@@ -638,7 +638,9 @@ impl GpuDrivenRenderer {
             .reserve(&self.sorted, views)
             .map_err(out_of_memory)?;
         list.reserve_words(
-            self.config.draw_list_words + Transparent::words_bound(&self.sorted, views),
+            self.config.draw_list_words
+                + Transparent::words_bound(&self.sorted, views)
+                + self.bundles_bound(),
         );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
@@ -1016,6 +1018,17 @@ impl GpuDrivenRenderer {
         self.dfg_pending = true;
         self.created = true;
         Ok(())
+    }
+
+    /// The most words that one frame's bundles take for the scene as it stands, when the frame
+    /// records them all: each camera view's, and its depth prepass's, and each cascade's and shadow
+    /// tile's. The list grows only when the layouts do, so steady frames allocate nothing.
+    fn bundles_bound(&self) -> usize {
+        let cameras = 2 * self.settings.views().len();
+        let tiles = self.settings.tile_settings().tiles as usize;
+        let shadow_views = MAX_CASCADES + tiles.min(MAX_TILES);
+        cameras * opaque::bundle_words(&self.layout)
+            + shadow_views * opaque::bundle_words(&self.casters)
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not

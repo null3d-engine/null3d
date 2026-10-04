@@ -6,7 +6,11 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { BufferUtils, Format, NodeIO } from '@gltf-transform/core';
-import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
+import {
+	ALL_EXTENSIONS,
+	EXTMeshoptCompression,
+	KHRTextureBasisu,
+} from '@gltf-transform/extensions';
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { VERSION } from '../version.js';
 import { planLevels, quantizeMeshes, reorderMeshes, storeLevels } from './geometry.js';
@@ -240,6 +244,9 @@ export async function optimizeModel(path, options, encode) {
 		quality: options.textureQuality,
 		folder: options.textureFolder,
 	});
+	// glTF names a KTX2 image only through KHR_texture_basisu. Readers that follow the rules, such
+	// as three.js's GLTFLoader, refuse a KTX2 image that a texture names directly.
+	if (uris.size > 0) doc.createExtension(KHRTextureBasisu).setRequired(true);
 	tidyBuffers(doc);
 	if (options.meshopt)
 		doc

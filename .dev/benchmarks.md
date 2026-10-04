@@ -171,6 +171,42 @@ A change can make a scene faster and make it look worse, such as a smaller shado
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
 - [D-06](decisions/D-06-success-targets.md#addendum-2026-10-02-s3-s4-and-s1-at-phone-scale-on-each-device) gives S4's figures on each device from 2 and 3 October 2026, with the long runs. [D-03](decisions/D-03-latency-mode.md) gives S4's pacing in low-latency mode on the iPad.
 
+## The crowd
+
+- S5 draws 500 copies of one animated character on a lit ground. `?n=` sets the count. The character is the KayKit Knight of the sample content (CC0), which the asset tool optimizes when the page imports it ([Sample content](sample-content.md#use-a-sample-file)). Both engines load the same optimized file, with meshopt buffers and a KTX2 texture.
+- Each knight keeps one sword and one round shield, with its helmet and cape, as a game shows it. The page removes the file's four other weapons and shields. A knight then has 10 meshes, 4,957 vertices, 5,296 triangles and 41 joints. Its 6 body meshes are skinned. The helmet, the cape, the sword and the shield follow their bones as rigid meshes.
+- The knights walk in rings around the center, and the rings take turns going one way and the other. Each knight blends the walk `Walking_A` with the run `Running_B`, whose clips are both 1.07 s long, so the blend stays in step. Each ring has its own share of the run, from 0.2 to 0.8, and moves at the speed of its blend. The knights of a ring keep their spacing, and the rings lie 2 m apart, so no two knights overlap.
+- Each knight plays its clips at a rate of its own, from 0.85 to 1.15, so no two step in time. S5's design starts each character's clips at a time of its own. The engine has no call that starts a clip at a chosen time, so the rates spread the poses instead.
+- S5's design calls for characters of about 2,500 vertices. The Knight has about 4,950, and the asset tool cannot simplify meshes. So S5 draws about twice the vertices of its design. The vertex work of both engines grows with it.
+- A sun casts shadows, and an ambient light fills them. S5's design also lights it with an environment. The engine does not light scenes with environment maps yet, so S5 and its twin leave it out. The pull request that builds environment light adds it to both, and makes S5's image references again.
+- The camera orbits the crowd once a minute, at a radius that fits the outer ring.
+- The page runs with the preset that null3D chooses and the governor on. S4 does the same ([The phone scene](#the-phone-scene)). `?demo` makes it the playable demo: the stats overlay, orbit controls, and Space to pause the crowd.
+- The three.js twin loads the file with `GLTFLoader`, `KTX2Loader` and `MeshoptDecoder`. `SkeletonUtils.clone` copies it for each knight. The copies share their geometries and materials, and each gets a skeleton of its own. Each knight has one `AnimationMixer`, which plays the two clips as actions whose weights add up to 1. three.js has no instanced skinning in its core. So each `SkinnedMesh` draws on its own, skinned in the vertex shader of each pass. The shadows come from the cascaded shadow addon, as in S4's twin.
+
+### What S5 found
+
+- three.js could not load any model that the asset tool optimized. The tool wrote each KTX2 texture as the texture's plain source, and glTF names a KTX2 image only through `KHR_texture_basisu`. The tool now turns the extension on whenever it writes KTX2 files.
+- On WebGPU, each skinned object draws from a bucket of its own, and every bundle names every bucket. The draw list kept a fixed room of 16,384 words, so 500 knights failed their first frame with E1501. The builder now reserves the words that the camera, prepass, cascade and tile bundles can take, for the layouts as they stand. A Rust test draws 5,000 skinned copies on both builders.
+- The Knight's material is double-sided, so both engines draw its lit faces into the shadow map. null3D's default `normalBias` of 0.02 m keeps those faces from shading themselves. The twins' cascades had no normal offset, so three.js speckled the sunlit helmets with acne. Then null3D's frame differed from three.js's in 0.93% of its pixels on WebGPU, 0.95% in compatibility mode and 1.76% on WebGL2. three.js's two renderers differed by 0.69%. With knights that receive no shadows, both tiers differed by only 0.12%. The cascades of S4's and S5's twins now take null3D's default `normalBias`, which three.js gives in meters too.
+- By [D-52](decisions/D-52-intent-parity.md), S5's comparison with three.js is strict: skinning poses, animation sampling and the glTF material are shared building blocks. The twin's offset gives both engines comparable shadow settings, as equal work asks. The shadows' own technique still differs. S5 passes because its frame differs from three.js's less than three.js's two renderers differ from each other.
+- After that change, the Mac's GPU gave these figures on 4 October 2026. 0.27% of S5's pixels differed on WebGPU, 0.33% in compatibility mode and 0.20% on WebGL2. three.js's two renderers differed by 0.46%. SwiftShader gave 0.29%, 0.32% and 0.20%, against 0.52%. S4's figures hardly moved: 0.159% to 0.156% on WebGPU, 0.174% to 0.173% in compatibility mode and 0.248% to 0.242% on WebGL2.
+
+- At 500 knights, null3D's WebGL2 path first drew 8.4 frames per second on the Mac, with the GPU 233 ms behind. Each frame wrote about 1,500 small runs of moved rows into the resident texture, one write each. The upload now joins runs that lie close together ([Implementation notes](implementation-notes.md#safaris-webgl2-path)).
+- The Mac ran S5 at 500 knights on 4 October 2026, at High with the governor off. Each page had 3 runs of 10 seconds' warm-up and 10 measured, taking turns (`target/bench/20261004-112928-bench`). null3D's WebGL2 page took 1.25 ms of CPU per frame (1.20 to 1.39). It held 120 frames per second at 120 Hz with 42 draw calls. three.js's WebGL renderer took 54.02 ms (51.62 to 60.58) and drew 18.4 frames per second. null3D's WebGPU page took 2.32 ms (2.07 to 2.75) and 7.38 ms of GPU time. It drew 20,002 draw calls, one per skinned object in each pass. The display ran at 60 Hz during its turn, so its frame rate gives no figure.
+- An earlier run that day, before the upload fix, timed WebGPU with `?skinning=vertex` too. It took 1.50 ms (1.40 to 1.54) against 1.93 ms (1.83 to 1.93) with the compute pass, at 4.75 and 4.35 ms of GPU time. three.js's WebGPU renderer took 133.65 ms and drew 7.5 frames per second.
+
+### S5 on SwiftShader
+
+- S5's ten page tests pass on SwiftShader, with the twins: each takes 2 to 22 seconds. The image tests draw both thread modes of each tier in about 20 seconds.
+- On SwiftShader, null3D's held frame takes longer than three.js's. We timed 500 knights on the Mac under a heavy load. null3D gave its held frame in 24 seconds on WebGL2 and 11 on WebGPU. three.js took 9 and 5. The sketch's steps took under 2 seconds. Most of the rest was SwiftShader running the frame's GPU work, which the read back waits for. SwiftShader runs GPU work on the CPU, so it says nothing about a real GPU. On the Mac's GPU, each engine gives the frame in about a second.
+
+### Run S5
+
+- The CI comparison leaves S5 out (`COMPARED_SCENES` in `bench/run.ts`) until it runs at a pinned preset.
+- On the Mac: `bun run bench:run --scenes s5 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,threejs-webgl,scene-code`.
+- Phones and tablets first find S5's own scale: `bun tests/real-browsers.ts --plan scale --scenes s5 --allow-no-webgpu --android chrome` ([Device sessions](devices.md#android-phone)). Then run the bench plan at that count: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s5 --pages null3d-webgl2,threejs-webgl,scene-code --n <count>`.
+- On the iPad: `bun tests/real-browsers.ts --plan scale --scenes s5 --lan ipad-safari`, then `--plan bench --lan ipad-safari --scenes s5 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code --n <count>`.
+
 ## Shadows
 
 - `?shadows=<n>` on S2's pages turns on the sun's shadows, and every node casts and receives them. null3D draws them in n cascades, from 1 to 4, and three.js in one map. Both maps have 2,048 texels on each side (`SHADOWS` in `bench/scenes/spec.ts`), and three.js's map covers a box around the whole forest.

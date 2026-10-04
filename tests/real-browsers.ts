@@ -13,6 +13,7 @@
 //   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard 1/2 Safari
 //   bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome
+//   bun tests/real-browsers.ts --plan scale --scenes s5 --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 250000
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8
 //   bun tests/real-browsers.ts --plan memory --android chrome --lan ipad-safari
@@ -50,8 +51,9 @@
 //                       on purpose in every thread mode and then plays S4 for many minutes on each
 //                       GPU path, recording each GPU loss, warm-up-time, which times how long the
 //                       pipelines of each benchmark scene and demo hold up the first frame, with
-//                       fresh shaders and with compiled ones, or scale, which finds the largest S1
-//                       count at which three.js holds 30 frames per second
+//                       fresh shaders and with compiled ones, or scale, which finds the largest
+//                       count of S1's objects or S5's characters at which three.js holds 30
+//                       frames per second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -64,8 +66,8 @@
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
-//   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2, s3, s4; the default
-//                       is s1
+//   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2, s3, s4, s5; or the
+//                       scale plan's: s1, s5. The default is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
@@ -194,10 +196,14 @@ import {
 	drawnFps,
 	HOLD_FPS,
 	holdsRate,
+	isScaleScene,
 	NEW_SEARCH,
 	nextCount,
+	SCALE_COUNTS,
 	SCALE_PLAN,
 	SCALE_RENDERERS,
+	SCALE_SCENES,
+	type ScaleScene,
 	type ScaleSearch,
 	scaleItem,
 } from './lib/scale.ts';
@@ -223,7 +229,7 @@ export interface Options {
 	jobs?: number[];
 	/** The bench plan's page kinds, when given. */
 	pages?: BenchPageKind[];
-	/** The bench plan's scenes, when given. */
+	/** The bench plan's or the scale plan's scenes, when given. */
 	scenes?: BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, when given. */
 	seconds?: number;
@@ -344,11 +350,18 @@ export function parseArgs(args: readonly string[]): Options {
 	for (const [flag, given] of [
 		['--jobs', options.jobs],
 		['--pages', options.pages],
-		['--scenes', options.scenes],
 		['--seconds', options.seconds],
 	] as const)
 		if (given && options.plan !== 'bench')
 			throw new Error(`${flag} works with --plan bench only\n${USAGE}`);
+	if (options.scenes && options.plan === SCALE_PLAN) {
+		const other = options.scenes.filter((scene) => !isScaleScene(scene));
+		if (other.length > 0)
+			throw new Error(
+				`--scenes: the scale plan searches ${SCALE_SCENES.join(' and ')} only; leave out ${other.join(', ')}`,
+			);
+	} else if (options.scenes && options.plan !== 'bench')
+		throw new Error(`--scenes works with --plan bench or --plan ${SCALE_PLAN} only\n${USAGE}`);
 	if (options.minutes && options.plan !== 'soak')
 		throw new Error(`--minutes works with --plan soak only\n${USAGE}`);
 	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
@@ -1304,6 +1317,7 @@ async function runPlan(
 
 /** One count that the phone-scale search tried on a runner. */
 interface ScaleStep {
+	scene: ScaleScene;
 	renderer: string;
 	count: number;
 	/** The run that tried it, and its result's name there. */
@@ -1316,24 +1330,28 @@ interface ScaleStep {
 	heat?: HeatSummary;
 }
 
-const objects = (count: number) => `${count.toLocaleString('en-US')} objects`;
+/** A count of a scene's objects, such as 1,000 objects or 25 characters. */
+const objects = (count: number, scene: ScaleScene) =>
+	`${count.toLocaleString('en-US')} ${SCALE_COUNTS[scene].noun}`;
 
 /** Whether a search has tried a count yet. */
 const searched = ({ held, dropped }: ScaleSearch) => held > 0 || dropped !== null;
 
 /** What the search found with one of three.js's renderers, in one line. */
-function answerText(renderer: string, { held, dropped }: ScaleSearch): string {
+function answerText(renderer: string, { held, dropped }: ScaleSearch, scene: ScaleScene): string {
+	const where = `${scene.toUpperCase()}: three.js ${renderer}`;
 	if (held === 0)
-		return `three.js ${renderer} does not hold ${HOLD_FPS} frames per second even at ${objects(dropped ?? 0)}`;
+		return `${where} does not hold ${HOLD_FPS} frames per second even at ${objects(dropped ?? 0, scene)}`;
 	if (dropped === null)
-		return `three.js ${renderer} holds ${HOLD_FPS} frames per second up to ${objects(held)}, the most the search tries`;
-	return `three.js ${renderer} holds ${HOLD_FPS} frames per second up to ${objects(held)}, and drops below at ${objects(dropped)}`;
+		return `${where} holds ${HOLD_FPS} frames per second up to ${objects(held, scene)}, the most the search tries`;
+	return `${where} holds ${HOLD_FPS} frames per second up to ${objects(held, scene)}, and drops below at ${objects(dropped, scene)}`;
 }
 
 /**
- * Searches each runner in turn for the largest S1 count at which three.js holds the rate, with each
- * renderer that the browser can run, one count per run. The larger count of the two renderers is the
- * device's phone scale. Returns the number of runners without an answer.
+ * Searches each runner in turn, scene by scene, for the largest count at which three.js holds the
+ * rate, with each renderer that the browser can run, one count per run. The larger count of the two
+ * renderers is the device's phone scale for the scene. Returns the number of scenes and runners
+ * without an answer.
  */
 async function runScale(
 	options: Options,
@@ -1342,54 +1360,63 @@ async function runScale(
 	local: DevServer,
 ): Promise<number> {
 	const base = runName(SCALE_PLAN);
+	const scenes = (options.scenes ?? ['s1']).filter(isScaleScene);
 	let failures = 0;
 	for (const runner of runners) {
 		const name = runner.name;
 		const log = launches.get(name)?.kind === 'android' ? new HeatLog() : undefined;
 		const steps: ScaleStep[] = [];
-		const answers: { renderer: string; search: ScaleSearch }[] = [];
+		const answers: { scene: ScaleScene; renderer: string; search: ScaleSearch }[] = [];
 		let braveShields: ShieldsState | null | undefined;
 		let unreliableTiming: string | undefined;
 		log?.start();
 		try {
-			for (const [page, renderer] of SCALE_RENDERERS) {
-				let search = NEW_SEARCH;
-				for (let count = nextCount(search); count !== null; count = nextCount(search)) {
-					const run = `${base}-${name}-${steps.length + 1}`;
-					const item = scaleItem(page, count);
-					const plan = writePlan(run, [item], { measureRefresh: true });
-					setTurns(run, [name]);
-					await waitForRunners(plan, await openRunners([name], launches, run, local.url), {
-						onQuiet: reportQuiet,
-					});
-					const result = readResult(run, name, item.id);
-					const verdict = result
-						? judge(item.check, result, options.missing)
-						: ['no result; the runner page stopped or never started'];
-					if (verdict === 'skip') {
-						console.log(`${name}: three.js ${renderer}: this browser cannot run it`);
-						break;
+			for (const scene of scenes)
+				for (const [page, renderer] of SCALE_RENDERERS) {
+					let search = NEW_SEARCH;
+					for (
+						let count = nextCount(search, scene);
+						count !== null;
+						count = nextCount(search, scene)
+					) {
+						const run = `${base}-${name}-${steps.length + 1}`;
+						const item = scaleItem(page, count, scene);
+						const plan = writePlan(run, [item], { measureRefresh: true });
+						setTurns(run, [name]);
+						await waitForRunners(plan, await openRunners([name], launches, run, local.url), {
+							onQuiet: reportQuiet,
+						});
+						const result = readResult(run, name, item.id);
+						const verdict = result
+							? judge(item.check, result, options.missing)
+							: ['no result; the runner page stopped or never started'];
+						if (verdict === 'skip') {
+							console.log(
+								`${name}: ${scene.toUpperCase()} on three.js ${renderer}: this browser cannot run it`,
+							);
+							break;
+						}
+						const failed = verdict.length > 0;
+						const step: ScaleStep = {
+							scene,
+							renderer,
+							count,
+							run,
+							id: item.id,
+							fps: failed ? null : drawnFps(result as ItemResult),
+							held: !failed && holdsRate(result as ItemResult),
+							...(failed && { error: verdict.join('; ') }),
+						};
+						steps.push(step);
+						console.log(
+							`${name}: three.js ${renderer} at ${objects(count, scene)}: ${step.fps === null ? `failed: ${step.error}` : `${step.fps.toFixed(1)} frames per second`}`,
+						);
+						// A page that fails at the first count shows that the browser cannot run it at all.
+						if (failed && !searched(search)) break;
+						search = afterCount(search, count, step.held);
 					}
-					const failed = verdict.length > 0;
-					const step: ScaleStep = {
-						renderer,
-						count,
-						run,
-						id: item.id,
-						fps: failed ? null : drawnFps(result as ItemResult),
-						held: !failed && holdsRate(result as ItemResult),
-						...(failed && { error: verdict.join('; ') }),
-					};
-					steps.push(step);
-					console.log(
-						`${name}: three.js ${renderer} at ${objects(count)}: ${step.fps === null ? `failed: ${step.error}` : `${step.fps.toFixed(1)} frames per second`}`,
-					);
-					// A page that fails at the first count shows that the browser cannot run it at all.
-					if (failed && !searched(search)) break;
-					search = afterCount(search, count, step.held);
+					if (searched(search)) answers.push({ scene, renderer, search });
 				}
-				if (searched(search)) answers.push({ renderer, search });
-			}
 		} finally {
 			setTurns(base, []);
 			const samples = log ? await log.stop() : [];
@@ -1410,24 +1437,27 @@ async function runScale(
 				...(unreliableTiming && { unreliableTiming }),
 			});
 		}
-		const best = answers
-			.filter(({ search }) => search.held > 0)
-			.sort((a, b) => b.search.held - a.search.held)[0];
-		for (const { renderer, search } of answers)
-			console.log(`${name}: ${answerText(renderer, search)}.`);
+		for (const { scene, renderer, search } of answers)
+			console.log(`${name}: ${answerText(renderer, search, scene)}.`);
 		const heat = wholeHeatText(log?.samples ?? []);
 		if (heat) console.log(`${name}, heat through the search: ${heat}`);
 		if (braveShields !== undefined) console.log(`${name}: ${shieldsText(braveShields)}`);
 		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
-		if (best) {
-			console.log(
-				`${name}: phone scale ${objects(best.search.held)}, with three.js's ${best.renderer} renderer. Run the benchmark at it with --plan bench --n ${best.search.held}.`,
-			);
-		} else {
-			failures++;
-			console.log(
-				`FAIL  ${name}: the search found no count at which three.js holds ${HOLD_FPS} frames per second`,
-			);
+		for (const scene of scenes) {
+			const best = answers
+				.filter((answer) => answer.scene === scene && answer.search.held > 0)
+				.sort((a, b) => b.search.held - a.search.held)[0];
+			if (best) {
+				const flags = scene === 's1' ? '' : ` --scenes ${scene}`;
+				console.log(
+					`${name}: ${scene.toUpperCase()}'s phone scale is ${objects(best.search.held, scene)}, with three.js's ${best.renderer} renderer. Run the benchmark at it with --plan bench${flags} --n ${best.search.held}.`,
+				);
+			} else {
+				failures++;
+				console.log(
+					`FAIL  ${name}: the search found no count of ${scene.toUpperCase()} at which three.js holds ${HOLD_FPS} frames per second`,
+				);
+			}
 		}
 	}
 	console.log(`results: ${join(RUNS_DIR, base)}`);

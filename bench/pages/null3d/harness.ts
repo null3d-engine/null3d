@@ -90,6 +90,8 @@ export function runNull3dPage(
 		if (options.shadowFilter !== null)
 			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
+		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
+		if (options.demo) sketchUrl.searchParams.set('demo', '');
 		// The allocation check's switches, which only some sketches read.
 		for (const name of SKETCH_SWITCHES) {
 			const value = params.get(name);
