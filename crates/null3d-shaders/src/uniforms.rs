@@ -1,7 +1,8 @@
 //! A custom material's uniforms: the fields of `struct Uniforms` in its WGSL. The build packs
 //! them into the material's row of custom values, which holds eight `vec4f`s, and writes the
 //! function that loads them, so the template can fill its `material` from the row. The engine
-//! writes each uniform's value at the offset that the build gives it.
+//! writes each uniform's value at the offset that the build gives it. The layers of the
+//! material's textures take the row's last floats, one each, so the uniforms fit in the rest.
 
 use serde::Serialize;
 
@@ -13,7 +14,7 @@ use crate::scan::{Kind, Token, matching};
 pub(crate) const STRUCT: &str = "Uniforms";
 
 /// The floats in a material's row of custom values.
-const ROW_FLOATS: u32 = 32;
+pub(crate) const ROW_FLOATS: u32 = 32;
 
 /// The component names of a `vec4f`, in order.
 const COMPONENTS: &str = "xyzw";
@@ -86,12 +87,15 @@ fn struct_body(tokens: &[Token]) -> Option<usize> {
 }
 
 /// Reads `struct Uniforms` from a custom material's WGSL, when it has one, and writes its loader.
-/// Problems name the fields' places in `source`.
+/// The material's `textures` take the row's last floats. Problems name the fields' places in
+/// `source`.
 pub(crate) fn read(
     tokens: &[Token],
     source: &str,
     path: &str,
+    textures: u32,
 ) -> Result<Option<Uniforms>, Vec<Problem>> {
+    let room = ROW_FLOATS - textures;
     let Some(open) = struct_body(tokens) else {
         return Ok(None);
     };
@@ -139,12 +143,17 @@ pub(crate) fn read(
             _ => 4,
         };
         let offset = cursor.div_ceil(align) * align;
-        if offset + ty.floats > ROW_FLOATS {
+        if offset + ty.floats > room {
+            let textures = match textures {
+                0 => String::new(),
+                1 => ", less one for the texture".to_owned(),
+                n => format!(", less one for each of the {n} textures"),
+            };
             problems.push(Problem::at(
                 path,
                 place(name),
                 format!(
-                    "the uniform `{}` does not fit: a custom material's uniforms hold {ROW_FLOATS} numbers at most, with each vec3f and vec4f starting a group of four. Pack small values into a vec4f, or remove some uniforms.",
+                    "the uniform `{}` does not fit: a custom material's uniforms hold {ROW_FLOATS} numbers at most{textures}, with each vec3f and vec4f starting a group of four. Pack small values into a vec4f, or remove some uniforms.",
                     name.text
                 ),
             ));

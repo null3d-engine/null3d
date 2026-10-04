@@ -19,6 +19,8 @@ import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeFrom } from './wa
 export interface CustomShader {
 	readonly variants: ShaderVariants;
 	readonly locations: readonly number[];
+	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */
+	readonly textures: number;
 }
 
 /** The images and custom materials' shaders that the thread that draws holds. */
