@@ -73,7 +73,9 @@ function main(): void {
 			positionals.length > 0
 				? positionals.map((name) => `${name}.json`)
 				: existsSync(ARCHIVE_DIR)
-					? readdirSync(ARCHIVE_DIR).filter((name) => name.endsWith('.json'))
+					? readdirSync(ARCHIVE_DIR)
+							.filter((name) => name.endsWith('.json'))
+							.sort()
 					: [];
 		console.log(
 			rowTables(names.flatMap((name) => resultRows(readRecord(join(ARCHIVE_DIR, name))))),

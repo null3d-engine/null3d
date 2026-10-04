@@ -1095,19 +1095,27 @@ function deviceLabel(device: ArchivedDevice | null, runner: string): string {
 /**
  * The rows of the results page that a record gives: one for each null3D page of a runner that ran
  * a three.js page of the same scene. Each compares null3D with three.js's renderer that took the
- * least time in each measure.
+ * least time in each measure, or marks three.js's side failed when none of its runs drew.
  */
 export function resultRows(record: ArchiveRecord): ResultRow[] {
 	const date = parseRunName(record.run)?.date ?? '';
 	const rows: ResultRow[] = [];
-	for (const [runner, { device, pages = [] }] of Object.entries(record.runners ?? {})) {
+	for (const [runner, { device, pages = [], runs = [] }] of Object.entries(record.runners ?? {})) {
+		const samePlace = (a: { scene: string; jobs?: number }, b: { scene: string; jobs?: number }) =>
+			a.scene === b.scene && a.jobs === b.jobs;
 		for (const page of pages) {
-			if (!page.againstThree || TIMING_PAGE.test(page.page)) continue;
-			const { wholeFrame, ownWork } = page.againstThree;
+			if (!isNull3d(page.page) || TIMING_PAGE.test(page.page)) continue;
+			// A scene whose three.js pages all failed, such as S3 where WebGLRenderer cannot build
+			// its shader, still gets its row, with three.js's side marked.
+			const threeFailed =
+				!page.againstThree &&
+				runs.some((run) => isThree(run.page) && !run.ok && samePlace(run, page));
+			if (!page.againstThree && !threeFailed) continue;
+			const { wholeFrame = null, ownWork = null } = page.againstThree ?? {};
 			const three = pages.find(
-				(other) =>
-					other.page === wholeFrame?.page && other.scene === page.scene && other.jobs === page.jobs,
+				(other) => other.page === wholeFrame?.page && samePlace(other, page),
 			);
+			const missing = threeFailed ? 'failed' : 'n/a';
 			const n = page.n;
 			rows.push({
 				table: resultTable(page.scene, n),
@@ -1119,13 +1127,13 @@ export function resultRows(record: ArchiveRecord): ResultRow[] {
 					n === undefined ? 'n/a' : n.toLocaleString('en-US'),
 					wholeFrame
 						? `${ms(page.cpuMs.median)} / ${ms(wholeFrame.threeMs)} (${rendererText(wholeFrame.page)})`
-						: `${ms(page.cpuMs.median)} / n/a`,
+						: `${ms(page.cpuMs.median)} / ${missing}`,
 					percent(wholeFrame?.share),
 					ownWork
 						? `${ms(page.ownWorkMs)} / ${ms(ownWork.threeMs)} (${rendererText(ownWork.page)})`
-						: `${ms(page.ownWorkMs)} / n/a`,
+						: `${ms(page.ownWorkMs)} / ${missing}`,
 					percent(ownWork?.share),
-					`${fps(page.presentedFps)} / ${fps(three?.presentedFps)}`,
+					`${fps(page.presentedFps)} / ${threeFailed ? missing : fps(three?.presentedFps)}`,
 					ms(page.gpuMs),
 					record.commit ? record.commit.slice(0, 8) : 'unknown',
 					record.run,

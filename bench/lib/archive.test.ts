@@ -301,6 +301,22 @@ describe('archiveFolder', () => {
 		]);
 	});
 
+	it("marks three.js's side failed when none of its pages drew the scene", () => {
+		const folder = deviceBenchRun();
+		const failed = { ok: false, error: 'FRAGMENT shader uniforms count exceeds' };
+		for (const page of ['threejs-webgpu', 'threejs-webgl'])
+			for (const run of [1, 2])
+				writeJson(join(folder, `ipad-safari/bench-s1-${page}-${run}.json`), failed);
+		const cells = resultRows(archiveFolder(folder, host))[0]?.cells;
+		expect(cells?.slice(4, 9)).toEqual([
+			'16.00 / failed',
+			'n/a',
+			'2.00 / failed',
+			'n/a',
+			'30.0 / failed',
+		]);
+	});
+
 	it("keeps a benchmark command's run as this machine's runner", () => {
 		const folder = join(root, 'target/bench/20261003-173411-bench');
 		writeJson(join(folder, 's1-null3d-webgl2-1.json'), null3dResult(2, 1.8));
