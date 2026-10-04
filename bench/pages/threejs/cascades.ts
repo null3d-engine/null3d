@@ -1,10 +1,19 @@
 // The sun's shadows in cascades, for the twins of the scenes that run with null3D's quality preset:
 // three.js's cascaded shadow addon, CSM for WebGLRenderer and CSMShadowNode for WebGPURenderer.
-// The cascades end where null3D's shadows end, with the preset's cascade count and map size.
+// The cascades end where null3D's shadows end, with the preset's cascade count and map size, and
+// their receivers take null3D's default offset along the normal.
 import type * as ThreeModule from 'three';
 import type { SceneLights } from '../../scenes/spec';
 import type { TwinSettings } from '../lib/preset';
 import type { BuildContext, SceneSetup, Three } from './harness';
+
+/**
+ * How far each receiver moves along its normal before its shadow test, in meters: null3D's default
+ * `normalBias`, which three.js gives in the same unit. A double-sided caster, such as S5's Knight,
+ * draws its lit faces into the map too. Without the offset, those faces compare with themselves and
+ * show acne, which null3D's biases keep off.
+ */
+const NORMAL_BIAS = 0.02;
 
 /** What the cascaded shadows need from the frame loop. */
 export type Cascades = Required<Pick<SceneSetup, 'afterCamera' | 'onAspect'>>;
@@ -36,7 +45,10 @@ export async function castCascadedShadows(
 			lightDirection: new three.Vector3(...direction).normalize(),
 			lightIntensity: intensity,
 		});
-		for (const light of csm.lights) light.color.set(color);
+		for (const light of csm.lights) {
+			light.color.set(color);
+			light.shadow.normalBias = NORMAL_BIAS;
+		}
 		scene.remove(sun);
 		for (const material of materials) csm.setupMaterial(material);
 		return {
@@ -50,6 +62,7 @@ export async function castCascadedShadows(
 	const { CSMShadowNode } = await import('three/addons/csm/CSMShadowNode.js');
 	sun.castShadow = true;
 	sun.shadow.mapSize.set(settings.shadowMapSize, settings.shadowMapSize);
+	sun.shadow.normalBias = NORMAL_BIAS;
 	const csm = new CSMShadowNode(sun as never, {
 		cascades: settings.shadowCascades,
 		maxFar: distance,

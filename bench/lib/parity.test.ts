@@ -369,7 +369,7 @@ describe('the scenes', () => {
 	});
 
 	test('compares with three.js the scenes that both engines draw in full', () => {
-		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2']);
+		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2', 's5']);
 		for (const scene of BENCH_SCENES)
 			expect(PARITY_SCENES.includes(scene)).toBe(LEFT_OUT_OF_PARITY[scene].length === 0);
 	});
@@ -531,7 +531,7 @@ describe('parseParityArgs', () => {
 	test('compares every scene on every GPU tier by default: benchmark scenes, then features', () => {
 		const features = FEATURE_SCENES.map((scene) => scene.test);
 		expect(parseParityArgs([])).toEqual({
-			scenes: ['s1', 's1-static', 's1-cells', 's2', ...features],
+			scenes: ['s1', 's1-static', 's1-cells', 's2', 's5', ...features],
 			comparisons: [
 				{
 					label: 'webgpu',
@@ -607,7 +607,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, standard-grid,',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, standard-grid,',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(
