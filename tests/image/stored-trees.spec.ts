@@ -20,8 +20,8 @@ const NO_FIT = /found a stored tree in .* that does not fit primitive \d+ of mes
 /** Opens the page with `switches`, and returns its result and the parts whose trees it refused. */
 async function open(page: Page, switches: string) {
 	const logs: string[] = [];
+	// The page's console events carry its workers' messages too, so each warning arrives once.
 	page.on('console', (message) => logs.push(message.text()));
-	page.on('worker', (worker) => worker.on('console', (message) => logs.push(message.text())));
 	await page.goto(`stored-trees.html?${switches}`);
 	const result = await pageResult<StoredTreesPage>(page, 60_000);
 	expect(result.error).toBeUndefined();
