@@ -106,10 +106,22 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 			if (/Content.Security.Policy/i.test(message.text())) violations.push(message.text());
 		});
 		await page.goto(`${server.url.href}?threads=off`);
+		// Functions, not text: Playwright evaluates text with eval, which the strict policy blocks.
+		// The casts give the page's globals the types that this file's Node settings lack.
+		type PageGlobals = {
+			document: { documentElement: { dataset: { start?: string } } };
+			crossOriginIsolated: boolean;
+		};
 		const start = await page
-			.waitForFunction('document.documentElement.dataset.start', undefined, { timeout: 30_000 })
+			.waitForFunction(
+				() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
+				undefined,
+				{ timeout: 30_000 },
+			)
 			.then((handle) => handle.jsonValue());
-		const isolated = await page.evaluate('crossOriginIsolated');
+		const isolated = await page.evaluate(
+			() => (globalThis as unknown as PageGlobals).crossOriginIsolated,
+		);
 		if (start !== 'threaded' || !isolated || violations.length > 0)
 			throw new Error(
 				`under a strict policy, with ?threads=off in the address, the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
