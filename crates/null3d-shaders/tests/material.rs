@@ -46,60 +46,69 @@ fn only_problem(source: &str) -> Problem {
 fn a_surface_function_builds_into_every_variant_of_the_template() {
     let built = compile(STRIPES).expect("the surface function builds");
     assert_eq!(built.functions, ["surface"]);
-    let names: Vec<&str> = built.variants.keys().map(String::as_str).collect();
-    assert_eq!(
-        names,
-        [
-            "webgl2",
-            "webgl2_alpha_mask",
-            "webgl2_alpha_mask_receive_shadows",
-            "webgl2_draw_index",
-            "webgl2_draw_index_alpha_mask",
-            "webgl2_draw_index_alpha_mask_receive_shadows",
-            "webgl2_draw_index_receive_shadows",
-            "webgl2_draw_index_tone_map",
-            "webgl2_draw_index_tone_map_alpha_mask",
-            "webgl2_draw_index_tone_map_alpha_mask_receive_shadows",
-            "webgl2_draw_index_tone_map_receive_shadows",
-            "webgl2_draw_index_tone_map_vertex_color",
-            "webgl2_draw_index_tone_map_vertex_color_alpha_mask",
-            "webgl2_draw_index_tone_map_vertex_color_alpha_mask_receive_shadows",
-            "webgl2_draw_index_tone_map_vertex_color_receive_shadows",
-            "webgl2_draw_index_vertex_color",
-            "webgl2_draw_index_vertex_color_alpha_mask",
-            "webgl2_draw_index_vertex_color_alpha_mask_receive_shadows",
-            "webgl2_draw_index_vertex_color_receive_shadows",
-            "webgl2_receive_shadows",
-            "webgl2_tone_map",
-            "webgl2_tone_map_alpha_mask",
-            "webgl2_tone_map_alpha_mask_receive_shadows",
-            "webgl2_tone_map_receive_shadows",
-            "webgl2_tone_map_vertex_color",
-            "webgl2_tone_map_vertex_color_alpha_mask",
-            "webgl2_tone_map_vertex_color_alpha_mask_receive_shadows",
-            "webgl2_tone_map_vertex_color_receive_shadows",
-            "webgl2_vertex_color",
-            "webgl2_vertex_color_alpha_mask",
-            "webgl2_vertex_color_alpha_mask_receive_shadows",
-            "webgl2_vertex_color_receive_shadows",
-            "webgpu",
-            "webgpu_alpha_mask",
-            "webgpu_alpha_mask_receive_shadows",
-            "webgpu_receive_shadows",
-            "webgpu_tone_map",
-            "webgpu_tone_map_alpha_mask",
-            "webgpu_tone_map_alpha_mask_receive_shadows",
-            "webgpu_tone_map_receive_shadows",
-            "webgpu_tone_map_vertex_color",
-            "webgpu_tone_map_vertex_color_alpha_mask",
-            "webgpu_tone_map_vertex_color_alpha_mask_receive_shadows",
-            "webgpu_tone_map_vertex_color_receive_shadows",
-            "webgpu_vertex_color",
-            "webgpu_vertex_color_alpha_mask",
-            "webgpu_vertex_color_alpha_mask_receive_shadows",
-            "webgpu_vertex_color_receive_shadows",
-        ]
-    );
+    // Each WebGL2 build has a twin that skins, for skinned meshes.
+    let plain = [
+        "webgl2",
+        "webgl2_alpha_mask",
+        "webgl2_alpha_mask_receive_shadows",
+        "webgl2_draw_index",
+        "webgl2_draw_index_alpha_mask",
+        "webgl2_draw_index_alpha_mask_receive_shadows",
+        "webgl2_draw_index_receive_shadows",
+        "webgl2_draw_index_tone_map",
+        "webgl2_draw_index_tone_map_alpha_mask",
+        "webgl2_draw_index_tone_map_alpha_mask_receive_shadows",
+        "webgl2_draw_index_tone_map_receive_shadows",
+        "webgl2_draw_index_tone_map_vertex_color",
+        "webgl2_draw_index_tone_map_vertex_color_alpha_mask",
+        "webgl2_draw_index_tone_map_vertex_color_alpha_mask_receive_shadows",
+        "webgl2_draw_index_tone_map_vertex_color_receive_shadows",
+        "webgl2_draw_index_vertex_color",
+        "webgl2_draw_index_vertex_color_alpha_mask",
+        "webgl2_draw_index_vertex_color_alpha_mask_receive_shadows",
+        "webgl2_draw_index_vertex_color_receive_shadows",
+        "webgl2_receive_shadows",
+        "webgl2_tone_map",
+        "webgl2_tone_map_alpha_mask",
+        "webgl2_tone_map_alpha_mask_receive_shadows",
+        "webgl2_tone_map_receive_shadows",
+        "webgl2_tone_map_vertex_color",
+        "webgl2_tone_map_vertex_color_alpha_mask",
+        "webgl2_tone_map_vertex_color_alpha_mask_receive_shadows",
+        "webgl2_tone_map_vertex_color_receive_shadows",
+        "webgl2_vertex_color",
+        "webgl2_vertex_color_alpha_mask",
+        "webgl2_vertex_color_alpha_mask_receive_shadows",
+        "webgl2_vertex_color_receive_shadows",
+        "webgpu",
+        "webgpu_alpha_mask",
+        "webgpu_alpha_mask_receive_shadows",
+        "webgpu_receive_shadows",
+        "webgpu_tone_map",
+        "webgpu_tone_map_alpha_mask",
+        "webgpu_tone_map_alpha_mask_receive_shadows",
+        "webgpu_tone_map_receive_shadows",
+        "webgpu_tone_map_vertex_color",
+        "webgpu_tone_map_vertex_color_alpha_mask",
+        "webgpu_tone_map_vertex_color_alpha_mask_receive_shadows",
+        "webgpu_tone_map_vertex_color_receive_shadows",
+        "webgpu_vertex_color",
+        "webgpu_vertex_color_alpha_mask",
+        "webgpu_vertex_color_alpha_mask_receive_shadows",
+        "webgpu_vertex_color_receive_shadows",
+    ];
+    let skinned = plain
+        .iter()
+        .filter(|name| name.starts_with("webgl2"))
+        .map(|name| format!("{name}_skin"));
+    let mut expected: Vec<String> = plain
+        .iter()
+        .map(|&name| name.to_owned())
+        .chain(skinned)
+        .collect();
+    expected.sort();
+    let names: Vec<&String> = built.variants.keys().collect();
+    assert_eq!(names, expected.iter().collect::<Vec<_>>());
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn square(x: f32) -> f32"), "{wgsl}");
     assert!(wgsl.contains("@location(2) uv0"), "{wgsl}");
@@ -130,7 +139,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 48, "{problem}");
+    assert_eq!(problem.variants.len(), 80, "{problem}");
 }
 
 #[test]
@@ -268,7 +277,8 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    assert_eq!(built.variants.len(), 48);
+    // 16 WebGPU builds, and 32 WebGL2 builds, each with a twin that skins.
+    assert_eq!(built.variants.len(), 80);
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn vertexOffset("), "{wgsl}");
     assert!(!wgsl.contains("fn surface("), "{wgsl}");
@@ -281,6 +291,19 @@ fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
         "{}",
         glsl.vertex.source
     );
+    // The twin that skins reads the joint texture and the first joints in its vertex shader.
+    let skin = &built.variants["webgl2_draw_index_skin"]
+        .glsl
+        .as_ref()
+        .expect("GLSL")["main"];
+    let read = |binding: u32| {
+        let textures = &skin.vertex.textures;
+        textures
+            .iter()
+            .any(|t| t.binding.group == 2 && t.binding.binding == binding)
+    };
+    assert!(read(4) && read(5));
+    assert!(!glsl.vertex.textures.iter().any(|t| t.binding.binding == 4));
     let both = compile(&format!("{STRIPES}\n{WAVE}"))
         .expect("a vertex offset and a surface function build together");
     assert_eq!(both.functions, ["surface", "vertexOffset"]);

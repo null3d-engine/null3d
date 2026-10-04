@@ -5,3 +5,8 @@
 export function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
+
+/** The message of `error` without its closing period, to quote inside a sentence. */
+export function reasonOf(error: unknown): string {
+	return messageOf(error).replace(/\.$/, '');
+}

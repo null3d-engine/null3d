@@ -325,45 +325,61 @@ impl Opaque {
 
     /// Makes a view's draw record buffer big enough for the layout, with the group that binds
     /// one block or record of it, and binds the view's instance textures again when one of them
-    /// is new (`textures_remade`).
+    /// is new (`textures_remade`). With `skins`, the joint texture and the texture of first joints,
+    /// the instance groups bind them too, for the pipelines that skin.
     pub(super) fn size(
         &mut self,
         list: &mut DrawList,
         view: ViewId,
         layout: &Layout,
+        skins: Option<[u32; 2]>,
         textures_remade: bool,
     ) -> Result<(), RecordError> {
         if textures_remade {
+            let bindings = if skins.is_some() { 6 } else { 4 };
+            let [joints, first_joints] = skins.unwrap_or_default();
+            let mut words = [
+                0,
+                bind_layout::INSTANCES,
+                bindings,
+                0,
+                resource_kind::TEXTURE,
+                ids::RESIDENT,
+                0,
+                0,
+                1,
+                resource_kind::TEXTURE,
+                0,
+                0,
+                0,
+                2,
+                resource_kind::TEXTURE,
+                0,
+                0,
+                0,
+                3,
+                resource_kind::TEXTURE,
+                ids::CLUSTERS,
+                0,
+                0,
+                4,
+                resource_kind::TEXTURE,
+                joints,
+                0,
+                0,
+                5,
+                resource_kind::TEXTURE,
+                first_joints,
+                0,
+                0,
+            ];
+            let used = 3 + bindings as usize * 5;
             for streamed in 0..RING {
                 for listed in 0..RING {
-                    list.push(
-                        Op::CreateBindGroup,
-                        &[
-                            ids::instances_group(view) + streamed * RING + listed,
-                            bind_layout::INSTANCES,
-                            4,
-                            0,
-                            resource_kind::TEXTURE,
-                            ids::RESIDENT,
-                            0,
-                            0,
-                            1,
-                            resource_kind::TEXTURE,
-                            ids::STREAMED + streamed,
-                            0,
-                            0,
-                            2,
-                            resource_kind::TEXTURE,
-                            ids::visible(view) + listed,
-                            0,
-                            0,
-                            3,
-                            resource_kind::TEXTURE,
-                            ids::CLUSTERS,
-                            0,
-                            0,
-                        ],
-                    )?;
+                    words[0] = ids::instances_group(view) + streamed * RING + listed;
+                    words[10] = ids::STREAMED + streamed;
+                    words[15] = ids::visible(view) + listed;
+                    list.push(Op::CreateBindGroup, &words[..used])?;
                 }
             }
         }

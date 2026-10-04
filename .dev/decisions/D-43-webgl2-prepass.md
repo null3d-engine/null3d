@@ -42,14 +42,16 @@ Each option was built and drawn on the shadows test in Chrome on the Mac.
 
 ### Option (c) on every prepass test
 
-The prepass image tests draw six scenes: shadows, masked cards, decals with a depth bias and see-through objects. The others are an orthographic camera whose near plane cuts a slab, and S2. Each image was compared with its test's image without the prepass, pixel for pixel.
+The prepass image tests draw seven scenes: shadows, masked cards, decals with a depth bias and see-through objects. The others are an orthographic camera whose near plane cuts a slab, S2, and skinned characters with shadows. Each image was compared with its test's image without the prepass, pixel for pixel.
 
 | GPU | WebGL2 | WebGPU | Compatibility mode |
 | --- | --- | --- | --- |
-| Chrome on the Mac's GPU | 0 pixels differ in all six | 0 in all six | 0 in all six |
-| SwiftShader | 0 in five; 16 edge pixels in the orthographic test | 0 in five; 18 edge pixels in the orthographic test | 0 in five; 18 edge pixels in the orthographic test |
+| Chrome on the Mac's GPU | 0 pixels differ in all seven | 0 in all seven | 0 in the first six |
+| SwiftShader | 16 edge pixels in the orthographic test, 0 in the other five | 18 edge pixels in the orthographic test, 0 in the other five | 18 edge pixels in the orthographic test, 0 in the other five |
 
-The orthographic test's edge pixels lie along one edge of the slab, and WebGPU's prepass on main shows them too. All six tests pass their tolerances on every tier and both GPU sets.
+The skinned scene was compared pixel for pixel on the Mac's WebGL2 and WebGPU tiers only. Elsewhere it passes its tolerance.
+
+The orthographic test's edge pixels lie along one edge of the slab, and WebGPU's prepass on main shows them too. All seven tests pass their tolerances on every tier and both GPU sets.
 
 ### Cost
 

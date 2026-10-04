@@ -74,6 +74,7 @@ mod data;
 mod layout;
 mod lights;
 mod opaque;
+mod skin;
 mod transparent;
 
 use std::collections::TryReserveError;
@@ -104,6 +105,7 @@ use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
+use crate::skinning::skinned_in_vertex_shader;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -112,6 +114,7 @@ use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
 use layout::{Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
 use opaque::{OFFSETS_BYTES, Opaque, Shading, ViewUpload};
+use skin::Skins;
 use transparent::Transparent;
 
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own, the
@@ -167,8 +170,12 @@ mod ids {
     pub const LIGHTS: u32 = LIGHT_GRID + RING;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = LIGHTS + RING;
+    /// Every animated instance's skinning matrices (see [`crate::skinning`]).
+    pub const JOINTS: u32 = BLANK_LUT + 1;
+    /// The first joint of the instance that skins each source row.
+    pub const FIRST_JOINTS: u32 = JOINTS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_LUT + 1;
+    pub const TARGETS: u32 = FIRST_JOINTS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -301,6 +308,8 @@ pub struct CpuCulledRenderer {
     /// The point and spot lights of the camera's view, and the textures that hold them.
     lights: CameraLights,
     light_textures: LightTextures,
+    /// The skinned scene objects, and the textures that their vertex shaders read.
+    skins: Skins,
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
@@ -382,6 +391,7 @@ impl CpuCulledRenderer {
             streamed_slot: RingSlot::default(),
             lights: CameraLights::new(config.light_limits),
             light_textures: LightTextures::default(),
+            skins: Skins::default(),
             created: false,
             dfg_pending: false,
         }
@@ -468,21 +478,28 @@ impl CpuCulledRenderer {
     /// `shadows`, the casters' layout holds the casters, and the receivers read the shadow map.
     fn rebuild_layout(&mut self, input: &FrameInput<'_>, shadows: bool) -> Result<(), RecordError> {
         self.settings.update_map_groups();
+        let rows = input.scene.capacity().saturating_add(1);
+        self.skins
+            .rebuild(input.scene, input.animations, self.settings.meshes())
+            .map_err(|_| RecordError::OutOfMemory {
+                bytes: rows.saturating_mul(4),
+            })?;
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
         let prepass = Prepass::OwnVertexShader.if_on(self.graph.depth_prepass());
-        let (settings, pipelines) = (&self.settings, &mut self.pipelines);
+        let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
-            settings, pipelines, targets, input, limit, multi_draw, shadows, prepass,
+            settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
         )?;
         // The casters' layout holds buckets only while the light casts shadows.
         if shadows {
             let targets = self.with_draw_index(shadows::TARGETS);
-            let (settings, pipelines) = (&self.settings, &mut self.pipelines);
+            let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
             self.casters.rebuild(
                 settings,
                 pipelines,
+                skins,
                 targets,
                 input,
                 limit,
@@ -503,6 +520,7 @@ impl CpuCulledRenderer {
             let slot = slots[index];
             (slot.base, if slot.dynamic { STREAMED } else { RESIDENT })
         };
+        let skins = &self.skins;
         self.sorted
             .rebuild(
                 &self.settings,
@@ -513,7 +531,7 @@ impl CpuCulledRenderer {
                 place,
                 RESIDENT,
                 shadows,
-                |_, _| None,
+                |slot, key| skins.skinned(slot).then(|| skinned_in_vertex_shader(key)),
             )
             .map_err(out_of_memory)?;
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
@@ -599,7 +617,7 @@ impl CpuCulledRenderer {
     /// uploaded yet, the material table, three.js's table of specular terms, the light grid, each
     /// view's, each shadow cascade's and each shadow tile's frame uniform, draw records and
     /// multi-draw arrays, the cascades' and the tiles' uniform blocks, the final pass's settings,
-    /// and the cluster orders not uploaded yet.
+    /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -625,6 +643,7 @@ impl CpuCulledRenderer {
             + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
             + cascades
             + shadows
+            + self.skins.upload_bound()
             + self.graph.upload_bound()
     }
 
@@ -662,15 +681,19 @@ impl CpuCulledRenderer {
     fn size_resources(
         &mut self,
         list: &mut DrawList,
+        input: &FrameInput<'_>,
         first_new: [usize; 3],
         rebuilt: bool,
     ) -> Result<bool, RecordError> {
         let limit = self.config.max_texture_size;
         let remade = if rebuilt {
-            self.textures.size(list, &self.layout, limit)?
+            let mut remade = self.textures.size(list, &self.layout, limit)?;
+            remade.any |= self.skins.size(list, input.animations, limit)?;
+            remade
         } else {
             Default::default()
         };
+        let skins = self.skins.textures();
         let views = self.settings.views().len();
         let cascades = self.cascades();
         let tiles = self.tile_count();
@@ -703,7 +726,7 @@ impl CpuCulledRenderer {
                 let view = culling.view(k);
                 let listed = culling.size(list, view, layout, limit)?;
                 let new_view = k >= first_new;
-                draws.size(list, view, layout, remade.any || listed || new_view)?;
+                draws.size(list, view, layout, skins, remade.any || listed || new_view)?;
             }
         }
         Ok(remade.resident)
@@ -905,11 +928,12 @@ impl CpuCulledRenderer {
         let new_views = first_new < views || first_new_cascade < cascades || first_new_tile < tiles;
         let new_texture = if rebuilt || new_views {
             let first_new = [first_new, first_new_cascade, first_new_tile];
-            self.size_resources(list, first_new, rebuilt)?
+            self.size_resources(list, input, first_new, rebuilt)?
         } else {
             false
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
+        self.skins.upload(list, arena, input.animations)?;
         self.clusters.upload(list, arena, &self.layout)?;
         self.light_textures
             .upload(list, arena, &mut self.lights, input.frame)?;
@@ -1205,6 +1229,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.streamed_slot.forget();
         self.lights.forget_gpu();
         self.light_textures.forget_gpu();
+        self.skins.forget_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
     }

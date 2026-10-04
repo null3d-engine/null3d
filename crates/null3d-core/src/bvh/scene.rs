@@ -8,7 +8,7 @@
 //! take a run of ids, in the order of the batches' ids. [`SceneBvh::source`] turns an id back
 //! into a slot or a batch row. Rows of a static batch join the static tree, and rows of a
 //! dynamic batch the dynamic tree. A batch's rows are the ones its last update wrote: its active
-//! rows then.
+//! rows then. Sprite batches stay out of the trees.
 //!
 //! An item's box is its mesh's own box (see [`super::mesh::MeshBvh::bounds`]) moved by the
 //! item's world matrix, widened a little (see [`Aabb::transformed`]). That box holds every
@@ -79,10 +79,13 @@ struct BatchRows {
     version: u32,
 }
 
-/// The rows of `batch` that its last update wrote, or `None` before its first update.
+/// The rows of `batch` that its last update wrote, or `None` before its first update and for a
+/// sprite batch: a sprite turns to face each camera, so it has no box of its own in the world, and
+/// its packed matrix places no mesh.
 fn rows_of(batch: &InstanceBatch) -> Option<u32> {
     let frame = batch.frame();
-    (frame != 0).then(|| batch.frame_active_count((frame & 1) as usize))
+    (frame != 0 && batch.sprite_look().is_none())
+        .then(|| batch.frame_active_count((frame & 1) as usize))
 }
 
 /// The box of an item: its mesh's box moved by its world matrix, or an empty box for a hidden

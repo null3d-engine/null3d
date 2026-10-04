@@ -1,12 +1,15 @@
-//! Skinning on the WebGPU frame builder, checked through the mock backend, which rejects what a
-//! real GPU would, and by decoding the lists it records: the skinning pass, which skins each
+//! Skinning on both frame builders, checked through the mock backend, which rejects what a real
+//! GPU would, and by decoding the lists they record. On WebGPU: the skinning pass, which skins each
 //! skinned object that some view draws once per frame, the joint texture it reads, and the views'
-//! draws of the skinned vertices.
+//! draws of the skinned vertices. On WebGL2: the skinning builds of the pipelines that draw
+//! skinned objects, shadows included, the joint texture and the texture of first joints that their
+//! vertex shaders read, and the instanced draws that skinned objects of one mesh share.
 
 mod common;
 
 use common::skinned::{AROUND, RINGS, column};
 use common::{World, count};
+use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
@@ -15,9 +18,11 @@ use null3d_gpu::drawlist::{
     Op, buffer_usage, format, layout, permutation, template, texture_usage, vertex,
 };
 use null3d_gpu::mock::MockBackend;
+use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::RendererConfig;
 use null3d_render::skinning::{JOINTS_PER_ROW, TEXELS_PER_JOINT, skinned_format};
+use null3d_render::view::ViewId;
 
 /// The common world with a skinned column at `position`, which casts shadows. Returns the world
 /// and the column.
@@ -217,4 +222,188 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
     );
     let second = world.step(&mut mock, false);
     assert_eq!(count(&second, Op::Dispatch), 1);
+}
+
+/// The WebGL2 frame builder, with `WEBGL_multi_draw` or without.
+fn webgl2(multi_draw: bool) -> World<CpuCulledRenderer> {
+    World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw,
+        ..CpuCulledConfig::default()
+    }))
+}
+
+/// Adds a second skinned object of `first`'s mesh and material at `position`, with an animated
+/// instance of its own.
+fn add_twin<B: FrameBuilder>(world: &mut World<B>, first: Handle, position: [f32; 3]) -> Handle {
+    let slot = world.scene.resolve(first).unwrap() as usize;
+    let (mesh, material) = (world.scene.meshes()[slot], world.scene.materials()[slot]);
+    let animations = world.animations.as_mut().unwrap();
+    let instance = animations.add_instance(0).unwrap();
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_position(object, position).unwrap();
+    let commands = [
+        Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+        Command::set_material(object, material),
+        Command::set_skin(object, Some(instance)),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    object
+}
+
+/// Turns on the sun's shadows, straight down, with two cascades.
+fn cast_sun_shadows<B: FrameBuilder>(world: &mut World<B>) {
+    let settings = world.renderer.settings_mut();
+    settings.set_sun([0.0, -1.0, 0.0], [3.0; 3]);
+    settings.set_sun_shadow(Some(SunShadow {
+        cascades: 2,
+        map_size: 1024,
+        bias: 0.5,
+        normal_bias: 1.0,
+        distance: 40.0,
+        layers: DEFAULT_LAYERS,
+    }));
+}
+
+/// The views' instance groups that a frame made.
+fn instance_groups(commands: &[(Op, Vec<u32>)]) -> Vec<Vec<u32>> {
+    operands(commands, Op::CreateBindGroup)
+        .into_iter()
+        .filter(|g| g[1] == layout::INSTANCES)
+        .collect()
+}
+
+/// The resource of entry `entry` of a bind group's operands.
+fn bound(group: &[u32], entry: usize) -> u32 {
+    group[3 + entry * 5 + 2]
+}
+
+/// The texture writes into texture `id`.
+fn writes(commands: &[(Op, Vec<u32>)], id: u32) -> Vec<Vec<u32>> {
+    operands(commands, Op::WriteTexture)
+        .into_iter()
+        .filter(|w| w[0] == id)
+        .collect()
+}
+
+#[test]
+fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object() {
+    for multi_draw in [false, true] {
+        let mut world = webgl2(multi_draw);
+        world.add_skinned([0.0; 3]);
+        cast_sun_shadows(&mut world);
+        let mut mock = MockBackend::default();
+        let first = world.step(&mut mock, true);
+
+        // The column's lit pass and its shadow pass draw with the skinning builds, which read
+        // its own vertices with their joints and weights. The other objects draw without them,
+        // and nothing skins in a compute pass.
+        let format = column().format;
+        let pipelines = operands(&first, Op::CreateRenderPipeline);
+        let skins = |template: u32| -> Vec<bool> {
+            pipelines
+                .iter()
+                .filter(|p| p[1] == template && p[7] == format)
+                .map(|p| p[2] & permutation::SKIN != 0)
+                .collect()
+        };
+        assert_eq!(skins(template::INSTANCED_LIT), [true]);
+        assert_eq!(skins(template::SHADOW_DEPTH), [true]);
+        assert!(
+            pipelines
+                .iter()
+                .filter(|p| p[7] != format)
+                .all(|p| p[2] & permutation::SKIN == 0)
+        );
+        assert_eq!(count(&first, Op::CreateComputePipeline), 0);
+
+        // Every instance group binds the joint texture and the texture of first joints after
+        // the instance textures.
+        let groups = instance_groups(&first);
+        assert!(!groups.is_empty());
+        assert!(groups.iter().all(|g| g[2] == 6));
+        let (joints, firsts) = (bound(&groups[0], 4), bound(&groups[0], 5));
+        let textures = operands(&first, Op::CreateTexture);
+        let created = |id: u32| textures.iter().find(|t| t[0] == id).unwrap().clone();
+        assert_eq!(
+            created(joints)[1..5],
+            [
+                JOINTS_PER_ROW * TEXELS_PER_JOINT,
+                1,
+                1,
+                format::RGBA32_FLOAT
+            ]
+        );
+        assert_eq!(created(firsts)[4], format::R32_UINT);
+        assert_eq!(writes(&first, joints).len(), 1);
+        assert_eq!(writes(&first, firsts).len(), 1);
+
+        // Later frames write the new pose's matrices, and make nothing.
+        let second = world.step(&mut mock, false);
+        assert_eq!(writes(&second, joints).len(), 1);
+        assert!(writes(&second, firsts).is_empty());
+        assert_eq!(count(&second, Op::CreateTexture), 0);
+        assert_eq!(count(&second, Op::CreateBindGroup), 0);
+    }
+}
+
+#[test]
+fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
+    let mut world = webgl2(true);
+    let left = world.add_skinned([-2.0, 0.0, 0.0]);
+    let objects = [left, add_twin(&mut world, left, [2.0, 0.0, 0.0])];
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    // Both columns are listed in one bucket, which one draw draws.
+    let culled = world.renderer.culled(world.frame - 1, ViewId::CAMERA);
+    let slots: Vec<u32> = objects
+        .iter()
+        .map(|&o| world.scene.resolve(o).unwrap())
+        .collect();
+    let bucket_of = |slot: u32| {
+        let rows = (1 << CELL_SHIFT) - 1;
+        let at = culled.indices().iter().position(|&e| e & rows == slot);
+        let at = at.expect("the column is in view") as u32;
+        let starts = culled.bucket_starts();
+        starts.windows(2).position(|w| w[0] <= at && at < w[1])
+    };
+    assert!(bucket_of(slots[0]).is_some());
+    assert_eq!(bucket_of(slots[0]), bucket_of(slots[1]));
+
+    // Each column finds its own instance's joints: the first joints of the slots from the first
+    // column's to the second's go up in one write.
+    let firsts = bound(&instance_groups(&first)[0], 5);
+    let written = writes(&first, firsts);
+    assert_eq!(written.len(), 1);
+    let width = slots[1] - slots[0] + 1;
+    assert_eq!(written[0][2..6], [slots[0], 0, 0, width]);
+    assert_eq!(written[0][9], width * 4);
+}
+
+#[test]
+fn webgl2_draws_unskinned_objects_without_the_skin_textures() {
+    // The common world skins nothing: its instance groups bind the instance textures alone.
+    let mut world = webgl2(true);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    let groups = instance_groups(&first);
+    assert!(!groups.is_empty());
+    assert!(groups.iter().all(|g| g[2] == 4));
+
+    // A column that stops being skinned draws its mesh as it is, with the plain build.
+    let mut world = webgl2(true);
+    let skinned_column = world.add_skinned([0.0; 3]);
+    world.step(&mut mock, true);
+    world
+        .scene
+        .apply_commands(&[Command::set_skin(skinned_column, None)], world.frame)
+        .unwrap();
+    let second = world.step(&mut mock, true);
+    let format = column().format;
+    let plain = operands(&second, Op::CreateRenderPipeline)
+        .into_iter()
+        .filter(|p| p[1] == template::INSTANCED_LIT && p[7] == format)
+        .all(|p| p[2] & permutation::SKIN == 0);
+    assert!(plain);
+    assert_eq!(count(&second, Op::CreateRenderPipeline), 1);
 }
