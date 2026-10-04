@@ -76,13 +76,13 @@ export default defineSketch(({ post }) => {
 
 ## Outlines
 
-Outlines draw edges around the meshes that `setOutlined(true)` marks, with the meanings of three.js's `OutlinePass`. They are off by default.
+Outlines draw a crisp line around the meshes that `setOutlined(true)` marks, as three.js's `OutlinePass` draws edges around its selected objects. They are off by default.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(({ scene, geometry, materials, post }) => {
-  post.set({ outline: { color: '#ffcc00', thickness: 2 } });
+  post.set({ outline: { color: '#ffcc00', width: 3 } });
   const camera = scene.createPerspectiveCamera({ position: [0, 2, 6], target: [0, 0, 0] });
   scene.setActiveCamera(camera);
   scene.createDirectionalLight({ direction: [-1, -2, -1] });
@@ -98,17 +98,17 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 | Setting | Values | Default |
 | --- | --- | --- |
 | `outline` | The outline's settings to turn it on, or `false` to turn it off. | Off |
-| `outline.color` | The color of the edges around the parts that nothing hides, as `visibleEdgeColor`. | White |
-| `outline.hiddenColor` | The color of the edges around the parts that other objects hide, as `hiddenEdgeColor`, or `false` for no edges there. | Dark brown, `[0.1, 0.04, 0.02]` |
-| `outline.strength` | How bright the edges are, as `edgeStrength`: a number from 0 up. | 3 |
-| `outline.thickness` | How far the edges spread, as `edgeThickness`: the radius of their blur in pixels at half the render size, from 0 up. | 1 |
-| `outline.glow` | How much of a wide, soft glow joins the edges, as `edgeGlow`: a number from 0 up. | 0 |
+| `outline.color` | The color of the line around the parts that nothing hides. | White |
+| `outline.hiddenColor` | The color of the line around the parts that other objects hide, or `false` for no line there. | `false` |
+| `outline.width` | The line's width in CSS pixels, from 0 up. | 2 |
 
 - `mesh.setOutlined(true)` marks a mesh, and `setOutlined(false)` clears it. A model's copy from `scene.instantiate` has `setOutlined` too, which marks each of its meshes. Instance batches take no outline.
 - One outline style covers every outlined mesh. three.js needs one `OutlinePass` for each style, and null3D draws one.
-- The edges add light before the tone mapping, as three.js's overlay adds it before its `OutputPass`. Bright edges on a bright scene can reach white.
+- The canvas shows the line's colors exactly: the exposure and the tone mapping do not change them. The color grading table and the vignette still apply.
+- The line is as wide as `width` says on every screen and at every render scale. The engine multiplies it by the device's pixel ratio.
+- Above about 4 pixels of the canvas, a part of a mesh thinner than the line can leave a gap between itself and its line.
 - The outline covers the mesh's whole shape. It ignores the holes that an alpha cutoff cuts, and the vertices that a custom material moves.
-- A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing, so a sketch can change `glow` every frame. That gives a pulse, as three.js's `pulsePeriod` does.
+- A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing. So a sketch can change the outline's color or width every frame.
 - Turning outlines on or off, and `setOutlined`, rebuild the engine's draw tables, as a new material does. Do it in response to a click, not in every frame.
 
 [The post-processing chain](../concepts/post-processing.md#outlines) explains how outlines draw and what they cost.
@@ -160,7 +160,7 @@ Grading and the vignette work on display color, so they draw on every GPU path, 
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, a bloom, outline or vignette value other than settings or `false`, a `lut` that is not a table from `assets.loadLut`, or a value out of its range: an exposure, strength, threshold, thickness, glow, offset or darkness below 0, or a radius or `lutIntensity` outside 0 to 1. |
+| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, a bloom, outline or vignette value other than settings or `false`, a `lut` that is not a table from `assets.loadLut`, or a value out of its range: an exposure, strength, threshold, offset, darkness or outline width below 0, or a radius or `lutIntensity` outside 0 to 1. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1101](../errors/E1101.md) | A table whose `destroy()` was called. |

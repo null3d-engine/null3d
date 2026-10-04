@@ -447,7 +447,7 @@ post.set({
   ao: { radius: 0.5, intensity: 1 },     // (0.2) High and Ultra presets only
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
-  outline: { color: '#ffcc00', thickness: 2 },  // (0.2) OutlinePass's meanings, with hiddenColor, strength, glow; meshes opt in with setOutlined(true)
+  outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
 post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
 post.setEffectUniform('pixelate', 'size', 8);  // (0.2)

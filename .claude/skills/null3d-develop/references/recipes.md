@@ -176,7 +176,7 @@ No objects are created or destroyed during play. `setActiveCount` draws only the
 ```ts
 const PICKABLE = 1 << 1;
 for (const u of units) u.setLayers(1 | PICKABLE);   // layer 0 stays on so cameras still draw it
-post.set({ outline: { color: '#ffcc00', thickness: 2 } });
+post.set({ outline: { color: '#ffcc00', width: 3 } });   // a crisp line, width in CSS pixels
 
 let selected: typeof units[number] | null = null;
 for (const u of units) {
