@@ -97,20 +97,6 @@ pub(super) enum Bundle {
     Outline,
 }
 
-/// Words of a bundle's own commands: its start, its view's frame group and its end.
-const BUNDLE_WORDS: usize = 5 + 4 + 1;
-/// The most words that a bucket adds before its draws: its pipeline, its maps' group and the joint
-/// texture's, and its slice of the view's instances.
-const BUCKET_WORDS: usize = 2 + 4 + 4 + 5;
-/// The most words that a draw adds: its vertex buffer, its index buffer and the draw.
-const DRAW_WORDS: usize = 5 + 5 + 3;
-
-/// The most words that a bundle of `layout` records. Each skinned object draws from a bucket of
-/// its own, so a crowd's bundles grow with it.
-pub(super) fn bundle_words(layout: &Layout) -> usize {
-    BUNDLE_WORDS + layout.buckets.len() * BUCKET_WORDS + layout.draws.len() * DRAW_WORDS
-}
-
 /// Records a view's bundle of `kind`: each draw of every bucket of the layout, with the bucket's
 /// slice of the view's compacted instances and, where the bucket shades or its prepass draws with
 /// its own vertex shader, the bind group of its material's map, from its mesh page's buffers in

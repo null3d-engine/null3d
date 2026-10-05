@@ -152,11 +152,25 @@ pub(crate) fn push_runs(
 /// Why a frame could not be recorded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordError {
-    /// The frame's commands do not fit the draw list.
-    DrawListFull,
+    /// The frame's commands would take the draw list past its limit.
+    DrawListFull {
+        /// The most bytes the list holds, in whole mebibytes.
+        megabytes: u32,
+    },
     /// More sources than the builder can draw on this device.
     TooManySources {
         /// The most sources the builder can draw on this device.
+        limit: u32,
+    },
+    /// The skinned vertices of the scene's skinned objects do not fit the skinned vertex buffers
+    /// of the WebGPU skinning pass.
+    SkinnedVerticesFull {
+        /// The bytes those buffers hold on this device, in whole mebibytes.
+        megabytes: u32,
+    },
+    /// Skinned meshes fill more mesh pages than the WebGPU skinning pass reads.
+    SkinnedPagesFull {
+        /// The most mesh pages of skinned meshes.
         limit: u32,
     },
     /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
@@ -171,8 +185,16 @@ pub enum RecordError {
 }
 
 impl From<DrawListError> for RecordError {
-    fn from(_: DrawListError) -> Self {
-        RecordError::DrawListFull
+    fn from(error: DrawListError) -> Self {
+        let bytes = |words: usize| words as u64 * 4;
+        match error {
+            DrawListError::Full { limit } => RecordError::DrawListFull {
+                megabytes: (bytes(limit) >> 20) as u32,
+            },
+            DrawListError::OutOfMemory { words } => RecordError::OutOfMemory {
+                bytes: bytes(words).min(u64::from(u32::MAX)) as u32,
+            },
+        }
     }
 }
 
@@ -448,20 +470,30 @@ pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
     bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
-/// The draw list and the upload arena of each frame parity.
+/// The draw list and the upload arena of each frame parity, and the frames' all-or-nothing rule.
+///
+/// A frame that fails publishes an empty list, so the thread that draws replays nothing and the
+/// canvas keeps the last frame that recorded whole. A failure before the frame recorded any
+/// command changed nothing on the GPU, and the next frame tries again. A failure after it recorded
+/// commands leaves the builder believing that the GPU holds what the dropped commands would have
+/// made, so every later frame fails with the same error until a new GPU device starts afresh.
 pub(crate) struct ParityLists {
     lists: [DrawList; 2],
     arenas: [UploadArena; 2],
+    /// The error of a frame that failed after it recorded commands.
+    halted: Option<RecordError>,
 }
 
 impl ParityLists {
-    pub(crate) fn new(words: usize) -> Self {
+    /// Lists with room for `words` words, which grow up to `limit` words.
+    pub(crate) fn new(words: usize, limit: usize) -> Self {
         Self {
             lists: [
-                DrawList::with_capacity(words),
-                DrawList::with_capacity(words),
+                DrawList::with_limit(words, limit),
+                DrawList::with_limit(words, limit),
             ],
             arenas: [UploadArena::default(), UploadArena::default()],
+            halted: None,
         }
     }
 
@@ -473,19 +505,43 @@ impl ParityLists {
         &mut self.arenas
     }
 
-    /// Takes the frame parity's list, emptied, and its arena out, so the builder can record with
-    /// its own state borrowed. [`ParityLists::restore`] puts them back.
-    pub(crate) fn take(&mut self, frame: u32) -> (DrawList, UploadArena) {
+    /// Empties the frame parity's list and takes it and its arena out, so the builder can record
+    /// with its own state borrowed. [`ParityLists::restore`] puts them back. Fails with the error
+    /// that halted the builder, which then records nothing.
+    pub(crate) fn take(&mut self, frame: u32) -> Result<(DrawList, UploadArena), RecordError> {
         let parity = (frame & 1) as usize;
-        let mut list = std::mem::replace(&mut self.lists[parity], DrawList::with_capacity(0));
-        list.clear();
-        (list, std::mem::take(&mut self.arenas[parity]))
+        self.lists[parity].clear();
+        if let Some(error) = self.halted {
+            return Err(error);
+        }
+        let list = std::mem::replace(&mut self.lists[parity], DrawList::with_capacity(0));
+        Ok((list, std::mem::take(&mut self.arenas[parity])))
     }
 
-    pub(crate) fn restore(&mut self, frame: u32, list: DrawList, arena: UploadArena) {
+    /// Puts back the list and the arena that [`ParityLists::take`] took, with the frame's
+    /// `result`, which it returns. A failed frame's list goes back empty.
+    pub(crate) fn restore(
+        &mut self,
+        frame: u32,
+        mut list: DrawList,
+        arena: UploadArena,
+        result: Result<bool, RecordError>,
+    ) -> Result<bool, RecordError> {
+        if let Err(error) = result {
+            if !list.is_empty() {
+                self.halted = Some(error);
+            }
+            list.clear();
+        }
         let parity = (frame & 1) as usize;
         self.lists[parity] = list;
         self.arenas[parity] = arena;
+        result
+    }
+
+    /// Lets frames record again on a new GPU device, which the builder fills from the start.
+    pub(crate) fn reset_gpu(&mut self) {
+        self.halted = None;
     }
 }
 
