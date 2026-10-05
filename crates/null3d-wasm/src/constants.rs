@@ -3,7 +3,7 @@
 
 use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
-    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, event_kind,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
 use null3d_core::cells::CELL_SIZE;
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
@@ -309,10 +309,6 @@ pub mod play_arg {
     /// The numbers in the array.
     pub const COUNT: usize = 5;
 }
-
-/// The words of each track's header in `createClip`'s staging words: joint, channel,
-/// interpolation and key count.
-pub const TRACK_WORDS: u32 = 4;
 
 /// What `clipReady` returns while a job worker still resamples the clip: no clip id reaches it.
 pub const CLIP_PENDING: u32 = u32::MAX;
