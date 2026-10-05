@@ -123,7 +123,7 @@ Queries test a skinned character as one capsule per bone. Its triangles move in 
 
 A stored mesh tree is a 48-byte header, the nodes, and one 32-bit triangle index per triangle. The header holds the bytes `N3BV`, the format version, the triangle count, the node count, the leaf size and the mesh's box. Every number is little-endian, and every record size is a multiple of 4, as a glTF buffer view needs. `crates/null3d-core/src/bvh/format.rs` gives the layout. The asset tool writes `MeshBvh::to_bytes()`, and the loader reads `MeshBvh::from_bytes()`.
 
-The reader checks each child word and the depth. It checks that each node has one parent, which comes before it, and that the leaves name every triangle once. It also checks that every stored box holds what lies under it. A tree that passes gives the same hits as a tree the engine builds, though its shape may differ. A test damages a stored tree 2,000 times at random. The reader refuses each damaged tree, or the tree still answers 20 random rays as brute force does.
+The reader checks each child word and the depth. It checks that each node has one parent, which comes before it, and that the leaves name every triangle once. It also checks that every stored box is finite and holds what lies under it, and that every empty slot holds the empty box ([D-59](D-59-file-limits.md)). A tree that passes gives the same hits as a tree the engine builds, though its shape may differ. A test damages a stored tree 2,000 times at random. The reader refuses each damaged tree, or the tree still answers 20 random rays as brute force does.
 
 ### How three.js handles it
 
