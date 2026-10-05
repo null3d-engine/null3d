@@ -379,8 +379,9 @@ export class Post {
 	}
 
 	/**
-	 * Changes one uniform of an effect, from the next frame on. A number or an array of numbers
-	 * allocates nothing, so a sketch can change a uniform every frame. Throws E1216 for a uniform
+	 * Changes one uniform of an effect, from the next frame on. It allocates nothing, so a sketch can
+	 * change a uniform every frame. Keep a vector's values in one array that the sketch changes in
+	 * place. Throws E1216 for a uniform
 	 * that the effect's WGSL does not declare or a value of the wrong kind, and E1101 for an effect
 	 * that `removeEffect` removed.
 	 */

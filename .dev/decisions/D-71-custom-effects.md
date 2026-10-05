@@ -29,12 +29,16 @@ How do a sketch's own full-screen effects and its own tone curve join the post-p
 - `crates/null3d-render/src/frame_graph.rs` checks that effects run in order between the scene passes and bloom. Their targets share two textures, whatever the chain's length. The 8-bit path runs no effects.
 - The image tests `effects`, `effects-reversed`, `effects-later`, `effects-curve`, `effects-bloom-curve`, `effects-scale-50` and `effects-8-bit` draw on all three tiers. They use two effects: a color split that reads the pixels beside each pixel, and a fog by distance that reads the depth. They also draw Reinhard's curve as a custom tone curve. All 23 pass on the Mac's GPU and on SwiftShader (5 October 2026). Effects added in another order, with orders that restore the first, draw the same image. So do effects added during play. In compatibility mode with MSAA the first effect moves the engine to HDR color with FXAA, as bloom does. With HDR turned off, the page draws the scene without effects or the curve, within the 8-bit path's usual edge differences.
 
+### Allocation
+
+`bun run bench:allocation --effects` adds two effects to S1, one of which reads depth, and changes a color uniform of each every frame. On 5 October 2026 both GPU paths passed, with no place of the effects' code in the sample. The first runs found 126 to 141 bytes per frame in the uniform writer, which the writer's change fixed ([benchmarks](../benchmarks.md)). Each effect pass adds about 64 bytes per frame to the WebGPU replay: the browser's render pass encoder.
+
 ### Pending timings
 
 These two figures were asked for on the Mac. The Mac was not quiet enough to time them before this record, so they run on devices, as the other effect costs do:
 
 1. The cost of one more full-screen pass at 1920 x 1080: the `effects` plan (`.dev/devices.md`, the effect cost plans). It adds 4 effects that each read their own pixel, so a quarter of the difference is one pass. Run it on the Mac in Chrome when its load is below 8, and on the iPad and the phone.
-2. The GPU cost of the move to HDR color in compatibility mode, at the Low preset. Compatibility mode is a Chrome mode on desktops, so the Mac measures it: the `effects` plan's page with `gpu=compat` before and after the first effect.
+2. The GPU cost of the move to HDR color in compatibility mode. Compatibility mode is a Chrome mode on desktops, so the Mac measures it. The effect cost page takes `antialias`: load `tests/pages/effect-cost.html?gpu=compat&effect=effects&count=0&antialias=msaa`, which stays on the 8-bit path with MSAA, and the same with `antialias=fxaa`, which draws HDR color with FXAA. With no effects both sides of each load draw the same, so the difference between the two loads is the move's cost. Add `&preset=low` for Low's figure.
 
 ## Decision
 
@@ -48,6 +52,7 @@ These two figures were asked for on the Mac. The Mac was not quiet enough to tim
 5. The tone-curve hook: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, passed as `post.set({ toneMapping })`. The plugin builds it into every non-`HALF` variant of the final pass. The final pass calls it in place of the built-in curves and clamps its result to 0 to 1. A curve takes no uniforms.
 6. A custom curve and effects need HDR color, as bloom does ([D-21](D-21-effect-chain.md), decision 2). On the 8-bit path that serves only MSAA, the first effect or custom curve moves the engine to HDR color with FXAA, for its life. Where the device has no HDR target in any mode, effects and the custom curve stay off. The built-in curve stays, and development builds warn once.
 7. Errors reuse the custom material codes. E1215 is for WGSL that the plugin did not compile as an effect or a curve, and E1216 for a wrong uniform. A ninth effect throws E1213. An order that is not a number throws E1203, and a uniform set on a removed effect E1101.
+8. The frame that adds an effect or changes the curve holds the screen until its pipelines are built (`Slot.PipelineHold`), as a preset change does. A pass whose pipeline still builds draws nothing. An effect's pass that drew nothing would leave its target blank, and the final pass would show it. Bloom and ambient occlusion instead join the frame once their pipelines are built. That suits a pass that adds to the image, but an effect replaces the image, and the curve replaces the final pass's own pipeline.
 
 ### Why the curve does not reach the 8-bit scene shaders
 

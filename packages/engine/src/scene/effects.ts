@@ -7,6 +7,7 @@
 // that changed. A uniform's new value goes to the core with its effect's other uniforms, through
 // the core's block of effect values, so setting a uniform every frame allocates nothing.
 
+import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { EFFECT_DEPTH, EFFECT_FLOATS, EFFECT_MAX } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
@@ -122,9 +123,40 @@ function takes(type: UniformType): string {
 	return `an array of ${count} numbers${count === 3 ? ', or a color' : ''}`;
 }
 
+/** E1216 for a value that a uniform does not take. */
+function wrongValue(uniform: EffectUniform, value: UniformValue, call: string): EngineError {
+	return new EngineError(
+		'E1216',
+		`${call}() got ${JSON.stringify(value)} for the ${uniform.type} uniform ${uniform.name}; it takes ${takes(uniform.type)}.`,
+	);
+}
+
 /**
- * Writes a uniform's value into `out` at the uniform's offset, or throws E1216 for a value of
- * another kind. A `vec3f` takes an sRGB color too, which becomes linear. It allocates nothing.
+ * Throws E1216 for a value that a uniform does not take: a number of another kind, an array of
+ * another length or with an element that is not a finite number, or a color it cannot read.
+ */
+function checkUniform(uniform: EffectUniform, value: UniformValue, call: string): void {
+	const count = UNIFORM_FLOATS[uniform.type];
+	if (count === 1) {
+		const whole = uniform.type !== 'f32';
+		if (typeof value !== 'number' || !Number.isFinite(value) || (whole && !Number.isInteger(value)))
+			throw wrongValue(uniform, value, call);
+		if (uniform.type === 'u32' && value < 0) throw wrongValue(uniform, value, call);
+		return;
+	}
+	if (uniform.type === 'vec3f' && !Array.isArray(value)) {
+		if (hexValue(value as string | number) < 0) throw invalidColor(value, call);
+		return;
+	}
+	if (!Array.isArray(value) || value.length !== count) throw wrongValue(uniform, value, call);
+	for (const n of value)
+		if (typeof n !== 'number' || !Number.isFinite(n)) throw wrongValue(uniform, value, call);
+}
+
+/**
+ * Writes a uniform's value into `out` at the uniform's offset. A `vec3f` takes an sRGB color too,
+ * which becomes linear. Development builds check the value first. It allocates nothing: an array
+ * goes in through the typed array's own copy, which reads no element into a number of its own.
  */
 function writeUniform(
 	out: Float32Array,
@@ -132,36 +164,22 @@ function writeUniform(
 	value: UniformValue,
 	call: string,
 ): void {
-	const count = UNIFORM_FLOATS[uniform.type];
-	const wrong = () =>
-		new EngineError(
-			'E1216',
-			`${call}() got ${JSON.stringify(value)} for the ${uniform.type} uniform ${uniform.name}; it takes ${takes(uniform.type)}.`,
-		);
+	if (DEV) checkUniform(uniform, value, call);
 	const at = uniform.offset;
-	if (count === 1) {
-		const whole = uniform.type !== 'f32';
-		if (typeof value !== 'number' || !Number.isFinite(value) || (whole && !Number.isInteger(value)))
-			throw wrong();
-		if (uniform.type === 'u32' && value < 0) throw wrong();
+	if (typeof value === 'number') {
 		out[at] = value;
 		return;
 	}
-	if (uniform.type === 'vec3f' && !Array.isArray(value)) {
-		const hex = hexValue(value as string | number);
-		if (hex < 0) throw invalidColor(value, call);
-		fromHex(linear, hex);
-		out[at] = linear[0] as number;
-		out[at + 1] = linear[1] as number;
-		out[at + 2] = linear[2] as number;
+	if (Array.isArray(value)) {
+		out.set(value, at);
 		return;
 	}
-	if (!Array.isArray(value) || value.length !== count) throw wrong();
-	for (let k = 0; k < count; k++) {
-		const n = value[k];
-		if (typeof n !== 'number' || !Number.isFinite(n)) throw wrong();
-		out[at + k] = n;
-	}
+	const hex = hexValue(value as string | number);
+	if (hex < 0) throw invalidColor(value, call);
+	fromHex(linear, hex);
+	out[at] = linear[0] as number;
+	out[at + 1] = linear[1] as number;
+	out[at + 2] = linear[2] as number;
 }
 
 /**

@@ -86,7 +86,7 @@ Declare uniforms as `struct Uniforms`, and read them as `uniforms.name`. The rul
 - A `vec3f` also takes a color string or a hex number, which the engine converts from sRGB to linear.
 - The `uniforms` option gives the first values, and a uniform without one starts at 0.
 - TypeScript types the `uniforms` option and `setEffectUniform` from the struct, so a wrong name fails the type check. At run time a wrong name or value throws E1216.
-- `setEffectUniform` with a number or an array allocates nothing, so a sketch can call it every frame.
+- `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place, rather than a new array each frame.
 
 Effects take no textures.
 
