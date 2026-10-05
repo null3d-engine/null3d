@@ -126,6 +126,11 @@ export interface CoreDevice {
 	 * their precision at any distance from the origin.
 	 */
 	largeWorld: boolean;
+	/**
+	 * True when KTX2 files keep their transcoded texels in the browser's Cache Storage, so later
+	 * loads of the same file skip the transcoder.
+	 */
+	textureCache: boolean;
 }
 
 /**
@@ -174,6 +179,7 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'vertexSkinning'
+	| 'textureCache'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -291,6 +297,7 @@ export function halfPrecision(
  * the 8-bit path, so tests reach every route. `freshShaders` makes the browser compile every
  * shader again, as on a first visit. `compression` limits the compressed texture families,
  * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
+ * `textureCache` off makes KTX2 files transcode on every load, to time the cache against it.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
@@ -310,6 +317,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		depthPrepass: options.depthPrepass,
 		vertexSkinning: options.vertexSkinning,
 		largeWorld: options.largeWorld,
+		textureCache: options.textureCache,
 	};
 	if (tier !== 'webgl2') {
 		return {

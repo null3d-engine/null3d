@@ -22,6 +22,7 @@ describe('parseSwitches', () => {
 			prepass: undefined,
 			occlusion: undefined,
 			vertexSkinning: false,
+			textureCache: true,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -36,6 +37,12 @@ describe('parseSwitches', () => {
 	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
 		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
 		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
+	});
+
+	it('turns the cache of transcoded textures off with ?texture-cache=off, and leaves it on otherwise', () => {
+		expect(parseSwitches('?texture-cache=off').textureCache).toBe(false);
+		expect(parseSwitches('?texture-cache=on').textureCache).toBe(true);
+		expect(parseSwitches('?texture-cache=no').textureCache).toBe(true);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {

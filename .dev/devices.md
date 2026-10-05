@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `ao`, `occlusion`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `ao`, `occlusion`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time` and `texture-cache`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -147,6 +147,18 @@ To collect the numbers, rest each device first and close its other tabs:
 - Chrome on the phone: `bun run bench:startup --android`.
 - Brave on the phone: `bun tests/real-browsers.ts --plan startup --android brave --shields on`. Then turn Shields off for the site and run it again with `--shields off`.
 - Safari and Brave on the iPad: open both runner pages, then run `bun tests/real-browsers.ts --plan startup --lan ipad-safari,ipad-brave --shields on`. Then turn Brave's Shields off and run `bun tests/real-browsers.ts --plan startup --lan ipad-brave --shields off`.
+
+## The texture cache plan
+
+The `texture-cache` plan times the [cache of transcoded textures](decisions/D-24-transcode-cache.md) on a device. Its page, `tests/pages/texture-cache.html`, comes from the startup build under the same load addresses as the startup plan. It loads the city scene's 120 KTX2 textures at once and reports the time from navigation until every texture is on the GPU.
+
+- The textures are the color, normal and roughness maps of the 40 ambientCG texture sets in the sample content. On first use, the dev server encodes each one with the asset tool's encoder into the shared samples cache. It serves them under `/sample-textures/` (`tools/lib/sample-textures.ts`). The first run on a machine encodes all 120 in about 30 s. Run `bun run samples:fetch` first.
+- A first visit (`cold`) deletes the cache of transcoded textures, and loads the engine under addresses of its own. It downloads every texture again under a query of its own. A repeat visit (`warm`) repeats the first warm load's addresses, so the browser's HTTP cache holds every file.
+- Each of five runs makes a first visit and a repeat visit. Each visit runs with the cache off (`?texture-cache=off`) and then on. `--runs` changes the number of runs.
+- The summary gives the medians of each visit, and says how much sooner a repeat visit is ready with the cache. D-24 keeps the cache when that is at least 10% on the S24+ or the iPad, and never later.
+- After the textures are ready, the page waits for the engine's writes to the cache before it stops the engine. The writes column says how long after the textures were ready the last one landed. A visitor who closes the page sooner keeps only the entries written so far.
+
+Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/real-browsers.ts --plan texture-cache --android chrome --lan ipad-safari`. Cache Storage needs a secure context, so the iPad's runner page must be on the HTTPS server.
 
 ## The depth plan
 

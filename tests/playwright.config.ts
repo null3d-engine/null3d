@@ -40,9 +40,9 @@ export default defineConfig({
 		DEV_SERVER,
 		{
 			// A fresh production build every run, so the tests never serve stale files. The errors,
-			// sketch shaders, KTX2 and stats pages build on their own, so the engine test page stays
-			// as the startup benchmark loads it.
-			command: `bunx vite build && NULL3D_BUILD_PAGE=errors bunx vite build && NULL3D_BUILD_PAGE=sketch-shaders bunx vite build && NULL3D_BUILD_PAGE=ktx2-files bunx vite build && NULL3D_BUILD_PAGE=gltf-files bunx vite build && NULL3D_BUILD_PAGE=stats bunx vite build && bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
+			// sketch shaders, KTX2, texture cache and stats pages build on their own, so the engine
+			// test page stays as the startup benchmark loads it.
+			command: `bunx vite build && NULL3D_BUILD_PAGE=errors bunx vite build && NULL3D_BUILD_PAGE=sketch-shaders bunx vite build && NULL3D_BUILD_PAGE=ktx2-files bunx vite build && NULL3D_BUILD_PAGE=texture-cache bunx vite build && NULL3D_BUILD_PAGE=gltf-files bunx vite build && NULL3D_BUILD_PAGE=stats bunx vite build && bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
 			cwd: REPO_ROOT,
 			url: `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`,
 			reuseExistingServer: false,

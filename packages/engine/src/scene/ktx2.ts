@@ -5,10 +5,11 @@
 // ASTC, BC7 or ETC2 where the device has them, and RGBA8 elsewhere. The Basis Universal
 // transcoder then turns the file's ETC1S or UASTC data into that format in a worker of its own,
 // outside the sketch's frames, and hands back every mip level. The texels go into engine memory,
-// and upload a band of rows of blocks per frame as data does.
+// and upload a band of rows of blocks per frame as data does. The cache of transcoded textures
+// (ktx2-cache.ts) keeps them too, so a later load of the same file skips the transcoder.
 //
-// The loader imports no engine module but constants, types and the WebAssembly download, which no
-// thread's first file shares with it. The bundler would move a module that this file shares with
+// The loader imports no engine module but constants, types, the WebAssembly download and the cache
+// of transcoded textures, which no thread's first file shares with it. The bundler would move a module that this file shares with
 // its thread's first file into a file of its own, which every page would then download at its
 // start. So the caller hands it the engine's error class.
 //
@@ -25,6 +26,7 @@ import {
 import { compileWasm } from '../shared/wasm';
 import type { LoadTextureOptions } from './assets';
 import { FILE_LIMITS } from './file-limits';
+import { TranscodeCache } from './ktx2-cache';
 import type {
 	CompressedTextureFormat,
 	Texture,
@@ -376,8 +378,10 @@ function transcoderOfThisThread(error: Ktx2Error): Transcoder {
 /**
  * Makes a texture from a KTX2 file, which moves to the transcoder's worker. The texture takes the
  * format of `ktx2Target`, the color space of the file unless the options give one, and the file's
- * mip levels unless `mipmaps` is false. Throws E1412 for a file that the engine does not load, and
- * E1406 when the transcoder does not load, each made by `error`.
+ * mip levels unless `mipmaps` is false. Where `textures.textureCache` is on, the texels come from
+ * the cache of transcoded textures when it holds them, and go into it when it does not. Throws
+ * E1412 for a file that the engine does not load, and E1406 when the transcoder does not load,
+ * each made by `error`.
  */
 export async function loadKtx2(
 	textures: Textures,
@@ -407,21 +411,27 @@ export async function loadKtx2(
 		console.warn(
 			`${call}() loads ${address} as uncompressed RGBA8, which takes ${Math.ceil(transcodedBytes(RGBA8.format, width, height, levels, layers) / 1024)} KB: its size, ${width} x ${height}, is not a whole number of 4 x 4 blocks. Save it at a size whose sides are multiples of 4, as the asset tool does.`,
 		);
-	const texels = await transcoderOfThisThread(error).transcode(
-		file,
-		target,
-		levels,
-		layers,
-		address,
-		call,
-	);
 	const expected = transcodedBytes(target.format, width, height, levels, layers);
-	if (texels.byteLength !== expected)
-		throw error(
-			'E1412',
-			`${call}() could not decode ${address} as a KTX2 texture: the transcoder wrote ${texels.byteLength} bytes, not ${expected}.`,
+	const cached = textures.textureCache
+		? await cacheOfThisThread().lookup(file, target.transcoder, levels, expected)
+		: undefined;
+	let texels = cached?.texels;
+	if (!texels) {
+		texels = await transcoderOfThisThread(error).transcode(
+			file,
+			target,
+			levels,
+			layers,
+			address,
+			call,
 		);
-	return textures.fromTexels(
+		if (texels.byteLength !== expected)
+			throw error(
+				'E1412',
+				`${call}() could not decode ${address} as a KTX2 texture: the transcoder wrote ${texels.byteLength} bytes, not ${expected}.`,
+			);
+	}
+	const texture = textures.fromTexels(
 		{
 			width,
 			height,
@@ -434,4 +444,14 @@ export async function loadKtx2(
 		options,
 		call,
 	);
+	cached?.store?.(texels);
+	return texture;
+}
+
+/** This thread's cache of transcoded textures, which opens with the first KTX2 file. */
+let transcodeCache: TranscodeCache | undefined;
+
+function cacheOfThisThread(): TranscodeCache {
+	transcodeCache ??= new TranscodeCache();
+	return transcodeCache;
 }

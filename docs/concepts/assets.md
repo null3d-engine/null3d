@@ -56,7 +56,7 @@ The loader reads both names of the extension: `KHR_meshopt_compression`, and the
 
 ## Textures
 
-`assets.loadTexture` loads PNG, JPEG and WebP images, AVIF images where the browser decodes them, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. A worker transcodes KTX2 data into the compressed format that the device supports. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it.
+`assets.loadTexture` loads PNG, JPEG and WebP images, AVIF images where the browser decodes them, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. A worker transcodes KTX2 data into the compressed format that the device supports. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it. The engine keeps each transcoded texture in the browser's Cache Storage, so a repeat visit skips the transcoder ([Caching](../api/assets.md#caching)).
 
 ```ts
 // sketch.ts

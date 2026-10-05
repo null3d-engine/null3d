@@ -123,10 +123,12 @@ export class Assets {
 	 * texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it
 	 * supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the
 	 * device supports, with the file's mip levels, and the first KTX2 file loads the transcoder.
-	 * Throws E1411 when the file does not download, E1413 when a server of another origin does not
-	 * allow the page to read it, E1412 when the file does not decode or passes a limit of the
-	 * engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the
-	 * transcoder does not load, and E1208 for options the engine does not know.
+	 * The engine keeps the transcoded texels in the browser's Cache Storage, so a later load of a
+	 * file with the same bytes skips the transcoder. Throws E1411 when the file does not download,
+	 * E1413 when a server of another origin does not allow the page to read it, E1412 when the file
+	 * does not decode or passes a limit of the engine's (a KTX2 file larger than the device's
+	 * textures, before it transcodes), E1406 when the transcoder does not load, and E1208 for
+	 * options the engine does not know.
 	 */
 	async loadTexture(url: string | URL, options: LoadTextureOptions = {}): Promise<Texture> {
 		const call = 'assets.loadTexture';

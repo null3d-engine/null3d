@@ -49,6 +49,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	depthPrepass: false,
 	vertexSkinning: false,
 	largeWorld: false,
+	textureCache: true,
 });
 
 /** A WebGL2 device that draws RGBA16F targets with the engine's MSAA. */
@@ -87,6 +88,7 @@ const PLAIN: DeviceOptions = {
 	transparent: false,
 	depthPrepass: false,
 	largeWorld: false,
+	textureCache: true,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */

@@ -2,7 +2,9 @@
 // compressed format that the device's features allow, the GPU memory counts its blocks, and the
 // calls that must fail give their codes. ?compression= limits the families, as on a device with
 // one of them or none. The KTX2 loader, the transcoder's worker and the transcoder download once,
-// when the first KTX2 file loads, and a page without KTX2 files downloads none of them.
+// when the first KTX2 file loads, and a page without KTX2 files downloads none of them. A second
+// visit takes each file's texels from the cache of transcoded textures, and downloads no part of
+// the transcoder.
 import { expect, type Page, test } from '@playwright/test';
 import type { CompressionFamily } from '../../packages/engine/src/page/switches.ts';
 import { ENGINE_MODES, modeProblems } from '../lib/engine-checks.ts';
@@ -86,3 +88,53 @@ for (const mode of ENGINE_MODES)
 		expect(requests.some((path) => /\/null3d_bg(-[\w-]+)?\.wasm$/.test(path))).toBe(true);
 		expect(ktx2Downloads(requests)).toEqual({ loader: 0, worker: 0, glue: 0, wasm: 0 });
 	});
+
+/** What the texture cache page reports for one visit. */
+interface CacheVisit {
+	error?: string;
+	entriesBefore: number | null;
+	entriesAfter: number | null;
+	transcoder: boolean;
+	textures: { format: string; bytes: number }[];
+}
+
+/** One visit of the texture cache page with the KTX2 test files, in the page's browser profile. */
+async function cacheVisit(page: Page, query: string): Promise<CacheVisit> {
+	await page.goto(`texture-cache.html?${query}`);
+	const result = await pageResult<CacheVisit>(page, 60_000);
+	expect(result.error).toBeUndefined();
+	return result;
+}
+
+/** The KTX2 test files that the texture cache page loads. */
+const CACHE_PAGE_FILES = 3;
+
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	test(`a second visit takes KTX2 textures from the cache, without the transcoder, on ${gpu}`, async ({
+		page,
+	}) => {
+		const requests = recordRequests(page);
+		const first = await cacheVisit(page, `gpu=${gpu}`);
+		expect(first.entriesBefore).toBe(0);
+		expect(first.entriesAfter).toBe(CACHE_PAGE_FILES);
+		expect(first.transcoder).toBe(true);
+		expect(ktx2Downloads(requests)).toEqual({ loader: 1, worker: 1, glue: 1, wasm: 1 });
+		requests.length = 0;
+		const second = await cacheVisit(page, `gpu=${gpu}`);
+		expect(second.entriesBefore).toBe(CACHE_PAGE_FILES);
+		expect(second.transcoder).toBe(false);
+		expect(second.textures).toEqual(first.textures);
+		expect(ktx2Downloads(requests)).toEqual({ loader: 1, worker: 0, glue: 0, wasm: 0 });
+	});
+
+	test(`?texture-cache=off transcodes KTX2 files on every visit, and stores nothing, on ${gpu}`, async ({
+		page,
+	}) => {
+		const query = `gpu=${gpu}&texture-cache=off`;
+		const first = await cacheVisit(page, query);
+		const second = await cacheVisit(page, query);
+		expect([first.entriesAfter, second.entriesBefore]).toEqual([0, 0]);
+		expect([first.transcoder, second.transcoder]).toEqual([true, true]);
+		expect(second.textures).toEqual(first.textures);
+	});
+}

@@ -218,6 +218,7 @@ async function start(
 				depthPrepass: false,
 				vertexSkinning: false,
 				largeWorld: false,
+				textureCache: true,
 			},
 			capabilities: CAPABILITIES,
 			quality,
