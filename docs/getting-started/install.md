@@ -46,7 +46,7 @@ export default defineConfig({ plugins: [null3d()] });
 Every Vite build of a null3D project needs the plugin, for the dev server and for production. The plugin does these jobs, which a three.js project does not need:
 
 - Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
-- Compiles your sketch file for the sketch worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core.
+- Compiles your sketch file for the sketch worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core. Each built page that loads the engine gets a small script of its own, which starts the core's download as soon as the page arrives.
 - Compiles the WGSL in your code, in `.wgsl` files and in strings tagged `/* wgsl */`, for WebGPU and WebGL2. A shader error stops Vite with its file, line and column. Beside each `.wgsl` file, the plugin writes a TypeScript declaration that holds the types of the file's uniforms. [Custom shaders](../guides/custom-shaders.md) explains both forms.
 - Keeps the engine's development checks in the dev server and removes them from production builds.
 - Builds the engine's workers as ES modules, so that they share the shader files. Without the plugin, Vite builds each worker as one classic script that holds every shader file. Each worker is then about 34 MB, and the page downloads them all at its start. The plugin warns if another setting builds workers in another format.
