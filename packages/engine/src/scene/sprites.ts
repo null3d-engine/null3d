@@ -270,6 +270,7 @@ export class SpriteBatch {
 	 */
 	destroy(): void {
 		this.batch.destroy();
+		this.material.destroy();
 		this.generation = -1;
 	}
 }

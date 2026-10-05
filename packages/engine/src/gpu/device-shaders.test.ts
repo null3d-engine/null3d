@@ -42,6 +42,21 @@ function loader() {
 }
 
 describe('DeviceShaderSet', () => {
+	it('names the failed download when a pipeline needs the shaders of a module that failed to load', async () => {
+		const asked: string[] = [];
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, async (bits, feature) => {
+			asked.push(feature === undefined ? `start ${bits}` : `${feature} ${bits}`);
+			throw new Error('404 Not Found');
+		});
+		const sprite = set.shaders.sprite;
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(() => set.ready(sprite, 0, 'wgsl')).toThrow(
+			'the engine could not download the shaders that a pipeline needs: 404 Not Found',
+		);
+		expect(asked).toEqual(['sprites 0']);
+	});
+
 	it("loads a feature's module once, the first time a pipeline asks for one of its shaders", async () => {
 		const { asked, load, settle } = loader();
 		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, load);
@@ -73,14 +88,6 @@ describe('DeviceShaderSet', () => {
 		expect(asked).toEqual([`start ${PERMUTATION_TONE_MAP}`]);
 		await settle();
 		expect(set.ready(set.shaders.final, PERMUTATION_TONE_MAP, 'wgsl')).toBe(true);
-	});
-
-	it('lets a pipeline build, and report its error, once a module failed to load', async () => {
-		const set = new DeviceShaderSet(start(), 0, () => Promise.reject(new Error('offline')));
-		expect(set.ready(set.shaders.sprite, 0, 'wgsl')).toBe(false);
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(set.ready(set.shaders.sprite, 0, 'wgsl')).toBe(true);
 	});
 
 	it("preloads a feature's module, which a pipeline then finds without loading it again", async () => {
