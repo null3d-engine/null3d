@@ -9,8 +9,10 @@ import {
 	faceTargets,
 	GltfBuilder,
 	type GltfJson,
+	iorBuilder,
 	morphBuilder,
 	shipBuilder,
+	specularBuilder,
 } from '../../../../tests/pages/lib/gltf-files';
 import {
 	type GltfData,
@@ -483,6 +485,76 @@ describe('materials, textures and lights', () => {
 		const at = source?.offset ?? 0;
 		expect(glb.subarray(at, at + 4)).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
 		expect(data.images[1]?.source).toBeUndefined();
+	});
+
+	test('a material without KHR_materials_specular or KHR_materials_ior takes their defaults', () => {
+		const [red] = parse(shipBuilder().glb()).materials;
+		expect(red).toMatchObject({ ior: 1.5, specularIntensity: 1, specularColor: [1, 1, 1] });
+		expect(red?.maps.specularIntensityMap).toBeUndefined();
+		expect(red?.maps.specularColorMap).toBeUndefined();
+	});
+
+	test('KHR_materials_specular gives the factors, and its textures in their color spaces', () => {
+		const data = parse(specularBuilder().glb());
+		const byName = new Map(data.materials.map((m) => [m.name, m]));
+		expect(byName.get('factor 3')).toMatchObject({
+			specularIntensity: 0.520996,
+			specularColor: [1, 1, 1],
+			ior: 1.5,
+		});
+		expect(byName.get('yellow 2')?.specularColor).toEqual([0.212231, 0.212231, 0]);
+		// Color factors above 1 stay, as glTF allows; the shader caps the reflectance.
+		expect(byName.get('bright 4')?.specularColor).toEqual([25, 25, 25]);
+		const intensity = byName.get('texture 0')?.maps.specularIntensityMap ?? -1;
+		const color = byName.get('gray texture 0')?.maps.specularColorMap ?? -1;
+		expect(data.textures[intensity]).toMatchObject({
+			image: 0,
+			colorSpace: 'linear',
+			filter: 'nearest',
+		});
+		expect(data.textures[color]).toMatchObject({ image: 1, colorSpace: 'srgb' });
+		expect(byName.get('texture 0')?.maps.specularColorMap).toBeUndefined();
+	});
+
+	test('KHR_materials_ior gives the index, and 0 stands for a very large one', () => {
+		const data = parse(iorBuilder().glb());
+		const iors = data.materials.filter((m) => m.name.startsWith('smooth')).map((m) => m.ior);
+		expect(iors).toEqual([1, 1.25, 1.5, 2, 3, 1000]);
+		expect(data.materials.find((m) => m.name === 'half metal ior 2')).toMatchObject({
+			ior: 2,
+			metalness: 0.5,
+			specularIntensity: 0.6,
+			specularColor: [1, 0.6, 0.3],
+		});
+	});
+
+	test('specular and ior values outside their ranges give E1416', () => {
+		const withExtensions = (extensions: GltfJson) => {
+			const b = shipBuilder().uses('KHR_materials_specular').uses('KHR_materials_ior');
+			b.json.materials[0].extensions = extensions;
+			return b.glb();
+		};
+		const cases: [GltfJson, string][] = [
+			[{ KHR_materials_ior: { ior: 0.5 } }, "material 0's ior is 0.5"],
+			[{ KHR_materials_ior: { ior: 'glass' } }, "material 0's ior is glass"],
+			[{ KHR_materials_specular: { specularFactor: 2 } }, "material 0's specularFactor is 2"],
+			[
+				{ KHR_materials_specular: { specularColorFactor: [1, -1, 1] } },
+				"material 0's specularColorFactor has a component below 0",
+			],
+			[
+				{ KHR_materials_specular: { specularColorFactor: [1, 1] } },
+				"material 0's specularColorFactor is not 3 numbers",
+			],
+			[
+				{ KHR_materials_specular: { specularTexture: { index: 9 } } },
+				"material 0's specularTexture",
+			],
+		];
+		for (const [extensions, message] of cases) {
+			const [code, text] = refusal(withExtensions(extensions));
+			expect([code, text.includes(message)]).toEqual(['E1416', true]);
+		}
 	});
 
 	test('KHR_texture_basisu names the KTX2 image of a texture', () => {

@@ -525,6 +525,11 @@ export interface CoreGlue extends CoreErrors {
 	 * clip itself.
 	 */
 	clipReady(ticket: number): number;
+	/**
+	 * The clips so far that the core resampled at each frame, plus one. The others held keys on
+	 * their frames already, as the asset tool writes them, and were copied.
+	 */
+	resampledClips(): number;
 	/** Adds an animated instance of a skeleton. */
 	createAnimatedInstance(skeleton: number): number;
 	/** Removes an animated instance; later instances take its id and joints. */
@@ -689,6 +694,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createClip',
 	'createClipLater',
 	'clipReady',
+	'resampledClips',
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',

@@ -192,6 +192,9 @@ export type {
 	Vec3,
 } from './scene/scene';
 export type {
+	PointBatch,
+	PointOptions,
+	PointValues,
 	SpriteAtlas,
 	SpriteBatch,
 	SpriteOptions,

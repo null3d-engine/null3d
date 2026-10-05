@@ -3,7 +3,7 @@
 
 use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
-    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, event_kind,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
 use null3d_core::cells::CELL_SIZE;
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
@@ -105,6 +105,8 @@ pub mod map_slot {
     pub const OCCLUSION: u32 = MapSlot::Occlusion as u32;
     pub const EMISSIVE: u32 = MapSlot::Emissive as u32;
     pub const LIGHT: u32 = MapSlot::Light as u32;
+    pub const SPECULAR_INTENSITY: u32 = MapSlot::SpecularIntensity as u32;
+    pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -325,10 +327,6 @@ pub mod play_arg {
     /// The numbers in the array.
     pub const COUNT: usize = 5;
 }
-
-/// The words of each track's header in `createClip`'s staging words: joint, channel,
-/// interpolation and key count.
-pub const TRACK_WORDS: u32 = 4;
 
 /// What `clipReady` returns while a job worker still resamples the clip: no clip id reaches it.
 pub const CLIP_PENDING: u32 = u32::MAX;
@@ -718,6 +716,8 @@ pub fn typescript() -> String {
                 ("OCCLUSION", map_slot::OCCLUSION),
                 ("EMISSIVE", map_slot::EMISSIVE),
                 ("LIGHT", map_slot::LIGHT),
+                ("SPECULAR_INTENSITY", map_slot::SPECULAR_INTENSITY),
+                ("SPECULAR_COLOR", map_slot::SPECULAR_COLOR),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -737,6 +737,9 @@ pub fn typescript() -> String {
                 ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+                ("REFLECTANCE", param::REFLECTANCE as u32),
+                ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
+                ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
             ],
         ),
         (

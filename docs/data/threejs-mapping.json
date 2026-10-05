@@ -758,10 +758,21 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard for the base layer",
-      "notes": "Clearcoat, transmission, sheen, iridescence, anisotropy and specular come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas. Clearcoat, transmission, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
+    },
+    {
+      "id": "mat-specular-ior",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial ior / reflectivity / specularIntensity / specularColor / specularIntensityMap / specularColorMap",
+      "status": "direct",
+      "since": "0.2",
+      "target": "materials.standard({ ior, specularIntensity, specularColor, specularIntensityMap, specularColorMap })",
+      "notes": "Same names, ranges and formulas, so the values carry over, and glTF's KHR_materials_ior and KHR_materials_specular load into them. specularColor takes linear components above 1, as three.js's Color does. reflectivity has no option: set ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity), as three.js converts it.",
+      "docs": "api/materials",
+      "detect": "\\bspecular(Intensity|Color)(Map)?\\b|\\.ior\\b|\\bior\\s*:"
     },
     {
       "id": "mat-basic",
@@ -1594,8 +1605,8 @@
       "three": "Points / PointsMaterial",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createPoints({ positions, colors, size, sizeAttenuation, texture })",
-      "notes": "Point sizes above one pixel work on every backend.",
+      "target": "await scene.createPoints({ positions, colors, size, sizeAttenuation, map })",
+      "notes": "Points of one size drawn in one batch as squares that face the camera, at any size on every backend. The call is async, because the first one downloads the sprite code. Points are opaque by default, as three.js's are; transparent becomes alphaMode 'blend', and alphaTest becomes alphaMode 'mask' with alphaCutoff. With size attenuation, size is in world units: three.js's size times tan(fov / 2). Without it, size is in CSS pixels, as in three.js. A point does not vanish when its center leaves the screen, as a WebGL point does. Blended points sort back to front. Raycasts do not find points yet.",
       "docs": "api/points",
       "detect": "new\\s+(THREE\\.)?Points\\s*\\(|\\bPointsMaterial\\b"
     },

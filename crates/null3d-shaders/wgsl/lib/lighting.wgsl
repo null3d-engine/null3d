@@ -180,12 +180,12 @@ struct PbrMaterial {
     base_color: vec3f,
     /// The color of diffuse light: the base color without its metallic part.
     diffuse: vec3f,
-    /// The dielectric reflectance at normal incidence, 0.04.
+    /// The dielectric reflectance at normal incidence: 0.04, unless `with_specular` changes it.
     specular: vec3f,
     /// The reflectance at normal incidence, blended from `specular` toward the base color by
     /// metalness.
     specular_blended: vec3f,
-    /// The reflectance at grazing angles.
+    /// The reflectance at grazing angles: 1, unless `with_specular` changes it.
     specular_grazing: f32,
     /// The perceptual roughness, from 0.0525 to 1.
     roughness: f32,
@@ -211,6 +211,19 @@ fn pbr_material(
     m.roughness = min(max(roughness, 0.0525) + geometry_roughness, 1.0);
     m.metalness = metalness;
     return m;
+}
+
+/// A PbrMaterial with the dielectric specular values of glTF's KHR_materials_ior and
+/// KHR_materials_specular. It sets them as three.js's MeshPhysicalMaterial does. `reflectance` is
+/// `((ior - 1) / (ior + 1))^2`, which the color tints up to a reflectance of 1, and `intensity`
+/// scales. Metals keep their base color, and their grazing reflectance stays 1. A reflectance of
+/// 0.04 with a white color at full intensity gives `m` back unchanged.
+fn with_specular(m: PbrMaterial, reflectance: f32, color: vec3f, intensity: f32) -> PbrMaterial {
+    var out = m;
+    out.specular = min(reflectance * color, vec3f(1.0)) * intensity;
+    out.specular_blended = mix(out.specular, m.base_color, m.metalness);
+    out.specular_grazing = intensity + (1.0 - intensity) * m.metalness;
+    return out;
 }
 
 /// Light that a surface reflects toward the camera, in its diffuse and specular parts.
