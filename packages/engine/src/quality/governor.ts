@@ -274,12 +274,13 @@ export class Governor {
 	/**
 	 * Forgets the frames before `from`, a time in whole ms: no step before it, and no window over or
 	 * under the budget yet. The frame loop calls it at the first frame, as the grace starts, after a
-	 * pause, and while the scene loads.
+	 * pause, and while the scene loads. It never moves the first judgement earlier: a stall within
+	 * the grace or the wait after a step leaves the rest of it.
 	 */
 	restart(from: number): void {
 		const { state } = this;
 		state[ROOM_SINCE] = -1;
-		state[JUDGE_FROM] = from;
+		state[JUDGE_FROM] = Math.max(from, state[JUDGE_FROM] as number);
 		state[RECENT_WINDOWS] = 0;
 	}
 

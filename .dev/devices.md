@@ -345,7 +345,7 @@ The S24+ has no WebGPU adapter, so every check of WebGPU on Android runs on a cl
 | MSAA 4x against FXAA on Low | Whether WebGPU phones can afford MSAA at Low. Record whether Chrome draws WebGL2 through ANGLE on Vulkan, the only backend known to resolve MSAA in tile memory | S4 at Low |
 | Half precision, low priority | The Pixel 9's Mali-G715 runs 16-bit floats at twice the rate, in vector math only ([D-09](decisions/D-09-half-precision.md)) | `bench` with `--switches half=on` |
 | Culling shader counters | Qualcomm, Arm and Apple advise adding per workgroup first; no phone timing is published | `bench:run --compare` pages |
-| Driver faults | Mali may crash with MSAA unless all uniforms are in bind group 0. Some Adreno drivers treat `int` as medium precision: the Galaxy Tab A9 Plus (Adreno 619) kept 16 bits of whole numbers declared without `highp`, so the GLSL build declares each one `highp` ([implementation notes](implementation-notes.md#browser-faults)). Adreno on WebGL may crash with more than one directional shadow light. Adreno 830 ran a write behind a false check in the skinning shader on WebGPU, which the skinning pass page catches ([Browser faults](implementation-notes.md#browser-faults)). On PowerVR, zeroed workgroup memory is unreliable, and mip sizes of depth textures whose size is not a power of two come out wrong | The checks plan with MSAA on; S25 WebGL2 shadows with several cascades; the checks plan's `skin-pass-*` pages |
+| Driver faults | Mali may crash with MSAA unless all uniforms are in bind group 0. Some Adreno drivers treat `int` as medium precision: the Galaxy Tab A9 Plus (Adreno 619) kept 16 bits of whole numbers declared without `highp`, so the GLSL build declares each one `highp` ([implementation notes](implementation-notes.md#browser-faults)). Adreno on WebGL may crash with more than one directional shadow light. Adreno 830 ran a write behind a false check in the skinning shader on WebGPU, which the skinning pass page catches ([Browser faults](implementation-notes.md#browser-faults)). Adreno 830 on WebGL2 leaves the arrays empty in a struct copied out of a uniform block, which the GLSL build refuses ([Browser faults](implementation-notes.md#browser-faults)). On PowerVR, zeroed workgroup memory is unreliable, and mip sizes of depth textures whose size is not a power of two come out wrong | The checks plan with MSAA on; S25 WebGL2 shadows with several cascades; the S25's environment image tests on WebGL2; the checks plan's `skin-pass-*` pages |
 
 Compatibility mode on a real OpenGL ES driver runs on the Galaxy Tab A9 Plus (Adreno 619). A Mali device in compatibility mode joins if BrowserStack offers one. For the scene format on WebGL2, add a Valhall Mali phone older than the Mali-G710, such as the Pixel 6, if offered.
 
@@ -405,7 +405,8 @@ The tables say which GPU paths each device should offer. These rules come from [
 
 - Core WebGPU: Chrome, Edge and Samsung Internet on Android 12 and later with Qualcomm Adreno or ARM Mali GPUs. Chrome also allows the Pixel 10's PowerVR GPU, with [known driver faults](https://github.com/playcanvas/engine/issues/8874). Safari 26 and later on iOS, iPadOS and macOS. Chrome and Edge on Windows and macOS with a GPU. Firefox on Windows, and on Apple silicon Macs.
 - Compatibility mode only: Chrome on older GPUs whose adapter lacks core WebGPU's features, such as the Adreno 610.
-- WebGL2 only: Android 10 and 11, Samsung's Xclipse GPUs, older PowerVR GPUs and Firefox on Android. Also iOS 17 and 18, and Safari 16.4 to 18 on macOS.
+- WebGL2 only: Android 10 and 11, Samsung's Xclipse GPUs, older PowerVR GPUs and Firefox on Android. Also iOS 18, and Safari 18 on macOS.
+- Not supported: Safari 17 and older, since 5 October 2026 ([D-64](decisions/D-64-minimum-browsers.md)). The engine refuses to start there with a clear start error.
 - A clear failure: Safari before 16.4, Chrome before 91 and Firefox before 89 lack WebAssembly SIMD, so the engine stops with E1303. A browser without any GPU path stops with E1301.
 
 ### Time per device
@@ -444,7 +445,7 @@ Tier B covers low memory, the other browser engines, more GPU lines and desktop 
 | Device | System | Browser | GPU | Expected paths | Why | Minutes |
 | --- | --- | --- | --- | --- | --- | --- |
 | iPad 10th | iPadOS 27 | Safari | Apple A14, 4 GB | WebGPU, compatibility mode, WebGL2 | WebGPU with little memory | 15 |
-| iPhone 13 | iOS 17 | Safari | Apple A15, 4 GB | WebGL2 | iOS 17, with little memory | 10 |
+| iPhone 13 | iOS 18 | Safari | Apple A15, 4 GB | WebGL2 | The oldest supported Safari on iPhones, with little memory. It ran iOS 17 until the owner ruled Safari 17 out ([D-64](decisions/D-64-minimum-browsers.md)) | 10 |
 | iPhone 17 | iOS 26 | Chrome | Apple A19 | WebGPU, compatibility mode, WebGL2 | One iOS browser other than Safari, as a check of WebKit | 12 |
 | Galaxy S24 | Android 16 | Chrome | Xclipse 940 or Adreno 750, by region | WebGL2 on Xclipse | Samsung's AMD-based GPU on the newest Android | 10 |
 | Galaxy S25 | Android 15 | Edge | Adreno 830 | WebGPU, compatibility mode, WebGL2 | Edge on Android | 12 |
@@ -462,13 +463,13 @@ Tier B covers low memory, the other browser engines, more GPU lines and desktop 
 
 ### Tier C: once
 
-Tier C covers the oldest systems: the WebGL2 path on old drivers, and the clear failure where the engine cannot run. Run it once, and again when the engine's startup checks change. It takes about 1 hour 40 minutes.
+Tier C covers the oldest systems: the WebGL2 path on old drivers, and the clear failure where the engine cannot run. Run it once, and again when the engine's startup checks change. It takes about 1 hour 30 minutes.
 
 | Device | System | Browser | GPU | Expected result | Why | Minutes |
 | --- | --- | --- | --- | --- | --- | --- |
 | iPhone SE 2022 | iOS 15 | Safari | Apple A15 | E1303 | Safari 15 has no WebAssembly SIMD | 5 |
 | iPhone 12 | iOS 14 | Safari | Apple A14 | E1303, or the page cannot run | An old WebKit | 5 |
-| iPad 8th | iPadOS 16 | Safari | Apple A12, 3 GB | WebGL2 from 16.4, E1303 before it | The oldest iPad in the list, with little memory | 8 |
+| iPad 8th | iPadOS 16 | Safari | Apple A12, 3 GB | The start error for Safari before 18 from 16.4, E1303 before it | The oldest iPad in the list, below the minimum Safari | 5 |
 | Galaxy S20 | Android 10 | Chrome | Mali-G77 or Adreno 650 | WebGL2 | The oldest Android with a current Chrome | 8 |
 | Vivo Y21 | Android 11 | Chrome | PowerVR GE8320, 4 GB | WebGL2 | An old PowerVR driver | 8 |
 | Nexus 5 | Android 5.0 | Chrome | Adreno 330 | A clear failure | The oldest Android in the list | 5 |
@@ -476,7 +477,7 @@ Tier C covers the oldest systems: the WebGL2 path on old drivers, and the clear 
 | Windows 11 | Windows 11 | Firefox 88 | Not published | E1303 | Firefox before WebAssembly SIMD | 3 |
 | Windows 11 | Windows 11 | Firefox 140 | Not published | WebGL2, with threads that wake by messages | Firefox before WebGPU and `Atomics.waitAsync` | 10 |
 | macOS Monterey | macOS 12 | Safari 15.6 | Not published | E1303 | Desktop Safari before WebAssembly SIMD | 3 |
-| macOS Ventura | macOS 13 | Safari 16.5 | Not published | WebGL2 | The oldest desktop Safari that runs the engine | 8 |
+| macOS Ventura | macOS 13 | Safari 16.5 | Not published | The start error for Safari before 18 | Desktop Safari with WebAssembly SIMD, below the minimum Safari | 3 |
 
 - Where the engine should draw, run the smoke plan with `--allow-no-webgpu`.
 - Where it should fail, run only the pages that start the engine, with no skip flags: `--plan smoke --only capabilities,restarts-pipelined,restarts-single-threaded`. Each page must fail at once with the error in the table, not wait until its time limit.
@@ -571,4 +572,5 @@ These facts come from BrowserStack's Automate docs, read on 3 October 2026: [mob
 - Only a frame counts. On 5 October 2026, Samsung Internet on the S25 opened the page hidden in 2 of 2 smoke runs. After the switch to its window, the browser reported the page visible, but the page still got no frames, and the runner ended the turn. The first version of the session took the visible report as proof and did not load the page again.
 - An Android phone's screen can run at 24 to 30 Hz. On 4 October 2026, the runner page on the cloud Galaxy S24 measured 24 to 30 Hz in every run. So the pages that limit the time between frames failed there, at 41.7 ms against a limit of 34 ms. The runner marked every timing figure unreliable. The cloud iPad 10th measured 60 Hz on 5 October. Before you call a frame-rate failure on a cloud device a fault of the engine, read the runner's warning about the refresh rate.
 - Those readings came from a runner page that measured on a still screen, and the engine pages ran under the report. On the S24+ over USB, both faults gave 24 Hz, as [A hidden canvas and the display's rate](implementation-notes.md#a-hidden-canvas-and-the-displays-rate) says. Readings of 24 to 30 Hz from cloud phones before 5 October 2026 may be such faults, not the phones' real rates. To check on the Galaxy S25 and S24: `bun run devices:cloud --only bsgalaxys25-chrome,bsgalaxys24-chrome --plan checks -- --only capabilities,engine-webgl2-pipelined,engine-webgl2-low-latency,engine-webgl2-single-threaded --rounds 3`. Then read `refreshRateHz` in each phone's `device.json`, and each engine page's `refreshHz` and median frame interval.
+- Cloud frame rates do not compare with real devices. On 5 October 2026, the cloud iPad 10th drew S4 at Low at 22 fps on WebGPU, with its screen at 60 Hz. The page's GPU work took 12 to 15 ms a frame, yet each frame waited 44 to 60 ms for the GPU. That held with the session's video on and off. The runs: 20261005-041513-bench with video off, 20261005-041911-bench with video on, and 20261005-042324-bench with WebGL2 forced, at 33 fps. Work outside the page holds the GPU, likely the screen's compositing and the live stream that interactive debugging needs. So a cloud comparison of two commits uses the page's GPU time, measured in turns within one session, and never the frame rate.
 - iOS does not send `localhost` through the tunnel, so every device opens `bs-local.com`. BrowserStack allows every port for current browsers.
