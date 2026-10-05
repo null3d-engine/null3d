@@ -55,6 +55,17 @@ const LISTEN_POLL_MS = 2000;
 const RESULT_POLL_MS = 200;
 const PAUSE_BETWEEN_PAGES_MS = 1000;
 const REFRESH_SAMPLES = 61;
+/**
+ * How long the page changes the screen before it times frames for the refresh rate. A phone lowers
+ * its display's rate while the screen barely changes, and the Galaxy S24+ took about 330 ms to
+ * raise it again once every frame changed the screen.
+ */
+const REFRESH_WARM_UP_MS = 500;
+/**
+ * A shade of the report's background one step lighter, which the report takes on every other frame
+ * while the page measures the refresh rate, so each frame changes the whole screen unseen.
+ */
+const REFRESH_SHADE = '#101419';
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
 const statusLine = byId('status');
@@ -205,17 +216,29 @@ async function claim(run: string): Promise<void> {
 	if (!response.ok) throw new Error(`the dev server refused the claim: ${response.status}`);
 }
 
-/** The display's refresh rate, from the median interval between animation frames. */
+/**
+ * The display's refresh rate, from the median interval between animation frames. Frame callbacks
+ * follow the display's rate, and a phone lowers that rate while the screen barely changes, as when
+ * only the report's lines change between pages: the Galaxy S24+ then runs at 24 Hz. So each frame
+ * of the measurement changes the report's background by one shade, and the timing starts once the
+ * display has had time to rise to its full rate.
+ */
 async function refreshRate(): Promise<number> {
+	const panel = byId('report');
 	const times: number[] = [];
+	let frames = 0;
+	let warmUpEnd = Number.POSITIVE_INFINITY;
 	await new Promise<void>((resolve) => {
 		const tick = (time: number) => {
-			times.push(time);
+			panel.style.backgroundColor = frames++ % 2 === 0 ? REFRESH_SHADE : '';
+			if (frames === 1) warmUpEnd = time + REFRESH_WARM_UP_MS;
+			if (time >= warmUpEnd) times.push(time);
 			if (times.length < REFRESH_SAMPLES) requestAnimationFrame(tick);
 			else resolve();
 		};
 		requestAnimationFrame(tick);
 	});
+	panel.style.backgroundColor = '';
 	const intervals = times
 		.slice(1)
 		.map((time, i) => time - (times[i] as number))
