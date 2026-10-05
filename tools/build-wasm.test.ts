@@ -2,12 +2,14 @@ import { describe, expect, it } from 'bun:test';
 import { addReleaseInstance, lockedVersion, parseOptions, releaseTarget } from './build-wasm';
 
 describe('parseOptions', () => {
-	it('reads the size check, its base, the base build, the names build and the pages build', () => {
+	it('reads the size check, its base, the base build, the names build, the pages build, an earlier build and the base alone', () => {
 		expect(parseOptions([])).toEqual({
 			checkSize: false,
 			sizesOnly: false,
 			keepNames: false,
 			pagesOnly: false,
+			prebuilt: false,
+			printBase: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
 			checkSize: true,
@@ -15,6 +17,16 @@ describe('parseOptions', () => {
 			sizesOnly: false,
 			keepNames: false,
 			pagesOnly: false,
+			prebuilt: false,
+			printBase: false,
+		});
+		expect(parseOptions(['--check-size', '--prebuilt'])).toMatchObject({
+			checkSize: true,
+			prebuilt: true,
+		});
+		expect(parseOptions(['--print-base', '--base', 'HEAD^'])).toMatchObject({
+			printBase: true,
+			base: 'HEAD^',
 		});
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
 		expect(parseOptions(['--names']).keepNames).toBe(true);
@@ -37,6 +49,12 @@ describe('parseOptions', () => {
 			expect(() => parseOptions(['--pages-only', other])).toThrow(
 				'--pages-only makes no size report',
 			);
+		for (const other of ['--names', '--pages-only', '--sizes-only'])
+			expect(() => parseOptions(['--prebuilt', other])).toThrow(
+				'--prebuilt measures the files of an earlier build',
+			);
+		for (const other of ['--check-size', '--prebuilt', '--sizes-only'])
+			expect(() => parseOptions(['--print-base', other])).toThrow('--print-base builds nothing');
 	});
 });
 

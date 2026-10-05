@@ -1,5 +1,5 @@
 // Runs a plan of test pages in real browsers that Playwright cannot drive, through the runner page:
-// browser apps on this Mac, browsers on an Android phone connected by USB, runner pages that wait
+// browser apps on this Mac or Linux machine, browsers on an Android phone connected by USB, runner pages that wait
 // on tablets and phones on the local network, and sessions that it opens on a device cloud's real
 // devices. It starts the dev server, lets one browser per device run at a time, then judges every
 // result and prints a summary. On an Android phone it reads
@@ -102,7 +102,7 @@
 // results depend on. After a fixed plan, it prints each browser's row for the record of tested
 // devices, from what the runner page found about its browser, device and GPU. A runner whose name
 // names one browser warns when its page ran in another.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
 	copyFileSync,
 	existsSync,
@@ -255,8 +255,8 @@ export interface Options {
 	cloudBuild?: string;
 	/** The cloud keeps each session's network log, which slows the session's loads a little. */
 	networkLogs?: boolean;
-	/** macOS app names, such as Safari. */
-	mac: string[];
+	/** Browser apps on this machine: macOS app names, such as Safari, or Linux commands' names, such as Firefox. */
+	apps: string[];
 	android: string[];
 	lan: string[];
 	/** Runners of the device cloud list, whose sessions the runner tool opens. */
@@ -264,7 +264,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -275,7 +275,7 @@ const PLAN_NAMES = [...Object.keys(PLANS), SCALE_PLAN];
 
 export function parseArgs(args: readonly string[]): Options {
 	const missing = { ...NONE_MISSING };
-	const options: Options = { plan: 'checks', missing, mac: [], android: [], lan: [], cloud: [] };
+	const options: Options = { plan: 'checks', missing, apps: [], android: [], lan: [], cloud: [] };
 	const list = (value: string | undefined) => (value ?? '').split(',').filter(Boolean);
 	const known = <T extends string>(flag: string, values: string[], allowed: readonly T[]): T[] => {
 		const unknown = values.filter((v) => !(allowed as readonly string[]).includes(v));
@@ -328,7 +328,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--network-logs') options.networkLogs = true;
 		else if (arg === '--attended') options.attended = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
-		else options.mac.push(arg);
+		else options.apps.push(arg);
 	}
 	if (!PLAN_NAMES.includes(options.plan))
 		throw new Error(`no plan named ${options.plan}; plans: ${PLAN_NAMES.join(', ')}`);
@@ -485,11 +485,11 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
 }
 
 /**
- * How a runner starts: an app on this Mac, a browser on the phone, a page that waits on the network,
- * or a session on a device cloud that opens a waiting page.
+ * How a runner starts: an app on this Mac or Linux machine, a browser on the phone, a page that
+ * waits on the network, or a session on a device cloud that opens a waiting page.
  */
 type Launch =
-	| { kind: 'mac'; app: string }
+	| { kind: AppMachine; app: string }
 	| { kind: 'android'; browser: string }
 	| { kind: 'lan' }
 	| { kind: 'cloud'; device: CloudDevice };
@@ -498,11 +498,26 @@ type LaunchedRunner = Runner & { launch: Launch };
 
 type Launches = ReadonlyMap<string, Launch>;
 
+/** The kind of machine whose browser apps a run opens: a Mac, or a Linux machine such as CI's. */
+type AppMachine = 'mac' | 'linux';
+
+/** The machine that this tool runs on, which opens its browser apps. */
+function appMachine(): AppMachine {
+	if (process.platform === 'darwin') return 'mac';
+	if (process.platform === 'linux') return 'linux';
+	throw new Error(`browser apps run on macOS or Linux, not on ${process.platform}`);
+}
+
+/** True for a runner that is a browser app on this machine. */
+const isApp = (launch: Launch | undefined): launch is { kind: AppMachine; app: string } =>
+	launch?.kind === 'mac' || launch?.kind === 'linux';
+
 function runnersOf(options: Options): LaunchedRunner[] {
-	const runners: LaunchedRunner[] = options.mac.map((app) => ({
-		name: `mac-${slug(app)}`,
-		device: 'mac',
-		launch: { kind: 'mac', app },
+	const machine = options.apps.length > 0 ? appMachine() : 'mac';
+	const runners: LaunchedRunner[] = options.apps.map((app) => ({
+		name: `${machine}-${slug(app)}`,
+		device: machine,
+		launch: { kind: machine, app },
 	}));
 	if (options.android.length > 0) {
 		const phone = slug(phoneModel());
@@ -530,13 +545,21 @@ const imageDevice = (runner: LaunchedRunner) =>
 const OPEN_TIMEOUT_MS = 60_000;
 
 /**
- * Opens the runner page in a macOS app and says whether it did. A launch that hangs, as behind a
- * first-launch prompt on a machine that nobody watches, fails after a minute instead of stopping
- * the whole run.
+ * Opens the runner page in a browser app and says whether it did. On a Mac, a launch that hangs,
+ * as behind a first-launch prompt on a machine that nobody watches, fails after a minute instead
+ * of stopping the whole run. On Linux, the app's command by its name in lowercase opens the page:
+ * the first call starts the browser, which keeps running, and a later call hands the page to it.
  */
 function openApp(app: string, url: string): boolean {
 	try {
-		execFileSync('open', ['-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+		if (process.platform === 'darwin')
+			execFileSync('open', ['-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+		else {
+			const command = execFileSync('which', [slug(app)], { encoding: 'utf8' }).trim();
+			spawn(command, [url], { detached: true, stdio: 'ignore' })
+				.on('error', (e) => console.log(`${app} stopped: ${e.message}`))
+				.unref();
+		}
 		return true;
 	} catch (e) {
 		console.log(`${app} did not open the runner page: ${(e as Error).message.split('\n')[0]}`);
@@ -573,7 +596,7 @@ async function openRunners(
 	for (const name of names) {
 		const launch = launches.get(name) as Launch;
 		const url = runnerUrl(baseUrl, run, name);
-		if (launch.kind === 'mac') {
+		if (isApp(launch)) {
 			if (openApp(launch.app, url)) opened.push(name);
 		} else if (launch.kind === 'cloud') {
 			if (await cloud?.open(name, cloudRunnerUrl(name))) opened.push(name);
@@ -767,7 +790,7 @@ export class QuietRecovery {
 }
 
 /**
- * Replaces runner pages: in macOS apps, it closes a quiet runner page in Safari, then opens a new
+ * Replaces runner pages: in browser apps, it closes a quiet runner page in Safari, then opens a new
  * one in the app. Where the quiet page stays open, the new page's claim on the runner's results
  * stops it. On the Android phone, it opens a new runner page only after a page that ended its tab,
  * since the browser then shows its crash page in place of the runner page. Runner pages on the
@@ -777,10 +800,13 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 	const startedAt = Date.now();
 	return {
 		canReopen: (runner, tabEnded) => {
-			const kind = launches.get(runner)?.kind;
-			return kind === 'mac' || (kind === 'android' && tabEnded);
+			const launch = launches.get(runner);
+			return isApp(launch) || (launch?.kind === 'android' && tabEnded);
 		},
-		inspect: (runner, count) => inspectMac(run, runner, count, startedAt),
+		inspect: (runner, count) =>
+			launches.get(runner)?.kind === 'mac'
+				? inspectMac(run, runner, count, startedAt)
+				: 'no evidence: the tool looks only at a Mac',
 		reopen: (runner, from) => {
 			const launch = launches.get(runner);
 			const url = runnerUrl(baseUrl, run, runner, from);
@@ -788,7 +814,7 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 				openOnPhone(launch.browser, url);
 				return true;
 			}
-			if (launch?.kind !== 'mac') return false;
+			if (!isApp(launch)) return false;
 			if (launch.app === 'Safari') closeSafariRunner(run, runner);
 			return openApp(launch.app, url);
 		},
@@ -816,6 +842,12 @@ interface DeviceWords {
 function deviceWords(runner: string, launch: Launch | undefined): DeviceWords {
 	if (launch?.kind === 'mac')
 		return { app: launch.app, place: 'this Mac', rateSettings: 'Low Power Mode is on' };
+	if (launch?.kind === 'linux')
+		return {
+			app: launch.app,
+			place: 'this Linux machine',
+			rateSettings: 'its display runs at another rate',
+		};
 	if (launch?.kind === 'android')
 		return {
 			app: titled(launch.browser),
