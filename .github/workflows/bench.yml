@@ -9,19 +9,24 @@ name: Benchmarks
 # request it runs on demand, against the pull request's merge base: add the benchmark label, or
 # start it from the Actions tab with the pull request's number.
 #
-# On main it runs one run at a time, against the last commit on main that a run measured. Some
-# pushes get no run of their own, so the last measured commit, not the commit before, makes sure
-# that each change is measured. A run measured its commit when its report merged the shards into a
-# whole comparison, whether the verdict passed or failed. So a slowdown fails the one run that holds
-# it, and the next run compares with that commit. A cancelled run, a run whose builds failed and a
-# run whose shards left pages out measured nothing. When the commits change the benchmark pages or
-# the comparison's switches, the two builds measure in different ways: the run reports "measurement
+# On main it runs at most once an hour, on main's newest commit, against the last commit on main
+# that a run measured, so one run measures every merge since then. Each run holds 3 Mac machines
+# for about 20 minutes, and GitHub gives about 5 at once, which the merge queue's Safari jobs need,
+# so main gets no run for each push. When no merge came since the last measured commit, the run
+# stops after choosing the commits, before any Mac machine starts. A run measured its commit when
+# its report merged the shards into a whole comparison, whether the verdict passed or failed. So a
+# slowdown fails the one run that holds it, and the next run compares with that commit. A cancelled
+# run, a run whose builds failed and a run whose shards left pages out measured nothing, so the next
+# hour's run measures the same commits again. When the commits change the benchmark pages or the
+# comparison's switches, the two builds measure in different ways: the run reports "measurement
 # changed" and fails no page. .dev/benchmarks.md says how to read the summary and how to mark an
 # expected slowdown.
 
 on:
-  push:
-    branches: [main]
+  # Seven minutes past the hour, away from the top of the hour, when GitHub delays the most
+  # scheduled runs. GitHub runs a schedule on the default branch only.
+  schedule:
+    - cron: "7 * * * *"
   pull_request:
     types: [labeled, synchronize]
   workflow_dispatch:
@@ -37,18 +42,18 @@ on:
 
 permissions:
   contents: read
-  # A push's baseline comes from this workflow's earlier runs.
+  # Main's baseline comes from this workflow's earlier runs.
   actions: read
 
-# Pushes to main share one group, so main runs one run at a time and leaves GitHub's other Mac
-# machines to pull requests. A running run is never cancelled; a newer push replaces a run that
-# waits, and the next run measures the waiting commit's change too. A pull request's newer run
-# replaces its older one, and a run started by hand has a group of its own. A pull request run that
-# the commits job skips, such as one for another label, also gets a group of its own, so it cancels
-# nothing: the group repeats that job's condition.
+# Main's scheduled runs share one group, so two never overlap, and main leaves GitHub's other Mac
+# machines to pull requests. A running run is never cancelled; a newer scheduled run replaces a run
+# that waits, and measures the waiting run's commits too. A pull request's newer run replaces its
+# older one, and a run started by hand has a group of its own. A pull request run that the commits
+# job skips, such as one for another label, also gets a group of its own, so it cancels nothing:
+# the group repeats that job's condition.
 concurrency:
   group: >-
-    bench-${{ github.event_name == 'push' && 'main' ||
+    bench-${{ github.event_name == 'schedule' && 'main' ||
     github.event_name == 'pull_request' &&
     contains(github.event.pull_request.labels.*.name, 'benchmark') &&
     (github.event.action != 'labeled' || github.event.label.name == 'benchmark') &&
@@ -64,7 +69,8 @@ jobs:
   commits:
     name: choose the commits
     # A pull request runs the benchmarks while it has the benchmark label, from the moment the label
-    # is added. Every other job needs this one, so they are skipped with it.
+    # is added. Every other job needs this one, so they are skipped with it. On main the job leaves
+    # its outputs empty when main has not moved since the last measured commit, and the builds skip.
     if: >-
       github.event_name != 'pull_request' ||
       (contains(github.event.pull_request.labels.*.name, 'benchmark') &&
@@ -104,9 +110,13 @@ jobs:
             if [ "$base" = "$1" ]; then git rev-parse "$1^"; else echo "$base"; fi
           }
           case "$EVENT" in
-            push)
+            schedule)
               new="$GITHUB_SHA"
-              baseline="$(bun bench/ci-baseline.ts "$new")" ;;
+              baseline="$(bun bench/ci-baseline.ts "$new")"
+              if [ -z "$baseline" ]; then
+                echo "Main has not moved since $(git log -1 --format='%h %s' "$new"), which a run measured."
+                exit 0
+              fi ;;
             pull_request)
               new="$PR_HEAD"
               baseline="$(git merge-base "origin/$PR_BASE" "$new")" ;;
@@ -126,6 +136,7 @@ jobs:
     # download them.
     name: build (${{ matrix.build }})
     needs: commits
+    if: needs.commits.outputs.new != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

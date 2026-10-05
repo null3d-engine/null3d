@@ -1,11 +1,11 @@
-// The baseline of the benchmark run on a push to main. Main runs one benchmark run at a time, and a
-// newer push replaces a run that waits, so some commits never get a run of their own. Each run
-// therefore compares the new commit with the last commit on main that a run measured, and so also
-// measures the change of every commit in between. A run measured its commit when it finished the
-// comparison, whatever the verdict: a slowdown then fails the one run that holds it, and the next
-// run measures from there. A run that stopped before its comparison ended measured nothing.
+// The baseline of main's benchmark run. Main's run starts at most once an hour, on main's newest
+// commit, so most commits never get a run of their own. Each run therefore compares the new commit
+// with the last commit on main that a run measured, and so also measures the change of every commit
+// in between. A run measured its commit when it finished the comparison, whatever the verdict: a
+// slowdown then fails the one run that holds it, and the next run measures from there. A run that
+// stopped before its comparison ended measured nothing.
 
-/** A finished push run of the benchmark workflow on main. */
+/** A finished run of the benchmark workflow on main, scheduled or, before the schedule, pushed. */
 export interface MainRun {
 	/** The run's number on GitHub. */
 	id: number;
@@ -38,20 +38,17 @@ export function finishedComparison(jobs: readonly RunJob[]): boolean {
 }
 
 /**
- * The commit that a new commit on main is compared with: the commit of the newest run in `runs`
- * that comes before the new commit in its history and finished its comparison, or null when none
- * does. `runs` lists finished push runs, newest first. The new commit itself never counts, so a new
- * run for a commit that a run already measured still compares it with an older one. `finished` may
- * ask GitHub, so it is asked last, and only until a run qualifies.
+ * The last commit on main that a run measured, as seen from a new commit: the commit of the newest
+ * run in `runs` that finished its comparison and whose commit `inHistory` accepts, or null when
+ * none does. `inHistory` is true for the new commit and the commits before it. `runs` lists
+ * finished runs on main, newest first. When the result is the new commit itself, main has not moved
+ * since that run, and there is nothing to measure. `finished` may ask GitHub, so it is asked last,
+ * and only until a run qualifies.
  */
-export function chooseBaseline(
-	newCommit: string,
+export function lastMeasured(
 	runs: readonly MainRun[],
-	isAncestor: (commit: string) => boolean,
+	inHistory: (commit: string) => boolean,
 	finished: (run: MainRun) => boolean,
 ): string | null {
-	return (
-		runs.find((run) => run.headSha !== newCommit && isAncestor(run.headSha) && finished(run))
-			?.headSha ?? null
-	);
+	return runs.find((run) => inHistory(run.headSha) && finished(run))?.headSha ?? null;
 }
