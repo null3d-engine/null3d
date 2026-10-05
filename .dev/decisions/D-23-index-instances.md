@@ -1,6 +1,6 @@
 # D-23: Index-only instance data on core WebGPU
 
-Status: proposed; the build, its image checks and the device cloud's timings done, the Mac's timing pending. Date: 2026-10-05. Task: M2-K1 (T-23).
+Status: decided for now: the index path stays a test switch, off by default. The owner's iPad timing is still to come and can reopen it. Date: 2026-10-05. Task: M2-K1 (T-23).
 
 ## Question
 
@@ -65,9 +65,10 @@ These runs drew the build before the index builds moved to first-use files and b
 
 On the S25, S1 gains 13%, but S1-static, where the rule looks, gains only 1.3%. On the iPad every scene is 0.1% to 1.4% slower, and the five runs of each page overlap by more than the change. No device yet meets the rule's 5% in S1-static.
 
+The Mac ran Chrome on WebGPU, five runs of each page, with its load about 3.9 (run `20261005-162153-bench`). Its GPU times are equal: S1 takes 2.11 ms with the copies and 2.13 ms with the indices, and S1-static changes by 0%. On the main thread, S1 takes 2.05 ms with the copies and 2.33 ms with the indices, 0.28 ms more. S1-static takes 0.07 ms both ways, and S4 0.12 ms with the copies and 0.10 ms with the indices.
+
 Still to run:
 
-- The Mac, with the Mac's load below 8: `bun run bench:run --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`
 - The owner's iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`
 - S6, when it exists: the same commands with `--scenes s6`.
 
@@ -79,7 +80,7 @@ What to expect: per visible instance and pass, the index path writes 60 bytes le
 
 ## Decision
 
-Pending the Mac's timing. Until then the copies stay the only default, and `?instances=index` stays a test switch. If a device meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it. If none does, the switch, its builds and its page kind leave the engine, and hard rule 7 stands with no exception.
+No device meets the rule's 5% in S1-static: the Galaxy S25 gains 1.3%, the cloud iPad loses 1.4%, and the Mac shows no change. So the copies stay the only default, and `?instances=index` stays a test switch, off by default. The owner's iPad run is still to come and can reopen this. If a device then meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it.
 
 ## Consequences
 
