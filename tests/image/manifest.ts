@@ -905,6 +905,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
+	// The same scenes from the skinning pass with neither of its savings: normals as 32-bit floats,
+	// and every character skinned in every frame. The default pass writes 8-bit normals, which must
+	// draw the same images.
+	...(['', 'shadows'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `skinning-${variant}-full` : 'skinning-full',
+			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			tiers: ['webgpu', 'compat'],
+			switches: ['skinning=full'],
+			reference: variant ? `skinning-${variant}` : 'skinning',
+		}),
+	),
 	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
 	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
 	// draws the scene in its own way, so each has its own image.
