@@ -744,6 +744,25 @@ pub mod permutation {
     /// these bits, and a page loads only its own.
     pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP | HALF;
 
+    /// Pairs of bits that no build holds together, so the shader build makes no build with both.
+    /// A mesh that WebGPU skins in the vertex shader reads the culling shader's copies, so the
+    /// builds that read their instances by index never skin: those builds would load with the
+    /// skinning feature and double its WebGPU files.
+    pub const APART: [(u32, u32); 1] = [(SKIN, INSTANCE_INDEX)];
+
+    /// True when a permutation word holds no pair of [`APART`].
+    pub const fn buildable(word: u32) -> bool {
+        let mut k = 0;
+        while k < APART.len() {
+            let (a, b) = APART[k];
+            if word & a != 0 && word & b != 0 {
+                return false;
+            }
+            k += 1;
+        }
+        true
+    }
+
     /// Every bit.
     pub const ALL: u32 = {
         let mut all = 0;

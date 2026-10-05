@@ -213,17 +213,19 @@ impl DrawKey {
     /// True for a pair whose template has WebGPU builds that read each instance by index from
     /// storage buffers ([`permutation::INSTANCE_INDEX`]): the engine's templates that the culling
     /// shader draws, apart from those that only tests and development builds draw. Custom
-    /// materials, sprites and lines read the culling shader's copies.
+    /// materials, sprites, lines and meshes skinned in the vertex shader read the culling shader's
+    /// copies.
     pub const fn reads_index(self) -> bool {
-        matches!(
-            self.template,
-            template::INSTANCED_LIT
-                | template::INSTANCED_STANDARD_MAPS
-                | template::INSTANCED_UNLIT
-                | template::INSTANCED_UNLIT_MAP
-                | template::SHADOW_DEPTH
-                | template::OUTLINE_MASK
-        )
+        permutation::buildable(self.permutation | permutation::INSTANCE_INDEX)
+            && matches!(
+                self.template,
+                template::INSTANCED_LIT
+                    | template::INSTANCED_STANDARD_MAPS
+                    | template::INSTANCED_UNLIT
+                    | template::INSTANCED_UNLIT_MAP
+                    | template::SHADOW_DEPTH
+                    | template::OUTLINE_MASK
+            )
     }
 
     /// The same key with the build that reads each instance by index.
