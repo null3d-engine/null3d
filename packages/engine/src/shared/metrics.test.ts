@@ -7,6 +7,7 @@ import {
 	threadRoles,
 	timerStep,
 } from '../page/frame-stats';
+import { QUALITY_SETTINGS } from '../quality/presets';
 import {
 	Counter,
 	createMetricsBuffer,
@@ -17,6 +18,7 @@ import {
 	type RingRecords,
 	RingSums,
 	Role,
+	SAMPLED_EVERY,
 	SUM_BUSY_MS,
 	SUM_COUNTERS,
 	SUM_INTERVAL_MS,
@@ -455,5 +457,16 @@ describe('timerStep', () => {
 		expect(timerStep([0.001, 0.002])).toBeNull();
 		expect(timerStep([0, 0])).toBeNull();
 		expect(timerStep([])).toBeNull();
+	});
+});
+
+describe('SAMPLED_EVERY', () => {
+	it('times frames in every phase of each far cascade interval', () => {
+		const { min, max } = QUALITY_SETTINGS.farCascadeInterval.values;
+		for (let interval = min; interval <= max; interval++) {
+			const phases = new Set<number>();
+			for (let k = 0; k < interval; k++) phases.add((k * SAMPLED_EVERY) % interval);
+			expect([interval, phases.size]).toEqual([interval, interval]);
+		}
 	});
 });
