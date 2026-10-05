@@ -276,7 +276,7 @@ Three figures show whether the GPU keeps up:
 
 - `presentedFps` counts the frames that the renderer presented. A frame callback keeps firing at the display rate while the GPU falls behind. So this count alone can look healthy while the screen shows fewer frames.
 - `completedFps` counts the frames that the GPU finished. The engine tracks every frame.
-- `gpuMs` is the GPU's working time within a frame, where the device has timestamp queries. It is not the time from submit to screen. The engine measures it on one frame in eight. Timing every frame would cost the drawing thread about as much as drawing a small scene.
+- `gpuMs` is the GPU's working time within a frame, where the device has timestamp queries. It is not the time from submit to screen. The engine measures it on one frame in eleven. Timing every frame would cost the drawing thread about as much as drawing a small scene. Eleven is a prime above the longest far cascade interval, so the timed frames take in every turn of the far cascades.
 
 The lower of the two rates is the rate that users see. The engine lets at most two frames wait unfinished on the GPU. So when the GPU falls behind, the presented rate falls to the completed rate, and `gpuLatencyMs` stays near two completed frame intervals. A rate below `refreshHz` with `gpuLatencyMs` near two frame intervals means that the GPU limits the frame rate. On WebGL2, and on a device without GPU timers, `completedFps` and `gpuLatencyMs` are the GPU's only signal.
 
