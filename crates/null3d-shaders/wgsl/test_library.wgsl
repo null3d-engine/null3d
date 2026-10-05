@@ -271,10 +271,11 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
 #endif
 #ifdef COLOR
         case 98u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
+        case 99u: { return triple(null3d::color::tone_map_agx_punchy(f[0].xyz)); }
 #endif
 #ifdef LIGHTING
-        case 99u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
-        case 100u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
+        case 100u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
+        case 101u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.

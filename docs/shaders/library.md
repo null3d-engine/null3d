@@ -530,6 +530,30 @@ fn tone_map_agx(c: vec3f) -> vec3f
 
 AgX tone mapping, as three.js's `AgXToneMapping`, in Rec. 2020 primaries.
 
+### `AGX_PUNCHY_POWER`
+
+```wgsl
+const AGX_PUNCHY_POWER: f32 = 1.35;
+```
+
+The power of AgX's punchy look, which deepens the contrast after the curve.
+
+### `AGX_PUNCHY_SATURATION`
+
+```wgsl
+const AGX_PUNCHY_SATURATION: f32 = 1.4;
+```
+
+The saturation of AgX's punchy look about each color's luminance.
+
+### `tone_map_agx_punchy`
+
+```wgsl
+fn tone_map_agx_punchy(c: vec3f) -> vec3f
+```
+
+AgX tone mapping with Filament's punchy look: more contrast and more color than plain AgX, which keeps hues as plain AgX does.
+
 ### `tone_map_neutral`
 
 ```wgsl

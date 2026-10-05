@@ -83,10 +83,11 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
- * shaders tone map themselves, must draw the HDR path's image at an exposure of 1.
+ * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
+ * look, which three.js lacks, joins the curves that three.js shares here.
  */
 function toneMappingTests(): ImageTest[] {
-	return TONE_MAPPINGS.flatMap((tone): ImageTest[] => [
+	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),

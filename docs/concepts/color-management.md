@@ -84,6 +84,7 @@ export default defineSketch(({ post }) => {
 | `toneMapping` | three.js equivalent | Look |
 | --- | --- | --- |
 | `'agx'` (the default) | `AgXToneMapping` | Softer contrast. Bright colors fade toward white and keep their hue. |
+| `'agx-punchy'` | None | AgX with Filament's punchy look: more contrast and more color, with AgX's hues. |
 | `'aces'` | `ACESFilmicToneMapping` | Strong contrast. Bright saturated colors change hue on their way to white: red turns orange, then yellow, and blue turns purple. |
 | `'neutral'` | `NeutralToneMapping` | Base colors keep their values until they near white. Khronos made it for product images. |
 | `'none'` | `LinearToneMapping` | The exposed color, clipped at white. A bright color loses detail once a channel reaches white. |

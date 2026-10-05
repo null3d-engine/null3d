@@ -110,11 +110,13 @@ describe('post.set', () => {
 		output.set({ exposure: 2 });
 		output.set({ toneMapping: 'none', exposure: 0.5 });
 		output.set({});
+		output.set({ toneMapping: 'agx-punchy' });
 		expect(calls).toEqual([
 			[C.TONE_MAPPING_AGX, 1],
 			[C.TONE_MAPPING_AGX, 2],
 			[C.TONE_MAPPING_NONE, 0.5],
 			[C.TONE_MAPPING_NONE, 0.5],
+			[C.TONE_MAPPING_AGX_PUNCHY, 0.5],
 		]);
 	});
 

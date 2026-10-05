@@ -6,16 +6,27 @@
 // whole area, which moves smoothly with the camera. A highlight narrower than a pixel comes and
 // goes in the frames of the canvas's size, and the averaged frames show it as a steady spot.
 //
-// A pixel's flicker is the mean size of its second difference over time, which a smooth change
-// leaves near 0. The page reports how much more the canvas's frames flicker than the truth, and
-// how far they lie from it, each over the whole frame and in steps of 1/255. ?frames= gives the
-// number of frames, and ?step= the sketch time between them in seconds.
+// A pixel's flicker is the size of its second difference over time, which a smooth change leaves
+// near 0. The 8-bit frames round each value, and the final pass dithers, so a smooth change of a
+// mid-tone pixel still steps by a level now and then. That noise grows with the area of soft
+// highlights, not with their flicker. So the page counts only the part of each second difference
+// beyond NOISE_LEVELS: a highlight that comes and goes jumps by far more. It reports that flicker
+// for the canvas's frames and for the truth, their difference (the shimmer), and the mean
+// distance from the truth, each over the whole frame and in steps of 1/255. ?scene= names the
+// sketch's scene, ?frames= the number of frames, and ?step= the sketch time between them in
+// seconds.
 import { createEngine } from '@null3d/engine';
 import { progress, run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
 const FRAMES = Number(params.get('frames') ?? 48);
 const STEP = Number(params.get('step') ?? 0.05);
+const SCENE = params.get('scene') ?? 'small';
+/**
+ * The part of a second difference, in steps of 1/255, that rounding and dithering can give a pixel
+ * that changes smoothly: a step of one level at each of three frames.
+ */
+const NOISE_LEVELS = 4;
 /** The canvas's size in CSS pixels, which the page draws at one device pixel each. */
 const WIDTH = 480;
 const HEIGHT = 270;
@@ -53,7 +64,7 @@ async function drawRow(scale: number): Promise<{ tier: string; frames: Float32Ar
 	document.body.append(canvas);
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/specular-shimmer-sketch.ts', import.meta.url),
+		sketch: new URL(`./sketches/specular-shimmer-sketch.ts?scene=${SCENE}`, import.meta.url),
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
@@ -79,7 +90,10 @@ async function drawRow(scale: number): Promise<{ tier: string; frames: Float32Ar
 	return { tier, frames };
 }
 
-/** The mean size of each pixel's second difference over time, over every pixel. */
+/**
+ * The mean size of each pixel's second difference over time beyond NOISE_LEVELS, over every
+ * pixel.
+ */
 function flicker(frames: readonly Float32Array[]): number {
 	let sum = 0;
 	for (let k = 1; k + 1 < frames.length; k++) {
@@ -87,7 +101,11 @@ function flicker(frames: readonly Float32Array[]): number {
 		const now = frames[k] as Float32Array;
 		const after = frames[k + 1] as Float32Array;
 		for (let p = 0; p < now.length; p++)
-			sum += Math.abs((after[p] as number) - 2 * (now[p] as number) + (before[p] as number));
+			sum += Math.max(
+				Math.abs((after[p] as number) - 2 * (now[p] as number) + (before[p] as number)) -
+					NOISE_LEVELS,
+				0,
+			);
 	}
 	return sum / ((frames.length - 2) * WIDTH * HEIGHT);
 }
@@ -109,6 +127,7 @@ run('specular-shimmer', async () => {
 	const trueFlicker = flicker(truth.frames);
 	return {
 		tier: drawn.tier,
+		scene: SCENE,
 		frames: FRAMES,
 		/** The mean luminance of the truth, for scale. */
 		light: light / samples,

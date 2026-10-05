@@ -448,7 +448,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ```ts
 post.set({
-  toneMapping: 'agx',       // 'agx' (default) | 'neutral' | 'aces' | 'none'
+  toneMapping: 'agx',       // 'agx' (default) | 'agx-punchy' | 'neutral' | 'aces' | 'none'
   exposure: 1,
   ev100: 15,                // (0.2) camera exposure for lights in real units; false turns it off
   bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off

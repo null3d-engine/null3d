@@ -604,6 +604,7 @@ pub fn typescript() -> String {
                 ("AGX", ToneMapping::Agx.code()),
                 ("NEUTRAL", ToneMapping::Neutral.code()),
                 ("NONE", ToneMapping::None.code()),
+                ("AGX_PUNCHY", ToneMapping::AgxPunchy.code()),
             ],
         ),
         (

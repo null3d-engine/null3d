@@ -76,7 +76,7 @@
       "three": "renderer.toneMapping (ACESFilmic, AgX, Neutral, Reinhard, Cineon, Linear) / toneMappingExposure",
       "status": "changed",
       "since": "0.1",
-      "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none', exposure })",
+      "target": "post.set({ toneMapping: 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none', exposure })",
       "notes": "The engine default is AgX, which keeps the hues of bright colors; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". A port keeps the curve it set: ACESFilmicToneMapping becomes \"aces\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="

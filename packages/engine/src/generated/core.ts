@@ -133,6 +133,7 @@ export const TONE_MAPPING_ACES = 0;
 export const TONE_MAPPING_AGX = 1;
 export const TONE_MAPPING_NEUTRAL = 2;
 export const TONE_MAPPING_NONE = 3;
+export const TONE_MAPPING_AGX_PUNCHY = 4;
 
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;

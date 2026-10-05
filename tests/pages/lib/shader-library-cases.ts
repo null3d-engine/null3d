@@ -366,13 +366,20 @@ const agxContrast = (v: V3) =>
 			0.00232
 		);
 	});
-function agx(c: V3): V3 {
+/** AgX, with Filament's punchy look after the contrast curve when `punchy` is true. */
+function agx(c: V3, punchy = false): V3 {
 	const inset = mat3(AGX_INSET, mat3(SRGB_TO_REC2020, c));
 	const logged = map3(
 		inset,
 		(x) => (Math.log2(Math.max(x, 1e-10)) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV),
 	);
-	const curved = mat3(AGX_OUTSET, agxContrast(map3(logged, saturate)));
+	let contrast = agxContrast(map3(logged, saturate));
+	if (punchy) {
+		const looked = map3(contrast, (x) => Math.max(x, 0) ** 1.35);
+		const luma = 0.2126 * looked[0] + 0.7152 * looked[1] + 0.0722 * looked[2];
+		contrast = map3(looked, (x) => luma + 1.4 * (x - luma));
+	}
+	const curved = mat3(AGX_OUTSET, contrast);
 	return map3(
 		mat3(
 			REC2020_TO_SRGB,
@@ -1430,6 +1437,11 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		],
 		expected: (i) => floats(map3(xyz(i.f(0)), (value) => Math.min(value, 65472))),
 		tolerance: 0,
+	},
+	{
+		name: 'color::tone_map_agx_punchy',
+		cases: uniform(3, 0.01, 8),
+		expected: (i) => floats(agx(xyz(i.f(0)), true)),
 	},
 	{
 		name: 'lighting::horizon_occlusion',

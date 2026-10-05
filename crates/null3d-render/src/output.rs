@@ -42,7 +42,8 @@ use crate::frame::linear_to_srgb;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u32)]
 pub enum ToneMapping {
-    /// ACES filmic, three.js's `ACESFilmicToneMapping`.
+    /// ACES filmic, three.js's `ACESFilmicToneMapping`, kept for ports of three.js scenes that set
+    /// it. It shifts the hues of bright colors, so new scenes use AgX.
     Aces = 0,
     /// AgX, three.js's `AgXToneMapping`, and the engine's default: it keeps the hues of bright
     /// colors on their way to white.
@@ -52,11 +53,19 @@ pub enum ToneMapping {
     Neutral = 2,
     /// No curve: the exposed color, clipped at 1, as three.js's `LinearToneMapping` gives it.
     None = 3,
+    /// AgX with Filament's punchy look: more contrast and color after AgX's curve.
+    AgxPunchy = 4,
 }
 
 impl ToneMapping {
     /// Every operator, in code order.
-    pub const ALL: [Self; 4] = [Self::Aces, Self::Agx, Self::Neutral, Self::None];
+    pub const ALL: [Self; 5] = [
+        Self::Aces,
+        Self::Agx,
+        Self::Neutral,
+        Self::None,
+        Self::AgxPunchy,
+    ];
 
     /// The operator's code, which the shaders and the TypeScript API share.
     pub const fn code(self) -> u32 {
@@ -75,6 +84,7 @@ impl ToneMapping {
             Self::Agx => "AGX",
             Self::Neutral => "NEUTRAL",
             Self::None => "NONE",
+            Self::AgxPunchy => "AGX_PUNCHY",
         }
     }
 
@@ -82,7 +92,8 @@ impl ToneMapping {
     pub fn apply(self, c: [f32; 3]) -> [f32; 3] {
         match self {
             Self::Aces => aces(c),
-            Self::Agx => agx(c),
+            Self::Agx => agx(c, false),
+            Self::AgxPunchy => agx(c, true),
             Self::Neutral => neutral(c),
             Self::None => c.map(|v| v.clamp(0.0, 1.0)),
         }
@@ -328,15 +339,25 @@ const AGX_OUTSET: Mat3 = [
 const AGX_MIN_EV: f32 = -12.47393;
 const AGX_MAX_EV: f32 = 4.026069;
 
-fn agx(c: [f32; 3]) -> [f32; 3] {
+/// The punchy look's power and saturation, as `null3d::color` has them.
+const AGX_PUNCHY_POWER: f32 = 1.35;
+const AGX_PUNCHY_SATURATION: f32 = 1.4;
+
+/// AgX, with the punchy look after the contrast curve when `punchy` is true.
+fn agx(c: [f32; 3], punchy: bool) -> [f32; 3] {
     let inset = mul(&AGX_INSET, mul(&LINEAR_SRGB_TO_LINEAR_REC2020, c));
-    let curved = inset.map(|v| {
+    let mut curved = inset.map(|v| {
         let x = ((v.max(1e-10).log2() - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV)).clamp(0.0, 1.0);
         let x2 = x * x;
         let x4 = x2 * x2;
         15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x
             - 0.00232
     });
+    if punchy {
+        let looked = curved.map(|v| v.max(0.0).powf(AGX_PUNCHY_POWER));
+        let luma = 0.2126 * looked[0] + 0.7152 * looked[1] + 0.0722 * looked[2];
+        curved = looked.map(|v| luma + AGX_PUNCHY_SATURATION * (v - luma));
+    }
     let rec2020 = mul(&AGX_OUTSET, curved).map(|v| v.max(0.0).powf(2.2));
     mul(&LINEAR_REC2020_TO_LINEAR_SRGB, rec2020).map(|v| v.clamp(0.0, 1.0))
 }
@@ -427,6 +448,26 @@ mod tests {
     }
 
     #[test]
+    fn the_punchy_look_deepens_contrast_and_color_and_keeps_grays_gray() {
+        let gray = ToneMapping::AgxPunchy.apply([0.18; 3]);
+        let plain = ToneMapping::Agx.apply([0.18; 3]);
+        assert!((gray[0] - gray[1]).abs() < 1e-4 && (gray[1] - gray[2]).abs() < 1e-4);
+        assert!(
+            gray[0] < plain[0],
+            "midtones darken: {gray:?} against {plain:?}"
+        );
+        let spread = |c: [f32; 3]| c[0].max(c[1]).max(c[2]) - c[0].min(c[1]).min(c[2]);
+        let warm = [1.0, 0.4, 0.1];
+        assert!(spread(ToneMapping::AgxPunchy.apply(warm)) > spread(ToneMapping::Agx.apply(warm)));
+        assert!(
+            ToneMapping::AgxPunchy
+                .apply([1e6; 3])
+                .iter()
+                .all(|&v| v > 0.99)
+        );
+    }
+
+    #[test]
     fn codes_name_each_operator_once_and_the_shader_library_agrees() {
         let library = include_str!("../../null3d-shaders/wgsl/lib/tonemap.wgsl");
         for mode in ToneMapping::ALL {
@@ -434,7 +475,7 @@ mod tests {
             let line = format!("const {}: u32 = {}u;", mode.shader_name(), mode.code());
             assert!(library.contains(&line), "tonemap.wgsl lacks {line}");
         }
-        assert_eq!(ToneMapping::from_code(4), None);
+        assert_eq!(ToneMapping::from_code(5), None);
         assert_eq!(ToneMapping::default(), ToneMapping::Agx);
         assert_eq!(Output::default().tone_mapping, ToneMapping::Agx);
     }

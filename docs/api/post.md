@@ -25,11 +25,12 @@ export default defineSketch(({ post }) => {
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `toneMapping` | `'aces'`, `'agx'`, `'neutral'` or `'none'` | `'agx'` |
+| `toneMapping` | `'agx'`, `'agx-punchy'`, `'neutral'`, `'aces'` or `'none'` | `'agx'` |
 | `exposure` | A number from 0 up. 2 is one stop brighter, and 0.5 one stop darker. | 1 |
 | `ev100` | The camera's exposure value at ISO 100, for lights in real units: a number from -20 to 30, or `false` for none | `false` |
 
-- The curves use three.js's formulas: `'aces'` for `ACESFilmicToneMapping`, `'agx'` for `AgXToneMapping` and `'neutral'` for `NeutralToneMapping`.
+- The curves use three.js's formulas: `'agx'` for `AgXToneMapping`, `'neutral'` for `NeutralToneMapping` and `'aces'` for `ACESFilmicToneMapping`. `'agx-punchy'` is AgX with Filament's punchy look, which adds contrast and color. three.js has no such curve.
+- `'aces'` serves ports of three.js scenes that set `ACESFilmicToneMapping`. It shifts the hues of bright colors, so new scenes use AgX.
 - `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
 - three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
 - The settings apply to the whole scene, the background included, from the next frame on. A setting that a call leaves out keeps its value.
@@ -314,10 +315,10 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 ### `ToneMapping`
 
 ```ts
-type ToneMapping = 'aces' | 'agx' | 'neutral' | 'none';
+type ToneMapping = 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none';
 ```
 
-How the engine maps the scene's high dynamic range color to the screen, with three.js's formulas. The curves are three.js's `ACESFilmicToneMapping` (`'aces'`), `AgXToneMapping` (`'agx'`) and `NeutralToneMapping` (`'neutral'`). The value `'none'` clips the exposed color at 1, as `LinearToneMapping` does.
+How the engine maps the scene's high dynamic range color to the screen. Three curves use three.js's formulas: `AgXToneMapping` (`'agx'`), `NeutralToneMapping` (`'neutral'`) and `ACESFilmicToneMapping` (`'aces'`). `'agx-punchy'` is AgX with Filament's punchy look, which adds contrast and color. `'aces'` serves ports of three.js scenes that set it. The value `'none'` clips the exposed color at 1, as `LinearToneMapping` does.
 
 ### `VignetteSettings`
 

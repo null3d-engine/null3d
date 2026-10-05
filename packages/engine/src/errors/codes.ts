@@ -139,7 +139,7 @@ const DOCS = {
 		title: 'Invalid setting',
 		cause:
 			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have.',
-		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
 		since: '0.1',
 	},
 	E1214: {

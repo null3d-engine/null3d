@@ -15,19 +15,21 @@ import type { CoreMemory } from './memory';
 import { ShaderPreloads } from './shader-preloads';
 
 /**
- * How the engine maps the scene's high dynamic range color to the screen, with three.js's
- * formulas. The curves are three.js's `ACESFilmicToneMapping` (`'aces'`), `AgXToneMapping`
- * (`'agx'`) and `NeutralToneMapping` (`'neutral'`). The value `'none'` clips the exposed color at
- * 1, as `LinearToneMapping` does.
+ * How the engine maps the scene's high dynamic range color to the screen. Three curves use
+ * three.js's formulas: `AgXToneMapping` (`'agx'`), `NeutralToneMapping` (`'neutral'`) and
+ * `ACESFilmicToneMapping` (`'aces'`). `'agx-punchy'` is AgX with Filament's punchy look, which adds
+ * contrast and color. `'aces'` serves ports of three.js scenes that set it. The value `'none'`
+ * clips the exposed color at 1, as `LinearToneMapping` does.
  *
  * @category api/post
  */
-export type ToneMapping = 'aces' | 'agx' | 'neutral' | 'none';
+export type ToneMapping = 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none';
 
 /** Each tone mapping's code, which the engine core and the shaders share. */
 const CODES: Readonly<Record<ToneMapping, number>> = {
 	aces: C.TONE_MAPPING_ACES,
 	agx: C.TONE_MAPPING_AGX,
+	'agx-punchy': C.TONE_MAPPING_AGX_PUNCHY,
 	neutral: C.TONE_MAPPING_NEUTRAL,
 	none: C.TONE_MAPPING_NONE,
 };
@@ -62,7 +64,7 @@ const AO_SETTINGS = [
 const MAX_AO_SAMPLES = 64;
 const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
 const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
-const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
+const TONE_MAPPINGS = "'agx', 'agx-punchy', 'neutral', 'aces' or 'none'";
 
 /** The lowest and highest EV100 that `post.set` takes. */
 const EV100_MIN = -20;
