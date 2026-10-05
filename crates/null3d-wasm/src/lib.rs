@@ -2662,16 +2662,12 @@ fn write_hits(out: &mut Vec<f64>, hits: &[QueryHit]) -> Result<u32, u32> {
     Ok(hits.len() as u32)
 }
 
-/// A ray from an origin and a direction, which becomes a unit vector, with its far limit.
-fn ray_from(numbers: &[f64], t_max: f64) -> WorldRay {
-    let d = [numbers[3], numbers[4], numbers[5]];
-    let length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    WorldRay {
-        origin: [numbers[0], numbers[1], numbers[2]],
-        direction: d.map(|v| (v / length) as f32),
-        t_min: 0.0,
-        t_max: t_max as f32,
-    }
+/// A ray from an origin and a direction, which becomes a unit vector, with its far limit; `None`
+/// for a ray that is not one, which then hits nothing (see `WorldRay::toward`).
+fn ray_from(numbers: &[f64], t_max: f64) -> Option<WorldRay> {
+    let origin = [numbers[0], numbers[1], numbers[2]];
+    let direction = [numbers[3], numbers[4], numbers[5]];
+    WorldRay::toward(origin, direction).map(|ray| ray.with_max(t_max as f32))
 }
 
 /// The parts of the engine that a query uses, with the scene's trees brought up to date.
@@ -2738,8 +2734,17 @@ pub fn query_arrays(field: u32) -> u32 {
 pub fn reserve_rays(count: u32) -> u32 {
     with_engine(|e| {
         let n = count as usize;
-        let grown = grow_query_array(&mut e.query_rays, n * query::RAY_FLOATS as usize)
-            .and_then(|()| grow_query_array(&mut e.query_hits, n * query::HIT_FLOATS as usize));
+        let floats = |per: u32| {
+            n.checked_mul(per as usize).ok_or_else(|| {
+                core_failure(CoreError::OutOfMemory {
+                    bytes: count.saturating_mul(per.saturating_mul(8)),
+                })
+            })
+        };
+        let grown = floats(query::RAY_FLOATS)
+            .and_then(|len| grow_query_array(&mut e.query_rays, len))
+            .and_then(|()| floats(query::HIT_FLOATS))
+            .and_then(|len| grow_query_array(&mut e.query_hits, len));
         match grown {
             Ok(()) => 0,
             Err(code) => code,
@@ -2752,7 +2757,9 @@ pub fn reserve_rays(count: u32) -> u32 {
 pub fn raycast(kind: u32, layers: u32) -> u32 {
     run_query(|q| {
         let input = q.input;
-        let ray = ray_from(input, input[query::INPUT_LIMIT as usize]);
+        let Some(ray) = ray_from(input, input[query::INPUT_LIMIT as usize]) else {
+            return Ok(0);
+        };
         match kind {
             query::ANY => Ok(u32::from(q.queries.raycast_any(&q.view, &ray, layers))),
             query::ALL => write_hits(q.hits, q.queries.raycast_all(&q.view, &ray, layers)),

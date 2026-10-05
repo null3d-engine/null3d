@@ -269,6 +269,9 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 96u: { return pair(null3d::vertex::mesh_uv(f[0].xy)); }
         case 97u: { return pair(null3d::vertex::mesh_second_uv(f[0].xy)); }
 #endif
+#ifdef COLOR
+        case 98u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
+#endif
         default: { return whole(vec4u(0xffffffffu)); }
     }
 }
