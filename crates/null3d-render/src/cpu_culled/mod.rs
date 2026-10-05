@@ -92,7 +92,9 @@ use null3d_core::culling::{BucketedCull, NO_BUCKET};
 use null3d_core::handle::Handle;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
-use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
+use null3d_gpu::drawlist::{
+    DrawList, MAX_WORDS, Op, format, permutation, sizes, texture_usage, view,
+};
 
 use crate::ao::{self, AoIds};
 use crate::background::BackgroundPass;
@@ -242,8 +244,10 @@ pub struct CpuCulledConfig {
     pub canvas: CanvasOutput,
     /// Materials the table holds, at most [`sizes::MAX_MATERIALS`].
     pub max_materials: u32,
-    /// Words of each frame's draw list.
+    /// Words of room in each frame's draw list at the start. A list grows when a frame needs more.
     pub draw_list_words: usize,
+    /// The most words that a frame's draw list grows to. A frame that needs more fails.
+    pub draw_list_limit: usize,
     /// The device's largest texture width and height; WebGL2 allows at least 2,048.
     pub max_texture_size: u32,
     /// True when the device has `WEBGL_multi_draw`.
@@ -264,6 +268,7 @@ impl Default for CpuCulledConfig {
             canvas: CanvasOutput::default(),
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 64 * 1024,
+            draw_list_limit: MAX_WORDS,
             max_texture_size: 2048,
             multi_draw: false,
             cell_culling: true,
@@ -374,7 +379,7 @@ impl CpuCulledRenderer {
                 textures,
                 config.canvas,
             ),
-            lists: ParityLists::new(config.draw_list_words),
+            lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
             graph: {
@@ -970,9 +975,6 @@ impl CpuCulledRenderer {
         }
         self.add_culled_views()?;
         let views = self.settings.views().len();
-        list.reserve_words(
-            self.config.draw_list_words + Transparent::words_bound(&self.sorted, views),
-        );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         self.lines.request_pipeline(
@@ -1421,10 +1423,9 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
-        let (mut list, mut arena) = self.lists.take(input.frame);
+        let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
-        self.lists.restore(input.frame, list, arena);
-        result
+        self.lists.restore(input.frame, list, arena, result)
     }
 
     fn visible_entries(&self, frame: u32) -> Option<u32> {
@@ -1452,6 +1453,7 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn reset_gpu(&mut self) {
+        self.lists.reset_gpu();
         self.created = false;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
