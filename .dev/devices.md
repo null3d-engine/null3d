@@ -404,7 +404,8 @@ The tables say which GPU paths each device should offer. These rules come from [
 
 - Core WebGPU: Chrome, Edge and Samsung Internet on Android 12 and later with Qualcomm Adreno or ARM Mali GPUs. Chrome also allows the Pixel 10's PowerVR GPU, with [known driver faults](https://github.com/playcanvas/engine/issues/8874). Safari 26 and later on iOS, iPadOS and macOS. Chrome and Edge on Windows and macOS with a GPU. Firefox on Windows, and on Apple silicon Macs.
 - Compatibility mode only: Chrome on older GPUs whose adapter lacks core WebGPU's features, such as the Adreno 610.
-- WebGL2 only: Android 10 and 11, Samsung's Xclipse GPUs, older PowerVR GPUs and Firefox on Android. Also iOS 17 and 18, and Safari 16.4 to 18 on macOS.
+- WebGL2 only: Android 10 and 11, Samsung's Xclipse GPUs, older PowerVR GPUs and Firefox on Android. Also iOS 18, and Safari 18 on macOS.
+- Not supported: Safari 17 and older, since 5 October 2026 ([D-64](decisions/D-64-minimum-browsers.md)). The engine refuses to start there with a clear start error.
 - A clear failure: Safari before 16.4, Chrome before 91 and Firefox before 89 lack WebAssembly SIMD, so the engine stops with E1303. A browser without any GPU path stops with E1301.
 
 ### Time per device
@@ -443,7 +444,7 @@ Tier B covers low memory, the other browser engines, more GPU lines and desktop 
 | Device | System | Browser | GPU | Expected paths | Why | Minutes |
 | --- | --- | --- | --- | --- | --- | --- |
 | iPad 10th | iPadOS 27 | Safari | Apple A14, 4 GB | WebGPU, compatibility mode, WebGL2 | WebGPU with little memory | 15 |
-| iPhone 13 | iOS 17 | Safari | Apple A15, 4 GB | WebGL2 | iOS 17, with little memory | 10 |
+| iPhone 13 | iOS 18 | Safari | Apple A15, 4 GB | WebGL2 | The oldest supported Safari on iPhones, with little memory. It ran iOS 17 until the owner ruled Safari 17 out ([D-64](decisions/D-64-minimum-browsers.md)) | 10 |
 | iPhone 17 | iOS 26 | Chrome | Apple A19 | WebGPU, compatibility mode, WebGL2 | One iOS browser other than Safari, as a check of WebKit | 12 |
 | Galaxy S24 | Android 16 | Chrome | Xclipse 940 or Adreno 750, by region | WebGL2 on Xclipse | Samsung's AMD-based GPU on the newest Android | 10 |
 | Galaxy S25 | Android 15 | Edge | Adreno 830 | WebGPU, compatibility mode, WebGL2 | Edge on Android | 12 |
@@ -461,13 +462,13 @@ Tier B covers low memory, the other browser engines, more GPU lines and desktop 
 
 ### Tier C: once
 
-Tier C covers the oldest systems: the WebGL2 path on old drivers, and the clear failure where the engine cannot run. Run it once, and again when the engine's startup checks change. It takes about 1 hour 40 minutes.
+Tier C covers the oldest systems: the WebGL2 path on old drivers, and the clear failure where the engine cannot run. Run it once, and again when the engine's startup checks change. It takes about 1 hour 30 minutes.
 
 | Device | System | Browser | GPU | Expected result | Why | Minutes |
 | --- | --- | --- | --- | --- | --- | --- |
 | iPhone SE 2022 | iOS 15 | Safari | Apple A15 | E1303 | Safari 15 has no WebAssembly SIMD | 5 |
 | iPhone 12 | iOS 14 | Safari | Apple A14 | E1303, or the page cannot run | An old WebKit | 5 |
-| iPad 8th | iPadOS 16 | Safari | Apple A12, 3 GB | WebGL2 from 16.4, E1303 before it | The oldest iPad in the list, with little memory | 8 |
+| iPad 8th | iPadOS 16 | Safari | Apple A12, 3 GB | The start error for Safari before 18 from 16.4, E1303 before it | The oldest iPad in the list, below the minimum Safari | 5 |
 | Galaxy S20 | Android 10 | Chrome | Mali-G77 or Adreno 650 | WebGL2 | The oldest Android with a current Chrome | 8 |
 | Vivo Y21 | Android 11 | Chrome | PowerVR GE8320, 4 GB | WebGL2 | An old PowerVR driver | 8 |
 | Nexus 5 | Android 5.0 | Chrome | Adreno 330 | A clear failure | The oldest Android in the list | 5 |
@@ -475,7 +476,7 @@ Tier C covers the oldest systems: the WebGL2 path on old drivers, and the clear 
 | Windows 11 | Windows 11 | Firefox 88 | Not published | E1303 | Firefox before WebAssembly SIMD | 3 |
 | Windows 11 | Windows 11 | Firefox 140 | Not published | WebGL2, with threads that wake by messages | Firefox before WebGPU and `Atomics.waitAsync` | 10 |
 | macOS Monterey | macOS 12 | Safari 15.6 | Not published | E1303 | Desktop Safari before WebAssembly SIMD | 3 |
-| macOS Ventura | macOS 13 | Safari 16.5 | Not published | WebGL2 | The oldest desktop Safari that runs the engine | 8 |
+| macOS Ventura | macOS 13 | Safari 16.5 | Not published | The start error for Safari before 18 | Desktop Safari with WebAssembly SIMD, below the minimum Safari | 3 |
 
 - Where the engine should draw, run the smoke plan with `--allow-no-webgpu`.
 - Where it should fail, run only the pages that start the engine, with no skip flags: `--plan smoke --only capabilities,restarts-pipelined,restarts-single-threaded`. Each page must fail at once with the error in the table, not wait until its time limit.
