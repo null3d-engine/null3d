@@ -59,7 +59,10 @@ export interface CubeGenerator {
 interface Kept {
 	programs: Record<Pipeline, WebGLProgram>;
 	sampler: WebGLSampler;
-	/** The texture unit of the source. Each program reads only the source, so all share it. */
+	/**
+	 * The texture unit of the source. The programs that read a texture read only the source, so
+	 * they share it. The trace reads none.
+	 */
 	unit: number;
 }
 
@@ -101,7 +104,7 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 		const programs = {} as Record<Pipeline, WebGLProgram>;
 		for (const pipeline of pipelines)
 			programs[pipeline] = host.program({ shader: variants, pipeline });
-		made = { programs, sampler: makeSampler(gl), unit: host.unit(programs.trace, 0, 1) };
+		made = { programs, sampler: makeSampler(gl), unit: host.unit(programs.blur, 0, 1) };
 		kept.set(gl, made);
 		return made;
 	};
@@ -118,7 +121,7 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 					kept.set(gl, {
 						programs,
 						sampler: makeSampler(gl),
-						unit: host.unit(programs.trace, 0, 1),
+						unit: host.unit(programs.blur, 0, 1),
 					});
 			});
 			preparing.set(gl, ready);
