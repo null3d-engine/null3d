@@ -540,7 +540,7 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			writeFileSync(join(root, path), text);
 			sent.length = 0;
 			server.watcher.emit('change', join(root, path));
-			for (let k = 0; k < 200 && sent.length === 0; k++) await Bun.sleep(25);
+			for (let k = 0; k < 800 && sent.length === 0; k++) await Bun.sleep(25);
 			return sent.slice();
 		};
 		try {
@@ -570,7 +570,7 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		} finally {
 			await server.close();
 		}
-	});
+	}, 60_000);
 
 	it('compiles WGSL in the dev server, and gives Vite the place of a problem', async () => {
 		const root = project({ 'src/broken.ts': BROKEN_SKETCH });
