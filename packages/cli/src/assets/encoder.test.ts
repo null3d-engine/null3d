@@ -166,7 +166,9 @@ describe('the images', () => {
 		]);
 		expect(textureSize(4096, 1024, 2048)).toEqual([2048, 512]);
 		expect(textureSize(96, 48, 2048)).toEqual([128, 64]);
-		expect(textureSize(8, 4000, 512)).toEqual([1, 512]);
+		expect(textureSize(8, 4000, 512)).toEqual([4, 512]);
+		// Each side is a whole number of the compressed formats' 4 x 4 blocks.
+		expect(textureSize(1, 2, 2048)).toEqual([4, 4]);
 	});
 
 	it('turn every sRGB value into linear light and back unchanged', () => {

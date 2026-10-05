@@ -71,6 +71,7 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let quality = ShadowQuality {
         filter: 3,
         far_interval: 2,
+        follow_movers: true,
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
     let shadow = SunShadow {
@@ -105,8 +106,10 @@ fn recording_frames_with_shadows_allocates_nothing() {
 
 /// Records warm-up frames of `world` with two spot lights and a point light that cast shadows into
 /// a shadow atlas of seven tiles, which the near spot light takes in turn from the others as it
-/// moves, then frames in which a caster moves within the lights' reach and out of it, still frames, and frames whose structure changes, and returns
-/// what those allocated.
+/// moves, then frames in which a caster moves within the lights' reach and out of it and changes
+/// its layers, a skinned caster below the point light plays its clip, the far spot light's
+/// shadows turn off and on, still frames, and frames whose structure changes, and returns what
+/// those allocated.
 fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
     let commands: Vec<Command> = world
@@ -124,27 +127,41 @@ fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             point_shadows: true,
         });
     let near = world.add_spot([-3.0, 4.0, 0.0], 6.0);
-    world.add_spot([3.0, 4.0, 0.0], 6.0);
+    let far = world.add_spot([3.0, 4.0, 0.0], 6.0);
     world.add_point([0.0, 3.0, -2.0], 5.0);
+    world.add_skinned([0.0, 0.0, -2.0]);
     let mover = world.objects[0];
+    // Returns true when the frame's commands change the structure.
     let step = |world: &mut World<B>, frame: u32| {
         // The near light moves toward the camera and back, so the two lights swap the tile.
         let z = if frame % 8 < 4 { 0.0 } else { 15.0 };
         world.scene.set_position(near, [-3.0, 4.0, z]).unwrap();
         let x = if frame.is_multiple_of(3) { -3.0 } else { 30.0 };
         world.scene.set_position(mover, [x, 0.0, 0.0]).unwrap();
+        let layers = if frame % 10 < 5 { 1 } else { 0b10 };
+        let casts = if frame % 14 < 7 {
+            flags::CAST_SHADOWS
+        } else {
+            0
+        };
+        let commands = [
+            Command::set_layers(mover, layers),
+            Command::set_flags(far, flags::CAST_SHADOWS, casts),
+        ];
+        world.scene.apply_commands(&commands, frame).unwrap();
+        world.scene.take_structure_changed()
     };
     world.record(true);
-    for frame in 2..=16 {
-        step(&mut world, frame);
+    for frame in 2..=30 {
+        let structure = step(&mut world, frame);
         world.frame = frame;
-        world.record(frame > 12);
+        world.record(structure || frame > 26);
     }
     CountingAllocator::arm();
-    for frame in 17..=120 {
-        step(&mut world, frame);
+    for frame in 31..=150 {
+        let structure = step(&mut world, frame);
         world.frame = frame;
-        world.record(frame.is_multiple_of(20));
+        world.record(structure || frame.is_multiple_of(20));
     }
     CountingAllocator::disarm()
 }

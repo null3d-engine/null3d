@@ -88,11 +88,6 @@ export function wakeWaiters(): void {
 	for (let resolve = waiters.pop(); resolve; resolve = waiters.pop()) resolve();
 }
 
-/** Ends this thread's waits at each message that comes through `port`. */
-export function wakeFrom(port: MessagePort): void {
-	port.onmessage = wakeWaiters;
-}
-
 /**
  * Wakes the threads that wait for a slot, after this thread changed it. With wake messages, it also
  * ends this thread's own waits, and sends a wake message through `to`, where another thread runs the

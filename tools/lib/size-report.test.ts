@@ -224,7 +224,7 @@ describe('budgetProblems', () => {
 			[morph, { raw: 0, brotli: ON_DEMAND_SHADER_BUDGET_BYTES + 1 }],
 		]);
 		expect(budgetProblems(over, downloads, later, [morph])).toEqual([
-			'js/shaders-glsl-morph.js, the shader builds of a feature that loads on demand, is 24,577 bytes after Brotli, over its 24 KB budget',
+			'js/shaders-glsl-morph.js, the shader builds of a feature that loads on demand, is 32,769 bytes after Brotli, over its 32 KB budget',
 		]);
 	});
 

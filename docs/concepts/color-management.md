@@ -17,12 +17,12 @@ flowchart LR
     maps["Color maps:<br/>sRGB textures"] -->|"decoded as the GPU samples them"| linear
     data["Data maps:<br/>linear textures"] -->|"read as they are"| linear
     linear["Linear color"] --> light["Lighting"] --> scene[("HDR scene color")]
-    scene --> final["Final pass: exposure, tone mapping,<br/>sRGB encoding, dithering"] --> canvas[("Canvas")]
+    scene --> final["Final pass: tone mapping,<br/>sRGB encoding, dithering"] --> canvas[("Canvas")]
 ```
 
 null3D works in linear color, as three.js does with its color management on. A color that you give as a hex string or a number is sRGB, the way CSS writes colors. The engine converts it to linear once, when the call receives it. A color that you give as three numbers is linear already.
 
-Lighting adds and scales light in linear color, so a lit surface can be brighter than white. The scene therefore draws into a high dynamic range (HDR) target. At the end of each frame, the final pass scales the color by the exposure. A tone mapping curve then maps it into the display's range, and the pass encodes it as sRGB for the canvas.
+Lighting adds and scales light in linear color, so a lit surface can be brighter than white. The scene therefore draws into a high dynamic range (HDR) target. Each light and each color of the scene comes in scaled by the exposure. At the end of each frame, a tone mapping curve maps it into the display's range. The final pass then encodes it as sRGB for the canvas.
 
 ## Colors in the API
 
@@ -60,11 +60,11 @@ A strong light can make a surface many times brighter than white. The scene keep
 - `rgba16float` on WebGPU. Where the device can draw into `rg11b10ufloat` and the canvas is opaque, the scene color takes that format instead, which needs half the memory.
 - `RGBA16F` on WebGL2, where the device can draw float targets in the anti-aliasing mode.
 
-The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It multiplies the color by the exposure and applies the tone mapping. It then encodes the result as sRGB and adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it.
+The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It applies the tone mapping to the exposed color. It then encodes the result as sRGB and adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it.
 
 ### The 8-bit path
 
-Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the exposure and the tone mapping itself, and writes into an 8-bit target. With MSAA that target resolves straight into the canvas, so the frame has no final pass. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
+Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the tone mapping itself, and writes into an 8-bit target. With MSAA that target resolves straight into the canvas, so the frame has no final pass. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
 
 Effects that need HDR color, such as bloom, move compatibility mode to HDR color with FXAA when a sketch turns them on. On a WebGL2 device with no float target they stay off. [The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color) explains both.
 
@@ -88,7 +88,7 @@ export default defineSketch(({ post }) => {
 | `'neutral'` | `NeutralToneMapping` | Base colors keep their values until they near white. Khronos made it for product images. |
 | `'none'` | `LinearToneMapping` | The exposed color, clipped at white. A bright color loses detail once a channel reaches white. |
 
-The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine uses three.js's formulas for each curve, so a scene looks the same in both engines with the same settings.
+The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine applies it to each light and each color as they enter the scene. That gives the same picture as scaling the finished color, and keeps scenes in real units inside the range of the HDR target. [Lighting and environment](lighting.md#units-and-exposure) explains it. The engine uses three.js's formulas for each curve, so a scene looks the same in both engines with the same settings.
 
 ## The background
 

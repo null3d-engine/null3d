@@ -5,6 +5,7 @@ import { decode } from 'fast-png';
 import { featureImagePath } from '../../tests/image/manifest.ts';
 import {
 	BENCH_SCENES,
+	BLOOM_STRONG_MAX_DIFFERENT_PERCENT,
 	compareFrames,
 	compareImages,
 	comparisonName,
@@ -259,8 +260,11 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the shadows, the strong bloom, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
+		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
+		expect(featureScene('bloom-strong')?.limit).toBe(BLOOM_STRONG_MAX_DIFFERENT_PERCENT);
+		expect(featureScene('bloom-soft')?.limit).toBeUndefined();
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		expect(featureScene('outline-hidden')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
@@ -270,6 +274,7 @@ describe('feature scenes', () => {
 			'gltf-meshopt-ext',
 			'shadows',
 			'morph',
+			'bloom-strong',
 			'ao-default',
 			'ao-wide',
 			'outline-plain',

@@ -306,6 +306,8 @@ export class Textures {
 		private readonly ownBudget: () => void = () => {},
 		/** Resolves once the thread that draws holds every image and generator up to an id. */
 		private readonly arrived: (id: number) => Promise<void> = async () => {},
+		/** @internal True when the engine draws with WebGL2. */
+		readonly webgl2 = false,
 	) {}
 
 	/**
