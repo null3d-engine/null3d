@@ -1,5 +1,6 @@
 // Cancels two starts of the engine, one before the GPU probe finishes and one once the core is
-// ready, and reports how each rejected. Then starts an engine on a fresh canvas, which must run.
+// ready, and reports how each rejected. Then starts an engine on a fresh canvas, which must run, and
+// takes the canvases off the page, so no worker keeps one.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -43,5 +44,7 @@ run('abort', async () => {
 	await engine.firstFrame;
 	const stats = await engine.measure(0.5);
 	await engine.destroy();
+	// A worker that drew keeps its canvas for the next engine while the canvas is on the page.
+	for (const canvas of document.querySelectorAll('canvas')) canvas.remove();
 	return { early, late, framesAfter: stats.frames };
 });

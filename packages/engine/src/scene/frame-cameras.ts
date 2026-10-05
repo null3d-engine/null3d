@@ -12,7 +12,7 @@
 // made once, so neither call nor the per-frame record allocates.
 
 import type { Vec3Like } from '../math/types';
-import { type ControlViews, Slot } from '../shared/control';
+import { type ControlViews, frameAfter, previousFrame, Slot } from '../shared/control';
 import type { CoreMemory } from './memory';
 
 /**
@@ -131,7 +131,7 @@ export class FrameCameras {
 		let at = this.newest * ENTRY;
 		if (
 			this.newest >= 0 &&
-			ring[at + LAST] === frame - 1 &&
+			ring[at + LAST] === previousFrame(frame) &&
 			this.ringCameras[this.newest] === drawn &&
 			(drawn === undefined || sameView(ring, at, incoming))
 		) {
@@ -185,11 +185,15 @@ export class FrameCameras {
 	 * `camera`, or from any camera when `camera` is undefined; otherwise -1.
 	 */
 	private entryOf(frame: number, camera: FrameLens | undefined): number {
-		if (frame < 0) return -1;
+		if (frame === NO_FRAME) return -1;
 		const { ring } = this;
 		for (let index = 0; index < RING_VIEWS; index++) {
 			const at = index * ENTRY;
-			if (frame < (ring[at + FIRST] as number) || frame > (ring[at + LAST] as number)) continue;
+			if (
+				frameAfter(ring[at + FIRST] as number, frame) ||
+				frameAfter(frame, ring[at + LAST] as number)
+			)
+				continue;
 			const drawn = this.ringCameras[index];
 			return drawn !== undefined && (camera === undefined || drawn === camera) ? at : -1;
 		}
