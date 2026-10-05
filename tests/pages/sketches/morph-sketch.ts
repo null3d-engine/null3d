@@ -4,7 +4,8 @@
 // them too. ?capped draws the weights that WebGL2 keeps at a cap of two targets per object, which
 // the cap's image test compares with. ?names sets the weights by the targets' names. ?closeup
 // looks at the third sphere from close by, where a step of the deltas' half floats would show.
-// ?tone=none
+// ?late adds the spheres during play, on the page's 'spheres' message, and posts 'added' once
+// their pipelines are built: the first morphed mesh needs its shader file. ?tone=none
 // turns off the engine's default of ACES, as the parity test asks: the three.js twin draws with no
 // tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
@@ -24,8 +25,9 @@ const params = new URL(import.meta.url).searchParams;
 const SHADOWS = params.has('shadows');
 const CAPPED = params.has('capped');
 const NAMES = params.has('names');
+const LATE = params.has('late');
 
-export default defineSketch(({ scene, materials, geometry, post }) => {
+export default defineSketch(({ scene, materials, geometry, post, page }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	const camera = params.has('closeup') ? MORPH_CLOSEUP_CAMERA : MORPH_CAMERA;
@@ -54,17 +56,28 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 		indices,
 		morphTargets: { positions: positionDeltas, normals: normalDeltas, names: [...TARGET_NAMES] },
 	});
-	for (const sphere of SPHERES) {
-		const object = scene.createMesh({
-			mesh,
-			material: materials.standard({ color: sphere.color }),
-			position: [...sphere.position],
-			castShadows: SHADOWS,
-			receiveShadows: SHADOWS,
-		});
-		const weights = CAPPED ? cappedWeights(sphere.weights, 2) : sphere.weights;
-		weights.forEach((weight, k) => {
-			object.setMorphWeight(NAMES ? (TARGET_NAMES[k] as string) : k, weight);
-		});
+	const addSpheres = () => {
+		for (const sphere of SPHERES) {
+			const object = scene.createMesh({
+				mesh,
+				material: materials.standard({ color: sphere.color }),
+				position: [...sphere.position],
+				castShadows: SHADOWS,
+				receiveShadows: SHADOWS,
+			});
+			const weights = CAPPED ? cappedWeights(sphere.weights, 2) : sphere.weights;
+			weights.forEach((weight, k) => {
+				object.setMorphWeight(NAMES ? (TARGET_NAMES[k] as string) : k, weight);
+			});
+		}
+	};
+	if (!LATE) {
+		addSpheres();
+		return;
 	}
+	page.onMessage((message) => {
+		if (message !== 'spheres') return;
+		addSpheres();
+		void scene.warmUp().then(() => page.post('added', null));
+	});
 });

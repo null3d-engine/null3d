@@ -514,14 +514,14 @@ impl BloomPass {
         step_draws(step, self.levels, self.active)
     }
 
-    /// Asks `pipelines` for the pipelines of the steps down and up, once.
-    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
-        if self.pipelines.is_none() {
-            self.pipelines = Some((
+    /// Asks `pipelines` for the pipelines of the steps down and up, once, and returns their ids.
+    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) -> (u32, u32) {
+        *self.pipelines.get_or_insert_with(|| {
+            (
                 pipelines.id(pipeline(FORMAT, false)),
                 pipelines.id(pipeline(FORMAT, true)),
-            ));
-        }
+            )
+        })
     }
 
     /// Makes the buffer and the sampler when the GPU lacks them, writes and uploads the settings

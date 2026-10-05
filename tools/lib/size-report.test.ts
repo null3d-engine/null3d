@@ -5,21 +5,41 @@ import {
 	DOWNLOADS,
 	downloadSizes,
 	ENGINE_SOURCE,
+	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findTranscoderFiles,
-	LATER_BUDGET_BYTES,
+	isFirstUseShaderPart,
+	LATER_BUDGET,
 	LATER_PARTS,
 	measure,
-	ON_DEMAND_SHADER_BUDGET_BYTES,
 	REPORTED_FILES,
-	START_BUDGET_BYTES,
+	type SizeEntry,
+	START_BUDGET,
 } from './size-report';
 
+/** A size with the same figure in each column, or a figure for each. */
+const size = (raw: number, gzip = raw, brotli = raw): SizeEntry => ({ raw, gzip, brotli });
+
 describe('measure', () => {
-	it('measures raw and Brotli sizes', () => {
-		const size = measure(Buffer.alloc(10_000, 7));
-		expect(size.raw).toBe(10_000);
-		expect(size.brotli).toBeLessThan(100);
+	it('measures raw, gzip and Brotli sizes', () => {
+		const measured = measure(Buffer.alloc(10_000, 7));
+		expect(measured.raw).toBe(10_000);
+		expect(measured.gzip).toBeLessThan(100);
+		expect(measured.brotli).toBeLessThan(100);
+	});
+
+	it("finds repeats beyond gzip's 32 KB window only with Brotli", () => {
+		let seed = 1;
+		const noise = () => {
+			seed ^= seed << 13;
+			seed ^= seed >>> 17;
+			seed ^= seed << 5;
+			return seed & 0xff;
+		};
+		const block = Buffer.from(Array.from({ length: 40_000 }, noise));
+		const measured = measure(Buffer.concat([block, block]));
+		expect(measured.gzip).toBeGreaterThan(70_000);
+		expect(measured.brotli).toBeLessThan(measured.gzip / 1.8);
 	});
 });
 
@@ -115,19 +135,37 @@ describe('findEngineParts', () => {
 
 	it("names each file of the shader build's device modules after its module, by its largest copy", () => {
 		const shaders = ['shaders-wgsl.js', 'shaders-glsl.js'];
-		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.ts'], 'wgsl');
-		const wgslCopy = built('shaders-wgsl-W1.js', ['generated/shaders-wgsl.ts'], 'wgsl, longer');
-		const glsl = built('shaders-glsl-W2.js', ['generated/shaders-glsl.ts'], 'glsl');
+		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.js'], 'wgsl');
+		const wgslCopy = built('shaders-wgsl-W1.js', ['generated/shaders-wgsl.js'], 'wgsl, longer');
+		const glsl = built('shaders-glsl-W2.js', ['generated/shaders-glsl.js'], 'glsl');
 		const files = [page, pageRenderer, worker, workerRenderer, wgsl, glsl, wgslCopy];
 		const found = findEngineParts(files, parts, shaders);
 		expect([...found].slice(4).map(([name, file]) => [name, file.file])).toEqual([
 			['shaders-wgsl.js', 'shaders-wgsl-W1.js'],
 			['shaders-glsl.js', 'shaders-glsl-W2.js'],
 		]);
-		const skin = built('shaders-glsl-skin-W3.js', ['generated/shaders-glsl-skin.ts']);
+		const skin = built('shaders-glsl-skin-W3.js', ['generated/shaders-glsl-skin.js']);
 		expect(() => findEngineParts([...files, skin], parts, shaders)).toThrow(
 			"shaders-glsl-skin-W3.js holds the shader build's module of shaders-glsl-skin.js, which the size report does not name",
 		);
+	});
+
+	it("names the files of each feature's shader modules after their modules, after the start's", () => {
+		const shaders = ['shaders-wgsl.js'];
+		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.js'], 'wgsl');
+		const bloom = built('shaders-bloom-wgsl-P2.js', ['generated/shaders-bloom-wgsl.js'], 'b');
+		const sprites = built(
+			'shaders-sprites-glsl-draw-index-P3.js',
+			['generated/shaders-sprites-glsl-draw-index.js'],
+			's',
+		);
+		const files = [page, pageRenderer, worker, workerRenderer, sprites, wgsl, bloom];
+		const found = findEngineParts(files, parts, shaders);
+		expect([...found.keys()].slice(4)).toEqual([
+			'shaders-wgsl.js',
+			'shaders-bloom-wgsl.js',
+			'shaders-sprites-glsl-draw-index.js',
+		]);
 	});
 
 	it("fails when a part's file also holds a page's own code", () => {
@@ -138,36 +176,66 @@ describe('findEngineParts', () => {
 	});
 });
 
+describe('isFirstUseShaderPart', () => {
+	it("is true for a feature's shader modules and false for the start's", () => {
+		for (const part of [
+			'shaders-sprites-glsl-draw-index.js',
+			'shaders-bloom-wgsl.js',
+			'shaders-occlusion-culling-wgsl-half.js',
+		])
+			expect(isFirstUseShaderPart(part)).toBe(true);
+		for (const part of [
+			'shaders-wgsl.js',
+			'shaders-glsl-draw-index-tone-map.js',
+			'shaders-glsl-skin.js',
+			'shaders.js',
+		])
+			expect(isFirstUseShaderPart(part)).toBe(false);
+	});
+});
+
 describe('downloadSizes', () => {
 	it("adds up each mode's parts, and counts a part the build lacks as nothing", () => {
 		const sizes = new Map([
-			['page.js', { raw: 100, brotli: 40 }],
-			['worker.js', { raw: 50, brotli: 20 }],
+			['page.js', size(100, 50, 40)],
+			['worker.js', size(50, 25, 20)],
 		]);
 		const downloads = [
 			{ mode: 'both', parts: ['page.js', 'worker.js'], shaders: 'shaders-' },
 			{ mode: 'page only', parts: ['page.js', 'page-renderer.js'], shaders: 'shaders-' },
 		];
 		expect(downloadSizes(sizes, downloads)).toEqual([
-			{ mode: 'both', size: { raw: 150, brotli: 60 } },
-			{ mode: 'page only', size: { raw: 100, brotli: 40 } },
+			{ mode: 'both', size: size(150, 75, 60) },
+			{ mode: 'page only', size: size(100, 50, 40) },
 		]);
 	});
 
-	it('adds the largest of the shader parts that a mode may load', () => {
+	it('adds the largest of the shader parts that a mode may load, in each column', () => {
 		const sizes = new Map([
-			['page.js', { raw: 100, brotli: 40 }],
-			['shaders-wgsl.js', { raw: 30, brotli: 5 }],
-			['shaders-glsl.js', { raw: 60, brotli: 9 }],
-			['shaders-glsl-draw-index.js', { raw: 61, brotli: 10 }],
+			['page.js', size(100, 50, 40)],
+			['shaders-wgsl.js', size(30, 8, 5)],
+			['shaders-glsl.js', size(60, 21, 9)],
+			['shaders-glsl-draw-index.js', size(61, 20, 10)],
 		]);
 		const downloads = [
 			{ mode: 'WebGPU', parts: ['page.js'], shaders: 'shaders-wgsl' },
 			{ mode: 'WebGL2', parts: ['page.js'], shaders: 'shaders-glsl' },
 		];
 		expect(downloadSizes(sizes, downloads)).toEqual([
-			{ mode: 'WebGPU', size: { raw: 130, brotli: 45 } },
-			{ mode: 'WebGL2', size: { raw: 161, brotli: 50 } },
+			{ mode: 'WebGPU', size: size(130, 58, 45) },
+			{ mode: 'WebGL2', size: size(161, 71, 50) },
+		]);
+	});
+
+	it("counts no feature's shader module, which loads on first use", () => {
+		const sizes = new Map([
+			['page.js', size(100, 50, 40)],
+			['shaders-wgsl.js', size(30, 8, 5)],
+			['shaders-sprites-wgsl.js', size(90, 30, 20)],
+		]);
+		const downloads = [{ mode: 'pipelined', parts: ['page.js'], shaders: 'shaders-' }];
+		expect(downloadSizes(sizes, downloads)).toEqual([
+			{ mode: 'pipelined', size: size(130, 58, 45) },
 		]);
 	});
 });
@@ -195,45 +263,60 @@ describe('LATER_PARTS', () => {
 describe('budgetProblems', () => {
 	const downloads = [{ mode: 'pipelined', parts: ['page.js', 'worker.js'], shaders: 'shaders-' }];
 	const later = [{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page.js' }];
-	const sizes = (start: number, chunk: number) =>
+	/** Sizes whose start and later part are `start` and `chunk` in each column. */
+	const sizes = (start: SizeEntry, chunk: SizeEntry) =>
 		new Map([
-			['page.js', { raw: 0, brotli: start - 1000 }],
-			['worker.js', { raw: 0, brotli: 600 }],
-			['shaders-wgsl.js', { raw: 0, brotli: 400 }],
-			['page-gltf.js', { raw: 0, brotli: chunk }],
+			['page.js', size(start.raw - 1000, start.gzip - 1000, start.brotli - 1000)],
+			['worker.js', size(600)],
+			['shaders-wgsl.js', size(400)],
+			['page-gltf.js', chunk],
 		]);
-
-	it('passes a start and a later part at their budgets', () => {
-		expect(START_BUDGET_BYTES).toBe(140 * 1024);
-		expect(LATER_BUDGET_BYTES).toBe(16 * 1024);
-		expect(budgetProblems(sizes(START_BUDGET_BYTES, LATER_BUDGET_BYTES), downloads, later)).toEqual(
-			[],
+	const plus = (budget: SizeEntry, extra: Partial<SizeEntry>) =>
+		size(
+			budget.raw + (extra.raw ?? 0),
+			budget.gzip + (extra.gzip ?? 0),
+			budget.brotli + (extra.brotli ?? 0),
 		);
-	});
 
-	it('holds shader modules of on-demand features to their own budget, which no start counts', () => {
-		const morph = 'shaders-glsl-morph.js';
-		const within = new Map([
-			...sizes(START_BUDGET_BYTES, 0),
-			[morph, { raw: 0, brotli: ON_DEMAND_SHADER_BUDGET_BYTES }],
-		]);
-		expect(budgetProblems(within, downloads, later, [morph])).toEqual([]);
-		expect(downloadSizes(within, downloads)[0]?.size.brotli).toBe(START_BUDGET_BYTES);
-		const over = new Map([
-			...within,
-			[morph, { raw: 0, brotli: ON_DEMAND_SHADER_BUDGET_BYTES + 1 }],
-		]);
-		expect(budgetProblems(over, downloads, later, [morph])).toEqual([
-			'js/shaders-glsl-morph.js, the shader builds of a feature that loads on demand, is 24,577 bytes after Brotli, over its 24 KB budget',
-		]);
+	it("passes a start and a later part at their budgets, with the owner's Brotli figures", () => {
+		expect(START_BUDGET.brotli).toBe(140 * 1024);
+		expect(LATER_BUDGET.brotli).toBe(16 * 1024);
+		expect(budgetProblems(sizes(START_BUDGET, LATER_BUDGET), downloads, later)).toEqual([]);
 	});
 
 	it('names a start over its budget, and a later part over its own, which no start counts', () => {
 		expect(
-			budgetProblems(sizes(START_BUDGET_BYTES + 1, LATER_BUDGET_BYTES + 1), downloads, later),
+			budgetProblems(
+				sizes(plus(START_BUDGET, { brotli: 1 }), plus(LATER_BUDGET, { brotli: 1 })),
+				downloads,
+				later,
+			),
 		).toEqual([
 			'the engine JavaScript that a page downloads at its start in pipelined mode is 143,361 bytes after Brotli, over its 140 KB budget',
 			'js/page-gltf.js, which loads after the start, is 16,385 bytes after Brotli, over its 16 KB budget',
+		]);
+	});
+
+	it('names each column over its budget: gzip for gzip hosts, raw for hosts that send files as they are', () => {
+		const problems = budgetProblems(
+			sizes(plus(START_BUDGET, { gzip: 1 }), plus(LATER_BUDGET, { raw: 1 })),
+			downloads,
+			later,
+		);
+		expect(problems).toEqual([
+			`the engine JavaScript that a page downloads at its start in pipelined mode is ${(START_BUDGET.gzip + 1).toLocaleString('en-US')} bytes after gzip, over its ${START_BUDGET.gzip / 1024} KB budget`,
+			`js/page-gltf.js, which loads after the start, is ${(LATER_BUDGET.raw + 1).toLocaleString('en-US')} bytes uncompressed, over its ${LATER_BUDGET.raw / 1024} KB budget`,
+		]);
+	});
+
+	it("names a feature's shader module over its budget in a column, which no start counts", () => {
+		expect(FIRST_USE_SHADER_BUDGET.brotli).toBe(24 * 1024);
+		const within = sizes(START_BUDGET, LATER_BUDGET);
+		within.set('shaders-bloom-wgsl.js', FIRST_USE_SHADER_BUDGET);
+		expect(budgetProblems(within, downloads, later)).toEqual([]);
+		within.set('shaders-bloom-wgsl.js', plus(FIRST_USE_SHADER_BUDGET, { brotli: 1 }));
+		expect(budgetProblems(within, downloads, later)).toEqual([
+			'js/shaders-bloom-wgsl.js, the shader builds of a feature that loads on first use, is 24,577 bytes after Brotli, over its 24 KB budget',
 		]);
 	});
 });

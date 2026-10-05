@@ -4,7 +4,8 @@
 
 import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
-import { type Build, coreUrls, type MemoryLimits } from '../shared/core';
+import { type Build, coreUrls } from '../shared/core';
+import { compileWasm, type MemoryLimits, readMemoryLimits, type WasmError } from '../shared/wasm';
 
 /**
  * The shared memory's maximum when neither the page nor a quality preset asks for one: 1 GiB. The
@@ -35,25 +36,7 @@ export interface LoadedCore {
 	memory?: WebAssembly.Memory;
 }
 
-/** Downloads one of the core's files whole, or fails with E1406 and the file's path. */
-async function download<T>(url: URL, read: (response: Response) => Promise<T>): Promise<T> {
-	let response: Response;
-	try {
-		response = await fetch(url);
-	} catch (e) {
-		throw new EngineError('E1406', `${url.pathname} did not download: ${(e as Error).message}.`);
-	}
-	if (!response.ok)
-		throw new EngineError('E1406', `${url.pathname} did not download: HTTP ${response.status}.`);
-	try {
-		return await read(response);
-	} catch (e) {
-		throw new EngineError(
-			'E1406',
-			`${url.pathname} did not download whole: ${(e as Error).message}.`,
-		);
-	}
-}
+const coreError: WasmError = (code, message) => new EngineError(code, message);
 
 /** The slot where the page's early script leaves the core's response (page/early-core.ts). */
 export const EARLY_CORE_SLOT = Symbol.for('null3d.early-core');
@@ -73,15 +56,6 @@ export function takeEarlyCore(url: URL): Promise<Response> | undefined {
 	if (early?.url !== url.href) return undefined;
 	delete slots[EARLY_CORE_SLOT];
 	return early.response;
-}
-
-async function compile(url: URL): Promise<WebAssembly.Module> {
-	try {
-		return await WebAssembly.compileStreaming(takeEarlyCore(url) ?? fetch(url));
-	} catch {
-		// Servers that send the wrong content type for .wasm files break streaming compilation.
-		return WebAssembly.compile(await download(url, (response) => response.arrayBuffer()));
-	}
 }
 
 /**
@@ -148,16 +122,31 @@ export async function createSharedMemory(
 	}
 }
 
+/**
+ * Downloads and compiles a core build. For the threaded build it also creates the shared memory,
+ * with the initial size and the maximum that the module's import declares, which the loader reads
+ * from the start of the download while the browser compiles the rest. The limits need no file of
+ * their own, so a strict Content-Security-Policy has no inline address to block.
+ */
 export async function loadCore(
 	build: Build,
 	maximumMiB = DEFAULT_MAXIMUM_MIB,
 ): Promise<LoadedCore> {
-	const urls = coreUrls(build);
-	if (!urls.memory) return { build, module: await compile(urls.wasm) };
-	const [module, limits] = await Promise.all([
-		compile(urls.wasm),
-		download(urls.memory, (response) => response.json() as Promise<MemoryLimits>),
-	]);
+	const threaded = build === 'threaded';
+	const url = coreUrls(build).wasm;
+	const { module, head: limits } = await compileWasm(
+		url,
+		`the ${build} engine core`,
+		coreError,
+		threaded ? readMemoryLimits : undefined,
+		takeEarlyCore(url),
+	);
+	if (!threaded) return { build, module };
+	if (!limits)
+		throw new EngineError(
+			'E1402',
+			'the threaded engine core imports no shared memory, so it comes from another build.',
+		);
 	const maximum = maximumPages(limits, maximumMiB);
 	return {
 		build,

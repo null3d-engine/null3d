@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { coreUrls } from '../shared/core';
+import { memoryImportLimits, readMemoryLimits } from '../shared/wasm';
 import {
 	createSharedMemory,
 	DEFAULT_MAXIMUM_MIB,
@@ -82,6 +83,93 @@ describe('maximumPages', () => {
 /** The smallest valid WebAssembly module: the magic number and the version. */
 const EMPTY_MODULE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
 
+/**
+ * A module that imports a function, env.f, then a shared memory, env.memory, of 18 pages that
+ * declares 65,536 pages at most, as the threaded core does.
+ */
+const SHARED_MEMORY_MODULE = new Uint8Array([
+	...EMPTY_MODULE,
+	// The type section: one function type, with no parameters and no results.
+	0x01,
+	0x04,
+	0x01,
+	0x60,
+	0x00,
+	0x00,
+	// The import section.
+	0x02,
+	0x1a,
+	0x02,
+	0x03,
+	0x65,
+	0x6e,
+	0x76,
+	0x01,
+	0x66,
+	0x00,
+	0x00,
+	0x03,
+	0x65,
+	0x6e,
+	0x76,
+	0x06,
+	0x6d,
+	0x65,
+	0x6d,
+	0x6f,
+	0x72,
+	0x79,
+	0x02,
+	0x03,
+	0x12,
+	0x80,
+	0x80,
+	0x04,
+]);
+
+describe('memoryImportLimits', () => {
+	it('reads the initial size, the maximum and the shared flag of an imported memory', () => {
+		expect(memoryImportLimits(SHARED_MEMORY_MODULE)).toEqual(LIMITS);
+	});
+
+	it('waits for more bytes until the import section has arrived whole', () => {
+		for (let end = 0; end < SHARED_MEMORY_MODULE.length; end++)
+			expect(memoryImportLimits(SHARED_MEMORY_MODULE.subarray(0, end))).toBeUndefined();
+	});
+
+	it('gives null for a module whose sections after the imports start without one', () => {
+		const functions = [0x03, 0x01, 0x00];
+		expect(memoryImportLimits(new Uint8Array([...EMPTY_MODULE, ...functions]))).toBeNull();
+	});
+});
+
+describe('readMemoryLimits', () => {
+	it('stops reading once the import section has arrived', async () => {
+		let pulls = 0;
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(SHARED_MEMORY_MODULE);
+			},
+			pull(controller) {
+				pulls++;
+				controller.enqueue(new Uint8Array(1_000));
+			},
+		});
+		expect(await readMemoryLimits(stream)).toEqual(LIMITS);
+		expect(pulls).toBeLessThanOrEqual(1);
+	});
+
+	it('gives null when the stream ends before any import section', async () => {
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(EMPTY_MODULE);
+				controller.close();
+			},
+		});
+		expect(await readMemoryLimits(stream)).toBeNull();
+	});
+});
+
 describe('loadCore', () => {
 	const browserFetch = globalThis.fetch;
 	afterEach(() => {
@@ -106,26 +194,93 @@ describe('loadCore', () => {
 		throw new Error('the core loaded');
 	}
 
+	/** The core module, one byte at a time, with no content type, as a careless host sends it. */
 	const wasm = () =>
-		new Response(EMPTY_MODULE, { headers: { 'Content-Type': 'application/wasm' } });
+		new Response(
+			new ReadableStream<Uint8Array>({
+				start(controller) {
+					for (const byte of SHARED_MEMORY_MODULE) controller.enqueue(new Uint8Array([byte]));
+					controller.close();
+				},
+			}),
+		);
 
-	it('names a core file that the server does not send', async () => {
-		serve({ 'null3d_bg.wasm': wasm });
+	it('names the core file that the server does not send by its role and path', async () => {
+		serve({});
 		const error = await failure();
 		expect(error).toBeInstanceOf(EngineError);
 		expect(error.code).toBe('E1406');
-		expect(error.message).toContain('null3d_memory.json did not download: HTTP 404.');
+		expect(error.message).toStartWith('E1406: the threaded engine core did not download from /');
+		expect(error.message).toContain('/dist/wasm/threaded/null3d_bg.wasm: HTTP 404.');
 	});
 
 	it('names a core file that arrives cut short', async () => {
-		serve({ 'null3d_bg.wasm': wasm, 'null3d_memory.json': () => new Response('{"initial": 1') });
+		serve({
+			'null3d_bg.wasm': () =>
+				new Response(
+					new ReadableStream<Uint8Array>({
+						start(controller) {
+							controller.enqueue(SHARED_MEMORY_MODULE.subarray(0, 12));
+							controller.error(new TypeError('network connection lost'));
+						},
+					}),
+				),
+		});
 		const error = await failure();
 		expect(error.code).toBe('E1406');
-		expect(error.message).toContain('null3d_memory.json did not download whole:');
+		expect(error.message).toContain('the threaded engine core did not download whole from');
+	});
+
+	it('names a core file that is not WebAssembly, such as a page that a host sends instead', async () => {
+		serve({ 'null3d_bg.wasm': () => new Response('<!doctype html><title>Home</title>') });
+		const error = await failure();
+		expect(error.code).toBe('E1406');
+		expect(error.message).toContain('null3d_bg.wasm is not a WebAssembly module:');
+	});
+
+	it("blames the page's Content-Security-Policy, with E1418, when it blocks WebAssembly", async () => {
+		serve({ 'null3d_bg.wasm': wasm });
+		const { Module, compileStreaming } = WebAssembly;
+		const blocked = () => {
+			throw new WebAssembly.CompileError("Refused to compile: 'wasm-unsafe-eval' is not allowed");
+		};
+		// biome-ignore lint/complexity/useArrowFunction: the check calls it with new, which an arrow function refuses.
+		WebAssembly.Module = function () {
+			blocked();
+		} as unknown as typeof WebAssembly.Module;
+		WebAssembly.compileStreaming = async () => blocked();
+		try {
+			const error = await failure();
+			expect(error.code).toBe('E1418');
+			expect(error.message).toStartWith(
+				"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: Refused to compile",
+			);
+		} finally {
+			Object.assign(WebAssembly, { Module, compileStreaming });
+		}
+	});
+
+	it('fails with E1402 when the threaded core imports no shared memory', async () => {
+		serve({ 'null3d_bg.wasm': () => new Response(EMPTY_MODULE) });
+		const error = await failure();
+		expect(error.code).toBe('E1402');
+	});
+
+	it('downloads only the WebAssembly file, with no file of memory limits', async () => {
+		const asked: string[] = [];
+		serve({ 'null3d_bg.wasm': wasm });
+		const served = globalThis.fetch;
+		globalThis.fetch = ((input: string | URL | Request) => {
+			asked.push(String(input));
+			return served(input);
+		}) as typeof fetch;
+		await loadCore('threaded');
+		expect(asked).toHaveLength(1);
+		expect(asked[0]).toEndWith('/threaded/null3d_bg.wasm?no-inline');
 	});
 
 	it('creates the shared memory with the maximum it is asked for', async () => {
-		serve({ 'null3d_bg.wasm': wasm, 'null3d_memory.json': () => Response.json(LIMITS) });
+		serve({ 'null3d_bg.wasm': wasm });
 		const BrowserMemory = WebAssembly.Memory;
 		const descriptors: WebAssembly.MemoryDescriptor[] = [];
 		// biome-ignore lint/complexity/useArrowFunction: the loader calls it with new, which an arrow function refuses.
@@ -146,7 +301,7 @@ describe('loadCore', () => {
 	});
 
 	it('creates the shared memory after the browser refused it once', async () => {
-		serve({ 'null3d_bg.wasm': wasm, 'null3d_memory.json': () => Response.json(LIMITS) });
+		serve({ 'null3d_bg.wasm': wasm });
 		const BrowserMemory = WebAssembly.Memory;
 		let refusals = 1;
 		// biome-ignore lint/complexity/useArrowFunction: the loader calls it with new, which an arrow function refuses.
@@ -206,6 +361,32 @@ describe("the page's early core download", () => {
 		await loadCore('single');
 		expect(fetches.count).toBe(1);
 		expect(slots[EARLY_CORE_SLOT]).toBe(threaded);
+	});
+
+	it("reads the threaded core's memory limits from the early script's response", async () => {
+		const fetches = countFetches();
+		slots[EARLY_CORE_SLOT] = {
+			url: coreUrls('threaded').wasm.href,
+			response: Promise.resolve(new Response(SHARED_MEMORY_MODULE)),
+		};
+		const core = await loadCore('threaded');
+		expect(fetches.count).toBe(0);
+		expect(core.memory?.buffer.byteLength).toBe(LIMITS.initial * 65_536);
+	});
+
+	it("reports an early download that failed with E1406, as the loader's own download", async () => {
+		const fetches = countFetches();
+		const response = Promise.reject(new TypeError('network connection lost'));
+		response.catch(() => {});
+		slots[EARLY_CORE_SLOT] = { url: coreUrls('single').wasm.href, response };
+		const error = await loadCore('single').then(
+			() => undefined,
+			(e: EngineError) => e,
+		);
+		expect(error?.code).toBe('E1406');
+		expect(error?.message).toContain('did not download from');
+		expect(error?.message).toContain('network connection lost');
+		expect(fetches.count).toBe(0);
 	});
 
 	it('picks the build as createEngine does, and leaves the response in the slot the loader reads', async () => {
