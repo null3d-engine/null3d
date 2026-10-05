@@ -202,6 +202,11 @@ impl AoPass {
     pub(crate) const UPLOAD_BYTES: usize = BLOCK_BYTES;
 
     /// Asks `pipelines` for the steps' pipelines, once.
+    /// The ids of the steps' pipelines that the pass asked for.
+    pub(crate) fn pipeline_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.pipelines.iter().flatten().copied()
+    }
+
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
         for (step, slot) in self.pipelines.iter_mut().enumerate() {
             if slot.is_none() {
