@@ -193,3 +193,10 @@ The coordinator runs these device runs on the gate commit:
 5. The soak plan on S4 in Safari on the iPad.
 6. T-28: `bun run bench:startup -- --android` on the S24+ in Chrome, cold and warm on Slow 4G, and the iPad's first frame.
 7. After each run, a row in [the record of tested devices](tested-devices.md).
+
+### The owner's rulings of 5 October 2026
+
+The owner ruled on two gate results on 5 October 2026 ([D-67](decisions/D-67-rulings-2026-10-05.md)).
+
+- The GPU time of S4 is a regression, and the gate does not pass until it is fixed. The cloud iPad 10th ran S4 in Safari 27.0, at Low on WebGPU with the governor off. Two commits took turns in one session, 30 seconds each. The gate commit 5309dba5 took 11.93 and 12.03 ms of GPU time per frame. The older commit f46c0686 took 10.89 and 10.88 ms. The gate commit takes about 1.1 ms more, 10%, and makes 63 draw calls against 56. CPU time stayed at 0.32 to 0.34 ms on both. A fix is in progress, and the comparison runs again once it lands.
+- The owner's iPad Pro 11-inch runs the gate's iPad items that are still open. Among them are the two 30-minute soaks and the first frame, which only the cloud iPad has run so far. Results from the cloud iPad are kept as evidence, and they do not replace a run on the owner's iPad.
