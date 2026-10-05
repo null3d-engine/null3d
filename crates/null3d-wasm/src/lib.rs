@@ -288,8 +288,16 @@ fn record_failure(error: RecordError) -> u32 {
     render_failure(detail, value)
 }
 
+/// The failure of an allocation of `bytes` that the engine's memory could not hold: E1109.
+fn out_of_memory(bytes: u64) -> u32 {
+    core_failure(CoreError::OutOfMemory {
+        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+    })
+}
+
 fn arrays_failure(error: ArraysError) -> u32 {
     let (problem, value) = match error {
+        ArraysError::OutOfMemory { bytes } => return out_of_memory(bytes),
         ArraysError::NoVertices => (arrays_problem::NO_VERTICES, 0),
         ArraysError::Length(array) => (arrays_problem::LENGTH, array as u32),
         ArraysError::Type(array) => (arrays_problem::TYPE, array as u32),
@@ -1110,7 +1118,10 @@ fn add_mesh(e: &mut Engine, geometry: &Geometry) -> Result<u32, u32> {
         .settings_mut()
         .meshes_mut()
         .add(geometry)
-        .map_err(|_| render_failure(render_detail::BAD_MESH, 0))?;
+        .map_err(|error| match error {
+            MeshError::OutOfMemory { bytes } => out_of_memory(bytes),
+            _ => render_failure(render_detail::BAD_MESH, 0),
+        })?;
     Ok(id + 1)
 }
 
@@ -2282,7 +2293,7 @@ fn animation_failure(error: AnimationError) -> u32 {
         AnimationError::Parent { joint, .. } => (animation_problem::PARENT, joint),
         AnimationError::Length { array, .. } => (animation_problem::LENGTH, array),
         AnimationError::NotFinite { at } => (animation_problem::NOT_FINITE, at),
-        AnimationError::Frames { frames } => (animation_problem::FRAMES, frames),
+        AnimationError::Keys { keys } => (animation_problem::KEYS, keys),
         AnimationError::UnknownSkeleton { skeleton } => {
             (animation_problem::UNKNOWN_SKELETON, skeleton)
         }
