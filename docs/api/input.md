@@ -18,7 +18,7 @@ flowchart LR
     frame --> input["ctx.input in onUpdate"]
 ```
 
-The page listens for pointer, touch, keyboard and wheel events, and reads the gamepads. It writes each event into a ring in shared memory. At the start of each frame, before `onUpdate`, the sketch takes every event that came since the previous frame. Only a second drag of the pointer waits for the next frame, as [The pointer](#the-pointer) explains. Then `ctx.input` gives the same answers for the whole frame. The sketch adds no DOM listeners, and input works the same in every thread mode.
+The page listens for pointer, touch, keyboard and wheel events, and reads the gamepads. It writes each event into a ring in shared memory. At the start of each frame, before `onUpdate`, the sketch takes every event that came since the previous frame. Only a second drag of the pointer, and wheel scroll after a drag, wait for the next frame, as [The pointer](#the-pointer) explains. Then `ctx.input` gives the same answers for the whole frame. The sketch adds no DOM listeners, and input works the same in every thread mode.
 
 ```ts
 export default defineSketch(({ scene, input }) => {
@@ -81,7 +81,7 @@ The sketch counts presses and releases per frame. A key can go down and up betwe
 
 Use `dragDx` and `dragDy` for drags, such as turning an object with the mouse. A frame can hold the end of a hover and the start of a drag, and `dx` counts both.
 
-A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames.
+A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames. Wheel scroll that follows a release waits for the following frame in the same way. So a frame's scroll never comes after the end of its drag. Controls that ignore the wheel during a drag, as three.js's do, still take the scroll after it.
 
 Browsers send a pinch on a trackpad as wheel scroll with the Control key's flag, while no Control key is down. Unless the page stops it, the browser also zooms the whole page on a pinch. [What the page does](#what-the-page-does) shows how to stop it.
 
@@ -252,7 +252,7 @@ The main pointer: the mouse, a pen, or the first finger that touches the canvas.
 | `readonly dy: number` | Movement down since the previous frame, in CSS pixels. |
 | `readonly dragDx: number` | The part of `dx` made while a button was held: a drag. Movement before a press or after a release in the same frame does not count. |
 | `readonly dragDy: number` | The part of `dy` made while a button was held: a drag. |
-| `readonly wheel: number` | The wheel's scroll since the previous frame, in pixels: positive where a page would scroll down. A wheel that scrolls by lines counts 16 pixels a line, and one that scrolls by pages counts 100 a page, as three.js's controls count them. |
+| `readonly wheel: number` | The wheel's scroll since the previous frame, in pixels: positive where a page would scroll down. A wheel that scrolls by lines counts 16 pixels a line, and one that scrolls by pages counts 100 a page, as three.js's controls count them. Scroll that follows a release of the pointer waits for the next frame, so a frame's scroll never comes after the end of its drag. |
 | `readonly pinch: number` | The part of `wheel` that came from a pinch on a trackpad: positive as the fingers close. Browsers send a pinch as wheel scroll that holds the Control key's flag while no Control key is down. |
 | `readonly isTouch: boolean` | True when the pointer is a finger on a touch screen. |
 
