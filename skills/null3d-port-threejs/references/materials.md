@@ -94,7 +94,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `MeshNormalMaterial` | `debug.view('normals')` for debugging (world-space normals; three.js shows view-space ones); a surface function that outputs the normal as color for a styled look |
 | `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')` for debugging; custom shadow materials are not needed |
 | `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2) |
-| `PointsMaterial` | Options of `scene.createPoints`: `size`, `sizeAttenuation`, `texture`, `colors` (0.2) |
+| `PointsMaterial` | Options of `scene.createPoints`: `size` (with `sizeAttenuation`, world units: three.js's size times `tan(fov / 2)`; without it, CSS pixels), `sizeAttenuation`, `map`, `color`, `opacity`, `colors` for `vertexColors`, `alphaMode` (`'opaque'` by default; `'blend'` for `transparent`, `'mask'` with `alphaCutoff` for `alphaTest`), `blending` (0.2). Points do not vanish at the screen's edge as WebGL points do. Docs `api/points` |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width` (1 for a one-pixel line), `worldUnits`, `dashed` with `dashSize`, `gapSize`, `dashScale` and `dashOffset`, `colors` (0.2). Docs `api/lines` |
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
 | `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |

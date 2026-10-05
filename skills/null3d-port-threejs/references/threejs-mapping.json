@@ -1583,8 +1583,8 @@
       "three": "Points / PointsMaterial",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createPoints({ positions, colors, size, sizeAttenuation, texture })",
-      "notes": "Point sizes above one pixel work on every backend.",
+      "target": "await scene.createPoints({ positions, colors, size, sizeAttenuation, map })",
+      "notes": "Points of one size drawn in one batch as squares that face the camera, at any size on every backend. The call is async, because the first one downloads the sprite code. Points are opaque by default, as three.js's are; transparent becomes alphaMode 'blend', and alphaTest becomes alphaMode 'mask' with alphaCutoff. With size attenuation, size is in world units: three.js's size times tan(fov / 2). Without it, size is in CSS pixels, as in three.js. A point does not vanish when its center leaves the screen, as a WebGL point does. Blended points sort back to front. Raycasts do not find points yet.",
       "docs": "api/points",
       "detect": "new\\s+(THREE\\.)?Points\\s*\\(|\\bPointsMaterial\\b"
     },
