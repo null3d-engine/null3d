@@ -114,6 +114,16 @@ export type RendererRequest =
 	| { type: 'lose-gpu' }
 	| { type: 'stop-drawing' };
 
+/**
+ * Sent to the worker that draws as soon as the probe has chosen the GPU path, before the core
+ * arrives: start the download of the device's shaders for that path and the fixed bits `bits`.
+ */
+export interface ShaderPreload {
+	type: 'load-shaders';
+	tier: Tier;
+	bits: number;
+}
+
 export type WorkerReply =
 	| {
 			type: 'ready';
@@ -153,6 +163,7 @@ export type SketchWorkerMessage =
 	| SketchWorkerInit
 	/** Sent before the core in low-latency mode, where the sketch worker draws: load the renderer. */
 	| { type: 'load-renderer' }
+	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }
 	/** Ends the sketch worker's waits, where the threads wake each other with messages. */

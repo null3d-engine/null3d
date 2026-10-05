@@ -5,14 +5,16 @@ import { join } from 'node:path';
 import { cloudRuns, parseCloudArgs, pickDevices, runnerArgs } from '../devices-cloud.ts';
 import { parseArgs } from '../real-browsers.ts';
 import {
+	ACCEPT_SSL_SCRIPT,
 	type AutomateBrowser,
 	type AutomatePlan,
 	automateApi,
 	capabilities,
+	certificateScript,
 	deviceProblems,
 	IDLE_TIMEOUT_SECONDS,
 	KEY_FILE,
-	needsAcceptSsl,
+	PROCEED_SCRIPT,
 	parallelSessions,
 	readCredentials,
 	redactor,
@@ -117,11 +119,12 @@ describe('capabilities', () => {
 		expect(text).not.toMatch(/userName|accessKey|user|key/i);
 	});
 
-	it('passes the certificate warning with a command in Safari and on iOS only', () => {
-		expect(needsAcceptSsl(device('bsiphone17-chromium'))).toBe(true);
-		expect(needsAcceptSsl(device('bsmacsequoia-safari'))).toBe(true);
-		expect(needsAcceptSsl(device('bsgalaxys25-chrome'))).toBe(false);
-		expect(needsAcceptSsl(device('bswin11-edge'))).toBe(false);
+	it("passes the certificate warning with BrowserStack's command in Safari and on iOS, and with the warning page's link in Edge on Android", () => {
+		expect(certificateScript(device('bsiphone17-chromium'))).toBe(ACCEPT_SSL_SCRIPT);
+		expect(certificateScript(device('bsmacsequoia-safari'))).toBe(ACCEPT_SSL_SCRIPT);
+		expect(certificateScript(device('bsgalaxys25-edge'))).toBe(PROCEED_SCRIPT);
+		expect(certificateScript(device('bswin11-edge'))).toBeUndefined();
+		expect(certificateScript(device('bsgalaxys25-chrome'))).toBeUndefined();
 	});
 });
 

@@ -4,7 +4,7 @@
 // also owns the canvas and draws each frame itself; only then does it load the renderer.
 
 import { messageOf } from '../errors/message';
-import { type DrawModule, loadDrawModule } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadShaders } from '../render/load-draw';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
@@ -35,6 +35,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 	const message = event.data;
 	if (message.type === 'load-renderer') {
 		drawLoad ??= loadDrawModule();
+	} else if (message.type === 'load-shaders') {
+		drawLoad ??= loadDrawModule();
+		preloadShaders(drawLoad, message.tier, message.bits);
 	} else if (message.type === 'init') {
 		try {
 			// The renderer loads while the core and the sketch start, if the page did not ask for it

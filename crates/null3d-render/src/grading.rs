@@ -37,7 +37,9 @@ impl Lut {
     /// The scale and the offset that place a display color in a table of `size` texels along each
     /// axis, as texture coordinates from 0 to 1: the domain's ends land on the centers of the first
     /// and last texels, as `LUTPass` pulls each sample in by half a texel. The scale's last value
-    /// holds the intensity.
+    /// holds the intensity. An axis whose domain gives no finite placement that spreads colors, such
+    /// as an empty domain or one too wide or too narrow for 32-bit floats, takes the domain from 0
+    /// to 1, so no pixel samples at NaN.
     pub(crate) fn placement(&self, size: [u32; 3]) -> ([f32; 4], [f32; 4]) {
         let mut scale = [0.0, 0.0, 0.0, self.intensity];
         let mut offset = [0.0; 4];
@@ -45,8 +47,13 @@ impl Lut {
             let texels = size[axis].max(1) as f32;
             let span = self.domain_max[axis] - self.domain_min[axis];
             let inner = 1.0 - 1.0 / texels;
-            scale[axis] = if span > 0.0 { inner / span } else { 0.0 };
+            scale[axis] = inner / span;
             offset[axis] = 0.5 / texels - self.domain_min[axis] * scale[axis];
+            let placed = scale[axis] > 0.0 && scale[axis].is_finite() && offset[axis].is_finite();
+            if !placed {
+                scale[axis] = inner;
+                offset[axis] = 0.5 / texels;
+            }
         }
         (scale, offset)
     }
@@ -99,6 +106,20 @@ mod tests {
             assert!((place(&table, size, min) - half).abs() < 1e-6);
             assert!((place(&table, size, max) - (1.0 - half)).abs() < 1e-6);
             assert_eq!(table.placement([size; 3]).0[3], 0.75);
+        }
+    }
+
+    #[test]
+    fn a_domain_past_32_bit_floats_places_colors_as_the_unit_domain() {
+        let size = 17;
+        let unit = lut(0.0, 1.0).placement([size; 3]);
+        for (min, max) in [
+            (f32::NEG_INFINITY, 1.0),
+            (0.0, 1e-40),
+            (-3e38, 3e38),
+            (1.0, 1.0),
+        ] {
+            assert_eq!(lut(min, max).placement([size; 3]), unit, "{min} to {max}");
         }
     }
 

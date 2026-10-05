@@ -155,6 +155,22 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the HDR limit tests: light past the largest 16-bit float. */
+export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
+
+/**
+ * Light far past the largest 16-bit float, without bloom and with it, on every tier: an emissive
+ * sphere and the sun's highlight on a smooth metal floor. Both must draw white, and the sphere must
+ * glow with bloom. The HDR limit spec checks those pixels too, so CI's software GPU, which stores
+ * such light as infinity without the limit, fails even where a reference would match.
+ */
+function hdrLimitTests(): ImageTest[] {
+	return [
+		{ name: 'hdr-limit', sketch: HDR_LIMIT_SKETCH, hold: 0 },
+		{ name: 'hdr-limit-bloom', sketch: `${HDR_LIMIT_SKETCH}?bloom`, hold: 0 },
+	];
+}
+
 /** The sketch of the ambient occlusion tests: a floor, a wall and shapes on them (bench/scenes/ao.ts). */
 const AO_SKETCH = 'tests/pages/sketches/ao-sketch.ts';
 
@@ -610,6 +626,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...hdrLimitTests(),
 	...aoTests(),
 	...outlineTests(),
 	...occlusionTests(),

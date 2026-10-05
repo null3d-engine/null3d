@@ -2,6 +2,7 @@
 //! each build also runs through the shader compiler's WebAssembly module (see `common`).
 
 mod common;
+mod precision;
 
 use common::{
     SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
@@ -10,6 +11,7 @@ use null3d_shaders::{
     ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs,
     literals_safari_refuses, typescript,
 };
+use precision::precision_breaks;
 
 /// A vertex and fragment pair with a flat varying, a uniform block per stage, a data texture read
 /// in the vertex stage and a sampled texture in the fragment stage.
@@ -1050,123 +1052,6 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
     build_wgsl(&named).unwrap();
 }
 
-/// The breaks of GLSL ES 3.00's precision rules in one shader, as messages, under the strictest
-/// WebGL2 driver: Arm's Mali compiler. A fragment shader sets the default precision of `float`
-/// and `int` before its first declaration, and each sampler uniform names its precision, since
-/// most sampler types have no default. Mali finds no precision for an array whose type names its
-/// size, in a sized constructor such as `vec3[9](...)` or a declaration such as `vec3[9] x`,
-/// although the shader sets one for `float`. The default `highp` holds again after each run of
-/// `mediump` functions. Each declaration of a whole number names its precision, as some Adreno
-/// drivers keep only 16 bits of one that does not, despite the default.
-fn precision_breaks(source: &str, fragment: bool) -> Vec<String> {
-    let mut breaks = Vec::new();
-    let lines: Vec<&str> = source.lines().collect();
-    let first_code = lines
-        .iter()
-        .position(|line| {
-            let line = line.trim();
-            !line.is_empty() && !line.starts_with('#') && !line.starts_with("precision ")
-        })
-        .unwrap_or(lines.len());
-    let head = if fragment {
-        &lines[..first_code]
-    } else {
-        &lines[..]
-    };
-    for default in ["precision highp float;", "precision highp int;"] {
-        if !head.iter().any(|line| line.trim() == default) {
-            breaks.push(format!(
-                "`{default}` is missing before the first declaration"
-            ));
-        }
-    }
-    let mut mediump = false;
-    for (index, line) in lines.iter().enumerate() {
-        let at = index + 1;
-        let text = line.trim();
-        match text {
-            "precision mediump float;" => mediump = true,
-            "precision highp float;" => mediump = false,
-            _ => {}
-        }
-        if text.starts_with("uniform ")
-            && text.contains("sampler")
-            && !["highp ", "mediump ", "lowp "]
-                .iter()
-                .any(|p| text.contains(p))
-        {
-            breaks.push(format!(
-                "line {at}: a sampler uniform without a precision: {text}"
-            ));
-        }
-        if sized_array_type(text) {
-            breaks.push(format!("line {at}: an array type with its size: {text}"));
-        }
-        if integer_without_precision(text) {
-            breaks.push(format!(
-                "line {at}: a whole number declared without a precision: {text}"
-            ));
-        }
-    }
-    if mediump {
-        breaks.push("the shader ends at `mediump`, without `precision highp float;`".to_owned());
-    }
-    breaks
-}
-
-/// True when a line of GLSL names an array type with its size, as `T[N](` or `T[N] name`.
-fn sized_array_type(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    text.match_indices('[').any(|(open, _)| {
-        let Some(close) = text[open..].find(']').map(|c| open + c) else {
-            return false;
-        };
-        let size = &text[open + 1..close];
-        let after_name = open > 0 && (bytes[open - 1].is_ascii_alphanumeric());
-        if size.is_empty() || !size.bytes().all(|b| b.is_ascii_digit()) || !after_name {
-            return false;
-        }
-        let after = &text[close + 1..];
-        let declares = after
-            .strip_prefix(' ')
-            .and_then(|rest| rest.bytes().next())
-            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_');
-        after.starts_with('(') || declares
-    })
-}
-
-/// True when a line of GLSL declares a whole number, as a type followed by a name, with no
-/// precision before the type.
-fn integer_without_precision(text: &str) -> bool {
-    const TYPES: [&str; 8] = [
-        "int", "uint", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4",
-    ];
-    let mut previous = "";
-    let bytes = text.as_bytes();
-    let mut at = 0;
-    while at < bytes.len() {
-        if !(bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
-            at += 1;
-            continue;
-        }
-        let start = at;
-        while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
-            at += 1;
-        }
-        let word = &text[start..at];
-        let named = text[at..]
-            .trim_start()
-            .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_');
-        if TYPES.contains(&word) && named && !["highp", "mediump", "lowp"].contains(&previous) {
-            return true;
-        }
-        previous = word;
-    }
-    false
-}
-
 #[test]
 fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
@@ -1237,4 +1122,80 @@ fn every_wgsl_shader_has_only_number_literals_that_safari_reads() {
         "number literals that Safari 26 refuses:\n{}",
         refused.join("\n")
     );
+}
+
+/// The text of the repository's library module `null3d::<name>`.
+fn library_module(name: &str) -> String {
+    let path = format!("{}/wgsl/lib/{name}.wgsl", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// The lines of function `name` in a module, from its first line to the brace that closes it.
+fn function_text<'a>(module: &'a str, name: &str) -> &'a str {
+    let start = module
+        .find(&format!("\nfn {name}("))
+        .unwrap_or_else(|| panic!("no fn {name}"));
+    let end = module[start..].find("\n}\n").expect("the function's end") + start;
+    &module[start..end]
+}
+
+/// The value of a number constant `name` that a module declares.
+fn number_constant(module: &str, name: &str) -> f32 {
+    let line = module
+        .lines()
+        .find(|line| line.starts_with(&format!("const {name}: ")))
+        .unwrap_or_else(|| panic!("no const {name}"));
+    let value = line.split(" = ").nth(1).expect("a value");
+    value
+        .trim_end_matches(';')
+        .trim_end_matches(['f', 'h', 'u'])
+        .parse()
+        .unwrap_or_else(|e| panic!("{line}: {e}"))
+}
+
+#[test]
+fn the_half_builds_keep_roughness_to_the_fourth_power_a_normal_16_bit_float() {
+    // GGX takes roughness to the fourth power. Below the smallest normal 16-bit float, 2^-14, a
+    // GPU may flush it to zero, and the highlight's peak then divides by zero.
+    let half = library_module("half");
+    let floor = number_constant(&half, "ROUGHNESS_FLOOR");
+    assert!(floor.powi(4) >= 2f32.powi(-14), "{floor} to the fourth");
+    let direct = function_text(&half, "direct_light");
+    assert!(
+        direct.contains("max(m.roughness, ROUGHNESS_FLOOR)"),
+        "{direct}"
+    );
+}
+
+#[test]
+fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
+    // Adreno 830 ran a loop the wrong number of times when its pass count differed between pixels.
+    let shadows = library_module("shadows");
+    let sun = function_text(&shadows, "sun_shadow");
+    let loops: Vec<&str> = sun
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            ["for ", "while ", "loop "]
+                .iter()
+                .any(|k| line.starts_with(k))
+        })
+        .collect();
+    assert_eq!(loops.len(), 2, "{sun}");
+    for header in loops {
+        assert_eq!(header, "for (var k = 0u; k < MAX_CASCADES; k++) {");
+    }
+    assert_eq!(number_constant(&shadows, "MAX_CASCADES"), 4.0);
+}
+
+#[test]
+fn hdr_color_stops_one_step_below_the_largest_16_bit_float() {
+    // Some GPUs store a value past the largest 16-bit float, 65,504, as infinity. The limit keeps
+    // one step of margin below it, as Unity's URP limits bloom's input.
+    let color = library_module("color");
+    let step = 2f32.powi(15 - 10);
+    assert_eq!(number_constant(&color, "HDR_LIMIT"), 65_504.0 - step);
+    let tonemap = library_module("tonemap");
+    let finish = function_text(&tonemap, "finish");
+    assert!(finish.contains("limit_hdr(c)"), "{finish}");
 }

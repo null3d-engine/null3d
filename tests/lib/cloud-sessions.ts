@@ -11,10 +11,8 @@ import { type WebDriver, WebDriverError } from './webdriver.ts';
 export interface CloudAccount {
 	/** The session's W3C capabilities for a device. */
 	capabilities(device: CloudDevice, runner: string): Record<string, unknown>;
-	/** Whether the device's browser needs the cloud's command that passes a certificate warning. */
-	needsAcceptSsl(device: CloudDevice): boolean;
-	/** The script that passes the certificate warning. */
-	acceptSslScript: string;
+	/** The script that passes the device's certificate warning after a load, where one shows. */
+	certificateScript(device: CloudDevice): string | undefined;
 	/** The session's page on the cloud's dashboard, or undefined when the cloud did not say. */
 	link(session: string): Promise<string | undefined>;
 	/** Marks a session passed or failed, with a reason. */
@@ -115,14 +113,14 @@ export class CloudSessions {
 
 	/** Loads a page, then passes the certificate warning where the browser shows one. */
 	private async load(device: CloudDevice, id: string, url: string): Promise<void> {
-		const needsAccept = this.account.needsAcceptSsl(device);
+		const script = this.account.certificateScript(device);
 		try {
 			await this.driver.navigate(id, url);
 		} catch (e) {
-			// Safari can report the warning page as a failed load, which acceptSsl then passes.
-			if (!needsAccept || (e instanceof WebDriverError && e.code === 'invalid session id')) throw e;
+			// Safari can report the warning page as a failed load, which the script then passes.
+			if (!script || (e instanceof WebDriverError && e.code === 'invalid session id')) throw e;
 		}
-		if (needsAccept) await this.driver.execute(id, this.account.acceptSslScript);
+		if (script) await this.driver.execute(id, script);
 	}
 
 	/** Whether the page gets an animation frame within the session's wait. */

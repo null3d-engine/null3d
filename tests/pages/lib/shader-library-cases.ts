@@ -1418,6 +1418,18 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => floats(i.f(0).slice(0, 2)),
 		tolerance: 0,
 	},
+	// null3d::color, the limit of HDR color: each channel no brighter than one step below the
+	// largest 16-bit float, infinity included, and every value below it kept.
+	{
+		name: 'color::limit_hdr',
+		cases: (random) => [
+			new Inputs().setF(0, [65472, 65473, 1e30]),
+			new Inputs().setF(0, [Number.POSITIVE_INFINITY, 0.5, -2]),
+			...uniform(3, 0, 70000)(random),
+		],
+		expected: (i) => floats(map3(xyz(i.f(0)), (value) => Math.min(value, 65472))),
+		tolerance: 0,
+	},
 ];
 
 function box(p: V3, half: V3): number {

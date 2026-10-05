@@ -138,6 +138,20 @@ Two faults, put back on purpose in builds of their own, show what the figures ca
 - So the raycast page adds up each job worker's busy time over all the measured frames. With `?everyWorker`, which only this test gives, it measures for 1 second, then for 2, 4, 8 and 16, until every worker has taken work. The test fails only for a worker that took no work in all that time. On a quiet machine the first second is enough.
 - Each measurement is twice as long as the one before, because a measurement counts only the frames that start and end within it. On the busy Mac, SwiftShader took 0.3 to 1.4 seconds for a frame. Ten measurements of one second each then found 0 or 1 frames in 8 of about 14 runs.
 - The engine checks of the engine test page (`engineProblems` in `tests/lib/engine-checks.ts`) include frame-rate checks. They are the median frame interval, the floors on the frames and the sketch's updates, and a measured refresh rate. The thread that draws needs 32 frames to measure that rate.
-- The tests that start each thread mode keep these checks, since the pace of the frame loop is their job. The test of the order of the start's downloads turns them off with `{ pacing: false }`. It still needs frames and the sketch's updates, at any rate.
-- In a CI merge queue run, that test failed single-threaded with a median frame interval of 50 ms. Alone it had passed 20 of 20. On the Mac, Chrome slowed the page's thread 4 times in 16 copies of the test at once. Then 11 of 16 failed the same way, at medians from 50 to 125 ms. With the switch, 16 of 16 passed at medians up to 175 ms.
+- Only the tests whose job is the pace of the frame loop keep these checks. In `tests/image/engine.spec.ts` they are the tests that:
+  - run the engine in each thread mode, on each GPU path;
+  - run the sketch and the drawing on the main thread, with low latency or with drawing on the main thread asked for;
+  - run the engine without `Atomics.waitAsync`, where the threads wake each other with a message for each frame.
+- The engine runs of the device plans keep them too.
+- The other tests of that file turn the frame-rate checks off with `{ pacing: false }`. Each checks something that a slow frame does not change. They still need frames and the sketch's updates, at any rate. They are the tests of:
+  - the shared memory maximum that the page asks for, in each mode;
+  - the order of the start's downloads;
+  - the request for the shader file while the core downloads, in each mode, and where a worker cannot draw;
+  - no download of the files that load on first use;
+  - the high-performance and the low-power GPU;
+  - the count of job workers that `?jobs=` asks for;
+  - the single-threaded start in a page without cross-origin isolation;
+  - the start that draws on the page where a worker cannot draw. The test of drawing on the main thread checks the pace of that loop.
+- In a CI merge queue run, the download test failed single-threaded with a median frame interval of 50 ms. Alone it had passed 20 of 20. On the Mac, Chrome slowed the page's thread 4 times in 16 copies of the test at once. Then 11 of 16 failed the same way, at medians from 50 to 125 ms. With the switch, 16 of 16 passed at medians up to 175 ms.
 - After both changes, the tests ran on SwiftShader on the busy Mac on 5 October 2026. Each of the three passed 20 of 20 one at a time. They are the raycast test on each GPU path and the download test in single-threaded mode. With 10 copies at once, each passed 20 of 20 again.
+- On 4 October 2026, the shared memory test failed in CI merge queue runs the same way. It failed single-threaded and with low latency, at a median frame interval of 50 ms. On the busy Mac, Chrome slowed the page's thread 4 times in 16 copies of the single-threaded test at once. With the frame-rate checks, 2 of 16 failed, at medians of 58 and 75 ms with 10 frames. With the switch, three rounds of 16 passed 48 of 48. In those rounds, 4 page loads had medians from 42 to 50 ms, which the frame-rate checks fail. Alone, the test passed 20 of 20. All of `engine.spec.ts` passed 124 of 124 on SwiftShader and 124 of 124 on the Mac's GPU, in the development and the production builds.
