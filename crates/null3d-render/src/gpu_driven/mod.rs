@@ -716,7 +716,7 @@ impl GpuDrivenRenderer {
             self.graph.scene_targets(),
         );
         self.graph
-            .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
+            .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());

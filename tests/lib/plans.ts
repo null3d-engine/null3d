@@ -831,6 +831,31 @@ export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
 	return [...pages, ...twin];
 }
 
+/** The bases of bloom's chain that the bloom size plan times, in texels on the short side. */
+export const BLOOM_SIZES = [512, 256, 128, 64] as const;
+
+/**
+ * What bloom costs at each base size of its chain, on WebGPU, whose GPU timer the phones have: the
+ * bloom cost page at render scales of 1 and 0.5, with the quality setting `bloomSize` at each size.
+ * Each halving of the base drops a level, so the sizes draw 15, 13, 11 and 9 passes, and the
+ * results split bloom's cost into a cost per pass and a cost per texel. D-21 records them.
+ */
+export function bloomSizesPlan(): PlanItem<Check>[] {
+	return BLOOM_SIZES.flatMap((size) =>
+		EFFECT_SCALES.map((scale) =>
+			pageItem(
+				`bloom-size-${size}-webgpu-${scale * 100}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'bloom', tier: 'webgpu', scale },
+				{
+					switches: ['gpu=webgpu', `scale=${scale}`, 'effect=bloom', `size=${size}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
 /**
  * What the environment's light costs on each GPU path: layers of planes of the standard material
  * fill the window at a render scale of 1, and the page times its frames without and with the built-in
@@ -1181,6 +1206,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: () => effectPlan('bloom'),
+	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
 	environment: environmentPlan,
 	occlusion: occlusionPlan,

@@ -24,7 +24,7 @@ const GLOW_NITS = 1_000_000;
 const BLOOM_THRESHOLD = 40_000;
 
 export default defineSketch(({ scene, materials, geometry, post }) => {
-	const bloom = { strength: 0.002, radius: 0.2, threshold: BLOOM_THRESHOLD };
+	const bloom = { intensity: 0.02, threshold: BLOOM_THRESHOLD, blend: 'add' as const };
 	if (THREE_UNITS) post.set({ exposure: 1 / (1.2 * 2 ** EV100), bloom });
 	else post.set({ ev100: EV100, bloom });
 	scene.setBackground('#000000');

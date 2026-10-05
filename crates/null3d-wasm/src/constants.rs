@@ -115,10 +115,10 @@ pub mod map_slot {
 pub mod post_value {
     /// The exposure.
     pub const EXPOSURE: u32 = 0;
-    /// Bloom's strength, radius and threshold.
-    pub const BLOOM_STRENGTH: u32 = 1;
-    pub const BLOOM_RADIUS: u32 = 2;
-    pub const BLOOM_THRESHOLD: u32 = 3;
+    /// Bloom's intensity, threshold and the threshold's soft edge.
+    pub const BLOOM_INTENSITY: u32 = 1;
+    pub const BLOOM_THRESHOLD: u32 = 2;
+    pub const BLOOM_KNEE: u32 = 3;
     /// The color grading table's intensity.
     pub const LUT_INTENSITY: u32 = 4;
     /// The colors of the table's first texels, red first, then of its last texels.
@@ -142,8 +142,11 @@ pub mod post_value {
     /// 1 where the outline draws around hidden parts, else 0, then the line's width in CSS pixels.
     pub const OUTLINE_HIDDEN: u32 = 26;
     pub const OUTLINE_WIDTH: u32 = 27;
+    /// Bloom's blend (0 mixes, 1 adds, 2 screens), then the share of each of its 10 levels.
+    pub const BLOOM_BLEND: u32 = 28;
+    pub const BLOOM_WEIGHTS: u32 = 29;
     /// The values in the block.
-    pub const COUNT: u32 = 28;
+    pub const COUNT: u32 = 39;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
@@ -688,9 +691,9 @@ pub fn typescript() -> String {
             "POST_VALUE",
             &[
                 ("EXPOSURE", post_value::EXPOSURE),
-                ("BLOOM_STRENGTH", post_value::BLOOM_STRENGTH),
-                ("BLOOM_RADIUS", post_value::BLOOM_RADIUS),
+                ("BLOOM_INTENSITY", post_value::BLOOM_INTENSITY),
                 ("BLOOM_THRESHOLD", post_value::BLOOM_THRESHOLD),
+                ("BLOOM_KNEE", post_value::BLOOM_KNEE),
                 ("LUT_INTENSITY", post_value::LUT_INTENSITY),
                 ("LUT_DOMAIN_MIN", post_value::LUT_DOMAIN_MIN),
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
@@ -707,6 +710,8 @@ pub fn typescript() -> String {
                 ("OUTLINE_HIDDEN_COLOR", post_value::OUTLINE_HIDDEN_COLOR),
                 ("OUTLINE_HIDDEN", post_value::OUTLINE_HIDDEN),
                 ("OUTLINE_WIDTH", post_value::OUTLINE_WIDTH),
+                ("BLOOM_BLEND", post_value::BLOOM_BLEND),
+                ("BLOOM_WEIGHTS", post_value::BLOOM_WEIGHTS),
                 ("COUNT", post_value::COUNT),
             ],
         ),

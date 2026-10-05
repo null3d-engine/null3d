@@ -3,7 +3,7 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, bloom at half size and below, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette."
+summary: "HDR scene color, ambient occlusion at half size, bloom through a chain of mip levels, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette."
 ---
 
 # The post-processing chain
@@ -14,10 +14,10 @@ summary: "HDR scene color, ambient occlusion at half size, bloom at half size an
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
     ao --> scene
-    scene["Scene passes:<br/>linear HDR color"] --> bright["Bright pass:<br/>half size, threshold"]
-    bright --> levels["Five blurred levels:<br/>each half the size<br/>of the one before"]
-    scene --> final["Final pass: adds bloom,<br/>then tone mapping,<br/>FXAA and dithering"]
-    levels --> final
+    scene["Scene passes:<br/>linear HDR color"] --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
+    down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
+    scene --> final["Final pass: blends in bloom,<br/>then tone mapping,<br/>FXAA and dithering"]
+    up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
     final --> line["In the same pass:<br/>the outline's line"]
     line --> grade["In the same pass:<br/>color grading table,<br/>then the vignette"]
@@ -26,7 +26,7 @@ flowchart LR
 
 Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
 
-Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw at half the render size and below. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
+Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
 Turn effects on with `post.set` in the sketch:
 
@@ -34,7 +34,7 @@ Turn effects on with `post.set` in the sketch:
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(({ scene, geometry, materials, post }) => {
-  post.set({ bloom: { strength: 0.8, radius: 0.4, threshold: 1 } });
+  post.set({ bloom: { intensity: 0.2, threshold: 1 } });
   scene.setBackground('#06080c');
   const camera = scene.createPerspectiveCamera({ position: [0, 1, 6], target: [0, 0, 0] });
   scene.setActiveCamera(camera);
@@ -47,28 +47,49 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 
 ## Bloom
 
-Bloom spreads light from the brightest parts of the scene into their surroundings, as a camera lens does. It follows three.js's `UnrealBloomPass` step by step:
+Bloom spreads light from the bright parts of the scene into their surroundings, as a camera lens does. It draws a chain of levels, each half the size of the one before, as Bevy, Filament and Unity draw bloom:
 
-1. The bright pass reads the scene color at half size. It keeps each pixel whose luminance reaches `threshold`, and turns the others black.
-2. Five levels blur the bright pass, each with a Gaussian blur across and then down. Each level has half the size of the level before it and a wider blur, so the levels spread the light ever further.
-3. The final pass adds the levels to the scene color before the tone mapping. The strength scales their sum. The radius moves weight from the narrow levels to the wide ones.
+1. Steps down. The first step reads the scene color into the largest level, the base. It keeps the light that passes `threshold`, and limits each color to what a 16-bit float holds. Each later step reads the level above into the next level.
+2. Each step down reads 13 texels around each texel, with the weights of Call of Duty: Advanced Warfare's bloom. The first step also takes a Karis average: a very bright group of texels counts less. So a small bright point does not flicker as it moves.
+3. Steps up. From the smallest level back to the base, each step blurs the level below with a 3 x 3 tent filter. It blends the result into its own level. The base then holds the light of every level, each with its share of the glow.
+4. The final pass reads the base once for each pixel, and blends it into the scene color before the tone mapping.
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `strength` | A number from 0 up. | 1 |
-| `radius` | A number from 0 to 1. | 0.5 |
-| `threshold` | A luminance from 0 up, in linear color before the exposure. The bright pass reads exposed color, so it scales the threshold by the exposure, and a threshold keeps its meaning at any exposure. | 1 |
+| `intensity` | 0 or more. With the `'mix'` blend, the glow's share of each pixel, at most 1. With `'add'` and `'screen'`, a factor on the glow. | 0.15 |
+| `threshold` | A luminance from 0 up, in linear color before the exposure. The first step reads exposed color, so it scales the threshold and its soft edge by the exposure, and a threshold keeps its meaning at any exposure. | 0 |
+| `knee` | The width of the threshold's soft edge, in luminance: 0 or more. | 0.1 |
+| `blend` | `'mix'`, `'add'` or `'screen'`. | `'mix'` |
+| `weights` | Up to 10 numbers of 0 or more: each level's share of the glow, from the narrowest level to the widest. Not all 0. | Shares for 8 levels |
 
-- The settings mean what `UnrealBloomPass`'s settings mean, with the same kernels and weights. In the engine's parity tests, null3D's bloom matches three.js's in all but under 0.1% of the pixels on every GPU path.
-- At a threshold of 1, only light brighter than white glows. An emissive material with an `emissiveIntensity` above 1 gives such light, and so does a strong light on a bright surface. At a threshold of 0, every pixel glows a little.
-- Bloom adds light before the tone mapping, so it never clips at white on its own. On a transparent canvas it also adds coverage, so the glow shows over the page.
+- The `'mix'` blend moves each pixel's color toward the glow by the intensity, so the image keeps its total light. A lit wall keeps its brightness and turns softer. `'add'` adds the glow, as three.js's `UnrealBloomPass` does, and `'screen'` screens it, as pmndrs's `BloomEffect` does.
+- At a threshold of 0, all light glows a little, as in a real lens. At 1, only light brighter than white glows, such as an emissive material with an `emissiveIntensity` above 1.
+- The levels have the canvas's shape and a fixed number of texels on its shorter side. So the glow keeps its size as a share of the screen at any pixel ratio, render scale and screen orientation.
+- Each level spreads light twice as far as the one before. The eighth spreads it over about a quarter of the canvas's shorter side, and the tenth over all of it. The engine divides the weights by their sum. The default gives eight levels a share, most to the narrow ones, for a soft glow that keeps the shape of the light.
+- Levels past the last one with a weight do not draw, so they cost nothing.
+- Bloom works before the tone mapping, so it never clips at white on its own. On a transparent canvas it also adds coverage, so the glow shows over the page.
 - `post.set({ bloom: false })` turns bloom off. The settings keep their values, so `post.set({ bloom: {} })` turns it on again with them.
+
+### The size of the base
+
+The quality setting `bloomSize` sets the base's texels on the canvas's shorter side. It is 512 on the Medium, High and Ultra presets, and 128 on Low, which phones run. A smaller base has fewer levels. Its finest levels fold into the base with their shares, so the glow keeps its size, with a softer core. The base never takes more than half the canvas's shorter side.
+
+```ts
+quality.set({ bloomSize: 256 });
+```
+
+A new `bloomSize` makes bloom's targets again. When frames take too long and bloom is on, the frame-budget governor halves the base once, after its shadow steps. Each level then draws into a corner of its target, so that step makes no target. [Quality presets](quality-presets.md) lists the governor's steps.
 
 ### Cost
 
-Bloom draws eleven small passes and adds five texture reads to each pixel of the final pass. Its targets take about 0.66 times the scene color's memory at full resolution, in the scene color's format. They follow the render scale, so a lower scale costs less, and a new scale makes no new target. The targets exist only while bloom is on.
+With the default weights, bloom draws 15 small passes: 8 steps down and 7 steps up. The final pass reads one texture for it.
 
-The `bloomSamples` quality setting is the share of `UnrealBloomPass`'s texture reads that each blur makes: 1, 0.5 or 0.25. A lower share reads the same blur in fewer, coarser steps, so the glow keeps its size. When frames take too long and bloom is on, the frame-budget governor halves the share, after its other steps. [Quality presets](quality-presets.md) lists the governor's steps.
+- The chain's work does not follow the render scale. A lower scale changes only where the first step reads, and a new scale makes no new target.
+- At 1920 x 1080, with a base of 512, bloom reads about 7.6 texels for each pixel of the canvas, over all its passes. On a phone's canvas of 540 x 932 at Low's base of 128, it reads about 2.7.
+- Its levels hold 16-bit floats, whatever the scene color's format. In a smaller float format the rounding of the chain's many steps adds up, and the glow loses light. At 1920 x 1080 with a base of 512, the levels take about 5 MB.
+- The bloom scene of the engine's effect cost test ran on a MacBook Pro in Chrome, with WebGPU at 1920 x 1080. Bloom added 0.79 to 0.85 ms of GPU time per frame at a render scale of 1, and 0.79 ms at 0.5. A base of 128 added 0.52 to 0.66 ms.
+- Phone GPUs pay a fixed cost for each pass, so a smaller base, with fewer levels, saves the most there. Each halving of the base removes two passes.
+- The targets exist only while bloom is on.
 
 ## Ambient occlusion
 
@@ -160,7 +181,10 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 ## Porting from three.js
 
 - Delete `EffectComposer`, `RenderPass` and `OutputPass`. The scene pass and the final pass are built in.
-- `new UnrealBloomPass(resolution, strength, radius, threshold)` becomes `post.set({ bloom: { strength, radius, threshold } })`. The resolution is the canvas's, so it needs no setting.
+- `new UnrealBloomPass(resolution, strength, radius, threshold)` becomes `post.set({ bloom })` with `blend: 'add'`, the same `threshold` and a `knee` of 0.01. The intensity is about 8.8 times `strength`, and `radius` becomes the `weights`. The `null3d-port-threejs` skill holds a table of weights by radius, and a script that maps the settings for a canvas size. The resolution is the canvas's, so it needs no setting.
+- three.js's glow spans a number of pixels, and null3D's a share of the screen. So a mapping matches at one canvas size, 1080 pixels on the shorter side by default. On a larger screen null3D's glow looks wider than three.js's.
+- A strong bloom spreads a little wider at the edges of the frame than three.js's. three.js's faint haze fades toward the corners, and null3D's keeps its light there. To soften it, lower `strength` or `radius` before you map the settings, or lower `intensity`.
+- pmndrs's `BloomEffect` maps the same way, with `blend: 'screen'`: its `intensity` stays, `luminanceThreshold` becomes `threshold`, and `luminanceSmoothing` becomes `knee`. three.js's `bloom()` node maps as `UnrealBloomPass` does, at a third of the intensity.
 - `new GTAOPass(scene, camera, width, height)` becomes `post.set({ ao: {} })`. Its `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` settings keep their names, with `distanceFalloff` spelled so, and `blendIntensity` becomes `intensity`. Set `quality.set({ aoScale: 0.5 })` too where phones and tablets should draw it.
 - `SSAOPass`, `SAOPass` and the N8AO library also become `post.set({ ao })`. Their settings have other meanings, so start from the defaults and tune `radius` and `scale` by eye.
 - `new OutlinePass(resolution, scene, camera, selectedObjects)` becomes `post.set({ outline: { color, hiddenColor, width } })`, from `visibleEdgeColor` and `hiddenEdgeColor`. `OutlinePass` draws its edge at half size, so a `width` of twice its `edgeThickness` gives about the same line. three.js draws a dark brown line around hidden parts by default, and null3D draws none until `hiddenColor` is set. Each selected mesh calls `setOutlined(true)`. A selected model's copy from `scene.instantiate` calls it once for all of its meshes.
@@ -175,4 +199,4 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - [Objects and transforms](../api/objects.md#mesh-calls): `setOutlined`.
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
-- [Quality presets](quality-presets.md): `bloomSamples`, `aoScale`, the depth prepass and the frame-budget governor.
+- [Quality presets](quality-presets.md): `bloomSize`, `aoScale`, the depth prepass and the frame-budget governor.

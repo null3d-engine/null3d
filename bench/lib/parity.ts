@@ -39,6 +39,14 @@ export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 export const AO_MAX_DIFFERENT_PERCENT = 1;
 
 /**
+ * The limit for the strong bloom, a sanity comparison: null3D draws bloom through its own mip chain,
+ * with `UnrealBloomPass`'s settings mapped onto it (D-21). The strong glow's widest haze reaches the
+ * frame's edges, where three.js's fades, so the pixels near the edges differ by three.js's rule.
+ * Near the lights the two match. The soft bloom keeps three.js's own limit.
+ */
+export const BLOOM_STRONG_MAX_DIFFERENT_PERCENT = 20;
+
+/**
  * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
  * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
  * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
@@ -329,14 +337,16 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/morph.html?closeup`,
 		sketchSwitches: NO_TONE,
 	},
-	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,
-	// so null3D's page draws without anti-aliasing too.
+	// Bloom at two settings against three.js's UnrealBloomPass, which the porting skill's mapping
+	// turns into null3D's settings. The composer's targets have no MSAA, so null3D's page draws
+	// without anti-aliasing too.
 	...(['soft', 'strong'] as const).map(
 		(bloom): FeatureScene => ({
 			test: `bloom-${bloom}`,
 			twin: `${TWINS}/bloom.html?bloom=${bloom}`,
 			switches: 'antialias=none',
 			webglOnly: true,
+			...(bloom === 'strong' && { limit: BLOOM_STRONG_MAX_DIFFERENT_PERCENT }),
 		}),
 	),
 	// Ambient occlusion with GTAOPass's defaults and with a wider search, against three.js's
