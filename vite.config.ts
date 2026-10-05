@@ -63,7 +63,7 @@ const config: UserConfig = {
 	cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
 	plugins: [
 		tunnelServer(),
-		null3d({ https, certDir: 'target/dev-cert' }),
+		null3d({ https, certDir: 'target/dev-cert', urlSwitches: true }),
 		reportCollector(),
 		loadServer(),
 		samplesServer(import.meta.dirname),

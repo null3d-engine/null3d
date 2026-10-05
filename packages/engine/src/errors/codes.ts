@@ -206,6 +206,29 @@ const DOCS = {
 		example: 'E1303: this browser runs WebAssembly without SIMD.',
 		since: '0.1',
 	},
+	E1304: {
+		title: 'GPU out of memory',
+		cause:
+			'The GPU had no room for a buffer or texture that the engine made after the start. The objects that use it draw wrong or not at all. The engine reports the first time this happens on each GPU device, and draws on.',
+		example: "E1304: the render worker's GPU ran out of memory: Not enough memory left.",
+		since: '0.2',
+	},
+	E1305: {
+		title: 'GPU rejected work',
+		cause:
+			'The GPU path refused a command that the engine gave it after the start, such as a buffer larger than the device allows. The objects that the command made or drew are missing, and the canvas can stay black. The engine reports the first time this happens on each GPU device, and draws on.',
+		example:
+			"E1305: the render worker's GPU rejected a command: Buffer size (377487360) exceeds the max buffer size limit (268435456).",
+		since: '0.2',
+	},
+	E1306: {
+		title: 'Safari before 18',
+		cause:
+			'The browser runs the WebKit engine of a Safari before 18, which null3D does not support. Every browser on iPhone and iPad runs WebKit, so Chrome, Edge and Firefox there count too.',
+		example:
+			'E1306: this browser runs the WebKit engine of Safari 17, and the engine needs Safari 18 or later.',
+		since: '0.2',
+	},
 	E1401: {
 		title: 'Not a sketch module',
 		cause:
@@ -230,7 +253,7 @@ const DOCS = {
 	E1404: {
 		title: 'Engine thread failed',
 		cause:
-			'An engine thread, or the drawing on the page, hit an error it could not handle. After the start the engine may have stopped. During the start, createEngine() stops the engine and rejects with this error.',
+			'An engine thread, or the drawing on the page, hit an error it could not handle, such as a trap in the engine core. After the start, the thread stops its loop: the engine draws no new frames, and engine.onFailure receives this error. During the start, createEngine() stops the engine and rejects with this error.',
 		example: 'E1404: the render worker failed: out of memory.',
 		since: '0.1',
 	},
@@ -244,8 +267,9 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first environment its reader, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error, or the connection broke off.',
-		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first environment its reader, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+		example:
+			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
 	},
 	E1407: {
@@ -332,6 +356,37 @@ const DOCS = {
 			'A glTF file needs an extension that the engine does not read, as its extensionsRequired list says. Or a call asked a model for something it cannot give, such as instance batches of a model with no meshes.',
 		example:
 			'E1417: assets.loadGltf() cannot load https://example.com/ship.glb: it requires KHR_draco_mesh_compression, which the engine does not read.',
+		since: '0.2',
+	},
+	E1418: {
+		title: 'WebAssembly blocked by the page',
+		cause:
+			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core or the KTX2 transcoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
+		example:
+			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
+		since: '0.2',
+	},
+	E1419: {
+		title: 'Canvas held by another engine',
+		cause:
+			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread failed, so no engine can draw on it again. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
+		example:
+			'E1419: createEngine() got a canvas that another engine draws on, which has not stopped.',
+		since: '0.2',
+	},
+	E1420: {
+		title: 'Engine stopped',
+		cause:
+			'Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing.',
+		example: 'E1420: a call reached the engine after it stopped.',
+		since: '0.2',
+	},
+	E1421: {
+		title: 'Unknown feature to preload',
+		cause:
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, morph, skinning and sprites, and texcoords for the engine's own tests.",
+		example:
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, lines, morph, skinning, sprites, texcoords.",
 		since: '0.2',
 	},
 	E1501: {

@@ -1,8 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, relative, resolve, sep } from 'node:path';
+import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
-import type { Connect, DevEnvironment, EnvironmentModuleNode, Plugin } from 'vite';
+import type {
+	Connect,
+	DevEnvironment,
+	EnvironmentModuleNode,
+	HtmlTagDescriptor,
+	Plugin,
+	Rollup,
+} from 'vite';
 import {
 	ASSET_FOLDER,
 	type AssetOptions,
@@ -66,6 +73,12 @@ export interface Null3dPluginOptions {
 	 * which `assets.loadGltf` takes. The tool comes from `@null3d/cli`, which the project installs.
 	 */
 	assets?: AssetOptions;
+	/**
+	 * Let the page's address set the engine's test switches, such as `?gpu=` and `?hold=`, in
+	 * production builds too. Development builds always read them. The default is false, so a link
+	 * cannot change how a shipped game runs. Turn it on for builds of test and benchmark pages.
+	 */
+	urlSwitches?: boolean;
 }
 
 /** Sets the isolation headers on every response, including `.wasm` files and worker scripts. */
@@ -120,10 +133,94 @@ const WORKER_BEFORE = /new\s+(?:Shared)?Worker\(\s*$/;
 export const CORE_FILES = [
 	'threaded/null3d.js',
 	'threaded/null3d_bg.wasm',
-	'threaded/null3d_memory.json',
 	'single/null3d.js',
 	'single/null3d_bg.wasm',
 ];
+
+/**
+ * The engine's early script, which starts the core's download as soon as a page's HTML arrives.
+ * A production build ships it as a file of its own, and each page whose scripts load the core gets
+ * a script tag for it.
+ */
+export const EARLY_CORE_MODULE = '@null3d/engine/early-core';
+
+/** The chunks that a page's entry chunk imports, directly or through others, with the entry. */
+function staticChunks(
+	entry: Rollup.OutputChunk,
+	bundle: Rollup.OutputBundle,
+): Rollup.OutputChunk[] {
+	const seen = new Map<string, Rollup.OutputChunk>([[entry.fileName, entry]]);
+	for (const chunk of seen.values())
+		for (const name of chunk.imports) {
+			const imported = bundle[name];
+			if (imported?.type === 'chunk' && !seen.has(name)) seen.set(name, imported);
+		}
+	return [...seen.values()];
+}
+
+/**
+ * The script tag of the early script for a built page, or undefined when the page's scripts do not
+ * load the engine core. The core files are the WebAssembly files that the early script names, and a
+ * page loads the core when one of its chunks names one of them too. `htmlFile` is the page's path in
+ * the build, and `base` the build's public base.
+ */
+export function earlyCoreTag(
+	early: Rollup.OutputChunk,
+	entry: Rollup.OutputChunk,
+	bundle: Rollup.OutputBundle,
+	htmlFile: string,
+	base: string,
+): HtmlTagDescriptor | undefined {
+	const cores = Object.values(bundle)
+		.filter((file) => file.type === 'asset' && file.fileName.endsWith('.wasm'))
+		.map((file) => posix.basename(file.fileName))
+		.filter((name) => early.code.includes(name));
+	if (!staticChunks(entry, bundle).some((chunk) => cores.some((name) => chunk.code.includes(name))))
+		return undefined;
+	const relativeBase = base === '' || base.startsWith('.');
+	const path = posix.relative(posix.dirname(htmlFile), early.fileName);
+	const src = relativeBase
+		? path.startsWith('.')
+			? path
+			: `./${path}`
+		: `${base}${early.fileName}`;
+	return {
+		tag: 'script',
+		attrs: { type: 'module', async: true, src },
+		injectTo: 'head-prepend',
+	};
+}
+
+/** The file in which each null3D package lists the third-party code that it ships, with licences. */
+const PACKAGE_NOTICES = 'THIRD-PARTY-NOTICES.txt';
+
+/** The file that a production build writes beside the page, with every package's notices. */
+export const NOTICES_FILE = 'null3d-third-party-notices.txt';
+
+/**
+ * The third-party notices of the null3D packages that the project depends on: the engine's first,
+ * then each add-on's, by name. Null when none has notices, as in a project without the engine.
+ */
+export function thirdPartyNotices(root: string): string | null {
+	const manifest = resolve(root, 'package.json');
+	if (!existsSync(manifest)) return null;
+	const { dependencies = {}, devDependencies = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
+	const require = createRequire(manifest);
+	const names = Object.keys({ ...dependencies, ...devDependencies })
+		.filter((name) => name.startsWith('@null3d/'))
+		.sort(
+			(a, b) => Number(b === '@null3d/engine') - Number(a === '@null3d/engine') || (a < b ? -1 : 1),
+		);
+	const texts = names.flatMap((name) => {
+		try {
+			const file = join(dirname(require.resolve(`${name}/package.json`)), PACKAGE_NOTICES);
+			return existsSync(file) ? [readFileSync(file, 'utf8').trimEnd()] : [];
+		} catch {
+			return [];
+		}
+	});
+	return texts.length > 0 ? `${texts.join('\n\n')}\n` : null;
+}
 
 /** True for a sketch module: a script that calls `defineSketch`. */
 function isSketchModule(path: string): boolean {
@@ -190,13 +287,22 @@ export function missingCoreFiles(root: string): string[] | null {
 /**
  * The null3D Vite plugin: isolation headers on the dev and preview servers, optional HTTPS, WGSL
  * compiled for WebGPU and WebGL2 in dev and in builds, hot updates of WGSL on the dev server, and a
- * production build that compiles each sketch module and ships the engine core.
+ * production build that compiles each sketch module, ships the engine core and starts its download
+ * from each page that loads it.
  */
 export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let building = false;
+	/** True for a production build of pages, which gets the early script. */
+	let buildingPages = false;
+	/** The early script's module, once a build of pages that imports the engine has added it. */
+	let earlyCoreId: string | undefined;
+	/** True once the build has looked for the early script. */
+	let earlyCoreSought = false;
 	let root = process.cwd();
 	let base = '/';
 	let assetsDir = 'assets';
+	/** The third-party notices that a client build writes beside the page; null in other builds. */
+	let notices: string | null = null;
 	/** The optimized files that this build has written, so each texture goes in once. */
 	const emitted = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
@@ -225,7 +331,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				: undefined;
 			return {
 				// Development checks stay in dev builds; release builds drop them as dead code.
-				define: { __NULL3D_DEV__: JSON.stringify(mode !== 'production') },
+				define: {
+					__NULL3D_DEV__: JSON.stringify(mode !== 'production'),
+					// Without the option, a build that defines the constant itself keeps its value.
+					...(options.urlSwitches === undefined
+						? {}
+						: { __NULL3D_URL_SWITCHES__: JSON.stringify(options.urlSwitches) }),
+				},
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },
@@ -237,12 +349,21 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		configResolved(config) {
 			building = config.command === 'build';
+			buildingPages = building && !config.build.lib && !config.build.ssr;
 			root = config.root;
 			base = config.base;
 			assetsDir = config.build.assetsDir;
+			if (config.worker.format !== 'es') {
+				config.logger.warn(
+					`null3D: workers build as ${config.worker.format}, not as ES modules, so each engine worker takes in every shader file and grows to tens of MB. Set worker.format to 'es', or leave it unset for the null3D plugin to set.`,
+				);
+			}
+			notices = building && !config.build.ssr ? thirdPartyNotices(root) : null;
 		},
 		buildStart() {
 			emitted.clear();
+			earlyCoreId = undefined;
+			earlyCoreSought = false;
 			if (!building) return;
 			const missing = missingCoreFiles(root);
 			if (missing && missing.length > 0) {
@@ -254,19 +375,44 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		buildEnd() {
 			return compiler.close();
 		},
+		// The dev server's pages import the client module of hot updates. A build of pages that
+		// imports the engine ships the early script, found from the module that imports the engine,
+		// as the engine itself is. The page's own scripts run only once all of them have arrived. The
+		// early script imports nothing, so it runs as soon as it arrives, and the core's download
+		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: HOT_CLIENT_ADDRESS },
-			handler: () => HOT_CLIENT_ID,
+			filter: { id: [HOT_CLIENT_ADDRESS, /^@null3d\/engine$/] },
+			async handler(source, importer) {
+				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
+				if (!buildingPages || earlyCoreSought) return null;
+				earlyCoreSought = true;
+				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
+				if (early && !early.external) {
+					earlyCoreId = early.id;
+					this.emitFile({ type: 'chunk', id: early.id, name: 'early-core' });
+				}
+				return null;
+			},
 		},
-		transformIndexHtml() {
-			if (building) return;
-			return [
-				{
-					tag: 'script',
-					attrs: { type: 'module', src: `${base}@id/__x00__${HOT_CLIENT}` },
-					injectTo: 'head',
-				},
-			];
+		transformIndexHtml: {
+			order: 'post',
+			handler(html, { bundle, chunk, path }) {
+				if (!building)
+					return [
+						{
+							tag: 'script',
+							attrs: { type: 'module', src: `${base}@id/__x00__${HOT_CLIENT}` },
+							injectTo: 'head',
+						},
+					];
+				if (!earlyCoreId || !bundle || !chunk) return;
+				const early = Object.values(bundle).find(
+					(file): file is Rollup.OutputChunk =>
+						file.type === 'chunk' && file.facadeModuleId === earlyCoreId,
+				);
+				const tag = early && earlyCoreTag(early, chunk, bundle, path.replace(/^\//, ''), base);
+				return tag ? { html, tags: [tag] } : html;
+			},
 		},
 		load: {
 			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS] } },
@@ -412,6 +558,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			for (const { key, shader } of updates) hot.remember(key, shader);
 			if (updates.length > 0) sendUpdates(environment, updates);
 			return otherModules(modules, file);
+		},
+		generateBundle() {
+			if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);

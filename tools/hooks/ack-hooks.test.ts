@@ -152,6 +152,16 @@ describe('the Size-Growth trailer', () => {
 		);
 	});
 
+	it('accepts the shader files of features that load on first use, which the manifest names', () => {
+		const lines =
+			'feat: x\n\nSize-Growth: js/shaders-lines-wgsl.js and js/shaders-lines-glsl-draw-index.js new, the line templates';
+		expect(sizeGrowthProblems(lines, files)).toEqual([]);
+		const start = 'feat: x\n\nSize-Growth: js/shaders-made-up.js +3%, nothing';
+		expect(sizeGrowthProblems(start, files)).toEqual([
+			'Size-Growth value "js/shaders-made-up.js +3%, nothing" names no file that the size report measures.',
+		]);
+	});
+
 	it('rejects a trailer that names no reported file, or gives no reason', () => {
 		expect(sizeGrowthProblems('feat: x\n\nSize-Growth: the core grew for meshes', files)).toEqual([
 			'Size-Growth value "the core grew for meshes" names no file that the size report measures.',

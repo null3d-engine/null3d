@@ -33,6 +33,10 @@ export class Drawing<R extends Recoverable> {
 	private loop: Loop;
 	private losses: number[] = [];
 	private stopped = false;
+	/** The renderer that holds the canvas and has not been destroyed, if any. */
+	private live: R | undefined;
+	/** The recovery under way, which a stop waits for. */
+	private recovering: Promise<void> | undefined;
 
 	/**
 	 * Starts drawing with `renderer`. `create` makes a replacement on the same canvas, `run` starts a
@@ -49,6 +53,7 @@ export class Drawing<R extends Recoverable> {
 		private readonly recovers = true,
 		private readonly release?: () => void,
 	) {
+		this.live = renderer;
 		this.loop = run(renderer);
 		this.watch();
 	}
@@ -56,13 +61,23 @@ export class Drawing<R extends Recoverable> {
 	private watch(): void {
 		const renderer = this.renderer;
 		void renderer.lost.then((reason) => {
-			if (!this.stopped && renderer === this.renderer) void this.recover(reason);
+			if (!this.stopped && renderer === this.renderer) {
+				this.recovering = this.recover(reason);
+				void this.recovering.finally(() => {
+					this.recovering = undefined;
+				});
+			}
 		});
 	}
 
+	/**
+	 * Replaces the lost renderer. When the engine stops meanwhile, the new renderer starts no loop,
+	 * and the stop releases it.
+	 */
 	private async recover(reason: string): Promise<void> {
 		this.loop.stop();
 		// Releases the old device's canvas setup before a new device configures the canvas.
+		this.live = undefined;
 		this.renderer.destroy();
 		if (!this.recovers) {
 			this.fail(`${reason}, in hold mode, which draws on one device only`);
@@ -81,10 +96,8 @@ export class Drawing<R extends Recoverable> {
 			this.fail(`${reason}, and no new GPU device started: ${messageOf(error)}`);
 			return;
 		}
-		if (this.stopped) {
-			await releaseCanvas(this.renderer);
-			return;
-		}
+		this.live = this.renderer;
+		if (this.stopped) return;
 		Atomics.add(this.slots, Slot.GpuEpoch, 1);
 		this.loop = this.run(this.renderer);
 		this.watch();
@@ -106,11 +119,18 @@ export class Drawing<R extends Recoverable> {
 		this.renderer.simulateLoss();
 	}
 
-	/** Stops drawing, and resolves once the renderer has given back the canvas and the GPU. */
+	/**
+	 * Stops drawing, and resolves once the renderer has given back the canvas and the GPU. A stop
+	 * during a recovery first waits for the new renderer, so that no renderer takes the canvas
+	 * after the stop.
+	 */
 	async stop(): Promise<void> {
 		this.stopped = true;
 		this.loop.stop();
-		await releaseCanvas(this.renderer);
+		if (this.recovering) await this.recovering;
+		const live = this.live;
+		this.live = undefined;
+		if (live) await releaseCanvas(live);
 		this.release?.();
 	}
 }

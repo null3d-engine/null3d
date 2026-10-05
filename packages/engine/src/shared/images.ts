@@ -14,6 +14,10 @@
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
 // not arrived yet builds once it has. On the dev server, a hot update sends a template's shader
 // again: the table lists the template as replaced, and the backend builds its pipelines again.
+//
+// So do the names of features whose shader files the sketch will need, such as skinning when a
+// glTF file with skins loads. The thread that draws starts to download each feature's file then,
+// before the objects that need it are drawn.
 
 import { messageOf } from '../errors/message';
 import type { ShaderVariants } from '../generated/shaders';
@@ -47,6 +51,21 @@ export class ImageTable {
 		if (this.shaders.has(template)) this.replaced.push(template);
 		this.shaders.set(template, shader);
 	}
+
+	/** The features whose shader files the sketch asked for, which every renderer loads. */
+	readonly preloads = new Set<string>();
+	/** Hears each feature that the sketch asks for, while a renderer runs. */
+	onPreload: ((feature: string) => void) | undefined;
+
+	/** Keeps the features that the sketch asked for, and tells the renderer of each new one. */
+	preload(features: readonly string[]): void {
+		for (const feature of features) {
+			if (this.preloads.has(feature)) continue;
+			this.preloads.add(feature);
+			this.onPreload?.(feature);
+		}
+	}
+
 	/** Each texture generator's name, by its id among the images' ids. */
 	private readonly generators = new Map<number, GeneratorName>();
 	/** The generators' code for the GPU path of the thread that draws, once it has loaded. */
@@ -77,15 +96,15 @@ export class ImageTable {
 
 	/**
 	 * Says how the backend of the thread's GPU device builds the generators' pipelines ahead, so
-	 * that a generator's first slice waits for no build. Each new device says it again. It builds
-	 * them at once when the code has loaded already.
+	 * that a generator's run waits for no build. Each new device says it again. It builds them at
+	 * once when the code has loaded already.
 	 */
 	warmGeneratorsWith(warm: (code: unknown) => Promise<unknown>): void {
 		this.warm = warm;
 		if (this.generatorCode !== undefined) void this.warmGenerators();
 	}
 
-	/** Builds the generators' pipelines ahead, where a backend said how. A failure waits for the slice. */
+	/** Builds the generators' pipelines ahead, where a backend said how. A failure waits for the run. */
 	private warmGenerators(): Promise<unknown> {
 		const { warm, generatorCode } = this;
 		if (!warm || generatorCode === undefined) return Promise.resolve();
@@ -159,6 +178,9 @@ export class ImageTable {
 		this.generators.clear();
 		this.shaders.clear();
 		this.replaced.length = 0;
+		// The listener belongs to a renderer: a table that kept it would keep that renderer, and the
+		// engine's memory with it, for as long as the port that fills the table lives.
+		this.onPreload = undefined;
 	}
 }
 
@@ -168,11 +190,18 @@ export type ImageSender = (id: number, image: ImageBitmap | GeneratorName) => vo
 /** Sends a custom material's shader variants, under its template, to the thread that draws. */
 export type ShaderSender = (template: number, shader: CustomShader) => void;
 
-/** A message that carries an image or a custom material's shader to the thread that draws. */
+/** Asks the thread that draws to load the shader files of features that the sketch will use. */
+export type PreloadSender = (features: readonly string[]) => void;
+
+/**
+ * A message that carries an image, a custom material's shader or features to preload to the
+ * thread that draws.
+ */
 type DrawingMessage =
 	| { id: number; image: ImageBitmap }
 	| { id: number; generator: GeneratorName }
-	| { template: number; shader: CustomShader };
+	| { template: number; shader: CustomShader }
+	| { preload: readonly string[] };
 
 /**
  * Counts an image that the thread that draws received, and wakes a thread that waits for it, through
@@ -190,11 +219,13 @@ function countArrival(slots: Int32Array, to?: WakeTarget): void {
 export const RECEIVING = { type: 'receiving' } as const;
 
 /**
- * Sends images, generators' names and shaders through a port to the thread that draws, which
- * receives them with `receiveImages`. The senders hold every message until that thread says that
- * it receives, then send them in order. Firefox can fail to read an image that reaches that thread
- * while it makes its first renderer: the thread gets a messageerror event in place of the image.
- * That thread's wake messages come back through the port and end this thread's waits.
+ * Sends images, generators' names, shaders and features to preload through a port to the thread
+ * that draws, which receives them with `receiveImages`. The senders hold the images, generators'
+ * names and shaders until that thread says that it receives, then send them in order. Firefox can
+ * fail to read an image that reaches that thread while it makes its first renderer: the thread
+ * gets a messageerror event in place of the image. Features to preload are plain names, so they go
+ * at once, and their shader files download while that renderer is made. That thread's wake
+ * messages come back through the port and end this thread's waits.
  */
 export function sendThrough(port: MessagePort): DrawingSenders {
 	let held: [DrawingMessage, Transferable[]][] | undefined = [];
@@ -215,6 +246,7 @@ export function sendThrough(port: MessagePort): DrawingSenders {
 			else post({ id, image }, [image]);
 		},
 		sendShader: (template, shader) => post({ template, shader }),
+		sendPreload: (features) => port.postMessage({ preload: features } satisfies DrawingMessage),
 	};
 }
 
@@ -254,10 +286,14 @@ export function sendToTable(table: ImageTable, slots: Int32Array): ImageSender {
 	return arrivals(table, slots);
 }
 
-/** What a sketch sends to the thread that draws: texture images and custom materials' shaders. */
+/**
+ * What a sketch sends to the thread that draws: texture images, custom materials' shaders and the
+ * features whose shader files to load early.
+ */
 export interface DrawingSenders {
 	sendImage: ImageSender;
 	sendShader: ShaderSender;
+	sendPreload: PreloadSender;
 }
 
 /**
@@ -271,7 +307,11 @@ export function drawingSenders(
 ): DrawingSenders {
 	return port
 		? sendThrough(port)
-		: { sendImage: sendToTable(table, slots), sendShader: shadersToTable(table) };
+		: {
+				sendImage: sendToTable(table, slots),
+				sendShader: shadersToTable(table),
+				sendPreload: (features) => table.preload(features),
+			};
 }
 
 /**
@@ -289,6 +329,7 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 	port.onmessage = (event: MessageEvent<DrawingMessage>) => {
 		const data = event.data;
 		if ('shader' in data) table.setShader(data.template, data.shader);
+		else if ('preload' in data) table.preload(data.preload);
 		else arrive(data.id, 'generator' in data ? data.generator : data.image);
 	};
 	return () => port.postMessage(RECEIVING);

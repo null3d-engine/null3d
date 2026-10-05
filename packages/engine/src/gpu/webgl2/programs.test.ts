@@ -7,10 +7,16 @@ import {
 } from '../../generated/shaders';
 import { DEPTH_SETUPS } from './depth';
 import {
+	createProgram,
 	declaresUniform,
+	type GlslTemplate,
+	METAL_FAULT,
 	MIN_UNIFORM_BLOCK_SLOTS,
+	metalFault,
 	type Program,
 	prepareProgram,
+	RELINK_TAIL,
+	relink,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -134,5 +140,92 @@ describe('WebGL2 programs that a driver optimized', () => {
 		expect(program.ready).toBe(true);
 		expect([...units]).toEqual([[kept.name, slotOf(kept.group, kept.binding)]]);
 		expect(program.sampled).toBe(true);
+	});
+});
+
+describe("WebGL2 links that Safari's Metal translator broke", () => {
+	const STAGE = '#version 300 es\nvoid main() {}\n';
+	const SOURCE: GlslProgram = {
+		vertex: { source: STAGE, uniformBlocks: [], textures: [] },
+		fragment: { source: STAGE, uniformBlocks: [], textures: [] },
+	};
+	const TEMPLATE: GlslTemplate = {
+		shader: { webgl2: { permutation: 0, wgsl: null, glsl: { main: SOURCE } } },
+		pipeline: 'main',
+	};
+	const FAULT_LOG = `Internal error while linking shader. ${METAL_FAULT}:\nno matching function for call to 'ANGLE_sf0f'`;
+
+	/**
+	 * A context whose links end with the logs of `links` in turn, where an empty log is a link that
+	 * succeeded. It records the sources it compiles and the objects it deletes.
+	 */
+	function fakeContext(links: readonly string[]) {
+		const sources: string[] = [];
+		const deleted: unknown[] = [];
+		const logs = new Map<object, string>();
+		let count = 0;
+		const gl = {
+			LINK_STATUS: 0x8b82,
+			VERTEX_SHADER: 0x8b31,
+			FRAGMENT_SHADER: 0x8b30,
+			createProgram: () => ({}),
+			createShader: () => ({}),
+			shaderSource: (_: unknown, source: string) => sources.push(source),
+			compileShader: () => {},
+			attachShader: () => {},
+			linkProgram: (program: object) => logs.set(program, links[count++] ?? ''),
+			getProgramParameter: (program: object) => logs.get(program) === '',
+			getProgramInfoLog: (program: object) => logs.get(program) ?? '',
+			getShaderInfoLog: () => '',
+			deleteShader: (shader: unknown) => deleted.push(shader),
+			deleteProgram: (program: unknown) => deleted.push(program),
+			detachShader: () => {},
+			useProgram: () => {},
+			getUniformLocation: () => null,
+		} as unknown as WebGL2RenderingContext;
+		return { gl, sources, deleted, links: () => count };
+	}
+
+	it('links the program again, from fresh translations, after the Metal fault', () => {
+		const context = fakeContext([FAULT_LOG, '']);
+		const program = createProgram(context.gl, TEMPLATE, 0);
+		const first = program.program;
+		prepareProgram(context.gl, program, DEPTH_SETUPS.reversed);
+		expect(program.ready).toBe(true);
+		expect(context.links()).toBe(2);
+		expect(program.program).not.toBe(first);
+		expect(context.deleted).toContain(first);
+		expect(context.sources).toEqual([STAGE, STAGE, STAGE + RELINK_TAIL, STAGE + RELINK_TAIL]);
+	});
+
+	it('reports a second Metal fault, and links no third time', () => {
+		const context = fakeContext([FAULT_LOG, FAULT_LOG, '']);
+		const program = createProgram(context.gl, TEMPLATE, 0);
+		expect(() => prepareProgram(context.gl, program, DEPTH_SETUPS.reversed)).toThrow(
+			/failed to link twice, the second time after a fault in its Metal: .*no matching function/s,
+		);
+		expect(context.links()).toBe(2);
+	});
+
+	it('links a program that is not in use again without waiting, as a hot shader swap does', () => {
+		const context = fakeContext([FAULT_LOG, '']);
+		const program = createProgram(context.gl, TEMPLATE, 0);
+		const first = program.program;
+		expect(metalFault(context.gl, program)).toBe(true);
+		relink(context.gl, program);
+		expect(program.ready).toBe(false);
+		expect(program.program).not.toBe(first);
+		expect(context.deleted).toContain(first);
+		expect(metalFault(context.gl, program)).toBe(false);
+		expect(context.sources).toEqual([STAGE, STAGE, STAGE + RELINK_TAIL, STAGE + RELINK_TAIL]);
+	});
+
+	it('reports any other link failure at once', () => {
+		const context = fakeContext(["ERROR: 'colour' : undeclared identifier"]);
+		const program = createProgram(context.gl, TEMPLATE, 0);
+		expect(() => prepareProgram(context.gl, program, DEPTH_SETUPS.reversed)).toThrow(
+			"a WebGL2 program failed to link: ERROR: 'colour' : undeclared identifier",
+		);
+		expect(context.links()).toBe(1);
 	});
 });

@@ -20,10 +20,10 @@
 // turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
-import type { DeviceShaders } from '../../generated/shaders';
+import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
+import { DEV } from '../../shared/dev';
 import { type GeneratorName, ImageTable } from '../../shared/images';
-import { DEV } from '../dev';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -41,12 +41,14 @@ import {
 	customTemplate,
 	engineTemplates,
 	type GlslTemplate,
+	metalFault,
 	mipmapTemplate,
 	type Pipeline,
 	type Program,
 	type ProgramHost,
 	prepareProgram,
 	programHost,
+	relink,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -73,6 +75,11 @@ const CULL_BACK = 0x0405;
 const UNPACK_RING = 3;
 /** Each write's place in a pixel unpack buffer is aligned to this, the largest texel's size. */
 const UNPACK_ALIGNMENT = 16;
+/**
+ * Features whose builds vary in every material bit, tens of programs for each device. A scene's
+ * materials draw with a few of them, so a preload compiles none, and `scene.warmUp()` builds those.
+ */
+const WARM_UP_FEATURES: ReadonlySet<string> = new Set(['skinning', 'morph']);
 
 /** Where drawing into the canvas goes during a capture: an offscreen stand-in of the same size. */
 export interface CanvasTarget {
@@ -343,9 +350,10 @@ export class WebGL2Backend {
 	private readonly parked = new Map<number, Uint32Array>();
 	/**
 	 * In development builds, the programs that a hot update of a custom material's shader compiles,
-	 * each under the key of the program it replaces once it has compiled.
+	 * each under the key of the program it replaces once it has compiled. `relinked` is set once the
+	 * program has linked a second time after Safari's random Metal fault.
 	 */
-	private readonly swapping = new Map<string, Program>();
+	private readonly swapping = new Map<string, { program: Program; relinked: boolean }>();
 	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
@@ -521,6 +529,7 @@ export class WebGL2Backend {
 		this.clearDepth = this.depth.standard ? 0 : 1;
 		// Texel rows in engine memory are tightly packed, whatever their width.
 		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+		this.prebuildSparePrograms();
 	}
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
@@ -579,8 +588,9 @@ export class WebGL2Backend {
 	/**
 	 * Compiles each program of a custom material whose shader a hot update replaced again, in the
 	 * background where the context can, and swaps each in once it has linked. The old program
-	 * draws until then, so no frame loses the material's objects. A program that fails to link
-	 * keeps the old one and logs why.
+	 * draws until then, so no frame loses the material's objects. A link that fails with Safari's
+	 * random Metal fault is done once more, also in the background. A program that fails to link
+	 * otherwise keeps the old one and logs why.
 	 */
 	private swapReplaced(): void {
 		if (!DEV) return;
@@ -595,18 +605,25 @@ export class WebGL2Backend {
 				const [owner, permutation] = key.split(' ').map(Number);
 				if (owner !== template) continue;
 				const earlier = this.swapping.get(key);
-				if (earlier) this.deleteProgram(earlier);
+				if (earlier) this.deleteProgram(earlier.program);
 				const program = createProgram(gl, defined, permutation as number);
 				program.background = true;
-				this.swapping.set(key, program);
+				this.swapping.set(key, { program, relinked: false });
 				this.counts.pipelines++;
 			}
 		}
-		for (const [key, program] of this.swapping) {
+		for (const [key, swap] of this.swapping) {
+			const program = swap.program;
 			if (!this.compiled(program)) continue;
-			this.swapping.delete(key);
 			const old = this.programs.get(key);
-			if (!old || !gl.getProgramParameter(program.program, gl.LINK_STATUS)) {
+			const linked = gl.getProgramParameter(program.program, gl.LINK_STATUS);
+			if (old && !linked && !swap.relinked && metalFault(gl, program)) {
+				relink(gl, program);
+				swap.relinked = true;
+				continue;
+			}
+			this.swapping.delete(key);
+			if (!old || !linked) {
 				if (old)
 					console.error(
 						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${gl.getProgramInfoLog(program.program)}`,
@@ -637,6 +654,27 @@ export class WebGL2Backend {
 		}
 		const build = buildPermutation(defined, permutation);
 		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
+	}
+
+	/**
+	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
+	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
+	 * background where the browser can, and the first frame waits for them. Skinning's and morph
+	 * targets' builds vary in every material bit, and a scene's materials draw with a few of them, so
+	 * `scene.warmUp()` builds those, as for any material.
+	 */
+	precompile(feature: string, module: FirstUseShaders): void {
+		if (WARM_UP_FEATURES.has(feature)) return;
+		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
+		for (const [name, builds] of Object.entries(module)) {
+			const variants = held?.[name];
+			if (!variants) continue;
+			this.templates.forEach((template, id) => {
+				if (template?.shader !== variants) return;
+				for (const build of Object.values(builds as ShaderVariants))
+					if (build.glsl?.[template.pipeline]) this.programOf(id, build.permutation, true);
+			});
+		}
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */
@@ -910,14 +948,39 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** The program that draws mip levels, or the one that copies a layer, in use. */
-	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+	/**
+	 * The program that draws mip levels, or the one that copies a layer, which starts compiling the
+	 * first time.
+	 */
+	private spareProgramOf(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
 		let program = this.programs.get(key);
 		if (!program) {
 			const template = key === MIP_PROGRAM ? this.mipTemplate : this.copyTemplate;
 			program = createProgram(this.gl, template, 0);
 			this.programs.set(key, program);
 		}
+		return program;
+	}
+
+	/**
+	 * Starts compiling the programs that draw mip levels and copy layers, so that the driver can
+	 * compile them before the first texture upload needs them. Nothing waits for their link here.
+	 * A program that fails to start is made again at first use, which reports the failure.
+	 */
+	private prebuildSparePrograms(): void {
+		for (const key of [MIP_PROGRAM, COPY_PROGRAM] as const) {
+			try {
+				this.spareProgramOf(key);
+			} catch {}
+		}
+	}
+
+	/**
+	 * The program that draws mip levels, or the one that copies a layer, in use. Its first use
+	 * waits for its link when the driver has not finished it.
+	 */
+	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+		const program = this.spareProgramOf(key);
 		this.useProgram(program);
 		return program;
 	}
@@ -1460,10 +1523,10 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Runs a slice of the work of a generator that the table holds, which fills a cube texture on
-	 * the GPU. The generator draws full-screen triangles with no depth test, culling, scissor or
-	 * blending, and writes every channel. It changes bindings that the state cache holds, so the
-	 * cache forgets them, and the next draws bind what they need again.
+	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
+	 * generator draws full-screen triangles with no depth test, culling, scissor or blending, and
+	 * writes every channel. It changes bindings that the state cache holds, so the cache forgets
+	 * them, and the next draws bind what they need again.
 	 */
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
@@ -1482,8 +1545,6 @@ export class WebGL2Backend {
 			texture.texture as WebGLTexture,
 			texture.width,
 			texture.mips,
-			words[a + 2] as number,
-			words[a + 3] as number,
 		);
 		this.program = null;
 		this.activeUnit = -1;

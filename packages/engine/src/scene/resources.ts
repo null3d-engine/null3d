@@ -56,6 +56,7 @@ import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
+import { ShaderPreloads } from './shader-preloads';
 import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -66,6 +67,7 @@ import type { TextureValues, UniformType, UniformValue, UniformValues } from './
  * @category api/geometry
  */
 export class MeshGeometry {
+	/** @internal */
 	constructor(
 		/** @internal */ readonly id: number,
 		/** The distance from the mesh's origin to its farthest vertex, at rest. */
@@ -1199,6 +1201,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The engine core's id, or 0 once the material is destroyed. */
 	private liveId: number;
 
+	/** @internal */
 	constructor(
 		id: number,
 		/** @internal */ readonly core: CoreMemory,
@@ -1298,10 +1301,13 @@ export class Materials {
 	/** In development builds, the newest WGSL under each hot update key that an update brought. */
 	private readonly hotShaders = new Map<string, CompiledMaterial>();
 
+	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,
 		/** Sends each custom material's shader to the thread that draws, once. */
 		private readonly sendShader: ShaderSender = () => {},
+		/** @internal Asks the thread that draws for the shader files of features early. */
+		readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
 
 	/**

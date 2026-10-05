@@ -5,11 +5,13 @@ import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
 import {
 	BUDGET_US,
+	CLOCK_LIMIT_MS,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
 	FRAME_US,
 	FULL_SCALE,
 	farIntervalSteps,
+	GAP_MS,
 	Governor,
 	GovernorLoop,
 	type GovernorScene,
@@ -408,9 +410,9 @@ describe('the governor in the frame loop', () => {
 
 	/**
 	 * A metrics buffer whose render and completion rings the test writes as frames go, and a scene
-	 * whose shadows and loading the test sets.
+	 * whose shadows and loading the test sets. The frame loop's clock starts at `start` ms.
 	 */
-	function loop(refreshHz = 60, fps?: number) {
+	function loop(refreshHz = 60, fps?: number, start = 0) {
 		const metrics = createMetricsBuffer(false, 0);
 		const render = new FrameRecorder(metrics, Role.Render);
 		const done = new FrameRecorder(metrics, Role.Completion);
@@ -422,7 +424,7 @@ describe('the governor in the frame loop', () => {
 		};
 		const resolution = new GovernorLoop(new Governor(), metrics, reads, fps);
 		resolution.governor.setRange(500, FULL_SCALE);
-		let now = 0;
+		let now = start;
 		let frame = 0;
 		/**
 		 * Steps frames `interval` ms apart for `ms`, or with the intervals of a list in turn, the GPU
@@ -452,6 +454,37 @@ describe('the governor in the frame loop', () => {
 		const { run } = loop();
 		expect(run(2 * BUDGET, BUDGET, GRACE_MS)).toBe(FULL_SCALE);
 		expect(run(2 * BUDGET, BUDGET, DROP_AFTER_MS + WINDOW_MS)).toBe(FULL_SCALE - SCALE_STEP);
+	});
+
+	it('keeps the rest of its grace after a stall early in play', () => {
+		// A stall long enough to start the windows again, as when a driver compiles the shaders of
+		// objects added during play at their first draw, comes before the grace ends.
+		const { run } = loop();
+		run(2 * BUDGET, BUDGET, 400);
+		run(GAP_MS + 100, BUDGET, GAP_MS + 100);
+		expect(run(2 * BUDGET, BUDGET, GRACE_MS + DROP_AFTER_MS - 2 * WINDOW_MS - 1000)).toBe(
+			FULL_SCALE,
+		);
+		expect(run(2 * BUDGET, BUDGET, 2 * WINDOW_MS)).toBe(FULL_SCALE - SCALE_STEP);
+	});
+
+	it('steps at the same times on a page open for weeks', () => {
+		// Frames at half the target rate, then at the target rate, from a frame loop's clock that
+		// starts at 0, a few seconds before the governor's clock moves its origin, and past the
+		// largest whole number of ms that 32 bits hold. Frame intervals of whole ms keep every
+		// reading of the clock exact, so the windows end at the same frames in each run.
+		const scales = (start: number): number[] => {
+			const { run } = loop(60, undefined, start);
+			const seen: number[] = [];
+			for (let k = 0; k < 40; k++) seen.push(run(33, BUDGET, WINDOW_MS));
+			for (let k = 0; k < 400; k++) seen.push(run(16, BUDGET / 4, WINDOW_MS));
+			return seen;
+		};
+		const fromZero = scales(0);
+		expect(Math.min(...fromZero)).toBeLessThan(FULL_SCALE - SCALE_STEP);
+		expect(fromZero.at(-1)).toBe(FULL_SCALE);
+		expect(scales(CLOCK_LIMIT_MS - 5000)).toEqual(fromZero);
+		expect(scales(2 ** 31 + 5000)).toEqual(fromZero);
 	});
 
 	it('scales the budget from the refresh rate, up to the highest target rate', () => {
