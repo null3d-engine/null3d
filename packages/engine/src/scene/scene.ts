@@ -648,6 +648,7 @@ export class Object3D implements Described {
 	/** @internal The object's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly scene: Scene,
 		/** @internal */ readonly handle: number,
@@ -1819,6 +1820,7 @@ export class InstanceBatch {
 	/** @internal The batch's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		private readonly scene: Scene,
 		/** @internal */ readonly id: number,
@@ -2133,6 +2135,7 @@ export class Scene {
 	private morphTable: Float32Array = new Float32Array(0);
 	private morphGeneration = -1;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
@@ -2941,6 +2944,7 @@ export class Scene {
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('sprites');
 		const sprites = await loadSprites(call);
 		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
 		const id = core.checkGrowth(
@@ -2983,6 +2987,7 @@ export class Scene {
 		LINE_CHECKS.width(width, call);
 		LINE_CHECKS.values(options, call);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('lines');
 		const lines = await loadLines(call);
 		const parts = lines.lineParts(makers, core, this.lineMesh, options, LINE_CHECKS, call);
 		this.lineMesh = parts.mesh;
@@ -3166,7 +3171,9 @@ export class Scene {
 	 * environment or a cube map that was destroyed.
 	 */
 	setBackground(background: ColorInput | BackgroundSource, options?: BackgroundOptions): void {
-		this.sceneBackground ??= new SceneBackground(this.core);
+		this.sceneBackground ??= new SceneBackground(this.core, (feature) =>
+			this.makers?.materials.shaders.need(feature),
+		);
 		if (
 			background instanceof Texture ||
 			background instanceof Environment ||

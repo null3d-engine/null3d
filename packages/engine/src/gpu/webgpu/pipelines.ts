@@ -80,8 +80,8 @@ import {
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
+import { DEV } from '../../shared/dev';
 import type { CustomShader } from '../../shared/images';
-import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import {
@@ -295,7 +295,8 @@ export class Pipelines {
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
 	private readonly skinLayout: GPUPipelineLayout;
-	private readonly skin: WgslShader | undefined;
+	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
+	private readonly skin: ShaderVariants;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The module of the fragment shader that writes nothing, made at its first use. */
@@ -542,14 +543,14 @@ export class Pipelines {
 			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES, LAYOUT_BACKGROUND],
 			vertexBuffers: [],
 		});
-		for (const [id, label, pipeline] of [
-			[TEMPLATE_BACKGROUND_CUBE, 'background cube', 'cube'],
-			[TEMPLATE_BACKGROUND_SKY, 'background sky', 'sky'],
+		for (const [id, label, shader] of [
+			[TEMPLATE_BACKGROUND_CUBE, 'background cube', shaders.background_cube],
+			[TEMPLATE_BACKGROUND_SKY, 'background sky', shaders.sky],
 		] as const) {
 			this.defineTemplate(id, {
 				label,
-				shader: shaders.skybox,
-				pipeline,
+				shader,
+				pipeline: 'main',
 				layouts: [LAYOUT_FRAME, LAYOUT_BACKGROUND],
 				vertexBuffers: [],
 			});
@@ -578,7 +579,7 @@ export class Pipelines {
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
-		this.skin = variantFor(shaders.skin, 0, 'wgsl')?.wgsl ?? undefined;
+		this.skin = shaders.skin;
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -617,11 +618,17 @@ export class Pipelines {
 		return template.shader;
 	}
 
-	/** Adds a render pipeline template under an id that no other template has. */
+	/**
+	 * Adds a render pipeline template under an id that no other template has. The shader of a
+	 * feature that loads on first use has no variants until its module arrives.
+	 */
 	defineTemplate(id: number, template: RenderTemplate): void {
 		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);
 		const variants = Object.values(template.shader);
-		if (!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline]))
+		if (
+			variants.length > 0 &&
+			!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline])
+		)
 			throw new Error(`the shader of template ${id} has no pipeline ${template.pipeline}`);
 		this.templates[id] = template;
 	}
@@ -630,6 +637,11 @@ export class Pipelines {
 		const layout = this.layouts[id];
 		if (!layout) throw new Error(`unknown bind group layout ${id}`);
 		return layout;
+	}
+
+	/** Creates the shader module of `shader` ahead of the pipelines that will share it. */
+	prepareModule(label: string, shader: WgslShader): void {
+		this.module(label, shader);
 	}
 
 	private module(label: string, shader: WgslShader): GPUShaderModule {
@@ -752,14 +764,23 @@ export class Pipelines {
 		return pipeline;
 	}
 
+	/**
+	 * The shader variants of a compute template whose shader loads on first use, the skinning pass's,
+	 * or undefined for a template whose shader the device's module of the start holds.
+	 */
+	computeVariants(template: number): ShaderVariants | undefined {
+		return template === TEMPLATE_SKIN ? this.skin : undefined;
+	}
+
 	/** How to build a compute pipeline of a template: culling, skinning, or a step of light clustering. */
 	compute(template: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
-			if (!this.skin) throw new Error("the device's shader module has no skinning shader");
+			const skin = variantFor(this.skin, 0, 'wgsl')?.wgsl;
+			if (!skin) throw new Error("the device's shader modules have no skinning shader");
 			return {
 				label: 'skin',
 				layout: this.skinLayout,
-				compute: { module: this.module('skin', this.skin), entryPoint: 'main' },
+				compute: { module: this.module('skin', skin), entryPoint: 'main' },
 			};
 		}
 		if (template === TEMPLATE_CULL) {

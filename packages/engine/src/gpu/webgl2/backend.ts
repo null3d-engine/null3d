@@ -20,7 +20,7 @@
 // turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
-import type { DeviceShaders } from '../../generated/shaders';
+import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { type GeneratorName, ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
@@ -71,6 +71,11 @@ const CULL_BACK = 0x0405;
 const UNPACK_RING = 3;
 /** Each write's place in a pixel unpack buffer is aligned to this, the largest texel's size. */
 const UNPACK_ALIGNMENT = 16;
+/**
+ * Features whose builds vary in every material bit, tens of programs for each device. A scene's
+ * materials draw with a few of them, so a preload compiles none, and `scene.warmUp()` builds those.
+ */
+const WARM_UP_FEATURES: ReadonlySet<string> = new Set(['skinning', 'morph']);
 
 /** Where drawing into the canvas goes during a capture: an offscreen stand-in of the same size. */
 export interface CanvasTarget {
@@ -584,6 +589,27 @@ export class WebGL2Backend {
 		}
 		const build = buildPermutation(defined, permutation);
 		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
+	}
+
+	/**
+	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
+	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
+	 * background where the browser can, and the first frame waits for them. Skinning's and morph
+	 * targets' builds vary in every material bit, and a scene's materials draw with a few of them, so
+	 * `scene.warmUp()` builds those, as for any material.
+	 */
+	precompile(feature: string, module: FirstUseShaders): void {
+		if (WARM_UP_FEATURES.has(feature)) return;
+		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
+		for (const [name, builds] of Object.entries(module)) {
+			const variants = held?.[name];
+			if (!variants) continue;
+			this.templates.forEach((template, id) => {
+				if (template?.shader !== variants) return;
+				for (const build of Object.values(builds as ShaderVariants))
+					if (build.glsl?.[template.pipeline]) this.programOf(id, build.permutation, true);
+			});
+		}
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */

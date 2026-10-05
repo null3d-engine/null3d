@@ -62,20 +62,24 @@ import {
 	growthSummary,
 } from './lib/size-check';
 import {
+	type Budget,
 	type BuiltFile,
 	budgetProblems,
+	COLUMNS,
 	type CORE_BUILDS,
 	CORE_FILES,
+	type Column,
 	downloadSizes,
+	ENGINE_SOURCE,
+	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
 	findTranscoderFiles,
-	LATER_BUDGET_BYTES,
+	isFirstUseShaderPart,
+	LATER_BUDGET,
 	LATER_PARTS,
 	measure,
-	ON_DEMAND_SHADER_BUDGET_BYTES,
-	ON_DEMAND_SHADER_PARTS,
 	type SizeEntry,
-	START_BUDGET_BYTES,
+	START_BUDGET,
 	totalSize,
 } from './lib/size-report';
 
@@ -357,10 +361,6 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 		'-o',
 		wasm,
 	]);
-	// The loader creates the shared memory itself, so it needs the module's declared sizes.
-	const limits = memoryImportLimits(readFileSync(join(root, wasm)));
-	if (limits)
-		writeFileSync(join(root, outDir, 'null3d_memory.json'), `${JSON.stringify(limits)}\n`);
 }
 
 /**
@@ -392,75 +392,13 @@ function buildToolModules(): void {
 	}
 }
 
-export interface MemoryLimits {
-	/** Initial size in 64 KB pages. */
-	initial: number;
-	/** Declared maximum in 64 KB pages, or null when the module declares none. */
-	maximum: number | null;
-	shared: boolean;
-}
-
-/** Reads an unsigned LEB128 number at `offset`; returns the value and the offset after it. */
-function readLeb(bytes: Uint8Array, offset: number): [number, number] {
-	let value = 0;
-	let shift = 0;
-	let at = offset;
-	for (;;) {
-		const byte = bytes[at++] ?? 0;
-		value += (byte & 0x7f) * 2 ** shift;
-		if ((byte & 0x80) === 0) return [value, at];
-		shift += 7;
-	}
-}
-
-/** The limits of the memory a module imports, from its import section, or null when it imports none. */
-export function memoryImportLimits(bytes: Uint8Array): MemoryLimits | null {
-	let at = 8;
-	while (at < bytes.length) {
-		const id = bytes[at++];
-		const [size, contentStart] = readLeb(bytes, at);
-		at = contentStart;
-		if (id !== 2) {
-			at += size;
-			continue;
-		}
-		let [count, cursor] = readLeb(bytes, at);
-		for (; count > 0; count--) {
-			for (let name = 0; name < 2; name++) {
-				const [length, afterLength] = readLeb(bytes, cursor);
-				cursor = afterLength + length;
-			}
-			const kind = bytes[cursor++];
-			if (kind === 0) {
-				cursor = readLeb(bytes, cursor)[1];
-			} else if (kind === 1) {
-				cursor++;
-				const flags = bytes[cursor++] ?? 0;
-				cursor = readLeb(bytes, cursor)[1];
-				if (flags & 1) cursor = readLeb(bytes, cursor)[1];
-			} else if (kind === 2) {
-				const flags = bytes[cursor++] ?? 0;
-				const [initial, afterInitial] = readLeb(bytes, cursor);
-				const maximum = flags & 1 ? readLeb(bytes, afterInitial)[0] : null;
-				return { initial, maximum, shared: (flags & 2) !== 0 };
-			} else if (kind === 3) {
-				cursor += 2;
-			} else {
-				cursor++;
-				cursor = readLeb(bytes, cursor)[1];
-			}
-		}
-		return null;
-	}
-	return null;
-}
-
 /**
  * Builds the engine test page for production with hidden source maps, which leave the JavaScript
- * as it ships, and reads each JavaScript file with the source files it holds. The core's glue is
- * copied as it is and has no map. Vite writes a worker's source paths from the build folder and
- * the page's from its assets folder, both inside the repository, so a path without its leading
- * steps up is the path from the repository's root.
+ * as it ships, and reads each JavaScript file with the source files it holds. The core's glue and
+ * the shader build's device modules are copied as they are and have no map: a device module's
+ * file holds its module alone, which its name gives. Vite writes a worker's source paths from the
+ * build folder and the page's from its assets folder, both inside the repository, so a path
+ * without its leading steps up is the path from the repository's root.
  */
 function buildEngineTestPage(): BuiltFile[] {
 	console.log('\nbuilding the engine test page for production');
@@ -469,30 +407,42 @@ function buildEngineTestPage(): BuiltFile[] {
 	if (build.status !== 0)
 		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
 	const assets = join(root, JS_BUILD_DIR, 'assets');
-	return readdirSync(assets)
-		.filter((file) => file.endsWith('.js') && existsSync(join(assets, `${file}.map`)))
-		.map((file) => {
-			const map = JSON.parse(readFileSync(join(assets, `${file}.map`), 'utf8')) as {
-				sources: string[];
-			};
-			return {
-				file,
-				text: readFileSync(join(assets, file), 'utf8'),
-				sources: map.sources.map((source) => source.replace(/^(\.\.?\/)+/, '')),
-			};
-		});
+	return readdirSync(assets).flatMap((file) => {
+		if (!file.endsWith('.js')) return [];
+		const text = readFileSync(join(assets, file), 'utf8');
+		const mapped = join(assets, `${file}.map`);
+		if (existsSync(mapped)) {
+			const map = JSON.parse(readFileSync(mapped, 'utf8')) as { sources: string[] };
+			const sources = map.sources.map((source) => source.replace(/^(\.\.?\/)+/, ''));
+			return [{ file, text, sources }];
+		}
+		const shaders = /^(shaders-[a-z0-9-]+)-[\w-]{8}\.js$/.exec(file)?.[1];
+		return shaders ? [{ file, text, sources: [`${ENGINE_SOURCE}generated/${shaders}.js`] }] : [];
+	});
 }
 
 const kb = (n: number) => `${(n / 1024).toFixed(1)} KB`;
 
-function printSize(name: string, size: SizeEntry, budgetBytes?: number): void {
-	const budget = budgetBytes
-		? `  ${((size.brotli / budgetBytes) * 100).toFixed(1)}% of budget`
-		: '';
-	console.log(
-		`  ${name.padEnd(28)} raw ${kb(size.raw).padStart(10)}   brotli ${kb(size.brotli).padStart(10)}${budget}`,
-	);
+/**
+ * One line of the report: the size in each column, and the share of each column's budget, where
+ * the column has one. The line ends with Brotli's share, which the gate's record reads.
+ */
+function printSize(name: string, size: SizeEntry, budget: Partial<Budget> = {}): void {
+	const share = (column: Column, limit: number) => ((size[column] / limit) * 100).toFixed(1);
+	const columns = COLUMNS.map((column) => {
+		const text = `${column} ${kb(size[column]).padStart(10)}`;
+		const limit = budget[column];
+		return limit && column !== 'brotli'
+			? `${text} ${`(${share(column, limit)}%)`.padStart(8)}`
+			: text;
+	});
+	const brotliShare = budget.brotli ? `  ${share('brotli', budget.brotli)}% of budget` : '';
+	console.log(`  ${name.padEnd(28)} ${columns.join('   ')}${brotliShare}`);
 }
+
+/** A section's heading's note of a budget, in each column. */
+const budgetNote = (budget: Budget) =>
+	`budget: ${kb(budget.brotli)} after Brotli, ${kb(budget.gzip)} after gzip, ${kb(budget.raw)} uncompressed`;
 
 interface Base {
 	sha: string;
@@ -568,7 +518,7 @@ function seedBuildFolders(tree: string): void {
  * commit in the base worktree with the commit's own build script, so the base has that commit's
  * flags, toolchain and list of parts.
  */
-function baseSizes(sha: string): Record<string, SizeEntry> {
+function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	const kept = join(root, BASE_DIR, `${sha}.json`);
 	if (existsSync(kept)) {
 		console.log(`reusing the sizes of the base build of ${sha.slice(0, 8)}, kept in ${BASE_DIR}`);
@@ -680,24 +630,22 @@ async function main(): Promise<void> {
 	);
 	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
-		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
+		printSize(file, size, file.endsWith('.wasm') ? { brotli: WASM_BUDGET_BYTES } : undefined);
 	printSize('js total', totalSize(parts.values()));
 	console.log(
-		`\nthe engine's JavaScript that a page downloads at its start in each thread mode, besides the core's glue (budget: ${kb(START_BUDGET_BYTES)} after Brotli)`,
+		`\nthe engine's JavaScript that a page downloads at its start in each thread mode, besides the core's glue (${budgetNote(START_BUDGET)})`,
 	);
-	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET_BYTES);
+	for (const { mode, size } of downloads) printSize(mode, size, START_BUDGET);
 	console.log(
-		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (budget: ${kb(LATER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+		`\nthe engine's JavaScript that loads after the start, on a feature's first use or after the first frame (${budgetNote(LATER_BUDGET)} for each file; no start counts them)`,
 	);
-	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET_BYTES);
+	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of features that load on demand, such as WebGL2's morph targets and the texture generators (budget: ${kb(ON_DEMAND_SHADER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+		`\nthe shader builds of each feature that loads on first use, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
 	);
-	for (const part of ON_DEMAND_SHADER_PARTS) {
-		const size = parts.get(part);
-		if (size) printSize(`js/${part}`, size, ON_DEMAND_SHADER_BUDGET_BYTES);
-	}
+	for (const [part, size] of parts)
+		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);
 	console.log(
 		'\nthe KTX2 transcoder, which a page downloads when it loads its first KTX2 file (no budget)',
 	);

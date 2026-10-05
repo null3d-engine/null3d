@@ -46,7 +46,7 @@ import {
 	type GlslStage,
 	type ShaderVariants,
 } from '../../generated/shaders';
-import { DEV } from '../dev';
+import { DEV } from '../../shared/dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
@@ -191,8 +191,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_LINE] = { shader: shaders.line, pipeline: 'main' };
 	templates[TEMPLATE_LINE_LIT] = { shader: shaders.line_lit, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
-	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.skybox, pipeline: 'cube' };
-	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.skybox, pipeline: 'sky' };
+	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.background_cube, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.sky, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.
 	templates[TEMPLATE_AO_DEPTH] = { shader: shaders.ao, pipeline: 'depth' };

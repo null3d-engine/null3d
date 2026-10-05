@@ -40,9 +40,18 @@ interface ModuleRecord {
 	modules: string;
 }
 
-/** True for a file that the shader build writes: the main module or a device module. */
+/**
+ * True for a file that the shader build writes: the main module, the module of feature names and
+ * the module of each shader that loads on first use as a whole, TypeScript, or a device module,
+ * plain JavaScript.
+ */
 export function isShaderModule(name: string): boolean {
-	return /^shaders(-[a-z0-9-]+)?\.ts$/.test(name);
+	return (
+		name === 'shaders.ts' ||
+		name === 'shader-features.ts' ||
+		/^shaders-[a-z0-9-]+-(wgsl|glsl)\.ts$/.test(name) ||
+		/^shaders-[a-z0-9-]+\.js$/.test(name)
+	);
 }
 
 /** The crate folders that the shader build compiles: its own and its path dependencies. */

@@ -1,54 +1,16 @@
-// Cube map and sky backgrounds: a box around the camera, drawn first in the camera's opaque pass,
-// whose fragments find their color in their direction, as three.js draws a cube texture in
-// `scene.background` and its `Sky` object. The fragment shaders write linear color as the mesh
-// shaders write theirs: into the HDR scene color, or tone mapped and encoded on the 8-bit path
-// (the TONE_MAP builds).
-//
-// - `cube` reads a cube texture: an environment map at the level of the blur's roughness, as
-//   three.js reads its PMREM with `backgroundBlurriness`, or a cube map's only level.
-// - `sky` is three.js's `Sky` (examples/jsm/objects/Sky.js, r186): the Preetham daylight model, a
-//   sun disc and drifting clouds. Every constant and formula follows three.js's, in its order, so
-//   a port keeps its look. The values that three.js's vertex shader finds once go to the fragments
-//   as flat values.
+// three.js's sky behind every object: its `Sky` object (examples/jsm/objects/Sky.js, r186), the
+// Preetham daylight model with a sun disc and drifting clouds, drawn as a box around the camera,
+// first in the camera's opaque pass. Every constant and formula follows three.js's, in its order,
+// so a port keeps its look. The values that three.js's vertex shader finds once go to the
+// fragments as flat values. The fragment shader writes linear color as the mesh shaders write
+// theirs: into the HDR scene color, or tone mapped and encoded on the 8-bit path (the TONE_MAP
+// builds). It binds the background's group as the cube map background does, and reads no texture.
 #import null3d::globals::Frame
 #import null3d::tonemap
-#import null3d::ibl::{roughness_level}
 #import null3d::backdrop::{Backdrop, box_corner}
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var<uniform> backdrop: Backdrop;
-@group(1) @binding(1) var cube_map: texture_cube<f32>;
-@group(1) @binding(2) var cube_sampler: sampler;
-
-struct CubeOut {
-    @builtin(position) clip: vec4f,
-    @location(0) direction: vec3f,
-}
-
-@vertex
-fn vs_cube(@builtin(vertex_index) vertex: u32) -> CubeOut {
-    let corner = box_corner(vertex, frame.view_proj, frame.camera_position);
-    var out: CubeOut;
-    out.clip = corner.clip;
-    out.direction = corner.direction;
-    return out;
-}
-
-/// The cube map's light in the fragment's direction, turned by the background's rotation, at the
-/// level that holds the blur's roughness, times the intensity and the exposure.
-@fragment
-fn fs_cube(in: CubeOut) -> @location(0) vec4f {
-    let d = in.direction;
-    let turned = vec3f(
-        dot(backdrop.rotation[0].xyz, d),
-        dot(backdrop.rotation[1].xyz, d),
-        dot(backdrop.rotation[2].xyz, d),
-    );
-    let level = roughness_level(backdrop.params.y, backdrop.params.z);
-    let light = textureSampleLevel(cube_map, cube_sampler, turned, level).rgb;
-    let scale = backdrop.params.x * frame.output.exposure;
-    return null3d::tonemap::finish(light * scale, in.clip.xy, frame.output);
-}
 
 const E: f32 = 2.718281828459045;
 const PI: f32 = 3.141592653589793;
@@ -91,7 +53,7 @@ fn total_mie(t: f32) -> vec3f {
 }
 
 @vertex
-fn vs_sky(@builtin(vertex_index) vertex: u32) -> SkyOut {
+fn vs(@builtin(vertex_index) vertex: u32) -> SkyOut {
     let corner = box_corner(vertex, frame.view_proj, frame.camera_position);
     var out: SkyOut;
     out.clip = corner.clip;
@@ -153,7 +115,7 @@ fn cloud_fbm(start: vec2f, drift: f32) -> f32 {
 
 /// The sky's light in the fragment's direction, times the intensity and the exposure.
 @fragment
-fn fs_sky(in: SkyOut) -> @location(0) vec4f {
+fn fs(in: SkyOut) -> @location(0) vec4f {
     let direction = normalize(in.direction);
     let sun_direction = in.sun_direction;
     let beta_r = in.beta_r;

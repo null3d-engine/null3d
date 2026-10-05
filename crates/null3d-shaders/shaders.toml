@@ -7,7 +7,7 @@
 #
 #   file       The WGSL file, relative to wgsl/. Every .wgsl file there needs a table.
 #   by_device  true for a shader that the engine loads by device. Its builds go into the device
-#              modules, generated/shaders-<target>[-<bit>...].ts, one for each target and each
+#              modules, generated/shaders-<target>[-<bit>...].js, one for each target and each
 #              value of the permutation bits that a device fixes (DEVICE in the `permutation`
 #              module): the draw index, tone mapping in the shader and half precision. A page
 #              loads one of them, so it downloads only the builds that its device draws with. Each
@@ -60,6 +60,28 @@
 # other than `@interpolate(flat, either)` (AGENTS.md hard rule 10). A variant whose only target is
 # "glsl" may read `@builtin(draw_index)`: its vertex shader reads `gl_DrawID` from
 # WEBGL_multi_draw, which WebGPU does not have.
+#
+# Each [first_use.<feature>] table names a feature whose builds load on first use: a page that
+# never uses the feature downloads none of them. The feature's builds go into device modules of
+# their own, generated/shaders-<feature>-<target>[-<bit>...].js, one for each target and each value
+# of the device's bits that those builds vary in. The engine loads one the first time a pipeline
+# asks for one of its builds, and the pipeline waits for it as for a custom material's shader.
+#
+#   shaders  Shaders that load by device, each of whose builds belongs to the feature: its templates.
+#   bits     Permutation bits that a device does not fix: each build of a shader that loads by
+#            device with one of them belongs to the feature, such as the final pass's BLOOM builds.
+#
+# A build with no feature stays in the device modules of the start. A build of a feature's shader
+# belongs to that feature, and any other build to the feature of its lowest bit that a feature
+# names. The template of custom materials stays at the start. The size check holds each module of
+# a feature to the start shader file's own limit after Brotli.
+#
+# Device modules are plain JavaScript, which the main module imports by address, so a production
+# build holds one copy of each for the page and every worker.
+#
+# A new feature that adds templates or bits adds its table here. A full-screen pass, or a pass whose
+# output other passes read, must not draw until its pipelines are built, as bloom's and skinning's
+# do, since a pipeline that waits for its file draws nothing (decision record D-56).
 
 # The SKIN builds skin each vertex by its joints in the vertex shader, and the MORPH builds, which
 # only WebGL2 has, add its morph targets' deltas before that. WebGPU skins and morphs in the
@@ -131,6 +153,10 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK"], targets = ["glsl"] }
 
+# A page downloads the sprite templates with its first sprite batch.
+[first_use.sprites]
+shaders = ["sprite", "sprite_map"]
+
 # Wide lines, like three.js's Line2 and LineSegments2 with a LineMaterial: a quad with round ends
 # for each segment of a line batch's rows, in the material's color times the segment's colors,
 # with widths in CSS pixels or world units and dashes.
@@ -150,6 +176,10 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["LIT"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "LIT"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
+# A page downloads both line templates with its first line batch.
+[first_use.lines]
+shaders = ["line", "line_lit"]
+
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"
@@ -157,6 +187,10 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "SKIN"], targets = ["glsl"] }
+
+# Only the engine's own tests draw with it, so a page downloads it with the first mesh that does.
+[first_use.texcoords]
+shaders = ["texcoords"]
 
 # The final pass: one triangle over the canvas, which scales the scene color up to it and tone
 # maps HDR color. The FXAA builds smooth edges first, for the FXAA anti-aliasing mode. The BLOOM
@@ -177,6 +211,12 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
+
+# A page downloads bloom's steps and the final pass's BLOOM builds when the sketch first turns
+# bloom on.
+[first_use.bloom]
+shaders = ["bloom"]
+bits = ["BLOOM"]
 
 # The outline effect's mask: outlined objects drawn as instanced meshes, which mark every part of
 # them, and with OUTLINE_VISIBLE the parts that nothing hides. It reads each instance as the mesh
@@ -209,6 +249,11 @@ file = "ao.wgsl"
 by_device = true
 pipelines.depth = { vertex = "vs", fragment = "depth" }
 variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads ambient occlusion's steps when the sketch first turns it on. The frames keep the
+# opaque pass without it until the steps' pipelines are built.
+[first_use.ao]
+shaders = ["ao", "ao_ms"]
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays
@@ -274,8 +319,7 @@ variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
 # A texture behind every object, drawn first in the camera's opaque pass as one triangle over the
-# whole view. It loads by device, with the mesh templates, and its TONE_MAP builds tone map and
-# encode their color themselves, for the 8-bit path.
+# whole view. Its TONE_MAP builds tone map and encode their color themselves, for the 8-bit path.
 [shaders.background]
 file = "background.wgsl"
 by_device = true
@@ -283,17 +327,34 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
-# A cube map or three.js's sky behind every object, drawn first in the camera's opaque pass as a
-# box around the camera. It loads by device, as the texture background does, and its TONE_MAP
-# builds tone map and encode their color themselves, for the 8-bit path. It is a file of its own,
-# so that the sky's code can load on its first use.
-[shaders.skybox]
-file = "skybox.wgsl"
+# An environment or a cube map behind every object, drawn first in the camera's opaque pass as a
+# box around the camera. Its TONE_MAP builds tone map and encode their color themselves, for the
+# 8-bit path.
+[shaders.background_cube]
+file = "background_cube.wgsl"
 by_device = true
-pipelines.cube = { vertex = "vs_cube", fragment = "fs_cube" }
-pipelines.sky = { vertex = "vs_sky", fragment = "fs_sky" }
+pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the texture, environment and cube map backgrounds with its first background
+# of one of them. The background appears once its pipeline is built, as it appears once its
+# texels are on the GPU.
+[first_use.background]
+shaders = ["background", "background_cube"]
+
+# three.js's sky behind every object, drawn as the cube map background is.
+[shaders.sky]
+file = "sky.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the sky with its first sky background. The view shows the background color
+# until the sky's pipeline is built.
+[first_use.sky]
+shaders = ["sky"]
 
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only. It stays in shaders.ts, where the GPU timer imports it.
@@ -344,12 +405,22 @@ variants.instanced = { defs = ["INSTANCED"], targets = ["wgsl", "glsl"] }
 variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }
 
 # The skinning pass on WebGPU: one thread per vertex of each part of each skinned mesh that a view
-# draws, into the skinned vertex buffer that the shadow and main passes draw. It loads by device,
-# with the culling shader.
+# draws, into the skinned vertex buffer that the shadow and main passes draw.
 [shaders.skin]
 file = "skin.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
+
+# A page downloads the skinning pass and every SKIN build with its first skinned mesh. The passes
+# leave skinned meshes out until every pipeline that draws or skins them is built.
+[first_use.skinning]
+shaders = ["skin"]
+bits = ["SKIN"]
+
+# A WebGL2 page downloads the MORPH builds with its first morphed mesh. WebGPU morphs in the
+# skinning pass, so it has no MORPH builds.
+[first_use.morph]
+bits = ["MORPH"]
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;
