@@ -75,27 +75,30 @@ The fog keeps 48 bytes. The first vector holds the color and the density. The se
 
 The fog is a branch on the frame's values in the mesh templates, as ambient occlusion's reading and color grading are ([D-56](D-56-first-use-shader-files.md)). A permutation bit would double each mesh template's builds for a few lines of code.
 
-`bun run build:check-size` measured the growth against main at 62ab95e1, after Brotli:
+`bun run build:check-size` measured the growth against main at a2e45c84, after Brotli:
 
 | Files | Before | After | Growth |
 | --- | --- | --- | --- |
-| The 6 WGSL start files | 33,191 to 34,165 bytes | 33,620 to 34,522 bytes | -0.1% to +1.5%, -32 to +503 bytes |
-| The 8 GLSL start files | 32,943 to 34,080 bytes | 33,499 to 35,245 bytes | +1.1% to +4.2%, +383 to +1,425 bytes |
-| The 8 GLSL morph files, which load on first use | 22,150 to 24,946 bytes | 23,335 to 25,182 bytes | +0.9% to +5.6%, +236 to +1,249 bytes |
-| The core, `null3d_bg.wasm` | 279,598 to 280,002 bytes | 279,978 to 280,910 bytes | +0.1% to +0.3% |
+| The 4 WGSL start files | 22,202 to 23,008 bytes | 22,437 to 23,245 bytes | +0.8% to +1.5%, +174 to +334 bytes |
+| The 8 GLSL start files | 19,956 to 20,866 bytes | 20,220 to 21,247 bytes | +1.1% to +1.8%, +217 to +381 bytes |
+| The 8 GLSL morph files and the 12 skin files, which load on first use | 16,952 to 20,847 bytes | 17,096 to 21,098 bytes | -1.2% to +1.6%, -208 to +298 bytes |
+| The 6 line files, which load on first use | 6,042 to 8,030 bytes | 6,283 to 8,279 bytes | +3.1% to +4.0%, +225 to +281 bytes |
+| The 6 sprite files, which load on first use | 3,265 to 5,014 bytes | 3,474 to 5,273 bytes | +5.2% to +6.4%, +209 to +262 bytes |
+| The 2 WGSL files of the engine's own test template, which only test pages load | 1,672 and 2,555 bytes | 1,734 and 2,618 bytes | +3.7% and +2.5%, +62 and +63 bytes |
+| The core, `null3d_bg.wasm` | 281,682 and 282,773 bytes | 281,932 and 282,764 bytes | 0.0% to +0.1% |
 
-The fog's code is in every fragment shader of the mesh templates, so each build carries it. The GLSL files grow more because each stage's text holds its own copy of each function it calls. The fog adds no build, so the count of pipelines stays the same.
+The fog's code is in every fragment shader of the mesh, line and sprite templates, so each build carries it. The fog adds about 200 to 300 bytes to each file. So the small line and sprite files grow the most in percent. Joining the two exponential curves into one `exp` and folding the path into `fog_factor` kept every mesh file under 2%. The first version of the fog, with separate functions, grew GLSL files by up to 5.6% against main at 62ab95e1. The fog adds no build, so the count of pipelines stays the same.
 
-Per pixel, the fog costs one square root, one division and one `exp` for the curve. Height adds one more `exp` and division, and a glow adds a normalize and a `pow`. A scene without fog, or a material with `fog: false`, returns before any of it. That matches the estimate of about 15 operations and one `exp`.
+Per pixel, the fog costs one square root and one `exp` for the curve, and a normalize and a `pow` for the glow. Height adds one more `exp` and a division. Exponential and exponential squared fog share one `exp`, and the curve picks its result with `select`, so the shader holds one short function for every curve. A scene without fog, or a material with `fog: false`, returns before any of it. That matches the estimate of about 15 operations and one `exp`.
 
 ## Data
 
-Results on 5 October 2026, in Chrome on the Mac's GPU and on SwiftShader, as CI draws:
+Results on 5 October 2026, in Chrome on the Mac's GPU and on SwiftShader, as CI draws. These runs came before the last change to the shader, which joined the exponential curves into one `exp` and folded the path into `fog_factor`. The change gives the same values within 32-bit rounding, and CI runs every one of these checks again on the pull request.
 
 | Check | Result |
 | --- | --- |
 | `fog-turn.spec.ts`: a white box 29.75 units away in black exponential fog of density 0.03, with the camera turned by 0, 20 and 40 degrees | The box's brightest channel is 171 on WebGPU and 172 in compatibility mode and on WebGL2, at every turn. Fog by depth along the view would give about 189 at 40 degrees, where the depth is 22.8 |
-| The shader library test, which checks `fog_distance`, `fog_exponential`, `fog_height_ratio`, `fog_path`, `fog_factor` and `fog_color` against references in 64-bit floats | Passes on all three tiers |
+| The shader library test, which checks the fog's functions against references in 64-bit floats | Passes on all three tiers |
 | Image tests `fog-linear`, `fog-exp2`, `fog-exponential`, `fog-height`, `fog-sun` and `lines-lit`, all three tiers | 18 of 18 pass on each reference set, with new references |
 | `fog-linear` and `fog-exp2` against three.js's `Fog` and `FogExp2`, by three.js's own rule | 6 of 6 pass on the Mac's GPU, with at most 0.003% of the pixels different, and 6 of 6 on SwiftShader, with at most 0.016% |
 | S4 against three.js, whose town fades into linear fog at a wide angle | 2.9% to 3.3% of the pixels differ, at the far corners. S4 was already left out of the parity checks for WebGL2, and now lists the fog as a reason on every tier |
@@ -117,7 +120,7 @@ Option C.
 ## Consequences
 
 - `scene.setFog` takes `{ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent }`. The `type` option is gone, and a call that passes it throws E1108 with the new name.
-- `null3d::fog` in the shader library has `fog_distance` in place of `fog_depth`, and adds `EXPONENTIAL`, `fog_exponential`, `fog_height_ratio`, `fog_path` and `fog_color`. The `Fog` struct's fields changed.
+- `null3d::fog` in the shader library loses `fog_depth`, and adds `EXPONENTIAL`, `fog_exponential`, `fog_height_ratio` and `fog_color`. The `Fog` struct's fields changed.
 - The image tests `fog-linear` and `fog-exp2` take new references, and so do `lines-lit` and S4, which have linear fog. Their parity with three.js becomes a sanity comparison.
 - New image tests: `fog-exponential`, `fog-height` and `fog-sun`. The browser test `fog-turn.spec.ts` checks that a box keeps its fogged color as the camera turns.
 - Docs: `api/scene` (fog), `concepts/lighting` (fog), the shader library. Mapping entries `Fog` and `FogExp2`.

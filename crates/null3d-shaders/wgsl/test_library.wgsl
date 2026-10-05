@@ -215,7 +215,7 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         }
 #endif
 #ifdef FOG
-        case 60u: { return scalar(null3d::fog::fog_distance(f[0].xyz)); }
+        case 60u: { return scalar(null3d::fog::fog_exponential(f[0].x, f[0].y)); }
         case 61u: { return scalar(null3d::fog::fog_linear(f[0].x, f[0].y, f[0].z)); }
         case 62u: { return scalar(null3d::fog::fog_exp2(f[0].x, f[0].y)); }
         case 63u: { return triple(null3d::fog::apply_fog(f[0].xyz, f[1].xyz, f[2].x)); }
@@ -275,10 +275,8 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 98u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
 #endif
 #ifdef FOG
-        case 99u: { return scalar(null3d::fog::fog_exponential(f[0].x, f[0].y)); }
-        case 100u: { return scalar(null3d::fog::fog_height_ratio(f[0].x, f[0].y)); }
-        case 101u: { return scalar(null3d::fog::fog_path(test_fog(u, f), f[4].xyz)); }
-        case 102u: {
+        case 99u: { return scalar(null3d::fog::fog_height_ratio(f[0].x)); }
+        case 100u: {
             return triple(null3d::fog::fog_color(test_fog(u, f), f[4].xyz, f[5].xyz, f[6].xyz));
         }
 #endif

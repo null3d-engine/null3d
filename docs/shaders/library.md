@@ -748,7 +748,7 @@ The light that a PBR surface reflects from an environment map, as three.js's `RE
 
 ## `null3d::fog`
 
-The scene's fog. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog measures each point's straight-line distance from the camera, so a point keeps its fog as the camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix their exposed linear color with the fog before any tone mapping and encoding.  Per pixel, the fog costs a square root, a division and one `exp`. Fog that thins with height adds an `exp`, and a sun glow adds a `pow`. The fog is a branch on the frame's values, not a permutation bit, so every scene shares the same shader builds.
+The scene's fog. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog measures each point's straight-line distance from the camera, so a point keeps its fog as the camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix their exposed linear color with the fog before any tone mapping and encoding.  Per pixel, the fog costs a square root, one `exp` and a `pow` for the sun glow. Fog that thins with height adds an `exp` and a division. The fog is a branch on the frame's values, not a permutation bit, so every scene shares the same shader builds.
 
 ### `NONE`
 
@@ -820,14 +820,6 @@ The scene's fog, as the engine writes it into each frame's values for the camera
 - `spare`: Fills the block to a multiple of 16 bytes.
 - `curve`: The fog's curve: `NONE`, `LINEAR`, `EXP2` or `EXPONENTIAL`.
 
-### `fog_distance`
-
-```wgsl
-fn fog_distance(relative_position: vec3f) -> f32
-```
-
-The distance through the fog to a point: its straight-line distance from the camera. `relative_position` is the point's position relative to the camera.
-
 ### `fog_linear`
 
 ```wgsl
@@ -855,18 +847,10 @@ The factor of exponential fog: the share of light that an even haze of `density`
 ### `fog_height_ratio`
 
 ```wgsl
-fn fog_height_ratio(rise: f32, falloff: f32) -> f32
+fn fog_height_ratio(x: f32) -> f32
 ```
 
-The mean density along a ray from the camera that rises by `rise`, as a share of the density at the camera's height. The fog's density falls by a factor of e every 1 / `falloff` units of height. The share is (1 - exp(-x)) / x, where x is falloff × rise. Near 0 it takes the first terms of its series, 1 - x / 2 + x² / 6.
-
-### `fog_path`
-
-```wgsl
-fn fog_path(fog: Fog, relative_position: vec3f) -> f32
-```
-
-The fog's path to a point: the distance, scaled by the mean density along the way. Fog at its base density hides as much over this path as the fog hides on the way to the point.
+The mean density along a ray from the camera, as a share of the density at the camera's height. Its input is the falloff times the ray's rise, where the falloff is how fast the density falls with height. The share is (1 - exp(-x)) / x. Near 0 the share takes the first terms of its series: 1 - x/2 + x²/6.
 
 ### `fog_factor`
 
@@ -874,7 +858,7 @@ The fog's path to a point: the distance, scaled by the mean density along the wa
 fn fog_factor(fog: Fog, relative_position: vec3f) -> f32
 ```
 
-The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where the scene has no fog.
+The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where the scene has no fog. The curve takes the point's distance, scaled by the mean density along the way where the fog thins with height. Fog at its base density hides as much over that path as the fog hides on the way to the point.
 
 ### `fog_color`
 

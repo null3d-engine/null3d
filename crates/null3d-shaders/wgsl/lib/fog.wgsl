@@ -5,8 +5,8 @@
 // camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix
 // their exposed linear color with the fog before any tone mapping and encoding.
 //
-// Per pixel, the fog costs a square root, a division and one `exp`. Fog that thins with height
-// adds an `exp`, and a sun glow adds a `pow`. The fog is a branch on the frame's values, not a
+// Per pixel, the fog costs a square root, one `exp` and a `pow` for the sun glow. Fog that thins
+// with height adds an `exp` and a division. The fog is a branch on the frame's values, not a
 // permutation bit, so every scene shares the same shader builds.
 
 /// No fog, as `Fog.curve` names it.
@@ -45,12 +45,6 @@ struct Fog {
     curve: u32,
 }
 
-/// The distance through the fog to a point: its straight-line distance from the camera.
-/// `relative_position` is the point's position relative to the camera.
-fn fog_distance(relative_position: vec3f) -> f32 {
-    return length(relative_position);
-}
-
 /// The factor of linear fog, as three.js's `Fog`: 0 up to `near`, 1 from `far`, and a smooth step
 /// between them. `near` must be less than `far`.
 fn fog_linear(distance: f32, near: f32, far: f32) -> f32 {
@@ -68,40 +62,30 @@ fn fog_exponential(distance: f32, density: f32) -> f32 {
     return 1.0 - exp(-density * distance);
 }
 
-/// The mean density along a ray from the camera that rises by `rise`, as a share of the density
-/// at the camera's height. The fog's density falls by a factor of e every 1 / `falloff` units of
-/// height. The share is (1 - exp(-x)) / x, where x is falloff × rise. Near 0 it takes the first
-/// terms of its series, 1 - x / 2 + x² / 6.
-fn fog_height_ratio(rise: f32, falloff: f32) -> f32 {
-    let x = falloff * rise;
+/// The mean density along a ray from the camera, as a share of the density at the camera's
+/// height. Its input is the falloff times the ray's rise, where the falloff is how fast the
+/// density falls with height. The share is (1 - exp(-x)) / x. Near 0 the share takes the first
+/// terms of its series: 1 - x/2 + x²/6.
+fn fog_height_ratio(x: f32) -> f32 {
     let exact = (1.0 - exp(min(-x, HEIGHT_EXPONENT_LIMIT))) / x;
     return select(exact, 1.0 + x * (x / 6.0 - 0.5), abs(x) < HEIGHT_SERIES_LIMIT);
 }
 
-/// The fog's path to a point: the distance, scaled by the mean density along the way. Fog at its
-/// base density hides as much over this path as the fog hides on the way to the point.
-fn fog_path(fog: Fog, relative_position: vec3f) -> f32 {
-    let distance = fog_distance(relative_position);
-    if (fog.shape.z == 0.0) {
-        return distance;
-    }
-    return distance * fog.shape.w * fog_height_ratio(relative_position.y, fog.shape.z);
-}
-
 /// The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where
-/// the scene has no fog.
+/// the scene has no fog. The curve takes the point's distance, scaled by the mean density along
+/// the way where the fog thins with height. Fog at its base density hides as much over that path
+/// as the fog hides on the way to the point.
 fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
     if (fog.curve == NONE) {
         return 0.0;
     }
-    let path = fog_path(fog, relative_position);
-    if (fog.curve == LINEAR) {
-        return fog_linear(path, fog.shape.x, fog.shape.y);
+    var path = length(relative_position);
+    if (fog.shape.z != 0.0) {
+        path *= fog.shape.w * fog_height_ratio(fog.shape.z * relative_position.y);
     }
-    if (fog.curve == EXP2) {
-        return fog_exp2(path, fog.color.w);
-    }
-    return fog_exponential(path, fog.color.w);
+    let k = fog.color.w * path;
+    let exponential = 1.0 - exp(-select(k, k * k, fog.curve == EXP2));
+    return select(exponential, smoothstep(fog.shape.x, fog.shape.y, path), fog.curve == LINEAR);
 }
 
 /// The color of the scene's `fog` toward a point, by its position relative to the camera. It is
@@ -109,9 +93,6 @@ fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
 /// brightest toward the sun. `sun_direction` is the unit direction that the sun's light travels,
 /// and `sun_color` its exposed color.
 fn fog_color(fog: Fog, relative_position: vec3f, sun_direction: vec3f, sun_color: vec3f) -> vec3f {
-    if (fog.sun_glow == 0.0) {
-        return fog.color.xyz;
-    }
     let toward_sun = max(dot(normalize(relative_position), -sun_direction), 0.0);
     return fog.color.xyz + sun_color * (fog.sun_glow * pow(toward_sun, fog.sun_exponent));
 }

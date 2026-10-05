@@ -1055,9 +1055,14 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	},
 	// null3d::fog
 	{
-		name: 'fog::fog_distance',
-		cases: samples((random) => new Inputs().setF(0, values(random, 3, -50, 50))),
-		expected: (i) => scalar(length(xyz(i.f(0)))),
+		name: 'fog::fog_exponential',
+		cases: samples((random) =>
+			new Inputs().setF(0, [between(random, 0, 300), between(random, 0, 0.05)]),
+		),
+		expected: (i) => {
+			const [distance, density] = i.f(0);
+			return scalar(1 - Math.exp(-density * distance));
+		},
 	},
 	{
 		name: 'fog::fog_linear',
@@ -1416,34 +1421,18 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => floats(map3(xyz(i.f(0)), (value) => Math.min(value, 65472))),
 		tolerance: 0,
 	},
-	// null3d::fog's functions of the native fog: its exponential curve, its height and its sun glow.
-	{
-		name: 'fog::fog_exponential',
-		cases: samples((random) =>
-			new Inputs().setF(0, [between(random, 0, 300), between(random, 0, 0.05)]),
-		),
-		expected: (i) => {
-			const [distance, density] = i.f(0);
-			return scalar(1 - Math.exp(-density * distance));
-		},
-	},
+	// null3d::fog's functions of the native fog: its height and its sun glow.
 	{
 		name: 'fog::fog_height_ratio',
 		cases: (random) => [
-			// No falloff, and rises on both sides of the series' limit.
-			new Inputs().setF(0, [25, 0]),
-			new Inputs().setF(0, [0.05, 0.1]),
-			new Inputs().setF(0, [-0.2, 0.1]),
-			new Inputs().setF(0, [-2000, 0.5]),
-			...samples((r) => new Inputs().setF(0, [between(r, -80, 80), between(r, 0, 0.2)]))(random),
+			// No rise, and rises on both sides of the series' limit.
+			new Inputs().setF(0, [0]),
+			new Inputs().setF(0, [0.005]),
+			new Inputs().setF(0, [-0.02]),
+			new Inputs().setF(0, [-1000]),
+			...samples((r) => new Inputs().setF(0, [between(r, -16, 16)]))(random),
 		],
-		expected: (i) => scalar(heightRatio(i.f(0)[0], i.f(0)[1])),
-	},
-	{
-		name: 'fog::fog_path',
-		cases: (random) =>
-			[0, 0.05].flatMap((falloff) => sceneFogCases(FOG_CURVE_EXPONENTIAL, falloff)(random)),
-		expected: (i) => scalar(fogPath(i)),
+		expected: (i) => scalar(heightRatio(i.f(0)[0])),
 	},
 	{
 		name: 'fog::fog_color',
@@ -1482,9 +1471,8 @@ function sceneFog(random: () => number, curve: number, falloff: number): Inputs 
 const sceneFogCases = (curve: number, falloff: number) =>
 	samples((random) => sceneFog(random, curve, falloff));
 
-/** The mean fog density along a ray that rises by `rise`, as a share of the density at its start. */
-function heightRatio(rise: number, falloff: number): number {
-	const x = falloff * rise;
+/** The mean fog density along a ray whose rise times the falloff is `x`, as a share of the density at its start. */
+function heightRatio(x: number): number {
 	if (x === 0) return 1;
 	return (1 - Math.exp(Math.min(-x, FOG_HEIGHT_EXPONENT_LIMIT))) / x;
 }
@@ -1494,7 +1482,7 @@ function fogPath(i: Inputs): number {
 	const relative = xyz(i.f(4));
 	const [, , falloff, share] = i.f(2);
 	const distance = length(relative);
-	return falloff === 0 ? distance : distance * share * heightRatio(relative[1], falloff);
+	return falloff === 0 ? distance : distance * share * heightRatio(falloff * relative[1]);
 }
 
 /** The scene fog's factor for its inputs. */
