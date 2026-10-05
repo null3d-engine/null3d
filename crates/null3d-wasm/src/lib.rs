@@ -521,6 +521,16 @@ pub fn job_worker_loop(index: u32) {
     JOBS.wait().worker_loop(index);
 }
 
+/// Counts the frame chunk that job worker `index` held when its loop failed as done and as
+/// failed, so the sketch thread's wait for it ends. The worker's own thread calls it after the
+/// failure.
+#[wasm_bindgen(js_name = jobWorkerFailed)]
+pub fn job_worker_failed(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.worker_failed(index);
+    }
+}
+
 /// The milliseconds job worker `index` spent on work since the last call for it, which starts
 /// its total again from zero. The sketch thread reads it once per frame.
 #[wasm_bindgen(js_name = takeJobBusyMs)]

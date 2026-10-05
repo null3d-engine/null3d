@@ -275,7 +275,8 @@ function pageItem(
 
 /**
  * The runner page's item for the engine test page with these switches, measured for 2 seconds: the
- * development page, or with a load, the production build.
+ * development page, or with a load, the production build. The engine check limits the time between
+ * frames, so with that check the page's frame stays on top of the runner page's report.
  */
 function engineItem(
 	id: string,
@@ -283,11 +284,14 @@ function engineItem(
 	check: Check,
 	load?: Load,
 ): PlanItem<Check> {
-	return pageItem(id, 'engine', check, {
-		switches: [...switches, 'seconds=2'],
-		timeoutSeconds: 45,
-		load,
-	});
+	return {
+		...pageItem(id, 'engine', check, {
+			switches: [...switches, 'seconds=2'],
+			timeoutSeconds: 45,
+			load,
+		}),
+		...(check.kind === 'engine' && { timesFrames: true as const }),
+	};
 }
 
 /** Switches of a timed run of a benchmark page, each left out when undefined. */
@@ -1183,8 +1187,9 @@ export function startupPlan({ runs = STARTUP_RUNS }: PlanSettings = {}): PlanIte
 }
 
 /**
- * The plans whose pages only check results, without timing them, so the runner page may draw its
- * report over their frames. Any other plan keeps each page's frame on top.
+ * The plans whose pages check results, so the runner page may draw its report over their frames.
+ * Any other plan keeps each page's frame on top, and so does an item of these plans that times its
+ * frames.
  */
 export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
 	'checks',
@@ -1588,6 +1593,21 @@ export function judge(
 				),
 			];
 			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
+			// The engine draws no whole numbers into a target on WebGL2, so a device that cannot hand
+			// them back is a fault of the check's readback, which the run records without a failure.
+			if (typeof result.deviceFault === 'string')
+				context?.note?.(
+					`device fault: ${result.deviceFault}. The page could not read the library's results back on this device`,
+				);
+			// Engine shaders keep whole numbers as the library's shader does, so they lose bits too.
+			if (typeof result.shaderFault === 'string')
+				problems.push(
+					`${result.shaderFault}. The target kept every bit, so the GLSL lost them, and engine shaders keep whole numbers the same way`,
+				);
+			if (typeof result.precisionFault === 'string')
+				context?.note?.(
+					`driver fault: ${result.precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
+				);
 			return problems;
 		}
 		case 'engine':

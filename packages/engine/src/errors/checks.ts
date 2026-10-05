@@ -42,7 +42,7 @@ export interface Destroyable extends Described {
  * on, or with `argument`, an object that the call got. Call it inside `if (DEV)`.
  */
 export function checkLive(call: string, target: Destroyable, argument = false): void {
-	if (target.destroyedFrame >= 0)
+	if (target.destroyedFrame !== -1)
 		throw new EngineError(
 			'E1101',
 			`${call}() ${argument ? 'got' : 'was called on'} ${target.describe()}, which was destroyed in frame ${target.destroyedFrame}.`,

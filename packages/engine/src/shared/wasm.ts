@@ -56,11 +56,12 @@ export async function compileWasm<T>(
 	name: string,
 	error: WasmError,
 	readHead?: (stream: ReadableStream<Uint8Array>) => Promise<T>,
+	started?: Promise<Response>,
 ): Promise<{ module: WebAssembly.Module; head: T | undefined }> {
 	const where = shownAddress(url);
 	let response: Response;
 	try {
-		response = await fetch(url);
+		response = await (started ?? fetch(url));
 	} catch (thrown) {
 		throw error('E1406', `${name} did not download from ${where}: ${reason(thrown)}.`);
 	}

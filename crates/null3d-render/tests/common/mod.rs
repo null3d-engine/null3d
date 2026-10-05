@@ -60,7 +60,8 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub lights: Vec<VisibleLight>,
     /// The point and spot lights that cast shadows, as the core's light table lists them.
     pub shadow_lights: Vec<LightShadow>,
-    /// The newest frame that the thread that draws drew with every pipeline built.
+    /// The newest frame that the thread that draws drew with every pipeline built, or `u32::MAX`
+    /// for the frame being recorded, as when every pipeline is always built.
     pub pipelines_built: u32,
     /// A light table that each frame gathers its lights from, as the engine does, or `None` to
     /// take `lights` and `shadow_lights` as they are.
@@ -317,7 +318,11 @@ impl<B: FrameBuilder> World<B> {
             lines: self.lines.lines(),
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
-            pipelines_built: self.pipelines_built,
+            pipelines_built: if self.pipelines_built == u32::MAX {
+                frame
+            } else {
+                self.pipelines_built
+            },
             animations: self.animations.as_ref(),
             morphs: &self.morphs,
         };
