@@ -649,9 +649,14 @@ export class Object3D implements Described {
 	/** @internal The object's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly scene: Scene,
-		/** @internal */ readonly handle: number,
+		/**
+		 * @internal The object's handle. Once the object is destroyed, it holds a generation that the
+		 * core never gives a live object, so a later call never reaches another object in its slot.
+		 */
+		public handle: number,
 		/** The name from the create options, or an empty string. */
 		readonly name: string,
 	) {
@@ -883,7 +888,7 @@ export class Object3D implements Described {
 	/** @internal The live parent, or null for a root. */
 	get liveParent(): Object3D | null {
 		const parent = this.parentObject;
-		return parent && parent.destroyedFrame < 0 ? parent : null;
+		return parent && parent.destroyedFrame === -1 ? parent : null;
 	}
 
 	/**
@@ -953,12 +958,14 @@ export class Object3D implements Described {
 		}
 		this.animation?.release();
 		this.scene.forgetListeners(this);
-		// The core checks the handle's generation, so a second destroy frees no other object.
+		// The core checks the handle's generation, so a second destroy frees no other object, even
+		// once the slot's generations have come round.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
 		this.parentObject?.childObjects?.delete(this);
 		this.scene.forget(this);
+		this.handle |= C.HANDLE_DEAD_GENERATION << C.HANDLE_SLOT_BITS;
 	}
 
 	/**
@@ -1019,7 +1026,7 @@ export class PrefabInstance extends Group {
 	 */
 	find(name: string): Object3D | undefined {
 		for (const object of this.objects)
-			if (object !== this && object.name === name && object.destroyedFrame < 0) return object;
+			if (object !== this && object.name === name && object.destroyedFrame === -1) return object;
 		return undefined;
 	}
 
@@ -1820,6 +1827,7 @@ export class InstanceBatch {
 	/** @internal The batch's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		private readonly scene: Scene,
 		/** @internal */ readonly id: number,
@@ -2178,6 +2186,7 @@ export class Scene {
 	private morphTable: Float32Array = new Float32Array(0);
 	private morphGeneration = -1;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
@@ -2220,7 +2229,7 @@ export class Scene {
 	 */
 	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
 		const camera = this.activeCamera;
-		const live = camera !== undefined && camera.destroyedFrame < 0 ? camera : undefined;
+		const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
 		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
 		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
 	}
@@ -2750,7 +2759,7 @@ export class Scene {
 		}
 		let write = this.reserveCommands(records, call);
 		const { core } = this;
-		const at = core.check(core.glue.reserveObjects(count), call);
+		const at = core.checkGrowth(core.glue.reserveObjects(count), call);
 		const handles = core.u32(at, count).slice();
 		const v = this.views;
 		const objects: Object3D[] = [];
@@ -3021,6 +3030,7 @@ export class Scene {
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('sprites');
 		const sprites = await loadSprites(call);
 		const parts = sprites.spriteParts(
 			makers,
@@ -3070,6 +3080,7 @@ export class Scene {
 		LINE_CHECKS.width(width, call);
 		LINE_CHECKS.values(options, call);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('lines');
 		const lines = await loadLines(call);
 		const parts = lines.lineParts(makers, core, this.lineMesh, options, LINE_CHECKS, call);
 		this.lineMesh = parts.mesh;
@@ -3247,6 +3258,7 @@ export class Scene {
 	setBackground(background: ColorInput | Texture): void {
 		const { glue } = this.core;
 		if (background instanceof Texture) {
+			this.makers?.materials.shaders.need('background');
 			const status = glue.setBackgroundTexture(background.handle);
 			this.core.check(status, 'setBackground', 'a texture', true);
 			return;

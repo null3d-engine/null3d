@@ -356,7 +356,7 @@ export class MetricsReader {
 			this.read[ring] = Atomics.load(header, WRITTEN + ring);
 		this.records = Array.from({ length: this.views.rings }, emptyRecords);
 		this.lost = 0;
-		Atomics.store(header, MEASURING, 1);
+		Atomics.add(header, MEASURING, 1);
 	}
 
 	drain(): void {
@@ -391,7 +391,7 @@ export class MetricsReader {
 	/** Drains the last records and turns costly timing off again. */
 	end(): void {
 		this.drain();
-		Atomics.store(this.views.header, MEASURING, 0);
+		Atomics.sub(this.views.header, MEASURING, 1);
 	}
 }
 

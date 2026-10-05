@@ -43,8 +43,10 @@ function fakeCore() {
 	const materials: { shading: number; features: number; values: Map<number, number[]> }[] = [];
 	const quads: number[][] = [];
 	const batches: unknown[][] = [];
+	const destroyedMaterials: number[] = [];
 	const glue = {
 		sceneCapacity: () => 15,
+		destroyMaterial: (material: number) => destroyedMaterials.push(material) && 0,
 		createSpriteBatch: (...args: unknown[]) => batches.push(args),
 		setBatchLayers: () => 0,
 		createMaterial: (shading: number, features: number) =>
@@ -68,7 +70,7 @@ function fakeCore() {
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	const makers: SpriteMakers = { geometry: new Geometry(core), materials: new Materials(core) };
 	const scene = new Scene(core, { frame: 1 }, false, undefined, undefined, makers);
-	return { core, makers, scene, materials, quads, batches, memory };
+	return { core, makers, scene, materials, quads, batches, memory, destroyedMaterials };
 }
 
 /** The calls of a sprite batch that reach the instance batch, as a log. */
@@ -199,7 +201,7 @@ describe('sprite batches', () => {
 	});
 
 	test('row calls reach the instance batch, with markDirty defaulting to every sprite', () => {
-		const { core, makers } = fakeCore();
+		const { core, makers, destroyedMaterials } = fakeCore();
 		const { material } = spriteParts(makers, new Map(), {}, [1, 1], 'blend', 'createSprites');
 		const log: string[] = [];
 		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls(log));
@@ -209,6 +211,9 @@ describe('sprite batches', () => {
 		sprites.markDirty(2);
 		sprites.destroy();
 		expect(log).toEqual(['active 3', 'layers 6', 'dirty 0 5', 'dirty 2 3', 'destroy']);
+		// The batch's own material goes with it, so batches made and destroyed in turn never fill
+		// the material table.
+		expect(destroyedMaterials).toEqual([1]);
 	});
 });
 

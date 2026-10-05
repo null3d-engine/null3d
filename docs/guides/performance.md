@@ -217,7 +217,7 @@ Each shadow cascade that draws in a frame costs a pass over its casters, and its
 
 - Mark only the objects whose shadows matter as casters, with `castShadows`.
 - Use fewer cascades, a shorter shadow distance, or a higher `farCascadeInterval`, so the far cascades draw less often.
-- Give shadows only to the spot and point lights that need them, and keep their ranges short. A point light draws six tiles when a caster in its range moves.
+- Give shadows only to the spot and point lights that need them, and keep their ranges short. A moving caster near a point light draws the tiles of the cube faces that it touches, one to three of six.
 
 The governor lowers the far cascades' rate and the shadow filter when frames run long, after the render scale ([The frame-budget governor](../concepts/quality-presets.md#the-frame-budget-governor)).
 
