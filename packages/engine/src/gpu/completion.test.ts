@@ -51,8 +51,13 @@ function fakeGl() {
 /** A queue whose submitted work finishes when the test says so, oldest first. */
 function fakeQueue() {
 	const waiting: (() => void)[] = [];
+	/** The promises that the tracker asked for: one for each frame it tracks. */
+	const asked = { count: 0 };
 	const queue = {
-		onSubmittedWorkDone: () => new Promise<void>((resolve) => waiting.push(resolve)),
+		onSubmittedWorkDone: () => {
+			asked.count++;
+			return new Promise<void>((resolve) => waiting.push(resolve));
+		},
 	};
 	/** The GPU finishes the next `count` frames now; the promises settle on the next microtasks. */
 	const finish = async (count: number) => {
@@ -60,7 +65,7 @@ function fakeQueue() {
 		await Promise.resolve();
 		await Promise.resolve();
 	};
-	return { queue: queue as unknown as GPUQueue, finish };
+	return { queue: queue as unknown as GPUQueue, finish, asked };
 }
 
 describe('the WebGL2 completion tracker', () => {
@@ -92,7 +97,7 @@ describe('the WebGL2 completion tracker', () => {
 		expect(sums.sums[SUM_INTERVAL_MS]).toBe(20);
 	});
 
-	it('stops counting a frame the GPU has not finished after a second, so drawing goes on', () => {
+	it('gives up a frame the GPU has not finished after a second, so drawing goes on', () => {
 		const { gl } = fakeGl();
 		const completions = new FenceCompletion(gl, createMetricsBuffer(false, 0));
 		completions.afterSubmit(1);
@@ -102,7 +107,12 @@ describe('the WebGL2 completion tracker', () => {
 		expect(completions.unfinished()).toBe(2);
 		now = 1001;
 		expect(completions.unfinished()).toBe(1);
-		now = 1501;
+		// The GPU takes the second frame only once it is done with the first, so the second frame's
+		// time runs from the moment the first was given up. A second frame given up with no
+		// completion between doubles the time, to 2 s.
+		now = 2999;
+		expect(completions.unfinished()).toBe(1);
+		now = 3001;
 		expect(completions.unfinished()).toBe(0);
 	});
 
@@ -150,6 +160,23 @@ describe('the WebGL2 completion tracker', () => {
 		expect(fences).toHaveLength(8);
 		expect(completions.unfinished()).toBe(8);
 	});
+
+	it('tracks every frame it lets through while the browser reports no completion', () => {
+		const { gl, fences } = fakeGl();
+		const completions = new FenceCompletion(gl, createMetricsBuffer(false, 0));
+		let submitted = 0;
+		// A thread that draws whenever fewer than two frames are unfinished, at 60 Hz for 60 s.
+		for (let callback = 0; callback < 60 * 60; callback++) {
+			now = (callback * 1000) / 60;
+			if (completions.unfinished() < 2) completions.afterSubmit(++submitted);
+		}
+		// Each frame gets a fence. The tracker gives up frames after 1, 2, 4 and then every 8 s, at
+		// 1, 3, 7, 15, 23, 31, 39, 47 and 55 s, so the drawing slows but goes on. Frames given up
+		// while every slot is taken lose their fence.
+		expect(fences).toHaveLength(submitted);
+		expect(submitted).toBe(2 + 9);
+		expect(fences.filter((fence) => fence.deleted).length).toBeGreaterThanOrEqual(3);
+	});
 });
 
 describe('the WebGPU completion tracker', () => {
@@ -169,25 +196,49 @@ describe('the WebGPU completion tracker', () => {
 		sums.add();
 		expect(sums.sums[SUM_RECORDS]).toBe(1);
 	});
+
+	it('tracks every frame it lets through, and skips the promises of frames it forgot', async () => {
+		const metrics = createMetricsBuffer(false, 0);
+		const sums = new RingSums(metrics, Role.Completion);
+		const { queue, finish, asked } = fakeQueue();
+		const completions = new QueueCompletion(queue, metrics);
+		let submitted = 0;
+		// The queue settles nothing for 60 s, while a thread draws whenever fewer than two frames
+		// are unfinished, at 60 Hz.
+		for (let callback = 0; callback < 60 * 60; callback++) {
+			now = (callback * 1000) / 60;
+			if (completions.unfinished() < 2) completions.afterSubmit(++submitted);
+		}
+		expect(asked.count).toBe(submitted);
+		expect(submitted).toBe(11);
+		// The queue then settles every frame in order. The forgotten frames' promises come first and
+		// leave no record, so the tracked frames finish in turn and none is left unfinished.
+		await finish(submitted);
+		expect(completions.unfinished()).toBe(0);
+		sums.add();
+		expect(sums.sums[SUM_RECORDS]).toBeLessThanOrEqual(8);
+	});
 });
 
 describe('the frame windows that the quality governor reads', () => {
 	/**
 	 * A GPU that needs `gpuMs` for each frame, fed by a thread that submits a frame whenever fewer
 	 * than two are unfinished, at each callback of a 60 Hz display. A list of frame times repeats,
-	 * one entry a frame. Returns, for each one-second window, the frames submitted and completed,
-	 * the completed rate, the mean and longest time from submit to completion, and the most frames
-	 * that waited on the GPU at once.
+	 * one entry a frame. `firstMs`, when given, is the first frame's time instead, as when a software
+	 * GPU builds the first frame's pipelines while it draws it. Returns, for each one-second window,
+	 * the frames submitted, tracked and completed, the completed rate, the mean and longest time
+	 * from submit to completion, and the most frames that waited on the GPU at once.
 	 */
-	async function windows(gpuMs: number | readonly number[], seconds: number) {
+	async function windows(gpuMs: number | readonly number[], seconds: number, firstMs?: number) {
 		const frameMs = typeof gpuMs === 'number' ? [gpuMs] : gpuMs;
 		const metrics = createMetricsBuffer(false, 0);
 		const sums = new RingSums(metrics, Role.Completion);
-		const { queue, finish } = fakeQueue();
+		const { queue, finish, asked } = fakeQueue();
 		const completions = new QueueCompletion(queue, metrics);
 		const callbackMs = 1000 / 60;
 		const results: {
 			submitted: number;
+			tracked: number;
 			completed: number;
 			fps: number;
 			latencyMs: number;
@@ -200,7 +251,9 @@ describe('the frame windows that the quality governor reads', () => {
 		let mostInFlight = 0;
 		let nextDone = Number.POSITIVE_INFINITY;
 		/** When the GPU, starting at `at`, finishes the oldest frame that it has not finished. */
-		const doneAfter = (at: number) => at + (frameMs[done % frameMs.length] as number);
+		const doneAfter = (at: number) =>
+			at +
+			(done === 0 && firstMs !== undefined ? firstMs : (frameMs[done % frameMs.length] as number));
 		for (let callback = 1; callback <= seconds * 60; callback++) {
 			const at = callback * callbackMs;
 			// The GPU finishes its queued frames up to this callback, one after another.
@@ -221,6 +274,7 @@ describe('the frame windows that the quality governor reads', () => {
 				const s = sums.sums;
 				results.push({
 					submitted: frame - submittedBefore,
+					tracked: asked.count,
 					completed: s[SUM_RECORDS] as number,
 					fps: (1000 * (s[SUM_RECORDS] as number)) / (s[SUM_INTERVAL_MS] as number),
 					latencyMs: (s[SUM_BUSY_MS] as number) / (s[SUM_RECORDS] as number),
@@ -291,4 +345,22 @@ describe('the frame windows that the quality governor reads', () => {
 
 	it('holds two frames in flight when a frame takes almost four times as long as those before', () =>
 		holdsTwo([400, 400, 400, 400, 400, 400, 400, 1550], 60, 1));
+
+	it('tracks every frame and soon holds two in flight when the first frame takes seconds', async () => {
+		// CI's software GPU builds the first frame's pipelines while it draws that frame, 4.3 s on a
+		// busy runner, and then draws a frame in about 0.7 s. Until the first completion, the tracker
+		// gave up a frame each second, and once its slots were full, frames that it could not track
+		// went in at every callback. They kept the GPU busy for seconds, and the benchmark measured
+		// no frame. Now it gives up frames after 1 and 3 s, so four frames wait at most.
+		const results = await windows(700, 30, 4300);
+		const last = results[results.length - 1];
+		expect(last?.tracked).toBe(results.reduce((sum, window) => sum + window.submitted, 0));
+		expect(Math.max(...results.map((window) => window.mostInFlight))).toBeLessThanOrEqual(4);
+		// Once the GPU has drawn the frames that went in during the first frame, every second
+		// completes frames, and two frames at most wait on the GPU.
+		for (const window of results.slice(10)) {
+			expect(window.completed).toBeGreaterThan(0);
+			expect(window.mostInFlight).toBeLessThanOrEqual(2);
+		}
+	});
 });

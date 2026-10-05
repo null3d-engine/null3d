@@ -355,7 +355,8 @@ jobs:
     # and the other 4 tests and 3 minutes. Shard 1 runs the page tests of the scenes that
     # BENCH_SHARD_1 names, and shard 2 every other test, so each test runs in exactly one shard.
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
-    # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader.
+    # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
+    # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
     runs-on: ubuntu-latest
