@@ -843,14 +843,17 @@ impl SceneSettings {
 
     /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
     /// while the scene has no environment to draw, with the environment's part of the frame
-    /// uniform. A frame builder asks after the frame's uploads, so a held frame, which uploads
-    /// everything, draws with the environment.
+    /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
+    /// uploads, so a held frame, which uploads everything, draws with the environment.
     pub(crate) fn environment_map(&self, blank: u32) -> (u32, EnvironmentUniform) {
         let ready = self.environment.and_then(|environment| {
             Some((environment, self.textures.ready_cube(environment.texture)?))
         });
         match ready {
-            Some((environment, (map, levels))) => (map, environment.uniform(levels)),
+            Some((environment, (map, levels))) => (
+                map,
+                environment.uniform(levels, self.drawn_output().exposure),
+            ),
             None => (blank, EnvironmentUniform::default()),
         }
     }

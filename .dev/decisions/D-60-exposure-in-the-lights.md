@@ -40,7 +40,7 @@ Results on 5 October 2026, on the Mac's GPU and on SwiftShader:
 
 ### Where the exposure applies
 
-The core multiplies the exposure into every light on the CPU, as the light gather reads them each frame. That covers the main directional light, the ambient lights, and each point and spot light. The background color and the fog color take it in the same way. Filament and Godot do the same.
+The core multiplies the exposure into every light on the CPU, as the light gather reads them each frame. That covers the main directional light, the ambient lights, and each point and spot light. The background color, the fog color and the environment's intensity take it in the same way. Filament and Godot do the same.
 
 Colors that come from materials and textures take the exposure in the shader, from the frame's values. These are emissive light, light maps, unlit colors, sprites, lines, debug lines and the background texture. Filament exposes emissive light in its shader in the same way. A change of exposure then rewrites one frame value, not every material row.
 
@@ -70,7 +70,7 @@ The plan's wording for this task said "divided by the exposure", which was wrong
 
 ## Consequences
 
-- `LightTable::gather` takes the frame's exposure, and `Fog::uniform` takes it too. `SceneColor::clear_color` exposes the background. `Output::tone_map` became `Output::expose`, and `FinalPass::prepare` takes only the tone mapping. Bloom's bright pass takes the exposure through `Bloom::bright_pass`.
+- `LightTable::gather` takes the frame's exposure, and `Fog::uniform` takes it too. `SceneColor::clear_color` exposes the background, and `Environment::uniform` exposes the environment's intensity. `Output::tone_map` became `Output::expose`, and `FinalPass::prepare` takes only the tone mapping. Bloom's bright pass takes the exposure through `Bloom::bright_pass`.
 - `null3d::tonemap::tone_map` takes exposed color, and the final pass's FXAA weights no longer read the exposure. `null3d::mesh` adds `exposed` and `finish_exposed`. The standard material's template imports `finish_exposed` in place of `finish`. A surface function may now declare `finish`, and may not declare `finish_exposed`.
 - A scene in real units shows its background color and unlit colors black. three.js does the same at that exposure, since those colors are in the scene's units too.
 - Docs: `concepts/lighting` (units and exposure), `api/lights`, `api/post`, `concepts/post-processing`, `concepts/color-management`, `shaders/surface-functions` and `guides/custom-shaders`. The mapping entries of `toneMappingExposure` and of the lights' `power` changed too. Skills: the porting skill's notes on lights and exposure, and the develop skill's reserved shader names.
