@@ -3,7 +3,7 @@
 // not change. ?edges makes the camera from four edges twice the view's size, then halves them with
 // setOrthoHeight, which must draw the same view as a height whose width follows the canvas. The
 // three.js twin draws with no tone mapping, three.js's default, so the sketch turns off the engine's
-// default of ACES.
+// default of AgX.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,

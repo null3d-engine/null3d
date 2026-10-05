@@ -444,11 +444,11 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `ao`, `outline`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets.
+`toneMapping`, `exposure`, `bloom`, `ao`, `outline`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is AgX, which keeps bright colors' hues; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets.
 
 ```ts
 post.set({
-  toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
+  toneMapping: 'agx',       // 'agx' (default) | 'neutral' | 'aces' | 'none'
   exposure: 1,
   ev100: 15,                // (0.2) camera exposure for lights in real units; false turns it off
   bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off

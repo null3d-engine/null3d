@@ -457,23 +457,24 @@ interface Pbr {
 	roughness: number;
 	metalness: number;
 }
-function pbrMaterial(base: V3, metalness: number, roughness: number, geometry: number): Pbr {
+function pbrMaterial(base: V3, metalness: number, roughness: number, kernel: number): Pbr {
 	const specular: V3 = [0.04, 0.04, 0.04];
+	const filtered = saturate(roughness ** 4 + kernel) ** 0.25;
 	return {
 		base,
 		diffuse: scale(base, 1 - metalness),
 		specular,
 		blended: mix3(specular, base, metalness),
 		grazing: 1,
-		roughness: Math.min(Math.max(roughness, 0.0525) + geometry, 1),
+		roughness: Math.min(Math.max(filtered, 0.045), 1),
 		metalness,
 	};
 }
 /** The material that the test shader's cases build from the first two texels. */
 const materialOf = (i: Inputs) => {
 	const [r, g, b, metalness] = i.f(0);
-	const [roughness, geometry] = i.f(1);
-	return pbrMaterial([r, g, b], metalness, roughness, geometry);
+	const [roughness, kernel] = i.f(1);
+	return pbrMaterial([r, g, b], metalness, roughness, kernel);
 };
 /** Inputs whose first two texels make a material, and whose later texels hold unit directions. */
 const materialCase =
@@ -482,7 +483,7 @@ const materialCase =
 		Array.from({ length: SAMPLES }, () => {
 			const i = new Inputs()
 				.setF(0, [...values(random, 3, 0, 1), between(random, 0, 1)])
-				.setF(1, [between(random, 0, 1), between(random, 0, 0.2)]);
+				.setF(1, [between(random, 0, 1), between(random, 0, 0.04)]);
 			fill(random, i);
 			return i;
 		});
@@ -1429,6 +1430,31 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		],
 		expected: (i) => floats(map3(xyz(i.f(0)), (value) => Math.min(value, 65472))),
 		tolerance: 0,
+	},
+	{
+		name: 'lighting::horizon_occlusion',
+		cases: samples((random) =>
+			new Inputs().setF(0, unit(random)).setF(1, unit(random)).setF(2, unit(random)),
+		),
+		expected: (i) => {
+			const [view, normal, vertex] = [xyz(i.f(0)), xyz(i.f(1)), xyz(i.f(2))];
+			const reflected = sub(scale(normal, 2 * dot(normal, view)), view);
+			return scalar(saturate(1 + dot(reflected, vertex)) ** 2);
+		},
+	},
+	{
+		name: 'lighting::specular_aa_kernel',
+		cases: (random) => [
+			new Inputs().setF(0, [0, 0, 0]).setF(1, [0, 0, 0]),
+			new Inputs().setF(0, [0.5, 0.2, 0]).setF(1, [0, 0.3, 0.1]),
+			...samples((r) =>
+				new Inputs().setF(0, values(r, 3, -0.2, 0.2)).setF(1, values(r, 3, -0.2, 0.2)),
+			)(random),
+		],
+		expected: (i) => {
+			const [du, dv] = [xyz(i.f(0)), xyz(i.f(1))];
+			return scalar(Math.min(2 * 0.15 * (dot(du, du) + dot(dv, dv)), 0.04));
+		},
 	},
 ];
 

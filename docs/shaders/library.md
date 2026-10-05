@@ -542,6 +542,30 @@ Khronos PBR Neutral tone mapping, as three.js's `NeutralToneMapping`. It keeps b
 
 Lighting in linear color: the Lambert model, and the physically based model of glTF's metallic-roughness materials with the formulas of three.js's MeshStandardMaterial. Directions are unit vectors that point away from the surface: `to_light` toward the light and `to_view` toward the camera. Light colors include the intensity.
 
+### `ROUGHNESS_FLOOR`
+
+```wgsl
+const ROUGHNESS_FLOOR: f32 = 0.045;
+```
+
+The lowest perceptual roughness of a surface, as Filament and three.js r187 have it: even a mirror shows a highlight of this width, and reads a prefiltered level of the environment.
+
+### `SPECULAR_AA_VARIANCE`
+
+```wgsl
+const SPECULAR_AA_VARIANCE: f32 = 0.15;
+```
+
+How much the change of the normal across a pixel widens the highlight, Filament's variance of its specular anti-aliasing kernel.
+
+### `SPECULAR_AA_LIMIT`
+
+```wgsl
+const SPECULAR_AA_LIMIT: f32 = 0.04;
+```
+
+The most that the specular anti-aliasing kernel adds to the squared GGX alpha: Filament's threshold, squared as Filament squares it, so silhouettes do not turn matte.
+
 ### `lambert`
 
 ```wgsl
@@ -644,6 +668,22 @@ fn specular_occlusion(n_dot_v: f32, occlusion: f32, roughness: f32) -> f32
 
 How much of the environment's specular light ambient occlusion lets through, after Lagarde and de Rousiers. It follows three.js's `computeSpecularOcclusion`.
 
+### `horizon_occlusion`
+
+```wgsl
+fn horizon_occlusion(to_view: vec3f, normal: vec3f, vertex_normal: vec3f) -> f32
+```
+
+How much of the environment's specular light reaches a point, after Russell's horizon fading in Unity's form. A normal map can bend the shading `normal` away from the mesh's `vertex_normal`. A reflection that it sends below the mesh's surface would come from inside the object, so it fades out. Where the two normals agree, the reflection stays whole.
+
+### `specular_aa_kernel`
+
+```wgsl
+fn specular_aa_kernel(du: vec3f, dv: vec3f) -> f32
+```
+
+The amount that specular anti-aliasing adds to the squared GGX alpha: Filament's kernel, after Kaplanyan and Tokuyoshi. The unit normal changes by `du` across a pixel and by `dv` up a row. A highlight narrower than a pixel would flicker as the surface moves. So the kernel widens it by the spread of the normals within the pixel, up to a limit that keeps edges glossy. Flat surfaces get nothing.
+
 ### `distance_attenuation`
 
 ```wgsl
@@ -697,16 +737,16 @@ A surface of glTF's metallic-roughness model at one point, set up for lighting a
 - `specular`: The dielectric reflectance at normal incidence, 0.04.
 - `specular_blended`: The reflectance at normal incidence, blended from `specular` toward the base color by metalness.
 - `specular_grazing`: The reflectance at grazing angles.
-- `roughness`: The perceptual roughness, from 0.0525 to 1.
+- `roughness`: The perceptual roughness after specular anti-aliasing, from ROUGHNESS_FLOOR to 1.
 - `metalness`: The metalness, from 0 to 1.
 
 ### `pbr_material`
 
 ```wgsl
-fn pbr_material(base_color: vec3f, metalness: f32, roughness: f32, geometry_roughness: f32) -> PbrMaterial
+fn pbr_material(base_color: vec3f, metalness: f32, roughness: f32, kernel: f32) -> PbrMaterial
 ```
 
-Sets up a PbrMaterial as three.js does. It raises `roughness` to at least 0.0525, adds `geometry_roughness`, and keeps the sum at 1 or less. `geometry_roughness` softens highlights where the normal changes fast between pixels. Pass 0 to leave it out.
+Sets up a PbrMaterial as three.js does, with Filament's specular anti-aliasing. It adds `kernel`, from `specular_aa_kernel`, to the squared GGX alpha of `roughness`, then keeps the result from ROUGHNESS_FLOOR to 1. Pass a kernel of 0 to leave the anti-aliasing out.
 
 ### `Reflected`
 

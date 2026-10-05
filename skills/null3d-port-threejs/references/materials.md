@@ -199,7 +199,8 @@ const leaf = materials.shader({
 
 ## 9. Checking material parity
 
-1. Compare with post-processing off and tone mapping matched. null3D defaults to ACES, so a three.js side with `NoToneMapping` needs `post.set({ toneMapping: 'none' })` on the null3D side.
+1. Compare with post-processing off and tone mapping matched. null3D defaults to AgX, so a three.js side with `NoToneMapping` needs `post.set({ toneMapping: 'none' })` on the null3D side.
 2. Compare one material type at a time, on a simple lit test view: a sphere and a plane under the scene's lights.
 3. Read the diff image. Uniformly brighter or darker usually means color space, exposure or light units. Different highlight size means roughness mapping. Missing detail means a missing map, or a map with the wrong color space.
-4. Record accepted differences in the report, with the reason.
+4. Expect two small differences, which need no fix. Highlights on small curved shapes are a little brighter and narrower, because null3D widens them by Filament's specular anti-aliasing, not by three.js's term. Grazing reflections on strong normal maps are darker, because null3D fades reflections that point below the surface. Both are always on, with no three.js mode (`concepts/lighting`).
+5. Record accepted differences in the report, with the reason.

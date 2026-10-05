@@ -3,7 +3,7 @@
 // camera out past 40 m, so each cascade holds some. ?cascades=<n> sets the cascade count, from 1
 // to 4. ?custom draws the ground and the red boxes with custom materials whose surface function
 // keeps the standard look, so the image must match the one without it. ?tone=none turns off the
-// engine's default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
+// engine's default of AgX, as the parity test asks: the three.js twin draws with no tone mapping,
 // three.js's default. ?filter=<n> sets the shadow filter, 3 or 5 texels; 3 by default, so every
 // GPU tier draws the same image whatever preset it runs.
 import { defineSketch, type Material, type MeshGeometry } from '@null3d/engine';

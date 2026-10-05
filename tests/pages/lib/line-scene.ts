@@ -1,6 +1,6 @@
 // The lines' scenes (bench/scenes/lines.ts) as null3D draws them, for the sketches of the wide
 // lines and the one-pixel lines. The three.js twins draw with no tone mapping, three.js's default,
-// so the scene turns off the engine's ACES.
+// so the scene turns off the engine's AgX.
 import { color, type SketchContext } from '@null3d/engine';
 import {
 	AMBIENT,

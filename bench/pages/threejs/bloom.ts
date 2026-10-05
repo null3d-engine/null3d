@@ -1,6 +1,6 @@
 // The three.js twin of bloom's scene (bench/scenes/bloom.ts), which null3D's image tests draw. It
 // draws one frame with an EffectComposer: a RenderPass, an UnrealBloomPass with the settings that
-// ?bloom=soft or ?bloom=strong names, and an OutputPass, which applies the ACES tone mapping that
+// ?bloom=soft or ?bloom=strong names, and an OutputPass, which applies the AgX tone mapping that
 // null3D applies by default. The OutputPass draws into the canvas, which the page reads back at once
 // and publishes. The composer's targets have no MSAA, so null3D's page draws with ?antialias=none.
 // Only WebGLRenderer draws it: WebGPURenderer's bloom is a node of its own.
@@ -36,7 +36,7 @@ run('hold', async () => {
 	const renderer = new three.WebGLRenderer({ preserveDrawingBuffer: true });
 	renderer.setPixelRatio(1);
 	renderer.setSize(width, height);
-	renderer.toneMapping = three.ACESFilmicToneMapping;
+	renderer.toneMapping = three.AgXToneMapping;
 
 	const scene = new three.Scene();
 	scene.background = new three.Color(BLOOM_BACKGROUND);

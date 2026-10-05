@@ -1,7 +1,7 @@
 // The sprites' scene (bench/scenes/sprites.ts), which the parity test also draws with three.js:
 // blended sprites that show frames of an atlas at several sizes, rotations, colors and depths, and
 // opaque sprites that keep their size in pixels and stand on their positions. The three.js twin
-// draws with no tone mapping, three.js's default, so the sketch turns off the engine's ACES.
+// draws with no tone mapping, three.js's default, so the sketch turns off the engine's AgX.
 import { color, defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,

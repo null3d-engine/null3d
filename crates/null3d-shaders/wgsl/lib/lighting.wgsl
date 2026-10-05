@@ -6,6 +6,16 @@
 // are unit vectors that point away from the surface: `to_light` toward the light and `to_view`
 // toward the camera. Light colors include the intensity.
 
+/// The lowest perceptual roughness of a surface, as Filament and three.js r187 have it: even a
+/// mirror shows a highlight of this width, and reads a prefiltered level of the environment.
+const ROUGHNESS_FLOOR: f32 = 0.045;
+/// How much the change of the normal across a pixel widens the highlight, Filament's variance of
+/// its specular anti-aliasing kernel.
+const SPECULAR_AA_VARIANCE: f32 = 0.15;
+/// The most that the specular anti-aliasing kernel adds to the squared GGX alpha: Filament's
+/// threshold, squared as Filament squares it, so silhouettes do not turn matte.
+const SPECULAR_AA_LIMIT: f32 = 0.04;
+
 /// The light a Lambert surface reflects under one directional light and ambient light, as
 /// three.js's MeshLambertMaterial computes it. It is the albedo over pi times the irradiance. The
 /// direction `to_light` points from the surface toward the light. The colors `light` and `ambient`
@@ -129,6 +139,25 @@ fn specular_occlusion(n_dot_v: f32, occlusion: f32, roughness: f32) -> f32 {
     return saturate(pow(n_dot_v + occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + occlusion);
 }
 
+/// How much of the environment's specular light reaches a point, after Russell's horizon fading
+/// in Unity's form. A normal map can bend the shading `normal` away from the mesh's
+/// `vertex_normal`. A reflection that it sends below the mesh's surface would come from inside the
+/// object, so it fades out. Where the two normals agree, the reflection stays whole.
+fn horizon_occlusion(to_view: vec3f, normal: vec3f, vertex_normal: vec3f) -> f32 {
+    let reflected = reflect(-to_view, normal);
+    return null3d::math::square(saturate(1.0 + dot(reflected, vertex_normal)));
+}
+
+/// The amount that specular anti-aliasing adds to the squared GGX alpha: Filament's kernel, after
+/// Kaplanyan and Tokuyoshi. The unit normal changes by `du` across a pixel and by `dv` up a row.
+/// A highlight narrower than a pixel would flicker as the surface moves. So the kernel widens it
+/// by the spread of the normals within the pixel, up to a limit that keeps edges glossy. Flat
+/// surfaces get nothing.
+fn specular_aa_kernel(du: vec3f, dv: vec3f) -> f32 {
+    let variance = SPECULAR_AA_VARIANCE * (dot(du, du) + dot(dv, dv));
+    return min(2.0 * variance, SPECULAR_AA_LIMIT);
+}
+
 /// How a point or spot light fades with `distance`, as three.js's `getDistanceAttenuation`: one
 /// over the distance to the power `decay`. When `cutoff` is more than 0, the light also fades
 /// smoothly to nothing at that distance.
@@ -187,28 +216,25 @@ struct PbrMaterial {
     specular_blended: vec3f,
     /// The reflectance at grazing angles.
     specular_grazing: f32,
-    /// The perceptual roughness, from 0.0525 to 1.
+    /// The perceptual roughness after specular anti-aliasing, from ROUGHNESS_FLOOR to 1.
     roughness: f32,
     /// The metalness, from 0 to 1.
     metalness: f32,
 }
 
-/// Sets up a PbrMaterial as three.js does. It raises `roughness` to at least 0.0525, adds
-/// `geometry_roughness`, and keeps the sum at 1 or less. `geometry_roughness` softens highlights
-/// where the normal changes fast between pixels. Pass 0 to leave it out.
-fn pbr_material(
-    base_color: vec3f,
-    metalness: f32,
-    roughness: f32,
-    geometry_roughness: f32,
-) -> PbrMaterial {
+/// Sets up a PbrMaterial as three.js does, with Filament's specular anti-aliasing. It adds
+/// `kernel`, from `specular_aa_kernel`, to the squared GGX alpha of `roughness`, then keeps the
+/// result from ROUGHNESS_FLOOR to 1. Pass a kernel of 0 to leave the anti-aliasing out.
+fn pbr_material(base_color: vec3f, metalness: f32, roughness: f32, kernel: f32) -> PbrMaterial {
     var m: PbrMaterial;
     m.base_color = base_color;
     m.diffuse = base_color * (1.0 - metalness);
     m.specular = vec3f(0.04);
     m.specular_blended = mix(m.specular, base_color, metalness);
     m.specular_grazing = 1.0;
-    m.roughness = min(max(roughness, 0.0525) + geometry_roughness, 1.0);
+    let alpha = null3d::math::square(roughness);
+    let filtered = sqrt(sqrt(saturate(alpha * alpha + kernel)));
+    m.roughness = clamp(filtered, ROUGHNESS_FLOOR, 1.0);
     m.metalness = metalness;
     return m;
 }

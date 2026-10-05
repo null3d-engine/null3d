@@ -77,7 +77,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none', exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
+      "notes": "The engine default is AgX, which keeps the hues of bright colors; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". A port keeps the curve it set: ACESFilmicToneMapping becomes \"aces\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -737,7 +737,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform.",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform. Roughness has three.js r187's floor of 0.045. Highlights on small curved shapes widen by Filament's specular anti-aliasing, where three.js adds its own term, so they are a little brighter and narrower there. A normal map that tilts a reflection below the surface fades the environment's reflection, which three.js does not.",
       "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },

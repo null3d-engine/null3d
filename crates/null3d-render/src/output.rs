@@ -42,10 +42,11 @@ use crate::frame::linear_to_srgb;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u32)]
 pub enum ToneMapping {
-    /// ACES filmic, three.js's `ACESFilmicToneMapping`, and the engine's default.
-    #[default]
+    /// ACES filmic, three.js's `ACESFilmicToneMapping`.
     Aces = 0,
-    /// AgX, three.js's `AgXToneMapping`.
+    /// AgX, three.js's `AgXToneMapping`, and the engine's default: it keeps the hues of bright
+    /// colors on their way to white.
+    #[default]
     Agx = 1,
     /// Khronos PBR Neutral, three.js's `NeutralToneMapping`.
     Neutral = 2,
@@ -100,7 +101,7 @@ pub struct Output {
 impl Default for Output {
     fn default() -> Self {
         Self {
-            tone_mapping: ToneMapping::Aces,
+            tone_mapping: ToneMapping::default(),
             exposure: 1.0,
         }
     }
@@ -434,7 +435,8 @@ mod tests {
             assert!(library.contains(&line), "tonemap.wgsl lacks {line}");
         }
         assert_eq!(ToneMapping::from_code(4), None);
-        assert_eq!(ToneMapping::default(), ToneMapping::Aces);
+        assert_eq!(ToneMapping::default(), ToneMapping::Agx);
+        assert_eq!(Output::default().tone_mapping, ToneMapping::Agx);
     }
 
     #[test]

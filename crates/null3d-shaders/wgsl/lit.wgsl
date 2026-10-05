@@ -39,7 +39,7 @@ enable draw_index;
 // few. It never imports a module whole, which would reserve the module's name
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
 // build without maps.
-#import null3d::lighting::{PbrMaterial, dfg_lut, multiscatter_compensation, pbr_material}
+#import null3d::lighting::{PbrMaterial, dfg_lut, multiscatter_compensation, pbr_material, specular_aa_kernel}
 #ifdef HALF
 #import null3d::half::{direct_light, indirect_diffuse}
 #else
@@ -49,7 +49,7 @@ enable draw_index;
 #import null3d::globals::{Material}
 #import null3d::gtao::{screen_occlusion}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
-#import null3d::lighting::{indirect_specular, specular_occlusion}
+#import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
@@ -443,13 +443,16 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
 /// `extra` irradiance such as a light map's, and the environment's light times the material's
 /// factor of it. `occlusion` darkens the ambient light and the environment's diffuse light, and
-/// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
-/// position relative to the camera, `to_view` points from the surface toward the camera, and
-/// `dfg` holds the split-sum terms at the surface's roughness and view angle.
+/// its specular light as three.js's `computeSpecularOcclusion` does. The environment's specular
+/// light also fades where the shading `normal` reflects the view below the mesh's own
+/// `vertex_normal`. `relative` is the surface's position relative to the camera, `to_view` points
+/// from the surface toward the camera, and `dfg` holds the split-sum terms at the surface's
+/// roughness and view angle.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
     normal: vec3f,
+    vertex_normal: vec3f,
     to_view: vec3f,
     dfg: vec2f,
     extra: vec3f,
@@ -484,7 +487,8 @@ fn light_surface(
         let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
         let image = indirect_specular(m, radiance, irradiance, dfg);
         let n_dot_v = saturate(dot(normal, to_view));
-        let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
+        let fading = horizon_occlusion(to_view, normal, vertex_normal);
+        let specular = image.specular * (specular_occlusion(n_dot_v, occlusion, m.roughness) * fading);
         indirect += image.diffuse * occlusion + specular;
     }
     return direct + indirect;
@@ -497,12 +501,11 @@ fn light_surface(
 /// occlusion.
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
-    // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
-    // them. As in three.js, the normal is the mesh's own, before a map or a surface function bends
-    // it.
-    let change = max(abs(dpdx(input.normal)), abs(dpdy(input.normal)));
-    let geometry_roughness = max(max(change.x, change.y), change.z);
-    let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
+    // Where the mesh's normal changes fast between pixels, highlights widen, so they do not
+    // flicker as the surface moves. As in Filament, the normal is the mesh's own, before a map or
+    // a surface function bends it.
+    let kernel = specular_aa_kernel(dpdx(input.normal), dpdy(input.normal));
+    let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, kernel);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
     // The frame's lights are exposed already. The surface's own light and its baked light take the
@@ -512,6 +515,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         pbr,
         input.relativePosition,
         normal,
+        input.normal,
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,

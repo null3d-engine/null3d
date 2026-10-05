@@ -48,6 +48,12 @@ Units follow three.js since r155, which dropped its legacy light mode. A scene t
 
 A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
 
+Three defaults keep shiny surfaces clean. They are always on, and they have no settings:
+
+- The smoothest surface has a roughness of 0.045, as in three.js and Filament. A roughness of 0 still shows a small highlight, and reads the sharpest level of an environment.
+- Highlights do not flicker on curved shapes. Where a mesh's normal turns fast from one pixel to the next, the highlight widens by the spread of the normals within the pixel, as Filament's specular anti-aliasing does. A highlight narrower than a pixel would come and go as the camera moves. The widening has a limit, so edges stay glossy, and flat surfaces get none. three.js widens highlights by a cruder rule that has no limit. So on small curved shapes, the engine's highlights are a little brighter and narrower than three.js's.
+- Reflections never come from inside an object. Where a normal map tilts a surface so far that its reflection points below the mesh's own surface, the environment's reflection fades out, as in Unity and Godot. three.js has no such fade, so grazing reflections on strong normal maps are darker than three.js's.
+
 Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. three.js's `distance` of 0, a light with no end, has no equivalent.
 
 ```ts
@@ -176,6 +182,7 @@ The standard material takes the environment's light as three.js's `MeshStandardM
 - Diffuse light comes from the nine coefficients, along the surface's normal.
 - The split-sum terms of three.js's table weigh the two by the view's angle, the roughness and the metalness, with three.js's energy compensation.
 - The occlusion map darkens the diffuse light, and darkens the specular light as three.js's `computeSpecularOcclusion` does.
+- The specular light fades where a normal map tilts the reflection below the mesh's own surface.
 
 three.js's PMREM blurs its levels a little less than the GGX distribution of its own materials. The engine therefore reads each roughness from the level that matches three.js's light best, from a table that compares the two. A port keeps its look: the spheres of the engine's parity scenes match three.js under three.js's own image rule.
 

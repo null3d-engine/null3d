@@ -1,6 +1,6 @@
 // The three.js twin of ambient occlusion's scene (bench/scenes/ao.ts), which null3D's image tests
 // draw. It draws one frame with an EffectComposer: a RenderPass, a GTAOPass with the settings that
-// ?ao=default or ?ao=wide names, and an OutputPass, which applies the ACES tone mapping that null3D
+// ?ao=default or ?ao=wide names, and an OutputPass, which applies the AgX tone mapping that null3D
 // applies by default. GTAOPass multiplies the whole image by the occlusion, which equals null3D's
 // darker ambient light in a scene that ambient light alone lights. The OutputPass draws into the
 // canvas, which the page reads back at once and publishes. The composer's targets have no MSAA, so
@@ -34,7 +34,7 @@ run('hold', async () => {
 	const renderer = new three.WebGLRenderer({ preserveDrawingBuffer: true });
 	renderer.setPixelRatio(1);
 	renderer.setSize(width, height);
-	renderer.toneMapping = three.ACESFilmicToneMapping;
+	renderer.toneMapping = three.AgXToneMapping;
 
 	const scene = new three.Scene();
 	scene.background = new three.Color(AO_BACKGROUND);
