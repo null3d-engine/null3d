@@ -12,8 +12,6 @@ use common::skinned::{AROUND, RINGS, column};
 use common::{World, count};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
-use null3d_core::layers::DEFAULT_LAYERS;
-use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{
     Op, buffer_usage, format, layout, permutation, template, texture_usage, vertex,
@@ -157,21 +155,7 @@ fn a_skinned_caster_that_only_a_cascade_sees_is_skinned_for_its_shadow() {
     // Out of the camera's view to the side, but inside the cascades' boxes, which reach toward the
     // light past the view.
     let (mut world, column) = skinned([0.0, 30.0, 0.0]);
-    world
-        .renderer
-        .settings_mut()
-        .set_sun([0.0, -1.0, 0.0], [3.0; 3]);
-    world
-        .renderer
-        .settings_mut()
-        .set_sun_shadow(Some(SunShadow {
-            cascades: 2,
-            map_size: 1024,
-            bias: 0.5,
-            normal_bias: 1.0,
-            distance: 40.0,
-            layers: DEFAULT_LAYERS,
-        }));
+    world.cast_sun_shadows(2);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
     let skin = operands(&first, Op::CreateComputePipeline)
@@ -295,38 +279,6 @@ fn webgl2(multi_draw: bool) -> World<CpuCulledRenderer> {
     }))
 }
 
-/// Adds a second skinned object of `first`'s mesh and material at `position`, with an animated
-/// instance of its own.
-fn add_twin<B: FrameBuilder>(world: &mut World<B>, first: Handle, position: [f32; 3]) -> Handle {
-    let slot = world.scene.resolve(first).unwrap() as usize;
-    let (mesh, material) = (world.scene.meshes()[slot], world.scene.materials()[slot]);
-    let animations = world.animations.as_mut().unwrap();
-    let instance = animations.add_instance(0).unwrap();
-    let object = world.scene.reserve().unwrap();
-    world.scene.set_position(object, position).unwrap();
-    let commands = [
-        Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
-        Command::set_material(object, material),
-        Command::set_skin(object, Some(instance)),
-    ];
-    world.scene.apply_commands(&commands, world.frame).unwrap();
-    object
-}
-
-/// Turns on the sun's shadows, straight down, with two cascades.
-fn cast_sun_shadows<B: FrameBuilder>(world: &mut World<B>) {
-    let settings = world.renderer.settings_mut();
-    settings.set_sun([0.0, -1.0, 0.0], [3.0; 3]);
-    settings.set_sun_shadow(Some(SunShadow {
-        cascades: 2,
-        map_size: 1024,
-        bias: 0.5,
-        normal_bias: 1.0,
-        distance: 40.0,
-        layers: DEFAULT_LAYERS,
-    }));
-}
-
 /// The views' instance groups that a frame made.
 fn instance_groups(commands: &[(Op, Vec<u32>)]) -> Vec<Vec<u32>> {
     operands(commands, Op::CreateBindGroup)
@@ -353,7 +305,7 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
     for multi_draw in [false, true] {
         let mut world = webgl2(multi_draw);
         world.add_skinned([0.0; 3]);
-        cast_sun_shadows(&mut world);
+        world.cast_sun_shadows(2);
         let mut mock = MockBackend::default();
         let first = world.step(&mut mock, true);
 
@@ -414,7 +366,7 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
 fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
     let mut world = webgl2(true);
     let left = world.add_skinned([-2.0, 0.0, 0.0]);
-    let objects = [left, add_twin(&mut world, left, [2.0, 0.0, 0.0])];
+    let objects = [left, world.add_twin(left, [2.0, 0.0, 0.0])];
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
 
@@ -520,9 +472,9 @@ fn crowd<B: FrameBuilder>(mut world: World<B>) -> Vec<(Op, Vec<u32>)> {
     let first = world.add_skinned([0.0, 0.0, 0.0]);
     for k in 1..CROWD {
         let position = [(k % 100) as f32 - 50.0, 0.0, -((k / 100) as f32)];
-        add_twin(&mut world, first, position);
+        world.add_twin(first, position);
     }
-    cast_sun_shadows(&mut world);
+    world.cast_sun_shadows(2);
     world.step(&mut MockBackend::default(), true)
 }
 

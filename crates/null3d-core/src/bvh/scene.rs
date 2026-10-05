@@ -251,20 +251,22 @@ impl SceneBvh {
         if rebuild {
             self.list_items(scene, batches, &object_box, mesh_bounds)?;
         } else {
-            // A sync in the same frame, after a late transform update, looks again at the
-            // objects stamped in this frame.
-            let since = self
-                .synced
-                .map(|(f, _)| if f == frame { f.wrapping_sub(1) } else { f });
+            // The objects stamped in the frame of the last sync are looked at again: a late
+            // transform update can move them after that sync, in the same frame. Only a box or a
+            // cell that changed refits the tree.
+            let since = self.synced.map(|(f, _)| f.wrapping_sub(1));
             let stamps = scene.changed_frames();
             let mut moved = false;
             for i in 0..self.static_objects {
                 let slot = self.statics.ids()[i as usize];
                 if changed_after(stamps[slot as usize], since, frame) {
-                    let cell = cells[slot as usize];
-                    rebuild |= cell != self.statics.cells()[i as usize];
-                    self.statics.set(i, cell, object_box(slot));
-                    moved = true;
+                    let (cell, b) = (cells[slot as usize], object_box(slot));
+                    let k = i as usize;
+                    if cell != self.statics.cells()[k] || b != self.statics.boxes()[k] {
+                        rebuild |= cell != self.statics.cells()[k];
+                        self.statics.set(i, cell, b);
+                        moved = true;
+                    }
                 }
             }
             for rows in &self.batches {
