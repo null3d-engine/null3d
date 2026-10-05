@@ -35,9 +35,11 @@ The items that run again on the new gate commit:
 - The iPad's GPU time comparison of S4 at Low against the older commit f46c0686, on a cool iPad.
 - Firefox and Safari on the Mac, after the fixes for their failures merge.
 
+The coordinator chose the new gate commit on 6 October 2026. It is the first main commit that holds #347, which keeps the refresh meter's frame tick free of allocation. Without #347, S4's allocation on WebGL2 still fails. That commit also holds #335. Firefox and Safari run again on the later main commit that holds the fixes for their failures, and their rows name that commit.
+
 ## Options rejected
 
-- Run every item again on the new commit. The night's order took about 5 hours of device time and 70 minutes of a quiet Mac. The fix in #335 changes only the governor's time keeping. So the items that passed have no reason to change.
+- Run every item again on the new commit. The night's order took about 5 hours of device time and 70 minutes of a quiet Mac. The fixes in #335 and #347 change only the governor's time keeping and the refresh meter's frame tick. So the items that passed have no reason to change.
 - Keep the 4.5 s target and take more bytes off the start. The 57 ms miss needs about 9 KB less. The start grew with each feature since the target was set, and about 2 KB more would miss again.
 
 ## Consequences

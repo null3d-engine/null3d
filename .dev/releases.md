@@ -305,7 +305,7 @@ Notes on the figures:
 
 ### What the gate still needs
 
-The gate moves to a newer main commit that holds the governor's allocation fix (#335), by the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). Only these items run again there. Every other item keeps its result from 89a1d6295, or from 03a1ad198 for the iPad runs before T-28.
+The gate moves to a newer main commit, by the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). It is the first main commit that holds #347, the refresh meter's allocation fix, and so also #335, the governor's. Firefox and Safari run again on the later main commit that holds their fixes, and their rows name it. Only these items run again there. Every other item keeps its result from 89a1d6295, or from 03a1ad198 for the iPad runs before T-28.
 
 1. Allocation, S4 on WebGL2, in Chrome on the Mac (gate step `allocation-s4-webgl2`), inside a quiet window.
 2. The iPad's soak plan on S4, on a cool iPad.
@@ -329,5 +329,5 @@ The owner ruled on two gate results on 5 October 2026 ([D-67](decisions/D-67-rul
 
 The owner ruled on the gate's results on 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)).
 
-- The gate commit moves to a newer main commit that holds #335. Only the items that failed, or that gave no valid result, run again there. [What the gate still needs](#what-the-gate-still-needs) lists them.
+- The gate commit moves to the first main commit that holds #347 and #335, the allocation fixes. Only the items that failed, or that gave no valid result, run again there. [What the gate still needs](#what-the-gate-still-needs) lists them.
 - T-28's cold-start target on the S24+ in Chrome on Slow 4G is 5.5 s, up from 4.5 s. The warm target stays at 1 s. So the gate commit's 4,532 and 4,557 ms pass.
