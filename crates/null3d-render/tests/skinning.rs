@@ -130,6 +130,64 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
     );
 }
 
+/// The column with a float tangent beside its texture coordinates.
+fn column_with_tangents() -> null3d_render::geometry::Geometry {
+    let plain = column();
+    let format = plain.format | vertex::TANGENT;
+    let mut g = null3d_render::geometry::Geometry {
+        format,
+        indices: plain.indices.clone(),
+        ..Default::default()
+    };
+    let stride = vertex::stride(plain.format) as usize;
+    // The tangent sits after the texture coordinates, before the joints.
+    let uv_end = (vertex::offset(plain.format, 2).unwrap() + 8) as usize;
+    for v in plain.vertices.chunks(stride) {
+        g.vertices.extend_from_slice(&v[..uv_end]);
+        for t in [1.0f32, 0.0, 0.0, 1.0] {
+            g.vertices.extend_from_slice(&t.to_le_bytes());
+        }
+        g.vertices.extend_from_slice(&v[uv_end..]);
+    }
+    assert_eq!(vertex::offset(format, 4), Some(uv_end as u32));
+    g
+}
+
+#[test]
+fn the_skinning_pass_skins_formats_with_a_tangent_with_a_build_of_their_own() {
+    let mut world = World::new();
+    world.add_skinned([-1.0, 0.0, 0.0]);
+    world.add_skinned_mesh([1.0, 0.0, 0.0], &column_with_tangents());
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    // One pipeline for each kind of format: the plain build, and the build with the tangent's code.
+    let skins: Vec<Vec<u32>> = operands(&first, Op::CreateComputePipeline)
+        .into_iter()
+        .filter(|p| p[1] == template::SKIN)
+        .collect();
+    assert_eq!(skins.len(), 2);
+    let plain = skins.iter().find(|p| p[2] == 0).expect("the plain build")[0];
+    let tangent = skins
+        .iter()
+        .find(|p| p[2] == permutation::VERTEX_TANGENT)
+        .expect("the tangent build")[0];
+    assert_ne!(plain, tangent);
+    // Each column's page skins in a dispatch of its own pipeline.
+    let groups = (RINGS * AROUND).div_ceil(64);
+    assert_eq!(skin_dispatches(&first, plain), [groups]);
+    assert_eq!(skin_dispatches(&first, tangent), [groups]);
+
+    // A scene without a tangent never builds the tangent's pipeline.
+    let (mut world, _) = skinned([0.0; 3]);
+    let first = world.step(&mut MockBackend::default(), true);
+    let skins: Vec<Vec<u32>> = operands(&first, Op::CreateComputePipeline)
+        .into_iter()
+        .filter(|p| p[1] == template::SKIN)
+        .collect();
+    assert_eq!(skins.iter().map(|p| p[2]).collect::<Vec<_>>(), [0]);
+}
+
 #[test]
 fn a_skinned_object_that_no_view_draws_is_not_skinned() {
     // Behind the camera, which looks down -z from z = 20, and with no shadows.

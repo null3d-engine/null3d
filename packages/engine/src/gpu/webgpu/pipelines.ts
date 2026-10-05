@@ -21,6 +21,7 @@ import {
 	LAYOUT_TEXTURES,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
+	PERMUTATION_VERTEX_TANGENT,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -292,7 +293,8 @@ export class Pipelines {
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
 	private readonly skinLayout: GPUPipelineLayout;
-	private readonly skin: WgslShader | undefined;
+	/** The skinning pass's builds: for vertex formats without a tangent, then with one. */
+	private readonly skin: [WgslShader | undefined, WgslShader | undefined];
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The module of the fragment shader that writes nothing, made at its first use. */
@@ -556,7 +558,9 @@ export class Pipelines {
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
-		this.skin = variantFor(shaders.skin, 0, 'wgsl')?.wgsl ?? undefined;
+		this.skin = [0, PERMUTATION_VERTEX_TANGENT].map(
+			(bits) => variantFor(shaders.skin, bits, 'wgsl')?.wgsl ?? undefined,
+		) as [WgslShader | undefined, WgslShader | undefined];
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -730,14 +734,20 @@ export class Pipelines {
 		return pipeline;
 	}
 
-	/** How to build a compute pipeline of a template: culling, skinning, or a step of light clustering. */
-	compute(template: number): GPUComputePipelineDescriptor {
+	/**
+	 * How to build a compute pipeline of a template: culling, skinning, or a step of light
+	 * clustering. The skinning pass takes the build of its permutation bits: with the vertex tangent
+	 * bit for vertex formats that have a tangent.
+	 */
+	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
-			if (!this.skin) throw new Error("the device's shader module has no skinning shader");
+			const tangent = (permutation & PERMUTATION_VERTEX_TANGENT) !== 0;
+			const shader = this.skin[tangent ? 1 : 0];
+			if (!shader) throw new Error("the device's shader module has no skinning shader");
 			return {
-				label: 'skin',
+				label: tangent ? 'skin tangent' : 'skin',
 				layout: this.skinLayout,
-				compute: { module: this.module('skin', this.skin), entryPoint: 'main' },
+				compute: { module: this.module('skin', shader), entryPoint: 'main' },
 			};
 		}
 		if (template === TEMPLATE_CULL) {

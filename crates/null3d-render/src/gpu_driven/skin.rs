@@ -51,8 +51,8 @@ use null3d_core::morph::MorphWeights;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_gpu::caps::MAX_WORKGROUPS_PER_DIMENSION;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
-    vertex,
+    DrawList, Op, buffer_usage as usage, layout as bind_layout, permutation, resource_kind, sizes,
+    template, vertex,
 };
 
 use super::ids;
@@ -100,6 +100,13 @@ const NONE: u32 = u32::MAX;
 const TANGENT: usize = 4;
 /// The vertex locations of the attributes that the pass copies unchanged, in vertex order.
 const COPIED: [usize; 3] = [2, 3, 5];
+
+/// The pass's pipelines, by [`Segment::pipeline`]: their ids and the permutation bits of their
+/// builds. The build for formats without a tangent holds no tangent code (see `skin.wgsl`).
+const PIPELINES: [(u32, u32); 2] = [
+    (ids::SKIN, 0),
+    (ids::SKIN_TANGENT, permutation::VERTEX_TANGENT),
+];
 
 /// The joint base of an object that no animated instance skins.
 const NOT_SKINNED: u32 = NONE;
@@ -154,6 +161,14 @@ struct Segment {
     groups: u32,
 }
 
+impl Segment {
+    /// The place in [`PIPELINES`] of the pipeline that skins its format: 1 for a format with a
+    /// tangent, 0 otherwise.
+    fn pipeline(&self) -> usize {
+        usize::from(self.format[1][0] != NONE)
+    }
+}
+
 /// The skinning pass's layout and GPU objects.
 #[derive(Debug)]
 pub(super) struct Skinning {
@@ -174,7 +189,8 @@ pub(super) struct Skinning {
     table_made: u32,
     /// True when the bind groups must be made again before the next dispatch.
     groups_stale: bool,
-    pipeline_made: bool,
+    /// Which of [`PIPELINES`] the GPU has.
+    pipelines_made: [bool; 2],
     joints: JointTexture,
     morph: MorphTexture,
     /// The objects that the skinning pass skins or morphs.
@@ -205,7 +221,7 @@ impl Skinning {
             table_entries: 0,
             table_made: 0,
             groups_stale: true,
-            pipeline_made: false,
+            pipelines_made: [false; 2],
             joints: JointTexture::new(ids::JOINTS),
             morph: MorphTexture::new(ids::MORPHS, ids::MORPH_WEIGHTS),
             computed: 0,
@@ -511,15 +527,22 @@ impl Skinning {
         Ok(())
     }
 
-    /// Records the creation of the pass's pipeline while the scene draws skinned objects and the
-    /// GPU lacks it. Returns true when it recorded it. Pipelines come first in a frame's list.
+    /// Records the creation of the pass's pipelines that the layout's segments need and the GPU
+    /// lacks. Returns true when it recorded one. Pipelines come first in a frame's list.
     pub(super) fn create_pipeline(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
-        if self.pipeline_made || !self.dispatches() {
+        if !self.dispatches() {
             return Ok(false);
         }
-        list.push(Op::CreateComputePipeline, &[ids::SKIN, template::SKIN, 0])?;
-        self.pipeline_made = true;
-        Ok(true)
+        let mut created = false;
+        for (k, &(id, bits)) in PIPELINES.iter().enumerate() {
+            if self.pipelines_made[k] || !self.segments.iter().any(|s| s.pipeline() == k) {
+                continue;
+            }
+            list.push(Op::CreateComputePipeline, &[id, template::SKIN, bits])?;
+            self.pipelines_made[k] = true;
+            created = true;
+        }
+        Ok(created)
     }
 
     /// Records the GPU objects the layout needs that the GPU lacks: the joint texture, the morph
@@ -725,14 +748,15 @@ impl Skinning {
     /// Records the frame's dispatches, one per segment with parts to skin, inside the compute
     /// pass that the render graph began.
     pub(super) fn record(&self, list: &mut DrawList) -> Result<(), RecordError> {
-        let mut pipeline_set = false;
+        let mut pipeline = None;
         for (k, segment) in self.segments.iter().enumerate() {
             if segment.groups == 0 {
                 continue;
             }
-            if !pipeline_set {
-                list.push(Op::SetComputePipeline, &[ids::SKIN])?;
-                pipeline_set = true;
+            let id = PIPELINES[segment.pipeline()].0;
+            if pipeline != Some(id) {
+                list.push(Op::SetComputePipeline, &[id])?;
+                pipeline = Some(id);
             }
             list.push(Op::SetBindGroup, &[0, ids::SKIN_GROUPS + k as u32, 0])?;
             list.push(Op::Dispatch, &dispatch_size(segment.groups))?;
@@ -745,7 +769,7 @@ impl Skinning {
         self.skinned_made = [0; MAX_SKINNED_BUFFERS as usize];
         self.table_made = 0;
         self.groups_stale = true;
-        self.pipeline_made = false;
+        self.pipelines_made = [false; 2];
         self.joints.forget_gpu();
         self.morph.forget_gpu();
     }

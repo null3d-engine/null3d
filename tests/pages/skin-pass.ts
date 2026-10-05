@@ -9,11 +9,12 @@
 //
 // The cases change one thing at a time: the types of the joints and weights (8-bit and 16-bit
 // joints, normalized 8-bit and float weights), rigid cubes that each follow one joint, as the glTF
-// loader makes of meshes that a clip moves, and a column whose vertices blend two joints, as a
-// skinned character does. Two cases are not the renderer's own: one dispatch for each part, and a
+// loader makes of meshes that a clip moves, a column whose vertices blend two joints, as a skinned
+// character does, and a tangent, which the pass's tangent build skins. Two cases are not the renderer's own: one dispatch for each part, and a
 // joint texture written whole. They tell a fault of the table from one of the joint texture.
 import type { DeviceShaders } from '@null3d/engine/internal';
 import { loadWgslShaders } from '@null3d/engine/internal';
+import { PERMUTATION_VERTEX_TANGENT } from '../../packages/engine/src/generated/gpu';
 import { variantFor } from '../../packages/engine/src/gpu/variants';
 import type { SkinPassCase, SkinPassResult, SkinPassWrong } from '../lib/skin-pass-checks';
 import { progress, run } from './lib/result';
@@ -34,8 +35,6 @@ const SEGMENT_ALIGN_BYTES = 256;
 const NONE = 0xffffffff;
 /** The engine's vertex type codes. */
 const TYPE = { f32: 0, unorm8: 1, uint8: 5, uint16: 7 } as const;
-/** A skinned vertex: its position, then its normal, as floats. */
-const SKINNED_WORDS = 6;
 /** Joints that the cases name, and the largest difference a float may show. */
 const JOINTS = 6;
 const TOLERANCE = 1e-4;
@@ -63,6 +62,8 @@ interface Case {
 	apart?: boolean;
 	/** The joint texture written whole, where the renderer writes only the joints in use. */
 	wholeRow?: boolean;
+	/** A float tangent after the normal, which the pass's tangent build skins. */
+	tangent?: boolean;
 }
 
 /** A cube of 24 vertices, 4 per face, around the origin, that joint `joint` alone moves. */
@@ -161,13 +162,36 @@ const CASES: Case[] = [
 		meshes: CUBES,
 		wholeRow: true,
 	},
+	{
+		name: 'cubes-tangent-u8-unorm8',
+		engine: true,
+		joints: 'uint8',
+		weights: 'unorm8',
+		meshes: CUBES,
+		tangent: true,
+	},
 ];
 
-/** Words of a source vertex: position, normal, joints, then weights. */
+/** Words of a source vertex: position, normal, the tangent if any, joints, then weights. */
 function sourceWords(c: Case): { stride: number; joints: number; weights: number } {
+	const joints = c.tangent ? 10 : 6;
 	const jointWords = c.joints === 'uint8' ? 1 : 2;
 	const weightWords = c.weights === 'unorm8' ? 1 : 4;
-	return { stride: 6 + jointWords + weightWords, joints: 6, weights: 6 + jointWords };
+	return { stride: joints + jointWords + weightWords, joints, weights: joints + jointWords };
+}
+
+/** Words of a skinned vertex: its position and normal, then its tangent if any, as floats. */
+function skinnedWords(c: Case): number {
+	return c.tangent ? 10 : 6;
+}
+
+/** A cube vertex's tangent: along its face, with a handedness that differs by face. */
+function tangentOf(mesh: Mesh, i: number): number[] {
+	const n = [0, 1, 2].map((k) => mesh.normals[i * 3 + k] as number);
+	const axis = n.findIndex((x) => x !== 0);
+	const t = [0, 0, 0];
+	t[(axis + 1) % 3] = 1;
+	return [...t, (n[axis] as number) > 0 ? 1 : -1];
 }
 
 /** The weights as the vertex stores them, which the CPU reads back as the shader does. */
@@ -189,6 +213,9 @@ function pageBytes(c: Case): ArrayBuffer {
 				view.setFloat32(at + k * 4, mesh.positions[i * 3 + k] as number, true);
 				view.setFloat32(at + 12 + k * 4, mesh.normals[i * 3 + k] as number, true);
 			}
+			if (c.tangent)
+				for (const [k, x] of tangentOf(mesh, i).entries())
+					view.setFloat32(at + 24 + k * 4, x, true);
 			for (let k = 0; k < 4; k++) {
 				const joint = mesh.joints[i * 4 + k] as number;
 				const weight = mesh.weights[i * 4 + k] as number;
@@ -201,7 +228,7 @@ function pageBytes(c: Case): ArrayBuffer {
 	return bytes;
 }
 
-/** A vertex skinned on the CPU: its position, then its normal. */
+/** A vertex skinned on the CPU: its position, its normal, then its tangent if any. */
 function skinnedOnCpu(c: Case, mesh: Mesh, i: number): number[] {
 	const rows = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 	for (let k = 0; k < 4; k++) {
@@ -217,7 +244,10 @@ function skinnedOnCpu(c: Case, mesh: Mesh, i: number): number[] {
 		(rows[r * 4 + 1] as number) * (x[1] as number) +
 		(rows[r * 4 + 2] as number) * (x[2] as number) +
 		(rows[r * 4 + 3] as number) * w;
-	return [row(0, p, 1), row(1, p, 1), row(2, p, 1), row(0, n, 0), row(1, n, 0), row(2, n, 0)];
+	const out = [row(0, p, 1), row(1, p, 1), row(2, p, 1), row(0, n, 0), row(1, n, 0), row(2, n, 0)];
+	if (!c.tangent) return out;
+	const t = tangentOf(mesh, i);
+	return [...out, row(0, t, 0), row(1, t, 0), row(2, t, 0), t[3] as number];
 }
 
 /** The size the renderer creates a buffer at to hold `needed` bytes (frame.rs, `grown_size`). */
@@ -241,7 +271,7 @@ function partsOf(c: Case): Part[] {
 		const vertices = mesh.positions.length / 3;
 		parts.push({ firstVertex: first, vertices, out });
 		first += vertices;
-		out += vertices * SKINNED_WORDS;
+		out += vertices * skinnedWords(c);
 	}
 	return parts;
 }
@@ -250,8 +280,13 @@ function partsOf(c: Case): Part[] {
 function tableOf(c: Case, segments: Part[][]): { words: Uint32Array; offsets: number[] } {
 	const { stride, joints, weights } = sourceWords(c);
 	const format = [
-		[stride, SKINNED_WORDS, 0 | (TYPE.f32 << 8), 3 | (TYPE.f32 << 8)],
-		[NONE, joints | (TYPE[c.joints] << 8), weights | (TYPE[c.weights] << 8), NONE],
+		[stride, skinnedWords(c), 0 | (TYPE.f32 << 8), 3 | (TYPE.f32 << 8)],
+		[
+			c.tangent ? 6 | (TYPE.f32 << 8) | (6 << 16) : NONE,
+			joints | (TYPE[c.joints] << 8),
+			weights | (TYPE[c.weights] << 8),
+			NONE,
+		],
 		[0, 0, 0, 0],
 	];
 	const offsets: number[] = [];
@@ -343,7 +378,7 @@ function compare(
 
 async function runCase(
 	device: GPUDevice,
-	pipeline: GPUComputePipeline,
+	pipelines: { plain: GPUComputePipeline; tangent: GPUComputePipeline },
 	layout: GPUBindGroupLayout,
 	c: Case,
 ): Promise<SkinPassCase & { jointsRead: boolean }> {
@@ -361,7 +396,8 @@ async function runCase(
 		usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 	});
 	device.queue.writeBuffer(table, 0, words);
-	const skinnedBytes = parts.reduce((n, p) => n + p.vertices, 0) * SKINNED_WORDS * 4;
+	const stride = skinnedWords(c);
+	const skinnedBytes = parts.reduce((n, p) => n + p.vertices, 0) * stride * 4;
 	const skinned = device.createBuffer({
 		size: grownSize(skinnedBytes),
 		usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC,
@@ -388,7 +424,7 @@ async function runCase(
 	});
 	const encoder = device.createCommandEncoder();
 	const pass = encoder.beginComputePass();
-	pass.setPipeline(pipeline);
+	pass.setPipeline(c.tangent ? pipelines.tangent : pipelines.plain);
 	segments.forEach((segmentParts, s) => {
 		const size = (HEADER_ENTRIES + PART_ENTRIES * segmentParts.length) * ENTRY_BYTES;
 		pass.setBindGroup(
@@ -416,12 +452,12 @@ async function runCase(
 	);
 	const out = new Float32Array(await readBuffer(device, skinned, skinnedBytes));
 	const pass1 = compare(expected, (part, vertex) => {
-		const at = (parts[part] as Part).out + vertex * SKINNED_WORDS;
-		return Array.from(out.subarray(at, at + SKINNED_WORDS));
+		const at = (parts[part] as Part).out + vertex * stride;
+		return Array.from(out.subarray(at, at + stride));
 	});
 	const positions = expected.map((vertices) => vertices.map((v) => v.slice(0, 3)));
-	const pass2 = compare(positions, await drawRegions(device, skinned, parts, false));
-	const pass3 = compare(positions, await drawRegions(device, skinned, parts, true));
+	const pass2 = compare(positions, await drawRegions(device, skinned, stride, parts, false));
+	const pass3 = compare(positions, await drawRegions(device, skinned, stride, parts, true));
 	const jointsRead = await readJoints(device, joints);
 	for (const buffer of [source, table, skinned]) buffer.destroy();
 	joints.destroy();
@@ -453,6 +489,7 @@ const ROW_STRIDE = 16;
 async function drawRegions(
 	device: GPUDevice,
 	skinned: GPUBuffer,
+	stride: number,
 	parts: Part[],
 	bundled: boolean,
 ): Promise<(part: number, vertex: number) => number[]> {
@@ -467,7 +504,7 @@ async function drawRegions(
 			constants: { WIDTH: width, HEIGHT: height },
 			buffers: [
 				{
-					arrayStride: SKINNED_WORDS * 4,
+					arrayStride: stride * 4,
 					attributes: [
 						{ shaderLocation: 0, offset: 0, format: 'float32x3' },
 						{ shaderLocation: 1, offset: 12, format: 'float32x3' },
@@ -596,8 +633,6 @@ run('skin-pass', async () => {
 		errors.push((event as GPUUncapturedErrorEvent).error.message);
 	});
 	const shaders: DeviceShaders = await loadWgslShaders(0);
-	const skin = variantFor(shaders.skin, 0, 'wgsl')?.wgsl;
-	if (!skin) throw new Error('the shader module has no skinning shader');
 	// The renderer's layout of the pass (packages/engine/src/gpu/webgpu/pipelines.ts).
 	const compute = GPUShaderStage.COMPUTE;
 	const data: GPUTextureBindingLayout = { sampleType: 'unfilterable-float' };
@@ -611,16 +646,21 @@ run('skin-pass', async () => {
 			{ binding: 5, visibility: compute, texture: data },
 		],
 	});
-	const pipeline = device.createComputePipeline({
-		label: 'skin',
-		layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-		compute: { module: device.createShaderModule({ code: skin.source }), entryPoint: 'main' },
-	});
+	// The pass's two builds, as the renderer picks them: for formats without a tangent, and with one.
+	const build = (bits: number) => {
+		const skin = variantFor(shaders.skin, bits, 'wgsl')?.wgsl;
+		if (!skin) throw new Error(`the shader module has no skinning build of bits ${bits}`);
+		return device.createComputePipeline({
+			layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+			compute: { module: device.createShaderModule({ code: skin.source }), entryPoint: 'main' },
+		});
+	};
+	const pipelines = { plain: build(0), tangent: build(PERMUTATION_VERTEX_TANGENT) };
 	const cases: SkinPassCase[] = [];
 	let jointsRead = true;
 	for (const c of CASES) {
 		progress(`case ${c.name}`);
-		const { jointsRead: read, ...result } = await runCase(device, pipeline, layout, c);
+		const { jointsRead: read, ...result } = await runCase(device, pipelines, layout, c);
 		jointsRead &&= read;
 		cases.push(result);
 	}

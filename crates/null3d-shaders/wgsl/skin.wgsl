@@ -20,6 +20,12 @@
 //   the joint texture, or every bit set for a mesh that no joint skins, the first texel of its
 //   object's morph weights in the morph texture, and padding.
 //
+// The VERTEX_TANGENT build skins the formats that have a tangent, and the other build those that
+// have none. The build without the bit holds no code that reads or writes a tangent, so no thread
+// can write the tangent's words, which lie past the vertex's own words in a format without one.
+// Adreno 830's driver runs the tangent's write behind a runtime check even where the check is false
+// ("Browser faults" in .dev/implementation-notes.md), so the format picks the build instead.
+//
 // A skinned vertex has its position, then its normal, as 32-bit floats, then the source's other
 // attributes in their order, with a tangent as 32-bit floats. Each attribute takes whole words, so
 // the skinned vertex is the mesh's vertex format without joints and weights.
@@ -190,9 +196,9 @@ fn main(
     let out = part.w + v * strides.y;
 
     var rest = Morphed(vector(vertex, strides.z), vector(vertex, strides.w), vec3f(0.0));
-    if more.x != NONE {
-        rest.tangent = vector(vertex, more.x);
-    }
+#ifdef VERTEX_TANGENT
+    rest.tangent = vector(vertex, more.x);
+#endif
     if more.w != NONE && object.y != NONE {
         let range = vec2f(component(vertex, more.w, 0u), component(vertex, more.w, 1u));
         rest = morphed(rest, range, object.y);
@@ -219,12 +225,12 @@ fn main(
     store(out, vec3f(dot(row_x, p), dot(row_y, p), dot(row_z, p)));
     let n = rest.normal;
     store(out + 3u, vec3f(dot(row_x.xyz, n), dot(row_y.xyz, n), dot(row_z.xyz, n)));
-    if more.x != NONE {
-        let t = rest.tangent;
-        let at = out + ((more.x >> 16u) & 0xffu);
-        store(at, vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t)));
-        skinned[at + 3u] = bitcast<u32>(component(vertex, more.x, 3u));
-    }
+#ifdef VERTEX_TANGENT
+    let t = rest.tangent;
+    let at = out + ((more.x >> 16u) & 0xffu);
+    store(at, vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t)));
+    skinned[at + 3u] = bitcast<u32>(component(vertex, more.x, 3u));
+#endif
     copy_run(vertex, out, runs.x);
     copy_run(vertex, out, runs.y);
 }
