@@ -22,6 +22,7 @@ describe('parseSwitches', () => {
 			prepass: undefined,
 			occlusion: undefined,
 			skinning: 'lean',
+			indexInstances: false,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -38,6 +39,8 @@ describe('parseSwitches', () => {
 			expect(parseSwitches(`?skinning=${mode}`).skinning).toBe(mode);
 		expect(parseSwitches('?skinning=compute').skinning).toBe('lean');
 		expect(parseSwitches('').skinning).toBe('lean');
+		expect(parseSwitches('?instances=index').indexInstances).toBe(true);
+		expect(parseSwitches('?instances=copy').indexInstances).toBe(false);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {

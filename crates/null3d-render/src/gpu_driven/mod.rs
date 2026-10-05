@@ -199,12 +199,14 @@ mod ids {
     pub const SOURCE_LAYERS: u32 = 5;
     /// Every drawn source's place, in cell order.
     pub const ORDER: u32 = 6;
-    /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
-    /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
+    /// Each view's buffers: its frame uniform, culling parameters, compacted instances, indirect
+    /// draws and compacted indices, `VIEW_BUFFER_IDS` ids from
+    /// `VIEW_BUFFERS + VIEW_BUFFER_IDS * view`.
     const VIEW_BUFFERS: u32 = 7;
+    const VIEW_BUFFER_IDS: u32 = 5;
 
     pub const fn frame(view: ViewId) -> u32 {
-        VIEW_BUFFERS + 4 * view.index() as u32
+        VIEW_BUFFERS + VIEW_BUFFER_IDS * view.index() as u32
     }
     pub const fn cull_params(view: ViewId) -> u32 {
         frame(view) + 1
@@ -215,9 +217,14 @@ mod ids {
     pub const fn indirect(view: ViewId) -> u32 {
         frame(view) + 3
     }
+    /// The view's compacted index buffer, which the buckets that read their instances by index
+    /// draw from.
+    pub const fn visible_indices(view: ViewId) -> u32 {
+        frame(view) + 4
+    }
 
     /// The vertices of the debug lines.
-    pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEW_IDS as u32;
+    pub const LINES: u32 = VIEW_BUFFERS + VIEW_BUFFER_IDS * MAX_VIEW_IDS as u32;
     /// The casters' bucket table and bucket records, which the shadow cascades' culling reads.
     pub const CASTER_BUCKETS: u32 = LINES + 1;
     pub const CASTER_RECORDS: u32 = LINES + 2;
@@ -304,15 +311,19 @@ mod ids {
     pub const SKIN: u32 = 5;
     pub const SKIN_TANGENT: u32 = 6;
 
-    /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
+    /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
+    /// the group of the pipelines that read their instances by index.
     pub const fn frame_group(view: ViewId) -> u32 {
-        1 + 2 * view.index() as u32
+        1 + 3 * view.index() as u32
     }
     pub const fn cull_group(view: ViewId) -> u32 {
         frame_group(view) + 1
     }
+    pub const fn index_group(view: ViewId) -> u32 {
+        frame_group(view) + 2
+    }
     /// The final pass's group, after every view's.
-    pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
+    pub const FINAL_GROUP: u32 = 1 + 3 * MAX_VIEW_IDS as u32;
     /// The light clustering pass's group.
     pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
     /// Each camera view's group of its depth prepass, after the light clustering pass's group.
@@ -366,6 +377,10 @@ pub struct RendererConfig {
     /// Where to skin skinned meshes: once per frame in the skinning pass, with its savings, or in
     /// the vertex shader of each pass that draws them.
     pub skinning: SkinningMode,
+    /// True when the vertex shaders of the culled buckets read each instance by index from
+    /// storage buffers, where their templates can, instead of a copy that the culling shader
+    /// writes. A test switch asks for it on core WebGPU (decision record D-23).
+    pub index_instances: bool,
 }
 
 impl Default for RendererConfig {
@@ -381,6 +396,7 @@ impl Default for RendererConfig {
             light_limits: LightLimits::default(),
             depth_prepass: false,
             skinning: SkinningMode::LEAN,
+            index_instances: false,
         }
     }
 }
@@ -506,16 +522,16 @@ impl GpuDrivenRenderer {
                 graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
-            layout: Layout::new(Drawn::Scene),
-            casters: Layout::new(Drawn::Casters),
-            outlined: Layout::new(Drawn::Outlined),
+            layout: Layout::new(Drawn::Scene, config.index_instances),
+            casters: Layout::new(Drawn::Casters, config.index_instances),
+            outlined: Layout::new(Drawn::Outlined, config.index_instances),
             layouts_shadowed: false,
             layouts_outlined: false,
             outline_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, false),
-            culling: Culling::default(),
+            culling: Culling::new(config.index_instances),
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),

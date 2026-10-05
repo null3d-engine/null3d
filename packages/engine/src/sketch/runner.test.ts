@@ -228,6 +228,7 @@ async function start(
 				cellCulling: true,
 				depthPrepass: false,
 				skinning: C.SKINNING_LEAN,
+				indexInstances: false,
 				largeWorld: false,
 			},
 			capabilities: CAPABILITIES,

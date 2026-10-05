@@ -275,6 +275,7 @@ export class SketchRunner {
 			device.cellCulling,
 			device.depthPrepass,
 			device.skinning,
+			device.indexInstances,
 			device.largeWorld,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');

@@ -121,9 +121,11 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -prepass, the depth prepass, for those with -skin-, a way of skinning that ?skinning=
- * picks, for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
- * wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * end in -prepass, the depth prepass, for the one that ends in -index, vertex shaders that read
+ * instance data by index, for those with -skin-, a way of skinning that ?skinning= picks, for
+ * those that end in -timed, the time of each WebGL call, and for those that end in -synced, that
+ * time with a wait for the browser's GPU process after each call, and the GPU interface it draws
+ * with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -139,6 +141,11 @@ const PAGES = {
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
 	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
 	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
+	'null3d-webgpu-index': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&instances=index',
+		api: 'webgpu',
+	},
 	'null3d-webgpu-skin-vertex': {
 		folder: 'null3d',
 		switches: 'gpu=webgpu&skinning=vertex',
