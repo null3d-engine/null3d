@@ -79,6 +79,8 @@ const ROW_BYTES: u32 = JOINTS_PER_ROW * MATRIX_FLOATS as u32 * 4;
 const JOINTS_LOCATION: usize = 6;
 /// The vertex location of a skinned mesh's weights.
 const WEIGHTS_LOCATION: usize = 7;
+/// The vertex location of colors.
+pub const COLOR_LOCATION: usize = 5;
 
 /// True for a mesh whose vertices name joints and weights, which an animated instance can skin.
 pub fn has_joints(format: u32) -> bool {
@@ -110,8 +112,9 @@ pub fn skin_of(
 
 /// The vertex format of a skinned or morphed mesh's vertices once a compute pass has skinned and
 /// morphed them: the mesh's format without its joints, weights and morph attribute, with
-/// positions, normals and tangents as 32-bit floats. The other attributes keep their types, as the
-/// pass copies them unchanged.
+/// positions, normals and tangents as 32-bit floats. A morphed mesh's colors are 32-bit floats
+/// too, as morph targets may move them. The other attributes keep their types, as the pass copies
+/// them unchanged.
 pub fn skinned_format(format: u32) -> u32 {
     let mut types = 0;
     for location in [
@@ -122,6 +125,9 @@ pub fn skinned_format(format: u32) -> u32 {
         WEIGHTS_LOCATION,
     ] {
         types |= vertex::ATTRIBUTES[location].mask();
+    }
+    if format & vertex::MORPH != 0 {
+        types |= vertex::ATTRIBUTES[COLOR_LOCATION].mask();
     }
     format & !(vertex::JOINTS | vertex::WEIGHTS | vertex::MORPH | types)
 }

@@ -11,7 +11,7 @@ use null3d_shaders::{
     ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs,
     literals_safari_refuses, typescript,
 };
-use precision::precision_breaks;
+use precision::{newer_built_in_calls, precision_breaks};
 
 /// A vertex and fragment pair with a flat varying, a uniform block per stage, a data texture read
 /// in the vertex stage and a sampled texture in the fragment stage.
@@ -1117,7 +1117,7 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 }
 
 #[test]
-fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
+fn every_glsl_shader_keeps_the_rules_of_strict_drivers_and_webgl2() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let output = build(&Inputs::read(root).unwrap()).unwrap();
     let mut breaks = Vec::new();
@@ -1128,12 +1128,12 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
                 for (stage, fragment) in [(&program.vertex, false), (&program.fragment, true)] {
                     stages += 1;
                     let kind = if fragment { "fragment" } else { "vertex" };
+                    let mut found = precision_breaks(&stage.source, fragment);
+                    found.extend(newer_built_in_calls(&stage.source));
                     breaks.extend(
-                        precision_breaks(&stage.source, fragment)
-                            .into_iter()
-                            .map(|b| {
-                                format!("{shader}.{variant} ({pipeline}, {kind} shader), {b}")
-                            }),
+                        found.into_iter().map(|b| {
+                            format!("{shader}.{variant} ({pipeline}, {kind} shader), {b}")
+                        }),
                     );
                 }
             }
@@ -1142,7 +1142,7 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
     assert!(stages > 100, "only {stages} GLSL shaders were built");
     assert!(
         breaks.is_empty(),
-        "GLSL that Mali GPUs reject:\n{}",
+        "GLSL that Mali GPUs or WebGL2 reject:\n{}",
         breaks.join("\n")
     );
 }
@@ -1161,6 +1161,18 @@ fn the_precision_check_finds_each_break() {
     assert!(found[4].starts_with("line 7: an array type with its size"));
     assert!(found[5].starts_with("line 8: a whole number declared without a precision"));
     assert!(found[6].contains("ends at `mediump`"));
+}
+
+#[test]
+fn the_built_in_check_finds_calls_that_webgl2_lacks() {
+    let source = "uint s = (1u + uint(bitCount((word & 7u))));
+float x = myldexp(a);
+int b = findMSB(c);
+";
+    let found = newer_built_in_calls(source);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert!(found[0].starts_with("line 1: `bitCount`"));
+    assert!(found[1].starts_with("line 3: `findMSB`"));
 }
 
 #[test]

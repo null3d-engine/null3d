@@ -56,16 +56,24 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` covers the base layer. The extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
+`materials.standard` covers the base layer, and takes the index of refraction and specular options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+
+| three.js | null3D | Notes |
+| --- | --- | --- |
+| `ior` | `ior` | 1 or more; the default 1.5 reflects 4% head on, as `MeshStandardMaterial` does |
+| `reflectivity` | `ior` | Convert: `ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity)`, as three.js does |
+| `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
+| `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
+
+glTF files with `KHR_materials_ior` and `KHR_materials_specular` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
 | `clearcoat`, `clearcoatRoughness` | Lower `roughness`; raise `envIntensity` (0.2) slightly | The second highlight is lost |
-| `transmission`, `thickness`, `ior`, `attenuationColor` | `alphaMode: 'blend'`, low `opacity`, tint with `color`, higher `envIntensity` (0.2) | No refraction or thickness color |
+| `transmission`, `thickness`, `attenuationColor` | `alphaMode: 'blend'`, low `opacity`, tint with `color`, higher `envIntensity` (0.2). Keep `ior` | No refraction or thickness color |
 | `sheen`, `sheenColor`, `sheenRoughness` | Surface function adding a fresnel rim to `emissive` | Approximate |
 | `iridescence` | Surface function tinting by view angle | Approximate |
 | `anisotropy` | Not available | Brushed-metal streaks are lost |
-| `specularIntensity`, `specularColor` | Adjust `roughness` and `metalness` | Approximate |
 | `dispersion` | Not available | |
 
 Tell the user which of these a scene relies on before porting it. Glass and car-paint showcases depend on them heavily.
