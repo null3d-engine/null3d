@@ -122,6 +122,13 @@ export interface CoreDevice {
 	 */
 	vertexSkinning: boolean;
 	/**
+	 * True when core WebGPU's vertex shaders read each culled instance by index from storage
+	 * buffers, instead of a copy that the culling shader writes. Only a test switch asks for it,
+	 * and compatibility mode, which may have no storage buffers in vertex shaders, and WebGL2 never
+	 * do it.
+	 */
+	indexInstances: boolean;
+	/**
 	 * True when each object's position holds whole cells besides its 32-bit part, so positions keep
 	 * their precision at any distance from the origin.
 	 */
@@ -174,6 +181,7 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'vertexSkinning'
+	| 'indexInstances'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -322,6 +330,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			sharedUploads: true,
 			depth: 'reversed',
 			shaderBits: toneMap | half,
+			indexInstances: tier === 'webgpu' && options.indexInstances,
 			...common,
 		};
 	}
@@ -339,6 +348,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap | half,
+		indexInstances: false,
 		...common,
 	};
 }

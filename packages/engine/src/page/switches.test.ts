@@ -23,6 +23,7 @@ describe('parseSwitches', () => {
 			prepass: undefined,
 			occlusion: undefined,
 			vertexSkinning: false,
+			indexInstances: false,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -37,6 +38,8 @@ describe('parseSwitches', () => {
 	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
 		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
 		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
+		expect(parseSwitches('?instances=index').indexInstances).toBe(true);
+		expect(parseSwitches('?instances=copy').indexInstances).toBe(false);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {

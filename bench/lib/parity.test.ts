@@ -430,6 +430,7 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-index',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -476,6 +477,12 @@ describe('the pages', () => {
 		);
 	});
 
+	test('runs the index page on the pipelined WebGPU page with the instances switch', () => {
+		expect(pagePath('s4', 'null3d-webgpu-index', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgpu&instances=index&seconds=2',
+		);
+	});
+
 	test('sweeps job worker counts on the null3D pages only', () => {
 		expect(JOBS_PAGES).toEqual(['null3d-webgpu', 'null3d-webgl2']);
 		expect(PAGE_KINDS.filter(isNull3dPage)).toEqual([
@@ -490,6 +497,7 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-index',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -508,6 +516,7 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
 			'webgl2',
 			'webgl2',
 		]);

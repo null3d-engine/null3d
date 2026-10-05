@@ -368,6 +368,7 @@ const NULL3D_PAGES = [
 	['null3d-webgl2-half', 'WebGL2 at half precision', 'threejs-webgl'],
 	['null3d-webgpu-prepass', 'WebGPU with the depth prepass', 'threejs-webgpu'],
 	['null3d-webgl2-prepass', 'WebGL2 with the depth prepass', 'threejs-webgl'],
+	['null3d-webgpu-index', 'WebGPU with instance data by index', 'threejs-webgpu'],
 ] as const;
 
 const percent = (share: number) => `${(share * 100).toFixed(0)}%`;

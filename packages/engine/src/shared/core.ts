@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		cellCulling: boolean,
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
+		indexInstances: boolean,
 		largeWorld: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
