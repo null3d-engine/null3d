@@ -9,7 +9,7 @@ Every M2 feature adds templates or permutation bits to the shader files that a p
 ## Rule
 
 - A feature that a page does not use adds nothing to its start ([D-14](D-14-js-budget.md), the chunk rule for M2). That holds for its shader builds as for its code.
-- Each shader file of a feature that loads on first use stays within the limits of one start shader file. Those are 24 KB after Brotli, 224 KB after gzip and 1,536 KB uncompressed. The owner set them on 4 October 2026, and D-14 records them.
+- Each shader file of a feature that loads on first use stays within 24 KB after Brotli and 1,536 KB uncompressed, the limits of one start shader file, and 320 KB after gzip. The owner set them on 4 October 2026 with 224 KB after gzip, and raised that to 320 KB on 5 October. D-14 records them.
 - No frame draws a feature half done. A pass whose pipelines wait for their file must not leave the canvas without a frame. And no pass may draw vertices that another pass has not written yet.
 - The image tests draw the same images on all three tiers.
 - The thread that draws allocates nothing per frame in steady state.
@@ -61,7 +61,7 @@ Morph targets (M2-C5) came after this record, with the MORPH bit on the WebGL2 m
 | Before morph targets | 16.1 KB | 199.4 KB | 1,325 KB |
 | After the merge of morph targets | 20.0 KB | 428.2 KB | 2,865 KB |
 | With each stage from its own entry point | 18.2 KB | 179.0 KB | 1,271 KB |
-| The limit | 24 KB | 224 KB | 1,536 KB |
+| The limit then | 24 KB | 224 KB | 1,536 KB |
 
 Each WebGL2 skinning file holds 70 builds. The draw index, the 8-bit path and half precision are fixed for each file, and no build varies in the count of morph targets. The material bits multiply the rest:
 

@@ -394,7 +394,7 @@ The largest JavaScript file that loads later is `gltf-worker.js`: 27.5 KB raw, 1
 | --- | --- | --- | --- | --- |
 | The start, in the thread mode that downloads the most | 3,328 KB | 448 KB | 140 KB | 3,040.6 / 402.7 / 106.9 KB (pipelined) |
 | Each JavaScript file that loads later | 64 KB | 24 KB | 16 KB | 27.5 / 10.4 / 9.4 KB (`gltf-worker.js`) |
-| Each shader file that loads on a feature's first use (M2-R11) | 1,536 KB | 224 KB | 24 KB | 1,324.5 / 199.4 / 16.1 KB (skinning's GLSL file for the draw index, the 8-bit output and half precision) |
+| Each shader file that loads on a feature's first use (M2-R11) | 1,536 KB | 320 KB (224 KB until 5 October, [below](#addendum-5-october-2026-first-use-shader-files-after-gzip)) | 24 KB | 1,324.5 / 199.4 / 16.1 KB (skinning's GLSL file for the draw index, the 8-bit output and half precision) |
 
 The start's gzip and uncompressed budgets are about 10% above today's largest start. Per-feature shader files bring both down. The budgets of the files that load later are 1.5 times their Brotli budget with gzip and 4 times it uncompressed. The largest such file uses 43% of each.
 
@@ -410,3 +410,20 @@ The same day, the owner made Vite with the null3D plugin the one supported build
 - The hosting guide tells developers to serve the engine's files with Brotli, and gives the gzip and uncompressed sizes of the start.
 - AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the budgets in all three columns.
 - `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the limits of each shader file of a feature that loads on first use. The size report lists those files in a section of their own.
+
+### Addendum, 5 October 2026: first-use shader files after gzip
+
+Status: decided by the owner on 2026-10-05.
+
+Environment lighting (M2-E2, #283) adds image-based light to the lit templates, so every SKIN and MORPH build grew. With it merged into M2-R11, eight skinning and morph files passed the 224 KB gzip limit. Every file stayed within the Brotli and uncompressed limits:
+
+| Largest first-use shader files | Uncompressed | gzip 9 | Brotli 11 |
+| --- | --- | --- | --- |
+| Skinning, WebGPU, 8-bit output and half precision | 1,182.3 KB | 270.0 KB | 18.7 KB |
+| Skinning, WebGL2 with the draw index, 8-bit output and half precision | 1,444.4 KB | 255.5 KB | 19.7 KB |
+| Morph, WebGL2 with the draw index, 8-bit output and half precision | 1,209.2 KB | 233.7 KB | 17.7 KB |
+| The limits until this addendum | 1,536 KB | 224 KB | 24 KB |
+
+The owner's decision: the gzip limit of each first-use shader file rises from 224 KB to 320 KB. The Brotli limit stays 24 KB and the uncompressed limit stays 1,536 KB. The reason: browsers download over HTTPS with Brotli wherever the host offers it, and the Brotli limit holds. Only a host without Brotli sends gzip, and a file of a feature loads only on that feature's first use. 320 KB leaves about a sixth above the largest file today.
+
+`FIRST_USE_SHADER_BUDGET.gzip` in `tools/lib/size-report.ts` holds the new limit. AGENTS.md, the README, [Benchmarks](../benchmarks.md#download-size), D-51 and D-56 give it.
