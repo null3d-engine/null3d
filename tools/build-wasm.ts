@@ -7,6 +7,11 @@
 //     [--base <ref>]                        commit, and fail on growth that no trailer explains
 //   bun tools/build-wasm.ts --sizes-only    build only what the size report measures, and write the
 //                                           sizes for a size check that builds this commit as its base
+//   bun tools/build-wasm.ts --prebuilt      measure the WebAssembly files and the build tools' modules
+//                                           that an earlier build made, such as CI's build job, instead
+//                                           of building them again; combines with --check-size
+//   bun tools/build-wasm.ts --print-base    print the commit that --check-size compares with, and stop
+//     [--base <ref>]
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
 //   bun tools/build-wasm.ts --pages-only    build only what the test pages and the tools need,
@@ -24,7 +29,8 @@
 // The size check's base is a build of main, or in the merge queue of the commit that the group
 // builds on: tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
 // target/ with that commit's own build script. It keeps the sizes of each base commit it built and
-// reuses them.
+// reuses them. Every mode that measures writes the sizes to target/size-report.json, so CI can keep
+// a commit's sizes as the base of later checks.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -77,7 +83,7 @@ const root = process.cwd();
 const CRATE = 'null3d-wasm';
 const OUT_DIR = 'packages/engine/dist/wasm';
 const TOOLS_DIR = 'target/tools';
-/** Where `--sizes-only` writes the sizes it measured, for the size check that asked for them. */
+/** Where each mode that measures writes the sizes, for a size check that uses this commit as its base. */
 const SIZE_RECORD = 'target/size-report.json';
 /**
  * Where the size check keeps its bases: a worktree that it reuses, and each base commit's sizes. The
@@ -245,10 +251,14 @@ export interface BuildOptions {
 	keepNames: boolean;
 	/** Build only what the test pages need: the two WebAssembly files and the shader compiler. */
 	pagesOnly: boolean;
+	/** Measure the files that an earlier build made, and build only the engine test page. */
+	prebuilt: boolean;
+	/** Print the commit that the size check compares with, and build nothing. */
+	printBase: boolean;
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] | --sizes-only | --names | --pages-only]';
+	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] [--prebuilt] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>]]';
 
 /** Reads the command line. It throws on an unknown option and on options that exclude each other. */
 export function parseOptions(args: readonly string[]): BuildOptions {
@@ -257,6 +267,8 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		sizesOnly: false,
 		keepNames: false,
 		pagesOnly: false,
+		prebuilt: false,
+		printBase: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -264,6 +276,8 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--sizes-only') options.sizesOnly = true;
 		else if (arg === '--names') options.keepNames = true;
 		else if (arg === '--pages-only') options.pagesOnly = true;
+		else if (arg === '--prebuilt') options.prebuilt = true;
+		else if (arg === '--print-base') options.printBase = true;
 		else if (arg === '--base' && args[i + 1] && !args[i + 1]?.startsWith('-'))
 			options.base = args[++i];
 		else
@@ -279,7 +293,20 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		throw new Error(
 			'--sizes-only measures a base for the size check, so it cannot also run the check',
 		);
-	if (options.base !== undefined && !options.checkSize)
+	if (options.prebuilt && (options.keepNames || options.pagesOnly || options.sizesOnly))
+		throw new Error(
+			'--prebuilt measures the files of an earlier build, so it cannot build them with other options',
+		);
+	if (
+		options.printBase &&
+		(options.checkSize ||
+			options.sizesOnly ||
+			options.keepNames ||
+			options.pagesOnly ||
+			options.prebuilt)
+	)
+		throw new Error(`--print-base builds nothing, so it takes only --base. ${USAGE}`);
+	if (options.base !== undefined && !options.checkSize && !options.printBase)
 		throw new Error(`--base names the commit that --check-size compares with. ${USAGE}`);
 	return options;
 }
@@ -477,7 +504,7 @@ interface Base {
 /** HEAD's merge base with a branch of origin, after a fetch of the branch. Offline, the last fetch serves. */
 function mergeBaseWith(branch: string): string {
 	const remote = `origin/${branch}`;
-	console.log(`\nfetching ${remote} for the size check's base`);
+	console.error(`\nfetching ${remote} for the size check's base`);
 	const fetch = spawnSync('git', ['fetch', '--quiet', 'origin', branch], {
 		cwd: root,
 		encoding: 'utf8',
@@ -593,13 +620,34 @@ function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined):
 	return growthProblems(changes, explainedBy);
 }
 
+/** Throws unless an earlier build made every file that the size report measures. */
+function checkPrebuilt(): void {
+	const missing = [
+		...VARIANTS.flatMap((variant) =>
+			CORE_FILES.map((file) => join(root, OUT_DIR, variant.name, file)),
+		),
+		...TOOL_MODULES.map(({ path }) => path),
+	].filter((path) => !existsSync(path));
+	if (missing.length > 0)
+		throw new Error(
+			`--prebuilt measures an earlier build, but these files are missing: ${missing.join(', ')}. Build them with bun tools/build-wasm.ts --pages-only first`,
+		);
+}
+
 async function main(): Promise<void> {
 	const options = parseOptions(process.argv.slice(2));
+	if (options.printBase) {
+		console.log(resolveBase(chooseBase(options.base, process.env)).sha);
+		return;
+	}
 	ensureShaderModules(root);
-	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
-	const bindgen = await wasmBindgen(version);
-	for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
-	if (!options.sizesOnly) buildToolModules();
+	if (options.prebuilt) checkPrebuilt();
+	else {
+		const cargoLock = readFileSync(join(root, 'Cargo.lock'), 'utf8');
+		const bindgen = await wasmBindgen(lockedVersion(cargoLock, 'wasm-bindgen'));
+		for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
+		if (!options.sizesOnly) buildToolModules();
+	}
 	if (options.pagesOnly) return;
 
 	const sizes: Record<string, SizeEntry> = {};
@@ -644,7 +692,7 @@ async function main(): Promise<void> {
 	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET_BYTES);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of features that load on demand, such as WebGL2's morph targets (budget: ${kb(ON_DEMAND_SHADER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+		`\nthe shader builds of features that load on demand, such as WebGL2's morph targets and the texture generators (budget: ${kb(ON_DEMAND_SHADER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
 	);
 	for (const part of ON_DEMAND_SHADER_PARTS) {
 		const size = parts.get(part);
@@ -656,11 +704,12 @@ async function main(): Promise<void> {
 	for (const [file, size] of transcoder) printSize(file, size);
 	printSize('ktx2 total', totalSize(transcoder.values()));
 	for (const [file, size] of transcoder) sizes[file] = size;
-	if (options.sizesOnly) {
+	// The function names of a profiling build would add to every size.
+	if (!options.keepNames) {
 		writeFileSync(join(root, SIZE_RECORD), `${JSON.stringify(sizes, null, '\t')}\n`);
 		console.log(`\nwrote ${SIZE_RECORD}`);
-		return;
 	}
+	if (options.sizesOnly) return;
 	console.log('\nthe modules that only build tools load (no budget)');
 	for (const { path } of TOOL_MODULES) printSize(basename(path), measure(readFileSync(path)));
 

@@ -432,12 +432,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 	},
 	// Mip levels that the GPU makes: a checkerboard that shrinks and a floor that recedes, with and
-	// without mip levels, and with anisotropic filtering.
+	// without mip levels, and with anisotropic filtering. Each GPU picks its own samples for
+	// anisotropic filtering, and a software renderer's differ most from a GPU's: Firefox on Linux
+	// draws the far squares of the anisotropic floor in another pattern. So other devices get a
+	// wider tolerance here.
 	{
 		name: 'texture-mipmaps',
 		sketch: 'tests/pages/sketches/texture-mipmaps-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+		deviceTolerance: { maxDiffRatio: 0.01 },
 	},
 	// The texture calls of a sketch: loadTexture with and without the flip, loadImageBitmap with
 	// fromImageBitmap, data in bytes, half floats and layers, updates that bring new texels and a new
@@ -1033,6 +1037,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The same spheres lit by an environment alone: the built-in room, which three.js's
+	// RoomEnvironment builds, and Poly Haven's Venice Sunset through the asset tool, whose low sun
+	// shows in the smooth spheres. The last turns the sunset a quarter turn about +Y, which moves the
+	// sun's reflection. The GPU makes the room, and its generator reaches the thread that draws in
+	// each thread mode's own way, so the room draws in every mode. A held frame makes the whole room
+	// at once, which a software GPU on a busy machine does slowly, so the room's runs take a longer
+	// limit (D-19).
+	...(['room', 'venice', 'venice&rotate'] as const).map(
+		(env): ImageTest => ({
+			name: `environment-${env.replace('&rotate', '-rotated')}`,
+			sketch: `tests/pages/sketches/standard-sketch.ts?scene=grid&env=${env}`,
+			hold: 0,
+			size: [GRID_IMAGE.width, GRID_IMAGE.height],
+			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

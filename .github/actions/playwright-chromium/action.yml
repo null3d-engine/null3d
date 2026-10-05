@@ -2,12 +2,14 @@ name: Install Chromium for Playwright
 description: >-
   Installs Playwright's Chromium and the Ubuntu packages that it needs. Ubuntu's package mirror
   sometimes stalls for minutes, so the browser and the downloaded packages stay in the Actions
-  cache, and a job downloads them again only after Playwright's version changes.
+  cache, and a job downloads them again only after Playwright's version changes. The cache saves
+  only when the workflow's SAVE_CACHES is true.
 
 runs:
   using: composite
   steps:
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
+      id: restore
       with:
         path: |
           ~/.cache/ms-playwright
@@ -23,3 +25,10 @@ runs:
         if compgen -G "$debs/*.deb" > /dev/null; then sudo cp "$debs"/*.deb /var/cache/apt/archives/; fi
         bunx playwright install --with-deps chromium
         if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then cp /var/cache/apt/archives/*.deb "$debs"/; fi
+    - uses: actions/cache/save@v4
+      if: env.SAVE_CACHES == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          ~/.cache/playwright-debs
+        key: playwright-chromium-${{ runner.os }}-${{ hashFiles('tests/package.json', 'bench/package.json') }}

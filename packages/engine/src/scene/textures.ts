@@ -21,6 +21,7 @@ import {
 	TEXTURE_FORMAT_ETC2_RGBA_SRGB,
 	TEXTURE_FORMAT_HALF_FLOAT,
 	TEXTURE_FORMAT_LINEAR,
+	TEXTURE_FORMAT_SHARED_EXPONENT,
 	TEXTURE_FORMAT_SRGB,
 	TEXTURE_MAX_DEPTH,
 	TEXTURE_OPTION_MAX_ANISOTROPY,
@@ -40,7 +41,8 @@ import {
 	TEXTURE_WRAP_REPEAT,
 } from '../generated/core';
 import type { QualitySettingName, QualitySettings } from '../quality/presets';
-import type { ImageSender } from '../shared/images';
+import type { GeneratorName, ImageSender } from '../shared/images';
+import type { EnvironmentFormat } from './environment';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
 
@@ -227,7 +229,7 @@ export class Texture {
 		 * How the texture stores its texels on the GPU. A texture from a KTX2 file has the
 		 * compressed format that the device supports, or `rgba8unorm` where it supports none.
 		 */
-		readonly format: TextureFormat | CompressedTextureFormat,
+		readonly format: TextureFormat | CompressedTextureFormat | EnvironmentFormat,
 		/** Whether sampling turns the texels from sRGB into linear values, or reads them as they are. */
 		readonly colorSpace: TextureColorSpace,
 		/** The set of texture coordinates that materials read the texture at. */
@@ -302,6 +304,8 @@ export class Textures {
 		/** @internal The device's capability flags, which say what compressed formats it has. */
 		readonly capabilities: number,
 		private readonly ownBudget: () => void = () => {},
+		/** @internal True when the engine draws with WebGL2. */
+		readonly webgl2 = false,
 	) {}
 
 	/**
@@ -408,6 +412,65 @@ export class Textures {
 		const texture = new Texture(handle, size, size, size, 'rgba8unorm', 'linear', 0, this);
 		try {
 			this.setData(texture, texels, call);
+		} catch (error) {
+			texture.destroy();
+			throw error;
+		}
+		return texture;
+	}
+
+	/**
+	 * @internal A cube texture with faces of `size` texels a side and `levels` mip levels, read
+	 * with linear filters within and between levels, filled with `texels`: each level's six faces,
+	 * from the largest level, as an environment map's file holds them.
+	 */
+	fromCube(
+		size: number,
+		levels: number,
+		format: EnvironmentFormat,
+		texels: readonly Uint8Array[],
+		call: string,
+	): Texture {
+		const { core } = this;
+		const code =
+			format === 'rgb9e5ufloat' ? TEXTURE_FORMAT_SHARED_EXPONENT : TEXTURE_FORMAT_HALF_FLOAT;
+		const handle = core.checkGrowth(core.glue.createCubeTexture(size, levels, code), call);
+		const texture = new Texture(handle, size, size, 6, format, 'linear', 0, this, true);
+		try {
+			let address = this.texelAddress(texture, size, size, call);
+			for (const level of texels) {
+				new Uint8Array(core.memory.buffer, address, level.length).set(level);
+				address += level.length;
+			}
+		} catch (error) {
+			texture.destroy();
+			throw error;
+		}
+		return texture;
+	}
+
+	/**
+	 * @internal A cube texture of shared-exponent floats with faces of `size` texels a side and
+	 * `levels` mip levels, read with linear filters within and between levels, whose texels a
+	 * generator makes on the GPU in `slices` parts of its work, one a frame. The thread that draws
+	 * loads the generator's code first, and the texture draws as none until its texels are made.
+	 */
+	fromGenerator(
+		name: GeneratorName,
+		size: number,
+		levels: number,
+		slices: number,
+		call: string,
+	): Texture {
+		const { core } = this;
+		const format = TEXTURE_FORMAT_SHARED_EXPONENT;
+		const handle = core.checkGrowth(core.glue.createCubeTexture(size, levels, format), call);
+		const texture = new Texture(handle, size, size, 6, 'rgb9e5ufloat', 'linear', 0, this, true);
+		try {
+			this.send(
+				core.checkGrowth(core.glue.generateTexture(handle, slices), call, 'a texture'),
+				name,
+			);
 		} catch (error) {
 			texture.destroy();
 			throw error;

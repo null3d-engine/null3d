@@ -286,8 +286,12 @@ impl Animations {
             if !action.playing() || !counts(slots.weight[k]) {
                 continue;
             }
+            // A slot whose clip id names no clip, as a direct write of the slot arrays can leave
+            // it, is skipped, as sampling skips it.
             let clip = self.slots_clip(slots.instance, k);
-            let source = self.clip_sources[clip as usize];
+            let Some(&source) = self.clip_sources.get(clip as usize) else {
+                continue;
+            };
             if action.flags & flag::FINISHED == 0 {
                 let moved = step * action.speed;
                 if moved != 0.0 {

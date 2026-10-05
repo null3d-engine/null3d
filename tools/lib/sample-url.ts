@@ -11,3 +11,17 @@ export const SAMPLES_URL = '/samples/';
 export function sampleUrl(path: string): string {
 	return `${SAMPLES_URL}${path}`;
 }
+
+/**
+ * The URL prefix under which the dev server and the preview server serve the environment maps of
+ * the sample HDR files, which the asset tool builds (tools/lib/sample-environments.ts).
+ */
+export const SAMPLE_ENVIRONMENTS_URL = '/sample-environments/';
+
+/**
+ * The address of the environment map of a sample HDR file, from the file's address that
+ * `sampleUrl` gives.
+ */
+export function sampleEnvironment(hdrUrl: string): string {
+	return `${SAMPLE_ENVIRONMENTS_URL}${hdrUrl.slice(SAMPLES_URL.length)}`;
+}

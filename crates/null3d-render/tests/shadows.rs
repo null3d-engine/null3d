@@ -541,6 +541,7 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
     let quality = ShadowQuality {
         filter: 3,
         far_interval: 2,
+        follow_movers: true,
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
     let mut mock = MockBackend::default();
@@ -589,6 +590,19 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
         turns.push(drawn(&world.step(&mut mock, false)).0);
     }
     assert_eq!(turns, [[0, 1, 2]; 4]);
+    // Without following movers, the far cascades keep their turns around the dynamic caster,
+    // after one more draw of the layers that held it.
+    let turned = ShadowQuality {
+        follow_movers: false,
+        ..quality
+    };
+    world.renderer.settings_mut().set_shadow_quality(turned);
+    let turns: Vec<_> = (0..4)
+        .map(|_| drawn(&world.step(&mut mock, false)).0.len())
+        .collect();
+    assert_eq!(turns, [3, 2, 2, 2]);
+    world.renderer.settings_mut().set_shadow_quality(quality);
+    assert_eq!(drawn(&world.step(&mut mock, false)).0, [0, 1, 2]);
     // A hidden caster draws nowhere, and a still one again: the far cascades take turns.
     let hidden = [Command::set_visible(ball, false)];
     world.scene.apply_commands(&hidden, world.frame).unwrap();
