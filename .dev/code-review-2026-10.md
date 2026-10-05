@@ -132,7 +132,7 @@ The low findings go with the group whose files they touch. The issues below go w
 Pairings with M2 work:
 
 - R5-06 (lit holes for cameras of 45 degrees or narrower) shares its cause with the cascade blend's fit. Each cascade's sphere fits only its slice along the view. Fix both in M2-R1, with a test that picks each point's cascade as the shader does.
-- R5-07, R5-08 and R5-09 pair with the tile changes (proposed M2-R9). They are per-face marks, a margin of the filter's reach, and a cap on redraws per frame.
+- R5-07, R5-08 and R5-09 are fixed with the tile changes of M2-R9: per-face marks, a margin of the filter's reach, and a cap on redraws per frame ([D-61](decisions/D-61-shadow-tile-redraws.md)).
 - R5-05 pairs with M2-A4's texture budget, which drops over-quality textures first, in Godot's order. M2-A4 fixed it: arrays stop at 128 MiB, shrink below a quarter, and count their old texture until it is destroyed ([D-69](decisions/D-69-texture-budget.md)).
 - R4-04 pairs with the animator changes (proposed M2-C9).
 
@@ -145,7 +145,7 @@ Each was read on main fe137a6b.
 | 1 | The culling shader adds 1 to its bucket's single counter for every surviving object, and once more for each further mesh part. Instance batches put thousands of rows on one address. Qualcomm, Arm and Apple advise adding per workgroup first | `crates/null3d-shaders/wgsl/cull.wgsl` | Medium (speed) | Proposed M2-I5, after G2 |
 | 2 | Below render scale 1 the final pass runs 4 tone curves, 4 sRGB encodes and 4 dither hashes per canvas pixel, and skips FXAA, so Low at scale 0.5 has no anti-aliasing | `crates/null3d-shaders/wgsl/final.wgsl` | Medium (speed, image) | Proposed M2-F10, after P1 |
 | 3 | WebGPU skinning skins every seen object every frame with no test that its pose changed, and copies UVs and colors into each object's region | `crates/null3d-render/src/gpu_driven/skin.rs`; `wgsl/skin.wgsl` | Medium (speed, memory) | Proposed M2-C8, with group C |
-| 4 | Spot and point shadow tiles keep a margin of 1 texel, but the 5x5 filter reads 3 texels past the point. A moved caster marks all six faces of a point light dirty | `crates/null3d-render/src/shadow_tiles.rs` | Low | Proposed M2-R9 |
+| 4 | Spot and point shadow tiles keep a margin of 1 texel, but the 5x5 filter reads 3 texels past the point. A moved caster marks all six faces of a point light dirty | `crates/null3d-render/src/shadow_tiles.rs` | Low | Fixed in M2-R9 |
 | 5 | On desktop Linux, Mesa offers ETC2 and ASTC on GPUs that lack them and decodes them in software on the main thread. The transcoder picks ETC2 first for ETC1S data, so such a page stalls. three.js has a guard | `packages/engine/src/scene/ktx2.ts` | Medium | Proposed M2-A7 |
 | 6 | KTX2 textures whose sizes are not a multiple of 4 transcode to RGBA8, 4 to 8 times the memory, and the tool does not enforce whole blocks | `packages/engine/src/scene/ktx2.ts` | Low | M2-B1 follow-up, M2-A4 |
 | 7 | `assets optimize --lod` simplifies positions only, with no weld, `Prune` or `Regularize`, skips quantized inputs, and bakes a 1,080-pixel screen into the file. 122 of the 213 Kenney models get no levels | `packages/cli/src/assets/geometry.js` | Medium | Proposed M2-B8, after A3 |

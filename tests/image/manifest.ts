@@ -850,6 +850,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same scene with the 5 x 5 filter, whose reads reach 3 texels past each point. Each tile
+	// keeps that reach inside its edges, so no seam shows where two faces' shadows meet.
+	{
+		name: 'point-shadows-wide',
+		sketch: 'tests/pages/sketches/point-shadows-sketch.ts?wide',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024', 'pointLightShadows'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// Skinning: three characters skinned to chains of joints, each in another pose of one clip. The
 	// parity test compares the image with three.js's SkinnedMesh. WebGPU skins them in a compute
 	// pass, and WebGL2 in the vertex shader of each pass. ?shadows stands them on a ground under a
