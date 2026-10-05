@@ -12,14 +12,14 @@ Status: decided for the vignette and the dither, 2026-10-05. The WebGL2 scene fo
 
 - The vignette multiplies HDR color before the tone curve, as Filament, URP, Bevy and Babylon.js do. A port maps `VignetteShader`'s `offset` to a size and `darkness` to an intensity (D-53, the analysis's porting table).
 - The dither runs last, after the color grading table and the vignette, with static triangle noise of one step, as Filament and URP do. Prototype P5 checks it: a dark vignette over a flat color draws with no bands.
-- WebGL2 takes `R11F_G11F_B10F` where the canvas is opaque and the probe passes, if prototype P3 shows that it costs no more and draws a dark gradient without bands on the cloud phones. Accumulation history keeps `rgba16float`.
+- WebGL2 takes `R11F_G11F_B10F` where the canvas is opaque and the probe passes, if prototype P3 allows it. On the cloud phones it must cost no more, and draw a dark gradient without bands. Accumulation history keeps `rgba16float`.
 - No new pipeline, no new full-screen pass, no allocation in the frame loop.
 
 ## Data
 
 ### The vignette's falloff
 
-The first build used three.js's falloff, `1 - d²`, as a multiply of linear color. It darkened much less than three.js: `VignetteShader` multiplies display color, and a display factor f is about f^2.2 in linear color. On the grading scene with `VignetteShader`'s offset 1.2 and darkness 1.1, the top-left corner was sRGB (90, 99, 102) against three.js's (40, 42, 40). A falloff power of 2 brings the look back: against the old references, which drew three.js's formula, the `vignette` test differs in 1.32% of its pixels at the image tests' threshold on the Mac's WebGPU and WebGL2, and `lut-vignette` in 1.11 to 1.13%. So the default falloff is 2.
+The first build used three.js's falloff, `1 - d²`, as a multiply of linear color. It darkened much less than three.js: `VignetteShader` multiplies display color, and a display factor f is about f^2.2 in linear color. On the grading scene with `VignetteShader`'s offset 1.2 and darkness 1.1, the top-left corner was sRGB (90, 99, 102) against three.js's (40, 42, 40). A falloff power of 2 brings the look back. The old references drew three.js's formula. At the image tests' threshold, the `vignette` test differs from them in 1.32% of its pixels on the Mac's WebGPU and WebGL2. The `lut-vignette` test differs in 1.11 to 1.13%. So the default falloff is 2.
 
 The parity scenes against three.js's `LUTPass` and `VignetteShader`, Chrome on the Mac's GPU, 5 October 2026 (`bun run parity -- --scene lut-cube,lut-vignette --tier webgpu,compat,webgl2`):
 
@@ -32,7 +32,7 @@ Only the outer corners differ: with a darkness above 1, three.js's blend passes 
 
 ### The 8-bit path
 
-The 8-bit path holds display color, so the vignette multiplies the linear value of the display color there, before the outline. The tone curve bends between the two, so the 8-bit image differs from the HDR one a little. On `dark-vignette`, no pixel differs past pixelmatch's threshold, and no channel by more than 10 steps, on the Mac's GPU and on SwiftShader. `lut-vignette-8-bit` stays within its 3% tolerance against `lut-vignette`.
+The 8-bit path holds display color, so the vignette multiplies the linear value of the display color there, before the outline. The tone curve bends between the two, so the 8-bit image differs from the HDR one a little. On `dark-vignette`, on the Mac's GPU and on SwiftShader, no pixel differs past pixelmatch's threshold. No channel differs by more than 10 steps. `lut-vignette-8-bit` stays within its 3% tolerance against `lut-vignette`.
 
 ### The dither
 
@@ -49,15 +49,20 @@ Image tests whose tolerance counts every changed pixel needed new references: `c
 
 ### The WebGL2 format
 
-The probe tests `R11F_G11F_B10F` as it tests `RGBA16F` and `RGBA32F`: a complete framebuffer, a clear to (2, 0.5, 0.25) that reads back exactly, and the samples a renderbuffer takes. The small format needs `RGBA16F` too, because bloom's levels and the effects' targets keep 16-bit floats ([D-21](D-21-effect-chain.md)).
+The probe tests `R11F_G11F_B10F` as it tests `RGBA16F` and `RGBA32F`. It checks for a complete framebuffer, a clear to (2, 0.5, 0.25) that reads back exactly, and the samples a renderbuffer takes. The small format needs `RGBA16F` too, because bloom's levels and the effects' targets keep 16-bit floats ([D-21](D-21-effect-chain.md)).
 
 On 5 October 2026 Chrome on the Mac (Apple GPU) passed the probe for all three formats, and so did SwiftShader. With `?scene-format=rg11b10`, WebGL2 draws `dark-gradient`, a point light's falloff from sRGB 45 down to 0, within the default tolerance of the `RGBA16F` image on both. The phones are P3's: their cost, their banding, and whether a Valhall Mali older than the G710 compresses the small format (S-14).
 
 ## Decision
 
-1. `post.set({ vignette: { intensity, size, falloff, roundness } })`. At a place `d` from the center, in canvas widths and heights times `size`, with the width scaled toward the height by `roundness`, HDR color is multiplied by `max(1 - intensity × (1 - (1 - d²)^falloff), 0)`. The defaults are intensity 1, size 1, falloff 2 and roundness 0. A port sets `size` to `offset` and `intensity` to `darkness`. The four values fill the vignette's existing vector in the final pass's settings, so the uniform block keeps its size. `offset` and `darkness` throw E1213 with the mapping.
+1. The vignette takes `post.set({ vignette: { intensity, size, falloff, roundness } })`. Take a place `d` from the center, in canvas widths and heights times `size`. The roundness scales the width toward the height. HDR color there is multiplied by `max(1 - intensity × (1 - (1 - d²)^falloff), 0)`. The defaults are intensity 1, size 1, falloff 2 and roundness 0. A port sets `size` to `offset` and `intensity` to `darkness`. The four values fill the vignette's existing vector in the final pass's settings, so the uniform block keeps its size. The old `offset` and `darkness` throw E1213 with the mapping.
 2. The final pass dithers last with static triangle noise of one step. Scene shaders on the 8-bit path dither with the same noise.
-3. WebGL2 keeps `RGBA16F` by default (`WEBGL2_SMALL_SCENE_COLOR` in `packages/engine/src/page/limits.ts`). The probe and the switch `?scene-format=rg11b10` let P3 measure the small format; P3's result sets that one value. The switch also takes `rgba16f`, which turns core WebGPU's small format off for comparisons.
+3. WebGL2 keeps `RGBA16F` by default (`WEBGL2_SMALL_SCENE_COLOR` in `packages/engine/src/page/limits.ts`). The probe and the switch `?scene-format=rg11b10` let P3 measure the small format; P3's result sets that one value. The switch also takes `rgba16f`, which turns core WebGPU's small format off for comparisons. The default stays off until P3 runs, for three reasons:
+   - The small format's gain is on phones, and no phone has drawn it yet. The Mac and SwiftShader show only that it draws correctly.
+   - Its 6 and 5 mantissa bits can band in dark gradients. Only P3's `dark-gradient` runs on the phones' own GPUs can show whether the dither hides that.
+   - Arm documents frame buffer compression for 32-bit formats on Valhall Mali GPUs older than the G710 for Vulkan only. Chrome's WebGL2 path on Android may not get it (S-14), so the memory saving is unmeasured.
+
+   A wrong default would change every WebGL2 phone's picture or cost. The switch lets P3 measure both formats on the same build.
 
 ## Options rejected
 
@@ -69,7 +74,7 @@ On 5 October 2026 Chrome on the Mac (Apple GPU) passed the probe for all three f
 
 ## Consequences
 
-- Code: `final.wgsl` (the vignette before the tone curve, `finish` with the table and the dither), `lib/tonemap.wgsl` (the triangle noise), `grading.rs`, `final_pass.rs`, the core's post values (the falloff and roundness after bloom's weights), `post.ts`, the probe in `capabilities.ts`, and `sceneColorFormat` and the `?scene-format=` switch.
-- Tests: the image tests `dark-vignette`, `dark-vignette-8-bit`, `dark-gradient` and `dark-gradient-small-float` on all three paths; new references for the vignette tests and the strict tests above; unit tests of the settings, the defaults and the format choice; the probe's browser test.
+- Code: `final.wgsl` (the vignette before the tone curve, `finish` with the table and the dither) and `lib/tonemap.wgsl` (the triangle noise). Also `grading.rs`, `final_pass.rs`, the core's post values (the falloff and roundness after bloom's weights) and `post.ts`. The probe is in `capabilities.ts`, and `sceneColorFormat` and the `?scene-format=` switch in `limits.ts` and `switches.ts`.
+- Tests: the image tests `dark-vignette`, `dark-vignette-8-bit`, `dark-gradient` and `dark-gradient-small-float` on all three paths. New references for the vignette tests and the strict tests above. Unit tests of the settings, the defaults and the format choice, and the probe's browser test.
 - Docs: `api/post`, `concepts/post-processing` (a dithering section), `concepts/color-management`, `concepts/backends`, `guides/testing`, the mapping's `vignette` entry, both skills.
 - After P3: set `WEBGL2_SMALL_SCENE_COLOR` from its result, and record the phones' figures here.
