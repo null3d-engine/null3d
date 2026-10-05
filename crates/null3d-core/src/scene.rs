@@ -2958,6 +2958,7 @@ mod tests {
         );
         let slot = scene.resolve(h).unwrap() as usize;
         assert_eq!(scene.current_world().sphere(slot)[2], 3_072.0);
+        assert_eq!(scene.cell_table().refused(), 1);
         // Once a cell frees up, the next update of the object moves it there.
         scene.cell_table_mut().release(5);
         scene.set_position(h, [0.0, 0.0, 3_073.0]).unwrap();

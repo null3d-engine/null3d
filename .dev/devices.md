@@ -220,6 +220,13 @@ To collect the numbers, rest each device first and close its other tabs:
 - The culling saves when the render worker's time and the GPU's time fall by more than the job workers' and the sketch worker's time grows.
 - Run it on the phone and the iPad: `bun tests/real-browsers.ts --plan occlusion --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. The page takes `?rounds=` and `?seconds=` to time one load by hand.
 
+## The jitter plan
+
+- The `jitter` plan runs the large-world jitter check on each GPU path: 2 pages. [Image tests](image-tests.md#large-world-jitter) says what the page measures, and [D-80](decisions/D-80-large-world-jitter.md) records the results by device.
+- Each page starts five engines, one after another, and takes a few seconds on the Mac. The runner saves each flight's first and last frames, and the figures, under the run's `frames/jitter-<path>/` folder. Its summary gives a table of each flight's figures.
+- Run it on the Mac, the iPad and the phone: `bun tests/real-browsers.ts --plan jitter Safari`, then `bun tests/real-browsers.ts --plan jitter --allow-no-webgpu --android chrome --lan ipad-safari`. It times nothing, so heat and the display's rate do not matter.
+- On BrowserStack Automate: `bun run devices:cloud --plan jitter --only <runners>`.
+
 ## The animation plan
 
 - The `animation` plan times the core's animation step on the job workers, for [D-26](decisions/D-26-animation-clips.md). The page (`tests/pages/animation.html`) draws nothing. It runs the core on its own thread, as the sketch worker does, and starts its own job workers.

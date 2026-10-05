@@ -175,6 +175,8 @@ pub struct CellTable {
     live: u32,
     /// One past the highest index in use.
     end: u32,
+    /// Times that a source entered a new cell while the table was full.
+    refused: u32,
 }
 
 impl Default for CellTable {
@@ -193,6 +195,7 @@ impl CellTable {
             slots: vec![0; HASH_SLOTS],
             live: 0,
             end: ORIGIN_CELL + 1,
+            refused: 0,
         }
     }
 
@@ -238,6 +241,12 @@ impl CellTable {
         self.free.is_empty()
     }
 
+    /// The times that a source entered a new cell while the table was full, so that it went into
+    /// the origin cell instead. A moving source counts again on each move that finds no room.
+    pub fn refused(&self) -> u32 {
+        self.refused
+    }
+
     /// The index of `cell`, when it is in use.
     pub fn find(&self, cell: CellCoords) -> Option<u32> {
         if cell == [0; 3] {
@@ -255,13 +264,16 @@ impl CellTable {
     }
 
     /// Adds one source to `cell` and returns its index, taking a new index when the cell was not
-    /// in use. Returns `None` when the cell is new and the table is full.
+    /// in use. Returns `None` when the cell is new and the table is full, and counts the refusal.
     pub fn acquire(&mut self, cell: CellCoords) -> Option<u32> {
         if let Some(index) = self.find(cell) {
             self.retain(index);
             return Some(index);
         }
-        let index = self.free.pop()?;
+        let Some(index) = self.free.pop() else {
+            self.refused = self.refused.saturating_add(1);
+            return None;
+        };
         let mask = HASH_SLOTS - 1;
         let mut at = hash(cell);
         while self.slots[at] != 0 {
@@ -518,8 +530,11 @@ mod tests {
             assert_eq!(table.acquire([k, -k, k * 7]), Some(k as u32));
         }
         assert!(table.is_full());
+        assert_eq!(table.refused(), 0);
         assert_eq!(table.acquire([0, 1, 0]), None);
         assert_eq!(table.acquire([3, -3, 21]), Some(3));
+        // Only the cell that found no room counts as refused.
+        assert_eq!(table.refused(), 1);
         // Every cell is still found after removals shift the probe chains. Cell 3 holds two
         // sources, so it stays.
         for k in (3..MAX_CELLS as i32).step_by(3) {
@@ -530,6 +545,7 @@ mod tests {
             assert_eq!(table.find([k, -k, k * 7]), expected, "cell {k}");
         }
         assert_eq!(table.acquire([0, 1, 0]), Some(510));
+        assert_eq!(table.refused(), 1);
     }
 
     #[test]

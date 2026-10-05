@@ -97,6 +97,11 @@ export interface CoreGlue extends CoreErrors {
 	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
 	/**
+	 * The times that an object or an instance row entered a new grid cell while every cell was in
+	 * use, so that it went into the origin's cell instead.
+	 */
+	cellsRefused(): number;
+	/**
 	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
 	 * is the newest frame that the thread that draws drew with every pipeline built, as for
 	 * `recordFrame`.

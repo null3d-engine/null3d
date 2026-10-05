@@ -90,6 +90,14 @@ for (let i = 0; i < trees.count; i++) {
 
 Sprite and line batches take the same `origin` option. Batch origins work with large-world mode and without it. A model's own instancing, from the `EXT_mesh_gpu_instancing` extension, takes its node's place as its batch's origin, so its rows stay precise too.
 
+## A moving camera
+
+A camera that moves far from the origin stays as smooth as one near it. Each frame, the engine computes the camera's offset to each cell in 64-bit numbers, so the offsets stay small and exact near the camera.
+
+A test checks this with a flight. A camera flies sideways past six squares, 4 m to 35 m away, 12 cm per frame for 16 frames. It flies at the origin, 1,000 km out and at the Earth's radius, in large-world mode. Each square's image moves from frame to frame as it does at the origin, within 0.0001 pixels. This holds on WebGPU, its compatibility mode and WebGL2.
+
+The same flight without large-world mode, or with no free cell, jitters. The camera's position then moves in steps of about 6 cm at 1,000 km and 0.5 m at the Earth's radius. So the squares jump by up to 3.5 pixels at 1,000 km and 7.8 pixels at the Earth's radius.
+
 ## Floating-origin geometry
 
 Vertex positions are 32-bit floats relative to their object's origin, and the engine does not split them. So keep them small: build each mesh around its own center, and place the center with the object's position. Terrain tiles, roads and city blocks far from the origin then keep their precision. A tile whose vertices hold Earth-centered coordinates would move in steps of 0.5 m. Large coordinates belong in object positions and batch origins, never in vertices.
@@ -104,7 +112,7 @@ three.js offers logarithmic depth for large scenes. It writes depth from the fra
 
 ## Limits
 
-- At most 512 cells are in use at once, the origin's cell included. A cell is in use while an object or a row lies in it, and frees when the last one leaves. When all 512 are in use, an object or a row that enters a new cell goes into the origin's cell instead. There it has the precision of a 32-bit position.
+- At most 512 cells are in use at once, the origin's cell included. A cell is in use while an object or a row lies in it, and frees when the last one leaves. When all 512 are in use, an object or a row that enters a new cell goes into the origin's cell instead. There it has the precision of a 32-bit position. The engine then warns once in the console, as such content jitters far from the origin.
 - Dense content fills the most objects and rows that a scene can draw before it fills the cells. A city of 20,000 objects per square kilometer reaches that most at about 420 km² of flat ground: about 420 cells. Content spread thin can reach it, such as one marker in each of 1,000 towns. Keep such content in fewer cells. Put far objects under a few parent objects, as children share their root's cell. Or create and destroy them as the camera moves.
 - In large-world mode, positions reach about 2 × 10¹² m from the origin, the most whole cells that a 32-bit integer counts.
 

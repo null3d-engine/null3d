@@ -73,6 +73,16 @@ Two faults, put back on purpose in builds of their own, show what the figures ca
 - The visual page runs on the dev server, because only development builds draw debug views. So the timed pages keep the production build, and the visual checks cost no measured frame.
 - In three.js, the `CSMHelper` shows the cascades' boxes, and the cascaded shadow maps take their camera as an option. `debug.shadowCamera` gives null3D the same choice of camera.
 
+## Large-world jitter
+
+Image tests compare still frames, so the `cells-6378km` test shows that a scene far out draws as at the origin. A moving camera rounds its position again in each frame, and a rounding that changes makes the image jump. The jitter check measures that over a flight. [D-80](decisions/D-80-large-world-jitter.md) gives its design, figures and tolerance.
+
+- The jitter page, `tests/pages/jitter.ts`, flies five flights. Each runs in its own engine in large-world mode. The flights stand at the origin, 1,000 km out and at the Earth's radius. Then the two far ones fly again with every grid cell taken, as without cells. The sketch `tests/pages/sketches/jitter-sketch.ts` builds the scene. `tests/pages/lib/jitter.ts` holds the layout, the figures and the limits.
+- The camera moves 12 cm sideways per frame, for 16 frames, past six white squares that face it. Each square sits at its own depth in its own band of rows. The page moves the camera through the sketch's messages, and reads each frame back with `captureFrame` from a live engine. Nothing else moves, and the governor is off.
+- Each square's center comes from its band's linear brightness, so edge pixels count in part. The figure compares each square's motion from one frame to the next with the same motion in the flight at the origin. It is the largest difference. Far flights must stay within 0.05 px. The flights without cells must exceed 0.5 px, so the check can see jitter. Each square must keep 95% of its largest area in every frame.
+- `tests/image/jitter.spec.ts` runs the page on WebGPU, compatibility mode and WebGL2, on the Mac's GPU and on SwiftShader in CI. It also checks that each flight without cells logs the engine's warning that the cells ran out, once. It saves each flight's first and last frames and the figures in `test-results/jitter/`.
+- The device runner's `jitter` plan runs the same page on each GPU path ([Device sessions](devices.md#the-jitter-plan)).
+
 ## Parity with three.js
 
 - Parity tests check intent: that null3D shows what files and authors mean ([D-52](decisions/D-52-intent-parity.md)). A scene compares with three.js's rule only where both engines draw the same building block. These blocks are lighting terms, tone curves that both engines offer, skinning poses, animation sampling and glTF interpretation. A feature that null3D draws with a better technique gets its own references. Its parity scene then takes a looser limit, which checks only that the effect sits in the same place and has a similar size. The scene's entry gives the reason.

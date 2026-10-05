@@ -70,6 +70,7 @@ import {
 	governorSummary as governorLine,
 	governorProblems,
 } from '../pages/lib/governor.ts';
+import { type JitterResult, jitterProblems } from '../pages/lib/jitter.ts';
 import {
 	framesInFlight,
 	type OverloadResult,
@@ -106,6 +107,7 @@ import {
 } from './engine-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
+import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
@@ -193,6 +195,8 @@ export type Check =
 	| { kind: 'environment'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
+	/** The large-world jitter page: flights at the origin and far from it, on one GPU path. */
+	| { kind: 'jitter'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -894,6 +898,29 @@ export function occlusionPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * How long the jitter page may take on a slow device: five engine starts, each with sixteen steps
+ * of the camera.
+ */
+const JITTER_TIMEOUT_SECONDS = 180;
+
+/**
+ * The large-world jitter check on each GPU path: a camera flies past objects at the origin, 1,000
+ * km and 6,378 km out in large-world mode, and again far out with every grid cell taken. Each far
+ * flight must move as the flight at the origin does, and the flights without cells must jitter.
+ * D-80 records the results.
+ */
+export function jitterPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`jitter-${tier}`,
+			'jitter',
+			{ kind: 'jitter', tier },
+			{ switches: [`gpu=${tier}`, 'images'], timeoutSeconds: JITTER_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 /** The crowds that the animation plan times: a first draft of S5's crowd, then the full crowd. */
 export const ANIMATION_CHARACTERS = [100, 500] as const;
 
@@ -1215,6 +1242,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	ao: () => effectPlan('ao'),
 	environment: environmentPlan,
 	occlusion: occlusionPlan,
+	jitter: jitterPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1721,6 +1749,12 @@ export function judge(
 				...(occlusion.on?.occludedEntries ? [] : ['occlusion culling hid nothing in the city']),
 			];
 		}
+		case 'jitter': {
+			const jitter = result as unknown as JitterResult;
+			if (context)
+				saveJitterResult(join(context.imageDir, 'frames', `jitter-${check.tier}`), jitter);
+			return jitterProblems(jitter);
+		}
 		case 'animation':
 			return animationProblems(result as ItemResult & AnimationResult);
 		case 'tab-memory':
@@ -2082,6 +2116,26 @@ export function animationSummary(
 		'| --- | --- | --- | --- | --- | --- | --- |',
 		...rows,
 	].join('\n');
+}
+
+/**
+ * The jitter pages' results as a Markdown table: for each GPU path and flight, how far its objects'
+ * motions strayed from the flight at the origin, and from their own mean motion. Undefined when the
+ * plan has no jitter pages.
+ */
+export function jitterSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) => {
+		if (check.kind !== 'jitter') return [];
+		const result = resultOf(id);
+		if (!result?.ok)
+			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | |`];
+		return jitterRows(check.tier, result as unknown as JitterResult);
+	});
+	if (rows.length === 0) return undefined;
+	return [...JITTER_TABLE_HEAD, ...rows].join('\n');
 }
 
 /**
