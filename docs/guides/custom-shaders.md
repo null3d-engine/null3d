@@ -156,6 +156,8 @@ Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one G
 
 Both builds follow the [WGSL rules for portable shaders](../shaders/wgsl-rules.md). The rules page says what the build rejects, and what you must test on each path yourself.
 
+You can use arrays in every form that WGSL allows. A function can return an array, and an array can take values that are not constants, such as `array<vec3f, 2>(a, b)`. Some Android GPUs reject these forms in GLSL, so the WebGL2 build rewrites them. A function that returns an array gives it through an extra `out` parameter, and an array built from values fills one element at a time. Your WGSL does not change, and the WebGPU build keeps it as you wrote it.
+
 ## Shader errors
 
 When WGSL does not compile, the plugin stops with the file, line and column of each problem. It shows the code around the first problem, and a fix where the rules give one. For a tagged literal, the place is its line and column in your script file:

@@ -1,6 +1,6 @@
-// Checks that run only in development builds. In release builds every check below becomes dead
-// code and leaves the download. A check that
-// passes allocates nothing, so setters can run it every frame.
+// Checks of the values that API calls get. Most callers run them inside `if (DEV)`: release builds
+// define the development flag as false, so those checks become dead code and leave the download. A
+// check that passes allocates nothing, so setters can run it every frame.
 
 import { DEV } from '../shared/dev';
 import { EngineError } from './engine-error';
@@ -51,7 +51,7 @@ export function checkLive(call: string, target: Destroyable, argument = false): 
 
 /**
  * Throws E1207 when a layer mask is not a whole number that fits 32 bits, signed or not, so that
- * `1 << 31` passes. Call it inside `if (DEV)`.
+ * `1 << 31` passes.
  */
 export function checkLayers(call: string, mask: number, target?: Described): void {
 	if (Number.isInteger(mask) && mask >= -0x8000_0000 && mask <= 0xffff_ffff) return;
