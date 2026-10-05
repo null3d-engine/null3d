@@ -53,6 +53,8 @@ A page downloads one shader file, and every shader file holds both line template
 
 The `LINE` template's own vertex and fragment code is about 1.8 KB of it, against 0.7 KB for both sprite templates. A first version of the vertex stage changed variables in place, and the shader compiler wrote each change out as new temporaries. Written with constants and selects instead, it saves about 0.3 KB per file. The half precision files grow more for lit lines. Their lit template uses `null3d::half`'s lighting, so the full-precision lighting of lit lines shares no text with it. A pipelined page's start grows from 100.6 KB to about 103.6 KB of its 140 KB budget. The coordinator accepted this on 4 October 2026, and noted a later change: shader text of features that load on first use could load with them.
 
+Since [D-56](D-56-first-use-shader-files.md), both templates load on first use with the line code, in files of 5.6 to 7.6 KB after Brotli. The start shader files no longer hold them.
+
 The line code that loads on first use is one file of 0.9 KB after Brotli, which both threads load from one address. Each WebAssembly file of the core grows by 2.0 to 2.1%, about 4.5 KB after Brotli, for the line rows of the batch update.
 
 ### Allocation

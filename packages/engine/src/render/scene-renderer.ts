@@ -182,6 +182,7 @@ export class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
+		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
@@ -298,6 +299,7 @@ export class WebGL2SceneRenderer implements Renderer {
 			device.transparent,
 		);
 		this.backend.moreShaders = shaders;
+		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
 		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);

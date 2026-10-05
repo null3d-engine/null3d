@@ -11,7 +11,7 @@ null3D's fog copied three.js's: linear fog or exponential squared fog, by depth 
 - A point keeps its fog as the camera turns. Fog at the screen's edges must not shift.
 - A port of three.js's `Fog` and `FogExp2` keeps their curves and numbers.
 - The fog mixes in linear color before the tone curve, as three.js's `WebGPURenderer` does.
-- A scene without fog pays nothing, and the fog adds no shader build (D-56).
+- A scene without fog pays nothing, and the fog adds no shader build ([D-56](D-56-first-use-shader-files.md)).
 - The frame's values keep their size, and every block stays laid out alike on every GPU path ([implementation notes](../implementation-notes.md#safaris-webgl2-path)).
 
 ## How other engines do it
@@ -73,7 +73,7 @@ The fog keeps 48 bytes. The first vector holds the color and the density. The se
 
 ### Cost
 
-The fog is a branch on the frame's values in the mesh templates, as ambient occlusion's reading and color grading are (D-56). A permutation bit would double each mesh template's builds for a few lines of code.
+The fog is a branch on the frame's values in the mesh templates, as ambient occlusion's reading and color grading are ([D-56](D-56-first-use-shader-files.md)). A permutation bit would double each mesh template's builds for a few lines of code.
 
 `bun run build:check-size` measured the growth against main at 62ab95e1, after Brotli:
 

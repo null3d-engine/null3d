@@ -5,6 +5,7 @@ export type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './de
 export type { FrameStats, FrameStatsThread } from './debug/stats';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
+export type { ShaderFeature } from './generated/shader-features';
 /**
  * Colors as linear RGB in plain arrays of three numbers, from hex colors, sRGB components, or hue,
  * saturation and lightness: `color.fromHex(out, '#ff8800')`.
