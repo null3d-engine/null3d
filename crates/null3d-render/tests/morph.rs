@@ -96,6 +96,9 @@ fn webgl2(multi_draw: bool, depth_prepass: bool) -> World<CpuCulledRenderer> {
 #[test]
 fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
     let mut world = World::new();
+    // No frame has drawn yet, so the first frame waits for every pipeline and draws the morphed
+    // objects at once.
+    world.pipelines_built = 0;
     world.add_morphed([0.0; 3], [1.0, 0.0]);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
