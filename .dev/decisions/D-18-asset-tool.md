@@ -1,6 +1,6 @@
 # D-18: How the asset tool is built
 
-Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
+Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05, with near-constant tracks stored once by the owner's ruling of that day. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
 
 ## Question
 
@@ -100,6 +100,8 @@ The Knight's changing rotation keys, after the step, by how they are stored:
 
 Writing the one-key tracks after all changing keys, not between them, saved the Knight 25 KB more.
 
+Near-constant tracks: 459 of the Knight's translation tracks and 519 of its scale tracks move by under a millionth, rounding noise from the exporter. The owner ruled on 5 October 2026 that such tracks count as constant, in the core for every file ([D-26](D-26-animation-clips.md#near-constant-tracks-5-october-2026)). The tool follows the core, so they keep one key. The Knight's binary part then falls from 455,487 B to 404,663 B after Brotli, 7% under gltfpack's 434,451 B. Poses do not change at three significant digits.
+
 Poses: the `gltf-poses` test plays each sample model's clips after the tool on the source's skeleton, against three.js r186 on the source file. The Knight differs by 6.65e-5 in a skinning matrix's rotation and scale, against 6.80e-5 for the source file. RiggedFigure moves from 4.14e-5 to 6.44e-5 and InterpolationTest from 2.43e-4 to 2.68e-4. The others do not change. The limit is 1e-3 ([D-35](D-35-gltf-animation.md)).
 
 Load: every model's output loads with no clip resampled. In the same test, the Knight's clips were ready in 7.9 ms on two job workers. From the source file they took 16.5 ms, and the core resampled 69 of the 76 clips. Parse time did not change measurably.
@@ -158,7 +160,7 @@ The engine keeps each clip at one fixed rate of keys ([D-26](D-26-animation-clip
 
 - The engine core's own `bake` puts each clip's tracks on the clip's frames. The tool calls it through the formats module (`clip()`), so the tool and the loader pick the same rate and evaluate curves the same way. All tracks of a clip share one input of frame times.
 - A rotation that changes keeps a key per frame as 16-bit normalized integers, the form the core stores. They take meshopt's quaternion filter at 16 bits. Translations, scales and morph weights stay 32-bit floats, which meshopt compresses with no loss.
-- A track whose value never changes keeps one key, at the clip's last time, so the clip keeps its length in every reader.
+- A track that the core counts as constant keeps one key, at the clip's last time, so the clip keeps its length in every reader. That is a track whose keys move by under a millionth of its largest value, or of 1 ([D-26](D-26-animation-clips.md#near-constant-tracks-5-october-2026)).
 - Step tracks stay step tracks. Cubic spline tracks become linear keys on the curve, the keys the core would store from it.
 - Keys that change come first in the buffer, each path's together, then the one-key tracks.
 
@@ -173,8 +175,6 @@ Options left out:
 | glTF-Transform's filter method for all accessors | Its exponential filter keeps 12 bits of each translation and scale |
 | Dropping constant tracks, as gltfpack does | A clip blends only where it has tracks ([D-26](D-26-animation-clips.md)), so a dropped track changes how it blends |
 | Fewer keys where the curve allows | The track's keys become uneven, so the loader would resample again |
-| A track that changes by under a millionth as constant | 404,598 B for the Knight, but values move by up to 1e-6 and differ from what the core builds from the source. It would belong in the core's constant rule, for every file. Not decided |
-
 Version 4.5.1 of glTF-Transform gives meshopt's filters to every accessor or to none. So the class `MeshoptWithRotationFilter` in `clips.js` extends its meshopt extension. After glTF-Transform groups the accessors, it switches only the buffer views of rotation keys to the quaternion filter. It reads three fields that glTF-Transform keeps for that step. The tests in `clips.test.ts` fail when a version changes them. They check that the quaternion filter is the file's only filter.
 
 ### How three.js handles it

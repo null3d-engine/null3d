@@ -84,13 +84,13 @@ The engine keeps each animation clip at one fixed rate of keys, so it never sear
 | Key times | One list of evenly spaced times per clip. The file's own spacing when every key lies on one grid of up to 30 keys a second, else 30 keys a second | The rate that the engine picks for the clip at load |
 | Rotations that change | One key per time, as 16-bit integers, compressed with meshopt's quaternion filter | A quarter of the size of floats. The engine keeps rotations in 16 bits as well |
 | Translations, scales and morph weights that change | One key per time, as 32-bit floats | glTF asks for floats. meshopt compresses them with no loss |
-| A track whose value never changes | One key, at the clip's last time | The clip keeps its length, in null3D and in three.js |
+| A track whose value never changes, or moves by under a millionth of its size | One key, at the clip's last time | The clip keeps its length, in null3D and in three.js. Exporters leave rounding noise of that size in tracks that do not move, and the engine counts such a track as constant in every file |
 | Step tracks | Step tracks, with a key at each time | The engine steps at the same times |
 | Cubic spline tracks | Linear keys on the curve | The engine stores the same keys from the curve at load |
 
 The command drops no key and no track. A clip blends only where it has tracks, as in three.js, so a dropped track would change how the clip blends. Poses stay within the engine's tolerance of three.js. The KayKit Knight's skinning matrices differ by at most 7e-5, the same as from its source file.
 
-For the Knight and its 76 clips, the file's binary part falls from 838 KB to 455 KB after Brotli. On the engine's test page, its clips were ready in 8 ms on two job workers, against 16.5 ms for the source file.
+For the Knight and its 76 clips, the file's binary part falls from 838 KB to 405 KB after Brotli. On the engine's test page, its clips were ready in 8 ms on two job workers, against 16.5 ms for the source file.
 
 ## Blockers and stored trees
 

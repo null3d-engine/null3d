@@ -7,7 +7,8 @@
 //!   matrix.
 //! - A [`Clip`] holds keys at one fixed rate per clip, so the key before any time is a direct
 //!   index. [`resample`] builds one from keys at any times, once at load. Rotations are stored as
-//!   four 16-bit integers each, and a track whose value never changes is stored once.
+//!   four 16-bit integers each, and a track whose value never changes, or moves by under a
+//!   millionth of its size, is stored once.
 //! - A pose is stored by field: ten arrays (translation x, y and z, rotation x, y, z and w, scale
 //!   x, y and z), each with one value per joint and padded to a multiple of four joints. SIMD code
 //!   then reads and writes four joints at once.

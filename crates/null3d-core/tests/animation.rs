@@ -171,6 +171,63 @@ fn clips_keep_a_source_grid_up_to_the_rate_and_resample_others() {
     assert_eq!(clip.base().joint(0).0, [1.0, 2.0, 3.0]);
 }
 
+#[test]
+fn tracks_that_move_under_a_millionth_count_as_constant() {
+    let skeleton = skeleton();
+    let times: Vec<f32> = (0..=30).map(|k| k as f32 / 30.0).collect();
+    // Is a track that moves its first component by `change` on every other key stored once?
+    let constant = |channel: Channel, key: &dyn Fn(f64) -> Vec<f32>, change: f64| {
+        let values: Vec<f32> = (0..times.len())
+            .flat_map(|k| key(if k % 2 == 1 { change } else { 0.0 }))
+            .collect();
+        let track = SourceTrack {
+            joint: 1,
+            channel,
+            interpolation: Interpolation::Linear,
+            times: &times,
+            values: &values,
+        };
+        let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
+        let baked = bake(&[track], skeleton.joints(), DEFAULT_RATE).unwrap();
+        let one_key = baked.tracks[0] == BakedKeys::Floats(key(0.0));
+        assert_eq!(clip.animated_tracks() == 0, one_key, "{channel:?} {change}");
+        one_key
+    };
+    // Within 1, the tolerance is a millionth.
+    let small = |d: f64| vec![(0.25 + d) as f32, -0.5, 0.75];
+    assert!(constant(Channel::Translation, &small, 0.9e-6));
+    assert!(!constant(Channel::Translation, &small, 1.1e-6));
+    // Past 1, it is a millionth of the track's largest value.
+    let large = |d: f64| vec![(150.0 + d) as f32, 3.0, 400.0];
+    assert!(constant(Channel::Scale, &large, 0.9 * 400e-6));
+    assert!(!constant(Channel::Scale, &large, 1.1 * 400e-6));
+    // A rotation compares as a quaternion, whichever sign a key has. The first component sits
+    // near the middle of two 16-bit steps, so both moves change its 16-bit integer.
+    let x: f64 = 10_000.49 / 32767.0;
+    let turn = |d: f64| {
+        let (x, sign) = (x + d.abs(), if d < 0.0 { -1.0 } else { 1.0 });
+        let q = [x, 0.0, 0.0, (1.0 - x * x).sqrt()];
+        q.iter().map(|v| (v * sign) as f32).collect()
+    };
+    assert!(constant(Channel::Rotation, &turn, 0.9e-6));
+    assert!(constant(Channel::Rotation, &turn, -0.9e-6));
+    assert!(!constant(Channel::Rotation, &turn, 1.1e-6));
+    assert!(!constant(Channel::Rotation, &turn, -1.1e-6));
+    // The one key is the first: that value goes into the clip's base pose.
+    let values: Vec<f32> = (0..times.len())
+        .flat_map(|k| small(if k % 2 == 1 { 0.9e-6 } else { 0.0 }))
+        .collect();
+    let track = SourceTrack {
+        joint: 1,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Step,
+        times: &times,
+        values: &values,
+    };
+    let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
+    assert_eq!(clip.base().joint(1).0, [0.25, -0.5, 0.75]);
+}
+
 /// A baked track as a file of the asset tool holds it: keys at the frames, or one key at the end,
 /// with rotations as 16-bit integers that a reader turns into floats.
 fn baked_track(keys: &BakedKeys) -> Vec<f32> {

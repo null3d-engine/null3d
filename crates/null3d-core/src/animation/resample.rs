@@ -1,6 +1,6 @@
 //! Builds a [`Clip`] from keys at any times, once at load: the keys are resampled at one fixed
 //! rate, rotations are quantized to 16 bits per component, and constant tracks are folded into the
-//! base pose.
+//! base pose. A track whose values move by under a millionth of their size counts as constant.
 //!
 //! Resampling evaluates each track as three.js's `AnimationMixer` would: linear tracks with
 //! `slerp` for rotations and `lerp` for the rest, step tracks with the key at or before the time,
@@ -29,6 +29,11 @@ const FRAME_TOLERANCE: f64 = 1e-3;
 /// How far after a frame's time, as a share of the time, a key still counts as at the frame: a
 /// few times the rounding of a 32-bit float.
 const KEY_TIME_TOLERANCE: f64 = 1e-6;
+
+/// How far a track's values may move from its first key and still count as constant, as a share
+/// of its largest value, or of 1 when its values all lie within 1. Exporters leave rounding noise
+/// of about this size in tracks that never move; such a track is stored once.
+const NEAR_CONSTANT: f64 = 1e-6;
 
 /// The scale of a quantized rotation component: the largest 16-bit value.
 pub(super) const QUANTIZED_ONE: f64 = 32767.0;
@@ -427,6 +432,9 @@ fn resample_track(
     let mut current = [0.0f64; 4];
     let mut previous = [0.0f64; 4];
     let mut first = [0.0f32; 4];
+    let mut first_value = [0.0f64; 4];
+    // The largest move from the first key, and the largest value, over all keys.
+    let (mut change, mut largest) = (0.0f64, 1.0f64);
     for frame in 0..keys {
         if copied {
             let key = &track.values[frame * stride + value_at..][..n];
@@ -454,6 +462,14 @@ fn resample_track(
             previous = q;
             if frame == 0 {
                 first = q.map(|v| v as f32);
+                first_value = q;
+            } else {
+                // q and -q are the same rotation: compare with the first key's sign.
+                let dot: f64 = q.iter().zip(&first_value).map(|(a, b)| a * b).sum();
+                let sign = if dot < 0.0 { -1.0 } else { 1.0 };
+                for (a, b) in q.iter().zip(&first_value) {
+                    change = change.max((a * sign - b).abs());
+                }
             }
             for (o, v) in out.iter_mut().zip(q) {
                 *o = (v * QUANTIZED_ONE).round() as i32;
@@ -463,12 +479,17 @@ fn resample_track(
                 *o = (*v as f32).to_bits() as i32;
                 if frame == 0 {
                     first[c] = *v as f32;
+                    first_value[c] = *v;
                 }
+                change = change.max((v - first_value[c]).abs());
+                largest = largest.max(v.abs());
             }
         }
     }
     let first_key = &values[..n];
-    let constant = values.chunks_exact(n).all(|key| key == first_key);
+    // A rotation whose keys round to the same 16-bit integers is constant too.
+    let constant =
+        change < NEAR_CONSTANT * largest || values.chunks_exact(n).all(|key| key == first_key);
     let turns_far = track.channel == Channel::Rotation
         && (1..keys).any(|frame| {
             let (a, b) = (
@@ -656,7 +677,8 @@ pub enum BakedKeys {
     /// times 32767, as a clip stores it. Each key lies in the hemisphere of the key before.
     Rotations(Vec<i16>),
     /// A translation or scale that changes: one key per frame, three floats each. Or a track
-    /// whose value never changes: one key, with a rotation as a unit quaternion of four floats.
+    /// that counts as constant: one key, its first, with a rotation as a unit quaternion of four
+    /// floats.
     Floats(Vec<f32>),
 }
 

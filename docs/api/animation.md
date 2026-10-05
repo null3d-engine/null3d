@@ -146,7 +146,7 @@ When the engine loads a clip, it stores the keys at one fixed rate for the whole
 - A clip whose keys all lie on one grid of at most 30 keys per second keeps that grid exactly. Files exported at 24, 25 or 30 frames per second lose nothing.
 - Other clips get 30 keys per second, spaced so that the last key falls on the clip's end. A clip exported at 60 keys per second keeps every second key.
 - Rotations take 8 bytes per key: four 16-bit integers. Translations and scales take 12 bytes per key.
-- A track whose value never changes is stored once.
+- A track whose value never changes is stored once. So is a track whose keys move by under a millionth of its largest value, or under a millionth when its values lie within 1. Exporters leave rounding noise of that size in tracks that do not move.
 
 A track moves in a straight line from key to key. A step track jumps instead: it holds each key's value until the next key.
 

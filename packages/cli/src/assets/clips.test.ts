@@ -200,20 +200,36 @@ describe('the clip step', async () => {
 		}
 	});
 
-	it('keeps a constant track as one key, and drops no track', () => {
+	it('keeps a track that moves under a millionth as one key, and drops no track', () => {
+		let near = 0;
 		for (const { source, output } of runs) {
 			const before = channelsOf(source).flat();
 			const after = channelsOf(output).flat();
 			expect(after).toHaveLength(before.length);
 			after.forEach(({ path, sampler }, c) => {
 				const original = (before[c] as (typeof after)[number]).sampler;
+				if (path === 'weights' || original.getInterpolation() === 'CUBICSPLINE') return;
 				const keys = floats(original.getOutput() as Accessor);
 				const n = path === 'rotation' ? 4 : 3;
-				const changes = keys.some((v, i) => v !== keys[i % n]);
-				if (original.getInterpolation() !== 'CUBICSPLINE' && !changes)
-					expect((sampler.getInput() as Accessor).getCount()).toBe(1);
+				// Within 1 a millionth, past 1 a millionth of the largest value. A rotation key
+				// compares with the first key's sign, since q and -q are the same rotation.
+				const tolerance = 1e-6 * Math.max(1, ...keys.map(Math.abs));
+				let change = 0;
+				for (let k = n; k < keys.length; k += n) {
+					const dot = keys.slice(k, k + n).reduce((s, v, i) => s + v * (keys[i] as number), 0);
+					const sign = path === 'rotation' && dot < 0 ? -1 : 1;
+					for (let i = 0; i < n; i++)
+						change = Math.max(
+							change,
+							Math.abs((keys[k + i] as number) * sign - (keys[i] as number)),
+						);
+				}
+				if (change > 0 && change < tolerance) near++;
+				if (change < tolerance) expect((sampler.getInput() as Accessor).getCount()).toBe(1);
 			});
 		}
+		// The Knight's exporter leaves rounding noise in hundreds of tracks that never move.
+		expect(near).toBeGreaterThan(500);
 		const knight = channelsOf((runs[0] as (typeof runs)[number]).output).flat();
 		const constant = knight.filter(({ sampler }) => sampler.getInput()?.getCount() === 1);
 		expect(constant.length).toBeGreaterThan(knight.length / 2);
