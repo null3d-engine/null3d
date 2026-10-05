@@ -185,7 +185,7 @@ The nearest cascade draws in every frame. The far cascades draw once every few f
 
 A kept layer shows each caster where it stood when the layer drew. So on every preset, a far cascade draws in every frame while a moving caster touches its box. A moving caster is a dynamic object, or an object under a dynamic one. Its shadow then follows it in every frame. The cascade draws once more after the caster leaves, so no old shadow stays behind. Far cascades that hold only still casters keep their turns. A town whose cars drive through every cascade, as in S4, draws every cascade in every frame, as three.js's cascaded shadows always do. A character near the camera keeps the far cascades' saving.
 
-A camera high above a scene can see nothing near enough for the nearest cascade. S4's camera flies 42 m up, and Low's nearest cascade ends 38 m from the camera, so every shadow on screen comes from the far cascade. That is why far cascades follow moving casters on Low too.
+A camera high above a scene can see nothing near enough for the nearest cascade. S4's camera flies 42 m up, and Low's nearest cascade ends 38 m from the camera. So every shadow on screen comes from the far cascade. That is why far cascades follow moving casters on Low too.
 
 The `followMovingCasters` quality setting turns this off. Each far cascade then keeps its turns, even while moving casters touch it, and the frames draw fewer shadow passes. A moving shadow in a far cascade then trails its caster until the cascade's next turn: up to 3 frames at Low's interval of 4. The quality governor then leaves `farCascadeInterval` as you set it, so the trail never grows. The setting changes during play:
 
