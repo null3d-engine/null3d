@@ -20,6 +20,8 @@ import { CoreMemory } from './memory';
 import { Geometry, Materials, type MeshGeometry } from './resources';
 import { Scene } from './scene';
 import {
+	PointBatch,
+	type PointChecks,
 	SpriteBatch,
 	type SpriteBatchRows,
 	type SpriteMakers,
@@ -84,7 +86,7 @@ function rowCalls(log: string[]): SpriteBatchRows {
 describe('sprite parts', () => {
 	test('a sprite material blends, draws both faces and scales the atlas into its frames', () => {
 		const { makers, materials } = fakeCore();
-		spriteParts(makers, new Map(), { count: 4 }, [4, 2], 'createSprites');
+		spriteParts(makers, new Map(), {}, [4, 2], 'blend', 'createSprites');
 		const [material] = materials;
 		expect(material?.shading).toBe(SHADING_SPRITE);
 		expect((material?.features ?? 0) & MATERIAL_FEATURE_BLEND).toBe(MATERIAL_FEATURE_BLEND);
@@ -99,7 +101,7 @@ describe('sprite parts', () => {
 
 	test('a masked sprite material does not blend', () => {
 		const { makers, materials } = fakeCore();
-		spriteParts(makers, new Map(), { count: 1, alphaMode: 'mask' }, [1, 1], 'createSprites');
+		spriteParts(makers, new Map(), { alphaMode: 'mask' }, [1, 1], 'blend', 'createSprites');
 		const features = materials[0]?.features ?? 0;
 		expect(features & MATERIAL_FEATURE_BLEND).toBe(0);
 		expect(features & MATERIAL_FEATURE_ALPHA_MASK).toBe(MATERIAL_FEATURE_ALPHA_MASK);
@@ -109,7 +111,7 @@ describe('sprite parts', () => {
 		const { makers, quads } = fakeCore();
 		const shared = new Map<string, MeshGeometry>();
 		const make = (options: SpriteOptions) =>
-			spriteParts(makers, shared, options, [1, 1], 'createSprites');
+			spriteParts(makers, shared, options, [1, 1], 'blend', 'createSprites');
 		const middle = make({ count: 1 });
 		expect(make({ count: 2 }).mesh).toBe(middle.mesh);
 		const standing = make({ count: 1, center: [0.5, 0] });
@@ -169,7 +171,7 @@ describe('scene.createSprites', () => {
 describe('sprite batches', () => {
 	test('the arrays view each field of the batch with its floats per sprite', () => {
 		const { core, makers } = fakeCore();
-		const { material } = spriteParts(makers, new Map(), { count: 1 }, [1, 1], 'createSprites');
+		const { material } = spriteParts(makers, new Map(), {}, [1, 1], 'blend', 'createSprites');
 		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls([]));
 		const views: [ArrayLike<number> & { byteOffset: number }, number, number][] = [
 			[sprites.positions, BATCH_FIELD_POSITIONS, 15],
@@ -189,7 +191,7 @@ describe('sprite batches', () => {
 
 	test('the views are made again after the memory grows', () => {
 		const { core, makers, memory } = fakeCore();
-		const { material } = spriteParts(makers, new Map(), { count: 1 }, [1, 1], 'createSprites');
+		const { material } = spriteParts(makers, new Map(), {}, [1, 1], 'blend', 'createSprites');
 		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls([]));
 		const before = sprites.positions;
 		memory.grow(1);
@@ -200,7 +202,7 @@ describe('sprite batches', () => {
 
 	test('row calls reach the instance batch, with markDirty defaulting to every sprite', () => {
 		const { core, makers, destroyedMaterials } = fakeCore();
-		const { material } = spriteParts(makers, new Map(), { count: 1 }, [1, 1], 'createSprites');
+		const { material } = spriteParts(makers, new Map(), {}, [1, 1], 'blend', 'createSprites');
 		const log: string[] = [];
 		const sprites = new SpriteBatch(core, 7, 5, material, rowCalls(log));
 		sprites.setActiveCount(3);
@@ -212,5 +214,95 @@ describe('sprite batches', () => {
 		// The batch's own material goes with it, so batches made and destroyed in turn never fill
 		// the material table.
 		expect(destroyedMaterials).toEqual([1]);
+	});
+});
+
+describe('scene.createPoints', () => {
+	test('makes an opaque sprite batch of one frame, and writes the points, colors and size', async () => {
+		const { scene, batches, materials, memory } = fakeCore();
+		const points = await scene.createPoints({
+			positions: [1, 2, 3, 4, 5, 6],
+			colors: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+			size: 0.25,
+			sizeAttenuation: false,
+		});
+		expect(points).toBeInstanceOf(PointBatch);
+		expect(points.count).toBe(2);
+		// Capacity, dynamic, quad, material, columns, rows and sizes in pixels.
+		expect(batches).toEqual([[2, false, 1, 1, 1, 1, true]]);
+		expect((materials[0]?.features ?? 0) & MATERIAL_FEATURE_BLEND).toBe(0);
+		expect([...points.positions]).toEqual([1, 2, 3, 4, 5, 6]);
+		const rgb = [...points.colors].filter((_, k) => k % 4 !== 3);
+		expect(rgb.map((v) => Math.round(v * 10) / 10)).toEqual([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+		const sizes = new Float32Array(memory.buffer, fieldAddress(BATCH_FIELD_SIZES), 4);
+		expect([...sizes]).toEqual([0.25, 0.25, 0.25, 0.25]);
+	});
+
+	test('colors of 4 numbers per point keep their alpha, and blended points blend', async () => {
+		const { scene, materials } = fakeCore();
+		const points = await scene.createPoints({
+			positions: [0, 0, 0],
+			colors: [1, 0.5, 0.25, 0.75],
+			alphaMode: 'blend',
+		});
+		expect([...points.colors]).toEqual([1, 0.5, 0.25, 0.75]);
+		expect((materials[0]?.features ?? 0) & MATERIAL_FEATURE_BLEND).toBe(MATERIAL_FEATURE_BLEND);
+	});
+
+	test('points or colors that make no points reject with E1206, and bad sizes with E1108 or E1203', async () => {
+		const { scene, batches } = fakeCore();
+		const cases: [Parameters<typeof scene.createPoints>[0], RegExp][] = [
+			[{ positions: [] }, /E1206: createPoints\(\) got 0 numbers in positions/],
+			[{ positions: [0, 0] }, /E1206: createPoints\(\) got 2 numbers in positions/],
+			[
+				{ positions: [0, 0, 0], colors: [1, 1] },
+				/E1206: .* 2 numbers in colors for 1 points, not 3 or 4/,
+			],
+			[{ positions: [0, Number.NaN, 0] }, /E1206: .* NaN at index 1 of positions/],
+			[{ positions: [0, 0, 0], size: 0 }, /E1108: createPoints\(\) got the size 0/],
+			[
+				{ positions: [0, 0, 0], size: Number.POSITIVE_INFINITY },
+				/E1203: createPoints\(\) got Infinity for size/,
+			],
+		];
+		for (const [options, message] of cases)
+			expect((await rejected(() => scene.createPoints(options))).message).toMatch(message);
+		expect(batches).toEqual([]);
+	});
+});
+
+describe('point batches', () => {
+	/** A point batch of 3 points over a sprite batch whose row calls go to `log`. */
+	function pointBatch(log: string[]) {
+		const { core, makers } = fakeCore();
+		const { material } = spriteParts(makers, new Map(), {}, [1, 1], 'opaque', 'createPoints');
+		const sprites = new SpriteBatch(core, 7, 3, material, rowCalls(log));
+		const checks: PointChecks = {
+			size: (size, call) => {
+				if (!(size > 0)) throw new Error(`${call} got ${size}`);
+			},
+		};
+		return { points: new PointBatch(sprites, checks), sprites };
+	}
+
+	test('the arrays are the sprite rows of positions and colors', () => {
+		const { points, sprites } = pointBatch([]);
+		expect(points.count).toBe(3);
+		expect(points.positions).toBe(sprites.positions);
+		expect(points.colors).toBe(sprites.colors);
+		expect(points.colors.length).toBe(12);
+	});
+
+	test('setSize sizes every point and marks them all, and the other calls reach the batch', () => {
+		const log: string[] = [];
+		const { points, sprites } = pointBatch(log);
+		points.setSize(4);
+		expect([...sprites.sizes]).toEqual([4, 4, 4, 4, 4, 4]);
+		expect(() => points.setSize(-1)).toThrow('points.setSize got -1');
+		points.setActiveCount(2);
+		points.setLayers(6);
+		points.markDirty(1);
+		points.destroy();
+		expect(log).toEqual(['dirty 0 3', 'active 2', 'layers 6', 'dirty 1 2', 'destroy']);
 	});
 });

@@ -26,7 +26,7 @@ null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere
 | --- | --- | --- | --- |
 | WebGPU core | Chrome and Edge 113+ on Windows, macOS and ChromeOS; Chrome 121+ on Android 12+ with ARM, Qualcomm or Intel GPUs; Safari 26 on macOS, iOS and iPadOS; Firefox 141+ on Windows and 147+ on Apple silicon Macs | Compute shaders, indirect draws, render bundles, storage buffers | Optional features differ from device to device |
 | WebGPU compatibility mode | Chrome 146+ on devices that have only OpenGL ES 3.1 or Direct3D 11 | Compute shaders and indirect draws on older GPUs | About 45% of these devices allow no storage buffers in vertex shaders; 16-bit float targets cannot use MSAA; uniform bindings stop at 16 KB |
-| WebGL2 | Every other supported browser: iPhones before iOS 26, Android phones without WebGPU (including phones with Samsung Xclipse GPUs), Firefox on Android and Linux | Instancing, uniform buffers, MSAA | No compute shaders, no indirect draws, no storage buffers |
+| WebGL2 | Every other supported browser: iPhones and iPads on iOS and iPadOS 18, Android phones without WebGPU (including phones with Samsung Xclipse GPUs), Firefox on Android and Linux | Instancing, uniform buffers, MSAA | No compute shaders, no indirect draws, no storage buffers |
 
 These facts were checked in September 2026. Browser support changes often, so this table can go out of date. At run time, the engine's feature tests decide.
 
@@ -172,11 +172,15 @@ A WebGPU device can be lost, for example after a driver reset, and so can a WebG
 
 | Browser | Minimum version |
 | --- | --- |
-| Safari on macOS and iOS | 16.4 |
+| Safari on macOS, iOS and iPadOS | 18 |
 | Chrome and Edge | 91 |
 | Firefox | 89 |
 
-WebAssembly SIMD sets these minimums. In an older browser, `createEngine` fails with [E1303](../errors/E1303.md) instead of taking a slow path, and the page can show its own message. On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
+WebAssembly SIMD sets the minimums of Chrome, Edge and Firefox. In an older browser, and in Safari before 16.4, `createEngine` fails with [E1303](../errors/E1303.md) instead of taking a slow path. The page can then show its own message.
+
+Safari 16.4 and 17 have WebAssembly SIMD and pass the engine's feature tests. The engine still meets faults there that no test finds in advance. On a phone with 4 GB of memory, Safari 17 refused the engine's shared memory. Its WebGL2 compiler also rejected a shader of the standard material. So null3D does not support Safari before 18, and `createEngine` fails there with [E1306](../errors/E1306.md) before it starts a worker or asks for memory. A page that the null3D Vite plugin builds still starts the core's download as its HTML arrives, and leaves it unread. Every browser on iPhone and iPad runs Safari's WebKit engine, so the same check covers Chrome, Edge and Firefox on iOS and iPadOS before 18. The check reads the browser's user agent. An `AppleWebKit/` number of 600 or more marks Apple's WebKit, and the check then reads Safari's `Version/` part, or else the iOS or iPadOS version. Chrome, Edge, Samsung Internet and Firefox on other systems give no such number, so the check passes them.
+
+On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
 
 ## Related pages
 

@@ -3,7 +3,8 @@
 // be declared in its source. The ones that the driver removed, because the program never reads
 // them, are listed apart. Each WGSL module must compile in WebGPU when the browser has it,
 // with the device feature `shader-f16` for the modules at half precision where the adapter has it.
-// Failures carry the browser's info logs. The result gives the time the GLSL programs took.
+// Failures carry the browser's info logs. Programs that link at the second try after Safari's random
+// Metal fault are listed apart. The result gives the time the GLSL programs took.
 // With `?part=k&parts=n`, the page checks only part k of n of the programs and of the modules, so
 // that several pages can share the work.
 import { everyShader } from '@null3d/engine/internal';
@@ -32,6 +33,7 @@ run('shaders', async () => {
 		parallelCompile: glsl.parallel,
 		skipped: glsl.skipped,
 		removed: glsl.removed,
+		relinked: glsl.relinked,
 		renderer: glsl.renderer,
 		webgpu: wgsl.webgpu,
 		wgslModules: wgsl.modules,

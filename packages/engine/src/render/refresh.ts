@@ -3,9 +3,10 @@
 // come from a busy thread. The meter averages the intervals near the median. It keeps intervals in
 // whole microseconds, so the work it does once per sample set, too rarely for the browser to
 // optimize, makes no number objects. Safari runs a worker's frame callbacks from a timer instead,
-// whose rate matches no display's, and the meter says when that is so.
+// whose rate matches no display's, and the meter says when that is so. A meter can also take chosen
+// intervals alone, such as those that follow a callback that drew nothing.
 
-/** Callback intervals the meter keeps. */
+/** Callback intervals a meter keeps unless it is given another count. */
 const SAMPLES = 32;
 /** Intervals within a fifth of the median count toward the period; the rest are outliers. */
 const NEAR_MEDIAN_DIVISOR = 5;
@@ -47,8 +48,8 @@ export function snapMeanInterval(sum: number, count: number): number {
 
 export class RefreshMeter {
 	/** Intervals between callbacks, in whole microseconds. */
-	private readonly intervals = new Int32Array(SAMPLES);
-	private readonly sorted = new Int32Array(SAMPLES);
+	private readonly intervals: Int32Array;
+	private readonly sorted: Int32Array;
 	private count = 0;
 	/**
 	 * The last callback's timestamp, or -1 before the first. It lives in a typed array: some
@@ -56,6 +57,12 @@ export class RefreshMeter {
 	 */
 	private readonly last = Float64Array.of(-1);
 	private matched = true;
+
+	/** `samples` is how many intervals each measurement takes. */
+	constructor(private readonly samples = SAMPLES) {
+		this.intervals = new Int32Array(samples);
+		this.sorted = new Int32Array(samples);
+	}
 
 	/**
 	 * False when the last measurement matched no display's rate, as the callbacks of a timer do;
@@ -68,18 +75,24 @@ export class RefreshMeter {
 	/** Adds a frame callback's timestamp; returns the refresh rate each time the samples fill up. */
 	tick(timestamp: number): number | undefined {
 		const last = this.last[0] as number;
-		if (last >= 0 && timestamp > last) {
-			const interval = Math.round((timestamp - last) * 1000);
-			this.intervals[this.count++ % SAMPLES] = Math.min(interval, LONGEST_INTERVAL);
-		}
 		this.last[0] = timestamp;
-		if (this.count === 0 || this.count % SAMPLES !== 0) return undefined;
+		return last >= 0 && timestamp > last ? this.add(timestamp - last) : undefined;
+	}
+
+	/**
+	 * Adds an interval between two callbacks, in ms; returns the refresh rate each time the
+	 * samples fill up.
+	 */
+	add(ms: number): number | undefined {
+		const { samples } = this;
+		this.intervals[this.count++ % samples] = Math.min(Math.round(ms * 1000), LONGEST_INTERVAL);
+		if (this.count % samples !== 0) return undefined;
 		this.sorted.set(this.intervals);
 		this.sorted.sort();
-		const median = this.sorted[SAMPLES >> 1] as number;
+		const median = this.sorted[samples >> 1] as number;
 		let sum = 0;
 		let near = 0;
-		for (let k = 0; k < SAMPLES; k++) {
+		for (let k = 0; k < samples; k++) {
 			const interval = this.sorted[k] as number;
 			if (Math.abs(interval - median) * NEAR_MEDIAN_DIVISOR > median) continue;
 			sum += interval;
