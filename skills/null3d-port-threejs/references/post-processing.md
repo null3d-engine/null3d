@@ -18,7 +18,7 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 
 1. Write down the original chain in order, with each pass's parameters.
 2. Delete `EffectComposer`, `RenderPass`, `OutputPass`, `GammaCorrectionShader` and `composer.render()`.
-3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })` (0.1). `ACESFilmicToneMapping`, `AgXToneMapping` and `NeutralToneMapping` become `'aces'`, `'agx'` and `'neutral'`, with the same formulas. `LinearToneMapping` and `NoToneMapping` both become `'none'`; `NoToneMapping` ignores `toneMappingExposure`, so keep `exposure` at 1 for it.
+3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })` (0.1). `ACESFilmicToneMapping`, `AgXToneMapping` and `NeutralToneMapping` become `'aces'`, `'agx'` and `'neutral'`, with the same formulas. `LinearToneMapping` and `NoToneMapping` both become `'none'`; `NoToneMapping` ignores `toneMappingExposure`, so keep `exposure` at 1 for it. Copy `toneMappingExposure` to `exposure` unchanged: null3D applies it to each light, which gives the same image.
 4. Add effects one at a time with `post.set` (0.2), and compare parity images after each.
 5. Port custom passes last, as `post.addEffect` (0.2, section 5).
 
@@ -142,7 +142,7 @@ This example is symmetric, so the UV flip does not matter here.
 - Background: null3D tone maps the background color with the scene, as three.js's WebGPURenderer does. WebGLRenderer does not, so with `'aces'` or `'agx'` a dark background comes out darker. Where the exact color matters, use `toneMapping: 'none'` or a transparent canvas over a CSS background.
 - Tone mapping twice: `renderer.toneMapping` and a tone-mapping pass in the same three.js app means the original was tone-mapped twice. Decide with the user which look to keep. null3D tone-maps once.
 - Order: three.js lets you tone-map before bloom. null3D always blooms in HDR before tone mapping, as `UnrealBloomPass` before `OutputPass` does. An original that tone-mapped first looks weaker; raise `intensity` to match.
-- Threshold: null3D's default threshold is 0, so all light glows a little, and its default intensity is low. A port always sets `threshold` from the source, which defaults to 1 in `UnrealBloomPass` and 0.9 in pmndrs `BloomEffect`.
+- Threshold: null3D's default threshold is 0, so all light glows a little, and its default intensity is low. A port always sets `threshold` from the source, which defaults to 1 in `UnrealBloomPass` and 0.9 in pmndrs `BloomEffect`. The threshold is in color before the exposure, as in three.js, at any exposure.
 - Bloom's size: the quality setting `bloomSize` (128 on Low, 512 elsewhere) changes the glow's detail, not its size. Do not map `resolution` or `resolutionScale` onto it.
 - Compatibility mode: in WebGPU's compatibility mode with MSAA, bloom moves the engine to HDR color with FXAA, so edges there look as with FXAA (`concepts/post-processing`).
 - Ambient occlusion: `GTAOPass` darkens the whole image, and null3D only the ambient light. A sunlit corner keeps its sunlight, so the port looks lighter where direct light falls. On the Low and Medium presets `aoScale` is 0, so it draws nothing there until the sketch sets the scale.
