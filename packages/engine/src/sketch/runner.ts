@@ -44,8 +44,17 @@ import { Scene } from '../scene/scene';
 import { ShaderPreloads } from '../scene/shader-preloads';
 import { ShaderTemplates } from '../scene/shader-templates';
 import { Textures } from '../scene/textures';
-import { type ControlViews, controlLabels, controlViews, Slot } from '../shared/control';
+import {
+	type ControlViews,
+	controlLabels,
+	controlViews,
+	frameAfter,
+	frameReached,
+	nextFrame,
+	Slot,
+} from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { stopHelperWorkers } from '../shared/helper-workers';
 import {
 	type ImageSender,
 	imagesArrived,
@@ -106,7 +115,7 @@ export interface SketchCore {
 const SLOT_POLL_MS = 4;
 
 /**
- * Resolves once a control slot holds `target` or more, or once the engine stops. It waits without
+ * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
  * blocking the thread, and checks the slot on a timer where the control block is not shared memory.
  * A start's steps wait this way, so each wait also checks the slot again after a short time, in case
  * the browser missed the wake.
@@ -116,7 +125,7 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
 		typeof SharedArrayBuffer !== 'undefined' && slots.buffer instanceof SharedArrayBuffer;
 	for (;;) {
 		const value = Atomics.load(slots, slot);
-		if (value >= target || Atomics.load(slots, Slot.Running) === 0) return;
+		if (frameReached(value, target) || Atomics.load(slots, Slot.Running) === 0) return;
 		if (shared) {
 			const change = slotChangeOrRecheck(slots, slot, value);
 			if (change) await change;
@@ -128,28 +137,37 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
  * The pipelined frame loop of a thread that runs the sketch while another thread draws: the sketch
  * worker, or the page with sketchThread: 'main'. It steps the sketch once the thread that draws has
  * taken the frame before, and waits for that without blocking, so the thread's event loop stays free
- * for promises, messages and the page's events. It ends when the engine stops.
+ * for promises, messages and the page's events. It ends when the engine stops, or when a frame
+ * step throws, such as a trap in the core: `fault` then hears the error, and the engine draws the
+ * last frame until the page destroys it. Each pass reads the newest published frame, because the
+ * setup's frames publish from the same thread.
  */
-export async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
+export async function runPipelined(
+	sketch: SketchRunner,
+	control: ArrayBufferLike,
+	fault: (error: unknown) => void,
+): Promise<void> {
 	const { slots } = controlViews(control);
-	// A warm-up during the setup may have published a frame that the render worker has not taken.
-	let published = Atomics.load(slots, Slot.FramesPublished);
-	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const paused = Atomics.load(slots, Slot.Paused);
-		if (paused !== 0) {
-			const change = slotChange(slots, Slot.Paused, paused);
-			if (change) await change;
-			continue;
+	try {
+		while (Atomics.load(slots, Slot.Running) !== 0) {
+			const paused = Atomics.load(slots, Slot.Paused);
+			if (paused !== 0) {
+				const change = slotChange(slots, Slot.Paused, paused);
+				if (change) await change;
+				continue;
+			}
+			const taken = Atomics.load(slots, Slot.FramesTaken);
+			if (frameAfter(Atomics.load(slots, Slot.FramesPublished), taken)) {
+				const change = slotChange(slots, Slot.FramesTaken, taken);
+				if (change) await change;
+				continue;
+			}
+			const published = sketch.step(performance.now());
+			Atomics.store(slots, Slot.FramesPublished, published);
+			Atomics.notify(slots, Slot.FramesPublished);
 		}
-		const taken = Atomics.load(slots, Slot.FramesTaken);
-		if (taken < published) {
-			const change = slotChange(slots, Slot.FramesTaken, taken);
-			if (change) await change;
-			continue;
-		}
-		published = sketch.step(performance.now());
-		Atomics.store(slots, Slot.FramesPublished, published);
-		Atomics.notify(slots, Slot.FramesPublished);
+	} catch (error) {
+		if (Atomics.load(slots, Slot.Running) !== 0) fault(error);
 	}
 }
 
@@ -420,6 +438,9 @@ export class SketchRunner {
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		const { check } = this.sketch.quality;
 		if (check && this.holdSeconds === undefined) await this.checkPreset(check.fps);
+		// Warm-ups that the setup started without waiting for them publish their frames first, so
+		// the frame loop never records while a setup frame does.
+		await this.setupFrames;
 		this.setUp = true;
 		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
 	}
@@ -453,6 +474,7 @@ export class SketchRunner {
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 					maxFps: fps,
+					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
 			);
@@ -485,7 +507,7 @@ export class SketchRunner {
 	private async settle(drawn: boolean): Promise<void> {
 		if (this.holdSeconds !== undefined) return;
 		const { slots } = this.sketch.control;
-		const target = this.setUp ? this.recorded.frame + 1 : await this.queueSetupFrame();
+		const target = this.setUp ? nextFrame(this.recorded.frame) : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
 		if (drawn) await reached(slots, Slot.FramesTaken, target);
 	}
@@ -515,15 +537,31 @@ export class SketchRunner {
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.recorded.frame);
+		while (
+			frameAfter(this.recorded.frame, Atomics.load(slots, Slot.FramesTaken)) &&
+			Atomics.load(slots, Slot.Running) !== 0
+		)
+			await reached(slots, Slot.FramesTaken, this.recorded.frame);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
 		return frame;
 	}
 
-	/** Gives the thread its own Math.random back, where hold mode seeded it. */
+	/**
+	 * Ends the sketch when the engine stops: runs its onDestroy, then makes every later call to the
+	 * engine fail with E1420, so code that outlives the engine never reaches the next engine's core.
+	 * It also gives the thread its own Math.random back, where hold mode seeded it.
+	 */
 	dispose(): void {
+		if (this.core.stopped) return;
+		try {
+			this.callbacks.onDestroy?.();
+		} catch (error) {
+			console.error(error);
+		}
+		this.core.stop();
+		stopHelperWorkers();
 		this.restoreRandom?.();
 		this.restoreRandom = undefined;
 	}
@@ -780,7 +818,8 @@ export class SketchRunner {
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.dt = dt;
-		const frame = ++this.recorded.frame;
+		const frame = nextFrame(this.recorded.frame);
+		this.recorded.frame = frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
 		this.phaseStart = start;
@@ -800,7 +839,7 @@ export class SketchRunner {
 		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
 			if (this.holdSeconds === undefined) {
-				this.input.beginFrame(frame, frame - time.frame);
+				this.input.beginFrame(frame, (frame - time.frame) | 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
 			}
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);

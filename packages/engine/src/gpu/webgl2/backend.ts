@@ -519,6 +519,7 @@ export class WebGL2Backend {
 		this.clearDepth = this.depth.standard ? 0 : 1;
 		// Texel rows in engine memory are tightly packed, whatever their width.
 		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+		this.prebuildSparePrograms();
 	}
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
@@ -887,14 +888,39 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** The program that draws mip levels, or the one that copies a layer, in use. */
-	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+	/**
+	 * The program that draws mip levels, or the one that copies a layer, which starts compiling the
+	 * first time.
+	 */
+	private spareProgramOf(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
 		let program = this.programs.get(key);
 		if (!program) {
 			const template = key === MIP_PROGRAM ? this.mipTemplate : this.copyTemplate;
 			program = createProgram(this.gl, template, 0);
 			this.programs.set(key, program);
 		}
+		return program;
+	}
+
+	/**
+	 * Starts compiling the programs that draw mip levels and copy layers, so that the driver can
+	 * compile them before the first texture upload needs them. Nothing waits for their link here.
+	 * A program that fails to start is made again at first use, which reports the failure.
+	 */
+	private prebuildSparePrograms(): void {
+		for (const key of [MIP_PROGRAM, COPY_PROGRAM] as const) {
+			try {
+				this.spareProgramOf(key);
+			} catch {}
+		}
+	}
+
+	/**
+	 * The program that draws mip levels, or the one that copies a layer, in use. Its first use
+	 * waits for its link when the driver has not finished it.
+	 */
+	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+		const program = this.spareProgramOf(key);
 		this.useProgram(program);
 		return program;
 	}

@@ -347,7 +347,7 @@ export class PointerEvents {
 	add(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
 		const code = typeCode(type, 'on');
 		// A destroyed target never takes events, and its handlers would keep the log running.
-		if (code < 0 || target.destroyedFrame >= 0) return;
+		if (code < 0 || target.destroyedFrame !== -1) return;
 		const lists = target.pointerListeners ?? new Array(TYPES.length).fill(undefined);
 		target.pointerListeners = lists;
 		const list = lists[code];
@@ -458,7 +458,7 @@ export class PointerEvents {
 		let frame = -1;
 		for (const pointer of this.pointers) {
 			if (pointer.id < 0 || !pointer.over || pointer.seen === dispatch) continue;
-			if (frame < 0) frame = this.input?.presentedFrame() ?? 0;
+			if (frame === -1) frame = this.input?.presentedFrame() ?? 0;
 			this.cast(pointer, frame, report);
 		}
 	}
@@ -549,7 +549,7 @@ export class PointerEvents {
 			const released = this.chain;
 			for (let k = 0; k < released.count; k++) {
 				const target = released.targets[k] as PointerTarget;
-				if (pressed.holds(target, released.instanceAt(k)) && target.destroyedFrame < 0) {
+				if (pressed.holds(target, released.instanceAt(k)) && target.destroyedFrame === -1) {
 					this.bubble(target, CLICK, report);
 					break;
 				}
