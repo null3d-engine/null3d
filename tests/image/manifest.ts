@@ -1053,6 +1053,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The same spheres lit by an environment alone: the built-in room, which three.js's
+	// RoomEnvironment builds, and Poly Haven's Venice Sunset through the asset tool, whose low sun
+	// shows in the smooth spheres. The last turns the sunset a quarter turn about +Y, which moves the
+	// sun's reflection. The GPU makes the room, and its generator reaches the thread that draws in
+	// each thread mode's own way, so the room draws in every mode. A held frame makes the whole room
+	// at once, which a software GPU on a busy machine does slowly, so the room's runs take a longer
+	// limit (D-19).
+	...(['room', 'venice', 'venice&rotate'] as const).map(
+		(env): ImageTest => ({
+			name: `environment-${env.replace('&rotate', '-rotated')}`,
+			sketch: `tests/pages/sketches/standard-sketch.ts?scene=grid&env=${env}`,
+			hold: 0,
+			size: [GRID_IMAGE.width, GRID_IMAGE.height],
+			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

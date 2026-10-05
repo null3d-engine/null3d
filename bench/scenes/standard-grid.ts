@@ -2,7 +2,9 @@
 // which the parity test compares them with. It is plain data with no engine imports: spheres over
 // metalness, in rows from 0 at the top to 1, and roughness, in columns from 0 to 1, lit by a sun and
 // an ambient light. The view, the background and the lights also serve the standard material's
-// features test.
+// features test. The environment tests light the same grid with an environment alone.
+
+import { sampleUrl } from '../../tools/lib/sample-url';
 
 type Vec3 = readonly [number, number, number];
 
@@ -61,3 +63,18 @@ export const GRID_CELLS: readonly GridCell[] = Array.from(
 		};
 	},
 );
+
+/**
+ * The environments that light the grid in its environment tests, with no sun and no ambient light:
+ * the room of three.js's `RoomEnvironment`, built in, and Poly Haven's Venice Sunset, an HDR file
+ * with a low sun, which the asset tool turns into an environment map.
+ */
+export const GRID_ENVIRONMENTS = {
+	room: { builtin: 'room' },
+	venice: { hdr: sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr') },
+} as const;
+
+export type GridEnvironmentName = keyof typeof GRID_ENVIRONMENTS;
+
+/** The environment's turn in the rotated test: a quarter turn about +Y, as three.js's Euler angles. */
+export const GRID_ENVIRONMENT_ROTATION = [0, Math.PI / 2, 0] as const;

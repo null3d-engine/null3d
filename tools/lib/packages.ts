@@ -67,7 +67,6 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'lib/workers/transcoder-worker.js',
 			'vendor/basis/basis_transcoder.js',
 			'vendor/basis/basis_transcoder.wasm',
-			'environments/room.ktx2',
 			'docs/index.md',
 		],
 	},
