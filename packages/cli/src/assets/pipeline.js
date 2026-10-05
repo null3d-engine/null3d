@@ -1,7 +1,8 @@
 // The asset tool's steps for one model, which the assets optimize command and the Vite plugin
-// share: read a glTF file, reorder, simplify and quantize its meshes, encode its textures to KTX2,
-// compress its buffers with meshopt unless told not to, and write a binary glTF file with its
-// texture files beside it. The same input and options give the same bytes on every machine.
+// share: read a glTF file, put its clips on the engine's frames, reorder, simplify and quantize
+// its meshes, encode its textures to KTX2, compress its buffers with meshopt unless told not to,
+// and write a binary glTF file with its texture files beside it. The same input and options
+// give the same bytes on every machine.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, extname, resolve } from 'node:path';
@@ -13,6 +14,7 @@ import {
 } from '@gltf-transform/extensions';
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { VERSION } from '../version.js';
+import { bakeClips, MeshoptWithRotationFilter } from './clips.js';
 import { planLevels, quantizeMeshes, reorderMeshes, storeLevels } from './geometry.js';
 import { MAX_TEXTURE_SIDE } from './images.js';
 import { MSFTLod } from './lod-extension.js';
@@ -230,6 +232,7 @@ export async function optimizeModel(path, options, encode) {
 			)
 		)
 			extension.dispose();
+	bakeClips(doc);
 	await reorderMeshes(doc);
 	const levels = options.lod ? await planLevels(doc) : new Map();
 	quantizeMeshes(doc);
@@ -250,7 +253,7 @@ export async function optimizeModel(path, options, encode) {
 	tidyBuffers(doc);
 	if (options.meshopt)
 		doc
-			.createExtension(EXTMeshoptCompression)
+			.createExtension(MeshoptWithRotationFilter)
 			.setRequired(true)
 			.setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
 	const glb = await writeGlb(io, doc, uris);

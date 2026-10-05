@@ -16,7 +16,7 @@ use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::geometry::Geometry;
-use null3d_render::materials::{CustomShading, Shading, feature};
+use null3d_render::materials::{CustomShading, MATERIAL_TEXELS, Shading, feature};
 use null3d_render::pipelines::DepthBias;
 
 /// One triangle, with a color at each vertex when `colored`.
@@ -325,7 +325,7 @@ fn custom_values_upload_after_the_rows_on_webgl2() {
     let world = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
     check_custom_values(
         world,
-        |(op, o)| (*op == Op::WriteTexture && o[5] == 8).then(|| o[3]),
+        |(op, o)| (*op == Op::WriteTexture && o[5] == MATERIAL_TEXELS).then(|| o[3]),
         |capacity| capacity + 1,
     );
 }

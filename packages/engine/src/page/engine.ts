@@ -1340,6 +1340,7 @@ async function startEngine(
 			powerPreference,
 			fps: switches.fps,
 			queue: switches.queue,
+			displayChecks: switches.displayChecks,
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
 			preload: options.preload,
