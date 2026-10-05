@@ -49,17 +49,20 @@ impl TexelFormat {
         }
     }
 
+    /// A channel of light as the format stores it: from 0 up to the largest value it holds. A
+    /// brighter value, such as a sun above the largest 16-bit float, would turn into infinity,
+    /// and NaN and negative values, which light cannot have, become 0.
+    fn channel(self, c: f32) -> f32 {
+        if c > 0.0 { c.min(self.max()) } else { 0.0 }
+    }
+
     /// Appends a texel's bytes.
     fn push(self, out: &mut Vec<u8>, rgb: [f32; 3]) {
         match self {
             Self::Rgb9e5 => out.extend(rgb9e5(rgb).to_le_bytes()),
             Self::Rgba16Float => {
                 for c in rgb {
-                    out.extend(
-                        half::f16::from_f32(c.min(self.max()))
-                            .to_bits()
-                            .to_le_bytes(),
-                    );
+                    out.extend(half::f16::from_f32(self.channel(c)).to_bits().to_le_bytes());
                 }
                 out.extend(half::f16::ONE.to_bits().to_le_bytes());
             }
@@ -101,8 +104,7 @@ fn pow2(e: i32) -> f32 {
 pub fn rgb9e5(rgb: [f32; 3]) -> u32 {
     const MANTISSA_BITS: i32 = 9;
     const BIAS: i32 = 15;
-    let max = TexelFormat::Rgb9e5.max();
-    let [r, g, b] = rgb.map(|c| if c > 0.0 { c.min(max) } else { 0.0 });
+    let [r, g, b] = rgb.map(|c| TexelFormat::Rgb9e5.channel(c));
     let largest = r.max(g).max(b);
     if largest < pow2(-BIAS - MANTISSA_BITS) {
         return 0;
@@ -274,19 +276,31 @@ mod tests {
         assert_eq!(&file[kvd + 4..kvd + 13], b"KTXwriter");
     }
 
-    #[test]
-    fn half_float_texels_carry_an_opaque_alpha() {
+    /// The first texel of a one-texel cube of half floats, after the file lays it out.
+    fn half_texel(rgb: [f32; 3]) -> [f32; 4] {
         let file = write(
-            &[Cube::from_fn(1, 1, |_| [0.5, 1.0, 2.0])],
+            &[Cube::from_fn(1, 1, |_| rgb)],
             TexelFormat::Rgba16Float,
             &[],
         );
         let at = u64::from_le_bytes(file[80..88].try_into().unwrap()) as usize;
         assert_eq!(at % 8, 0);
-        let half = |i: usize| {
+        [0, 1, 2, 3].map(|i| {
             half::f16::from_bits(u16::from_le_bytes([file[at + 2 * i], file[at + 2 * i + 1]]))
                 .to_f32()
-        };
-        assert_eq!([half(0), half(1), half(2), half(3)], [0.5, 1.0, 2.0, 1.0]);
+        })
+    }
+
+    #[test]
+    fn half_float_texels_carry_an_opaque_alpha() {
+        assert_eq!(half_texel([0.5, 1.0, 2.0]), [0.5, 1.0, 2.0, 1.0]);
+    }
+
+    #[test]
+    fn half_float_texels_stay_finite_and_never_negative() {
+        let [r, g, b, _] = half_texel([1e6, f32::NAN, -3.0]);
+        assert_eq!([r, g, b], [65_504.0, 0.0, 0.0]);
+        let [r, g, b, _] = half_texel([f32::INFINITY, 70_000.0, f32::NEG_INFINITY]);
+        assert_eq!([r, g, b], [65_504.0, 65_504.0, 0.0]);
     }
 }

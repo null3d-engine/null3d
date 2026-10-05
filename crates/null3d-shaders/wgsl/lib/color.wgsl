@@ -20,6 +20,17 @@ fn srgb_to_linear(c: vec3f) -> vec3f {
     return select(high, low, c <= vec3f(0.04045));
 }
 
+/// The brightest linear color that the engine stores in a 16-bit float target: one step below
+/// the largest 16-bit float, 65,504. Some GPUs store a larger value as infinity, and the tone
+/// mapping curves turn infinity into black.
+const HDR_LIMIT: f32 = 65472.0;
+
+/// A linear color with each channel no brighter than HDR_LIMIT, so that a 16-bit float target
+/// holds it. Infinity becomes HDR_LIMIT too.
+fn limit_hdr(c: vec3f) -> vec3f {
+    return min(c, vec3f(HDR_LIMIT));
+}
+
 /// The relative luminance of a linear color, with the Rec. 709 weights that three.js uses.
 fn luminance(c: vec3f) -> f32 {
     return dot(c, vec3f(0.2126, 0.7152, 0.0722));

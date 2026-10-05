@@ -114,7 +114,7 @@ fn write_stage(
     })?;
 
     source = crate::half::mediump_items(&source, mediump);
-    source = unroll_array_constructors(&source);
+    source = lower_arrays(&source);
     source = drop_unused_constants(&source);
 
     let entry = module
@@ -370,53 +370,201 @@ fn is_whole_word(source: &str, at: usize, len: usize) -> bool {
     before && after
 }
 
-/// Fills each local array that naga declares with a sized array constructor one element at a
-/// time, so the GLSL holds no array constructor. Arm's Mali compiler rejects a sized constructor
-/// such as `vec3[9](a, b, ...)` whose values are not constants: it finds no default precision for
-/// the array type, although the shader declares one for `float`. naga writes such a declaration
-/// on one line, indented inside a function, in the form `T name[N] = T[N](values);`. Other lines,
-/// and globals, stay as they are.
-pub(crate) fn unroll_array_constructors(source: &str) -> String {
+/// The name of the parameter through which a function that returns an array gives its result.
+const ARRAY_RESULT: &str = "_n3d_result";
+/// The start of the names of the arrays that take array constructors' values. naga's namer never
+/// gives a user's name a leading underscore, and naga's own names start with `_e`, `_group` and
+/// the stage prefixes.
+const ARRAY_TEMPORARY: &str = "_n3d_array";
+
+/// Rewrites the GLSL of a stage so that no line inside a function names a sized array type, such
+/// as `vec3[9]`. Arm's Mali compiler rejects a sized array constructor such as `vec3[9](a, b, ...)`
+/// whose values are not constants, and an array type as a function's result: it finds no default
+/// precision for the array type, although the shader declares one for `float`.
+///
+/// - A function that returns an array gives it through an `out` parameter instead. Each call
+///   passes the array that naga declares for the result.
+/// - Inside functions, each array constructor becomes an array that its values fill one element
+///   at a time. A declaration whose whole value is a constructor fills the declared array itself.
+///   naga writes each call on a line of its own, and the other expressions have no side effects,
+///   so a constructor's values can move to the lines before the line that holds it.
+///
+/// Constructors at global scope hold constants only, and stay as they are.
+pub(crate) fn lower_arrays(source: &str) -> String {
+    lower_array_constructors(&lower_array_results(source))
+}
+
+/// The type, size, name and parameters of a function's first line `T[N] name(params) {`, which
+/// returns an array.
+fn array_result_definition(line: &str) -> Option<(&str, &str, &str, &str)> {
+    let (ty, rest) = line.split_once('[')?;
+    let (size, rest) = rest.split_once("] ")?;
+    let (name, params) = rest.split_once('(')?;
+    let params = params.strip_suffix(") {")?;
+    (is_identifier(ty) && is_size(size) && is_identifier(name)).then_some((ty, size, name, params))
+}
+
+/// The result's type, name and size, the function and its arguments of a line that calls one of
+/// `functions` in naga's form `T name[N] = function(args);`.
+fn array_result_call<'a>(
+    body: &'a str,
+    functions: &[&str],
+) -> Option<(&'a str, &'a str, &'a str, &'a str, &'a str)> {
+    let (declaration, call) = body.split_once(" = ")?;
+    let (ty, declarator) = declaration.split_once(' ')?;
+    let (name, size) = declarator.strip_suffix(']')?.split_once('[')?;
+    let (function, args) = call.strip_suffix(");")?.split_once('(')?;
+    (is_identifier(ty) && is_identifier(name) && is_size(size) && functions.contains(&function))
+        .then_some((ty, name, size, function, args))
+}
+
+/// Gives the result of each function that returns an array through an `out` parameter.
+fn lower_array_results(source: &str) -> String {
+    let functions: Vec<&str> = source
+        .lines()
+        .filter_map(|line| array_result_definition(line).map(|(_, _, name, _)| name))
+        .collect();
+    if functions.is_empty() {
+        return source.to_owned();
+    }
     let mut out = String::with_capacity(source.len() + source.len() / 16);
+    // True inside the body of a function that returns an array. naga closes a function with a
+    // brace at the start of a line.
+    let mut inside = false;
     for line in source.split_inclusive('\n') {
-        match unrolled_declaration(line) {
-            Some(lines) => out.push_str(&lines),
-            None => out.push_str(line),
+        let text = line.trim_end_matches('\n');
+        let body = text.trim_start();
+        let indent = &text[..text.len() - body.len()];
+        if let Some((ty, size, name, params)) = array_result_definition(text) {
+            let separator = if params.is_empty() { "" } else { ", " };
+            out.push_str(&format!(
+                "void {name}({params}{separator}out {ty} {ARRAY_RESULT}[{size}]) {{\n"
+            ));
+            inside = true;
+        } else if let Some(value) = body.strip_prefix("return ").filter(|_| inside) {
+            let value = value.strip_suffix(';').unwrap_or(value);
+            out.push_str(&format!(
+                "{indent}{ARRAY_RESULT} = {value};\n{indent}return;\n"
+            ));
+        } else if let Some((ty, name, size, function, args)) = array_result_call(body, &functions) {
+            let separator = if args.is_empty() { "" } else { ", " };
+            out.push_str(&format!(
+                "{indent}{ty} {name}[{size}];\n{indent}{function}({args}{separator}{name});\n"
+            ));
+        } else {
+            inside &= text != "}";
+            out.push_str(line);
         }
     }
     out
 }
 
-/// The declaration and element assignments that replace one line of the form
-/// `T name[N] = T[N](values);`, or `None` for any other line.
-fn unrolled_declaration(line: &str) -> Option<String> {
-    let body = line.trim_start();
-    let indent = &line[..line.len() - body.len()];
-    let body = body.trim_end();
-    if indent.is_empty() {
-        return None;
+/// An array constructor `T[N](values)` in a line: where it starts and ends, and its type, size and
+/// values.
+struct Constructor<'a> {
+    start: usize,
+    end: usize,
+    ty: &'a str,
+    size: &'a str,
+    values: Vec<&'a str>,
+}
+
+/// The constructor in `line` that starts last, which therefore holds no other constructor.
+fn last_constructor(line: &str) -> Option<Constructor<'_>> {
+    line.rmatch_indices("](").find_map(|(close, _)| {
+        let open = line[..close].rfind('[')?;
+        let size = &line[open + 1..close];
+        let start = line[..open]
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map_or(0, |at| at + 1);
+        let ty = &line[start..open];
+        if !is_size(size) || !is_identifier(ty) {
+            return None;
+        }
+        let first = close + 2;
+        let length = closing_parenthesis(&line[first..])?;
+        let values = split_arguments(&line[first..first + length])?;
+        (values.len() == size.parse::<usize>().ok()?).then_some(Constructor {
+            start,
+            end: first + length + 1,
+            ty,
+            size,
+            values,
+        })
+    })
+}
+
+/// Moves each array constructor inside a function into an array that its values fill one element
+/// at a time, on the lines before the constructor's line.
+fn lower_array_constructors(source: &str) -> String {
+    let mut out = String::with_capacity(source.len() + source.len() / 16);
+    let mut temporaries = 0;
+    for line in source.split_inclusive('\n') {
+        let mut text = line.trim_end_matches('\n').to_owned();
+        let body_at = text.len() - text.trim_start().len();
+        if body_at == 0 || last_constructor(&text).is_none() {
+            out.push_str(line);
+            continue;
+        }
+        let indent = text[..body_at].to_owned();
+        while let Some(c) = last_constructor(&text) {
+            let whole_value = c.end + 1 == text.len() && text.ends_with(';');
+            let declared = whole_value
+                .then(|| declared_array(&text[body_at..c.start], c.ty, c.size))
+                .flatten()
+                .map(str::to_owned);
+            let array = declared.clone().unwrap_or_else(|| {
+                temporaries += 1;
+                format!("{ARRAY_TEMPORARY}{temporaries}")
+            });
+            out.push_str(&format!("{indent}{} {array}[{}];\n", c.ty, c.size));
+            for (index, value) in c.values.iter().enumerate() {
+                out.push_str(&format!("{indent}{array}[{index}] = {value};\n"));
+            }
+            if declared.is_some() {
+                text.clear();
+                break;
+            }
+            text.replace_range(c.start..c.end, &array);
+        }
+        if !text.is_empty() {
+            out.push_str(&text);
+            out.push('\n');
+        }
     }
-    let (declaration, value) = body.split_once(" = ")?;
-    let (ty, declarator) = declaration.split_once(' ')?;
-    let (name, size) = declarator.strip_suffix(']')?.split_once('[')?;
-    if !is_identifier(ty) || !is_identifier(name) || !size.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let values = value
+    out
+}
+
+/// The name that `head`, the start of a declaration `T name[N] = ` before its value, declares when
+/// its type and size are `ty` and `size`.
+fn declared_array<'a>(head: &'a str, ty: &str, size: &str) -> Option<&'a str> {
+    let name = head
         .strip_prefix(ty)?
-        .strip_prefix('[')?
-        .strip_prefix(size)?
-        .strip_prefix("](")?
-        .strip_suffix(");")?;
-    let values = split_arguments(values)?;
-    if values.len() != size.parse::<usize>().ok()? {
-        return None;
+        .strip_prefix(' ')?
+        .strip_suffix(" = ")?
+        .strip_suffix(']')?
+        .strip_suffix(size)?
+        .strip_suffix('[')?;
+    is_identifier(name).then_some(name)
+}
+
+/// True for an array size: decimal digits.
+fn is_size(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// The length of the text before the parenthesis that closes the one opened just before `text`.
+fn closing_parenthesis(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' if depth == 0 => return Some(at),
+            ')' => depth -= 1,
+            _ => {}
+        }
     }
-    let mut out = format!("{indent}{declaration};\n");
-    for (index, value) in values.iter().enumerate() {
-        out.push_str(&format!("{indent}{name}[{index}] = {value};\n"));
-    }
-    Some(out)
+    None
 }
 
 /// True for a GLSL identifier.
@@ -457,8 +605,22 @@ mod tests {
     #[test]
     fn local_array_constructors_become_element_assignments() {
         let source = "vec2 corners[2] = vec2[2](vec2(0.0), vec2(1.0));\nvoid main() {\n    vec3 sh_1[3] = vec3[3](f[1].xyz, vec3(f[1].w, f[2].xy), min(a, b));\n        uvec4 u[2] = uvec4[2](uvec4(0u), uvec4(0u));\n    vec3 x = vec3[3](a, b, c)[i];\n    vec2 w[3] = vec2[3](a, b);\n}\n";
-        let expected = "vec2 corners[2] = vec2[2](vec2(0.0), vec2(1.0));\nvoid main() {\n    vec3 sh_1[3];\n    sh_1[0] = f[1].xyz;\n    sh_1[1] = vec3(f[1].w, f[2].xy);\n    sh_1[2] = min(a, b);\n        uvec4 u[2];\n        u[0] = uvec4(0u);\n        u[1] = uvec4(0u);\n    vec3 x = vec3[3](a, b, c)[i];\n    vec2 w[3] = vec2[3](a, b);\n}\n";
-        assert_eq!(unroll_array_constructors(source), expected);
+        let expected = "vec2 corners[2] = vec2[2](vec2(0.0), vec2(1.0));\nvoid main() {\n    vec3 sh_1[3];\n    sh_1[0] = f[1].xyz;\n    sh_1[1] = vec3(f[1].w, f[2].xy);\n    sh_1[2] = min(a, b);\n        uvec4 u[2];\n        u[0] = uvec4(0u);\n        u[1] = uvec4(0u);\n    vec3 _n3d_array1[3];\n    _n3d_array1[0] = a;\n    _n3d_array1[1] = b;\n    _n3d_array1[2] = c;\n    vec3 x = _n3d_array1[i];\n    vec2 w[3] = vec2[3](a, b);\n}\n";
+        assert_eq!(lower_arrays(source), expected);
+    }
+
+    #[test]
+    fn assigned_nested_and_passed_array_constructors_move_to_temporaries() {
+        let source = "void main() {\n    a = vec3[2](a[1], a[0]);\n    P p = P(float[2](x, float[2](y, z)[i]), 1.0);\n}\n";
+        let expected = "void main() {\n    vec3 _n3d_array1[2];\n    _n3d_array1[0] = a[1];\n    _n3d_array1[1] = a[0];\n    a = _n3d_array1;\n    float _n3d_array2[2];\n    _n3d_array2[0] = y;\n    _n3d_array2[1] = z;\n    float _n3d_array3[2];\n    _n3d_array3[0] = x;\n    _n3d_array3[1] = _n3d_array2[i];\n    P p = P(_n3d_array3, 1.0);\n}\n";
+        assert_eq!(lower_arrays(source), expected);
+    }
+
+    #[test]
+    fn functions_that_return_arrays_give_them_through_a_parameter() {
+        let source = "vec3[2] pick(vec2 u) {\n    if (u.x > 0.5) {\n        return vec3[2](u.xxx, u.yyy);\n    }\n    return _e4;\n}\n\nfloat[2] none() {\n    return w;\n}\n\nvoid main() {\n    vec3 _e20[2] = pick(uv);\n    float _e21[2] = none();\n    return;\n}\n";
+        let expected = "void pick(vec2 u, out vec3 _n3d_result[2]) {\n    if (u.x > 0.5) {\n        vec3 _n3d_array1[2];\n        _n3d_array1[0] = u.xxx;\n        _n3d_array1[1] = u.yyy;\n        _n3d_result = _n3d_array1;\n        return;\n    }\n    _n3d_result = _e4;\n    return;\n}\n\nvoid none(out float _n3d_result[2]) {\n    _n3d_result = w;\n    return;\n}\n\nvoid main() {\n    vec3 _e20[2];\n    pick(uv, _e20);\n    float _e21[2];\n    none(_e21);\n    return;\n}\n";
+        assert_eq!(lower_arrays(source), expected);
     }
 
     #[test]
