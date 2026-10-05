@@ -1,5 +1,7 @@
 // Checks of the engine test page's result, shared by the Playwright tests and the real-browser runner.
 
+import { SAMPLED_EVERY } from '../../packages/engine/src/shared/metrics.ts';
+
 export interface EngineMode {
 	name: string;
 	/** URL switches that select the mode. */
@@ -213,9 +215,15 @@ export function engineProblems(
 		if (!((stats.threads[thread]?.busyMs.count ?? 0) > 0))
 			problems.push(`no frame records from the ${thread} thread`);
 	}
+	// The engine times one frame in every few while the page measures. Most of those must come
+	// back: a browser that drops nearly all of them still has a few.
 	const timestamps = tier === 'webgpu' && result.capabilities.features.includes('timestamp-query');
-	if (timestamps && !((stats.gpuMs?.count ?? 0) > 0))
-		problems.push('no GPU times, although the device has timestamp queries');
+	const sampled = Math.floor(stats.frames / SAMPLED_EVERY);
+	const gpuTimes = stats.gpuMs?.count ?? 0;
+	if (timestamps && gpuTimes < Math.max(1, sampled / 2))
+		problems.push(
+			`GPU times for ${gpuTimes} of about ${sampled} sampled frames, although the device has timestamp queries`,
+		);
 	if (!((stats.completedFps ?? 0) > 0) || !((stats.gpuLatencyMs?.count ?? 0) > 0))
 		problems.push('no frame completions were counted');
 	// The job workers cull on WebGL2 and count the visible entries; on WebGPU the GPU culls.
