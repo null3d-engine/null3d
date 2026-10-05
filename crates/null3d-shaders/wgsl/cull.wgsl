@@ -11,6 +11,11 @@
 // the instance by its cell's offset from the camera before it tests it. The compacted instance
 // buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
 //
+// A bucket whose vertex shaders read their instances by index (the INSTANCE_INDEX builds, which a
+// test switch asks for) takes no copy: its slice of a second compacted buffer gets each survivor's
+// index, 4 bytes in place of 64, and the vertex shader reads the matrix, the material and the
+// cell's offset itself (decision record D-23).
+//
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
 //
@@ -46,7 +51,8 @@ struct CullParams {
 /// its indirect draws, one per part of the mesh, from `first_draw` on. Its instances are culled
 /// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A skinned
 /// object's bucket names the first joint of its skin, which the vertex shaders that skin read
-/// beside the material.
+/// beside the material. A bucket with `indices` 1 writes each survivor's index into its slice of
+/// the compacted index buffer instead, from `base` on.
 struct Bucket {
     base: u32,
     material: u32,
@@ -57,6 +63,7 @@ struct Bucket {
     center_y: f32,
     center_z: f32,
     first_joint: u32,
+    indices: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -68,6 +75,9 @@ struct Bucket {
 @group(0) @binding(6) var<storage, read> instance_layers: array<u32>;
 /// The instances in cell order: each cell's still instances, then the ones that move.
 @group(0) @binding(7) var<storage, read> order: array<u32>;
+/// The compacted index buffer: each survivor's index, in the slices of the buckets that read their
+/// instances by index.
+@group(0) @binding(8) var<storage, read_write> visible_indices: array<u32>;
 
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
@@ -138,6 +148,10 @@ fn main(
     let slot = atomicAdd(&indirect[bucket.first_draw * INDIRECT_WORDS + 1u], 1u);
     for (var d = 1u; d < bucket.draws; d++) {
         atomicAdd(&indirect[(bucket.first_draw + d) * INDIRECT_WORDS + 1u], 1u);
+    }
+    if bucket.indices != 0u {
+        visible_indices[bucket.base + slot] = i;
+        return;
     }
     let dst = (bucket.base + slot) * 4u;
     visible[dst] = r0;

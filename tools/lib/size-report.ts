@@ -159,9 +159,10 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 
 /**
  * The shader build's modules of features that load on demand, beside the device modules: the
- * MORPH builds of WebGL2, which a page loads the first time it draws a morphed mesh, and the
- * texture generators' shaders, one file for each target, which the thread that draws loads with
- * the first generator. No start counts them, and each has a budget of its own
+ * MORPH builds of WebGL2, which a page loads the first time it draws a morphed mesh, the
+ * INSTANCE_INDEX builds of WebGPU, which only the test switch for index-only instance data loads,
+ * and the texture generators' shaders, one file for each target, which the thread that draws loads
+ * with the first generator. No start counts them, and each has a budget of its own
  * ([`ON_DEMAND_SHADER_BUDGET_BYTES`]).
  */
 export const ON_DEMAND_SHADER_PARTS: readonly string[] = [
@@ -173,6 +174,10 @@ export const ON_DEMAND_SHADER_PARTS: readonly string[] = [
 	'shaders-glsl-tone-map-morph-half.js',
 	'shaders-glsl-draw-index-morph-half.js',
 	'shaders-glsl-draw-index-tone-map-morph-half.js',
+	'shaders-wgsl-instance-index.js',
+	'shaders-wgsl-tone-map-instance-index.js',
+	'shaders-wgsl-half-instance-index.js',
+	'shaders-wgsl-tone-map-half-instance-index.js',
 	'shaders-environment-wgsl.js',
 	'shaders-environment-glsl.js',
 ];

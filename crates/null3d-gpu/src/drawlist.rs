@@ -646,6 +646,12 @@ pub mod layout {
     /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
     /// textures that the step reads with `textureLoad`.
     pub const AO: u32 = 18;
+    /// The group after a template's own groups in the WebGPU builds that read their instances by
+    /// index ([`INSTANCE_INDEX`](super::permutation::INSTANCE_INDEX)): the view's culling
+    /// parameters as a uniform block, for the offset from the camera to each cell, then the world
+    /// matrices, the bucket table and the bucket records of the layout that the view draws, which
+    /// vertex shaders read.
+    pub const INSTANCE_INDEX: u32 = 20;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -703,9 +709,14 @@ pub mod permutation {
     /// The outline mask template marks the parts of outlined objects that nothing hides. Without
     /// it, the template marks every part, hidden or not.
     pub const OUTLINE_VISIBLE: u32 = 65536;
+    /// On WebGPU, the vertex shader reads its instance by index: an instance-rate vertex attribute
+    /// names the source, and the shader reads the source's world matrix, its bucket's material and
+    /// its cell's offset from storage buffers, instead of a copy that the culling shader writes.
+    /// Only the test switch for index-only instance data asks for it (decision record D-23).
+    pub const INSTANCE_INDEX: u32 = 131072;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 17] = [
+    pub const NAMES: [(&str, u32); 18] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -723,6 +734,7 @@ pub mod permutation {
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("INSTANCE_INDEX", INSTANCE_INDEX),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -734,8 +746,9 @@ pub mod permutation {
 
     /// The bits of features whose builds go into device modules of their own, beside those of
     /// the device's bits, which a page loads the first time a pipeline asks for one: morph
-    /// targets, which WebGL2 draws with MORPH builds of every template that draws meshes.
-    pub const ON_DEMAND: u32 = MORPH;
+    /// targets, which WebGL2 draws with MORPH builds of every template that draws meshes, and
+    /// index-only instance data, which only a test switch asks for.
+    pub const ON_DEMAND: u32 = MORPH | INSTANCE_INDEX;
 
     /// Every bit.
     pub const ALL: u32 = {
@@ -1144,6 +1157,8 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
+    /// Bytes per compacted instance that a vertex shader reads by index: the source's index.
+    pub const INDEX_STRIDE: u32 = 4;
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, and the
@@ -1156,9 +1171,10 @@ pub mod sizes {
     /// 32-bit words per indexed indirect draw.
     pub const INDIRECT_WORDS: u32 = 5;
     /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
-    /// local sphere's radius, its first draw and draw count, the sphere's centre, and the first
-    /// joint of a skin that the vertex shader skins.
-    pub const BUCKET_WORDS: u32 = 9;
+    /// local sphere's radius, its first draw and draw count, the sphere's centre, the first joint
+    /// of a skin that the vertex shader skins, and 1 for a bucket whose slice holds source indices
+    /// instead of copies of the matrices.
+    pub const BUCKET_WORDS: u32 = 10;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
@@ -1561,6 +1577,7 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
+                ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1670,6 +1687,7 @@ pub fn typescript_constants() -> String {
             "SIZE",
             &[
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
+                ("INDEX_STRIDE", sizes::INDEX_STRIDE),
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
                 ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),

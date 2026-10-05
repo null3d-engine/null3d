@@ -390,8 +390,11 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
 /// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
-/// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
-/// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// the vertex shader of each pass, not in a compute pass. With `index_instances`, WebGPU's vertex
+/// shaders read each culled instance by index from storage buffers, not from a copy that the
+/// culling shader writes, for the test of decision record D-23. With `large_world`, each object's
+/// position holds whole cells besides its 32-bit part, so positions keep their precision at any
+/// distance.
 /// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
@@ -410,6 +413,7 @@ pub fn init_engine(
     cell_culling: bool,
     depth_prepass: bool,
     vertex_skinning: bool,
+    index_instances: bool,
     large_world: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
@@ -469,6 +473,7 @@ pub fn init_engine(
                 cell_culling,
                 depth_prepass,
                 vertex_skinning,
+                index_instances,
                 ..RendererConfig::default()
             }))
         },

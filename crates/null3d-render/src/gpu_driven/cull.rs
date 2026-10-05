@@ -13,6 +13,13 @@
 //! source, and copies the moved matrix into the compacted instance buffer, so the vertex shader
 //! draws positions relative to the view's camera.
 //!
+//! A bucket whose pipelines read their instances by index (see
+//! [`super::RendererConfig::index_instances`]) gets no copy: the shader writes each visible
+//! source's index into the bucket's slice of the view's compacted index buffer. The view's index
+//! group then gives those pipelines' vertex shaders the view's culling parameters, for the cells'
+//! offsets, the scene's matrices, and the bucket tables of the layout that the view draws. It binds
+//! the same buffers as the culling group, so it is made again whenever that group is.
+//!
 //! When the scene's sources lie in more than one grid cell, the CPU first finds the cells whose
 //! still sources a view can see (see [`crate::cells`]). The view's parameters then hold the runs of
 //! the cell order that it culls: the visible cells' runs and the moving sources' run. Its dispatch
@@ -53,7 +60,9 @@ pub(super) const CULL_PARAMS_BYTES: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 /// The buffers of the culling pass's bind group, one per binding.
-const CULL_BINDINGS: usize = 8;
+const CULL_BINDINGS: usize = 9;
+/// The buffers of a view's index group, one per binding.
+const INDEX_BINDINGS: usize = 4;
 /// Words of the culling pass's bind group entries: three for the group, five per buffer.
 const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
 
@@ -68,6 +77,7 @@ const _: () = assert!(sizes::MAX_CULL_RANGES == MAX_CELLS / 2 + 1);
 struct ViewBuffers {
     visible: u32,
     indirect: u32,
+    indices: u32,
     groups: u32,
     ranges: Vec<[u32; 4]>,
     range_count: usize,
@@ -78,6 +88,7 @@ impl Default for ViewBuffers {
         Self {
             visible: 0,
             indirect: 0,
+            indices: 0,
             groups: 0,
             ranges: vec![[0; 4]; sizes::MAX_CULL_RANGES as usize],
             range_count: 0,
@@ -92,6 +103,14 @@ pub(super) struct Culling {
     views: Vec<Option<ViewBuffers>>,
     /// The offsets from the camera of the view being uploaded to each cell in use.
     offsets: CellOffsets,
+    /// True when each view has an index group, for the pipelines that read their instances by
+    /// index.
+    index_instances: bool,
+}
+
+/// A bind group entry that binds all of `buffer` at `binding`.
+fn buffer_entry(binding: usize, buffer: u32) -> [u32; 5] {
+    [binding as u32, resource_kind::BUFFER, buffer, 0, 0]
 }
 
 /// Records the creation of the culling pipeline.
@@ -101,6 +120,14 @@ pub(super) fn create_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
 }
 
 impl Culling {
+    /// The culling passes, with an index group for each view with `index_instances`.
+    pub(super) fn new(index_instances: bool) -> Self {
+        Self {
+            index_instances,
+            ..Self::default()
+        }
+    }
+
     /// True when a view's culling buffers exist.
     pub(super) fn has_view(&self, view: ViewId) -> bool {
         self.views.get(view.index()).is_some_and(Option::is_some)
@@ -130,10 +157,11 @@ impl Culling {
         Ok(())
     }
 
-    /// Sizes a view's compacted instance and indirect buffers for the layout, at most
-    /// `binding_bytes` each, and binds its culling group again when a buffer it binds is new:
+    /// Sizes a view's compacted instance, indirect and compacted index buffers for the layout, at
+    /// most `binding_bytes` each, and binds its culling group again when a buffer it binds is new:
     /// one of its own, or one of the layouts' (`shared_recreated`). The group binds the layout's
-    /// bucket tables beside the scene's matrices and layer table.
+    /// bucket tables beside the scene's matrices and layer table. Its index group, where views
+    /// have one, binds again with it.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
@@ -150,7 +178,7 @@ impl Culling {
             (
                 ids::visible(view),
                 &mut buffers.visible,
-                layout.drawable().max(1) * sizes::INSTANCE_STRIDE,
+                layout.copied.max(1) * sizes::INSTANCE_STRIDE,
                 usage::VERTEX | usage::STORAGE,
             ),
             (
@@ -158,6 +186,12 @@ impl Culling {
                 &mut buffers.indirect,
                 draws.max(1) * INDIRECT_BYTES,
                 usage::INDIRECT | usage::STORAGE | usage::COPY_DST,
+            ),
+            (
+                ids::visible_indices(view),
+                &mut buffers.indices,
+                layout.indexed.max(1) * sizes::INDEX_STRIDE,
+                usage::VERTEX | usage::STORAGE,
             ),
         ];
         let mut recreated = shared_recreated;
@@ -185,20 +219,34 @@ impl Culling {
                 ids::indirect(view),
                 ids::SOURCE_LAYERS,
                 ids::ORDER,
+                ids::visible_indices(view),
             ]
             .into_iter()
             .enumerate()
             {
                 let at = 3 + binding * 5;
-                entries[at..at + 5].copy_from_slice(&[
-                    binding as u32,
-                    resource_kind::BUFFER,
-                    buffer,
-                    0,
-                    0,
-                ]);
+                entries[at..at + 5].copy_from_slice(&buffer_entry(binding, buffer));
             }
             list.push(Op::CreateBindGroup, &entries)?;
+            if self.index_instances {
+                let mut entries = [0u32; 3 + INDEX_BINDINGS * 5];
+                entries[..3].copy_from_slice(&[
+                    ids::index_group(view),
+                    bind_layout::INSTANCE_INDEX,
+                    INDEX_BINDINGS as u32,
+                ]);
+                let buffers = [
+                    ids::cull_params(view),
+                    ids::MATRICES,
+                    bucket_table,
+                    bucket_records,
+                ];
+                for (binding, buffer) in buffers.into_iter().enumerate() {
+                    let at = 3 + binding * 5;
+                    entries[at..at + 5].copy_from_slice(&buffer_entry(binding, buffer));
+                }
+                list.push(Op::CreateBindGroup, &entries)?;
+            }
         }
         Ok(())
     }
