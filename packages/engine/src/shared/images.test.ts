@@ -101,6 +101,52 @@ describe('images on their way to the thread that draws', () => {
 	});
 });
 
+describe('texture generators on their way to the thread that draws', () => {
+	test('count once their code has loaded, and images after them count after them', async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const send = sendToTable(table, slots);
+		const code = { room: () => {} };
+		let load: (loaded: unknown) => void = () => {};
+		const loading = new Promise((resolve) => {
+			load = resolve;
+		});
+		table.loadGeneratorsWith(() => loading);
+		const later = image();
+		send(1, 'room');
+		send(2, later);
+		const arrived = imagesArrived(slots, 2);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(0);
+		load(code);
+		await arrived;
+		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(2);
+		expect(table.generator(1)).toEqual(['room', code]);
+		expect(table.get(2)).toBe(later);
+		table.release(1);
+		expect(() => table.generator(1)).toThrow('draw list names generator 1, which does not exist');
+	});
+
+	test('cross a port by name, and count when their code did not load, which running one reports', async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const posted: unknown[] = [];
+		const port = {
+			onmessage: null as ((event: MessageEvent) => void) | null,
+			postMessage: (message: unknown) => posted.push(message),
+		} as unknown as MessagePort;
+		sendThrough(port)(1, 'room');
+		expect(posted).toEqual([{ id: 1, generator: 'room' }]);
+		receiveImages(port, table, slots);
+		table.loadGeneratorsWith(() => Promise.reject(new Error('offline')));
+		port.onmessage?.({ data: posted[0] } as MessageEvent);
+		await imagesArrived(slots, 1);
+		expect(() => table.generator(1)).toThrow(
+			'the code of the room generator did not download: offline',
+		);
+	});
+});
+
 describe("custom materials' shaders on their way to the thread that draws", () => {
 	const shader: CustomShader = { variants: {}, locations: [0, 1, 2], textures: 0 };
 

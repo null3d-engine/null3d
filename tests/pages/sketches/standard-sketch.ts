@@ -1,6 +1,8 @@
 // The standard and unlit materials, for their image tests. `?scene=grid` draws the grid of
 // bench/scenes/standard-grid.ts: spheres over metalness (rows, from 0 at the top to 1) and roughness
-// (columns, from 0 to 1), lit by a sun and an ambient light. ?tone=none turns off the engine's
+// (columns, from 0 to 1), lit by a sun and an ambient light. `?scene=grid&env=room` or `&env=venice`
+// lights the grid with an environment alone (bench/scenes/standard-grid.ts), and `&rotate` turns
+// the environment a quarter turn. ?tone=none turns off the engine's
 // default of ACES, as the parity test asks: the grid's three.js twin draws with no tone mapping,
 // three.js's default. `?scene=features` draws what a material fixes when it is created, in
 // pairs: an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a
@@ -14,12 +16,17 @@ import {
 	GRID_CAMERA,
 	GRID_CELLS,
 	GRID_COLOR,
+	GRID_ENVIRONMENT_ROTATION,
+	GRID_ENVIRONMENTS,
 	GRID_SPHERE,
 	GRID_SUN,
+	type GridEnvironmentName,
 } from '../../../bench/scenes/standard-grid';
+import { sampleEnvironment } from '../../../tools/lib/sample-url';
 
 const params = new URL(import.meta.url).searchParams;
 const scene = params.get('scene') ?? 'grid';
+const environment = params.get('env') as GridEnvironmentName | null;
 
 /** A quad in the XY plane, facing +Z, with a linear color at each corner. */
 const QUAD = {
@@ -29,13 +36,23 @@ const QUAD = {
 	indices: [0, 1, 2, 0, 2, 3],
 };
 
-export default defineSketch((ctx) => {
-	const { scene: world, post } = ctx;
+export default defineSketch(async (ctx) => {
+	const { scene: world, post, assets } = ctx;
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	world.setBackground(GRID_BACKGROUND);
 	world.setActiveCamera(world.createPerspectiveCamera(GRID_CAMERA));
-	world.createDirectionalLight(GRID_SUN);
-	world.createAmbientLight(GRID_AMBIENT);
+	if (environment) {
+		const source = GRID_ENVIRONMENTS[environment];
+		const env =
+			'builtin' in source
+				? await assets.builtinEnvironment(source.builtin)
+				: await assets.loadEnvironment(sampleEnvironment(source.hdr));
+		const rotation = params.has('rotate') ? GRID_ENVIRONMENT_ROTATION : undefined;
+		world.setEnvironment(env, { rotation });
+	} else {
+		world.createDirectionalLight(GRID_SUN);
+		world.createAmbientLight(GRID_AMBIENT);
+	}
 	if (scene === 'grid') grid(ctx);
 	else features(ctx);
 });

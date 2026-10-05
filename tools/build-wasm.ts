@@ -644,7 +644,7 @@ async function main(): Promise<void> {
 	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET_BYTES);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of features that load on demand, such as WebGL2's morph targets (budget: ${kb(ON_DEMAND_SHADER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
+		`\nthe shader builds of features that load on demand, such as WebGL2's morph targets and the texture generators (budget: ${kb(ON_DEMAND_SHADER_BUDGET_BYTES)} after Brotli for each file; no start counts them)`,
 	);
 	for (const part of ON_DEMAND_SHADER_PARTS) {
 		const size = parts.get(part);

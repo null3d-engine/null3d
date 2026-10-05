@@ -3,12 +3,12 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadJson, loadBinary, preload, onProgress; environments."
+summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadEnvironment, builtinEnvironment, loadJson, loadBinary, preload, onProgress."
 ---
 
 # Assets
 
-> Ships in null3D 0.1, with glTF models and color grading tables from 0.2. The API is experimental, so it can still change between versions. Environments are not built yet: `loadEnvironment`, `builtinEnvironment` and `loadCubemap`. Morph targets load but do not draw. glTF files with Draco compression do not load yet. Coding agents must not use these parts.
+> Ships in null3D 0.1, with glTF models, color grading tables and environments from 0.2. The API is experimental, so it can still change between versions. `loadCubemap` is not built yet. `loadEnvironment` reads only the files of `bunx @null3d/cli assets env`, not HDR files. Morph targets load but do not draw. glTF files with Draco compression do not load yet. Coding agents must not use these parts.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
@@ -33,6 +33,8 @@ export default defineSketch(async ({ assets, page }) => {
 | `loadTexture(url, options)` | A texture from a PNG, JPEG or WebP file, an AVIF file where the browser decodes AVIF, or a KTX2 file of ETC1S or UASTC data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
+| `loadEnvironment(url)` | An `Environment` from a file of `bunx @null3d/cli assets env`, for `scene.setEnvironment`. [Environments](#environments) says what it reads |
+| `builtinEnvironment('room')` | The built-in room, the scene of three.js's `RoomEnvironment`, as an `Environment` |
 | `loadJson(url)` | The file parsed as JSON |
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
 | `preload(urls)` | Nothing: it downloads the files ahead of their loads |
@@ -94,6 +96,31 @@ Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them o
 
 `lut.destroy()` frees the table's GPU memory. Give `post.set` a table that lives.
 
+## Environments
+
+`loadEnvironment` reads the KTX2 file that `bunx @null3d/cli assets env` writes. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light. `builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. The GPU draws it and filters it, so no file downloads. Give either to [`scene.setEnvironment`](scene.md#the-environment).
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  const [room, sunset] = await Promise.all([
+    assets.builtinEnvironment('room'),
+    assets.loadEnvironment('/env/sunset.ktx2'),
+  ]);
+  scene.setEnvironment(sunset, { intensity: 1.2 });
+  return {};
+});
+```
+
+- An `Environment` has its cube map's `size`, the width of the largest faces, its `levels`, its `format` and its GPU `bytes`.
+- The first environment file loads the file reader, under 1 KB after Brotli. The first built-in room loads the code and the shaders that make it on the GPU, about 7 KB after Brotli. [Lighting and environment](../concepts/lighting.md#cost) gives the GPU's time.
+- The cube map uploads in the frames after the load, and the scene draws without it until it is on the GPU.
+- `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
+- Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
+
+[Lighting and environment](../concepts/lighting.md#environment-maps) says how an environment lights the scene.
+
 ## Addresses
 
 A relative address resolves against the page's address, in every thread mode, as it would in a page's own script. So `assets.loadTexture('tex/bricks.png')` on `https://example.com/game/` loads `https://example.com/game/tex/bricks.png`. An address from `new URL('./bricks.png', import.meta.url)` resolves against the sketch module instead, and Vite then ships the file with the build.
@@ -123,11 +150,12 @@ Each call rejects with an engine error that says how to fix the problem:
 | Code | When |
 | --- | --- |
 | [E1411](../errors/E1411.md) | The file did not download: the server answered with an error, such as 404, or the network failed |
-| [E1412](../errors/E1412.md) | The file downloaded, but the browser could not decode the image, the file was not a KTX2 file that the engine loads, the file was not valid JSON, or it held no color grading table that the engine reads. A KTX2 file also fails before it transcodes when it passes a limit, such as a side larger than `textures.maxSize` |
+| [E1412](../errors/E1412.md) | The file downloaded, but the browser could not decode the image, the file was not a KTX2 file that the engine loads, the file was not valid JSON, it held no color grading table that the engine reads, or it was not an environment map of `bunx @null3d/cli assets env`. A KTX2 file also fails before it transcodes when it passes a limit, such as a side larger than `textures.maxSize` |
 | [E1416](../errors/E1416.md) | `loadGltf` got a file that is not a glTF 2.0 model it can read: broken JSON, an offset or a count past the data, a missing buffer or image, or a loop of nodes. Or the file passes a limit on what one file may decode to, as [Assets and prefabs](../concepts/assets.md#limits-on-each-file) lists |
 | [E1109](../errors/E1109.md) | `loadGltf` made a mesh too large for engine memory |
 | [E1417](../errors/E1417.md) | `loadGltf` got a file that requires an extension the engine does not read, such as Draco compression |
-| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader or the table readers did not download, when the first such file loads |
+| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader, the table readers or the environment map reader did not download, when the first such file loads |
+| [E1213](../errors/E1213.md) | `builtinEnvironment` got a name that no built-in environment has |
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
 | [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take |
 
@@ -167,10 +195,42 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 | `loadGltf(url: string \| URL, options: LoadGltfOptions = {}): Promise<Prefab>` | Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first call downloads the loader and its worker. The first file with meshopt compression also downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too, and they take files that `preload` downloaded. Throws E1411 when a file does not download, E1413 when a server of another origin does not allow the page to read it, E1416 for a file that is not a glTF model the engine reads or that passes a limit on what one file may decode to, E1417 for a file that requires an extension the engine does not read, E1412 when an image does not decode, E1109 when a mesh does not fit engine memory, and E1406 when the loader or the meshopt decoder does not download. `options.rewriteUrl` checks the addresses that the file names. |
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadLut(url: string \| URL): Promise<Lut>` | Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along; a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when the readers do not load. |
+| `loadEnvironment(url: string \| URL): Promise<Environment>` | Downloads an environment map that `bunx |
+| `builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment>` | Makes a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for soft, neutral light with no file of your own. No file downloads: the GPU draws the room into its cube map and filters it for each roughness, in parts over the next 32 frames, as three.js's `PMREMGenerator.fromScene` does. The scene draws without the environment until the map is made. The first one loads the code that makes it, about 7 KB after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its code does not download. |
 | `loadJson<T = unknown>(url: string \| URL): Promise<T>` | Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412 when the file is not valid JSON. |
 | `loadBinary(url: string \| URL): Promise<ArrayBuffer>` | Downloads a file as bytes. Throws E1411 or E1413 as `loadTexture` does. |
 | `preload(urls: readonly (string \| URL)[]): Promise<void>` | Downloads files ahead of their loads, all at once, and resolves when every one has arrived. The next load of each address takes its file from memory. Pair it with `onProgress` for a loading screen. Throws the error of the first file that fails, as `loadBinary` does. |
 | `onProgress(handler: ProgressHandler): () => void` | Calls `handler` each time a download finishes or fails, with the files downloaded so far and the files asked for so far. Loads that take a file that `preload` downloaded count no further. Returns a function that removes the handler. |
+
+### `BuiltinEnvironmentName`
+
+```ts
+type BuiltinEnvironmentName = 'room';
+```
+
+The names of the built-in environments that `assets.builtinEnvironment` loads. `room` is the room that three.js's `RoomEnvironment` builds, blurred as three.js's examples blur it. It is a white room with six boxes and glowing panels, which gives soft, neutral light.
+
+### `Environment`
+
+Class `Environment`.
+
+An environment map, which `assets.loadEnvironment` and `assets.builtinEnvironment` load. It holds the light around a scene from every direction, filtered for each roughness, and the diffuse light that it gives. Give it to `scene.setEnvironment`, which lights standard materials with it, as three.js's `scene.environment` does with a texture from `PMREMGenerator`.
+
+| Member | Description |
+| --- | --- |
+| `readonly size: number` | The width of the largest faces of its cube map, in texels. |
+| `readonly levels: number` | The mip levels of its cube map: one for each roughness step, from a mirror up. |
+| `readonly format: EnvironmentFormat` | How its cube map stores its texels. |
+| `readonly bytes: number` | The GPU bytes of its cube map, with every mip level. |
+| `destroy(): void` | Frees the cube map's GPU memory. If `scene.setEnvironment` named the environment last, the scene shows without it from then on. Passing it to `scene.setEnvironment` afterwards, or destroying it again, throws E1101. |
+
+### `EnvironmentFormat`
+
+```ts
+type EnvironmentFormat = 'rgb9e5ufloat' | 'rgba16float';
+```
+
+The texel format of an environment map: `rgb9e5ufloat`, three 9-bit values with a shared exponent in 4 bytes, or `rgba16float`, four half floats in 8 bytes.
 
 ### `LoadGltfOptions`
 

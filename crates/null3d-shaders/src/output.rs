@@ -38,6 +38,9 @@ pub struct Output {
     /// The shaders that load by device, whose builds go into the device modules.
     #[serde(skip)]
     pub by_device: BTreeSet<String>,
+    /// The shaders that load on a feature's first use, each in a module of its own per target.
+    #[serde(skip)]
+    pub first_use: BTreeSet<String>,
 }
 
 /// One built variant.

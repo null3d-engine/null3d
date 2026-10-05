@@ -36,6 +36,7 @@ import { controlViews, createControlBuffer } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
 import { type ColorInput, linearColor } from './color';
+import { type Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
@@ -2035,6 +2036,8 @@ export class Scene {
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** The environment's values in the core, made on the first `setEnvironment`. */
+	private sceneEnvironment: SceneEnvironment | undefined;
 	/** Pointer events on objects, made on the first `on`. */
 	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -3078,6 +3081,21 @@ export class Scene {
 		const [r, g, b] = linearColor(background, 'setBackground');
 		glue.setBackground(r, g, b);
 		glue.setBackgroundTexture(0);
+	}
+
+	/**
+	 * Lights the scene with an environment from `assets.loadEnvironment` or
+	 * `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from
+	 * `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth
+	 * and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene
+	 * draws without the environment until its map is on the GPU. It allocates nothing, so a sketch
+	 * can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for
+	 * a negative intensity, E1213 for a value that is not an environment, and E1101 for an
+	 * environment that was destroyed.
+	 */
+	setEnvironment(environment: Environment | null, options?: EnvironmentOptions): void {
+		this.sceneEnvironment ??= new SceneEnvironment(this.core);
+		this.sceneEnvironment.set(environment, options);
 	}
 
 	/**

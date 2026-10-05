@@ -210,7 +210,7 @@ A texture: an image or data on the GPU, which materials sample. Its texels uploa
 | Member | Description |
 | --- | --- |
 | `readonly depth: number` | Layers: 1, or more for a texture from data with a depth. |
-| `readonly format: TextureFormat \| CompressedTextureFormat` | How the texture stores its texels on the GPU. A texture from a KTX2 file has the compressed format that the device supports, or `rgba8unorm` where it supports none. |
+| `readonly format: TextureFormat \| CompressedTextureFormat \| EnvironmentFormat` | How the texture stores its texels on the GPU. A texture from a KTX2 file has the compressed format that the device supports, or `rgba8unorm` where it supports none. |
 | `readonly colorSpace: TextureColorSpace` | Whether sampling turns the texels from sRGB into linear values, or reads them as they are. |
 | `readonly uvSet: 0 \| 1` | The set of texture coordinates that materials read the texture at. |
 | `readonly width: number` | Texels in each row. An update with an image of another size changes it. |
