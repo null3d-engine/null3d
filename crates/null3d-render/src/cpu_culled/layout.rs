@@ -152,6 +152,9 @@ pub(super) struct Layout {
     pub(super) drawn_slots: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged.
     key_counts: Vec<(BucketKey, u32)>,
+    /// True when a bucket draws without writing depth, so a background drawn after the objects
+    /// would cover it where nothing lies behind it.
+    pub(super) depthless: bool,
     /// The pipelines of the skinned objects that the layout leaves out until they are built.
     waiting: Vec<u32>,
     /// Bytes of one ring slot of draw records: the opaque draws' records, then room for the
@@ -179,6 +182,7 @@ impl Layout {
 
     /// Empties the buckets, for a layout that draws nothing until it is built again.
     pub(super) fn clear(&mut self) {
+        self.depthless = false;
         self.buckets.clear();
         self.draws.clear();
         self.scene_buckets.clear();
@@ -336,6 +340,10 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+        self.depthless = self
+            .key_counts
+            .iter()
+            .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
         self.waiting.clear();
         for slot in 0..self.scene_rows as usize {

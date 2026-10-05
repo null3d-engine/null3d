@@ -171,6 +171,7 @@ export const STATE_BLEND_ADDITIVE = 64;
 export const STATE_BLEND_MULTIPLY = 96;
 export const STATE_DEPTH_EQUAL = 128;
 export const STATE_NO_COLOR_WRITE = 256;
+export const STATE_DEPTH_OR_EQUAL = 1024;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;

@@ -32,9 +32,9 @@ struct BoxCorner {
 
 /// Corner `vertex` of 36: the box of two triangles per face around the camera, as three.js draws
 /// cube and sky backgrounds. Positions are relative to the camera, so the box's center is the
-/// camera, and a corner's position is its direction. Every corner sits at a depth that every depth
-/// mapping keeps inside the clip volume, and triangles that pass behind the camera are clipped
-/// where w reaches 0. An orthographic camera's view rays are parallel, so every pixel looks the
+/// camera, and a corner's position is its direction. Every corner sits at the far plane, depth 0 in
+/// reversed depth, which every depth mapping keeps at the edge of the clip volume, and triangles
+/// that pass behind the camera are clipped where w reaches 0. An orthographic camera's view rays are parallel, so every pixel looks the
 /// same way: its first three corners make one triangle over the whole view, in the view's
 /// direction, and the rest make none.
 fn box_corner(vertex: u32, view_proj: mat4x4f, camera_position: vec4f) -> BoxCorner {
@@ -42,7 +42,7 @@ fn box_corner(vertex: u32, view_proj: mat4x4f, camera_position: vec4f) -> BoxCor
     if camera_position.w == 0.0 {
         let corner = vec2f(f32((vertex << 1u) & 2u), f32(vertex & 2u));
         let inside = vertex < 3u;
-        out.clip = select(vec4f(0.0), vec4f(corner * 2.0 - 1.0, 0.5, 1.0), inside);
+        out.clip = select(vec4f(0.0), vec4f(corner * 2.0 - 1.0, 0.0, 1.0), inside);
         out.direction = -camera_position.xyz;
         return out;
     }
@@ -60,7 +60,7 @@ fn box_corner(vertex: u32, view_proj: mat4x4f, camera_position: vec4f) -> BoxCor
         p = vec3f(u, v, side);
     }
     let clip = view_proj * vec4f(p, 1.0);
-    out.clip = vec4f(clip.xy, 0.5 * clip.w, clip.w);
+    out.clip = vec4f(clip.xy, 0.0, clip.w);
     out.direction = p;
     return out;
 }

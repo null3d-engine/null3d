@@ -92,8 +92,9 @@
 //! or turning outlines on or off, rebuilds the layouts, as casting shadows does.
 //!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
-//! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
-//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
+//! that the camera's opaque pass draws after its bundle, or before it while a bucket writes no
+//! depth, is [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and
+//! begins their render passes.
 //!
 //! # Memory
 //!
@@ -118,7 +119,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, AoIds};
-use crate::background::{BackgroundIds, BackgroundPass};
+use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
@@ -750,6 +751,7 @@ impl GpuDrivenRenderer {
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
+            Place::of(self.layout.depthless),
         );
         created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
         created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
@@ -1130,10 +1132,15 @@ impl GpuDrivenRenderer {
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
                 Role::Prepass(view) if drawn(view) => opaque::record(list, view, true),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
-                    if view == ViewId::CAMERA {
-                        background.record(list, ids::frame_group(view), &[])?;
+                    let camera = view == ViewId::CAMERA;
+                    if camera {
+                        background.record(list, ids::frame_group(view), &[], Place::First)?;
                     }
-                    opaque::record(list, view, false)
+                    opaque::record(list, view, false)?;
+                    if camera {
+                        background.record(list, ids::frame_group(view), &[], Place::Last)?;
+                    }
+                    Ok(())
                 }
                 Role::OutlineMask if drawn(ViewId::OUTLINE) => {
                     opaque::record(list, ViewId::OUTLINE, false)

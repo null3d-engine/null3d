@@ -30,6 +30,7 @@ import {
 	STATE_CULL_FRONT,
 	STATE_CULL_NONE,
 	STATE_DEPTH_EQUAL,
+	STATE_DEPTH_OR_EQUAL,
 	STATE_LINE_LIST,
 	STATE_NO_COLOR_WRITE,
 	STATE_NO_DEPTH_TEST,
@@ -187,11 +188,12 @@ const ALL_CHANNELS = 0xf;
 
 /**
  * The depth test of a pipeline's state flags, in reversed depth: nearer surfaces pass, every one
- * passes without the test, and only the surface at the target's depth passes after the depth
- * prepass.
+ * passes without the test, only the surface at the target's depth passes after the depth prepass,
+ * and a background at the far plane passes where no object wrote depth.
  */
 function depthCompare(stateFlags: number): GPUCompareFunction {
 	if (stateFlags & STATE_NO_DEPTH_TEST) return 'always';
+	if (stateFlags & STATE_DEPTH_OR_EQUAL) return 'greater-equal';
 	return stateFlags & STATE_DEPTH_EQUAL ? 'equal' : 'greater';
 }
 

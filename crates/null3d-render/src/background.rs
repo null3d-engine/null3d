@@ -10,10 +10,15 @@
 //! - three.js's analytic sky (`Sky` in its examples), from the sun's position, the air's
 //!   scattering and the clouds.
 //!
-//! Each draws first in the camera's opaque pass, with no depth test and no depth write, so every
-//! object draws over it. Its color goes into the scene color like an object's, so exposure and
-//! tone mapping change it too: its shader multiplies the exposure into its light, with the
-//! background's intensity, as three.js's `backgroundIntensity`.
+//! Each draws at the far plane in the camera's opaque pass, after the opaque objects and before
+//! the transparent ones, with the depth test on and no depth write. It shades only the pixels
+//! where no object wrote depth, so a costly background such as the sky costs nothing where objects
+//! cover it. Drawn first, it shades the whole view on GPUs that do not drop the fragments that
+//! later objects cover, as Adreno does not (D-68). While an opaque material writes no depth, the
+//! background draws first with no depth test instead, as three.js draws `scene.background`, so
+//! that material still shows over it. Its color goes into the scene color like an object's, so
+//! exposure and tone mapping change it too: its shader multiplies the exposure into its light,
+//! with the background's intensity, as three.js's `backgroundIntensity`.
 //!
 //! The texture draws as one triangle over the whole target. It binds the bind group of the
 //! texture's array and sampler, as materials bind their maps, and names the texture's layer by its
@@ -190,6 +195,31 @@ pub(crate) struct BackgroundIds {
 /// The index at which the texture background binds the texture's group, after the frame's group.
 const TEXTURE_GROUP: u32 = 1;
 
+/// Where the background draws in the camera's opaque pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Place {
+    /// Before the objects, with no depth test, while an opaque material writes no depth: the
+    /// objects draw over every pixel of it.
+    First,
+    /// After the opaque objects, at the far plane, only where no object wrote depth.
+    Last,
+}
+
+impl Place {
+    /// First while an opaque material writes no depth (`depthless`), else last.
+    pub(crate) const fn of(depthless: bool) -> Self {
+        if depthless { Self::First } else { Self::Last }
+    }
+
+    /// The depth state of the background's pipeline in this place.
+    const fn depth_state(self) -> u32 {
+        match self {
+            Self::First => state_flags::NO_DEPTH_TEST,
+            Self::Last => state_flags::DEPTH_OR_EQUAL | state_flags::NO_DEPTH_WRITE,
+        }
+    }
+}
+
 /// How the frame's background draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Shape {
@@ -205,6 +235,7 @@ enum Shape {
 struct Draw {
     pipeline: u32,
     shape: Shape,
+    place: Place,
 }
 
 /// The background's pipeline, its buffer and bind group, and the draw of the frame being recorded.
@@ -213,6 +244,8 @@ pub(crate) struct BackgroundPass {
     ids: BackgroundIds,
     /// The id of the pipeline, from the builder's pipeline cache, or 0 without a background.
     pipeline: u32,
+    /// Where the pipeline draws.
+    place: Place,
     draw: Option<Draw>,
     /// True once the GPU has the uniform buffer.
     created: bool,
@@ -231,6 +264,7 @@ impl BackgroundPass {
         Self {
             ids,
             pipeline: 0,
+            place: Place::Last,
             draw: None,
             created: false,
             bound: None,
@@ -239,14 +273,15 @@ impl BackgroundPass {
     }
 
     /// Asks `pipelines` for the pipeline of the scene's background, which draws into the scene's
-    /// `targets`, while its texture lives or it reads none. A builder asks before it records the
-    /// pipelines that its frame creates, so the list creates this one with the others, at its
-    /// start.
+    /// `targets` in `place`, while its texture lives or it reads none. A builder asks before it
+    /// records the pipelines that its frame creates, so the list creates this one with the others,
+    /// at its start.
     pub(crate) fn request_pipeline(
         &mut self,
         settings: &SceneSettings,
         pipelines: &mut PipelineCache,
         targets: PassTargets,
+        place: Place,
     ) {
         let live = |texture| settings.textures().is_live(texture);
         let template =
@@ -258,13 +293,14 @@ impl BackgroundPass {
                 Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
                 _ => 0,
             };
+        self.place = place;
         self.pipeline = if template == 0 {
             0
         } else {
             let state = if template == template::BACKGROUND {
-                state_flags::NO_DEPTH_TEST
+                place.depth_state()
             } else {
-                state_flags::NO_DEPTH_TEST | state_flags::CULL_NONE
+                place.depth_state() | state_flags::CULL_NONE
             };
             let key = DrawKey {
                 template,
@@ -357,21 +393,24 @@ impl BackgroundPass {
         self.draw = Some(Draw {
             pipeline: self.pipeline,
             shape,
+            place: self.place,
         });
         Ok(())
     }
 
-    /// Records the background inside the render pass that the camera's opaque pass began, before
-    /// its objects, with the view's frame group `frame_group` bound at the dynamic offsets
-    /// `offsets` as the opaque pass binds it. It records nothing without a background whose
-    /// texels are on the GPU.
+    /// Records the background inside the render pass that the camera's opaque pass began, at
+    /// `place` among its objects, with the view's frame group `frame_group` bound at the dynamic
+    /// offsets `offsets` as the opaque pass binds it. It records nothing without a background whose
+    /// texels are on the GPU, or when the background draws in the other place. It sets every
+    /// binding it reads, so it can follow a render bundle, which clears them.
     pub(crate) fn record(
         &self,
         list: &mut DrawList,
         frame_group: u32,
         offsets: &[u32],
+        place: Place,
     ) -> Result<(), RecordError> {
-        let Some(draw) = self.draw else {
+        let Some(draw) = self.draw.filter(|draw| draw.place == place) else {
             return Ok(());
         };
         list.push(Op::SetPipeline, &[draw.pipeline])?;

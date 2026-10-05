@@ -318,8 +318,9 @@ pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
-# A texture behind every object, drawn first in the camera's opaque pass as one triangle over the
-# whole view. Its TONE_MAP builds tone map and encode their color themselves, for the 8-bit path.
+# A texture behind every object, drawn in the camera's opaque pass as one triangle over the whole
+# view at the far plane. Its TONE_MAP builds tone map and encode their color themselves, for the
+# 8-bit path.
 [shaders.background]
 file = "background.wgsl"
 by_device = true
@@ -327,9 +328,9 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
-# An environment or a cube map behind every object, drawn first in the camera's opaque pass as a
-# box around the camera. Its TONE_MAP builds tone map and encode their color themselves, for the
-# 8-bit path.
+# An environment or a cube map behind every object, drawn in the camera's opaque pass as a box
+# around the camera at the far plane. Its TONE_MAP builds tone map and encode their color
+# themselves, for the 8-bit path.
 [shaders.background_cube]
 file = "background_cube.wgsl"
 by_device = true

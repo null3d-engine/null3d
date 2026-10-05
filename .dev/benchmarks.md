@@ -244,6 +244,10 @@ A run folder holds every page's full result, with frames and images, and stays o
 - On 4 October 2026 (M2-R2), S2 ran again with the `-prepass` pages, 5 runs of 5 seconds each, in turns. WebGPU's GPU time per frame went from 0.28 ms to 0.40 ms. On WebGL2 the draw calls went from 101 to 201, and the render worker's time per frame from 0.075 ms to 0.080 ms. Chrome on the Mac has no GPU timer on WebGL2, so the WebGL2 GPU cost needs a device.
 - Every preset leaves the prepass off on those results. The iPad's and the phones' figures, from the bench plan with the `-prepass` pages, are still to come.
 
+## The sky
+
+- S1's page switch `?sky` draws three.js's sky behind the swarm, with its sun and clouds moving in every frame. The page kinds that end in `-sky` start null3D with it, so a bench run takes turns between a page and its sky twin: `bun run bench:run --scenes s1 --pages null3d-webgpu,null3d-webgpu-sky,null3d-webgl2,null3d-webgl2-sky --switches governor=off`. The difference is the sky's cost in the pixels that the swarm leaves open ([D-68](decisions/D-68-backgrounds.md)).
+
 ## Sweeps for the open defaults
 
 Three sweeps measure the defaults that are still open: the latency mode, the job worker count and the shared memory's maximum. Each runs on the Mac, and on a phone or an iPad through the device runner.

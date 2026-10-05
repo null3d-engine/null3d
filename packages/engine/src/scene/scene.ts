@@ -3177,9 +3177,8 @@ export class Scene {
 	 * environment or a cube map that was destroyed.
 	 */
 	setBackground(background: ColorInput | BackgroundSource, options?: BackgroundOptions): void {
-		this.sceneBackground ??= new SceneBackground(this.core, (feature) =>
-			this.makers?.materials.shaders.need(feature),
-		);
+		// No closure here: one that reads `this` would make every call allocate a context.
+		this.sceneBackground ??= new SceneBackground(this.core, this.makers?.materials.shaders);
 		if (
 			background instanceof Texture ||
 			background instanceof Environment ||

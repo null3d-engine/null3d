@@ -779,6 +779,10 @@ pub mod state_flags {
     pub const DEPTH_EQUAL: u32 = 128;
     /// Writes no color, as the depth prepass draws into the color target's render pass.
     pub const NO_COLOR_WRITE: u32 = 256;
+    /// Draws where the fragment is as near as what the depth target holds or nearer, so a
+    /// fragment at the far plane draws where no object wrote depth, as backgrounds draw after the
+    /// opaque objects.
+    pub const DEPTH_OR_EQUAL: u32 = 1024;
     /// Every flag.
     pub const ALL: u32 = CULL_NONE
         | LINE_LIST
@@ -787,7 +791,8 @@ pub mod state_flags {
         | NO_DEPTH_TEST
         | BLEND
         | DEPTH_EQUAL
-        | NO_COLOR_WRITE;
+        | NO_COLOR_WRITE
+        | DEPTH_OR_EQUAL;
 }
 
 /// Vertex formats. Every vertex has a position and a normal. A format adds optional attributes
@@ -1617,6 +1622,7 @@ pub fn typescript_constants() -> String {
                 ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
                 ("DEPTH_EQUAL", state_flags::DEPTH_EQUAL),
                 ("NO_COLOR_WRITE", state_flags::NO_COLOR_WRITE),
+                ("DEPTH_OR_EQUAL", state_flags::DEPTH_OR_EQUAL),
             ],
         ),
         (

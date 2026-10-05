@@ -1,10 +1,11 @@
 // three.js's sky behind every object: its `Sky` object (examples/jsm/objects/Sky.js, r186), the
-// Preetham daylight model with a sun disc and drifting clouds, drawn as a box around the camera,
-// first in the camera's opaque pass. Every constant and formula follows three.js's, in its order,
-// so a port keeps its look. The values that three.js's vertex shader finds once go to the
-// fragments as flat values. The fragment shader writes linear color as the mesh shaders write
-// theirs: into the HDR scene color, or tone mapped and encoded on the 8-bit path (the TONE_MAP
-// builds). It binds the background's group as the cube map background does, and reads no texture.
+// Preetham daylight model with a sun disc and drifting clouds, drawn as a box around the camera at
+// the far plane, in the camera's opaque pass behind the objects. Every constant and formula follows
+// three.js's, in its order, so a port keeps its look. The values that three.js's vertex shader
+// finds once go to the fragments as flat values. The fragment shader writes linear color as the
+// mesh shaders write theirs: into the HDR scene color, or tone mapped and encoded on the 8-bit path
+// (the TONE_MAP builds). It binds the background's group as the cube map background does, and reads
+// no texture.
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::{Backdrop, box_corner}

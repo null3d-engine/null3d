@@ -2025,11 +2025,13 @@ export class WebGL2Backend {
 	 * GL's depth function of a pipeline's state flags. A pipeline without the depth test still
 	 * keeps GL's test on, with a function that passes every fragment: GL writes no depth while its
 	 * test is off, and the pipeline writes none either way. After the depth prepass, the opaque
-	 * pass draws only at the depth that the prepass found, in every depth mode.
+	 * pass draws only at the depth that the prepass found, in every depth mode. A background at the
+	 * far plane draws where the target still holds the far plane.
 	 */
 	private depthFuncOf(flags: number): number {
 		const gl = this.gl;
 		if (flags & G.STATE_NO_DEPTH_TEST) return gl.ALWAYS;
+		if (flags & G.STATE_DEPTH_OR_EQUAL) return this.depth.standard ? gl.LEQUAL : gl.GEQUAL;
 		return flags & G.STATE_DEPTH_EQUAL ? gl.EQUAL : this.nearerPasses();
 	}
 

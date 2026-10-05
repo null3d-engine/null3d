@@ -28,9 +28,9 @@ import {
 	BACKGROUND_VALUE_TIME,
 	BACKGROUND_VALUE_TURBIDITY,
 } from '../generated/core';
-import type { ShaderFeature } from '../generated/shader-features';
 import { Environment } from './environment';
 import type { CoreMemory } from './memory';
+import { ShaderPreloads } from './shader-preloads';
 import { Texture } from './textures';
 
 /**
@@ -192,7 +192,7 @@ export class SceneBackground {
 	constructor(
 		private readonly core: CoreMemory,
 		/** Asks the thread that draws for a feature's shader file, once; it allocates nothing after. */
-		private readonly need: (feature: ShaderFeature) => void = () => {},
+		private readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
 
 	/**
@@ -211,7 +211,7 @@ export class SceneBackground {
 		values[BACKGROUND_VALUE_ROTATION + 2] = rotation ? rotation[2] : 0;
 		let kind = BACKGROUND_KIND_SKY;
 		let texture = 0;
-		this.need(isSkyBackground(source) ? 'sky' : 'background');
+		this.shaders.need(isSkyBackground(source) ? 'sky' : 'background');
 		if (source instanceof Texture) {
 			kind = BACKGROUND_KIND_TEXTURE;
 			texture = source.handle;

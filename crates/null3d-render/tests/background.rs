@@ -1,10 +1,12 @@
-//! Backgrounds, drawn by both frame builders: the background's pipeline, and its draw at the start
-//! of the camera's opaque pass once a texture's texels are on the GPU, for a texture, a cube map of
-//! six images and the sky, checked through the mock backend, which rejects what a real GPU would.
+//! Backgrounds, drawn by both frame builders: the background's pipeline, and its draw in the
+//! camera's opaque pass once a texture's texels are on the GPU, for a texture, a cube map of six
+//! images and the sky, checked through the mock backend, which rejects what a real GPU would. The
+//! background draws after the opaque objects behind the depth test, or before them with no depth
+//! test while an opaque material writes no depth.
 
 mod common;
 
-use common::{World, count, map_desc};
+use common::{World, count, grid, map_desc};
 use null3d_core::handle::Handle;
 use null3d_gpu::drawlist::{Op, format, layout, sizes, state_flags, template};
 use null3d_gpu::mock::MockBackend;
@@ -12,9 +14,15 @@ use null3d_render::background::{Background, BackgroundSource, Sky};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
 use null3d_render::frame::FrameBuilder;
+use null3d_render::materials::{Shading, feature};
 
 /// The size of the test's textures.
 const SIZE: u32 = 16;
+
+/// The depth state of a background drawn after the opaque objects, where none wrote depth.
+const LAST: u32 = state_flags::DEPTH_OR_EQUAL | state_flags::NO_DEPTH_WRITE;
+/// The depth state of a background drawn before the opaque objects.
+const FIRST: u32 = state_flags::NO_DEPTH_TEST;
 
 /// Makes a texture of the test's size with an image on its way, the scene's background.
 fn add_background<B: FrameBuilder>(world: &mut World<B>) -> Handle {
@@ -36,39 +44,63 @@ fn background(source: BackgroundSource) -> Background {
     }
 }
 
-/// The ids of the background pipelines that a frame's list creates. Each draws with no depth test.
-fn background_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+/// The ids of the background pipelines that a frame's list creates. Each draws with the depth
+/// state `depth`.
+fn background_pipelines(commands: &[(Op, Vec<u32>)], depth: u32) -> Vec<u32> {
     commands
         .iter()
         .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::BACKGROUND)
         .map(|(_, o)| {
-            assert_eq!(o[6], state_flags::NO_DEPTH_TEST);
+            assert_eq!(o[6], depth);
             o[0]
         })
         .collect()
 }
 
+/// The commands that draw objects.
+const DRAWS: [Op; 5] = [
+    Op::Draw,
+    Op::DrawIndexed,
+    Op::DrawIndexedIndirect,
+    Op::MultiDrawIndexed,
+    Op::ExecuteBundles,
+];
+
+/// The draws of the render pass in which the background's `pipeline` draws: those before the
+/// background, and those after its draw.
+fn draws_around(commands: &[(Op, Vec<u32>)], pipeline: u32) -> (usize, usize) {
+    let set = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == pipeline)
+        .expect("the background draws");
+    let begin = commands[..set]
+        .iter()
+        .rposition(|(op, _)| *op == Op::BeginRenderPass)
+        .expect("the background draws inside a render pass");
+    let draw = set
+        + commands[set..]
+            .iter()
+            .position(|(op, _)| *op == Op::Draw)
+            .unwrap();
+    let end = draw
+        + commands[draw..]
+            .iter()
+            .position(|(op, _)| *op == Op::EndRenderPass)
+            .unwrap();
+    let count =
+        |range: &[(Op, Vec<u32>)]| range.iter().filter(|(op, _)| DRAWS.contains(op)).count();
+    (
+        count(&commands[begin..set]),
+        count(&commands[draw + 1..end]),
+    )
+}
+
 /// The background's draw in a frame's list: the draw after `SetPipeline` of `pipeline`, with the
-/// texture's group that it binds at index 1. Checks that it is the first draw of its render pass.
+/// texture's group that it binds at index 1.
 fn background_draw(commands: &[(Op, Vec<u32>)], pipeline: u32) -> Option<(u32, Vec<u32>)> {
     let set = commands
         .iter()
         .position(|(op, o)| *op == Op::SetPipeline && o[0] == pipeline)?;
-    let pass = commands[..set]
-        .iter()
-        .rposition(|(op, _)| *op == Op::BeginRenderPass)
-        .expect("the background draws inside a render pass");
-    let draws = [
-        Op::Draw,
-        Op::DrawIndexed,
-        Op::DrawIndexedIndirect,
-        Op::MultiDrawIndexed,
-        Op::ExecuteBundles,
-    ];
-    assert!(
-        !commands[pass..set].iter().any(|(op, _)| draws.contains(op)),
-        "the background draws before the pass's objects"
-    );
     let after = &commands[set..];
     let group = after
         .iter()
@@ -82,9 +114,10 @@ fn background_draw(commands: &[(Op, Vec<u32>)], pipeline: u32) -> Option<(u32, V
 /// Steps a world that draws a background through its texture's life, on either frame builder.
 fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
     let mut mock = MockBackend::default();
+    world.add_object(&grid(1, 1), Shading::Lit);
     let texture = add_background(&mut world);
     let commands = world.step(&mut mock, true);
-    let pipelines = background_pipelines(&commands);
+    let pipelines = background_pipelines(&commands, LAST);
     assert_eq!(
         pipelines.len(),
         1,
@@ -96,7 +129,10 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
     world.arrive(&mut mock, 1, SIZE);
     let commands = world.step(&mut mock, false);
     assert_eq!(count(&commands, Op::UploadImage), 1);
-    assert!(background_pipelines(&commands).is_empty(), "made once");
+    assert!(
+        background_pipelines(&commands, LAST).is_empty(),
+        "made once"
+    );
     let store = world.renderer.settings().textures();
     let group = store.group_id(texture).unwrap();
     let layer = store.ready_layer(texture).unwrap();
@@ -105,6 +141,9 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
         Some((group, vec![3, 1, layer * 3, 0])),
         "one triangle, whose first vertex names the layer"
     );
+    let (before, after) = draws_around(&commands, pipeline);
+    assert!(before > 0, "the object draws first");
+    assert_eq!(after, 0, "the background ends the opaque pass");
     let draws = mock.draws;
     world.step(&mut mock, false);
     let with_background = mock.draws - draws;
@@ -154,7 +193,7 @@ fn a_scene_without_a_background_texture_makes_no_background_pipeline() {
     let texture = add_background(&mut world);
     world.renderer.settings_mut().set_background_source(None);
     let commands = world.step(&mut mock, true);
-    assert!(background_pipelines(&commands).is_empty());
+    assert!(background_pipelines(&commands, LAST).is_empty());
     world.arrive(&mut mock, 1, SIZE);
     let commands = world.step(&mut mock, false);
     assert_eq!(
@@ -162,7 +201,7 @@ fn a_scene_without_a_background_texture_makes_no_background_pipeline() {
         1,
         "the texture still uploads"
     );
-    assert!(background_pipelines(&commands).is_empty());
+    assert!(background_pipelines(&commands, LAST).is_empty());
     assert!(
         !commands
             .iter()
@@ -173,13 +212,13 @@ fn a_scene_without_a_background_texture_makes_no_background_pipeline() {
 }
 
 /// The ids of the pipelines of `template` that a frame's list creates. Each draws both faces with
-/// no depth test.
-fn box_pipelines(commands: &[(Op, Vec<u32>)], template: u32) -> Vec<u32> {
+/// the depth state `depth`.
+fn box_pipelines(commands: &[(Op, Vec<u32>)], template: u32, depth: u32) -> Vec<u32> {
     commands
         .iter()
         .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template)
         .map(|(_, o)| {
-            assert_eq!(o[6], state_flags::NO_DEPTH_TEST | state_flags::CULL_NONE);
+            assert_eq!(o[6], depth | state_flags::CULL_NONE);
             o[0]
         })
         .collect()
@@ -208,6 +247,7 @@ fn value_writes(commands: &[(Op, Vec<u32>)], buffer: u32) -> usize {
 /// writes them again only when they change.
 fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     let mut mock = MockBackend::default();
+    world.add_object(&grid(1, 1), Shading::Lit);
     let settings = world.renderer.settings_mut();
     let textures = settings.textures_mut();
     let cube = textures
@@ -216,7 +256,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(textures.set_cube_images(cube, 0).unwrap(), 1);
     settings.set_background_source(Some(background(BackgroundSource::Cubemap(cube))));
     let commands = world.step(&mut mock, true);
-    let pipelines = box_pipelines(&commands, template::BACKGROUND_CUBE);
+    let pipelines = box_pipelines(&commands, template::BACKGROUND_CUBE, LAST);
     assert_eq!(
         pipelines.len(),
         1,
@@ -244,6 +284,11 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(value_writes(&commands, buffer), 1);
     let (_, draw) = background_draw(&commands, pipelines[0]).expect("the cube map draws");
     assert_eq!(draw, vec![36, 1, 0, 0], "a box of twelve triangles");
+    let (before, after) = draws_around(&commands, pipelines[0]);
+    assert!(
+        before > 0 && after == 0,
+        "the cube map draws after the object"
+    );
 
     // The faces' images go once the thread that draws took a later frame.
     let commands = world.step(&mut mock, false);
@@ -259,7 +304,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     let settings = world.renderer.settings_mut();
     settings.set_background_source(Some(background(BackgroundSource::Sky(sky))));
     let commands = world.step(&mut mock, false);
-    let pipelines = box_pipelines(&commands, template::BACKGROUND_SKY);
+    let pipelines = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
     assert_eq!(pipelines.len(), 1);
     assert!(background_draw(&commands, pipelines[0]).is_some());
     assert_eq!(
@@ -300,5 +345,36 @@ fn a_debug_view_draws_no_background() {
     settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
     settings.set_debug_view(DebugView::Normals);
     let commands = world.step(&mut mock, true);
-    assert!(box_pipelines(&commands, template::BACKGROUND_SKY).is_empty());
+    assert!(box_pipelines(&commands, template::BACKGROUND_SKY, LAST).is_empty());
+}
+
+/// Steps a world whose objects draw the sky, on either frame builder: while an opaque material
+/// writes no depth, the sky draws first with no depth test, so that material shows over it.
+fn a_material_without_depth_writes_draws_over_the_sky<B: FrameBuilder>(mut world: World<B>) {
+    let mut mock = MockBackend::default();
+    world.add_object(&grid(1, 1), Shading::Lit);
+    world.add_object_with(&grid(2, 2), Shading::Unlit, feature::NO_DEPTH_WRITE);
+    let sky = background(BackgroundSource::Sky(Sky::default()));
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(sky));
+    let commands = world.step(&mut mock, true);
+    let pipelines = box_pipelines(&commands, template::BACKGROUND_SKY, FIRST);
+    assert_eq!(pipelines.len(), 1);
+    let (before, after) = draws_around(&commands, pipelines[0]);
+    assert_eq!(before, 0, "the sky starts the opaque pass");
+    assert!(after > 0, "the objects draw over the sky");
+}
+
+#[test]
+fn a_material_without_depth_writes_draws_over_the_sky_on_webgpu() {
+    a_material_without_depth_writes_draws_over_the_sky(World::new());
+}
+
+#[test]
+fn a_material_without_depth_writes_draws_over_the_sky_on_webgl2() {
+    a_material_without_depth_writes_draws_over_the_sky(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
 }

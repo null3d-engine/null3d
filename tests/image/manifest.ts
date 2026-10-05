@@ -1400,10 +1400,10 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
  * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
  * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
  * cuts a slab, S2, and skinned characters with shadows. The depth debug view replaces every
- * material, and a background texture draws after the prepass in its render pass. Custom materials
- * draw their prepass depth with their own vertex shader, a vertex offset that samples a texture
- * among them. The shadows test's ground, which the near plane cuts, caught WebGL2's prepass when it
- * drew with a program of its own (D-43).
+ * material, and a background texture and the sky draw after the prepass, behind its depth, in its
+ * render pass. Custom materials draw their prepass depth with their own vertex shader, a vertex
+ * offset that samples a texture among them. The shadows test's ground, which the near plane cuts,
+ * caught WebGL2's prepass when it drew with a program of its own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1415,6 +1415,7 @@ const PREPASS_SCENES = [
 	'skinning-shadows',
 	'debug-view-depth',
 	'texture-background',
+	'background-sky',
 	'custom-textures',
 ];
 

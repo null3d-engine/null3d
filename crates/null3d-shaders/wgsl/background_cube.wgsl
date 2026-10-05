@@ -1,9 +1,10 @@
-// An environment or a cube map behind every object: a box around the camera, drawn first in the
-// camera's opaque pass, whose fragments read the cube map in their direction, as three.js draws a
-// cube texture or a PMREM texture in `scene.background`. An environment reads the level that holds
-// the blur's roughness, as three.js reads its PMREM with `backgroundBlurriness`; a cube map reads
-// its only level. The fragment shader writes linear color as the mesh shaders write theirs: into
-// the HDR scene color, or tone mapped and encoded on the 8-bit path (the TONE_MAP builds).
+// An environment or a cube map behind every object: a box around the camera at the far plane, drawn
+// in the camera's opaque pass behind the objects (see the renderer's `background` module), whose
+// fragments read the cube map in their direction, as three.js draws a cube texture or a PMREM
+// texture in `scene.background`. An environment reads the level that holds the blur's roughness, as
+// three.js reads its PMREM with `backgroundBlurriness`; a cube map reads its only level. The
+// fragment shader writes linear color as the mesh shaders write theirs: into the HDR scene color,
+// or tone mapped and encoded on the 8-bit path (the TONE_MAP builds).
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::ibl::{roughness_level}

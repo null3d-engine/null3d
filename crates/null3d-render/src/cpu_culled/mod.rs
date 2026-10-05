@@ -25,9 +25,9 @@
 //! Each part has a module: `layout` keeps the sources, buckets and clusters, `data` the data
 //! textures and their rings, `cull` culls each view on the job workers, and `opaque` records the
 //! opaque passes. The debug lines pass, which both builders share, is [`crate::debug_lines`], and
-//! the background texture that the camera's opaque pass draws before its buckets is
-//! [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and begins
-//! their render passes.
+//! the background that the camera's opaque pass draws after its buckets, or before them while a
+//! bucket writes no depth, is [`crate::background`]. The render graph ([`crate::frame_graph`])
+//! orders the passes and begins their render passes.
 //!
 //! # Cells
 //!
@@ -97,7 +97,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, AoIds};
-use crate::background::{BackgroundIds, BackgroundPass};
+use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
@@ -1013,6 +1013,7 @@ impl CpuCulledRenderer {
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
+            Place::of(self.layout.depthless),
         );
         let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
@@ -1223,14 +1224,19 @@ impl CpuCulledRenderer {
             skips,
             |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
-                    if view == ViewId::CAMERA {
-                        let slot = opaque.frame_slot(view);
-                        let group = ids::frame_group(view) + light_slot;
-                        background.record(list, group, &[slot, slot])?;
+                    let camera = view == ViewId::CAMERA;
+                    let slot = opaque.frame_slot(view);
+                    let group = ids::frame_group(view) + light_slot;
+                    if camera {
+                        background.record(list, group, &[slot, slot], Place::First)?;
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Lit { light_slot };
-                    opaque.record(list, arena, view, starts, layout, meshes, shading)
+                    opaque.record(list, arena, view, starts, layout, meshes, shading)?;
+                    if camera {
+                        background.record(list, group, &[slot, slot], Place::Last)?;
+                    }
+                    Ok(())
                 }
                 Role::Prepass(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
