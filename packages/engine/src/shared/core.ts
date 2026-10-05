@@ -449,10 +449,11 @@ export interface CoreGlue extends CoreErrors {
 	/** The device pixels per CSS pixel of the canvas, which size sprites given in screen pixels. */
 	setPixelRatio(ratio: number): number;
 	/**
-	 * The shadow filter's texels on each side, 3 or 5, and the frames between two draws of a far
-	 * shadow cascade, from 1 to 8, from the next frame on.
+	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
+	 * shadow cascade, from 1 to 8, and whether a far cascade draws in every frame while a moving
+	 * caster touches it, from the next frame on.
 	 */
-	setShadowQuality(filter: number, farInterval: number): number;
+	setShadowQuality(filter: number, farInterval: number, followMovers: boolean): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights

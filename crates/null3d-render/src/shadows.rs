@@ -109,8 +109,8 @@ pub struct ShadowSettings {
     pub filter: u32,
 }
 
-/// The shadow settings that the quality settings give every light: the filter's size, and how
-/// often far cascades draw.
+/// The shadow settings that the quality settings give every light: the filter's size, how often
+/// far cascades draw, and whether moving casters make them draw in every frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ShadowQuality {
     /// The texels on each side of the square of comparisons that blend into each receiver's
@@ -118,6 +118,10 @@ pub struct ShadowQuality {
     pub filter: u32,
     /// Far cascades draw once in this many frames, from 1 to [`MAX_INTERVAL`].
     pub far_interval: u32,
+    /// True when a far cascade draws in every frame while a moving caster touches it, so moving
+    /// shadows follow their casters. False keeps every far cascade to its turns, and a moving
+    /// caster's shadow there stays where the layer last drew it until the next turn.
+    pub follow_movers: bool,
 }
 
 impl Default for ShadowQuality {
@@ -125,6 +129,7 @@ impl Default for ShadowQuality {
         Self {
             filter: 3,
             far_interval: 1,
+            follow_movers: true,
         }
     }
 }
@@ -684,12 +689,15 @@ pub const TARGETS: PassTargets = PassTargets {
     permutation: 0,
 };
 
-/// Records the creation of the cascades' uniform block under `uniform`, and of the comparison
-/// sampler that reads the shadow map under `sampler`. Every scene view's frame group binds both.
+/// Records the creation of the cascades' uniform block under `uniform`, of the comparison sampler
+/// of the shadow atlas under `sampler`, and of the sampler that reads four texels of the shadow
+/// map at once under `texels`, where the frame builder's shaders have such reads. Every scene
+/// view's frame group binds them.
 pub(crate) fn create_objects(
     list: &mut DrawList,
     uniform: u32,
     sampler: u32,
+    texels: Option<u32>,
 ) -> Result<(), RecordError> {
     list.push(
         Op::CreateBuffer,
@@ -718,6 +726,27 @@ pub(crate) fn create_objects(
             1,
         ],
     )?;
+    // The receivers compare each texel of the shadow map with a depth of their own, so they read
+    // the texels' depths unfiltered.
+    if let Some(texels) = texels {
+        let nearest = filter::NEAREST;
+        list.push(
+            Op::CreateSampler,
+            &[
+                texels,
+                clamp,
+                clamp,
+                clamp,
+                nearest,
+                nearest,
+                nearest,
+                0f32.to_bits(),
+                0f32.to_bits(),
+                compare::NONE,
+                1,
+            ],
+        )?;
+    }
     Ok(())
 }
 

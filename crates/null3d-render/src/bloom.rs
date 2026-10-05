@@ -4,7 +4,8 @@
 //!
 //! 1. Steps down: the first reads the scene color, limits it to what a 16-bit float holds, keeps
 //!    what passes the threshold, and takes a 13-tap filter with a Karis average into the base
-//!    level. Each later step takes the same filter, without the average, from the level above
+//!    level. The scene color holds exposed color (see [`crate::output`]), so the threshold and its
+//!    soft edge take the exposure too: a threshold keeps its meaning in color before the exposure. Each later step takes the same filter, without the average, from the level above
 //!    into a level of half its size.
 //! 2. Steps up: from the smallest level back to the base, each step reads the level below with a
 //!    3x3 tent and blends it over its own level by the level's mix, through premultiplied
@@ -147,6 +148,16 @@ impl Default for Bloom {
 }
 
 impl Bloom {
+    /// The settings in exposed color for a frame whose exposure is `exposure`: the threshold and
+    /// the width of its soft edge scaled by it, as the scene color is.
+    pub fn exposed(self, exposure: f32) -> Bloom {
+        Bloom {
+            threshold: self.threshold * exposure,
+            knee: self.knee * exposure,
+            ..self
+        }
+    }
+
     /// The levels that a chain whose base is reference level `offset` draws, of the `available`
     /// ones: those up to the last level with a weight above 0, and at least the base.
     fn drawn_levels(&self, offset: usize, available: usize) -> usize {
@@ -454,6 +465,7 @@ struct Staged {
     scale: RenderScale,
     frame: ChainFrame,
     bloom: Bloom,
+    exposure: f32,
 }
 
 /// Bloom's GPU objects, its settings and what the GPU holds of them.
@@ -524,8 +536,8 @@ impl BloomPass {
         })
     }
 
-    /// Makes the buffer and the sampler when the GPU lacks them, writes and uploads the settings
-    /// when an input changed, and binds each step to `sources[step]`, the texture it reads, when
+    /// Makes the buffer and the sampler when the GPU lacks them, writes and uploads the settings,
+    /// for `bloom` in a frame of the exposure that comes with it, when an input changed, and binds each step to `sources[step]`, the texture it reads, when
     /// its group is new or the frame made the plan's textures again.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
@@ -535,7 +547,7 @@ impl BloomPass {
         canvas: (u32, u32),
         scale: RenderScale,
         frame: ChainFrame,
-        bloom: Bloom,
+        (bloom, exposure): (Bloom, f32),
         sources: &[u32; STEPS],
         textures_made: bool,
     ) -> Result<(), RecordError> {
@@ -572,6 +584,7 @@ impl BloomPass {
             scale,
             frame,
             bloom,
+            exposure,
         };
         if self.staged_for != Some(inputs) {
             self.stage(inputs);
@@ -618,7 +631,10 @@ impl BloomPass {
             scale,
             frame,
             bloom,
+            exposure,
         } = inputs;
+        // The steps compare exposed color, so their threshold takes the exposure.
+        let exposed = bloom.exposed(exposure);
         let layout = Layout {
             canvas,
             scale,
@@ -632,7 +648,7 @@ impl BloomPass {
             let block = step_block(
                 step,
                 self.levels,
-                &bloom,
+                &exposed,
                 &mixes,
                 layout,
                 self.rows_from_bottom,
@@ -823,6 +839,14 @@ mod tests {
         let mixes = bloom.mixes(0);
         let first = step_block(0, 8, &bloom, &mixes, layout, false);
         assert_eq!(first.mode, MODE_FIRST_DOWN);
+        // The threshold and its soft edge take the exposure, as the scene color does.
+        let lit = Bloom {
+            threshold: 1.0,
+            knee: 0.5,
+            ..bloom
+        };
+        let exposed = step_block(0, 8, &lit.exposed(0.25), &mixes, layout, false);
+        assert_eq!((exposed.threshold, exposed.knee), (0.25, 0.125));
         assert_eq!(first.scale[1], 1.0 / 512.0);
         assert_eq!(first.bounds[3], 1079.5 / 1080.0);
         let half = Layout {
@@ -894,7 +918,7 @@ mod tests {
                 (1920, 1080),
                 scale,
                 chain,
-                Bloom::default(),
+                (Bloom::default(), 1.0),
                 &sources,
                 false,
             )

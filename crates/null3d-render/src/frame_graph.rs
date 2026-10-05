@@ -37,8 +37,8 @@
 //!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
-//! scene color and draws the canvas: it applies the exposure and the tone mapping, and encodes the
-//! color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
+//! scene color, which holds exposed color, and draws the canvas: it applies the tone mapping, and
+//! encodes the color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
 //! instead: the render pass that draws the scene resolves its multisampled color straight into
 //! the canvas, with no pass, copy or target of its own. With one sample, or while the render scale
 //! can drop below the whole canvas, the final pass copies the scene color into the canvas. In the
@@ -1179,7 +1179,8 @@ impl FrameGraph {
             );
             match (self.bloom, self.bloom_pass.as_mut()) {
                 (Some(settings), Some(pass)) => {
-                    pass.prepare(list, arena, canvas, scale, chain, settings, &sources, made)?;
+                    let bloom = (settings, output.exposure);
+                    pass.prepare(list, arena, canvas, scale, chain, bloom, &sources, made)?;
                     Some(BloomInputs::new(pass.ids(), base))
                 }
                 _ => None,
@@ -1199,7 +1200,7 @@ impl FrameGraph {
         self.final_pass.prepare(
             list,
             arena,
-            output,
+            output.tone_mapping,
             render_size,
             scene_color,
             bloom,

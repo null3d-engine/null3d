@@ -298,8 +298,14 @@ function bitsFor(value: number): number {
 	return Math.ceil(Math.log2(value + 1));
 }
 
-/** Reads a `.3dl` file's text. */
-export function parse3dl(text: string): LutTable {
+/** The most numbers that a `.3dl` file holds: three per texel of the largest table, and its grid. */
+const MAX_3DL_VALUES = 3 * MAX_LUT_SIZE ** 3 + MAX_LUT_SIZE;
+
+/**
+ * Reads a `.3dl` file's text. It stops with an error once the file holds more than `most`
+ * numbers, before it keeps them all.
+ */
+export function parse3dl(text: string, most = MAX_3DL_VALUES): LutTable {
 	const scan = new Scanner(text);
 	let outputBits = 0;
 	const values: number[] = [];
@@ -311,6 +317,9 @@ export function parse3dl(text: string): LutTable {
 		while (!Number.isNaN(value)) {
 			if (!(Number.isInteger(value) && value >= 0 && value <= 0xffff))
 				fail(`${value}, which is not a whole number from 0 to 65535`, scan.line);
+			// The largest table and its input grid: the reader stops before it keeps more.
+			if (values.length >= most)
+				fail(`more numbers than a table of ${MAX_LUT_SIZE} a side holds`, scan.line);
 			values.push(value);
 			value = scan.next();
 		}

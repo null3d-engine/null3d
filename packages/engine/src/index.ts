@@ -75,6 +75,7 @@ export type {
 } from './scene/animation';
 export type {
 	Assets,
+	LoadGltfOptions,
 	LoadImageOptions,
 	LoadTextureOptions,
 	ProgressHandler,
@@ -156,6 +157,7 @@ export type {
 } from './scene/resources';
 export type {
 	AmbientLight,
+	AmbientLightOptions,
 	Camera,
 	CameraOptions,
 	DirectionalLight,

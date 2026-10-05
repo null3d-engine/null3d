@@ -204,7 +204,7 @@ mod ids {
     pub const TARGETS: u32 = BLANK_AO + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The comparison sampler of the shadow map.
+    /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
@@ -762,7 +762,7 @@ impl CpuCulledRenderer {
     /// material it holds and one for each material's custom values, of three.js's table of
     /// specular terms, and of the shadows' uniform block and comparison sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
+        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER, None)?;
         ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         list.push(
             Op::CreateTexture,
@@ -1340,7 +1340,9 @@ impl FrameBuilder for CpuCulledRenderer {
             input.render_scale,
         );
         self.shadow = self.settings.shadow_frame(input);
-        let camera = self.settings.camera_position(scene, parity);
+        let camera = self
+            .settings
+            .view_frame(ViewId::CAMERA, scene, parity, canvas, scale);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
         self.tiles

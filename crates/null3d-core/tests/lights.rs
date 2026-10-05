@@ -31,6 +31,8 @@ struct World {
     commands: Vec<Command>,
     frame: u32,
     jobs: JobSystem,
+    /// The exposure that each frame's gather multiplies into every color.
+    exposure: f32,
 }
 
 impl World {
@@ -41,6 +43,7 @@ impl World {
             commands: Vec::new(),
             frame: 0,
             jobs: JobSystem::new(0),
+            exposure: 1.0,
         }
     }
 
@@ -79,7 +82,8 @@ impl World {
             .apply_commands(&std::mem::take(&mut self.commands), self.frame)
             .unwrap();
         self.scene.update_transforms(&self.jobs);
-        self.lights.gather(&self.scene, self.scene.parity(), view)
+        self.lights
+            .gather(&self.scene, self.scene.parity(), view, self.exposure)
     }
 
     /// The rows of the visible list.
@@ -352,6 +356,43 @@ fn ambient_lights_add_up() {
     let lit = world.frame(None);
     assert_eq!(lit.ambient, [1.0, 0.5, 0.75]);
     assert_eq!(lit.sun_color, [0.0; 3]);
+}
+
+#[test]
+fn the_exposure_scales_every_color_that_the_frame_gets() {
+    let mut world = World::new();
+    let (_, sun) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    let (_, ambient) = world.light(kind::AMBIENT, [0.0; 3], NO_TURN);
+    let point = world.ranged(kind::POINT, [0.0, 0.0, -10.0], 5.0);
+    world
+        .lights
+        .set_value(sun, value::INTENSITY, 100_000.0)
+        .unwrap();
+    world
+        .lights
+        .set_value(ambient, value::INTENSITY, 0.5)
+        .unwrap();
+    world
+        .lights
+        .set_color(point, color::MAIN, [1.0, 0.5, 0.25])
+        .unwrap();
+    world
+        .lights
+        .set_value(point, value::INTENSITY, 8.0)
+        .unwrap();
+    // The exposure of EV100 15: a sun of 100,000 lux becomes about 2.5, which a 16-bit float holds.
+    world.exposure = 1.0 / (1.2 * 2f32.powi(15));
+    let lit = world.frame(Some(&origin_view()));
+    let e = world.exposure;
+    assert_close(lit.sun_color, [100_000.0 * e; 3]);
+    assert!((2.5..2.6).contains(&lit.sun_color[0]));
+    assert_close(lit.ambient, [0.5 * e; 3]);
+    assert_close(world.lights.visible()[0].color, [8.0 * e, 4.0 * e, 2.0 * e]);
+    // The table keeps the light's own numbers.
+    assert_eq!(
+        world.lights.value(sun, value::INTENSITY).unwrap(),
+        100_000.0
+    );
 }
 
 #[test]

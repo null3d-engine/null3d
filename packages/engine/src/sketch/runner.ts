@@ -206,6 +206,8 @@ export class SketchRunner {
 	private bloomOn = false;
 	/** The base of bloom's chain that the `bloomSize` setting gives. */
 	private bloomSetting = 0;
+	/** The `followMovingCasters` setting, which the governor's shadow steps keep. */
+	private followMovers = true;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -287,6 +289,7 @@ export class SketchRunner {
 			this.recorded,
 			device.capabilities,
 			() => this.quality.own('uploadBytesPerFrame'),
+			device.webgl2,
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -584,6 +587,7 @@ export class SketchRunner {
 		governor.setOn(settings.governor);
 		governor.setRange(low, high);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
+		this.followMovers = settings.followMovingCasters;
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
@@ -592,7 +596,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
-			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
+			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
@@ -609,7 +613,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		this.stepChanges = governor.stepChanges;
 		if (
-			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
+			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0
 		)
