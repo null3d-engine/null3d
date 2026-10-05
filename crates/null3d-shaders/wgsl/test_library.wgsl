@@ -85,6 +85,14 @@ fn transform(r: array<vec4f, 8>) -> null3d::vertex::Transform {
 }
 #endif
 
+#ifdef FOG
+/// A scene fog from the inputs: the color and density in the first texel, the curve in the second,
+/// the shape in the third, and the sun glow and its exponent in the fourth.
+fn test_fog(u: array<vec4u, 8>, r: array<vec4f, 8>) -> null3d::fog::Fog {
+    return null3d::fog::Fog(r[0], r[2], r[3].x, r[3].y, 0.0, u[1].x);
+}
+#endif
+
 #ifdef LIGHTING
 fn material(r: array<vec4f, 8>) -> null3d::lighting::PbrMaterial {
     return null3d::lighting::pbr_material(r[0].xyz, r[0].w, r[1].x, r[1].y);
@@ -207,7 +215,7 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         }
 #endif
 #ifdef FOG
-        case 60u: { return scalar(null3d::fog::fog_depth(f[0].xyz, f[1].xyz)); }
+        case 60u: { return scalar(null3d::fog::fog_distance(f[0].xyz)); }
         case 61u: { return scalar(null3d::fog::fog_linear(f[0].x, f[0].y, f[0].z)); }
         case 62u: { return scalar(null3d::fog::fog_exp2(f[0].x, f[0].y)); }
         case 63u: { return triple(null3d::fog::apply_fog(f[0].xyz, f[1].xyz, f[2].x)); }
@@ -255,13 +263,7 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
 #endif
 #ifdef FOG
         case 94u: {
-            let scene_fog = null3d::fog::Fog(
-                vec4f(f[0].xyz, f[2].w),
-                vec4f(f[2].xyz, f[3].x),
-                f[3].y,
-                u[1].x,
-            );
-            return scalar(null3d::fog::fog_factor(scene_fog, f[4].xyz));
+            return scalar(null3d::fog::fog_factor(test_fog(u, f), f[4].xyz));
         }
 #endif
 #ifdef VERTEX
@@ -271,6 +273,14 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
 #endif
 #ifdef COLOR
         case 98u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
+#endif
+#ifdef FOG
+        case 99u: { return scalar(null3d::fog::fog_exponential(f[0].x, f[0].y)); }
+        case 100u: { return scalar(null3d::fog::fog_height_ratio(f[0].x, f[0].y)); }
+        case 101u: { return scalar(null3d::fog::fog_path(test_fog(u, f), f[4].xyz)); }
+        case 102u: {
+            return triple(null3d::fog::fog_color(test_fog(u, f), f[4].xyz, f[5].xyz, f[6].xyz));
+        }
 #endif
         default: { return whole(vec4u(0xffffffffu)); }
     }

@@ -8,9 +8,10 @@
 // exact results by a few units, so float results must agree within a tolerance. Hashes are
 // whole numbers and must agree bit for bit.
 import {
-	FOG_KIND_EXP2,
-	FOG_KIND_LINEAR,
-	FOG_KIND_NONE,
+	FOG_CURVE_EXP2,
+	FOG_CURVE_EXPONENTIAL,
+	FOG_CURVE_LINEAR,
+	FOG_CURVE_NONE,
 } from '../../../packages/engine/src/generated/core.ts';
 import { linearToSrgb, srgbToLinear } from '../../../packages/engine/src/math/color.ts';
 import { inverseLerp, mapLinear, smoothstep } from '../../../packages/engine/src/math/math.ts';
@@ -1054,11 +1055,9 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	},
 	// null3d::fog
 	{
-		name: 'fog::fog_depth',
-		cases: samples((random) =>
-			new Inputs().setF(0, values(random, 3, -50, 50)).setF(1, unit(random)),
-		),
-		expected: (i) => scalar(dot(xyz(i.f(0)), xyz(i.f(1)))),
+		name: 'fog::fog_distance',
+		cases: samples((random) => new Inputs().setF(0, values(random, 3, -50, 50))),
+		expected: (i) => scalar(length(xyz(i.f(0)))),
 	},
 	{
 		name: 'fog::fog_linear',
@@ -1374,29 +1373,16 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		cases: uniform(2, -2, 2),
 		expected: (i) => scalar(Math.abs(i.f(0)[0]) - i.f(0)[1]),
 	},
-	// null3d::fog's scene fog, numbered after the other modules' functions. Each kind of fog, by the
-	// engine's codes, at points in front of and behind the camera.
+	// null3d::fog's scene fog, numbered after the other modules' functions. Each curve, by the
+	// engine's codes, at points around the camera, in fog that thins with height and in fog that
+	// does not.
 	{
 		name: 'fog::fog_factor',
 		cases: (random) =>
-			[FOG_KIND_NONE, FOG_KIND_LINEAR, FOG_KIND_EXP2].flatMap((kind) =>
-				samples((r) =>
-					new Inputs()
-						.setF(0, values(r, 3, 0, 1))
-						.setU(1, [kind])
-						.setF(2, [...unit(r), between(r, 0, 0.05)])
-						.setF(3, [between(r, 0, 20), between(r, 30, 100)])
-						.setF(4, values(r, 3, -80, 80)),
-				)(random),
+			[FOG_CURVE_NONE, FOG_CURVE_LINEAR, FOG_CURVE_EXP2, FOG_CURVE_EXPONENTIAL].flatMap((curve) =>
+				[0, 0.05].flatMap((falloff) => sceneFogCases(curve, falloff)(random)),
 			),
-		expected: (i) => {
-			const kind = i.u(1)[0];
-			const [density, near, far] = [i.f(2)[3], i.f(3)[0], i.f(3)[1]];
-			const depth = dot(xyz(i.f(4)), xyz(i.f(2)));
-			if (kind === FOG_KIND_LINEAR) return scalar(smooth(near, far, depth));
-			if (kind === FOG_KIND_EXP2) return scalar(1 - Math.exp(-density * density * depth * depth));
-			return scalar(0);
-		},
+		expected: (i) => scalar(fogFactor(i)),
 	},
 	// null3d::vertex, the attribute readers. The test page sets no pipeline constants, so each
 	// scale keeps its default of 1, as on WebGL2 and for float attributes on WebGPU.
@@ -1430,7 +1416,98 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => floats(map3(xyz(i.f(0)), (value) => Math.min(value, 65472))),
 		tolerance: 0,
 	},
+	// null3d::fog's functions of the native fog: its exponential curve, its height and its sun glow.
+	{
+		name: 'fog::fog_exponential',
+		cases: samples((random) =>
+			new Inputs().setF(0, [between(random, 0, 300), between(random, 0, 0.05)]),
+		),
+		expected: (i) => {
+			const [distance, density] = i.f(0);
+			return scalar(1 - Math.exp(-density * distance));
+		},
+	},
+	{
+		name: 'fog::fog_height_ratio',
+		cases: (random) => [
+			// No falloff, and rises on both sides of the series' limit.
+			new Inputs().setF(0, [25, 0]),
+			new Inputs().setF(0, [0.05, 0.1]),
+			new Inputs().setF(0, [-0.2, 0.1]),
+			new Inputs().setF(0, [-2000, 0.5]),
+			...samples((r) => new Inputs().setF(0, [between(r, -80, 80), between(r, 0, 0.2)]))(random),
+		],
+		expected: (i) => scalar(heightRatio(i.f(0)[0], i.f(0)[1])),
+	},
+	{
+		name: 'fog::fog_path',
+		cases: (random) =>
+			[0, 0.05].flatMap((falloff) => sceneFogCases(FOG_CURVE_EXPONENTIAL, falloff)(random)),
+		expected: (i) => scalar(fogPath(i)),
+	},
+	{
+		name: 'fog::fog_color',
+		cases: (random) =>
+			[0, 0.5].flatMap((glow) =>
+				samples((r) =>
+					sceneFog(r, FOG_CURVE_EXPONENTIAL, 0)
+						.setF(3, [glow, between(r, 1, 32)])
+						.setF(5, unit(r))
+						.setF(6, values(r, 3, 0, 4)),
+				)(random),
+			),
+		expected: (i) => {
+			const [glow, exponent] = i.f(3);
+			const toward = Math.max(dot(normalize(xyz(i.f(4))), scale(xyz(i.f(5)), -1)), 0);
+			return floats(add(xyz(i.f(0)), scale(xyz(i.f(6)), glow * toward ** exponent)));
+		},
+	},
 ];
+
+/** The largest exponent of the fog's height terms, as `null3d::fog` limits it. */
+const FOG_HEIGHT_EXPONENT_LIMIT = 40;
+
+/**
+ * Inputs of a scene fog with `curve` and `falloff`: its color and density, its curve, its shape (near,
+ * far, falloff and the density share at the camera's height), and a point relative to the camera.
+ */
+function sceneFog(random: () => number, curve: number, falloff: number): Inputs {
+	return new Inputs()
+		.setF(0, [...values(random, 3, 0, 1), between(random, 0, 0.05)])
+		.setU(1, [curve])
+		.setF(2, [between(random, 0, 20), between(random, 30, 100), falloff, between(random, 0.2, 3)])
+		.setF(4, values(random, 3, -80, 80));
+}
+
+const sceneFogCases = (curve: number, falloff: number) =>
+	samples((random) => sceneFog(random, curve, falloff));
+
+/** The mean fog density along a ray that rises by `rise`, as a share of the density at its start. */
+function heightRatio(rise: number, falloff: number): number {
+	const x = falloff * rise;
+	if (x === 0) return 1;
+	return (1 - Math.exp(Math.min(-x, FOG_HEIGHT_EXPONENT_LIMIT))) / x;
+}
+
+/** The path through fog at its base density that hides as much as the scene fog's inputs do. */
+function fogPath(i: Inputs): number {
+	const relative = xyz(i.f(4));
+	const [, , falloff, share] = i.f(2);
+	const distance = length(relative);
+	return falloff === 0 ? distance : distance * share * heightRatio(relative[1], falloff);
+}
+
+/** The scene fog's factor for its inputs. */
+function fogFactor(i: Inputs): number {
+	const curve = i.u(1)[0];
+	const density = i.f(0)[3];
+	const [near, far] = i.f(2);
+	const path = fogPath(i);
+	if (curve === FOG_CURVE_LINEAR) return smooth(near, far, path);
+	if (curve === FOG_CURVE_EXP2) return 1 - Math.exp(-density * density * path * path);
+	if (curve === FOG_CURVE_EXPONENTIAL) return 1 - Math.exp(-density * path);
+	return 0;
+}
 
 function box(p: V3, half: V3): number {
 	const q = sub(map3(p, Math.abs), half);

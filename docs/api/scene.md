@@ -132,22 +132,38 @@ Each call sets both options, and an option left out takes its default. The call 
 
 ## Fog
 
-`setFog` covers every object in fog, with three.js's formulas. Linear fog is clear up to `near` and hides objects from `far`, with a smooth change between them. Exponential squared fog thickens with the square of the distance, at a rate that `density` sets. Distances run from the camera along its view direction, for both kinds of camera. `setFog(null)` removes the fog.
+`setFog` covers every object in fog that thickens with its distance from the camera. The distance is the straight line from the camera to the point, so an object keeps its fog as the camera turns. A curve sets how the fog thickens:
+
+- `'exponential'`, the default: an even haze. An object at distance d takes the fog color by a factor of 1 - exp(-density × d).
+- `'exp2'`: thicker with the square of the distance, 1 - exp(-(density × d)²), as three.js's `FogExp2`.
+- `'linear'`: clear up to `near`, and hides objects from `far`, with a smooth change between them, as three.js's `Fog`.
+
+The fog can also thin with height, as mist lies in a valley, and glow toward the main directional light. `setFog(null)` removes the fog.
 
 ```ts
 scene.setBackground('#b8c4d0');
-scene.setFog({ type: 'linear', color: '#b8c4d0', near: 10, far: 70 });
-// Or thicker with distance: scene.setFog({ type: 'exp2', color: '#b8c4d0', density: 0.03 });
+scene.setFog({ color: '#b8c4d0', density: 0.04 });
+// Mist on the ground that thins upward:
+scene.setFog({ color: '#b8c4d0', density: 0.1, height: 0, heightFalloff: 0.5 });
+// A low sun that lights the haze around it:
+scene.setFog({ color: '#b8c4d0', density: 0.04, sunGlow: 1.5 });
 ```
 
-| Option | Fog | Default | What it sets |
+| Option | Curves | Default | What it sets |
 | --- | --- | --- | --- |
-| `color` | Both | none | The fog's color, in any form that `setBackground` takes |
+| `color` | All | none | The fog's color, in any form that `setBackground` takes |
+| `curve` | All | `'exponential'` | How the fog thickens: `'exponential'`, `'exp2'` or `'linear'` |
+| `density` | Exponential and exp2 | 0.01 | How fast the fog thickens, 0 or more. At 0.01, exponential fog hides about two thirds of an object 100 units away |
 | `near` | Linear | 1 | The distance where the fog starts |
 | `far` | Linear | 1000 | The distance from which the fog hides every object. It must be above `near` |
-| `density` | Exponential squared | 0.00025 | How fast the fog thickens: 0 or more |
+| `height` | All | 0 | The height where the fog has its `density`, or its `near` and `far` |
+| `heightFalloff` | All | 0 | How fast the fog thins with height, 0 or more. The fog's density falls to about a third every 1 / `heightFalloff` units up, and grows below `height`. 0 keeps the fog the same at every height |
+| `sunGlow` | All | 0 | How much of the main directional light the fog scatters toward the camera, 0 or more. Fog toward that light glows in its color |
+| `sunGlowExponent` | All | 8 | How tightly the glow gathers around the light's direction, above 0. Higher values make a smaller glow |
 
-The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for a `far` that is not above `near` and for a negative `density`, and E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
+Height fog sums the fog along each line of sight. A view down into the mist then sees thick fog, and a view up sees clear air. The sun glow takes the color and the intensity of the scene's main directional light, so it follows the light as it moves. Shadows do not block the glow.
+
+The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for an unknown curve, a `far` that is not above `near`, a negative `density`, `heightFalloff` or `sunGlow`, and a `sunGlowExponent` that is not above 0. They throw E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
 
 ## Lights
 
@@ -201,25 +217,31 @@ The options of `scene.setEnvironment`. A call that leaves an option out takes it
 | `intensity?: number` | The factor of the environment's light on every surface, 0 or more, as three.js's `scene.environmentIntensity`. A material's `envIntensity` multiplies it. The default is 1. |
 | `rotation?: readonly [number, number, number]` | The turn of the environment about the scene, as Euler angles in radians in the order X, Y, Z, as three.js's `scene.environmentRotation`. The default is `[0, 0, 0]`. |
 
-### `Exp2FogOptions`
+### `FogCurve`
 
-Interface `Exp2FogOptions`.
+```ts
+type FogCurve = 'exponential' | 'exp2' | 'linear';
+```
 
-Exponential squared fog, as three.js's `FogExp2`: an object at distance d takes the fog color by a factor of 1 - exp(-(density × d)²). Distances run from the camera along its view direction.
-
-| Member | Description |
-| --- | --- |
-| `type: 'exp2'` | Exponential squared fog. |
-| `color: ColorInput` | The fog's color. |
-| `density?: number` | How fast the fog thickens with distance: 0 or more. The default is 0.00025. |
+How fog thickens with distance. Exponential fog, `'exponential'`, follows light through an even haze. An object at distance d takes the fog color by a factor of 1 - exp(-density × d). Exponential squared fog, `'exp2'`, thickens with the square of the distance, as three.js's `FogExp2`: 1 - exp(-(density × d)²). Linear fog, `'linear'`, is clear up to `near` and hides objects from `far`, with a smooth step between them, as three.js's `Fog`.
 
 ### `FogOptions`
 
-```ts
-type FogOptions = LinearFogOptions | Exp2FogOptions;
-```
+Interface `FogOptions`.
 
-Options of `scene.setFog`: linear fog or exponential squared fog.
+Options of `scene.setFog`. Fog measures each object's straight-line distance from the camera, so an object keeps its fog as the camera turns.
+
+| Member | Description |
+| --- | --- |
+| `color: ColorInput` | The fog's color. Give the background the same color, because the background takes no fog. |
+| `curve?: FogCurve` | How the fog thickens with distance. The default is `'exponential'`. |
+| `density?: number` | How fast exponential and exponential squared fog thicken with distance: 0 or more. At the default of 0.01, exponential fog hides about two thirds of an object 100 units away. |
+| `near?: number` | The distance where linear fog starts. The default is 1. |
+| `far?: number` | The distance from which linear fog hides every object. It must be above `near`. The default is 1000. |
+| `height?: number` | The height where the fog has its `density`, or its `near` and `far` distances. Above it, fog with a `heightFalloff` thins; below it, the fog thickens. The default is 0. |
+| `heightFalloff?: number` | How fast the fog thins with height, 0 or more: its density falls by a factor of e, to about a third, every 1 / `heightFalloff` units up. The engine adds up the fog along each line of sight, so a view down into a valley sees thick fog and a view up sees clear air. The default is 0: the fog is the same at every height. |
+| `sunGlow?: number` | How much of the main directional light the fog scatters toward the camera, 0 or more. Fog toward that light then glows in the light's color. The default is 0: no glow. |
+| `sunGlowExponent?: number` | How tightly the glow gathers around the light's direction, above 0. Higher values make a smaller glow. The default is 8. |
 
 ### `InstanceBatch`
 
@@ -267,19 +289,6 @@ Options for `scene.instantiate`: where the copy's group goes, and settings for a
 | `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
 | `occluder?: boolean` | True makes every mesh of the copy block the view for software occlusion culling on WebGL2, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset tool gave blockers block, and the others do not. |
 | `layers?: number` | The layers of every object of the copy and of its instance batches, as a 32-bit mask. Left out, they keep the default, 1, which is layer 0. |
-
-### `LinearFogOptions`
-
-Interface `LinearFogOptions`.
-
-Linear fog, as three.js's `Fog`: none up to `near`, full from `far`, and a smooth step between them. Distances run from the camera along its view direction.
-
-| Member | Description |
-| --- | --- |
-| `type: 'linear'` | Linear fog. |
-| `color: ColorInput` | The fog's color. |
-| `near?: number` | The distance where the fog starts. The default is 1. |
-| `far?: number` | The distance from which the fog hides every object. It must be above `near`. The default is 1000. |
 
 ### `MeshOptions`
 
@@ -351,7 +360,7 @@ The scene: every object, the active camera, the lights and the background.
 | `createAmbientLight(options: AmbientLightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
 | `setBackground(background: ColorInput \| Texture): void` | What the camera shows behind every object: a color, or a texture. A texture fills the view and stretches to its shape, as a texture in three.js's `scene.background` does. The color set before it shows until the texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of a texture. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
 | `setEnvironment(environment: Environment \| null, options?: EnvironmentOptions): void` | Lights the scene with an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene draws without the environment until its map is on the GPU. It allocates nothing, so a sketch can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for a negative intensity, E1213 for a value that is not an environment, and E1101 for an environment that was destroyed. |
-| `setFog(fog: FogOptions \| null): void` | Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Converting the color allocates. |
+| `setFog(fog: FogOptions \| null): void` | Fog over every object, by each object's straight-line distance from the camera along a curve: exponential by default, exponential squared or linear. The fog can thin with height and glow toward the main directional light. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a value out of its range, and E1203 for a value that is not finite. Converting the color allocates. |
 | `raycast(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hit: RaycastHit): boolean` | Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they were. The direction needs no unit length. The ray tests the triangles of objects and instance rows on the layers of `options.layers`, as their materials draw them: front faces, or both faces for a double-sided material. Queries see the scene as the last frame's update left it, so a move, a new object or a destroy in this frame counts from the next frame, or from `onLateUpdate`. Create `hit` and `options` once and pass them each time. |
 | `raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean` | True when a ray from `origin` along `direction` hits anything on the layers of `options.layers`. It stops at the first hit it finds, so it is faster than `raycast`: use it for line-of-sight checks. |
 | `raycastAll(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hits: RaycastHit[]): number` | Casts a ray as `raycast` does, writes every hit into `hits` nearest first, one hit for each triangle that the ray crosses, and returns how many. It fills the first entries of `hits`, adds hit objects when the array is too short, and leaves the entries after the hits as they were. |

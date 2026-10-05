@@ -3176,9 +3176,12 @@ export class Scene {
 	}
 
 	/**
-	 * Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential
-	 * squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a
-	 * material created with `fog: false` keeps its color. Converting the color allocates.
+	 * Fog over every object, by each object's straight-line distance from the camera along a curve:
+	 * exponential by default, exponential squared or linear. The fog can thin with height and glow
+	 * toward the main directional light. Null removes the fog. The background takes no fog, and a
+	 * material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a
+	 * value out of its range, and E1203 for a value that is not finite. Converting the color
+	 * allocates.
 	 */
 	setFog(fog: FogOptions | null): void {
 		setSceneFog(this.core.glue, fog);
