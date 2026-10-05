@@ -269,6 +269,11 @@ export interface InstantiateOptions extends NodeOptions {
 	 * tool gave blockers block, and the others do not.
 	 */
 	occluder?: boolean;
+	/**
+	 * The layers of every object of the copy and of its instance batches, as a 32-bit mask. Left
+	 * out, they keep the default, 1, which is layer 0.
+	 */
+	layers?: number;
 }
 
 /**
@@ -279,8 +284,24 @@ export interface InstantiateOptions extends NodeOptions {
 export interface LightOptions extends NodeOptions {
 	/** The light's color. The default is white. */
 	color?: ColorInput;
-	/** A factor that scales the color. The default is 1. */
+	/**
+	 * A factor that scales the color, in three.js's units unless the options name another unit.
+	 * The default is 1.
+	 */
 	intensity?: number;
+}
+
+/**
+ * Options for `scene.createAmbientLight`.
+ *
+ * @category api/lights
+ */
+export interface AmbientLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches every surface. It is three.js's
+	 * unit too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 }
 
 /**
@@ -289,6 +310,11 @@ export interface LightOptions extends NodeOptions {
  * @category api/lights
  */
 export interface DirectionalLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches a surface facing the light, such
+	 * as 100,000 for direct sunlight. It is three.js's unit too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 	/**
 	 * The direction the light travels, relative to the parent. The default, (0, -1, 0), points
 	 * straight down. It sets the light's rotation, so it wins over `rotation`.
@@ -348,6 +374,13 @@ export interface DirectionalShadowOptions {
  * @category api/lights
  */
 export interface PointLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity and of `setIntensity`: `'lumen'`, the light's whole output, such
+	 * as 800 for a 60 W bulb. The engine divides it by 4π for a point light, and by π for a spot
+	 * light at any cone angle, as three.js's `power` and Filament do. Without it, the intensity is
+	 * in candela, three.js's unit.
+	 */
+	intensityUnit?: 'lumen';
 	/**
 	 * The distance in meters where the light ends, above 0. Every point light needs one, because the
 	 * engine finds the lights near each surface by their ranges.
@@ -431,12 +464,44 @@ export interface HemisphereLightOptions extends NodeOptions {
 	groundColor?: ColorInput;
 	/** A factor that scales both colors. The default is 1. */
 	intensity?: number;
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches a surface. It is three.js's unit
+	 * too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 }
 
 /** The options of any light, as the scene's shared create path reads them. */
 type AnyLightOptions = LightOptions &
-	Partial<Omit<SpotLightOptions, keyof LightOptions>> &
-	Pick<DirectionalLightOptions, 'shadow'>;
+	Partial<Omit<SpotLightOptions, keyof LightOptions | 'intensityUnit'>> &
+	Pick<DirectionalLightOptions, 'shadow'> & { intensityUnit?: 'lumen' | 'lux' };
+
+/**
+ * The candela of one lumen of a point or spot light, by kind, as three.js's `power` and Filament
+ * convert them: a point light spreads its lumens over the whole sphere, 4π steradians, and a spot
+ * light over π, whatever its cone, so a narrower cone keeps the light's brightness.
+ */
+const CANDELA_PER_LUMEN: Readonly<Record<number, number>> = {
+	[C.LIGHT_KIND_POINT]: 1 / (4 * Math.PI),
+	[C.LIGHT_KIND_SPOT]: 1 / Math.PI,
+};
+
+/** The unit that each kind of light takes besides three.js's own. */
+const LIGHT_UNITS: Readonly<Record<number, 'lumen' | 'lux'>> = {
+	[C.LIGHT_KIND_DIRECTIONAL]: 'lux',
+	[C.LIGHT_KIND_POINT]: 'lumen',
+	[C.LIGHT_KIND_SPOT]: 'lumen',
+	[C.LIGHT_KIND_HEMISPHERE]: 'lux',
+	[C.LIGHT_KIND_AMBIENT]: 'lux',
+};
+
+/**
+ * The factor that turns an intensity in `unit` into three.js's unit for a light of `kind`: candela
+ * for point and spot lights, and lux for the others. Without a unit, or in lux, the factor is 1.
+ */
+function intensityScale(kind: number, unit: 'lumen' | 'lux' | undefined): number {
+	return unit === 'lumen' ? (CANDELA_PER_LUMEN[kind] ?? 1) : 1;
+}
 
 /** The numbers of a light's options, and their codes in the light table. */
 const LIGHT_NUMBERS = [
@@ -559,9 +624,14 @@ export class Object3D implements Described {
 	row: number;
 	/**
 	 * @internal The object's parent, as its create options or its last `setParent` gave it. A
-	 * destroyed parent leaves the object a root, as in the engine core.
+	 * destroyed parent leaves the object a root, as in the engine core. `attachTo` sets it.
 	 */
 	parentObject: Object3D | null = null;
+	/**
+	 * @internal The objects whose `parentObject` this object is, from its first child on, so
+	 * `scene.clone` walks a tree without a pass over the scene. Destroyed children leave it.
+	 */
+	childObjects: Set<Object3D> | undefined;
 	/** @internal The object's flags (`FLAG_*`), as its create options and its setters gave them. */
 	flags: number = C.FLAG_VISIBLE;
 	/** @internal The object's layer mask, as its create options and `setLayers` gave it. */
@@ -571,6 +641,7 @@ export class Object3D implements Described {
 	/** @internal The object's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly scene: Scene,
 		/** @internal */ readonly handle: number,
@@ -789,7 +860,17 @@ export class Object3D implements Described {
 		}
 		const keep = options?.keepWorld ? C.COMMAND_KEEP_WORLD : 0;
 		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, keep, 'setParent');
+		this.attachTo(parent);
+	}
+
+	/** @internal Records `parent` as the object's parent, in both objects. */
+	attachTo(parent: Object3D | null): void {
+		this.parentObject?.childObjects?.delete(this);
 		this.parentObject = parent;
+		if (parent) {
+			parent.childObjects ??= new Set();
+			parent.childObjects.add(this);
+		}
 	}
 
 	/** @internal The live parent, or null for a root. */
@@ -869,6 +950,7 @@ export class Object3D implements Described {
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
+		this.parentObject?.childObjects?.delete(this);
 		this.scene.forget(this);
 	}
 
@@ -932,6 +1014,18 @@ export class PrefabInstance extends Group {
 		for (const object of this.objects)
 			if (object !== this && object.name === name && object.destroyedFrame < 0) return object;
 		return undefined;
+	}
+
+	/**
+	 * Removes the whole copy at the next frame: this group, every object that the copy created and
+	 * that is not destroyed yet, and its instance batches. Objects that the sketch put under the
+	 * copy later become roots, as children of any destroyed object do.
+	 */
+	override destroy(): void {
+		super.destroy();
+		for (const object of this.objects)
+			if (object !== this && object.destroyedFrame < 0) object.destroy();
+		for (const batch of this.batches) if (batch.destroyedFrame < 0) batch.destroy();
 	}
 
 	/**
@@ -1473,6 +1567,11 @@ export class Light extends Object3D {
 	id = 0;
 	/** @internal The light's color in linear RGB, before the intensity scales it. */
 	readonly linear = new Float64Array([1, 1, 1]);
+	/**
+	 * @internal What an intensity in the light's unit is in three.js's unit: 1, or the candela of
+	 * one lumen for a point or spot light in lumens.
+	 */
+	unitScale = 1;
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
@@ -1484,6 +1583,7 @@ export class Light extends Object3D {
 		const { core } = this.scene;
 		twin.id = core.checkGrowth(core.glue.copyLight(this.id, handle), 'clone', this.label);
 		twin.linear.set(this.linear);
+		twin.unitScale = this.unitScale;
 		return twin;
 	}
 
@@ -1492,9 +1592,9 @@ export class Light extends Object3D {
 		this.paint('setColor', C.LIGHT_COLOR_MAIN, color);
 	}
 
-	/** Sets the factor that scales the color. */
+	/** Sets the factor that scales the color, in the unit that the light was created with. */
 	setIntensity(intensity: number): void {
-		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity);
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity * this.unitScale);
 	}
 
 	/** Removes the light at the next frame. Its children become roots. */
@@ -1713,6 +1813,7 @@ export class InstanceBatch {
 	/** @internal The batch's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		private readonly scene: Scene,
 		/** @internal */ readonly id: number,
@@ -2009,8 +2110,6 @@ export class Scene {
 	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
-	/** Every live object, which `clone` searches for the objects below the one it copies. */
-	private readonly live = new Set<Object3D>();
 	/** @internal The batches of command records published so far, which tests count. */
 	commandBatches = 0;
 	private warnedPastPortable = false;
@@ -2027,6 +2126,7 @@ export class Scene {
 	private morphTable: Float32Array = new Float32Array(0);
 	private morphGeneration = -1;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
@@ -2298,11 +2398,10 @@ export class Scene {
 	}
 
 	/**
-	 * Adds a new object to the live objects, to the index of slots that queries read, and to the
-	 * index of names after those with its name.
+	 * Adds a new object to the index of slots that queries read, and to the index of names after
+	 * those with its name.
 	 */
 	private remember(object: Object3D): void {
-		this.live.add(object);
 		this.objectSlots[object.slot] = object;
 		const { name } = object;
 		if (!name) return;
@@ -2320,7 +2419,6 @@ export class Scene {
 
 	/** @internal Takes a destroyed object out of the index of names. */
 	forget(object: Object3D): void {
-		this.live.delete(object);
 		const { name } = object;
 		const known = this.names.get(name);
 		if (known === object) this.names.delete(name);
@@ -2374,8 +2472,11 @@ export class Scene {
 
 	/**
 	 * Creates an object of class `kind` from the next frame: its slot with the transform of
-	 * `options`, its create command with `flags` besides visibility and `dynamic`, its layers, and
-	 * its wrapper, built with any further constructor arguments, which the index of names learns.
+	 * `options`, its create command with `flags` besides visibility and `dynamic`, its layers, the
+	 * material `material` names when it is not 0, and its wrapper, built with any further
+	 * constructor arguments, which the index of names learns. It checks that the command ring has
+	 * room for every record before it reserves the slot, and publishes the records at once, so a
+	 * failure leaves nothing behind.
 	 */
 	private create<T extends Object3D, A extends unknown[]>(
 		kind: ObjectClass<T, A>,
@@ -2383,6 +2484,7 @@ export class Scene {
 		mesh: number,
 		radius: number,
 		flags: number,
+		material: number,
 		call: string,
 		...extra: A
 	): T {
@@ -2391,6 +2493,8 @@ export class Scene {
 			if (options.parent) checkLive(call, options.parent, true);
 			if (layers !== undefined) checkLayers(call, layers);
 		}
+		const layered = layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT;
+		let write = this.reserveCommands(1 + (layered ? 1 : 0) + (material ? 1 : 0), call);
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
@@ -2400,11 +2504,13 @@ export class Scene {
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
 		v.radii[slot] = radius;
 		const all = flags | C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
-		this.command(C.COMMAND_CREATE | (all << 8), handle, options.parent?.handle ?? 0, mesh, call);
-		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
-			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
+		const parent = options.parent?.handle ?? 0;
+		this.writeCommand(write++, C.COMMAND_CREATE | (all << 8), handle, parent, mesh);
+		if (layered) this.writeCommand(write++, C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0);
+		if (material) this.writeCommand(write++, C.COMMAND_SET_MATERIAL, handle, material, 0);
+		this.publishCommands(write);
 		const object = new kind(this, handle, options.name ?? '', ...extra);
-		object.parentObject = options.parent ?? null;
+		object.attachTo(options.parent ?? null);
 		object.flags = all;
 		object.layerMask = (layers ?? C.LAYERS_DEFAULT) >>> 0;
 		this.remember(object);
@@ -2414,7 +2520,7 @@ export class Scene {
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 'createGroup');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup');
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
@@ -2428,8 +2534,15 @@ export class Scene {
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
 			(options.occluder ? C.FLAG_OCCLUDER : 0);
-		const object = this.create(Mesh, options, mesh.id, mesh.radius, flags, 'createMesh');
-		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
+		const object = this.create(
+			Mesh,
+			options,
+			mesh.id,
+			mesh.radius,
+			flags,
+			material.id,
+			'createMesh',
+		);
 		object.mesh = mesh;
 		object.material = material;
 		const block = this.makeMorph(object, mesh, undefined, 'createMesh');
@@ -2442,8 +2555,9 @@ export class Scene {
 	 * `options` places, and returns that group. All the objects are created with one batch of
 	 * commands, and every copy shares the model's meshes, materials and textures. The group's
 	 * `find` gives the copy's object of a node, by the node's name. A model with clips or skins
-	 * gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws E1102 when the scene has
-	 * no room for the objects, before it creates any.
+	 * gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws
+	 * E1102 when the scene, the animation table or the batch table has no room for the copy. Then
+	 * no part of the copy stays. `destroy()` on the group removes the whole copy.
 	 */
 	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
 		const call = 'instantiate';
@@ -2466,11 +2580,27 @@ export class Scene {
 			root: true,
 		};
 		const cleared = options.occluder === false ? C.FLAG_OCCLUDER : 0;
-		const objects = this.createNodes(template, call, options.parent ?? null, root, extra, cleared);
+		// Layers reach every object of the copy and its batches, as the shadow flags reach every mesh.
+		const nodes =
+			options.layers === undefined
+				? template
+				: template.map((node) => ({ ...node, layers: root.layers }));
+		const objects = this.createNodes(nodes, call, options.parent ?? null, root, extra, cleared);
 		const instance = objects[0] as PrefabInstance;
 		instance.objects = objects;
-		prefab.animate(objects);
-		instance.batches = prefab.instancing.map((spec) => this.placeInstancing(instance, spec, call));
+		const batches: InstanceBatch[] = [];
+		try {
+			prefab.animate(objects);
+			for (const spec of prefab.instancing)
+				batches.push(this.placeInstancing(instance, spec, call, options.layers));
+		} catch (error) {
+			// The animation table or the batch table is full: the copy goes whole, so the sketch
+			// holds no part of it that it cannot reach.
+			instance.batches = batches;
+			instance.destroy();
+			throw error;
+		}
+		instance.batches = batches;
 		return instance;
 	}
 
@@ -2480,8 +2610,8 @@ export class Scene {
 	 * same parent, so it starts in the same place. The copies are created with one batch of
 	 * commands. An animated object's copy gets an animator of its own, with no clip playing, which
 	 * moves the copies of its meshes, as three.js's `SkeletonUtils.clone` does. Instance batches are
-	 * not objects, so they are not copied. Throws E1102 when the scene has no room for the copies,
-	 * before it creates any.
+	 * not objects, so they are not copied. Throws E1102 when the scene or the animation table has
+	 * no room for the copies. Then no copy stays.
 	 */
 	clone<T extends Object3D>(object: T): T {
 		const call = 'clone';
@@ -2494,30 +2624,29 @@ export class Scene {
 		const copies = new Map(
 			nodes.map((node, k) => [node.source as Object3D, objects[k] as Object3D]),
 		);
-		for (const [source, made] of copies) source.animation?.copyTo(made, copies);
+		try {
+			for (const [source, made] of copies) source.animation?.copyTo(made, copies);
+		} catch (error) {
+			// The animation table is full: the copies go, so the sketch holds none it cannot reach.
+			for (const made of objects) if (made.destroyedFrame < 0) made.destroy();
+			throw error;
+		}
 		return copy;
 	}
 
 	/**
 	 * The objects at and below `object` as template nodes, parents first, each with its object as
-	 * the source of its copy. It goes through every live object once.
+	 * the source of its copy. It walks each object's children, so it visits only the tree.
 	 */
 	private subtree(object: Object3D): TemplateNode[] {
-		const children = new Map<Object3D, Object3D[]>();
-		for (const each of this.live) {
-			const parent = each.liveParent;
-			if (!parent) continue;
-			const list = children.get(parent);
-			if (list) list.push(each);
-			else children.set(parent, [each]);
-		}
 		const order: Object3D[] = [object];
 		const parents: number[] = [-1];
 		for (let k = 0; k < order.length; k++)
-			for (const child of children.get(order[k] as Object3D) ?? []) {
-				order.push(child);
-				parents.push(k);
-			}
+			for (const child of (order[k] as Object3D).childObjects ?? [])
+				if (child.destroyedFrame < 0) {
+					order.push(child);
+					parents.push(k);
+				}
 		const v = this.views;
 		return order.map((each, k): TemplateNode => {
 			const row = each.row;
@@ -2607,7 +2736,7 @@ export class Scene {
 				this.writeCommand(write++, C.COMMAND_SET_MORPH, handle, block, 0);
 				if (n.morph) (object as Mesh).morphJoint = n.morph.joint;
 			}
-			object.parentObject = n.parent < 0 ? parent : (objects[n.parent] as Object3D);
+			object.attachTo(n.parent < 0 ? parent : (objects[n.parent] as Object3D));
 			object.flags = flags;
 			object.layerMask = n.layers;
 			objects.push(object);
@@ -2654,6 +2783,7 @@ export class Scene {
 		instance: PrefabInstance,
 		spec: InstancingTemplate,
 		call: string,
+		layers?: number,
 	): InstanceBatch {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
@@ -2670,7 +2800,7 @@ export class Scene {
 			object = object.liveParent;
 		}
 		const origin: Vec3 = [world[12] as number, world[13] as number, world[14] as number];
-		const batch = this.createParts(spec.parts, spec.count, { origin }, call);
+		const batch = this.createParts(spec.parts, spec.count, { origin, layers }, call);
 		const { positions, rotations, scales } = batch;
 		for (let r = 0; r < spec.count; r++) {
 			trs(spec.positions.subarray(r * 3, r * 3 + 3), spec.rotations, spec.scales, r);
@@ -2805,6 +2935,7 @@ export class Scene {
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('sprites');
 		const sprites = await loadSprites(call);
 		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
 		const id = core.checkGrowth(
@@ -2847,6 +2978,7 @@ export class Scene {
 		LINE_CHECKS.width(width, call);
 		LINE_CHECKS.values(options, call);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('lines');
 		const lines = await loadLines(call);
 		const parts = lines.lineParts(makers, core, this.lineMesh, options, LINE_CHECKS, call);
 		this.lineMesh = parts.mesh;
@@ -2915,7 +3047,7 @@ export class Scene {
 		...lens: A
 	): T {
 		const node = { dynamic: true, ...options };
-		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, 0, call, ...lens);
+		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, 0, 0, call, ...lens);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
@@ -2937,15 +3069,32 @@ export class Scene {
 		options: AnyLightOptions,
 		call: string,
 	): T {
+		const { intensityUnit } = options;
+		if (DEV && intensityUnit !== undefined && intensityUnit !== LIGHT_UNITS[type])
+			throw new EngineError(
+				'E1213',
+				`${call}() got the intensity unit ${JSON.stringify(intensityUnit)}, and this light takes only '${LIGHT_UNITS[type]}'.`,
+			);
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
-		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, call);
+		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call);
 		const { core } = this;
-		light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);
+		try {
+			light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);
+		} catch (error) {
+			// The object has no light row, so it goes before the sketch could reach it.
+			light.destroy();
+			throw error;
+		}
+		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
-			if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
+			if (which === C.LIGHT_VALUE_INTENSITY) {
+				// An intensity in another unit, even the default of 1, is that unit's.
+				if (value !== undefined || light.unitScale !== 1)
+					light.write(call, which, (value ?? 1) * light.unitScale);
+			} else if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
 				light.write(call, which, value as number);
 		}
 		if (options.shadow) light.shadow(call, options.shadow);
@@ -2992,7 +3141,7 @@ export class Scene {
 	}
 
 	/** Light on every surface, from no direction. */
-	createAmbientLight(options: LightOptions = {}): AmbientLight {
+	createAmbientLight(options: AmbientLightOptions = {}): AmbientLight {
 		return this.createLight(AmbientLight, C.LIGHT_KIND_AMBIENT, options, 'createAmbientLight');
 	}
 
@@ -3007,6 +3156,7 @@ export class Scene {
 	setBackground(background: ColorInput | Texture): void {
 		const { glue } = this.core;
 		if (background instanceof Texture) {
+			this.makers?.materials.shaders.need('background');
 			const status = glue.setBackgroundTexture(background.handle);
 			this.core.check(status, 'setBackground', 'a texture', true);
 			return;

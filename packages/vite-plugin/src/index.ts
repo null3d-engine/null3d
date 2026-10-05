@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, posix, relative, resolve, sep } from 'node:path';
+import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
 import type { Connect, HtmlTagDescriptor, Plugin, Rollup } from 'vite';
 import {
@@ -47,6 +47,12 @@ export interface Null3dPluginOptions {
 	 * which `assets.loadGltf` takes. The tool comes from `@null3d/cli`, which the project installs.
 	 */
 	assets?: AssetOptions;
+	/**
+	 * Let the page's address set the engine's test switches, such as `?gpu=` and `?hold=`, in
+	 * production builds too. Development builds always read them. The default is false, so a link
+	 * cannot change how a shipped game runs. Turn it on for builds of test and benchmark pages.
+	 */
+	urlSwitches?: boolean;
 }
 
 /** Sets the isolation headers on every response, including `.wasm` files and worker scripts. */
@@ -101,7 +107,6 @@ const WORKER_BEFORE = /new\s+(?:Shared)?Worker\(\s*$/;
 export const CORE_FILES = [
 	'threaded/null3d.js',
 	'threaded/null3d_bg.wasm',
-	'threaded/null3d_memory.json',
 	'single/null3d.js',
 	'single/null3d_bg.wasm',
 ];
@@ -158,6 +163,37 @@ export function earlyCoreTag(
 		attrs: { type: 'module', async: true, src },
 		injectTo: 'head-prepend',
 	};
+}
+
+/** The file in which each null3D package lists the third-party code that it ships, with licences. */
+const PACKAGE_NOTICES = 'THIRD-PARTY-NOTICES.txt';
+
+/** The file that a production build writes beside the page, with every package's notices. */
+export const NOTICES_FILE = 'null3d-third-party-notices.txt';
+
+/**
+ * The third-party notices of the null3D packages that the project depends on: the engine's first,
+ * then each add-on's, by name. Null when none has notices, as in a project without the engine.
+ */
+export function thirdPartyNotices(root: string): string | null {
+	const manifest = resolve(root, 'package.json');
+	if (!existsSync(manifest)) return null;
+	const { dependencies = {}, devDependencies = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
+	const require = createRequire(manifest);
+	const names = Object.keys({ ...dependencies, ...devDependencies })
+		.filter((name) => name.startsWith('@null3d/'))
+		.sort(
+			(a, b) => Number(b === '@null3d/engine') - Number(a === '@null3d/engine') || (a < b ? -1 : 1),
+		);
+	const texts = names.flatMap((name) => {
+		try {
+			const file = join(dirname(require.resolve(`${name}/package.json`)), PACKAGE_NOTICES);
+			return existsSync(file) ? [readFileSync(file, 'utf8').trimEnd()] : [];
+		} catch {
+			return [];
+		}
+	});
+	return texts.length > 0 ? `${texts.join('\n\n')}\n` : null;
 }
 
 /** True for a sketch module: a script that calls `defineSketch`. */
@@ -221,6 +257,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let root = process.cwd();
 	let base = '/';
 	let assetsDir = 'assets';
+	/** The third-party notices that a client build writes beside the page; null in other builds. */
+	let notices: string | null = null;
 	/** The optimized files that this build has written, so each texture goes in once. */
 	const emitted = new Map<string, string>();
 	return {
@@ -235,7 +273,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				: undefined;
 			return {
 				// Development checks stay in dev builds; release builds drop them as dead code.
-				define: { __NULL3D_DEV__: JSON.stringify(mode !== 'production') },
+				define: {
+					__NULL3D_DEV__: JSON.stringify(mode !== 'production'),
+					// Without the option, a build that defines the constant itself keeps its value.
+					...(options.urlSwitches === undefined
+						? {}
+						: { __NULL3D_URL_SWITCHES__: JSON.stringify(options.urlSwitches) }),
+				},
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },
@@ -251,6 +295,12 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			root = config.root;
 			base = config.base;
 			assetsDir = config.build.assetsDir;
+			if (config.worker.format !== 'es') {
+				config.logger.warn(
+					`null3D: workers build as ${config.worker.format}, not as ES modules, so each engine worker takes in every shader file and grows to tens of MB. Set worker.format to 'es', or leave it unset for the null3D plugin to set.`,
+				);
+			}
+			notices = building && !config.build.ssr ? thirdPartyNotices(root) : null;
 		},
 		buildStart() {
 			emitted.clear();
@@ -383,6 +433,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					? { code: out.toString(), map: out.generateMap({ hires: 'boundary' }) }
 					: undefined;
 			},
+		},
+		generateBundle() {
+			if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);

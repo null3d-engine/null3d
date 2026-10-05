@@ -14,9 +14,12 @@ import {
 	type Ktx2Header,
 	type Ktx2Target,
 	ktx2Target,
+	ktx2TooLarge,
+	loadKtx2,
 	readKtx2Header,
 	transcodedBytes,
 } from './ktx2';
+import type { Textures } from './textures';
 
 const ENGINE = join(import.meta.dir, '../..');
 const VENDOR = join(ENGINE, 'vendor/basis');
@@ -155,6 +158,80 @@ describe('ktx2Target', () => {
 		expect(ktx2Target(etc2, UASTC).transcoder).toBe('cTFETC1_RGB');
 		expect(format(ALL, { ...UASTC, width: 30 })).toBe('rgba8unorm');
 		expect(format(ALL, { ...ETC1S, height: 18 })).toBe('rgba8unorm');
+	});
+
+	test('on WebGL2, takes BC7 first wherever the device has BC, as desktop drivers may emulate the rest', () => {
+		// A desktop whose driver offers every family, as Mesa on Linux does, and one with BC alone.
+		for (const capabilities of [ALL, CAPABILITY_TEXTURE_BC | CAPABILITY_TEXTURE_ETC2])
+			for (const header of [UASTC, ETC1S, { ...ETC1S, alpha: true }])
+				expect(ktx2Target(capabilities, header, true)).toEqual({
+					transcoder: 'cTFBC7_RGBA',
+					format: 'bc7-rgba-unorm',
+				});
+		// A phone's WebGL2 has no BC, and WebGPU offers each family only where the GPU has it.
+		const phone = CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_ETC2;
+		expect([ktx2Target(phone, UASTC, true).format, ktx2Target(phone, ETC1S, true).format]).toEqual([
+			'astc-4x4-unorm',
+			'etc2-rgb8unorm',
+		]);
+		expect(ktx2Target(ALL, ETC1S, false).format).toBe('etc2-rgb8unorm');
+		expect(ktx2Target(ALL, { ...ETC1S, width: 30 }, true).format).toBe('rgba8unorm');
+	});
+});
+
+describe('ktx2TooLarge', () => {
+	const header = { width: 2048, height: 1024, layers: 1, levels: 12 };
+
+	test('lets through a file within every limit', () => {
+		expect(ktx2TooLarge(header, 'rgba8unorm', 2048)).toBeUndefined();
+		expect(ktx2TooLarge({ ...header, layers: 2 }, 'bc7-rgba-unorm', 4096)).toBeUndefined();
+	});
+
+	test("refuses sides past the device's limit, too many layers or levels, and too many bytes", () => {
+		expect(ktx2TooLarge(header, 'rgba8unorm', 1024)).toBe(
+			"it is 2048 x 1024 texels, larger than the 1024 a side that this device's textures hold",
+		);
+		expect(ktx2TooLarge({ ...header, layers: 257 }, 'bc7-rgba-unorm', 4096)).toContain(
+			'257 layers, more than the 256',
+		);
+		expect(ktx2TooLarge({ ...header, levels: 13 }, 'bc7-rgba-unorm', 4096)).toContain(
+			'13 mip levels, more than the 12',
+		);
+		expect(ktx2TooLarge({ ...header, layers: 48 }, 'rgba8unorm', 4096)).toBe(
+			'its texels take 513 MiB as rgba8unorm, more than the 256 MiB that one texture may hold',
+		);
+	});
+
+	test('a file larger than the device takes is refused before the transcoder starts', async () => {
+		const Worker = globalThis.Worker;
+		let started = 0;
+		globalThis.Worker = class {
+			constructor() {
+				started++;
+				throw new Error('the transcoder started');
+			}
+		} as unknown as typeof globalThis.Worker;
+		try {
+			// A 16 KB file that says it holds 16,384 x 16,384 texels.
+			const huge = withWord(withWord(file('quarters-etc1s'), 20, 16384), 24, 16384);
+			const textures = { capabilities: 0, webgl2: false, maxSize: 4096 } as Textures;
+			const refused = loadKtx2(
+				textures,
+				huge.buffer as ArrayBuffer,
+				new URL('https://example.com/huge.ktx2'),
+				{},
+				'assets.loadTexture',
+				(code, message) => Object.assign(new Error(message), { code }) as never,
+			);
+			await expect(refused).rejects.toMatchObject({
+				code: 'E1412',
+				message:
+					"assets.loadTexture() could not load https://example.com/huge.ktx2 as a KTX2 texture: it is 16384 x 16384 texels, larger than the 4096 a side that this device's textures hold.",
+			});
+			expect(started).toBe(0);
+		} finally {
+			globalThis.Worker = Worker;
+		}
 	});
 });
 

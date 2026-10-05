@@ -227,6 +227,7 @@ async function start(
 			},
 			sendImage: () => {},
 			sendShader: () => {},
+			sendPreload: () => {},
 			pageUrl: 'http://localhost/',
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
@@ -405,16 +406,16 @@ describe('SketchRunner', () => {
 		expect(record?.[4]).toBe(1000);
 	});
 
-	it("gives the core the preset's shadow filter and far cascade interval, and each change", async () => {
+	it("gives the core the preset's shadow filter, far cascade interval and moving casters, and each change", async () => {
 		const { runner, calls } = await start(({ quality }) => ({
 			onUpdate: () => {
-				quality.set({ shadowFilter: 3, farCascadeInterval: 1 });
+				quality.set({ shadowFilter: 3, farCascadeInterval: 1, followMovingCasters: false });
 			},
 		}));
 		const shadowCalls = () => calls.filter((call) => call[0] === 'setShadowQuality');
-		expect(shadowCalls()).toEqual([['setShadowQuality', 5, 3]]);
+		expect(shadowCalls()).toEqual([['setShadowQuality', 5, 3, true]]);
 		runner.step(0);
-		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1]);
+		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1, false]);
 	});
 
 	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {

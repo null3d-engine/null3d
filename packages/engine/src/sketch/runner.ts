@@ -33,7 +33,7 @@ import {
 import { FORMAT_CANVAS } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
-import { bloomDivisor, FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
+import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
@@ -41,10 +41,16 @@ import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
+import { ShaderPreloads } from '../scene/shader-preloads';
 import { Textures } from '../scene/textures';
 import { type ControlViews, controlLabels, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
-import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
+import {
+	type ImageSender,
+	imagesArrived,
+	type PreloadSender,
+	type ShaderSender,
+} from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -81,6 +87,8 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
+	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
@@ -196,8 +204,10 @@ export class SketchRunner {
 	private readonly post: Post;
 	/** True while the sketch has bloom on, as the governor knows it. */
 	private bloomOn = false;
-	/** The divisor of bloom's taps that the `bloomSamples` setting gives. */
-	private bloomSetting = 1;
+	/** The base of bloom's chain that the `bloomSize` setting gives. */
+	private bloomSetting = 0;
+	/** The `followMovingCasters` setting, which the governor's shadow steps keep. */
+	private followMovers = true;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -279,6 +289,7 @@ export class SketchRunner {
 			this.recorded,
 			device.capabilities,
 			() => this.quality.own('uploadBytesPerFrame'),
+			device.webgl2,
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -296,6 +307,7 @@ export class SketchRunner {
 					)
 				: undefined;
 		const { governor } = this;
+		const bloomSize = () => this.bloomSetting / 2 ** governor.bloomHalvings;
 		this.quality = new SketchQuality(
 			sketch.quality,
 			(update, changed) => {
@@ -315,8 +327,8 @@ export class SketchRunner {
 				get shadowFilter() {
 					return governor.filter as 3 | 5;
 				},
-				get bloomSamples() {
-					return 1 / governor.bloomDivisor;
+				get bloomSize() {
+					return bloomSize();
 				},
 				get aoScale() {
 					return governor.aoScale / FULL_SCALE;
@@ -335,7 +347,11 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
-		const materials = new Materials(this.core, sketch.sendShader);
+		const materials = new Materials(
+			this.core,
+			sketch.sendShader,
+			new ShaderPreloads(sketch.sendPreload),
+		);
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
@@ -350,6 +366,7 @@ export class SketchRunner {
 			this.core,
 			device.effectsSceneColor !== FORMAT_CANVAS,
 			device.occlusionTargets,
+			materials.shaders,
 		);
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
@@ -570,7 +587,8 @@ export class SketchRunner {
 		governor.setOn(settings.governor);
 		governor.setRange(low, high);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
-		this.bloomSetting = bloomDivisor(settings.bloomSamples);
+		this.followMovers = settings.followMovingCasters;
+		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
@@ -578,8 +596,8 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
-			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
+			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
@@ -587,7 +605,7 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Gives the core the shadow settings and bloom's samples after a step of the governor, and tells
+	 * Gives the core the shadow settings and bloom's base after a step of the governor, and tells
 	 * the sketch's change handlers of it.
 	 */
 	private applyGovernedSteps(): void {
@@ -595,8 +613,8 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		this.stepChanges = governor.stepChanges;
 		if (
-			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
-			glue.setBloomSamples(governor.bloomDivisor) !== 0 ||
+			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
+			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
@@ -631,7 +649,7 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Follows the sketch's bloom: the governor's bloom steps need it on. The first time an effect
+	 * Follows the sketch's bloom: the governor's bloom step needs it on. The first time an effect
 	 * that needs HDR color turns on, on a device that started on the 8-bit path only for MSAA, the
 	 * core moves to HDR color with FXAA for the engine's life. Returns true then: the frame has new
 	 * targets and pipelines, so the thread that draws holds it until they are built, and the frame
@@ -852,7 +870,9 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
-		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		if (glue.cullFrame(frame, width, height, built) !== 0)
+			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
 			this.core.refresh();
@@ -863,7 +883,6 @@ export class SketchRunner {
 			}
 		}
 		const scale = this.renderScale();
-		const built = Atomics.load(slots, Slot.PipelinesBuilt);
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
