@@ -756,7 +756,7 @@ The light that a PBR surface reflects from an environment map, as three.js's `RE
 
 ## `null3d::fog`
 
-The scene's fog. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog measures each point's straight-line distance from the camera, so a point keeps its fog as the camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix their exposed linear color with the fog before any tone mapping and encoding.  Per pixel, the fog costs a square root, two `exp`, a division and a `pow` for the sun glow. The height terms take one `exp` and the division even for fog that is the same at every height, which keeps the shader text short. The fog is a branch on the frame's values, not a permutation bit, so every scene shares the same shader builds.
+The scene's fog. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog measures each point's straight-line distance from the camera, so a point keeps its fog as the camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix their exposed linear color with the fog before any tone mapping and encoding.  Per pixel, the fog costs a square root, one `exp` and a `pow` for the sun glow. Fog that thins with height adds an `exp` and a division. The fog is a branch on the frame's values, not a permutation bit, so every scene shares the same shader builds.
 
 ### `OFF`
 

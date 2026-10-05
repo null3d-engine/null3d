@@ -75,34 +75,33 @@ The fog keeps 48 bytes. The first vector holds the color and the density. The se
 
 The fog is a branch on the frame's values in the mesh templates, as ambient occlusion's reading and color grading are ([D-56](D-56-first-use-shader-files.md)). A permutation bit would double each mesh template's builds for a few lines of code.
 
-`bun run build:check-size` measured the growth against main at d83350b7, after Brotli:
+`bun run build:check-size` measured the growth against main at 32f387b8, after Brotli:
 
 | Files | Before | After | Growth |
 | --- | --- | --- | --- |
-| The 4 WGSL start files | 21,533 to 23,110 bytes | 22,468 to 22,885 bytes | -2.7% to +4.4%, -633 to +955 bytes |
-| The 8 GLSL start files | 20,059 to 21,037 bytes | 20,161 to 21,146 bytes | +0.4% to +1.2%, +89 to +238 bytes |
-| The 8 GLSL morph files, which load on first use | 16,971 to 18,908 bytes | 17,413 to 19,022 bytes | +0.5% to +2.7%, +86 to +463 bytes |
-| The 12 skin files, which load on first use | 17,195 to 20,886 bytes | 17,300 to 21,051 bytes | -1.7% to +5.3%, -305 to +935 bytes |
-| The 6 line files, which load on first use | 6,060 to 8,098 bytes | 6,186 to 8,222 bytes | +1.5% to +2.1%, +119 to +146 bytes |
-| The 6 sprite files, which load on first use | 3,283 to 5,038 bytes | 3,426 to 5,162 bytes | +2.4% to +4.4%, +113 to +143 bytes |
-| The 6 files of the engine's own test template, which only test pages load | 1,696 to 4,060 bytes | 1,720 to 4,068 bytes | +0.2% to +1.4%, +8 to +41 bytes |
-| The core, `null3d_bg.wasm` | 281,829 and 282,519 bytes | 282,033 and 282,927 bytes | +0.1% |
+| The 4 WGSL start files | 22,778 to 24,182 bytes | 22,970 to 24,348 bytes | +0.7% to +0.8%, +157 to +195 bytes |
+| The 8 GLSL start files | 21,181 to 22,181 bytes | 21,330 to 22,326 bytes | +0.6% to +0.9%, +128 to +195 bytes |
+| The 8 GLSL morph files, which load on first use | 17,964 to 19,874 bytes | 18,116 to 20,059 bytes | +0.7% to +1.1%, +126 to +203 bytes |
+| The 12 skin files, which load on first use | 18,553 to 21,925 bytes | 18,741 to 22,078 bytes | +0.5% to +1.2%, +107 to +226 bytes |
+| The 6 line files, which load on first use | 6,361 to 8,383 bytes | 6,513 to 8,525 bytes | +1.4% to +2.6%, +121 to +188 bytes |
+| The 6 sprite files, which load on first use | 3,504 to 5,245 bytes | 3,693 to 5,400 bytes | +2.7% to +5.4%, +140 to +189 bytes |
+| The 6 files of the engine's own test template, which only test pages load | 1,696 to 4,186 bytes | 1,720 to 4,203 bytes | +0.2% to +1.4%, +5 to +26 bytes |
+| The core, `null3d_bg.wasm` | 287,258 and 287,711 bytes | 287,491 and 288,329 bytes | +0.1% and +0.2% |
 
-The fog's code is in every fragment shader of the mesh, line and sprite templates, so each build carries it. Uncompressed, the main WGSL start file grows by 1.1%, 12,344 bytes over 43 programs. After Brotli the growth swings widely between files that differ only in a permutation bit. Two WGSL start files grow by about 4.4%, and the half-float one shrinks by 2.7%. Against main at df913098, before its environment values left their arrays, the same files grew by 0.6% to 1.6%. The small line and sprite files grow the most in percent. The fog adds no build, so the count of pipelines stays the same.
+The fog's code is in every fragment shader of the mesh, line and sprite templates, so each build carries it. The small line and sprite files grow the most in percent. The fog adds no build, so the count of pipelines stays the same.
 
-The two largest GLSL skin files, with tone mapping and half floats, set the shader text's size. On main they are at 98.9% of their 1536 KB limit before compression. The fog's first form added about 1 KB to each of their 32 fragment programs. That took them over the limit by up to 8.1 KB. The fog now adds about 470 bytes to each program. The largest file is 1,570,132 bytes, 2,732 bytes under the limit:
+Uncompressed, the largest file is the GLSL skin file with tone mapping, half floats and draw indices. It is 548.5 KB, 35.7% of its 1536 KB limit. Shader files store each repeated paragraph once and join them at load, since M2-J5. Before that, main had this file at 98.9% of the limit, and the fog took it over by up to 8.1 KB. A version of the fog that always computed the height terms fit under the limit then. The faster fog came back once the shared paragraphs merged.
+
+naga writes each name once per program, and it lengthens names that clash between modules. So the fog keeps its text short with no cost per pixel:
 
 - The material's `fog: false` check and the zero-factor check are two early returns. naga writes an `||` in GLSL as a local variable and an if-else.
 - The height terms' limits are constants inside `fog_height_ratio`, which naga writes as numbers.
-- `fog_factor` scales the distance by the height terms without a branch. Fog that is the same at every height has a falloff of 0 and a density share of 1, so the terms give exactly 1.
 - The mesh template mixes with `mix`, without a call to `apply_fog`.
-- The fog's names do not clash with other modules' names, which naga lengthens in every program: the fog's off curve is `OFF`, and `fog_color` takes `light_direction` and `light_color`.
-
-The next growth of the skin templates will meet the limit regardless of the fog.
+- The fog's off curve is `OFF`, and `fog_color` takes `light_direction` and `light_color`, so no name clashes with another module's.
 
 naga's renames also reach custom materials. A library function's argument named `x` made naga rename a custom surface function's own `x`, and the shader crate's material test caught it. So `fog_height_ratio` calls its input `climb`.
 
-Per pixel, the fog costs one square root, two `exp`, a division, a normalize and a `pow`. The curve takes one `exp`, and the height terms take the other and the division, even for fog that is the same at every height. That keeps the shader text short, at the cost of about three operations per fogged pixel. Exponential and exponential squared fog share one `exp`, and the curve picks its result with `select`. A scene without fog, or a material with `fog: false`, returns before any of it. That matches the estimate of about 15 operations and one `exp`, plus the height terms.
+Per pixel, the fog costs one square root and one `exp` for the curve, and a normalize and a `pow` for the glow. Height adds one more `exp` and a division, and fog that is the same at every height skips them with a branch on the frame's values. Exponential and exponential squared fog share one `exp`, and the curve picks its result with `select`. A scene without fog, or a material with `fog: false`, returns before any of it. That matches the estimate of about 15 operations and one `exp`.
 
 ## Data
 

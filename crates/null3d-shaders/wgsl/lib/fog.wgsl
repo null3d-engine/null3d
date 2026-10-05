@@ -5,10 +5,9 @@
 // camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix
 // their exposed linear color with the fog before any tone mapping and encoding.
 //
-// Per pixel, the fog costs a square root, two `exp`, a division and a `pow` for the sun glow. The
-// height terms take one `exp` and the division even for fog that is the same at every height,
-// which keeps the shader text short. The fog is a branch on the frame's values, not a permutation
-// bit, so every scene shares the same shader builds.
+// Per pixel, the fog costs a square root, one `exp` and a `pow` for the sun glow. Fog that thins
+// with height adds an `exp` and a division. The fog is a branch on the frame's values, not a
+// permutation bit, so every scene shares the same shader builds.
 
 /// No fog, as `Fog.curve` names it.
 const OFF: u32 = 0u;
@@ -77,10 +76,10 @@ fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
     if (fog.curve == OFF) {
         return 0.0;
     }
-    // Fog that is the same at every height has a falloff of 0 and a density share of 1, so the
-    // height ratio is 1 and the path is the distance.
-    let path = length(relative_position) * fog.shape.w
-        * fog_height_ratio(fog.shape.z * relative_position.y);
+    var path = length(relative_position);
+    if (fog.shape.z != 0.0) {
+        path *= fog.shape.w * fog_height_ratio(fog.shape.z * relative_position.y);
+    }
     let k = fog.color.w * path;
     let exponential = 1.0 - exp(-select(k, k * k, fog.curve == EXP2));
     return select(exponential, smoothstep(fog.shape.x, fog.shape.y, path), fog.curve == LINEAR);
