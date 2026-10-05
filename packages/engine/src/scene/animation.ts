@@ -3,7 +3,9 @@
 // core keeps each object's clips, times and fades, and its frame step advances and blends them on
 // the job workers. Calls here change that state in the core; the clip weights, the layer weights,
 // the blend values and the time scale are numbers in engine memory, which these calls write
-// directly, so a sketch can change them every frame for free.
+// directly, so a sketch can change them every frame for free. A play reads a frozen options
+// object once and keeps what it read, so a game that switches clips with constant options
+// allocates nothing.
 // After each frame step, the events that the clips passed reach the sketch's handlers. A rig
 // holds a skeleton and its named clips in the core, which every object that animates with it
 // shares. Only engine code creates rigs: the glTF loader, from the models it loads, and test
@@ -31,7 +33,8 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
 let checks: SceneChecks;
 
 /**
- * How `Animator.play` plays a clip.
+ * How `Animator.play` plays a clip. A play reads a frozen object once, so a game that keeps its
+ * options in frozen constants switches clips without allocating.
  *
  * @category api/animation
  */
@@ -75,7 +78,7 @@ export interface PlayOptions {
 }
 
 /**
- * How `Animator.playBlend` plays a 1D blend.
+ * How `Animator.playBlend` plays a 1D blend. Like `PlayOptions`, a frozen object is read once.
  *
  * @category api/animation
  */
@@ -167,6 +170,50 @@ const INTERPOLATIONS = {
 	step: C.ANIMATION_STEP,
 	cubic: C.ANIMATION_CUBIC_SPLINE,
 } as const;
+
+/**
+ * What a play reads from its options: its numbers at the `ANIMATION_ARG_*` places, its
+ * `ANIMATION_PLAY_*` flags and its layer. A play copies the numbers into engine memory with one
+ * array copy, which makes no number objects in the browser.
+ */
+class ReadOptions {
+	readonly numbers = new Float32Array(C.ANIMATION_ARGS);
+	flags = C.ANIMATION_PLAY_LOOP;
+	layer = 0;
+
+	constructor() {
+		this.numbers[C.ANIMATION_ARG_SPEED] = 1;
+		this.numbers[C.ANIMATION_ARG_WEIGHT] = 1;
+	}
+}
+
+/** What a blend reads from its points: the clips' names and their points, in order. */
+class ReadPoints {
+	readonly names: string[] = new Array<string>(C.ANIMATION_MAX_BLEND).fill('');
+	readonly points = new Float32Array(C.ANIMATION_MAX_BLEND);
+	/** The clips that the points name, which can be more than the record holds. */
+	count = 0;
+}
+
+/**
+ * What plays read from each frozen options object and points object. A frozen object never
+ * changes, so a play reads it once. Reading a fraction from an object that a play gets makes a
+ * number object in the browser each time, once the object's shape is one of several that the
+ * play has seen, as in any game. The records keep a switch between clips free of such objects.
+ */
+const playRecords = new WeakMap<PlayOptions, ReadOptions>();
+const blendRecords = new WeakMap<BlendOptions, ReadOptions>();
+const pointRecords = new WeakMap<Readonly<Record<string, number>>, ReadPoints>();
+/** The record of a play without options. */
+const NO_OPTIONS = new ReadOptions();
+/** The records that plays fill again from objects that are not frozen. */
+const sharedOptions = new ReadOptions();
+const sharedPoints = new ReadPoints();
+
+/** A new record for a frozen `object`, which its play keeps, or else the shared one. */
+function recordFor<T>(object: object, shared: T, make: new () => T): T {
+	return typeof object === 'object' && Object.isFrozen(object) ? new make() : shared;
+}
 
 /** A skeleton and its named clips in the engine core, which animated objects share. */
 export class AnimationRig {
@@ -466,7 +513,7 @@ export class Animator implements Described {
 	 * that played once and reached its end starts again.
 	 */
 	play(name: string, options?: PlayOptions): void {
-		this.start('play', name, options, options?.weight !== undefined);
+		this.start('play', name, options, true);
 	}
 
 	/**
@@ -516,57 +563,22 @@ export class Animator implements Described {
 	 */
 	playBlend(points: Readonly<Record<string, number>>, options?: BlendOptions): void {
 		const call = 'playBlend';
-		// The names are counted and read with `for...in`, which builds no array, so a game that
-		// switches back to a blend allocates nothing.
-		let count = 0;
-		for (const _ in points) count++;
-		const fade = options?.fade ?? 0;
-		const speed = options?.speed ?? 1;
-		const layer = options?.layer ?? 0;
-		const phase = options?.phase;
-		const value = options?.value;
-		if (DEV) {
-			checks.checkLive(call, this.object);
-			if (count === 0 || count > C.ANIMATION_MAX_BLEND)
-				refuse(
-					`${call}() got ${count} clips on ${this.describe()}; a blend takes 1 to ${C.ANIMATION_MAX_BLEND}.`,
-				);
-			const named = new Map<number, string>();
-			for (const name in points) {
-				const point = points[name] as number;
-				checks.checkNumber(call, `the point of "${name}"`, point, this);
-				const other = named.get(point);
-				if (other !== undefined)
-					refuse(
-						`${call}() got the point ${point} for "${other}" and "${name}" on ${this.describe()}; give each clip a point of its own.`,
-					);
-				named.set(point, name);
-			}
-			this.checkFade(call, fade);
-			checks.checkNumber(call, 'speed', speed, this);
-			this.checkLayer(call, layer);
-			if (value !== undefined) checks.checkNumber(call, 'value', value, this);
-			if (phase !== undefined) checks.checkNumber(call, 'phase', phase, this);
-		}
+		if (DEV) checks.checkLive(call, this.object);
+		const read = this.blendOptions(call, options);
+		const blend = this.blendPoints(call, points);
+		const { count } = blend;
 		const { core } = this.system;
 		const at = core.checkGrowth(core.glue.animationStaging(count * 2), call) >>> 2;
 		const words = this.system.memoryWords();
 		const floats = this.system.memoryFloats();
-		let k = 0;
-		for (const name in points) {
-			words[at + k] = this.clip(call, name);
-			floats[at + count + k] = points[name] as number;
-			k++;
+		// Past the most clips a blend takes, the staged words reach the core's check unwritten.
+		const named = Math.min(count, C.ANIMATION_MAX_BLEND);
+		for (let k = 0; k < named; k++) {
+			words[at + k] = this.clip(call, blend.names[k] as string);
+			floats[at + count + k] = blend.points[k] as number;
 		}
-		const flags =
-			(options?.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
-			(phase === undefined ? 0 : C.ANIMATION_PLAY_TIME);
-		const args = this.system.playArgs();
-		args[C.ANIMATION_ARG_FADE] = fade;
-		args[C.ANIMATION_ARG_SPEED] = speed;
-		args[C.ANIMATION_ARG_TIME] = phase ?? 0;
-		this.done(core.glue.animatorPlayBlend(this.instance, count, layer, flags), call);
-		if (value !== undefined) this.system.blendValues()[this.layerAt(call, layer)] = value;
+		this.system.playArgs().set(read.numbers);
+		this.done(core.glue.animatorPlayBlend(this.instance, count, read.layer, read.flags), call);
 	}
 
 	/**
@@ -702,8 +714,7 @@ export class Animator implements Described {
 
 	/**
 	 * Plays clip `name` with `options`, fading over `duration` seconds or else the options' fade.
-	 * The play's numbers stay in `options` until they reach engine memory: a fraction passed to a
-	 * call that the browser does not inline would allocate.
+	 * With `join`, a play with a weight joins the layer's other clips.
 	 */
 	private start(
 		call: string,
@@ -713,35 +724,122 @@ export class Animator implements Described {
 		duration?: number,
 	): void {
 		const clip = this.clip(call, name);
-		const fade = duration ?? options?.fade ?? 0;
-		const speed = options?.speed ?? 1;
-		const layer = options?.layer ?? 0;
-		const time = options?.time;
-		const weight = options?.weight;
 		if (DEV) {
 			checks.checkLive(call, this.object);
+			if (duration !== undefined) this.checkFade(call, duration);
+		}
+		const read = this.playOptions(call, options);
+		const { core } = this.system;
+		const args = this.system.playArgs();
+		args.set(read.numbers);
+		if (duration !== undefined) args[C.ANIMATION_ARG_FADE] = duration;
+		const joins = join && (read.flags & C.ANIMATION_PLAY_WEIGHT) !== 0;
+		const flags = read.flags | (joins ? C.ANIMATION_PLAY_JOIN : 0);
+		const status = core.glue.animatorPlay(this.instance, clip, read.layer, flags);
+		// The first additive play of a clip stores its additive form, which can grow the memory.
+		core.refresh();
+		this.done(status, call);
+	}
+
+	/** What a play reads from `options`, which it checks in development builds. */
+	private playOptions(call: string, options: PlayOptions | undefined): ReadOptions {
+		if (options === undefined) return NO_OPTIONS;
+		const known = playRecords.get(options);
+		if (known !== undefined) return known;
+		const fade = options.fade ?? 0;
+		const speed = options.speed ?? 1;
+		const layer = options.layer ?? 0;
+		const { time, weight } = options;
+		if (DEV) {
 			this.checkFade(call, fade);
 			checks.checkNumber(call, 'speed', speed, this);
 			this.checkLayer(call, layer);
 			if (time !== undefined) checks.checkNumber(call, 'time', time, this);
 			if (weight !== undefined) this.checkWeight(call, weight);
 		}
-		const flags =
-			(options?.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
-			(options?.additive ? C.ANIMATION_PLAY_ADDITIVE : 0) |
+		const read = recordFor(options, sharedOptions, ReadOptions);
+		const { numbers } = read;
+		numbers[C.ANIMATION_ARG_FADE] = fade;
+		numbers[C.ANIMATION_ARG_SPEED] = speed;
+		numbers[C.ANIMATION_ARG_TIME] = time ?? 0;
+		numbers[C.ANIMATION_ARG_WEIGHT] = weight ?? 1;
+		read.flags =
+			(options.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
+			(options.additive ? C.ANIMATION_PLAY_ADDITIVE : 0) |
 			(time === undefined ? 0 : C.ANIMATION_PLAY_TIME) |
-			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT) |
-			(join ? C.ANIMATION_PLAY_JOIN : 0);
-		const { core } = this.system;
-		const args = this.system.playArgs();
-		args[C.ANIMATION_ARG_FADE] = fade;
-		args[C.ANIMATION_ARG_SPEED] = speed;
-		args[C.ANIMATION_ARG_TIME] = time ?? 0;
-		args[C.ANIMATION_ARG_WEIGHT] = weight ?? 1;
-		const status = core.glue.animatorPlay(this.instance, clip, layer, flags);
-		// The first additive play of a clip stores its additive form, which can grow the memory.
-		core.refresh();
-		this.done(status, call);
+			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT);
+		read.layer = layer;
+		if (read !== sharedOptions) playRecords.set(options, read);
+		return read;
+	}
+
+	/** What a blend reads from `options`, which it checks in development builds. */
+	private blendOptions(call: string, options: BlendOptions | undefined): ReadOptions {
+		if (options === undefined) return NO_OPTIONS;
+		const known = blendRecords.get(options);
+		if (known !== undefined) return known;
+		const fade = options.fade ?? 0;
+		const speed = options.speed ?? 1;
+		const layer = options.layer ?? 0;
+		const { phase, value } = options;
+		if (DEV) {
+			this.checkFade(call, fade);
+			checks.checkNumber(call, 'speed', speed, this);
+			this.checkLayer(call, layer);
+			if (value !== undefined) checks.checkNumber(call, 'value', value, this);
+			if (phase !== undefined) checks.checkNumber(call, 'phase', phase, this);
+		}
+		const read = recordFor(options, sharedOptions, ReadOptions);
+		const { numbers } = read;
+		numbers[C.ANIMATION_ARG_FADE] = fade;
+		numbers[C.ANIMATION_ARG_SPEED] = speed;
+		numbers[C.ANIMATION_ARG_TIME] = phase ?? 0;
+		numbers[C.ANIMATION_ARG_VALUE] = value ?? 0;
+		read.flags =
+			(options.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
+			(phase === undefined ? 0 : C.ANIMATION_PLAY_TIME) |
+			(value === undefined ? 0 : C.ANIMATION_PLAY_VALUE);
+		read.layer = layer;
+		if (read !== sharedOptions) blendRecords.set(options, read);
+		return read;
+	}
+
+	/**
+	 * What a blend reads from `points`, which it checks in development builds. The names are
+	 * counted and read with `for...in`, which builds no array.
+	 */
+	private blendPoints(call: string, points: Readonly<Record<string, number>>): ReadPoints {
+		const known = pointRecords.get(points);
+		if (known !== undefined) return known;
+		const read = recordFor(points, sharedPoints, ReadPoints);
+		let count = 0;
+		for (const name in points) {
+			if (count < C.ANIMATION_MAX_BLEND) {
+				read.names[count] = name;
+				read.points[count] = points[name] as number;
+			}
+			count++;
+		}
+		read.count = count;
+		if (DEV) {
+			if (count === 0 || count > C.ANIMATION_MAX_BLEND)
+				refuse(
+					`${call}() got ${count} clips on ${this.describe()}; a blend takes 1 to ${C.ANIMATION_MAX_BLEND}.`,
+				);
+			const named = new Map<number, string>();
+			for (const name in points) {
+				const point = points[name] as number;
+				checks.checkNumber(call, `the point of "${name}"`, point, this);
+				const other = named.get(point);
+				if (other !== undefined)
+					refuse(
+						`${call}() got the point ${point} for "${other}" and "${name}" on ${this.describe()}; give each clip a point of its own.`,
+					);
+				named.set(point, name);
+			}
+		}
+		if (read !== sharedPoints) pointRecords.set(points, read);
+		return read;
 	}
 
 	/**

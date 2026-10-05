@@ -59,9 +59,11 @@ Each test failed against the code of main, then passed with its fix:
 
 ### Allocation
 
-`frames_allocate_nothing` counts 0 allocator calls in 197 frames. Its crowd now also plays blends, and clips side by side from start times. Sketch code moves the blend values and the clip weights every frame. `bun run bench:allocation --animated 64` adds the same to its 64 characters on 5 October 2026. It passes on WebGPU and with `--gpu webgl2`. The weight and blend writes allocate nothing. The rare switches play a blend again or fade a clip to a new weight. They allocate 4.6 to 5.0 bytes a frame in the crowd's code and 1.5 to 2.0 in `playBlend`. A switch reads its fade and weight from an options object. A call that runs every two seconds is not optimized, so the browser boxes each fraction that it reads. The check's budget for the crowd's code says so.
+`frames_allocate_nothing` counts 0 allocator calls in 197 frames. Its crowd now also plays blends, and clips side by side from start times. Sketch code moves the blend values and the clip weights every frame. `bun run bench:allocation --animated 64` adds the same to its 64 characters on 5 October 2026. It passes on WebGPU and with `--gpu webgl2`. The weight and blend writes allocate nothing. So do the rare switches, which play a blend again or fade a clip to a new weight. Neither the crowd's code nor `playBlend` shows in the samples of either GPU path. So the crowd has no budget of its own. The crowd keeps its options and blend points in frozen constants, as [Frozen options are read once](#frozen-options-are-read-once) explains.
 
-How the data was produced: `bun bench/three-fixtures.ts`, `cargo test -p null3d-core --test animation --test no_alloc`, `bun run parity -- --scene s5` with and without `CI=1`, and `bun run bench:allocation --animated 64` with and without `--gpu webgl2`, on 2026-10-05.
+Before that rule, the switches allocated 8.5 bytes a frame on WebGPU: 7.0 in the crowd's code, where the browser inlined `play`, and 1.5 in `playBlend`. With inlining off (`--no-inline`), `play` and the code it calls showed 5.4 bytes a frame, and `playBlend` 0.9. A play with a fade and a weight made 36 bytes, a blend switch 12 and a cross-fade none. That is 16 bytes per switch, as measured. Each is one 12-byte number for each fraction read from an options object.
+
+How the data was produced: `bun bench/three-fixtures.ts`, `cargo test -p null3d-core --test animation --test no_alloc`, `bun run parity -- --scene s5` with and without `CI=1`, and `bun run bench:allocation --animated 64` with and without `--gpu webgl2` and `--no-inline`, on 2026-10-05. The direct count is a loop of plays in Node 24.2 that read options of 4 to 9 shapes. The heap profiler sampled it every 64 bytes over 200,000 rounds.
 
 ## Decision
 
@@ -81,7 +83,19 @@ A slot's weight is its own weight times its fade. three.js's effective weight is
 
 `setWeight` writes engine memory, as `setLayerWeight` does. The core keeps, for each slot, the clip that a play put there (its source, so an additive form counts as its clip). TypeScript scans the object's 8 slots for the clip and writes each slot's weight. `setBlend` writes the layer's blend value the same way. Neither crosses into the core, and neither passes a fraction to a call that the browser might not inline.
 
-A play's numbers cross in a small array of engine memory too, not as call arguments. They are the fade, the speed, the start time or phase, and the weight. Each fraction passed to a call that the browser does not inline is boxed. In memory, the call boxes no number. The bytes that the allocation check still finds come from reading the options object in code that runs too rarely to be optimized.
+A play's numbers cross in a small array of engine memory too, not as call arguments. They are the fade, the speed, the start time or phase, the weight, and a blend's value. Each fraction passed to a call that the browser does not inline is boxed. In memory, the call boxes no number. A blend's value crosses with its play, and the core sets it, so the play and the value change in one call.
+
+### Frozen options are read once
+
+Reading a fraction from an options object makes a 12-byte number in Chrome, even in optimized code. A game passes `play` objects of many shapes, one for each call site of a game. Past four shapes, the browser reads the property through its generic lookup. That lookup copies the fraction into a new number. With four or fewer, an option that some shapes lack merges with `undefined`, so the value read is boxed again. Node 24 runs the same engine as Chrome. A direct count in it found 97 to 162 bytes for each round of plays, and none for the same loop without the reads. Freezing an object does not change the read itself.
+
+So the animator reads a frozen options object, or a frozen points object of `playBlend`, once. It keeps what it read in a `WeakMap`, and later plays copy those numbers into engine memory with one `Float32Array.set`. A frozen object cannot change, so what the animator kept stays true. An object that is not frozen is read at every play, as before. Development builds check a frozen object's values the first time only.
+
+The rejected options:
+
+- Taking fractions as call arguments, as `crossFade(name, duration)` does. That changes the API, and an argument to a call that the browser does not inline is boxed too.
+- Keeping what the animator read for any object, frozen or not. A game that changes an options object between plays would then get the old numbers.
+- Leaving a budget of 8 bytes a frame for the switches. Each switch would then cost a game 12 to 36 bytes. The check would also hide any other allocation of that size in a crowd's frame code.
 
 ### The 1D blend keeps one phase
 

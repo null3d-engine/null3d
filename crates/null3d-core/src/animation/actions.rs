@@ -317,7 +317,8 @@ impl Animations {
     /// steps together. The layer's other base clips fade out over `blend.fade` seconds, and the
     /// blend's clips fade in. Clips that the layer's blend already plays keep their slots and
     /// their weights. The clips start at `blend.phase`, a share of their cycle, or else at the
-    /// phase of the layer's blend, or of the first of `clips` that the layer plays.
+    /// phase of the layer's blend, or of the first of `clips` that the layer plays. A
+    /// `blend.value` sets the layer's blend value.
     pub fn play_blend(
         &mut self,
         instance: u32,
@@ -405,6 +406,9 @@ impl Animations {
             }
             let duration = self.clips[source as usize].duration();
             self.slots.time[s] = start_time(phase * duration, duration, blend.looping);
+        }
+        if let Some(value) = blend.value {
+            self.blend_values[instance as usize * MAX_LAYERS + layer] = value;
         }
         Ok(())
     }

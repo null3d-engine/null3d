@@ -106,10 +106,6 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the benchmark sketch's camera path. With --dev, its numbers go to the engine's development
  *   checks. In S4, the browser runs it on its middle tier for the whole sample, which boxes about
  *   two of the numbers that it passes to the camera's setters;
- * - the clip switches of `--animated`'s crowd. A switch reads its fade and weight from an options
- *   object. Each character switches every two seconds, so the browser runs the switch without
- *   optimizing it, and boxes each fraction that it reads: about 12 bytes per number. The crowd's
- *   per-frame weight and blend writes allocate nothing;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
  *   does a few times while its buffers reach their final sizes.
  */
@@ -121,7 +117,6 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
-		'(anonymous) null3d/crowd.ts': 8,
 	},
 	'render-worker': {
 		'replay webgpu/backend.ts': 320,

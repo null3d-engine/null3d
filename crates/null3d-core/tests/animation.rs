@@ -1126,6 +1126,44 @@ fn a_blend_keeps_its_clips_in_one_phase() {
 }
 
 #[test]
+fn a_blend_with_a_value_sets_its_layers_blend_value_and_one_without_keeps_it() {
+    let jobs = JobSystem::new(0);
+    let (mut animations, instance) = fixture_table(&jobs);
+    let layer = instance as usize * MAX_LAYERS + 1;
+    let valued = Blend {
+        layer: 1,
+        value: Some(0.4),
+        ..Blend::default()
+    };
+    animations
+        .play_blend(instance, &[GRID24, GRID30], &[0.0, 1.0], valued)
+        .unwrap();
+    assert_eq!(animations.blend_values()[layer], 0.4);
+    assert_eq!(animations.blend_values()[layer - 1], 0.0);
+    let kept = Blend {
+        layer: 1,
+        ..Blend::default()
+    };
+    animations
+        .play_blend(instance, &[GRID30, GRID24], &[0.0, 1.0], kept)
+        .unwrap();
+    assert_eq!(animations.blend_values()[layer], 0.4);
+    // A play that fails leaves the value as it is.
+    let refused = Blend {
+        layer: 1,
+        fade: -1.0,
+        value: Some(0.9),
+        ..Blend::default()
+    };
+    assert!(
+        animations
+            .play_blend(instance, &[GRID24, GRID30], &[0.0, 1.0], refused)
+            .is_err()
+    );
+    assert_eq!(animations.blend_values()[layer], 0.4);
+}
+
+#[test]
 fn a_blend_starts_in_step_with_the_clip_it_takes_over_from() {
     let jobs = JobSystem::new(0);
     let (mut animations, instance) = fixture_table(&jobs);

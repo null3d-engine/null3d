@@ -287,8 +287,10 @@ pub mod play_arg {
     pub const TIME: usize = 2;
     /// The clip's weight.
     pub const WEIGHT: usize = 3;
+    /// The blend's value.
+    pub const VALUE: usize = 4;
     /// The numbers in the array.
-    pub const COUNT: usize = 4;
+    pub const COUNT: usize = 5;
 }
 
 /// The words of each track's header in `createClip`'s staging words: joint, channel,
@@ -310,6 +312,8 @@ pub mod play_flag {
     pub const WEIGHT: u32 = 8;
     /// The clip plays beside the other clips of its layer.
     pub const JOIN: u32 = 16;
+    /// The blend gives its layer's blend value.
+    pub const VALUE: u32 = 32;
 }
 
 /// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
@@ -875,11 +879,13 @@ pub fn typescript() -> String {
                 ("PLAY_TIME", play_flag::TIME),
                 ("PLAY_WEIGHT", play_flag::WEIGHT),
                 ("PLAY_JOIN", play_flag::JOIN),
+                ("PLAY_VALUE", play_flag::VALUE),
                 ("NO_SOURCE", NO_SOURCE),
                 ("ARG_FADE", play_arg::FADE as u32),
                 ("ARG_SPEED", play_arg::SPEED as u32),
                 ("ARG_TIME", play_arg::TIME as u32),
                 ("ARG_WEIGHT", play_arg::WEIGHT as u32),
+                ("ARG_VALUE", play_arg::VALUE as u32),
                 ("ARGS", play_arg::COUNT as u32),
                 ("EVENT_CLIP", event_kind::EVENT),
                 ("EVENT_LOOP", event_kind::LOOP),

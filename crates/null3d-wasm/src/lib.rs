@@ -2565,8 +2565,9 @@ pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
 /// and the numbers in `PLAY_ARGS`: `Animations::play_blend`.
 #[wasm_bindgen(js_name = animatorPlayBlend)]
 pub fn animator_play_blend(instance: u32, count: u32, layer: u32, flags: u32) -> u32 {
+    // The staging words stay with the engine, so switching blends reuses them.
     with_play_args(|animations, staging, args| {
-        let staged = std::mem::take(staging);
+        let staged = staging.as_slice();
         let n = (count as usize).min(staged.len() / 2);
         let mut clips = [0u32; MAX_BLEND];
         let named = n.min(MAX_BLEND);
@@ -2580,6 +2581,7 @@ pub fn animator_play_blend(instance: u32, count: u32, layer: u32, flags: u32) ->
             speed: args[play_arg::SPEED],
             looping: flags & play_flag::LOOP != 0,
             phase: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
+            value: (flags & play_flag::VALUE != 0).then_some(args[play_arg::VALUE]),
         };
         // More clips than slots reach the core's check through the point count.
         let clips = if n > MAX_BLEND {

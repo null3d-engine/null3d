@@ -120,6 +120,9 @@ pub struct Blend {
     /// The share of their cycle at which the clips start, or `None` to keep the phase of the
     /// layer's clips.
     pub phase: Option<f32>,
+    /// The layer's blend value ([`Animations::blend_values_mut`]) from this play on, or `None` to
+    /// keep the value it has.
+    pub value: Option<f32>,
 }
 
 impl Default for Blend {
@@ -130,6 +133,7 @@ impl Default for Blend {
             speed: 1.0,
             looping: true,
             phase: None,
+            value: None,
         }
     }
 }

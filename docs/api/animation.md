@@ -93,6 +93,17 @@ return {
 
 A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
 
+Keep the options of the plays that a game repeats in frozen constants. The animator reads a frozen options object once and keeps what it read, so a clip switch allocates nothing. From an object that is not frozen, the animator reads at every play. The browser then makes a new 12-byte number for each fraction it reads. The same holds for the points of `playBlend`.
+
+```ts
+const TO_RUN = Object.freeze({ fade: 0.3, weight: 0.75 });
+const GAIT = Object.freeze({ walk: 1.4, run: 4 });
+const SMOOTH = Object.freeze({ fade: 0.2 });
+
+anim.play('run', TO_RUN);
+anim.playBlend(GAIT, SMOOTH);
+```
+
 A crowd whose characters all start a clip at once steps in time. Give each character a start time of its own:
 
 ```ts
@@ -363,7 +374,7 @@ Plays an animated object's clips. It fades between them, blends them in layers w
 
 Interface `BlendOptions`.
 
-How `Animator.playBlend` plays a 1D blend.
+How `Animator.playBlend` plays a 1D blend. Like `PlayOptions`, a frozen object is read once.
 
 | Member | Description |
 | --- | --- |
@@ -378,7 +389,7 @@ How `Animator.playBlend` plays a 1D blend.
 
 Interface `PlayOptions`.
 
-How `Animator.play` plays a clip.
+How `Animator.play` plays a clip. A play reads a frozen object once, so a game that keeps its options in frozen constants switches clips without allocating.
 
 | Member | Description |
 | --- | --- |

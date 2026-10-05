@@ -16,17 +16,17 @@ import { CROWD_CLIPS, crowdMesh, crowdRig } from '../../../tests/pages/lib/crowd
 const JOINTS = 40;
 /** Frames between two cross-fades of one character. */
 const FADE_EVERY = 120;
-/** The blend of the walk and the run, and the same blend with the points swapped. */
-const BLEND = { walk: 0, run: 1 };
-const REVERSED = { walk: 1, run: 0 };
 /**
- * The options of the calls that switch clips. Game code keeps them in constants, as here, so a
- * switch builds no object.
+ * The blend of the walk and the run, the same blend with the points swapped, and the options of
+ * the calls that switch clips. Game code keeps them in frozen constants, as here: a switch then
+ * builds no object, and the animator reads each object once, so a switch allocates nothing.
  */
-const FADE = { fade: 0.3 };
+const BLEND = Object.freeze({ walk: 0, run: 0.8 });
+const REVERSED = Object.freeze({ walk: 0.8, run: 0 });
+const FADE = Object.freeze({ fade: 0.3 });
 const FADE_TO_WEIGHT = [
-	{ fade: 0.3, weight: 0.25 },
-	{ fade: 0.3, weight: 0.75 },
+	Object.freeze({ fade: 0.3, weight: 0.25 }),
+	Object.freeze({ fade: 0.3, weight: 0.75 }),
 ];
 
 /** Reads the animated character count from the sketch module's address, or 0 for none. */
@@ -54,7 +54,7 @@ export function createAnimatedCrowd(
 		const dancer = scene.createMesh({ mesh, material, position, name: `dancer${k}` });
 		const animator = animateObject(dancer, rig);
 		skinObject(dancer, animator);
-		if (k % 3 === 1) animator.playBlend({ walk: 0, run: 1 }, { phase: k / count });
+		if (k % 3 === 1) animator.playBlend(BLEND, { phase: k / count });
 		else if (k % 3 === 2) {
 			animator.play('walk', { time: k * 0.1, weight: 0.5 });
 			animator.play('run', { time: k * 0.1, weight: 0.5 });
@@ -74,7 +74,7 @@ export function createAnimatedCrowd(
 			const animator = animators[k] as Animator;
 			const kind = k % 3;
 			animator.setLayerWeight(1, 0.5 + 0.5 * Math.sin(t + k));
-			if (kind === 1) animator.setBlend(0.5 + 0.5 * Math.sin(t + k));
+			if (kind === 1) animator.setBlend(0.4 + 0.4 * Math.sin(t + k));
 			else if (kind === 2) animator.setWeight('run', 0.5 + 0.5 * Math.cos(t + k));
 			if ((frame + k) % FADE_EVERY !== 0) continue;
 			const turn = ((frame + k) / FADE_EVERY) % 2;

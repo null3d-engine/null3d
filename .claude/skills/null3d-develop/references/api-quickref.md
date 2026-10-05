@@ -382,6 +382,7 @@ anim.play('run', { weight: 0.3 });      // a weight joins the layer's clips inst
 anim.setWeight('run', 0.6);             // 0 or more, on a clip that plays; free to call every frame
 anim.playBlend({ idle: 0, walk: 1.4, run: 4 }, { fade: 0.2 });  // a 1D blend: clips at points
 anim.setBlend(speed);                   // free every frame; the blend's clips keep one phase
+const RUN = Object.freeze({ fade: 0.3 }); // frozen options and points are read once: switches allocate nothing
 anim.play('wave', { layer: 1, fade: 0.2 });              // layers 0 to 3; each replaces the pose below
 anim.setLayerMask(1, 'Spine');          // upper body only: the joint and every joint below it
 anim.setLayerWeight(1, 0.5);            // 0 to 1; free to call every frame

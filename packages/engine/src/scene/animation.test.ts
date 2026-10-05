@@ -72,8 +72,15 @@ function fakeCore() {
 		[C.ANIMATION_FIELD_BLEND_VALUES]: AT.blendValues,
 		[C.ANIMATION_FIELD_PLAY_ARGS]: AT.playArgs,
 	};
-	/** The play numbers that a call reads, in the order of the `ANIMATION_ARG_*` places. */
-	const args = () => [...new Float32Array(memory.buffer, AT.playArgs, C.ANIMATION_ARGS)];
+	/** The play numbers at the `ANIMATION_ARG_*` places `at`. */
+	const args = (at: number[]) => {
+		const read = new Float32Array(memory.buffer, AT.playArgs, C.ANIMATION_ARGS);
+		return at.map((k) => read[k] as number);
+	};
+	const { ANIMATION_ARG_FADE: FADE, ANIMATION_ARG_SPEED: SPEED, ANIMATION_ARG_TIME: TIME } = C;
+	/** The numbers that a play reads, and those that a blend reads. */
+	const PLAY = [FADE, SPEED, TIME, C.ANIMATION_ARG_WEIGHT];
+	const BLEND = [FADE, SPEED, TIME, C.ANIMATION_ARG_VALUE];
 	const glue = {
 		initAnimations: record('initAnimations'),
 		animationArrays: (field: number) => fields[field],
@@ -92,12 +99,12 @@ function fakeCore() {
 		createAnimatedInstance: created('createAnimatedInstance'),
 		removeAnimatedInstance: record('removeAnimatedInstance'),
 		animatorPlay: (...given: number[]) => {
-			calls.push(['animatorPlay', ...given, ...args()]);
+			calls.push(['animatorPlay', ...given, ...args(PLAY)]);
 			return 0;
 		},
 		animatorPlayBlend: (...given: number[]) => {
 			words();
-			calls.push(['animatorPlayBlend', ...given, ...args().slice(0, 3)]);
+			calls.push(['animatorPlayBlend', ...given, ...args(BLEND)]);
 			return 0;
 		},
 		animatorStop: record('animatorStop'),
@@ -332,17 +339,19 @@ describe('the animator', () => {
 		expect(thrown(() => animator.play('walk', { time: Infinity })).code).toBe('E1203');
 	});
 
-	test('plays a 1D blend, and writes its value into engine memory', () => {
+	test('plays a 1D blend, and passes its value with its numbers', () => {
 		const { calls, staged, animator, f32 } = animated();
 		const { ANIMATION_PLAY_LOOP: LOOP, ANIMATION_PLAY_TIME: TIME } = C;
+		const VALUE = C.ANIMATION_PLAY_VALUE;
 		animator.playBlend({ walk: 1.5, run: 4 }, { value: 2, fade: 0.3, layer: 1 });
 		animator.playBlend({ run: 0 }, { loop: false, speed: -1, phase: 0.25 });
 		animator.setBlend(3.25, 2);
 		const instance = 4;
 		expect(calls).toEqual([
-			// The instance, the clip count, the layer and the flags, then the fade, speed and phase.
-			['animatorPlayBlend', instance, 2, 1, LOOP, Math.fround(0.3), 1, 0],
-			['animatorPlayBlend', instance, 1, 0, TIME, 0, -1, 0.25],
+			// The instance, the clip count, the layer and the flags, then the fade, speed, phase and
+			// value.
+			['animatorPlayBlend', instance, 2, 1, LOOP | VALUE, Math.fround(0.3), 1, 0, 2],
+			['animatorPlayBlend', instance, 1, 0, TIME, 0, -1, 0.25, 0],
 		]);
 		// The clips' ids plus one, then their points.
 		const [two, one] = staged.slice(-2) as number[][];
@@ -350,8 +359,70 @@ describe('the animator', () => {
 		expect(two?.slice(0, 2)).toEqual([2, 3]);
 		expect(floats(two as number[]).slice(2)).toEqual([1.5, 4]);
 		expect(one?.[0]).toBe(3);
+		// The core sets a play's value; `setBlend` writes engine memory.
 		const at = AT.blendValues + 3 * C.ANIMATION_MAX_LAYERS * 4;
-		expect(f32(at, C.ANIMATION_MAX_LAYERS)).toEqual([0, 2, 3.25, 0]);
+		expect(f32(at, C.ANIMATION_MAX_LAYERS)).toEqual([0, 0, 3.25, 0]);
+	});
+
+	test('reads a frozen options or points object once, and any other object at each play', () => {
+		const { calls, staged, animator } = animated();
+		const reads = { fade: 0, point: 0 };
+		const counted = () => ({
+			get fade() {
+				reads.fade++;
+				return 0.25;
+			},
+			weight: 0.5,
+		});
+		const points = () => ({
+			get walk() {
+				reads.point++;
+				return 0.5;
+			},
+			run: 2,
+		});
+		const frozen = Object.freeze(counted());
+		const frozenPoints = Object.freeze(points());
+		for (let k = 0; k < 3; k++) {
+			animator.play('walk', frozen);
+			animator.playBlend(frozenPoints, frozen);
+		}
+		// The play and the blend each read the options once. Development builds read each point
+		// once more to check it.
+		expect(reads).toEqual({ fade: 2, point: 2 });
+		animator.play('walk', counted());
+		const open = counted();
+		const openPoints = points();
+		animator.play('walk', open);
+		animator.play('walk', open);
+		animator.playBlend(openPoints);
+		animator.playBlend(openPoints);
+		expect(reads).toEqual({ fade: 5, point: 6 });
+		// One frozen object serves a play and a blend, each with what it reads.
+		const { ANIMATION_PLAY_LOOP: LOOP, ANIMATION_PLAY_WEIGHT: WEIGHT } = C;
+		const JOIN = C.ANIMATION_PLAY_JOIN;
+		const instance = 4;
+		expect(calls.slice(0, 2)).toEqual([
+			['animatorPlay', instance, 2, 0, LOOP | WEIGHT | JOIN, 0.25, 1, 0, 0.5],
+			['animatorPlayBlend', instance, 2, 0, LOOP, 0.25, 1, 0, 0],
+		]);
+		expect(calls.slice(2, 6)).toEqual([...calls.slice(0, 2), ...calls.slice(0, 2)]);
+		const floats = (words: number[]) => [...new Float32Array(new Uint32Array(words).buffer)];
+		for (const words of staged.slice(-5)) {
+			expect(words.slice(0, 2)).toEqual([2, 3]);
+			expect(floats(words).slice(2)).toEqual([0.5, 2]);
+		}
+	});
+
+	test('keeps nothing of a frozen object that it refuses', () => {
+		const { animator, calls } = animated();
+		const bad = Object.freeze({ fade: -1 });
+		for (let k = 0; k < 2; k++)
+			expect(thrown(() => animator.play('walk', bad)).message).toContain('play() got the fade -1');
+		const twin = Object.freeze({ walk: 1, run: 1 });
+		for (let k = 0; k < 2; k++)
+			expect(thrown(() => animator.playBlend(twin)).message).toContain('give each clip a point');
+		expect(calls).toEqual([]);
 	});
 
 	test('refuses blends it cannot play', () => {
