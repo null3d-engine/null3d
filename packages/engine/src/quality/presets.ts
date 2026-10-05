@@ -172,7 +172,8 @@ export const QUALITY_SETTINGS = {
 	},
 	// The tiles of the shadow atlas that spot and point lights cast their shadows into: a spot light
 	// takes one, and a point light six. The lights that look largest from the camera get them
-	// first. 0 turns their shadows off. The atlas holds no more layers than the lights can fill.
+	// first. 0 turns their shadows off. The atlas grows to the layers that the lights fill, and
+	// keeps them while some light casts.
 	shadowTiles: {
 		presets: [4, 8, 16, 24],
 		changes: 'start',
