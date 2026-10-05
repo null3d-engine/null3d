@@ -9,7 +9,7 @@
 //
 // Bundlers find a worker's script only in the form `new Worker(new URL('<file>',
 // import.meta.url), options)`, which every modern bundler reads. So the engine keeps that form, and
-// `spawnWorker` runs it while the thread's `Worker` is a class that adds the bootstrap where the
+// `spawnWorker` runs it while the thread's `Worker` is a stand-in that adds the bootstrap where the
 // script's origin needs it.
 
 import type { EngineError } from '../errors/engine-error';
@@ -89,53 +89,56 @@ export function bootstrapFailure(message: string, error: WasmError): EngineError
 	return coded;
 }
 
-/** The class that stands in for the thread's `Worker` while `spawnWorker` runs, once made. */
+/** What stands in for the thread's `Worker` while `spawnWorker` runs, once made. */
 let bootstrapping: typeof Worker | undefined;
 /** The error maker of the `spawnWorker` call that runs. */
 let errorOfCall: WasmError | undefined;
 
-/** A `Worker` class that starts a script of another origin through the bootstrap module. */
+/**
+ * A stand-in for `Worker` that starts a script of another origin through the bootstrap module. It
+ * is a plain constructor that returns the thread's own workers, not a subclass: a subclass's
+ * prototype would stay for the page's life and count as a live worker wherever a page counts the
+ * objects whose prototype is the worker's.
+ */
 function bootstrappingWorker(Native: typeof Worker): typeof Worker {
-	return class extends Native {
-		constructor(script: string | URL, options: WorkerOptions = {}) {
-			const url = new URL(String(script), globalThis.location?.href);
-			if (!isCrossOrigin(url)) {
-				super(script, options);
-				return;
-			}
-			watchPolicy();
-			const address = URL.createObjectURL(
-				new Blob([bootstrapSource(url.href)], { type: 'text/javascript' }),
-			);
-			super(address, { ...options, type: 'module' });
-			// The constructor has read the address, so the worker no longer needs it.
-			URL.revokeObjectURL(address);
-			const error = errorOfCall as WasmError;
-			const what = `the ${(options.name ?? 'engine').replace(/^null3d-/, '')} worker`;
-			let started = false;
-			const made = new WeakSet<Event>();
-			const fail = (failure: EngineError) => {
-				const event = new ErrorEvent('error', { message: failure.message, error: failure });
-				made.add(event);
-				this.dispatchEvent(event);
-			};
-			this.addEventListener('message', (event) => {
-				const data = event.data as { [REPORT]?: BootstrapReport } | null;
-				const report = typeof data === 'object' && data !== null ? data[REPORT] : undefined;
-				if (!report) return;
-				event.stopImmediatePropagation();
-				if (report.started) started = true;
-				else fail(bootstrapError(what, url, report, error));
-			});
-			this.addEventListener('error', (event) => {
-				if (started || made.has(event)) return;
-				// The browser gives no reason for a refused bootstrap; the policy's report does.
-				event.stopImmediatePropagation();
-				event.preventDefault();
-				void refusedBootstrap(what, error).then(fail);
-			});
-		}
-	};
+	// An arrow function cannot stand in for a class: `new` refuses it.
+	function BootstrappedWorker(script: string | URL, options: WorkerOptions = {}): Worker {
+		const url = new URL(String(script), globalThis.location?.href);
+		if (!isCrossOrigin(url)) return new Native(script, options);
+		watchPolicy();
+		const address = URL.createObjectURL(
+			new Blob([bootstrapSource(url.href)], { type: 'text/javascript' }),
+		);
+		const worker = new Native(address, { ...options, type: 'module' });
+		// The constructor has read the address, so the worker no longer needs it.
+		URL.revokeObjectURL(address);
+		const error = errorOfCall as WasmError;
+		const what = `the ${(options.name ?? 'engine').replace(/^null3d-/, '')} worker`;
+		let started = false;
+		const made = new WeakSet<Event>();
+		const fail = (failure: EngineError) => {
+			const event = new ErrorEvent('error', { message: failure.message, error: failure });
+			made.add(event);
+			worker.dispatchEvent(event);
+		};
+		worker.addEventListener('message', (event) => {
+			const data = event.data as { [REPORT]?: BootstrapReport } | null;
+			const report = typeof data === 'object' && data !== null ? data[REPORT] : undefined;
+			if (!report) return;
+			event.stopImmediatePropagation();
+			if (report.started) started = true;
+			else fail(bootstrapError(what, url, report, error));
+		});
+		worker.addEventListener('error', (event) => {
+			if (started || made.has(event)) return;
+			// The browser gives no reason for a refused bootstrap; the policy's report does.
+			event.stopImmediatePropagation();
+			event.preventDefault();
+			void refusedBootstrap(what, error).then(fail);
+		});
+		return worker;
+	}
+	return BootstrappedWorker as unknown as typeof Worker;
 }
 
 /**

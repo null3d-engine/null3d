@@ -1,6 +1,7 @@
 // What the thread that runs the sketch needs to send tasks to the job workers: a port to each, and
 // the core's call that asks a job worker to leave the job loop for its tasks. The thread's start
-// sets it, and the on-demand loader (shared/tasks.ts), which loads on first use, reads it. It
+// sets it, its stop clears it, and the on-demand loader (shared/tasks.ts), which loads on first
+// use, reads it. It
 // lives on the thread's global object, because Safari can run a worker's first file twice and so
 // hold two copies of this module.
 
@@ -18,6 +19,14 @@ const thread = globalThis as { [HOST]?: JobTaskHost };
 /** Gives this thread the job workers' task ports. */
 export function setJobTasks(host: JobTaskHost): void {
 	thread[HOST] = host;
+}
+
+/**
+ * Takes the job workers' task ports from this thread when its engine stops, unless a later engine
+ * has given its own, so the thread no longer reaches the stopped engine's core and workers.
+ */
+export function clearJobTasks(host: JobTaskHost | undefined): void {
+	if (host && thread[HOST] === host) delete thread[HOST];
 }
 
 /** The job workers' task ports, or undefined in a thread without job workers. */

@@ -35,7 +35,7 @@ import { URL_SWITCHES } from '../shared/dev';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
-import { setJobTasks } from '../shared/task-host';
+import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { spawnWorker } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
@@ -1194,6 +1194,8 @@ async function startEngine(
 	 * memory, so each engine starts a core of its own.
 	 */
 	let localCore: CoreGlue | undefined;
+	/** The job workers' task ports that the page's on-demand loader uses, when the page runs the sketch. */
+	let jobTaskHost: JobTaskHost | undefined;
 	let stopping: Promise<void> | undefined;
 	/** The marker of a start that may crash the tab, which the start sets once it knows the tier. */
 	let markerSet = false;
@@ -1253,7 +1255,9 @@ async function startEngine(
 			// list that the page's engine holds, so the engine stays until that worker has stopped.
 			localCore?.destroyEngine();
 			// The job workers have left the job system, so the page's threaded core has no more work,
-			// and the browser can free the engine's memory once the page lets go of the core.
+			// and the browser can free the engine's memory once the page lets go of the core and of the
+			// loader's call into it.
+			clearJobTasks(jobTaskHost);
 			localCore?.releaseInstance?.();
 			release();
 		})();
@@ -1529,10 +1533,11 @@ async function startEngine(
 			// The page's on-demand loader sends its tasks to this engine's job workers; without them, it
 			// starts a task worker.
 			const glue = started.glue;
-			setJobTasks({
+			jobTaskHost = {
 				ports: threads ? startJobs(threads.jobs) : [],
 				call: (index) => glue.callJobWorker(index),
-			});
+			};
+			setJobTasks(jobTaskHost);
 			let imagePort: MessagePort | undefined;
 			if (render) {
 				// The setup can wait for frames of the render worker: in hold mode, for a warm-up, and
