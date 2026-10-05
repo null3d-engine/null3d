@@ -15,6 +15,7 @@
 import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { AO_IMAGE } from '../../bench/scenes/ao.ts';
+import { BACKGROUND_SCENES, BACKGROUNDS_IMAGE } from '../../bench/scenes/backgrounds.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import {
@@ -595,6 +596,37 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['hdr=off'],
 		reference: 'texture-background',
 		expect: { hdr: false },
+	},
+	// The other backgrounds: three.js's sky with clouds, an environment that blurs, dims and turns
+	// behind spheres it lights, and a cube map of six pictures. The parity test compares each with
+	// three.js.
+	...BACKGROUND_SCENES.map(
+		(bg): ImageTest => ({
+			name: `background-${bg}`,
+			sketch: `tests/pages/sketches/backgrounds-sketch.ts?bg=${bg}`,
+			size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+			hold: 0,
+		}),
+	),
+	// The sky on the 8-bit path, where the sky's own shader tone maps its color. It must draw the
+	// HDR path's image.
+	{
+		name: 'background-sky-8-bit',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=sky',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		reference: 'background-sky',
+		expect: { hdr: false },
+	},
+	// The cube map through an orthographic camera, whose parallel rays all look toward one point
+	// of the cube: the view shows that point's color.
+	{
+		name: 'background-cubemap-ortho',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=cubemap&ortho',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
 	},
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the

@@ -314,6 +314,10 @@ UI libraries need the DOM, so they live on the page. Each change sends one messa
 ```ts
 const sun = scene.createDirectionalLight({ direction: [0, -1, 0], intensity: 3, castShadows: true });
 const dir = vec3.create();
+const sunPosition: [number, number, number] = [0, 1, 0];
+const settings = { sunPosition, turbidity: 8, rayleigh: 2, time: 0 };  // three.js's Sky uniforms
+const sky = { sky: settings };
+scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.3 });
 let t = 0.3; // 0 = midnight, 0.5 = noon
 return {
   onUpdate(dt) {
@@ -323,12 +327,16 @@ return {
     sun.setDirection(dir[0], dir[1], dir[2]);
     const daylight = math.clamp(-dir[1] * 2, 0, 1);
     sun.setIntensity(3 * daylight);
-    scene.setBackground({ sky: { sunDirection: dir, turbidity: 8, rayleigh: 2 } });
+    sunPosition[0] = -dir[0];                                // toward the sun
+    sunPosition[1] = -dir[1];
+    sunPosition[2] = -dir[2];
+    settings.time += dt;                                     // the clouds drift
+    scene.setBackground(sky);
   },
 };
 ```
 
-Calling `setBackground` every frame is fine: sky parameters are uniform values and do not recompile anything. Docs: `api/scene`, `concepts/lighting`.
+Calling `setBackground` every frame is fine: the sky's settings are values, not shader builds, and the call allocates nothing. Keep one settings object and change it in place. The sky lights nothing, so the sun light and an environment light the scene. Docs: `api/scene`, `concepts/lighting`.
 
 ## 11. Physics with a library in the sketch worker
 

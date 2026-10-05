@@ -3,12 +3,12 @@ id: concepts/lighting
 title: Lighting and environment
 status: experimental
 since: "0.1"
-summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics."
+summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; sky and environment backgrounds."
 ---
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with environment maps and backgrounds from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -202,6 +202,44 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - three.js takes `scene.environmentIntensity` in place of a material's `envMapIntensity` when the material has no map of its own. The engine multiplies the two, so `envIntensity` keeps its meaning with a scene environment.
 - Each material can have its own `envMap` in three.js. The engine has one environment per scene.
 
+## Sky and backgrounds
+
+The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, or three.js's analytic sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  // A low sun over a hazy sky, as three.js's sky example draws it.
+  scene.setBackground({ sky: { sunPosition: [0, 0.07, -1], turbidity: 10, rayleigh: 3 } });
+  // Light from an environment, which the sky does not give.
+  scene.setEnvironment(await assets.builtinEnvironment('room'));
+  return {};
+});
+```
+
+The engine draws a background first in the camera's opaque pass, without the depth test, so every object draws over it. A texture fills the view as one triangle. An environment, a cube map and the sky draw as a box around the camera, as three.js draws them. So each pixel takes its color from its own direction. Their light goes into the scene's color like an object's, so exposure and tone mapping change them too.
+
+- An environment's background reads the environment's cube map at the level of the blur's roughness, as three.js reads its PMREM texture with `backgroundBlurriness`. The levels hold the blur already, so a blurred background costs no more than a sharp one.
+- A cube map reads its six images as three.js's `CubeTextureLoader` maps them: seen from inside the cube, mirrored across x.
+- The sky is three.js's `Sky`, the Preetham daylight model, with its sun disc and its clouds. Its formulas and constants are three.js's, in their order. The engine's parity scenes compare the sky, a blurred environment background and a cube map with three.js. Each matches under three.js's own image rule, on every GPU path.
+
+The sky lights nothing. For light that matches it, add a directional light along the sun and an environment, as three.js's examples do.
+
+### Background cost
+
+- Each background is one draw of at most 12 triangles. The sky reads no texture.
+- An environment or a cube map reads one texel of its cube map per pixel. The sky computes its light in each pixel, and does more work above the horizon while it draws clouds. `cloudCoverage: 0` skips the clouds.
+- The settings are a small block of values that the GPU reads, and the engine writes them again only when they change. Setting or moving a background builds no pipeline. The first background of each kind builds one.
+- A cube map's six images upload in the frames after the load, within the frame's upload budget. Its faces have one level, so large faces seen small can shimmer.
+
+### Backgrounds beside three.js
+
+- three.js's `Sky` and `SkyMesh` are meshes in the scene. The engine's sky is the scene's background, so it draws behind every object, whatever the camera's far plane.
+- three.js's `SkyMesh` moves its clouds by the renderer's clock. The engine's sky moves them by its `time` setting, as three.js's `Sky` does, so a still frame shows the same clouds.
+- Only environments blur. three.js blurs a cube texture by turning it into a PMREM texture first. Make an environment with `bunx @null3d/cli assets env` for a background that blurs.
+- `WebGLRenderer` draws an sRGB cube texture without exposure and tone mapping. The engine changes every background with them, as three.js's `WebGPURenderer` does.
+
 ## Related pages
 
 - [Lights](../api/lights.md): the calls and options of each kind of light.
@@ -210,4 +248,4 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - [Render layers](render-layers.md): which cameras a light lights.
 - [Materials](../api/materials.md): the standard material, which lights shade.
 - [The asset pipeline](../guides/assets-pipeline.md#environment-maps): the command that makes environment maps.
-- [Assets](../api/assets.md#environments): the calls that load environments.
+- [Assets](../api/assets.md#environments): the calls that load environments and cube maps.

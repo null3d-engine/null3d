@@ -59,6 +59,7 @@ const SKETCH_SWITCHES = [
 	'outline',
 	'labels',
 	'environment',
+	'sky',
 ] as const;
 
 /**

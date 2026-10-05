@@ -97,7 +97,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, AoIds};
-use crate::background::BackgroundPass;
+use crate::background::{BackgroundIds, BackgroundPass};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
@@ -159,8 +159,10 @@ mod ids {
     pub const BLOOM: u32 = SHADOW_TILES + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = BLOOM + 1;
+    /// The uniform buffer of the background's values.
+    pub const BACKGROUND: u32 = AO + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = AO + 1;
+    pub const PAGES: u32 = BACKGROUND + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -238,8 +240,10 @@ mod ids {
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
-    /// The bind groups of materials' maps, after ambient occlusion's.
-    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The background's bind group, after ambient occlusion's.
+    pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The bind groups of materials' maps, after the background's.
+    pub const TEXTURE_GROUPS: u32 = BACKGROUND_GROUP + 1;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -442,7 +446,12 @@ impl CpuCulledRenderer {
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::new(config.multi_draw),
-            background: BackgroundPass::default(),
+            background: BackgroundPass::new(BackgroundIds {
+                buffer: ids::BACKGROUND,
+                group: ids::BACKGROUND_GROUP,
+                blank_cube: ids::BLANK_ENVIRONMENT,
+                sampler: ids::ENVIRONMENT_SAMPLER,
+            }),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -754,6 +763,7 @@ impl CpuCulledRenderer {
             + shadows
             + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
+            + BackgroundPass::UPLOAD_BYTES
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -1090,7 +1100,7 @@ impl CpuCulledRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(&self.settings);
+        self.background.prepare(list, arena, &self.settings)?;
         let new_views = first_new < views
             || first_new_cascade < cascades
             || first_new_tile < tiles
@@ -1471,6 +1481,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.background.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

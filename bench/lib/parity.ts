@@ -13,6 +13,7 @@ import { percent } from '../../packages/cli/src/compare.js';
 import { TIERS, type Tier } from '../../packages/cli/src/page.js';
 import { encodePng, type RgbaImage } from '../../packages/cli/src/png.js';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../../tests/pages/lib/bright-scene.ts';
+import { BACKGROUND_SCENES } from '../scenes/backgrounds.ts';
 import { MODEL_NAMES } from '../scenes/gltf-models.ts';
 
 export { encodePng, percent, type RgbaImage, TIERS, type Tier };
@@ -286,6 +287,13 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'lines', twin: `${TWINS}/lines.html` },
 	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
+	// three.js's sky, a blurred environment background and a cube map of six pictures.
+	...BACKGROUND_SCENES.map(
+		(bg): FeatureScene => ({
+			test: `background-${bg}`,
+			twin: `${TWINS}/backgrounds.html?bg=${bg}`,
+		}),
+	),
 	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
 	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },

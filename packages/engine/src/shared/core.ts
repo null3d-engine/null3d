@@ -312,8 +312,9 @@ export interface CoreGlue extends CoreErrors {
 	createVolumeTexture(width: number, height: number, depth: number, format: number): number;
 	/**
 	 * A cube texture with faces of `size` texels a side and `levels` mip levels, in a `FORMAT_*`
-	 * code of shared-exponent floats or half floats, with no texels yet. Its texels bring every
-	 * level, each level's six faces in turn. Returns its handle.
+	 * code of shared-exponent floats or half floats, whose texels bring every level, each level's
+	 * six faces in turn, or of 8-bit sRGB texels and one level, whose faces come from six images.
+	 * It has no texels yet. Returns its handle.
 	 */
 	createCubeTexture(size: number, levels: number, format: number): number;
 	/**
@@ -321,6 +322,12 @@ export interface CoreGlue extends CoreErrors {
 	 * returns the image's id for the thread that draws. An image of another size resizes it.
 	 */
 	setTextureImage(texture: number, width: number, height: number, flags: number): number;
+	/**
+	 * Gives a cube texture of 8-bit texels six images, one for each face from +X to -Z, uploaded
+	 * with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and returns the first image's id for the
+	 * thread that draws. The other five take the ids after it.
+	 */
+	setCubeImages(texture: number, flags: number): number;
 	/**
 	 * Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU in
 	 * `slices` parts of its work, one a frame, and returns the generator's id among the images'
@@ -456,8 +463,17 @@ export interface CoreGlue extends CoreErrors {
 	 * cast shadows.
 	 */
 	shadowCasters(): number;
-	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
-	setBackgroundTexture(texture: number): number;
+	/**
+	 * The address of the block of the background's values (`BACKGROUND_VALUE_*`), 32-bit floats
+	 * that TypeScript writes before it calls `setBackgroundSource`.
+	 */
+	backgroundValues(): number;
+	/**
+	 * Draws a source (`BACKGROUND_KIND_*`) behind every object in the camera's view, with the
+	 * background's values: texture or cube texture `texture`, or none for the sky. `NONE` leaves
+	 * the background color alone.
+	 */
+	setBackgroundSource(kind: number, texture: number): number;
 	/**
 	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
 	 * linear fog, and the density of exponential squared fog.
@@ -623,6 +639,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createVolumeTexture',
 	'createCubeTexture',
 	'setTextureImage',
+	'setCubeImages',
 	'generateTexture',
 	'setTextureData',
 	'destroyTexture',
@@ -657,7 +674,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setPixelRatio',
 	'setShadowQuality',
 	'shadowCasters',
-	'setBackgroundTexture',
+	'backgroundValues',
+	'setBackgroundSource',
 	'setFog',
 	'setDebugView',
 	'initAnimations',

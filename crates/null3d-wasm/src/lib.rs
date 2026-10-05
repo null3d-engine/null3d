@@ -39,6 +39,7 @@ use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
+use null3d_render::background::{Background, BackgroundSource, Sky};
 use null3d_render::bloom::{self, Blend, Bloom};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -169,6 +170,9 @@ struct Engine {
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
     /// The environment's values that TypeScript writes (`constants::environment_value`).
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
+    /// The block of the background's values, which TypeScript writes before it calls
+    /// `setBackgroundSource`.
+    background_values: Box<[f32; constants::background_value::COUNT as usize]>,
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
@@ -486,6 +490,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
+        background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
     });
     0
 }
@@ -495,6 +500,13 @@ pub fn init_engine(
 #[wasm_bindgen(js_name = environmentValues)]
 pub fn environment_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
+/// The address of the block of the background's values (`background_value`), which TypeScript
+/// writes before it calls `setBackgroundSource`.
+#[wasm_bindgen(js_name = backgroundValues)]
+pub fn background_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.background_values[..])))
 }
 
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes
@@ -1716,6 +1728,20 @@ pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u
     })
 }
 
+// Gives a cube texture of 8-bit sRGB texels and one level six images, one for each face from +X
+// to -Z, uploaded with the `upload_flags` in `flags`, and returns the first image's id. TypeScript
+// sends the images to the thread that draws under that id and the five after it, in id order.
+/// Gives a cube texture six images and returns the first one's id.
+#[wasm_bindgen(js_name = setCubeImages)]
+pub fn set_cube_images(texture: u32, flags: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .set_cube_images(Handle::from_raw(texture), flags)
+            .map_err(texture_failure)
+    })
+}
+
 // Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU in
 // `slices` parts of its work, one a frame, and returns the generator's id, which it takes from the
 // images' ids. TypeScript sends the generator's name to the thread that draws under that id, in id
@@ -2236,20 +2262,56 @@ pub fn set_software_occlusion(on: bool) -> u32 {
     })
 }
 
-// Draws a texture behind every object in the camera's view, or only the background color when
-// `texture` is 0. Fails for a texture that is not live.
-/// Draws a texture behind every object, or none with 0.
-#[wasm_bindgen(js_name = setBackgroundTexture)]
-pub fn set_background_texture(texture: u32) -> u32 {
+// Draws the source `kind` (`background_kind`) behind every object in the camera's view, with the
+// background's values, or only the background color for `NONE`. A texture, an environment or a
+// cube map is cube texture or texture `texture`; the sky takes none. The TypeScript API checks the
+// values. Fails for a texture that is not live.
+/// Draws a background source behind every object, or none.
+#[wasm_bindgen(js_name = setBackgroundSource)]
+pub fn set_background_source(kind: u32, texture: u32) -> u32 {
     with_engine(|e| {
+        use constants::background_value as at;
+        let values = &e.background_values;
+        let value = |place: u32| values[place as usize];
+        let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
+        let sky = Sky {
+            sun_position: three(at::SUN_POSITION),
+            turbidity: value(at::TURBIDITY),
+            rayleigh: value(at::RAYLEIGH),
+            mie_coefficient: value(at::MIE_COEFFICIENT),
+            mie_directional_g: value(at::MIE_DIRECTIONAL_G),
+            cloud_scale: value(at::CLOUD_SCALE),
+            cloud_speed: value(at::CLOUD_SPEED),
+            cloud_coverage: value(at::CLOUD_COVERAGE),
+            cloud_density: value(at::CLOUD_DENSITY),
+            cloud_elevation: value(at::CLOUD_ELEVATION),
+            time: value(at::TIME),
+            sun_disc: value(at::SUN_DISC) > 0.0,
+        };
+        let (intensity, blur, rotation) =
+            (value(at::INTENSITY), value(at::BLUR), three(at::ROTATION));
         let settings = e.renderer.settings_mut();
-        match texture_or_none(settings, texture) {
-            Ok(background) => {
-                settings.set_background_texture(background);
-                0
-            }
-            Err(failure) => failure,
-        }
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        use constants::background_kind as kind_of;
+        let source = match kind {
+            kind_of::TEXTURE => Some(BackgroundSource::Texture(texture)),
+            kind_of::ENVIRONMENT => Some(BackgroundSource::Environment(texture)),
+            kind_of::CUBEMAP => Some(BackgroundSource::Cubemap(texture)),
+            kind_of::SKY => Some(BackgroundSource::Sky(sky)),
+            _ => None,
+        };
+        let draws = source
+            .filter(|source| matches!(source, BackgroundSource::Sky(_)) || !texture.is_none());
+        settings.set_background_source(draws.map(|source| Background {
+            source,
+            intensity,
+            blur,
+            rotation,
+        }));
+        0
     })
 }
 

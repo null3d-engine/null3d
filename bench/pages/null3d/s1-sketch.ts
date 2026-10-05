@@ -57,6 +57,11 @@ export default defineSketch(async (context) => {
 	const turn: [number, number, number] = [0, 0, 0];
 	const lighting = { intensity: 1, rotation: turn };
 	let room: Environment | undefined;
+	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
+	const sky = switches.has('sky');
+	const sun: [number, number, number] = [0, 0.2, -1];
+	const skySettings = { sunPosition: sun, time: 0 };
+	const skyBackground = { sky: skySettings };
 	if (switches.has('environment'))
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
@@ -74,6 +79,11 @@ export default defineSketch(async (context) => {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.scene.setEnvironment(room, lighting);
+		}
+		if (sky) {
+			sun[1] = 0.2 + 0.15 * Math.sin(t);
+			skySettings.time = t;
+			context.scene.setBackground(skyBackground);
 		}
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);

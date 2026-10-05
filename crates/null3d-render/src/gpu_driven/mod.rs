@@ -118,7 +118,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, AoIds};
-use crate::background::BackgroundPass;
+use crate::background::{BackgroundIds, BackgroundPass};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
@@ -256,8 +256,10 @@ mod ids {
     /// reads.
     pub const OUTLINE_BUCKETS: u32 = AO + 1;
     pub const OUTLINE_RECORDS: u32 = OUTLINE_BUCKETS + 1;
+    /// The uniform buffer of the background's values.
+    pub const BACKGROUND: u32 = OUTLINE_RECORDS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OUTLINE_RECORDS + 1;
+    pub const PAGES: u32 = BACKGROUND + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -323,8 +325,10 @@ mod ids {
     pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_SEGMENTS;
     /// The bind group of each step of ambient occlusion, after the joint texture's.
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
-    /// The bind groups of materials' maps, after ambient occlusion's.
-    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The background's bind group, after ambient occlusion's.
+    pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The bind groups of materials' maps, after the background's.
+    pub const TEXTURE_GROUPS: u32 = BACKGROUND_GROUP + 1;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -515,7 +519,12 @@ impl GpuDrivenRenderer {
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
-            background: BackgroundPass::default(),
+            background: BackgroundPass::new(BackgroundIds {
+                buffer: ids::BACKGROUND,
+                group: ids::BACKGROUND_GROUP,
+                blank_cube: ids::BLANK_ENVIRONMENT,
+                sampler: ids::ENVIRONMENT_SAMPLER,
+            }),
             lights: CameraLights::on_gpu(config.light_limits),
             light_clusters: LightClusters::default(),
             skinning: Skinning::new(config.vertex_skinning),
@@ -864,7 +873,7 @@ impl GpuDrivenRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(&self.settings);
+        self.background.prepare(list, arena, &self.settings)?;
         let binding_bytes = self.config.storage_binding_bytes;
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -1196,6 +1205,7 @@ impl GpuDrivenRenderer {
             + shadows
             + sorted
             + self.graph.upload_bound()
+            + BackgroundPass::UPLOAD_BYTES
     }
 }
 
@@ -1238,6 +1248,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.background.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();

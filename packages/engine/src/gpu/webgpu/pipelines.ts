@@ -8,6 +8,7 @@ import {
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
+	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
@@ -38,6 +39,8 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_CUBE,
+	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
@@ -453,6 +456,13 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
+		// The background's values, which the sky's vertex stage reads too, a cube map and its
+		// filtering sampler.
+		this.defineLayout(LAYOUT_BACKGROUND, 'background', [
+			{ binding: 0, visibility: GPUShaderStage.VERTEX | fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
+			{ binding: 2, visibility: fragment, sampler: {} },
+		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -527,9 +537,21 @@ export class Pipelines {
 			label: 'background',
 			shader: shaders.background,
 			pipeline: 'main',
-			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES],
+			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES, LAYOUT_BACKGROUND],
 			vertexBuffers: [],
 		});
+		for (const [id, label, pipeline] of [
+			[TEMPLATE_BACKGROUND_CUBE, 'background cube', 'cube'],
+			[TEMPLATE_BACKGROUND_SKY, 'background sky', 'sky'],
+		] as const) {
+			this.defineTemplate(id, {
+				label,
+				shader: shaders.skybox,
+				pipeline,
+				layouts: [LAYOUT_FRAME, LAYOUT_BACKGROUND],
+				vertexBuffers: [],
+			});
+		}
 		if (DEV) {
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
