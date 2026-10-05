@@ -35,8 +35,13 @@ pub struct Exclusive {
 
 impl Drop for Exclusive {
     fn drop(&mut self) {
-        TRACKED.with(|t| t.set(0));
+        untrack_this_thread();
     }
+}
+
+/// Stops counting the current thread.
+fn untrack_this_thread() {
+    TRACKED.with(|t| t.set(0));
 }
 
 impl CountingAllocator {
@@ -55,6 +60,22 @@ impl CountingAllocator {
     pub fn track_this_thread() {
         let hold = HOLD.load(Ordering::SeqCst);
         TRACKED.with(|t| t.set(hold));
+    }
+
+    /// Runs `f` with the current thread counted, as [`CountingAllocator::track_this_thread`]
+    /// does, and stops counting the thread when `f` returns or panics. A spawned thread runs its
+    /// work through this. Its exit then never counts: the thread can free memory after its scope
+    /// has returned, while the same test already counts again.
+    pub fn track_while<R>(f: impl FnOnce() -> R) -> R {
+        struct Untrack;
+        impl Drop for Untrack {
+            fn drop(&mut self) {
+                untrack_this_thread();
+            }
+        }
+        Self::track_this_thread();
+        let _untrack = Untrack;
+        f()
     }
 
     /// Starts counting from zero.

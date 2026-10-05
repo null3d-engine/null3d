@@ -68,7 +68,7 @@ struct ShadowTiles {
 // compares with a depth of its own. WebGPU's compatibility mode reads a depth texture through a
 // comparison sampler alone, so the map binds as a float texture.
 @group(0) @binding(4) var shadow_map: texture_2d_array<f32>;
-@group(0) @binding(12) var shadow_texels: sampler;
+@group(0) @binding(14) var shadow_texels: sampler;
 #endif
 @group(0) @binding(5) var shadow_sampler: sampler_comparison;
 @group(0) @binding(6) var<uniform> cascades: ShadowCascades;

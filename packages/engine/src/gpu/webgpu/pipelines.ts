@@ -320,7 +320,8 @@ export class Pipelines {
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
 		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
 		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
-		// textureLoad, and the sampler that reads four texels of the shadow map at once.
+		// textureLoad, the environment's cube map with its filtering sampler, and the sampler that
+		// reads four texels of the shadow map at once.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -346,7 +347,9 @@ export class Pipelines {
 			},
 			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
-			{ binding: 12, visibility: fragment, sampler: { type: 'non-filtering' } },
+			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
+			{ binding: 13, visibility: fragment, sampler: {} },
+			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },

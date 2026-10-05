@@ -126,7 +126,7 @@ describe('findEngineParts', () => {
 		]);
 		const skin = built('shaders-glsl-skin-W3.js', ['generated/shaders-glsl-skin.ts']);
 		expect(() => findEngineParts([...files, skin], parts, shaders)).toThrow(
-			"shaders-glsl-skin-W3.js holds the shader build's device module of shaders-glsl-skin.js, which the size report does not name",
+			"shaders-glsl-skin-W3.js holds the shader build's module of shaders-glsl-skin.js, which the size report does not name",
 		);
 	});
 

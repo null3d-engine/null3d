@@ -5,15 +5,22 @@ description: >-
   says. The Actions cache keeps the
   pinned commit's files, so a job downloads them again only when tools/samples/lock.json changes.
   bun run samples:fetch then checks the cached copy's marker, or downloads the commit and checks
-  every file's SHA-256 when the cache missed.
+  every file's SHA-256 when the cache missed. The cache saves only when the workflow's
+  SAVE_CACHES is true.
 
 runs:
   using: composite
   steps:
-    - uses: actions/cache@v4
+    - uses: actions/cache/restore@v4
+      id: restore
       with:
         path: ~/.cache/null3d/samples
         key: null3d-samples-${{ hashFiles('tools/samples/lock.json') }}
     - name: Fetch and check the sample content
       shell: bash
       run: bun run samples:fetch
+    - uses: actions/cache/save@v4
+      if: env.SAVE_CACHES == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: ~/.cache/null3d/samples
+        key: null3d-samples-${{ hashFiles('tools/samples/lock.json') }}
