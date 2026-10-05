@@ -1,25 +1,15 @@
 import { afterAll, describe, expect, it, setDefaultTimeout, spyOn } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { samplePath } from '../../../../tools/lib/samples.ts';
+import { BUILTIN_ENVIRONMENTS } from '../../../engine/src/scene/builtin-environments.ts';
 import { main } from '../cli.js';
 import { parseEnvArgs, readEnvironment } from './env.js';
 import { environmentMap } from './formats.js';
 
 // A built-in environment takes a few seconds on a busy machine or a CI runner of four cores.
 setDefaultTimeout(60_000);
-
-const ROOT = join(import.meta.dir, '../../../..');
-
-/** The engine's built-in environments, which the tool writes and the engine's package ships. */
-const BUILTIN_FILES = { room: join(ROOT, 'packages/engine/environments/room.ktx2') };
-
-/**
- * Set to write the built-in environments again, after a change that their files must take:
- * NULL3D_WRITE_ENVIRONMENTS=1 bun test packages/cli/src/assets/env.test.ts
- */
-const WRITE = process.env.NULL3D_WRITE_ENVIRONMENTS !== undefined;
 
 const work = mkdtempSync(join(tmpdir(), 'null3d-env-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -140,14 +130,18 @@ describe('environment maps', () => {
 			);
 	});
 
-	it('give the same bytes on every run, and the built-in files hold them', () => {
-		for (const [name, path] of Object.entries(BUILTIN_FILES)) {
-			const built = environmentMap({ builtin: name }, { size: 256, format: 'rgb9e5ufloat' });
-			if (WRITE) {
-				mkdirSync(join(path, '..'), { recursive: true });
-				writeFileSync(path, built);
-			}
-			expect(Buffer.from(built).equals(readFileSync(path))).toBe(true);
+	it("give the same bytes on every run, and the engine's built-in environments their diffuse light", () => {
+		// The engine makes its built-in environments on the GPU, from the same scene, and keeps
+		// only their nine coefficients, which must be the tool's.
+		for (const [name, builtin] of Object.entries(BUILTIN_ENVIRONMENTS)) {
+			const settings = { size: builtin.size, format: 'rgb9e5ufloat' } as const;
+			const built = environmentMap({ builtin: name }, settings);
+			expect(
+				Buffer.from(built).equals(Buffer.from(environmentMap({ builtin: name }, settings))),
+			).toBe(true);
+			const env = readEnvironment(built);
+			expect(env.levels.length).toBe(builtin.levels);
+			expect(env.sh.map(Math.fround)).toEqual(Array.from(builtin.sh));
 		}
 		const sky = { file: radianceFile(64, 32, (d) => [1 + (d[0] as number), 1, 0.5]) };
 		const a = environmentMap(sky, { size: 32, format: 'rgb9e5ufloat', samples: 32 });

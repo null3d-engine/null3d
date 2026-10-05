@@ -26,9 +26,10 @@
 //! [`read`] checks everything a damaged or hostile file could get wrong, and returns an error
 //! instead of a tree that loops, reads past an array, or misses a triangle: the sizes, each child
 //! word, that each node has one parent that comes before it, the depth, that the leaves name
-//! every entry of the order once, that the order names every triangle once, and that every box
-//! holds what lies under it. A tree that passes gives the same hits as one the engine builds,
-//! though its shape may differ.
+//! every entry of the order once, that the order names every triangle once, that every box is
+//! finite and holds what lies under it, and that every empty slot holds the empty box that
+//! [`write`] gives it. A tree that passes gives the same hits as one the engine builds, though its
+//! shape may differ.
 
 use std::fmt;
 
@@ -67,8 +68,12 @@ pub enum FormatError {
     Order(u32, u32),
     /// A node lies deeper than [`MAX_DEPTH`]: the node.
     Depth(u32),
-    /// A box does not hold what lies under it: the node, and the child.
+    /// A box does not hold what lies under it, or is not finite: the node, and the child, or 4
+    /// for the box around every triangle.
     Bounds(u32, u32),
+    /// An empty child slot holds a box other than the empty one: the node, and the slot. A query
+    /// that tests such a slot would follow its empty word.
+    EmptySlot(u32, u32),
     /// Memory could not grow for the tree: the bytes it needed.
     OutOfMemory(usize),
 }
@@ -101,6 +106,9 @@ impl fmt::Display for FormatError {
                     f,
                     "child {slot} of node {node} has a box that misses its triangles"
                 )
+            }
+            Self::EmptySlot(node, slot) => {
+                write!(f, "empty slot {slot} of node {node} has a box")
             }
             Self::OutOfMemory(bytes) => write!(f, "memory could not grow by {bytes} bytes"),
         }
@@ -280,6 +288,7 @@ fn check(bvh: &MeshBvh, max_leaf: u32, mesh: &impl Triangles) -> Result<(), Form
         let node = &bvh.nodes[i];
         let mut all = Aabb::EMPTY;
         for (slot, &w) in node.children.iter().enumerate() {
+            let stored = node.child_box(slot);
             let b = if child::is_node(w) {
                 exact[w as usize]
             } else if child::is_leaf(w) {
@@ -290,19 +299,38 @@ fn check(bvh: &MeshBvh, max_leaf: u32, mesh: &impl Triangles) -> Result<(), Form
                 }
                 b
             } else {
+                // The walks test all four slots at once, so an empty slot must hold the box
+                // that no test enters, bit for bit.
+                if !same_bits(&stored, &Aabb::EMPTY) {
+                    return Err(FormatError::EmptySlot(i as u32, slot as u32));
+                }
                 continue;
             };
-            if !node.child_box(slot).contains(&b) {
+            if !finite(&stored) || !stored.contains(&b) {
                 return Err(FormatError::Bounds(i as u32, slot as u32));
             }
             all.grow(&b);
         }
         exact[i] = all;
     }
-    if !bvh.bounds.contains(&exact[0]) {
+    if !finite(&bvh.bounds) || !bvh.bounds.contains(&exact[0]) {
         return Err(FormatError::Bounds(0, 4));
     }
     Ok(())
+}
+
+/// True when every corner of a box is a finite number.
+fn finite(b: &Aabb) -> bool {
+    b.min.iter().chain(&b.max).all(|v| v.is_finite())
+}
+
+/// True when two boxes hold the same bits, so NaN differs from everything.
+fn same_bits(a: &Aabb, b: &Aabb) -> bool {
+    a.min
+        .iter()
+        .chain(&a.max)
+        .zip(b.min.iter().chain(&b.max))
+        .all(|(x, y)| x.to_bits() == y.to_bits())
 }
 
 impl MeshBvh {

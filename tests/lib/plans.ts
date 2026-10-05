@@ -189,6 +189,8 @@ export type Check =
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The effect cost page: an effect off and on in turns, at one render scale. */
 	| { kind: 'effect'; effect: 'bloom' | 'ao'; tier: Tier; scale: number }
+	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
+	| { kind: 'environment'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
@@ -829,6 +831,47 @@ export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
 	return [...pages, ...twin];
 }
 
+/** The bases of bloom's chain that the bloom size plan times, in texels on the short side. */
+export const BLOOM_SIZES = [512, 256, 128, 64] as const;
+
+/**
+ * What bloom costs at each base size of its chain, on WebGPU, whose GPU timer the phones have: the
+ * bloom cost page at render scales of 1 and 0.5, with the quality setting `bloomSize` at each size.
+ * Each halving of the base drops a level, so the sizes draw 15, 13, 11 and 9 passes, and the
+ * results split bloom's cost into a cost per pass and a cost per texel. D-21 records them.
+ */
+export function bloomSizesPlan(): PlanItem<Check>[] {
+	return BLOOM_SIZES.flatMap((size) =>
+		EFFECT_SCALES.map((scale) =>
+			pageItem(
+				`bloom-size-${size}-webgpu-${scale * 100}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'bloom', tier: 'webgpu', scale },
+				{
+					switches: ['gpu=webgpu', `scale=${scale}`, 'effect=bloom', `size=${size}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
+/**
+ * What the environment's light costs on each GPU path: layers of planes of the standard material
+ * fill the window at a render scale of 1, and the page times its frames without and with the built-in
+ * room in turns. D-19 records the results.
+ */
+export function environmentPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`environment-${tier}`,
+			'environment-cost',
+			{ kind: 'environment', tier },
+			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 /** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
 const OCCLUSION_TIMEOUT_SECONDS = 90;
 
@@ -1163,7 +1206,9 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: () => effectPlan('bloom'),
+	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	environment: environmentPlan,
 	occlusion: occlusionPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
@@ -1636,11 +1681,13 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
-		case 'effect': {
+		case 'effect':
+		case 'environment': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
+			const feature = check.kind === 'effect' ? check.effect : 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
-				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${check.effect} on`]),
+				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
 			];
 		}
 		case 'occlusion': {

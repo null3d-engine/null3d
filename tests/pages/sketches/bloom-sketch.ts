@@ -1,9 +1,10 @@
 // Bloom's scene (bench/scenes/bloom.ts), which the parity test also draws with three.js's
 // UnrealBloomPass: emissive spheres and a thin bar that glow over a dim ground, beside a lit box
-// below the threshold. ?bloom=soft or ?bloom=strong names its settings, and without it bloom stays
-// off. With ?later, the sketch turns bloom on during play, half a second in, rather than in its
+// below the threshold. ?bloom=soft or ?bloom=strong names its settings, mapped from three.js's onto
+// null3D's chain, and without it bloom stays off. With ?later, the sketch turns bloom on during play, half a second in, rather than in its
 // setup. ?scale= draws at that render scale, with a range that reaches down to 0.5; with ?fixed the
-// range holds that scale alone, and the governor is off, for timing. On the page's 'bloom' message
+// range holds that scale alone, and the governor is off, for timing. ?size= sets the quality
+// setting bloomSize, the base of bloom's chain. On the page's 'bloom' message
 // it turns the strong bloom on, waits until its pipelines are built, and posts the frames and
 // milliseconds that took as 'settled'. The 'bloom-off' message turns bloom off.
 //
@@ -14,7 +15,7 @@ import {
 	BLOOM_AMBIENT,
 	BLOOM_BACKGROUND,
 	BLOOM_CAMERA,
-	BLOOM_SETTINGS,
+	BLOOM_MAPPED,
 	BLOOM_SHAPES,
 	BLOOM_SUN,
 } from '../../../bench/scenes/bloom';
@@ -22,10 +23,11 @@ import {
 const params = new URL(import.meta.url).searchParams;
 const name = params.get('bloom');
 const BLOOM =
-	name === 'soft' ? BLOOM_SETTINGS.soft : name === 'strong' ? BLOOM_SETTINGS.strong : undefined;
+	name === 'soft' ? BLOOM_MAPPED.soft : name === 'strong' ? BLOOM_MAPPED.strong : undefined;
 const LATER = params.has('later');
 const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
+const SIZE = params.get('size');
 
 export default defineSketch(({ scene, materials, geometry, post, quality, time, page }) => {
 	if (BLOOM && !LATER) post.set({ bloom: BLOOM });
@@ -37,6 +39,7 @@ export default defineSketch(({ scene, materials, geometry, post, quality, time, 
 			governor: !FIXED,
 		});
 	}
+	if (SIZE !== null) quality.set({ bloomSize: Number(SIZE) as 64 | 128 | 256 | 512 });
 	scene.setBackground(BLOOM_BACKGROUND);
 	const camera = scene.createPerspectiveCamera({
 		fov: BLOOM_CAMERA.fov,
@@ -72,7 +75,7 @@ export default defineSketch(({ scene, materials, geometry, post, quality, time, 
 		if (message !== 'bloom') return;
 		const frame = time.frame;
 		const start = performance.now();
-		post.set({ bloom: BLOOM_SETTINGS.strong });
+		post.set({ bloom: BLOOM_MAPPED.strong });
 		void scene
 			.warmUp()
 			.then(() =>

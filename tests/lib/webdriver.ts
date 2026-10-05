@@ -48,6 +48,8 @@ export function webDriver(
 		timeoutMs = COMMAND_TIMEOUT_MS,
 	): Promise<unknown> => {
 		let response: Response;
+		let text: string;
+		// The time limit covers the whole answer, so reading its body can time out as well.
 		try {
 			response = await fetchFn(`${hub}${path}`, {
 				method,
@@ -55,10 +57,10 @@ export function webDriver(
 				...(body !== undefined && { body: JSON.stringify(body) }),
 				signal: AbortSignal.timeout(timeoutMs),
 			});
+			text = await response.text();
 		} catch (e) {
 			throw new WebDriverError('no answer', redact(`${method} ${path}: ${(e as Error).message}`));
 		}
-		const text = await response.text();
 		let value: unknown;
 		try {
 			value = (JSON.parse(text) as { value?: unknown }).value;

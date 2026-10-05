@@ -1,11 +1,14 @@
 // Asks the engine for instance batches around its limits: one past the limit that every WebGPU
 // device draws, one as large as the device's own limit, and a small one after both. Reports the device's
-// limit, what each request returned, and how many pixels the large batch drew.
+// limit, what each request returned, and how many pixels the large batch drew. Then asks for a mesh
+// larger than engine memory holds, and a small batch after it.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
 /** Rows of the batch that passes the limit every WebGPU device draws. */
 const PAST_PORTABLE = 3_000_000;
+/** Vertices of a mesh whose buffers, with normals to compute, pass 1 GiB of engine memory. */
+const HUGE_MESH = 12_000_000;
 
 interface BatchResult {
 	ok: boolean;
@@ -50,6 +53,10 @@ run('limits', async () => {
 	if (full.ok) await ask('destroy', 'destroyed');
 	const after = await batch(1000);
 	const afterDrawn = after.ok ? await drawnPixels() : 0;
+	const hugeMesh = await ask<BatchResult>('mesh', 'mesh', HUGE_MESH);
+	await ask('destroy', 'destroyed');
+	const afterMesh = await batch(1000);
+	const afterMeshDrawn = afterMesh.ok ? await drawnPixels() : 0;
 	await engine.destroy();
 	return {
 		mode: engine.mode,
@@ -59,6 +66,9 @@ run('limits', async () => {
 		full,
 		after,
 		afterDrawn,
+		hugeMesh,
+		afterMesh,
+		afterMeshDrawn,
 		failures,
 	};
 });
