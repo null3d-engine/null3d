@@ -782,22 +782,6 @@ const EXPONENTIAL: u32 = 3u;
 
 Exponential fog: a factor of 1 - exp(-density × distance), which light through an even haze follows.
 
-### `HEIGHT_EXPONENT_LIMIT`
-
-```wgsl
-const HEIGHT_EXPONENT_LIMIT: f32 = 40.0;
-```
-
-The largest exponent that the height terms take. Each term then stays finite in 32-bit floats, and so does their product.
-
-### `HEIGHT_SERIES_LIMIT`
-
-```wgsl
-const HEIGHT_SERIES_LIMIT: f32 = 1e-2;
-```
-
-Below this product of falloff and rise, the height ratio takes the first three terms of its series. There the exact form loses digits to cancellation, and the series' first missing term is under 1e-9.
-
 ### `Fog`
 
 ```wgsl
@@ -850,7 +834,7 @@ The factor of exponential fog: the share of light that an even haze of `density`
 fn fog_height_ratio(climb: f32) -> f32
 ```
 
-The mean density along a ray from the camera, as a share of the density at the camera's height. Its input, the climb, is the falloff times the ray's rise, where the falloff is how fast the density falls with height. The share is (1 - exp(-climb)) / climb. Near 0 the share takes the first terms of its series: 1 - climb/2 + climb²/6.
+The mean density along a ray from the camera, as a share of the density at the camera's height. Its input, the climb, is the falloff times the ray's rise, where the falloff is how fast the density falls with height. The share is (1 - exp(-climb)) / climb. Near 0 the share takes the first terms of its series: 1 - climb/2 + climb²/6. It takes the series below a climb of 0.01, where the exact form loses digits to cancellation, and limits the exponent to 40, so the share stays finite in 32-bit floats.
 
 ### `fog_factor`
 

@@ -19,14 +19,6 @@ const EXP2: u32 = 2u;
 /// follows.
 const EXPONENTIAL: u32 = 3u;
 
-/// The largest exponent that the height terms take. Each term then stays finite in 32-bit floats,
-/// and so does their product.
-const HEIGHT_EXPONENT_LIMIT: f32 = 40.0;
-/// Below this product of falloff and rise, the height ratio takes the first three terms of its
-/// series. There the exact form loses digits to cancellation, and the series' first missing term is
-/// under 1e-9.
-const HEIGHT_SERIES_LIMIT: f32 = 1e-2;
-
 /// The scene's fog, as the engine writes it into each frame's values for the camera that draws.
 struct Fog {
     /// The exposed linear fog color in `xyz`, and the fog's density at its base height in `w`.
@@ -65,10 +57,15 @@ fn fog_exponential(distance: f32, density: f32) -> f32 {
 /// The mean density along a ray from the camera, as a share of the density at the camera's height.
 /// Its input, the climb, is the falloff times the ray's rise, where the falloff is how fast the
 /// density falls with height. The share is (1 - exp(-climb)) / climb. Near 0 the share takes the
-/// first terms of its series: 1 - climb/2 + climb²/6.
+/// first terms of its series: 1 - climb/2 + climb²/6. It takes the series below a climb of 0.01,
+/// where the exact form loses digits to cancellation, and limits the exponent to 40, so the share
+/// stays finite in 32-bit floats.
 fn fog_height_ratio(climb: f32) -> f32 {
-    let exact = (1.0 - exp(min(-climb, HEIGHT_EXPONENT_LIMIT))) / climb;
-    return select(exact, 1.0 + climb * (climb / 6.0 - 0.5), abs(climb) < HEIGHT_SERIES_LIMIT);
+    // Local constants, which the shader builds write as numbers rather than as names.
+    const EXPONENT_LIMIT = 40.0;
+    const SERIES_LIMIT = 1e-2;
+    let exact = (1.0 - exp(min(-climb, EXPONENT_LIMIT))) / climb;
+    return select(exact, 1.0 + climb * (climb / 6.0 - 0.5), abs(climb) < SERIES_LIMIT);
 }
 
 /// The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where

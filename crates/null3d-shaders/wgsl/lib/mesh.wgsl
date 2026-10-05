@@ -186,8 +186,11 @@ const NO_FOG: u32 = 4u;
 /// through the scene's fog, whose color the core exposes and the sun may light. A material with fog
 /// off keeps its color.
 fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
+    if ((u32(m.strengths.z) & NO_FOG) != 0u) {
+        return c;
+    }
     let factor = fog_factor(frame.fog, relative);
-    if (factor == 0.0 || (u32(m.strengths.z) & NO_FOG) != 0u) {
+    if (factor == 0.0) {
         return c;
     }
     let color = fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz);
