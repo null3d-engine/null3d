@@ -174,6 +174,19 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 
 Textures upload in bands of rows, spread over frames. Each frame sends no more texel bytes than the preset's upload budget, from 2 MiB on Low to 16 MiB on Ultra. So loading many textures does not make one frame slow, but a large texture takes several frames to arrive. [Textures](../api/textures.md) covers the budget, and [Phones and tablets](phones.md) covers texture memory.
 
+## Crowds and large scenes
+
+Each frame's list of GPU commands grows with the scene, so no count of objects or draws stops a scene from drawing. The list grows in the first frame that needs more room and keeps that room, so later frames allocate nothing. A frame that cannot finish, for example when memory runs out, draws nothing. The canvas then keeps the last whole frame, and the error names the cause.
+
+Animated characters also cost skinning work and memory:
+
+- WebGPU skins each character that some view draws once per frame, in a compute pass. So a crowd costs GPU time in proportion to its vertices, and a character out of every view costs no skinning work.
+- Each skinned copy keeps its own skinned vertices in GPU memory, even when copies share a mesh. The S5 benchmark's 500 knights take about 69 MB. Count this memory against the preset's GPU memory on phones.
+- WebGPU skinning holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
+- WebGL2 skins in the vertex shader of each pass, so shadows skin a character again. Copies that share a mesh and a material draw in one instanced draw.
+
+For a large crowd, use models with fewer vertices, and fewer shadow cascades on phones.
+
 ## Large worlds
 
 The engine divides space into [grid cells](../concepts/culling.md#grid-cells) 1,024 m wide. When a scene spreads over several cells, each view first tests each cell against its frustum. It then skips every still object of the cells out of view, and tests only the rest one by one. A still object is a static object whose parents are all static, or a row of a static instance batch.

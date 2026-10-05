@@ -62,6 +62,8 @@ struct ShadowTiles {
 @group(0) @binding(9) var shadow_atlas: texture_depth_2d_array;
 @group(0) @binding(10) var<uniform> tiles: ShadowTiles;
 
+/// The most cascades that the main directional light has.
+const MAX_CASCADES: u32 = 4u;
 /// The share of the shadow distance over which shadows fade out.
 const FADE_SHARE: f32 = 0.1;
 
@@ -180,31 +182,45 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     // an orthographic camera, whose cascades have texels of one size, it comes from its distance
     // along the view.
     let distance = mix(along, length(seen) * length(cascades.forward.xyz), cascades.biases.z);
-    var cascade = 0u;
-    while cascade + 1u < count && distance >= cascades.ends[cascade] {
-        cascade += 1u;
-    }
-    // The filter reads up to three texels beyond the point, which must stay inside the layer.
-    let inside = 0.5 - 3.0 * cascades.kernel.y;
-    for (; cascade < count; cascade += 1u) {
-        let m = cascades.view_proj[cascade];
-        let offset = bias_offset(normal, to_light, cascades.biases.xy, cascades.texels[cascade]);
-        let clip = m * vec4f(relative + offset, 1.0);
-        if any(abs(clip.xy) > vec2f(2.0 * inside)) {
-            // A box that kept its place while the camera turned can miss the point; the next
-            // cascade's box is larger.
-            continue;
+    // Both loops below run MAX_CASCADES passes at every pixel, and the cascade count only chooses
+    // the passes that do work. Adreno 830's driver ran a loop the wrong number of times when its
+    // pass count differed between the pixels of a work group, as the fractal noise in
+    // null3d::noise found. The cascades end farther out one after another, so the cascade that
+    // holds the distance comes after each cascade whose end the distance passed.
+    var first = 0u;
+    for (var k = 0u; k < MAX_CASCADES; k++) {
+        if k + 1u < count && distance >= cascades.ends[k] {
+            first = k + 1u;
         }
-        var uv = clip.xy * vec2f(0.5, -0.5) + 0.5;
-#ifdef WEBGL2
-        // WebGL2 keeps the rows of a drawn texture bottom first.
-        uv.y = 1.0 - uv.y;
-#endif
-        let plane = receiver_plane(m, relative, normal, to_light, cascades.kernel.x);
-        let lit = filtered(false, cascades.kernel, uv, cascade, clip.z, plane);
-        return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
     }
-    return 1.0;
+    // A box that kept its place while the camera turned can miss the point; the next cascade's
+    // box is larger. The filter reads up to three texels beyond the point, which must stay inside
+    // the layer.
+    let inside = 0.5 - 3.0 * cascades.kernel.y;
+    var cascade = MAX_CASCADES;
+    var clip = vec4f(0.0);
+    for (var k = 0u; k < MAX_CASCADES; k++) {
+        if cascade == MAX_CASCADES && k >= first && k < count {
+            let offset = bias_offset(normal, to_light, cascades.biases.xy, cascades.texels[k]);
+            let at = cascades.view_proj[k] * vec4f(relative + offset, 1.0);
+            if !any(abs(at.xy) > vec2f(2.0 * inside)) {
+                cascade = k;
+                clip = at;
+            }
+        }
+    }
+    if cascade == MAX_CASCADES {
+        return 1.0;
+    }
+    var uv = clip.xy * vec2f(0.5, -0.5) + 0.5;
+#ifdef WEBGL2
+    // WebGL2 keeps the rows of a drawn texture bottom first.
+    uv.y = 1.0 - uv.y;
+#endif
+    let m = cascades.view_proj[cascade];
+    let plane = receiver_plane(m, relative, normal, to_light, cascades.kernel.x);
+    let lit = filtered(false, cascades.kernel, uv, cascade, clip.z, plane);
+    return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
 }
 
 /// One sample of the comparison sampler at `uv` in layer `layer`: of the shadow atlas when `atlas`,

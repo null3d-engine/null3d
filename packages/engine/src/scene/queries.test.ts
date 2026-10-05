@@ -373,6 +373,18 @@ describe('query errors', () => {
 			'raycast() got NaN for y of the origin.',
 		],
 		[
+			'an origin past the range of 32-bit floats',
+			(s) => s.raycast([1e39, 0, 0], [0, 0, -1], undefined, hit),
+			'E1108',
+			'raycast() got 1e+39 for x of the origin: pass a number from -3.4e38 to 3.4e38',
+		],
+		[
+			'a direction that is not finite',
+			(s) => s.raycastAny([0, 0, 0], [0, Number.NaN, 0]),
+			'E1203',
+			'raycastAny() got NaN for y of the direction.',
+		],
+		[
 			'a direction of length 0',
 			(s) => s.raycastAny([0, 0, 0], [0, 0, 0]),
 			'E1108',
@@ -401,7 +413,25 @@ describe('query errors', () => {
 			(s) =>
 				s.raycastBatch([0, 0, 0, 0, Infinity, 0], undefined, { distances: new Float32Array(1) }),
 			'E1203',
-			'raycastBatch() got Infinity at index 4 of its rays.',
+			'raycastBatch() got Infinity for index 4 of its rays.',
+		],
+		[
+			'a ray of a batch with a direction of length 0',
+			(s) =>
+				s.raycastBatch([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], undefined, {
+					distances: new Float32Array(2),
+				}),
+			'E1108',
+			'raycastBatch() got a direction of length 0 for ray 1',
+		],
+		[
+			'a ray of a batch whose origin is past the range of 32-bit floats',
+			(s) =>
+				s.raycastBatch([0, 0, 0, 0, 0, 1, 0, -1e39, 0, 0, 0, 1], undefined, {
+					distances: new Float32Array(2),
+				}),
+			'E1108',
+			'raycastBatch() got -1e+39 for index 7 of its rays: pass a number from -3.4e38 to 3.4e38',
 		],
 		[
 			'an output array too short for the rays',
@@ -426,6 +456,30 @@ describe('query errors', () => {
 			'overlapSphere() got Infinity for radius',
 		],
 		[
+			'a radius past the range of 32-bit floats',
+			(s) => s.overlapSphere([0, 0, 0], 1e39, undefined, []),
+			'E1108',
+			'overlapSphere() got 1e+39 for radius: pass a number from 0 to 3.4e38.',
+		],
+		[
+			'a center past the range of 32-bit floats',
+			(s) => s.overlapSphere([0, 0, -1e39], 1, undefined, []),
+			'E1108',
+			'overlapSphere() got -1e+39 for z of the center',
+		],
+		[
+			'a box that reaches infinity',
+			(s) => s.overlapBox([-Infinity, 0, 0], [1, 1, 1], undefined, []),
+			'E1203',
+			'overlapBox() got -Infinity for x of the lowest corner.',
+		],
+		[
+			'a box past the range of 32-bit floats',
+			(s) => s.overlapBox([0, 0, 0], [1, 1e39, 1], undefined, []),
+			'E1108',
+			'overlapBox() got 1e+39 for y of the highest corner',
+		],
+		[
 			'a box whose corners are swapped',
 			(s) => s.overlapBox([0, 2, 0], [1, 1, 1], undefined, []),
 			'E1108',
@@ -441,6 +495,25 @@ describe('query errors', () => {
 			// The check runs before the core sees the query.
 			expect(calls).toHaveLength(0);
 		});
+
+	test('directions of any finite size, and points at the edge of 32-bit floats, reach the core', () => {
+		const { scene, calls } = fakeCore();
+		scene.raycast([0, 0, 0], [0, -1e-200, 0], undefined, hit);
+		scene.raycastAny([0, 0, 0], [1e300, 0, 0]);
+		scene.raycastBatch([3.4e38, 0, 0, 0, 0, -1e-300], undefined, {
+			distances: new Float32Array(1),
+		});
+		scene.overlapSphere([-3.4e38, 0, 0], 3.4e38, undefined, []);
+		scene.overlapBox([-3.4e38, 0, 0], [3.4e38, 1, 1], undefined, []);
+		expect(calls.map((call) => call.name)).toEqual([
+			'raycast',
+			'raycast',
+			'raycastBatch',
+			'overlap',
+			'overlap',
+		]);
+		expect(calls[0]?.input.slice(3, 6)).toEqual([0, -1e-200, 0]);
+	});
 
 	test("the core's failure throws its error, with the call's name", () => {
 		const { scene, failWith } = fakeCore();

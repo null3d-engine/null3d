@@ -15,6 +15,12 @@
 export const MIN_LUT_SIZE = 2;
 export const MAX_LUT_SIZE = 256;
 
+/**
+ * The smallest span of a domain along an axis: the smallest normal 32-bit float. The core places
+ * colors in the domain in 32-bit floats, and divides by the span.
+ */
+const MIN_DOMAIN_SPAN = 2 ** -126;
+
 /** A table as a file gives it. */
 export interface LutTable {
 	/** Texels along each side. */
@@ -233,7 +239,10 @@ export function parseCube(text: string): LutTable {
 		const [keyword = '', ...rest] = words(line);
 		const numbers = (expected: number): number[] => {
 			const values = rest.map(Number);
-			if (values.length !== expected || values.some((value) => !Number.isFinite(value)))
+			if (
+				values.length !== expected ||
+				values.some((value) => !Number.isFinite(Math.fround(value)))
+			)
 				fail(`${keyword} without ${expected} numbers`, scan.line);
 			return values;
 		};
@@ -273,9 +282,14 @@ export function parseCube(text: string): LutTable {
 	}
 	if (!texels) fail('no LUT_3D_SIZE');
 	if (count !== size ** 3) fail(`${count} texels where a table of ${size} a side has ${size ** 3}`);
-	for (let axis = 0; axis < 3; axis++)
-		if (!((domainMax[axis] as number) > (domainMin[axis] as number)))
-			fail('a domain whose maximum is not above its minimum');
+	for (let axis = 0; axis < 3; axis++) {
+		const span = Math.fround(
+			Math.fround(domainMax[axis] as number) - Math.fround(domainMin[axis] as number),
+		);
+		if (!(span >= MIN_DOMAIN_SPAN))
+			fail('a domain whose maximum is not above its minimum by a span that 32-bit floats hold');
+		if (!Number.isFinite(span)) fail('a domain wider than 32-bit floats hold');
+	}
 	return { size, title, domainMin, domainMax, texels };
 }
 
