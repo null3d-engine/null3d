@@ -307,7 +307,7 @@ The same plan measured the change on the same devices, the old commit against th
 | Pixel 10, WebGL2 | 2,428 to 1,326 (-1,102) | 2,138 to 1,687 (-451) | 1,090 to 1,016 |
 | Galaxy S24, WebGL2 | 2,884 to 2,455 (-429) | 2,379 to 1,812 (-567) | 926 to 1,233 |
 
-The HDR files' times fell by 0.25 to 1.2 s on every device and path. The room's path did not change, and its figures moved both ways. The S24's old runs ranged from 926 to 1,061 ms and its new runs from 1,233 to 1,259 ms. With two runs each, that reads as the devices' noise.
+The HDR files' times fell by 0.25 to 1.2 s on every device and path. The room's path did not change, and its figures moved both ways. The S24's old runs ranged from 926 to 1,061 ms and its new runs from 1,233 to 1,259 ms. Four more pairs of the S24's room page alone settled it (runs `20261005-153346` to `20261005-153913`). The first lit frame's median was 1,140 ms before and 1,095 ms after. The pairs differed by -328 to +163 ms, so the change makes no difference that the runs can show.
 
 The code that loads on first use, after Brotli: the reader's worker 5.8 KB, and its loader 0.6 KB in the sketch's thread. The generators' file grew from 2.1 to 2.7 KB. The environment shaders grew from 4.2 to 4.7 KB in WGSL, and from 4.4 to 4.8 KB in GLSL.
 
