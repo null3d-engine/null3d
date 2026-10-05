@@ -90,7 +90,7 @@ pub fn build(source: &Source, settings: &Settings) -> Result<Vec<u8>, String> {
             let sub = image.samples_per_texel(size);
             Cube::from_fn(size, sub, |d| image.sample(d))
         }
-        Source::Builtin("room") => Cube::from_fn(size, 4, room::light),
+        Source::Builtin("room") => Cube::from_fn(size, 4, room::light).blurred(room::SIGMA),
         Source::Builtin(name) => {
             return Err(format!(
                 "there is no built-in environment named \"{name}\". The built-in environments: {}",

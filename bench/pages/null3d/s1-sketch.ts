@@ -15,7 +15,10 @@
 // The `tileShadows` switch adds two point lights and two spot lights that cast shadows, with
 // casters that circle them, so tiles of the shadow atlas draw again every frame, for the
 // allocation sample of the tiles' marks and their cap.
-import { defineSketch, type SketchContext } from '@null3d/engine';
+// The `environment` switch lights the swarm with the built-in room, and turns it and changes its
+// intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
+// light.
+import { defineSketch, type Environment, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
@@ -50,6 +53,14 @@ export default defineSketch(async (context) => {
 	const ao = switches.has('ao');
 	const occlusion = { ao: { intensity: 1 } };
 	if (ao) context.quality.set({ aoScale: 0.5 });
+	// The environment's options, changed in place, as the grading's settings are.
+	const turn: [number, number, number] = [0, 0, 0];
+	const lighting = { intensity: 1, rotation: turn };
+	let room: Environment | undefined;
+	if (switches.has('environment'))
+		void context.assets.builtinEnvironment('room').then((loaded) => {
+			room = loaded;
+		});
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -59,6 +70,11 @@ export default defineSketch(async (context) => {
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
+		}
+		if (room) {
+			turn[1] = 0.5 * t;
+			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
+			context.scene.setEnvironment(room, lighting);
 		}
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
