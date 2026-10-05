@@ -119,25 +119,24 @@ fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixe
     assert!(scratch.run().status.success());
     let folder = scratch.0.join(OUTPUT_DIR);
     for module in [
-        "shaders-wgsl.ts",
-        "shaders-glsl.ts",
-        "shaders-glsl-draw-index.ts",
+        "shaders-wgsl.js",
+        "shaders-glsl.js",
+        "shaders-glsl-draw-index.js",
     ] {
         let text = fs::read_to_string(folder.join(module)).unwrap();
-        assert!(
-            text.contains("export const SHADERS: DeviceShaders = {"),
-            "{module}"
-        );
+        assert!(text.contains("export const SHADERS = {"), "{module}");
     }
-    let wgsl = fs::read_to_string(folder.join("shaders-wgsl.ts")).unwrap();
+    let wgsl = fs::read_to_string(folder.join("shaders-wgsl.js")).unwrap();
     assert!(wgsl.contains("\tlit: {\n\t\twebgpu: {") && !wgsl.contains("#version"));
-    let glsl = fs::read_to_string(folder.join("shaders-glsl-draw-index.ts")).unwrap();
+    let glsl = fs::read_to_string(folder.join("shaders-glsl-draw-index.js")).unwrap();
     assert!(glsl.contains("\tlit: {\n\t\twebgl2_draw_index: {"));
     assert!(glsl.contains("\tcull: {},") && !glsl.contains("\tlit: {\n\t\twebgl2: {"));
     // A shader without permutation bits is in every module of its target.
     assert!(glsl.contains("\tmipmap: {\n\t\twebgl2: {"));
     let main = fs::read_to_string(scratch.0.join(OUTPUT_PATH)).unwrap();
-    assert!(main.contains("\t1: () => import('./shaders-glsl-draw-index'),"));
+    assert!(main.contains(
+        "\t1: () => importShaders(new URL('./shaders-glsl-draw-index.js?no-inline', import.meta.url)),"
+    ));
     assert!(!main.contains("LIT_SHADER") && main.contains("TEST_MESH_SHADER"));
 }
 
@@ -145,7 +144,7 @@ fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixe
 fn the_build_deletes_a_device_module_that_it_no_longer_makes() {
     let scratch = Scratch::new();
     assert!(scratch.run().status.success());
-    let stale = scratch.0.join(OUTPUT_DIR).join("shaders-glsl-skin.ts");
+    let stale = scratch.0.join(OUTPUT_DIR).join("shaders-glsl-skin.js");
     fs::write(&stale, "export {};\n").unwrap();
     let rebuilt = scratch.run();
     assert!(rebuilt.status.success());

@@ -1,9 +1,10 @@
 // Turns bloom on during play, on the GPU path that the switches ask for. In compatibility mode the
 // engine starts on the 8-bit path for MSAA, and bloom moves it to HDR color with FXAA: new targets,
 // pipelines and shader builds. The page measures play before the change, across it and after it,
-// and reports the GPU objects and pipelines that each measurement made, the frames and time until
-// bloom's pipelines were built, and the longest frame interval meanwhile, while the frame before
-// stayed on screen.
+// and reports the GPU objects and pipelines that each measurement made, the draws that frames
+// skipped across it, the frames and time until bloom's pipelines were built, and the longest frame
+// interval meanwhile, while the frame before stayed on screen. Bloom's shader builds load on first
+// use, so the change also downloads them.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -44,6 +45,7 @@ run('bloom-switch', async () => {
 		acrossIntervalP99: during.intervalMs.p99,
 		acrossGpuObjects: during.gpuObjects,
 		acrossPipelines: during.pipelines,
+		acrossSkippedDraws: during.skippedDraws,
 		afterGpuObjects: after.gpuObjects,
 		afterPipelines: after.pipelines,
 		failures,

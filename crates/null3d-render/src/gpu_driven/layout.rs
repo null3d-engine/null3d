@@ -253,6 +253,8 @@ pub(super) struct Layout {
     /// Each bucket of a skinned object, with the object's slot, in bucket order. Their bounds
     /// change with the pose in every frame.
     skinned: Vec<(u32, u32)>,
+    /// The pipelines of the skinned objects that the layout leaves out until they are built.
+    waiting: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
@@ -338,12 +340,19 @@ impl Layout {
         self.order.try_reserve(owned as usize)
     }
 
+    /// The pipelines of the skinned objects that the layout leaves out, which must be built before
+    /// they draw.
+    pub(super) fn waiting(&self) -> &[u32] {
+        &self.waiting
+    }
+
     /// Empties the buckets, for a layout that draws nothing until it is built again.
     pub(super) fn clear(&mut self) {
         self.buckets.clear();
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
         self.skinned.clear();
+        self.waiting.clear();
         self.indirect_template.clear();
         self.bucket_records.clear();
     }
@@ -439,7 +448,8 @@ impl Layout {
     /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
     /// a `prepass`, the buckets that the depth prepass draws get its pipelines too. The outlined
     /// layout's buckets get both pipelines of the outline mask. Skinned objects draw the skinned
-    /// vertices that `skinning` lays out. It reuses
+    /// vertices that `skinning` lays out; the skinned objects that it hides get no bucket, and the
+    /// layout asks only for their pipelines (see [`Self::waiting`]). It reuses
     /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
     /// `limit` sources fails.
     #[allow(clippy::too_many_arguments)]
@@ -507,7 +517,7 @@ impl Layout {
             Some((pipeline, group, page, mesh, material, bounds))
         };
         let world = scene.world(parity);
-        let scene_key = |slot: usize| {
+        let any_key = |slot: usize| {
             let object = scene.flags()[slot];
             let left_out = match drawn {
                 Drawn::Scene => false,
@@ -526,8 +536,15 @@ impl Layout {
                 skinning.object(slot as u32),
             )
         };
-        // Instance batches cast no shadows yet, and take no outlines. Sprites sized in pixels of the screen have no
-        // bounds in the world, so culling keeps them.
+        let scene_key = |slot: usize| {
+            if skinning.hides(slot as u32) {
+                None
+            } else {
+                any_key(slot)
+            }
+        };
+        // Instance batches cast no shadows yet, and take no outlines. Sprites sized in pixels of the
+        // screen have no bounds in the world, so culling keeps them.
         let batch_key = |batch: &InstanceBatch| match drawn {
             Drawn::Scene => {
                 let bounds = if batch.unculled() {
@@ -547,6 +564,27 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+
+        self.waiting.clear();
+        for slot in 0..scene_rows {
+            if !skinning.hides(slot) {
+                continue;
+            }
+            if let Some((pipeline, ..)) = any_key(slot as usize) {
+                // The outlined layout's buckets draw with both pipelines of the outline mask.
+                let (pipeline, second) = if drawn == Drawn::Outlined {
+                    let (every, visible) = mask_keys(pipeline);
+                    (
+                        pipelines.id(every.in_pass(targets)),
+                        pipelines.id(visible.in_pass(targets)),
+                    )
+                } else {
+                    pipelines.opaque(pipeline, targets, prepass)
+                };
+                self.waiting
+                    .extend([pipeline, second].into_iter().filter(|&id| id != 0));
+            }
+        }
 
         self.buckets.clear();
         self.draws.clear();

@@ -141,8 +141,6 @@ export const PERMUTATION_BLOOM = 32768;
 export const PERMUTATION_OUTLINE_VISIBLE = 65536;
 export const PERMUTATION_INSTANCE_INDEX = 131072;
 
-export const PERMUTATION_ON_DEMAND = 131200;
-
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
 export const VERTEX_TANGENT = 4;
