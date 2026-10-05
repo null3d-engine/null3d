@@ -1538,6 +1538,15 @@ export function judge(
 				context?.note?.(
 					`device fault: ${result.deviceFault}. The page could not read the library's results back on this device`,
 				);
+			// Engine shaders keep whole numbers as the library's shader does, so they lose bits too.
+			if (typeof result.shaderFault === 'string')
+				problems.push(
+					`${result.shaderFault}. The target kept every bit, so the GLSL lost them, and engine shaders keep whole numbers the same way`,
+				);
+			if (typeof result.precisionFault === 'string')
+				context?.note?.(
+					`driver fault: ${result.precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
+				);
 			return problems;
 		}
 		case 'engine':

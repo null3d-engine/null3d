@@ -119,4 +119,30 @@ describe("the WebGL2 page's probe of its 32-bit target", () => {
 		const broken = { ...result, failures: ['math: GLSL: 0:1: error'] };
 		expect(judge(check, broken, NONE_MISSING, context)).toEqual(['math: GLSL: 0:1: error']);
 	});
+
+	it("fails when the library's own shader loses bits on a target that keeps them", () => {
+		const check = { kind: 'shader-library', tier: 'webgl2' } as const;
+		const context = { resultOf: () => undefined, imageDir: '', note: () => {} };
+		const shaderFault = probeFault(
+			"the library test shader's write (its math module) into the texture target",
+			TARGET_PROBE.map((value) => value & 0xffff),
+		);
+		const result = { ok: true, cases: 428, failures: [], mismatches: [], shaderFault };
+		expect(judge(check, result, NONE_MISSING, context)).toEqual([
+			"the library test shader's write (its math module) into the texture target kept only the low 16 bits of each value: wrote 0x89abcdef, 0x12345678, 0xfedcba98, 0x76543210, read 0x0000cdef, 0x00005678, 0x0000ba98, 0x00003210. The target kept every bit, so the GLSL lost them, and engine shaders keep whole numbers the same way",
+		]);
+	});
+
+	it('notes a driver that keeps only 16 bits of whole numbers declared without a precision, without a failure', () => {
+		const check = { kind: 'shader-library', tier: 'webgl2' } as const;
+		const notes: string[] = [];
+		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
+		const precisionFault =
+			"a shader's write of whole numbers declared without a precision kept only the low 16 bits of each value";
+		const result = { ok: true, cases: 428, failures: [], mismatches: [], precisionFault };
+		expect(judge(check, result, NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			`driver fault: ${precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
+		]);
+	});
 });

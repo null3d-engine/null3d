@@ -552,13 +552,13 @@ fn flat_either_interpolation_passes_validation_and_reaches_both_outputs() {
         program
             .vertex
             .source
-            .contains("flat out uint _vs2fs_location1;")
+            .contains("flat out highp uint _vs2fs_location1;")
     );
     assert!(
         program
             .fragment
             .source
-            .contains("flat in uint _vs2fs_location1;")
+            .contains("flat in highp uint _vs2fs_location1;")
     );
 }
 
@@ -1056,7 +1056,8 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 /// most sampler types have no default. Mali finds no precision for an array whose type names its
 /// size, in a sized constructor such as `vec3[9](...)` or a declaration such as `vec3[9] x`,
 /// although the shader sets one for `float`. The default `highp` holds again after each run of
-/// `mediump` functions.
+/// `mediump` functions. Each declaration of a whole number names its precision, as some Adreno
+/// drivers keep only 16 bits of one that does not, despite the default.
 fn precision_breaks(source: &str, fragment: bool) -> Vec<String> {
     let mut breaks = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
@@ -1101,6 +1102,11 @@ fn precision_breaks(source: &str, fragment: bool) -> Vec<String> {
         if sized_array_type(text) {
             breaks.push(format!("line {at}: an array type with its size: {text}"));
         }
+        if integer_without_precision(text) {
+            breaks.push(format!(
+                "line {at}: a whole number declared without a precision: {text}"
+            ));
+        }
     }
     if mediump {
         breaks.push("the shader ends at `mediump`, without `precision highp float;`".to_owned());
@@ -1127,6 +1133,38 @@ fn sized_array_type(text: &str) -> bool {
             .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_');
         after.starts_with('(') || declares
     })
+}
+
+/// True when a line of GLSL declares a whole number, as a type followed by a name, with no
+/// precision before the type.
+fn integer_without_precision(text: &str) -> bool {
+    const TYPES: [&str; 8] = [
+        "int", "uint", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4",
+    ];
+    let mut previous = "";
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        if !(bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
+            at += 1;
+            continue;
+        }
+        let start = at;
+        while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
+            at += 1;
+        }
+        let word = &text[start..at];
+        let named = text[at..]
+            .trim_start()
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_');
+        if TYPES.contains(&word) && named && !["highp", "mediump", "lowp"].contains(&previous) {
+            return true;
+        }
+        previous = word;
+    }
+    false
 }
 
 #[test]
@@ -1162,17 +1200,18 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
 
 #[test]
 fn the_precision_check_finds_each_break() {
-    let good = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nuniform highp sampler2D t;\nprecision mediump float;\nvec3 f(vec3 c) {\n    vec3 a[2];\n    a[0] = c;\n    return a[0];\n}\nprecision highp float;\n";
+    let good = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nuniform highp sampler2D t;\nlayout(location = 0) out highp uvec4 color;\nprecision mediump float;\nvec3 f(vec3 c, highp int k) {\n    vec3 a[2];\n    a[0] = c * float(uint(k));\n    return a[0];\n}\nprecision highp float;\n";
     assert_eq!(precision_breaks(good, true), Vec::<String>::new());
-    let bad = "#version 300 es\n\nuniform sampler2D t;\nprecision highp float;\nvoid main() {\n    vec3 a[2] = vec3[2](b, c);\n    vec3[2] d = a;\n}\nprecision mediump float;\n";
+    let bad = "#version 300 es\n\nuniform sampler2D t;\nprecision highp float;\nvoid main() {\n    vec3 a[2] = vec3[2](b, c);\n    vec3[2] d = a;\n    uvec4 u = uvec4(0u);\n}\nprecision mediump float;\n";
     let found = precision_breaks(bad, true);
-    assert_eq!(found.len(), 6, "{found:#?}");
+    assert_eq!(found.len(), 7, "{found:#?}");
     assert!(found[0].contains("`precision highp float;` is missing"));
     assert!(found[1].contains("`precision highp int;` is missing"));
     assert!(found[2].starts_with("line 3: a sampler uniform"));
     assert!(found[3].starts_with("line 6: an array type with its size"));
     assert!(found[4].starts_with("line 7: an array type with its size"));
-    assert!(found[5].contains("ends at `mediump`"));
+    assert!(found[5].starts_with("line 8: a whole number declared without a precision"));
+    assert!(found[6].contains("ends at `mediump`"));
 }
 
 #[test]

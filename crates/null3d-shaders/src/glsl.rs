@@ -81,6 +81,7 @@ fn write_stage(
 
     source = crate::half::mediump_items(&source, mediump);
     source = unroll_array_constructors(&source);
+    source = highp_integers(&source);
 
     let entry = module
         .entry_points
@@ -331,6 +332,42 @@ fn unrolled_declaration(line: &str) -> Option<String> {
     Some(out)
 }
 
+/// GLSL's whole-number types.
+const INTEGER_TYPES: [&str; 8] = [
+    "int", "uint", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4",
+];
+
+/// GLSL's precision qualifiers.
+const PRECISIONS: [&str; 3] = ["highp", "mediump", "lowp"];
+
+/// Writes `highp` on each declaration of a whole number that names no precision: globals, inputs
+/// and outputs, uniform block and struct members, constants, function results and parameters, and
+/// locals. The default `precision highp int;` should cover them, but a fragment shader's built-in
+/// default for whole numbers is `mediump`, and the Adreno 619 driver of a Galaxy Tab A9 Plus kept
+/// only the low 16 bits of whole numbers declared without a precision. A declaration is a type
+/// followed by a name; a type followed by `(` is a constructor or a conversion, and stays.
+pub(crate) fn highp_integers(source: &str) -> String {
+    let tokens = crate::scan::tokenize(source);
+    let mut out = String::with_capacity(source.len() + source.len() / 32);
+    let mut copied = 0;
+    for (index, token) in tokens.iter().enumerate() {
+        let declares = INTEGER_TYPES.contains(&token.text)
+            && tokens
+                .get(index + 1)
+                .is_some_and(|next| next.kind == crate::scan::Kind::Ident)
+            && !index
+                .checked_sub(1)
+                .is_some_and(|previous| PRECISIONS.contains(&tokens[previous].text));
+        if declares {
+            out.push_str(&source[copied..token.start]);
+            out.push_str("highp ");
+            copied = token.start;
+        }
+    }
+    out.push_str(&source[copied..]);
+    out
+}
+
 /// True for a GLSL identifier.
 fn is_identifier(word: &str) -> bool {
     word.bytes()
@@ -371,6 +408,14 @@ mod tests {
         let source = "vec2 corners[2] = vec2[2](vec2(0.0), vec2(1.0));\nvoid main() {\n    vec3 sh_1[3] = vec3[3](f[1].xyz, vec3(f[1].w, f[2].xy), min(a, b));\n        uvec4 u[2] = uvec4[2](uvec4(0u), uvec4(0u));\n    vec3 x = vec3[3](a, b, c)[i];\n    vec2 w[3] = vec2[3](a, b);\n}\n";
         let expected = "vec2 corners[2] = vec2[2](vec2(0.0), vec2(1.0));\nvoid main() {\n    vec3 sh_1[3];\n    sh_1[0] = f[1].xyz;\n    sh_1[1] = vec3(f[1].w, f[2].xy);\n    sh_1[2] = min(a, b);\n        uvec4 u[2];\n        u[0] = uvec4(0u);\n        u[1] = uvec4(0u);\n    vec3 x = vec3[3](a, b, c)[i];\n    vec2 w[3] = vec2[3](a, b);\n}\n";
         assert_eq!(unroll_array_constructors(source), expected);
+    }
+
+    #[test]
+    fn each_whole_number_declaration_names_highp() {
+        let source = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nstruct Results {\n    uvec4 a;\n    ivec2 b;\n};\nconst int INPUTS = 8;\nuniform highp usampler2D cases;\nflat in uint _vs2fs_location2;\nlayout(location = 0) out uvec4 color;\nuint hash(uint v, inout int n) {\n    return uint(n) ^ v;\n}\nvoid main() {\n    uvec4 u[2];\n    mediump int low = 1;\n    for (int i = 0; i < INPUTS; i++) {\n        u[i] = uvec4(texelFetch(cases, ivec2(i, 0), 0));\n    }\n    color = u[0];\n}\n";
+        let expected = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nstruct Results {\n    highp uvec4 a;\n    highp ivec2 b;\n};\nconst highp int INPUTS = 8;\nuniform highp usampler2D cases;\nflat in highp uint _vs2fs_location2;\nlayout(location = 0) out highp uvec4 color;\nhighp uint hash(highp uint v, inout highp int n) {\n    return uint(n) ^ v;\n}\nvoid main() {\n    highp uvec4 u[2];\n    mediump int low = 1;\n    for (highp int i = 0; i < INPUTS; i++) {\n        u[i] = uvec4(texelFetch(cases, ivec2(i, 0), 0));\n    }\n    color = u[0];\n}\n";
+        assert_eq!(highp_integers(source), expected);
+        assert_eq!(highp_integers(expected), expected);
     }
 
     #[test]
