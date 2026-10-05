@@ -554,13 +554,13 @@ fn flat_either_interpolation_passes_validation_and_reaches_both_outputs() {
         program
             .vertex
             .source
-            .contains("flat out uint _vs2fs_location1;")
+            .contains("flat out highp uint _vs2fs_location1;")
     );
     assert!(
         program
             .fragment
             .source
-            .contains("flat in uint _vs2fs_location1;")
+            .contains("flat in highp uint _vs2fs_location1;")
     );
 }
 
@@ -1149,17 +1149,18 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
 
 #[test]
 fn the_precision_check_finds_each_break() {
-    let good = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nuniform highp sampler2D t;\nprecision mediump float;\nvec3 f(vec3 c) {\n    vec3 a[2];\n    a[0] = c;\n    return a[0];\n}\nprecision highp float;\n";
+    let good = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nuniform highp sampler2D t;\nlayout(location = 0) out highp uvec4 color;\nprecision mediump float;\nvec3 f(vec3 c, highp int k) {\n    vec3 a[2];\n    a[0] = c * float(uint(k));\n    return a[0];\n}\nprecision highp float;\n";
     assert_eq!(precision_breaks(good, true), Vec::<String>::new());
-    let bad = "#version 300 es\n\nuniform sampler2D t;\nprecision highp float;\nvoid main() {\n    vec3 a[2] = vec3[2](b, c);\n    vec3[2] d = a;\n}\nprecision mediump float;\n";
+    let bad = "#version 300 es\n\nuniform sampler2D t;\nprecision highp float;\nvoid main() {\n    vec3 a[2] = vec3[2](b, c);\n    vec3[2] d = a;\n    uvec4 u = uvec4(0u);\n}\nprecision mediump float;\n";
     let found = precision_breaks(bad, true);
-    assert_eq!(found.len(), 6, "{found:#?}");
+    assert_eq!(found.len(), 7, "{found:#?}");
     assert!(found[0].contains("`precision highp float;` is missing"));
     assert!(found[1].contains("`precision highp int;` is missing"));
     assert!(found[2].starts_with("line 3: a sampler uniform"));
     assert!(found[3].starts_with("line 6: an array type with its size"));
     assert!(found[4].starts_with("line 7: an array type with its size"));
-    assert!(found[5].contains("ends at `mediump`"));
+    assert!(found[5].starts_with("line 8: a whole number declared without a precision"));
+    assert!(found[6].contains("ends at `mediump`"));
 }
 
 #[test]

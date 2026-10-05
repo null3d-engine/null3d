@@ -6,9 +6,11 @@
 // tool replaces a runner page that stopped answering. Each runner page claims its runner's results
 // when it starts a run, and a page whose claim a newer page took stops: a replaced page can still be
 // running, hidden, where the runner tool cannot close it. A page whose turn the runner tool ended, as
-// when its browser keeps refusing memory, stops too. A request to the dev server that gets no
-// answer in time goes out again, because Safari can lose one that it sends as a removed frame
-// closes its connections.
+// when its browser keeps refusing memory, stops too. So does a page that gets no animation frames
+// for its measure of the refresh rate within a time limit, as when the browser reports the page
+// hidden: it posts a record of it, since every test page would wait for frames too. A request to
+// the dev server that gets no answer in time goes out again, because Safari can lose one that it
+// sends as a removed frame closes its connections.
 // A runner page that opens without &from= starts at the first page of the plan that has no result,
 // so a browser that reloads it in the middle of a run, as Safari does after a page crashed its tab,
 // goes on where it stopped. A page that may end its tab on purpose, such as the tab memory page,
@@ -23,7 +25,14 @@
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
-import { detectBrowser, type GpuFacts, type UserAgentData } from '../lib/device-record';
+import {
+	detectBrowser,
+	type GpuFacts,
+	NO_FRAMES,
+	type NoFramesRecord,
+	noFramesText,
+	type UserAgentData,
+} from '../lib/device-record';
 import {
 	type GpuPath,
 	type MissingAllowed,
@@ -66,6 +75,11 @@ const REFRESH_WARM_UP_MS = 500;
  * while the page measures the refresh rate, so each frame changes the whole screen unseen.
  */
 const REFRESH_SHADE = '#101419';
+/**
+ * How long the page waits for the animation frames that measure the refresh rate. A visible page
+ * gets them within about a second; a page that the browser hides gets none until it shows it.
+ */
+const REFRESH_LIMIT_MS = 20_000;
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
 const statusLine = byId('status');
@@ -78,6 +92,16 @@ const pageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)
 class TakenOver extends Error {
 	constructor() {
 		super('a newer runner page took over this run');
+	}
+}
+
+/**
+ * The browser gave this page no animation frames in time, as when it reports the page hidden. Every
+ * test page would wait for frames too, so the page stops, and the runner tool ends its turn.
+ */
+class NoFrames extends Error {
+	constructor(visibility: string) {
+		super(noFramesText(visibility));
 	}
 }
 
@@ -217,28 +241,39 @@ async function claim(run: string): Promise<void> {
 }
 
 /**
- * The display's refresh rate, from the median interval between animation frames. Frame callbacks
- * follow the display's rate, and a phone lowers that rate while the screen barely changes, as when
- * only the report's lines change between pages: the Galaxy S24+ then runs at 24 Hz. So each frame
- * of the measurement changes the report's background by one shade, and the timing starts once the
- * display has had time to rise to its full rate.
+ * The display's refresh rate, from the median interval between animation frames, or null when the
+ * browser gives the page too few frames within the time limit. Frame callbacks follow the display's
+ * rate, and a phone lowers that rate while the screen barely changes, as when only the report's
+ * lines change between pages: the Galaxy S24+ then runs at 24 Hz. So each frame of the measurement
+ * changes the report's background by one shade, and the timing starts once the display has had
+ * time to rise to its full rate.
  */
-async function refreshRate(): Promise<number> {
+async function refreshRate(): Promise<number | null> {
 	const panel = byId('report');
 	const times: number[] = [];
 	let frames = 0;
 	let warmUpEnd = Number.POSITIVE_INFINITY;
-	await new Promise<void>((resolve) => {
+	let late = false;
+	const measured = await new Promise<boolean>((resolve) => {
+		const limit = setTimeout(() => {
+			late = true;
+			resolve(false);
+		}, REFRESH_LIMIT_MS);
 		const tick = (time: number) => {
+			if (late) return;
 			panel.style.backgroundColor = frames++ % 2 === 0 ? REFRESH_SHADE : '';
 			if (frames === 1) warmUpEnd = time + REFRESH_WARM_UP_MS;
 			if (time >= warmUpEnd) times.push(time);
 			if (times.length < REFRESH_SAMPLES) requestAnimationFrame(tick);
-			else resolve();
+			else {
+				clearTimeout(limit);
+				resolve(true);
+			}
 		};
 		requestAnimationFrame(tick);
 	});
 	panel.style.backgroundColor = '';
+	if (!measured) return null;
 	const intervals = times
 		.slice(1)
 		.map((time, i) => time - (times[i] as number))
@@ -308,6 +343,7 @@ async function deviceInfo(): Promise<Record<string, unknown>> {
 		screen: { width: screen.width, height: screen.height },
 		devicePixelRatio,
 		refreshRateHz: await refreshRate(),
+		visibility: document.visibilityState,
 		crossOriginIsolated,
 		origin: location.origin,
 		startedAt: new Date().toISOString(),
@@ -400,6 +436,16 @@ async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number
 }
 
 /**
+ * Posts that the browser gave the page no animation frames before `step`, the device reading or a
+ * plan item, and stops the run: every page would wait for frames too.
+ */
+async function stopWithoutFrames(run: string, step: string): Promise<never> {
+	const record: NoFramesRecord = { visibility: document.visibilityState, step };
+	await post(run, NO_FRAMES, record);
+	throw new NoFrames(record.visibility);
+}
+
+/**
  * Runs a run's items from the item at `from`, or where the run stopped without it. Only a run from
  * its first item reads the device. Before an item that may end its tab, the page notes that the
  * item started, under the item's progress. In a plan that asks for it, the page measures the
@@ -422,7 +468,9 @@ async function runPlan(run: string, from?: number): Promise<void> {
 	report.start(run, plan.items, start);
 	if (start === 0) {
 		show(`run ${run}: reading the device`);
-		await post(run, 'device', await deviceInfo());
+		const device = await deviceInfo();
+		await post(run, 'device', device);
+		if (device.refreshRateHz === null) await stopWithoutFrames(run, 'device');
 	}
 	const { skipMissing } = plan;
 	const reportAt = plan.items.findIndex((item) => item.id === skipMissing?.report);
@@ -445,6 +493,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
 			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
 		stage.classList.toggle('report-on-top', plan.reportOnTop === true && !item.timesFrames);
 		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
+		if (runnerRefreshHz === null) await stopWithoutFrames(run, item.id);
 		const result = await runItem(item, run);
 		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);
 		report.finish(index, result);
@@ -479,7 +528,7 @@ async function listen(): Promise<void> {
 				await runPlan(current.run as string);
 			} else show(`waiting for a run${ended}`);
 		} catch (e) {
-			if (e instanceof TakenOver) return show(`stopped: ${e.message}`);
+			if (e instanceof TakenOver || e instanceof NoFrames) return show(`stopped: ${e.message}`);
 			// A page whose turn the tool ended waits for the next run, which reloads it first.
 			if (e instanceof TurnEnded) {
 				ended = ` (${e.message})`;
