@@ -2,6 +2,15 @@
 # allocations install a counting allocator and measure the engine's job workers too, so each of
 # their tests runs with the machine to itself, as under cargo test, where no other test file runs
 # beside them. Under the load of other tests, the light grid's allocation test once failed in CI.
+# These tests run first: a test that needs the whole machine waits until every running test ends,
+# and among the others it held back the rest of the run behind each slow test.
 [[profile.default.overrides]]
 filter = 'binary_id(null3d-render::no_alloc) | binary_id(null3d-core::no_alloc) | binary_id(null3d-core::bvh_no_alloc) | binary_id(null3d-core::arena_soak) | binary_id(null3d-core::depth_sort)'
 threads-required = 'num-cpus'
+priority = 100
+
+# The shader build's tests take the longest, so they start next, while the many short tests fill
+# the other threads.
+[[profile.default.overrides]]
+filter = 'binary_id(null3d-shaders::build) | binary_id(null3d-shaders::cli)'
+priority = 50
