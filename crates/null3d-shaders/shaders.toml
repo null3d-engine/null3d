@@ -94,9 +94,16 @@
 # they share. They load by device, with the culling shader.
 
 # The standard material, lit like three.js's MeshStandardMaterial. VERTEX_COLOR multiplies the
-# base color by the mesh's vertex colors, and ALPHA_MASK discards the fragments whose alpha falls
-# below the material's cutoff, as glTF's alpha mode MASK and three.js's alphaTest do. Only masked
-# materials pay for the discard, which keeps the GPU's early depth test for the others.
+# base color by the mesh's vertex colors, and ALPHA_MASK tests each fragment's alpha and discards
+# the fragments that fail: the cutoff of glTF's alpha mode MASK and three.js's alphaTest, alpha to
+# coverage's fade, or the alpha hash, as the material's flags say (null3d::cutout). Only masked
+# materials pay for the discard, which keeps the GPU's early depth test for the others. Two more
+# bits test a mask's alpha other ways (null3d::cutout): ALPHA_COVERAGE fades it over a pixel for
+# alpha to coverage, and ALPHA_HASH tests it against three.js's alpha hash. The SAMPLE_MASK builds
+# of alpha to coverage write their coverage of the pixel's samples themselves, for a multisampled
+# WebGPU target without alpha, which cannot turn alpha into coverage. A bit builds only beside the
+# bits it needs, and ALPHA_COVERAGE and ALPHA_HASH never build together (drawlist.rs, NEEDS and
+# APART). Custom materials build none of the three.
 # RECEIVE_SHADOWS reads the main directional light's shadow maps. Custom materials build this
 # template.
 [shaders.lit]
@@ -104,8 +111,8 @@ file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
 # occlusion, emissive and light maps. VERTEX_TANGENT takes the normal map's frame from the mesh's
@@ -114,8 +121,8 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
 
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -123,8 +130,8 @@ variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TO
 file = "unlit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
 
 # The material's color times its map, like three.js's MeshBasicMaterial with a map, times the
 # mesh's vertex colors with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -132,8 +139,8 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "unlit_map.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH"], targets = ["glsl"] }
+variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
 
 # Sprites, like three.js's Sprite with a SpriteMaterial: quads of a sprite batch's rows that face
 # the camera, in the material's color times each sprite's color. ALPHA_MASK as for the standard
@@ -142,16 +149,16 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "sprite.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "ALPHA_MASK"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
 
 # Sprites times the material's map at each sprite's frame of the atlas, from the same file.
 [shaders.sprite_map]
 file = "sprite.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TONE_MAP", "ALPHA_MASK", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
 
 # A page downloads the sprite templates with its first sprite batch.
 [first_use.sprites]
@@ -287,6 +294,30 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "PREPASS", "CASTER_OFFSET"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "CASTER_OFFSET", "SKIN", "MORPH"], targets = ["glsl"] }
 
+# The depth of masked shadow casters, from the same file: the CUTOUT builds test each fragment's
+# alpha as the caster's material does, so masked surfaces cut holes in their shadows. VERTEX_COLOR
+# reads the vertex alpha, ALPHA_MASK tests against the cutoff, and ALPHA_HASH against the alpha
+# hash. Every key of these templates has ALPHA_MASK; the builds without it draw as shadow_depth
+# does. The MAP builds read the base color map's alpha too, from the map's own bind group.
+[shaders.shadow_cutout]
+file = "shadow_depth.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["CUTOUT"], permutations = ["SKIN", "VERTEX_COLOR", "ALPHA_MASK", "CASTER_OFFSET", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "CUTOUT"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "CASTER_OFFSET", "SKIN", "MORPH", "ALPHA_HASH"], targets = ["glsl"] }
+
+[shaders.shadow_cutout_map]
+file = "shadow_depth.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["CUTOUT", "MAP", "JOINTS_AFTER_MAPS"], permutations = ["SKIN", "VERTEX_COLOR", "ALPHA_MASK", "CASTER_OFFSET", "ALPHA_HASH"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "CUTOUT", "MAP"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "CASTER_OFFSET", "SKIN", "MORPH", "ALPHA_HASH"], targets = ["glsl"] }
+
+# A page downloads both with its first masked shadow caster. Until they are built, such a caster
+# casts nothing.
+[first_use.cutout]
+shaders = ["shadow_cutout", "shadow_cutout_map"]
+
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
 file = "cull.wgsl"
@@ -398,6 +429,18 @@ bits = ["SKIN"]
 # skinning pass, so it has no MORPH builds.
 [first_use.morph]
 bits = ["MORPH"]
+
+# A page downloads the builds of alpha to coverage with its first material that turns it on, with
+# the SAMPLE_MASK builds on WebGPU where the scene color has no alpha, and the builds of the alpha
+# hash with its first hashed material. Each takes the builds that it shares with a feature of a
+# lower bit too, such as its SKIN and MORPH builds, so the skinning and morph files do not grow.
+[first_use.coverage]
+bits = ["ALPHA_COVERAGE", "SAMPLE_MASK"]
+claims_shared_builds = true
+
+[first_use.hash]
+bits = ["ALPHA_HASH"]
+claims_shared_builds = true
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;

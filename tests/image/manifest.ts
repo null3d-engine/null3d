@@ -1195,6 +1195,52 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [MASK_IMAGE.width, MASK_IMAGE.height],
 	},
+	// The same cards with alpha to coverage, whose cut edges MSAA smooths as it smooths their outer
+	// edges: in the pipeline where the scene color has alpha, and in the shader's own sample mask on
+	// WebGPU's rg11b10ufloat. The parity test compares it with three.js's alphaToCoverage.
+	{
+		name: 'alpha-coverage',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?mode=coverage',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Alpha to coverage without MSAA, as the Low preset draws: a plain alpha test.
+	{
+		name: 'alpha-coverage-no-msaa',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?mode=coverage',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+		switches: ['antialias=none'],
+	},
+	// The cards under a sun that casts shadows, with two more cards cut by their base color map's
+	// alpha: each card cuts the holes of its mask into its shadow, at its cutoff. The parity test
+	// compares it with three.js's alphaTest shadows.
+	{
+		name: 'alpha-mask-shadows',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?shadows',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// The same with alpha to coverage, whose shadows cut at the cutoff too, and with the alpha hash,
+	// whose shadows take the hash's pattern in the light's pixels. three.js casts a hashed
+	// surface's whole shape, so the hash has no twin.
+	...(['coverage', 'hash'] as const).map(
+		(mode): ImageTest => ({
+			name: `alpha-${mode}-shadows`,
+			sketch: `tests/pages/sketches/alpha-mask-sketch.ts?mode=${mode}&shadows`,
+			hold: 0,
+			size: [MASK_IMAGE.width, MASK_IMAGE.height],
+		}),
+	),
+	// The same cards with the alpha hash: each ring draws the share of its points that its alpha
+	// sets, in a pattern that stays on each card. The parity test compares it with three.js's
+	// alphaHash.
+	{
+		name: 'alpha-hash',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?mode=hash',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
 	// Wide lines: widths in pixels and in world units, round joins, colors at each point, dashes, a
 	// loop and a blended line, over a floor and in front of a wall. The parity test compares it with
 	// three.js's Line2 and LineSegments2 with a LineMaterial.
@@ -1270,6 +1316,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'transparency',
 		sketch: 'tests/pages/sketches/transparency-sketch.ts',
+		hold: 0,
+		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+	},
+	// Double-sided see-through solids: each draws its back faces before its front faces, and an
+	// open tube draws both in one draw with forceSinglePass. The parity test compares it with
+	// three.js's DoubleSide materials.
+	{
+		name: 'transparency-solids',
+		sketch: 'tests/pages/sketches/transparency-solids-sketch.ts',
 		hold: 0,
 		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
 	},

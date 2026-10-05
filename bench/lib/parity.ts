@@ -281,7 +281,17 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	),
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
+	{ test: 'alpha-coverage', twin: `${TWINS}/alpha-mask.html?mode=coverage` },
+	{ test: 'alpha-hash', twin: `${TWINS}/alpha-mask.html?mode=hash` },
+	{
+		test: 'alpha-mask-shadows',
+		twin: `${TWINS}/alpha-mask.html?shadows`,
+		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+	// alpha-coverage-shadows has no twin: three.js cuts the shadow of alpha to coverage at 0.5, and
+	// null3D at each card's own cutoff, which glTF's alpha mode MASK means (D-82).
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
+	{ test: 'transparency-solids', twin: `${TWINS}/transparency.html?solids` },
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
 	// Points against three.js's Points and PointsMaterial, whose WebGPURenderer draws them one pixel
 	// wide, so WebGLRenderer's frame is the reference on every tier. WebGPU's samples within a pixel

@@ -39,13 +39,15 @@ use crate::sorted::SkinnedPipeline;
 const NOT_SKINNED: u32 = u32::MAX;
 
 /// The templates with MORPH builds.
-const MORPH_TEMPLATES: [u32; 6] = [
+const MORPH_TEMPLATES: [u32; 8] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
     template::INSTANCED_UNLIT,
     template::INSTANCED_UNLIT_MAP,
     template::DEBUG_VIEW,
     template::SHADOW_DEPTH,
+    template::SHADOW_CUTOUT,
+    template::SHADOW_CUTOUT_MAP,
 ];
 
 /// The joint texture, the morph texture and the texture of first joints and weights, with what the

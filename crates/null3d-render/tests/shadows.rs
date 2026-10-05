@@ -473,6 +473,63 @@ fn a_double_sided_caster_draws_both_faces_in_place_and_no_material_draws_its_dep
 }
 
 #[test]
+fn masked_casters_cut_their_holes_and_custom_ones_cast_their_whole_shape() {
+    let mut world = shadowed(SUN);
+    let table = world.renderer.settings_mut().materials_mut();
+    let mask = feature::ALPHA_MASK | feature::ALPHA_TO_COVERAGE;
+    let masked = table.create(Shading::Lit, mask, [1.0; 4]).unwrap();
+    let hashed = feature::ALPHA_MASK | feature::ALPHA_HASH | feature::DOUBLE_SIDED;
+    let hashed = table.create(Shading::Unlit, hashed, [1.0; 4]).unwrap();
+    let [lit_box, unlit_box, ball, _] = world.objects[..] else {
+        panic!("four objects")
+    };
+    let cast = flags::CAST_SHADOWS;
+    let commands = [
+        Command::set_material(lit_box, masked + 1),
+        Command::set_material(ball, hashed + 1),
+        Command::set_flags(unlit_box, cast, cast),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    // The cutout template tests each masked material's alpha as its shading does, at its cutoff or
+    // by the hash; the unlit box keeps the plain depth template.
+    let mut casters: Vec<[u32; 3]> = operands(&world.commands(), Op::CreateRenderPipeline)
+        .iter()
+        .filter(|p| p[1] == template::SHADOW_DEPTH || p[1] == template::SHADOW_CUTOUT)
+        .map(|p| [p[1], p[2], p[6]])
+        .collect();
+    casters.sort_unstable();
+    casters.dedup();
+    let offset = permutation::CASTER_OFFSET;
+    let cut = permutation::ALPHA_MASK;
+    let (back, both) = (state_flags::CULL_FRONT, state_flags::CULL_NONE);
+    assert_eq!(
+        casters,
+        [
+            [template::SHADOW_DEPTH, offset, back],
+            [template::SHADOW_CUTOUT, cut | offset, back],
+            [template::SHADOW_CUTOUT, cut | permutation::ALPHA_HASH, both],
+        ]
+    );
+    // A custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape.
+    let custom = DrawKey {
+        template: template::CUSTOM_FIRST,
+        permutation: permutation::ALPHA_MASK,
+        vertex_format: 0,
+        state: 0,
+        bias: DepthBias::NONE,
+    };
+    let (key, group) = world.renderer.settings().caster_of(custom, masked + 1);
+    assert_eq!(
+        (key.template, key.permutation, group),
+        (template::SHADOW_DEPTH, offset, 0)
+    );
+}
+
+#[test]
 fn standard_and_custom_materials_receive_shadows_and_unlit_ones_do_not() {
     let world = shadowed(SUN);
     let key = |template: u32| DrawKey {

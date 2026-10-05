@@ -148,11 +148,13 @@ These options are fixed when you create the material. Most of them choose the ma
 | `doubleSided` | Both | false | Draws both faces of each triangle. A back face lights as if it faced the camera, as with three.js's `side: DoubleSide` |
 | `vertexColors` | Both | false | Multiplies the base color by the mesh's vertex colors, on meshes that have them. [Geometry](geometry.md) makes meshes with colors |
 | `flatShading` | Standard | false | Lights each triangle with the normal of its face, so the mesh looks faceted |
-| `alphaMode` | Both | `'opaque'` | How the material uses its alpha: `'opaque'`, `'mask'` or `'blend'`. See "Alpha modes" |
+| `alphaMode` | Both | `'opaque'` | How the material uses its alpha: `'opaque'`, `'mask'`, `'hash'` or `'blend'`. See "Alpha modes" |
+| `alphaToCoverage` | Both | true | With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's `alphaToCoverage` does. `false` gives the hard cut edges of three.js's `alphaTest`. See "Alpha to coverage" |
 | `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'` or `'multiply'`. See "Blending" |
 | `depthWrite` | Both | true | False writes no depth, so the surface hides nothing that draws after it |
 | `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
+| `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
@@ -165,9 +167,12 @@ A surface's alpha is its `opacity`, times the alpha of its base color map. With 
 | --- | --- | --- |
 | `'opaque'` | The whole surface, opaque. The alpha has no effect | The default material |
 | `'mask'` | Nothing where the alpha is below `alphaCutoff`, and the rest opaque | `alphaTest: alphaCutoff` |
+| `'hash'` | Each point of the surface opaque or not at all, so the alpha sets how much of the surface draws | `alphaHash: true` |
 | `'blend'` | The surface blended over what lies behind it, as far as the alpha says | `transparent: true` |
 
-A masked surface has hard edges, and it hides what lies behind it as an opaque one does, so its objects draw in any order. Use it for leaves, fences and cut-out shapes. Only masked materials draw with the shader that drops fragments, so opaque ones keep the GPU's early depth test.
+A masked surface has hard edges, and it hides what lies behind it as an opaque one does, so its objects draw in any order. Use it for leaves, fences and cut-out shapes. Only masked and hashed materials draw with the shader that drops fragments, so opaque ones keep the GPU's early depth test.
+
+A hashed surface draws a share of its points that its alpha sets: half of them at an alpha of 0.5. A hash of each point's place on the mesh picks the points, as three.js's `alphaHash` picks them. So the pattern moves with the object and does not crawl as the camera moves. Hashed objects draw in any order, as masked ones do. They suit fades and see-through surfaces that cross each other, where blending would need a sort. The pattern is noisy up close. `alphaCutoff` has no effect in this mode.
 
 A blended surface lets what lies behind it show through. Blended objects draw after the opaque ones, farthest first, so each one blends over the objects behind it. A call to `mesh.setRenderOrder(order)` draws an object before or after the others, whatever its depth. The rows of an instance batch sort one by one. The page [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort. It also says where the sort cannot help.
 
@@ -178,6 +183,30 @@ A blended material writes depth, as three.js's transparent materials do. Give pa
 const leaves = materials.standard({ color: '#5bc27a', vertexColors: true, alphaMode: 'mask', alphaCutoff: 0.4 });
 // Later: a lower cutoff grows the leaves, at no cost.
 leaves.set({ alphaCutoff: 0.2 });
+```
+
+### Alpha to coverage
+
+A masked surface's cut edges are as smooth as its outer edges, as `alphaToCoverage` is on by default. The alpha fades from nothing at `alphaCutoff` to full over about one pixel, as three.js's `alphaToCoverage` makes it fade. MSAA then draws the surface on that share of each edge pixel's samples. Foliage and fences lose their stair steps, and their objects still draw in any order.
+
+This is the best technique for cut-out shapes, so it is the default, as in Filament. three.js's `alphaTest` alone cuts hard edges: give `alphaToCoverage: false` for that look. The option needs MSAA, the default anti-aliasing. With FXAA or no anti-aliasing, as on the Low preset, the mask cuts as without it. Custom materials take neither `alphaToCoverage` nor the `hash` alpha mode, and throw E1217 for them. On WebGPU, where the scene's colors have no alpha channel, the shader sets the covered samples itself, with the same look. The first such material loads the shader builds of alpha to coverage, and the first hashed material those of the hash. To load them before the first frame instead, list `'coverage'` and `'hash'` in `createEngine`'s `preload` option.
+
+```ts
+// sketch.ts: grass cards whose cut edges MSAA smooths, and a fence with hard pixel edges.
+const grass = materials.standard({ map: grassTexture, alphaMode: 'mask', alphaCutoff: 0.5 });
+const fence = materials.standard({ map: fenceTexture, alphaMode: 'mask', alphaToCoverage: false });
+```
+
+## Double-sided blended surfaces
+
+A blended surface with `doubleSided: true` draws in two draws, as three.js draws it. Its back faces draw first, then its front faces. So the near side of a glass box or a sphere always covers its far side, whatever the order of the mesh's triangles. Neighbors that share the mesh and the material draw together: all their back faces, then all their front faces.
+
+`forceSinglePass: true` draws both faces in one draw, as three.js's `forceSinglePass` does. The triangles then cover each other in the mesh's order. Use it for flat surfaces, such as leaves and planes of glass, whose two faces never overlap on screen: it saves one draw per object.
+
+```ts
+// sketch.ts: a glass globe that shows its far side, and a flat pane that needs one draw.
+const globe = materials.standard({ color: '#a8d8ff', opacity: 0.3, alphaMode: 'blend', doubleSided: true });
+const pane = materials.standard({ color: '#a8d8ff', opacity: 0.3, alphaMode: 'blend', doubleSided: true, forceSinglePass: true });
 ```
 
 ## Blending
@@ -291,10 +320,10 @@ One engine holds up to 1,024 materials at once. One more throws E1501. A materia
 ### `AlphaMode`
 
 ```ts
-type AlphaMode = 'opaque' | 'mask' | 'blend';
+type AlphaMode = 'opaque' | 'mask' | 'hash' | 'blend';
 ```
 
-How a material uses its alpha: its opacity, times its base color map's alpha, and times its mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque, as three.js's `alphaTest` does. The `blend` mode blends the surface over what lies behind it, as three.js's `transparent: true` does. Blended objects draw after the opaque ones, farthest first.
+How a material uses its alpha: its opacity, times its base color map's alpha, and times its mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque, as three.js's `alphaTest` does. The `hash` mode draws each point of the surface opaque or not at all, by a pattern that stays on the mesh. The alpha then sets how much of the surface draws, as three.js's `alphaHash` does. The `blend` mode blends the surface over what lies behind it, as three.js's `transparent: true` does. Blended objects draw after the opaque ones, farthest first.
 
 ### `Blending`
 
@@ -356,6 +385,8 @@ The options that choose how a material's shader and pipeline draw it. They are f
 | `vertexColors?: boolean` | Multiplies the base color by the mesh's vertex colors, and the alpha by their alpha, on meshes that have them. The default is false. |
 | `fog?: boolean` | Takes the scene's fog. False keeps the material's color at every distance. The default is true. |
 | `alphaMode?: AlphaMode` | How the material uses its alpha. The default is `opaque`. |
+| `alphaToCoverage?: boolean` | With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's `alphaToCoverage` does: the alpha fades over about one pixel above `alphaCutoff`, and covers that share of the pixel. Without MSAA the mask cuts as without it. False gives three.js's hard cut edges of `alphaTest`. Custom materials do not take it. The default is true. |
+| `forceSinglePass?: boolean` | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, in the mesh's order, as three.js's `forceSinglePass` does. By default such a surface draws its back faces first and then its front faces, so its near side always covers its far side. The default is false. |
 | `blending?: Blending` | With the `blend` alpha mode, how the surface meets what lies behind it. The default is `normal`. |
 | `depthWrite?: boolean` | False to write no depth, so the surface hides nothing behind it. The default is true. |
 | `depthTest?: boolean` | False to draw the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer. The default is true. |
@@ -383,7 +414,7 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
 | `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
-| `shader<const Wgsl extends string \| CompiledWgsl>(options: ShaderOptions<Wgsl>): Material<ShaderValues<Wgsl>>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it, or a full shader of your own. It takes every option of `materials.standard` but the texture maps, the first values of the uniforms that its WGSL declares, and the textures that its WGSL samples. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with a surface function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. When TypeScript can see the WGSL, a wrong name or a value of the wrong kind also fails the type check. |
+| `shader<const Wgsl extends string \| CompiledWgsl>(options: ShaderOptions<Wgsl>): Material<ShaderValues<Wgsl>>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it, or a full shader of your own. It takes every option of `materials.standard` but the texture maps, the first values of the uniforms that its WGSL declares, and the textures that its WGSL samples. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with a surface function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. Throws E1217 for the `hash` alpha mode and for `alphaToCoverage`, which custom materials do not take. When TypeScript can see the WGSL, a wrong name or a value of the wrong kind also fails the type check. |
 
 ### `ShaderOptions`
 

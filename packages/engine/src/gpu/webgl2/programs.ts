@@ -31,6 +31,8 @@ import {
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_SHADOW_CUTOUT,
+	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -159,6 +161,8 @@ export interface Pipeline {
 	readonly colorWrite: boolean;
 	/** The blend mode: a `STATE_BLEND_*` flag, or 0 for none. */
 	readonly blend: number;
+	/** True when the fragment's alpha decides which of the pixel's samples it covers. */
+	readonly alphaToCoverage: boolean;
 	/** GL's polygon offset for the backend's depth mode: its factor and its units. */
 	readonly offsetFactor: number;
 	readonly offsetUnits: number;
@@ -187,6 +191,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
+	templates[TEMPLATE_SHADOW_CUTOUT] = { shader: shaders.shadow_cutout, pipeline: 'main' };
+	templates[TEMPLATE_SHADOW_CUTOUT_MAP] = { shader: shaders.shadow_cutout_map, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
 	// Sprites turn their quads to face the camera, so their prepass draws with their own vertex
 	// shader too.

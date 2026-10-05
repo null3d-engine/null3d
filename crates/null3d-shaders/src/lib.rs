@@ -179,6 +179,9 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             .filter_map(|bit| permutation::bit(bit))
         {
             output.first_use.bits.insert(bit, feature.clone());
+            if first_use.claims_shared_builds {
+                output.first_use.claiming.insert(bit);
+            }
         }
     }
     errors.or(output)

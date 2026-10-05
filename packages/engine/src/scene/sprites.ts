@@ -52,7 +52,7 @@ export type SpriteValues = MaterialOptions;
  */
 export interface SpriteOptions
 	extends SpriteValues,
-		Omit<MaterialFeatures, 'doubleSided' | 'vertexColors'> {
+		Omit<MaterialFeatures, 'doubleSided' | 'vertexColors' | 'forceSinglePass'> {
 	/** The number of sprites: the batch's capacity, which never changes. */
 	count: number;
 	/**

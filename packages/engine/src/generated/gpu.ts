@@ -138,6 +138,9 @@ export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
 export const PERMUTATION_OUTLINE_VISIBLE = 65536;
+export const PERMUTATION_SAMPLE_MASK = 1048576;
+export const PERMUTATION_ALPHA_COVERAGE = 2097152;
+export const PERMUTATION_ALPHA_HASH = 4194304;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -170,6 +173,7 @@ export const STATE_BLEND_ADDITIVE = 64;
 export const STATE_BLEND_MULTIPLY = 96;
 export const STATE_DEPTH_EQUAL = 128;
 export const STATE_NO_COLOR_WRITE = 256;
+export const STATE_ALPHA_TO_COVERAGE = 512;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
@@ -197,6 +201,8 @@ export const TEMPLATE_AO_DEPTH = 31;
 export const TEMPLATE_AO_DEPTH_MS = 32;
 export const TEMPLATE_AO = 33;
 export const TEMPLATE_AO_DENOISE = 34;
+export const TEMPLATE_SHADOW_CUTOUT = 37;
+export const TEMPLATE_SHADOW_CUTOUT_MAP = 38;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

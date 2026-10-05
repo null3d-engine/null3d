@@ -265,7 +265,9 @@ export interface EngineOptions {
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
-	 * batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so
+	 * batch, `'background'` with a texture background, `'coverage'` with the first masked material
+	 * that MSAA smooths, `'hash'` with the first hashed material, and `'cutout'` with the first
+	 * masked object that casts shadows, which casts none until its shaders are built. WebGPU morphs in the skinning pass, so
 	 * there `'morph'` loads the skinning shaders. Listed features download beside the engine's own
 	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects

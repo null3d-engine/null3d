@@ -1,8 +1,8 @@
 //! The transparent passes: one per view, which draws the view's blended rows back to front. The
 //! job workers cull and sort the rows while they cull the view (see [`super::cull`]), and the
 //! sorted rows' entries follow the opaque entries in the view's index list. Each run of sorted
-//! rows that share a bucket draws with one instanced draw per part of its bucket's mesh, whose
-//! draw record names the run's slice of the index list.
+//! rows that share a bucket draws with one instanced draw per part of its bucket's mesh, for each
+//! of the bucket's passes, whose draw record names the run's slice of the index list.
 //!
 //! Neighboring draws that share a pipeline, a map group and a vertex page go out in one call:
 //! one multi-draw call of up to a block of records where the device has `WEBGL_multi_draw`, or one
@@ -140,9 +140,13 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            for part in storage.parts(mesh) {
+            let parts = storage.parts(mesh);
+            for (pipeline, part) in bucket
+                .passes()
+                .flat_map(|pass| parts.iter().map(move |part| (pass, part)))
+            {
                 let joins = state.calls.last().is_some_and(|call| {
-                    call.pipeline == bucket.pipeline
+                    call.pipeline == pipeline
                         && call.textures == bucket.textures
                         && call.page == part.page
                         && call.count < per_call
@@ -157,7 +161,7 @@ impl Transparent {
                             .next_multiple_of(OFFSET_ALIGNMENT);
                     }
                     state.calls.push(Call {
-                        pipeline: bucket.pipeline,
+                        pipeline,
                         textures: bucket.textures,
                         page: part.page,
                         first: state.parts.len() as u32,

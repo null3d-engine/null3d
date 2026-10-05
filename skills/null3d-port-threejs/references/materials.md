@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: every `materials.standard` option in section 1 is built, unless its row gives a version, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials (0.2) are built, so the alpha map recipe works. The matcap recipe also needs `camera.view`, which comes later in 0.2.
+Versions: every `materials.standard` option in section 1 is built, unless its row gives a version, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Both take `alphaToCoverage`, `forceSinglePass` and the `hash` alpha mode (0.2) too. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials (0.2) are built, so the alpha map recipe works. The matcap recipe also needs `camera.view`, which comes later in 0.2.
 
 ## Contents
 
@@ -39,9 +39,11 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function: procedural now, from a height texture in 0.2 (section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | Alpha packed into `map`'s alpha offline, or a surface function that samples the alpha map (0.2) | three.js reads the alpha map's G channel (recipe in section 8) |
 | `transparent: true`, `opacity` | `alphaMode: 'blend'`, `opacity` | Blended objects draw after the opaque ones, farthest first; an instance batch's rows sort one by one |
-| `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` | Pass the `alphaTest` value as `alphaCutoff`, whose default is 0.5, as in glTF |
-| `alphaHash` | `alphaMode: 'mask'` | Hashed transparency is not supported |
-| `side: DoubleSide` | `doubleSided: true` | Fixed when the material is created. A back face lights as if it faced the camera, as in three.js |
+| `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` | Pass the `alphaTest` value as `alphaCutoff`, whose default is 0.5, as in glTF. The cut edges are smoothed by default (0.2); add `alphaToCoverage: false` only when the port needs three.js's hard edges |
+| `alphaToCoverage` with `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` (0.2) | On by default: the cut edges fade over one pixel and MSAA smooths them, as in three.js. Without MSAA it is a plain mask. Without `alphaTest`, three.js turns raw alpha into coverage: use `alphaMode: 'hash'` |
+| `alphaHash` | `alphaMode: 'hash'` (0.2) | three.js's hash on the mesh's own positions, so the alpha sets the share of the surface that draws. `alphaCutoff` has no effect |
+| `side: DoubleSide` | `doubleSided: true` | Fixed when the material is created. A back face lights as if it faced the camera, as in three.js. With `alphaMode: 'blend'` the back faces draw first, then the front faces, as in three.js (0.2) |
+| `forceSinglePass` | Same name (0.2) | With `alphaMode: 'blend'` and `doubleSided`, one draw for both faces, in the mesh's triangle order |
 | `side: BackSide` | Flip the geometry | Not a material option: in `geometry.fromArrays`, reverse each triangle's indices and negate the normals |
 | `depthWrite`, `depthTest` | Same names | Fixed when the material is created. `depthTest: false` writes no depth either, as in three.js's WebGL renderer |
 | `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |

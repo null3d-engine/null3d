@@ -204,8 +204,8 @@ export function loadGlslShaders(bits: number): Promise<DeviceShaders> {
 
 /**
  * The feature that loads on first use whose device modules hold the build of `shader` with the
- * permutation word `permutation`: the shader's own feature, or else that of the word's lowest bit
- * that a feature names. Undefined for a build that the device modules of the start hold.
+ * permutation word `permutation`: the shader's own feature, or else that of the word's first bit in
+ * the order of `FEATURE_BITS`. Undefined for a build that the device modules of the start hold.
  */
 export function firstUseFeature(shader: string, permutation: number): string | undefined {
 	const feature = SHADER_FEATURES[shader];
@@ -700,11 +700,10 @@ fn first_use_tables(
     }
     ts.line("");
     ts.line(
-        "/** Each permutation bit whose builds load on first use, in bit order, with its feature. */",
+        "/** Each permutation bit whose builds load on first use, with its feature, in the order in which the bits take builds. */",
     );
     let bits: Vec<String> = first_use
-        .bits
-        .iter()
+        .bit_order()
         .map(|(bit, feature)| format!("[{bit}, {}]", quote(feature)))
         .collect();
     ts.line(&format!(

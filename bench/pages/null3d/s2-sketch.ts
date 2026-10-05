@@ -2,6 +2,9 @@
 // another count) whose roots turn every frame. Every node is a scene object under its parent; the
 // engine propagates the roots' turns to the static children, level by level on its job workers.
 // When the page asks for shadows, the sun casts them and every node casts and receives them.
+// ?sides=two draws every box see-through and double-sided, so the transparent pass draws each
+// box's back faces, then its front faces, and ?sides=one draws both faces in one draw, to time the
+// second draw.
 import { defineSketch, type Mesh } from '@null3d/engine';
 import {
 	BACKGROUND,
@@ -28,7 +31,17 @@ export default defineSketch((context) => {
 		const [width, height, depth] = s2MeshSize(k);
 		return geometry.box({ width, height, depth });
 	});
-	const colors = S2_COLORS.map((color) => materials.standard({ color }));
+	const sides = new URL(import.meta.url).searchParams.get('sides');
+	const seeThrough =
+		sides === null
+			? {}
+			: ({
+					opacity: 0.85,
+					alphaMode: 'blend',
+					doubleSided: true,
+					forceSinglePass: sides === 'one',
+				} as const);
+	const colors = S2_COLORS.map((color) => materials.standard({ color, ...seeThrough }));
 	const nodes: Mesh[] = [];
 	const roots: Mesh[] = [];
 	for (let i = 0; i < data.parent.length; i++) {

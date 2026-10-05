@@ -19,7 +19,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes, template};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
@@ -488,14 +488,20 @@ impl Layout {
             let pipeline = skin(settings.pipeline_of(mesh, material)?, skinned);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             // Casters and outlined objects draw with no material, through the depth template's
-            // bindings.
+            // bindings, apart from masked casters, which test their material's alpha.
             let depth_key = match drawn {
-                Drawn::Casters => Some(settings.caster_of(pipeline)),
-                Drawn::Outlined => Some(mask_keys(pipeline).0),
+                Drawn::Casters => Some(settings.caster_of(pipeline, material)),
+                Drawn::Outlined => Some((mask_keys(pipeline).0, 0)),
                 Drawn::Scene => None,
             };
-            if let Some(key) = depth_key {
-                return Some((skin(key, skinned), 0, page, mesh, CASTER_MATERIAL, bounds));
+            if let Some((key, group)) = depth_key {
+                let material = if key.template == template::SHADOW_DEPTH || drawn == Drawn::Outlined
+                {
+                    CASTER_MATERIAL
+                } else {
+                    material
+                };
+                return Some((skin(key, skinned), group, page, mesh, material, bounds));
             }
             // Blended pairs draw in the transparent pass, which sorts them on the job workers.
             if pipeline.blends() {

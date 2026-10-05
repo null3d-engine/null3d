@@ -22,7 +22,7 @@
 //! The test for equal depth needs both passes to give each pixel the same depth, to the last bit.
 //! Each GPU path draws the prepass in the way that does so on it ([`Prepass`]).
 
-use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags, template};
+use null3d_gpu::drawlist::{DrawList, Op, format, permutation, state_flags, template};
 
 use crate::frame::RecordError;
 
@@ -209,6 +209,33 @@ impl DrawKey {
             || self.template == template::SPRITE_MAP
     }
 
+    /// True for a pair that blends and culls no faces, whose transparent draws can show its back
+    /// faces through its front faces: a mesh template's, not a sprite's or a line's, which face
+    /// the camera, nor a debug view's.
+    pub const fn blends_both_faces(self) -> bool {
+        self.blends()
+            && self.state & state_flags::CULL_NONE != 0
+            && !matches!(
+                self.template,
+                template::SPRITE
+                    | template::SPRITE_MAP
+                    | template::LINE
+                    | template::LINE_LIT
+                    | template::DEBUG_VIEW
+            )
+    }
+
+    /// The pair's key with only its back faces, or only its front faces when `front`, which a
+    /// double-sided pair that blends draws one after the other, as three.js does. Back faces light
+    /// as the double-sided pair's do.
+    pub const fn faces(self, front: bool) -> DrawKey {
+        let culled = if front { 0 } else { state_flags::CULL_FRONT };
+        DrawKey {
+            state: (self.state & !(state_flags::CULL_NONE | state_flags::CULL_FRONT)) | culled,
+            ..self
+        }
+    }
+
     /// The key of the pipeline that shades the pair after the depth prepass drew its depth: it
     /// draws only where its depth equals the target's, and writes none.
     pub const fn after_prepass(self) -> DrawKey {
@@ -218,16 +245,33 @@ impl DrawKey {
         }
     }
 
-    /// The key of the pipeline that draws the pair in a pass with these targets.
+    /// The key of the pipeline that draws the pair in a pass with these targets. A masked pair
+    /// with alpha to coverage fades its alpha ([`permutation::ALPHA_COVERAGE`]) where the targets
+    /// have more than one sample, and tests it as a plain mask where they have one. A target
+    /// without alpha cannot turn alpha into coverage, so there the shader writes the coverage
+    /// itself ([`permutation::SAMPLE_MASK`]).
     pub const fn in_pass(self, targets: PassTargets) -> PipelineKey {
+        let mut permutation = self.permutation | targets.permutation;
+        let mut state = self.state;
+        if state & state_flags::ALPHA_TO_COVERAGE != 0 {
+            state &= !state_flags::ALPHA_TO_COVERAGE;
+            if targets.samples > 1 && permutation & permutation::ALPHA_MASK != 0 {
+                permutation |= permutation::ALPHA_COVERAGE;
+                if format::covers_by_alpha(targets.color_format) {
+                    state |= state_flags::ALPHA_TO_COVERAGE;
+                } else {
+                    permutation |= permutation::SAMPLE_MASK;
+                }
+            }
+        }
         PipelineKey {
             template: self.template,
-            permutation: self.permutation | targets.permutation,
+            permutation,
             vertex_format: self.vertex_format,
             color_format: targets.color_format,
             depth_format: targets.depth_format,
             samples: targets.samples,
-            state: self.state,
+            state,
             bias: self.bias,
         }
     }
@@ -758,5 +802,88 @@ mod tests {
             ..lit(0)
         };
         assert_eq!(cache.opaque(masked, targets, Prepass::OwnVertexShader).1, 0);
+    }
+
+    #[test]
+    fn alpha_to_coverage_turns_on_where_the_pass_can_turn_alpha_into_coverage() {
+        let covered = DrawKey {
+            permutation: permutation::ALPHA_MASK,
+            state: state_flags::ALPHA_TO_COVERAGE,
+            ..lit(0)
+        };
+        let fade = permutation::ALPHA_COVERAGE;
+        let own = permutation::SAMPLE_MASK;
+        let pass = |key: DrawKey, color_format, samples| {
+            let pass = key.in_pass(PassTargets {
+                color_format,
+                samples,
+                ..TARGETS
+            });
+            (
+                pass.state & state_flags::ALPHA_TO_COVERAGE != 0,
+                pass.permutation & (fade | own),
+            )
+        };
+        // A multisampled target with alpha turns it on in the pipeline, over the faded alpha.
+        assert_eq!(pass(covered, format::CANVAS, 4), (true, fade));
+        assert_eq!(pass(covered, format::RGBA16_FLOAT, 4), (true, fade));
+        // One without alpha takes the builds that write the samples themselves.
+        assert_eq!(
+            pass(covered, format::RG11B10_UFLOAT, 4),
+            (false, fade | own)
+        );
+        // With one sample it is a plain mask.
+        assert_eq!(pass(covered, format::CANVAS, 1), (false, 0));
+        assert_eq!(pass(covered, format::RG11B10_UFLOAT, 1), (false, 0));
+        // Without the masked build there is no alpha to fade.
+        let unmasked = DrawKey {
+            permutation: 0,
+            ..covered
+        };
+        assert_eq!(pass(unmasked, format::CANVAS, 4), (false, 0));
+        // Every pipeline key holds the bits that its bits need.
+        let key = covered.in_pass(PassTargets {
+            color_format: format::RG11B10_UFLOAT,
+            ..TARGETS
+        });
+        assert!(permutation::complete(key.permutation));
+        // A masked pair never joins the prepass.
+        assert_eq!(covered.prepass(), None);
+    }
+
+    #[test]
+    fn a_double_sided_pair_that_blends_splits_into_its_back_and_front_faces() {
+        let glass = DrawKey {
+            state: state_flags::CULL_NONE | state_flags::BLEND_NORMAL,
+            ..lit(0)
+        };
+        assert!(glass.blends_both_faces());
+        assert_eq!(
+            glass.faces(false).state,
+            state_flags::CULL_FRONT | state_flags::BLEND_NORMAL
+        );
+        assert_eq!(glass.faces(true).state, state_flags::BLEND_NORMAL);
+        let one_sided = DrawKey {
+            state: state_flags::BLEND_NORMAL,
+            ..lit(0)
+        };
+        let opaque = DrawKey {
+            state: state_flags::CULL_NONE,
+            ..lit(0)
+        };
+        assert!(!one_sided.blends_both_faces());
+        assert!(!opaque.blends_both_faces());
+        for faces_camera in [
+            template::SPRITE,
+            template::SPRITE_MAP,
+            template::LINE,
+            template::LINE_LIT,
+        ] {
+            let quad = DrawKey {
+                template: faces_camera,
+                ..glass
+            };
+            assert!(!quad.blends_both_faces(), "template {faces_camera}");
+        }
     }
 }

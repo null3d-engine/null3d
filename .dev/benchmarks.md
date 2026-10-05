@@ -245,6 +245,12 @@ A run folder holds every page's full result, with frames and images, and stays o
 - On 4 October 2026 (M2-R2), S2 ran again with the `-prepass` pages, 5 runs of 5 seconds each, in turns. WebGPU's GPU time per frame went from 0.28 ms to 0.40 ms. On WebGL2 the draw calls went from 101 to 201, and the render worker's time per frame from 0.075 ms to 0.080 ms. Chrome on the Mac has no GPU timer on WebGL2, so the WebGL2 GPU cost needs a device.
 - Every preset leaves the prepass off on those results. The iPad's and the phones' figures, from the bench plan with the `-prepass` pages, are still to come.
 
+## Double-sided see-through objects
+
+- The page switch `?sides=two` draws every box of S2 see-through and double-sided. The transparent pass then draws each run's back faces, then its front faces ([D-82](decisions/D-82-transparency-parity.md)). `?sides=one` draws the same boxes with `forceSinglePass`, in one draw. The difference between the two is the cost of the second draw.
+- On the Mac: `bun run bench:run --scenes s2 --pages null3d-webgpu,null3d-webgl2 --switches sides=one`, then the same with `sides=two`. Compare `gpuMs` on WebGPU. Chrome on the Mac has no GPU timer on WebGL2, so the WebGL2 figure needs the iPad or a phone: the bench plan with `--switches sides=two` and `sides=one`.
+- The rule is under 5% more GPU time with two passes.
+
 ## Sweeps for the open defaults
 
 Three sweeps measure the defaults that are still open: the latency mode, the job worker count and the shared memory's maximum. Each runs on the Mac, and on a phone or an iPad through the device runner.

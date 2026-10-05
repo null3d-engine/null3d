@@ -431,6 +431,7 @@ export class WebGL2Backend {
 	private depthFunc: number;
 	private colorMask = true;
 	private blend = 0;
+	private alphaToCoverage = false;
 	private offsetFactor = 0;
 	private offsetUnits = 0;
 	// Fractions passed to WebGL become new number objects, so the clear values and the depth range
@@ -665,6 +666,7 @@ export class WebGL2Backend {
 			depthFunc: this.depthFuncOf(flags),
 			colorWrite: (flags & G.STATE_NO_COLOR_WRITE) === 0,
 			blend: flags & G.STATE_BLEND,
+			alphaToCoverage: (flags & G.STATE_ALPHA_TO_COVERAGE) !== 0,
 			offsetUnits: sign * ((words[a + 8] as number) | 0),
 			offsetFactor: sign * floatOfBits(words[a + 9] as number),
 			vertexFormat: words[a + 7] as number,
@@ -1473,6 +1475,7 @@ export class WebGL2Backend {
 		this.setCullFace(0);
 		this.setColorMask(true);
 		if (this.blend) this.setBlend(0);
+		this.setAlphaToCoverage(false);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
 		generators[name].run(
@@ -1519,6 +1522,7 @@ export class WebGL2Backend {
 		this.setCullFace(0);
 		this.setColorMask(true);
 		if (this.blend) this.setBlend(0);
+		this.setAlphaToCoverage(false);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
 		this.unitsChanged = true;
@@ -2015,6 +2019,7 @@ export class WebGL2Backend {
 		this.setColorMask(p.colorWrite);
 		this.setPolygonOffset(p.offsetFactor, p.offsetUnits);
 		if (p.blend !== this.blend) this.setBlend(p.blend);
+		this.setAlphaToCoverage(p.alphaToCoverage);
 	}
 
 	/** GL's depth function that passes nearer surfaces in the backend's depth mode. */
@@ -2056,6 +2061,14 @@ export class WebGL2Backend {
 			else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		}
 		this.blend = mode;
+	}
+
+	/** Turns GL's alpha to coverage on or off, which only multisampled targets heed. */
+	private setAlphaToCoverage(on: boolean): void {
+		if (on === this.alphaToCoverage) return;
+		if (on) this.gl.enable(this.gl.SAMPLE_ALPHA_TO_COVERAGE);
+		else this.gl.disable(this.gl.SAMPLE_ALPHA_TO_COVERAGE);
+		this.alphaToCoverage = on;
 	}
 
 	/** Sets GL's polygon offset, switched on only while it moves depth. */

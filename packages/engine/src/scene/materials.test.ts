@@ -8,7 +8,9 @@ import {
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
+	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
+	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_BLEND,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
@@ -16,6 +18,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
@@ -410,7 +413,9 @@ describe('Material.set', () => {
 		materials.unlit({ alphaMode: 'opaque', depthTest: false, depthBias: { constant: -4 } });
 		materials.unlit({ depthBias: { slopeScale: -1.5 }, depthWrite: true, depthTest: true });
 		expect(features).toEqual([
-			MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_NO_DEPTH_WRITE,
+			MATERIAL_FEATURE_ALPHA_MASK |
+				MATERIAL_FEATURE_ALPHA_TO_COVERAGE |
+				MATERIAL_FEATURE_NO_DEPTH_WRITE,
 			MATERIAL_FEATURE_NO_DEPTH_TEST,
 			0,
 		]);
@@ -418,6 +423,22 @@ describe('Material.set', () => {
 			[0, 0],
 			[-4, 0],
 			[0, -1.5],
+		]);
+	});
+
+	test('passes the alpha hash, alpha to coverage on masks by default, and one pass for both faces', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ alphaMode: 'hash' });
+		materials.unlit({ alphaMode: 'mask', alphaToCoverage: true });
+		materials.unlit({ alphaMode: 'mask', alphaToCoverage: false });
+		materials.standard({ alphaMode: 'blend', doubleSided: true, forceSinglePass: true });
+		materials.unlit({ alphaToCoverage: true, forceSinglePass: false });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_ALPHA_HASH,
+			MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
+			MATERIAL_FEATURE_ALPHA_MASK,
+			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_SINGLE_PASS,
+			0,
 		]);
 	});
 
@@ -444,7 +465,7 @@ describe('Material.set', () => {
 		);
 		expect(mode.code).toBe('E1217');
 		expect(mode.message).toStartWith(
-			`E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
+			`E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask', 'hash' or 'blend'.`,
 		);
 		const blending = thrown(() =>
 			materials.unlit({ alphaMode: 'blend', blending: 'screen' as unknown as 'normal' }),
@@ -490,6 +511,19 @@ describe('materials.shader', () => {
 			[SHADING_CUSTOM_FIRST, { variants: stripes.variants, locations: [0, 1, 2], textures: 0 }],
 			[SHADING_CUSTOM_FIRST + 1, { variants: rings.variants, locations: [0, 1, 2], textures: 0 }],
 		]);
+	});
+
+	test('refuses the alpha hash and alpha to coverage, which custom materials do not take', () => {
+		const { shadings, materials } = fakeCore();
+		const wgsl = compiledMaterial();
+		const hashed = thrown(() => materials.shader({ wgsl, alphaMode: 'hash' }));
+		expect(hashed.code).toBe('E1217');
+		expect(hashed.message).toStartWith("E1217: materials.shader() got the alpha mode 'hash';");
+		const covered = thrown(() =>
+			materials.shader({ wgsl, alphaMode: 'mask', alphaToCoverage: true }),
+		);
+		expect(covered.message).toStartWith('E1217: materials.shader() got alphaToCoverage;');
+		expect(shadings).toEqual([]);
 	});
 
 	test('passes a full shader the vertex attributes it reads, without vertex colors', () => {

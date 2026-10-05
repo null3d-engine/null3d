@@ -25,8 +25,24 @@ enable draw_index;
 // the same vertex, and the opaque pass's test for equal depth passes on exactly the nearest
 // surfaces. WebGL2 draws the prepass with each mesh template's own vertex shader, because there two
 // programs can give different depths although both mark the position invariant.
+//
+// The CUTOUT builds draw masked casters, so masked surfaces cut holes in their shadows. Each
+// fragment tests its alpha as the caster's material tests it: the opacity, times the vertex alpha
+// in the VERTEX_COLOR builds and the base color map's alpha in the MAP builds, against the cutoff
+// in the ALPHA_MASK builds, or against the alpha hash in the ALPHA_HASH builds, whose pattern then
+// takes the light's pixels. Alpha to coverage casts at its cutoff, where its fade starts.
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, relative_position, world_normal}
 #import null3d::vertex::{mesh_position}
+#ifdef CUTOUT
+#import null3d::mesh::{material_of}
+#endif
+#ifdef MAP
+#import null3d::mesh::{map_layer, map_ready}
+#import null3d::vertex::{mesh_second_uv, mesh_uv}
+#endif
+#ifdef ALPHA_HASH
+#import null3d::cutout::{alpha_hash_threshold}
+#endif
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
@@ -42,10 +58,33 @@ const CASTER_OFFSET_TEXELS: f32 = 1.0;
 /// floor 20 cm thick.
 const CASTER_OFFSET_MAX: f32 = 0.05;
 
-/// The vertex attributes that the template reads: every vertex format has both.
+#ifdef MAP
+// The map's bind group comes after the frame's group, and on WebGL2 after the groups of the draw
+// records and the data textures.
+#ifdef WEBGL2
+@group(3) @binding(0) var map_layers: texture_2d_array<f32>;
+@group(3) @binding(1) var map_sampler: sampler;
+#else
+@group(1) @binding(0) var map_layers: texture_2d_array<f32>;
+@group(1) @binding(1) var map_sampler: sampler;
+#endif
+
+/// The bit of a material's flags for a base color map on the second texture coordinates.
+const SECOND_UV: u32 = 256u;
+#endif
+
+/// The vertex attributes that the template reads: every vertex format has the first two.
 struct VertexIn {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
+#ifdef MAP
+    @location(2) uv0: vec2f,
+    /// The second texture coordinates, or the first on a mesh without a second set.
+    @location(3) uv1: vec2f,
+#endif
+#ifdef VERTEX_COLOR
+    @location(5) vertex_color: vec4f,
+#endif
 #ifdef SKIN
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
@@ -55,8 +94,31 @@ struct VertexIn {
 #endif
 }
 
+#ifdef CUTOUT
+/// What a masked caster's fragments read to test their alpha.
+struct VertexOut {
+    @invariant @builtin(position) clip: vec4f,
+    @location(0) @interpolate(flat, either) material: u32,
+#ifdef MAP
+    /// The first texture coordinates, then the second.
+    @location(1) uv: vec4f,
+#endif
+#ifdef VERTEX_COLOR
+    @location(2) vertex_alpha: f32,
+#endif
+#ifdef ALPHA_HASH
+    /// The position in the mesh's own space, where the alpha hash finds its pattern.
+    @location(3) mesh_place: vec3f,
+#endif
+}
+#endif
+
 @vertex
+#ifdef CUTOUT
+fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
+#else
 fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
+#endif
     let found = find_instance(i);
 #ifdef MORPH
     let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, vec3f(0.0)));
@@ -93,10 +155,56 @@ fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
 #ifndef PREPASS
     clip.z = min(clip.z, clip.w);
 #endif
+#ifdef CUTOUT
+    var out: VertexOut;
+    out.clip = clip;
+    out.material = found.material;
+#ifdef MAP
+    out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
+#endif
+#ifdef VERTEX_COLOR
+    out.vertex_alpha = v.vertex_color.a;
+#endif
+#ifdef ALPHA_HASH
+    out.mesh_place = mesh_position(v.position);
+#endif
+    return out;
+#else
     return clip;
+#endif
 }
 
+#ifdef CUTOUT
+/// Writes no color, and keeps the depth of the fragments whose alpha passes the material's test.
+/// The map is sampled whether it is ready or not, as sampling needs the same control flow in every
+/// invocation, and a map that is not ready counts as opaque.
+@fragment
+fn fs(in: VertexOut) {
+    let m = material_of(in.material);
+    var alpha = m.color.a;
+#ifdef VERTEX_COLOR
+    alpha *= in.vertex_alpha;
+#endif
+#ifdef MAP
+    let second = (u32(m.strengths.z) & SECOND_UV) != 0u;
+    let raw = vec3f(select(in.uv.xy, in.uv.zw, second), 1.0);
+    let uv = vec2f(dot(m.uv_u.xyz, raw), dot(m.uv_v.xyz, raw));
+    let texel = textureSample(map_layers, map_sampler, uv, map_layer(m.maps.x));
+    alpha *= select(1.0, texel.a, map_ready(m.maps.x));
+#endif
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(in.mesh_place) {
+        discard;
+    }
+#else ifdef ALPHA_MASK
+    if alpha < m.emissive.w {
+        discard;
+    }
+#endif
+}
+#else
 /// Writes no color: the pass keeps the depth alone.
 @fragment
 fn fs() {
 }
+#endif

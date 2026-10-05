@@ -21,7 +21,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{DrawList, sizes};
+use null3d_gpu::drawlist::{DrawList, sizes, template};
 
 use super::data::{TextureRows, write_rows};
 use super::ids;
@@ -263,8 +263,14 @@ impl Layout {
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             match drawn {
                 Drawn::Casters => {
-                    let caster = skin(settings.caster_of(pipeline), skinned);
-                    return Some((caster, 0, page, mesh, CASTER_MATERIAL, group));
+                    // A masked caster tests its material's alpha; the others draw with none.
+                    let (caster, textures) = settings.caster_of(pipeline, material);
+                    let material = if caster.template == template::SHADOW_DEPTH {
+                        CASTER_MATERIAL
+                    } else {
+                        material
+                    };
+                    return Some((skin(caster, skinned), textures, page, mesh, material, group));
                 }
                 Drawn::Outlined => {
                     let (every, _) = mask_keys(skin(pipeline, skinned));

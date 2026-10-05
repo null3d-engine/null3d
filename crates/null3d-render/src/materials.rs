@@ -166,8 +166,22 @@ pub mod feature {
     pub const ADDITIVE: u32 = 128;
     /// With [`BLEND`], the surface tints what lies behind it. It wins over [`ADDITIVE`].
     pub const MULTIPLY: u32 = 256;
+    /// With [`ALPHA_MASK`], the alpha fades from nothing at the cutoff to full over about one
+    /// pixel, as three.js's `alphaToCoverage` makes it, and MSAA turns it into the share of each
+    /// pixel's samples that the surface covers. Without MSAA it is a plain alpha test, and so it is
+    /// for custom materials, whose builds stay few.
+    pub const ALPHA_TO_COVERAGE: u32 = 512;
     /// The scene's fog leaves the material's color as it is.
     pub const NO_FOG: u32 = 1024;
+    /// With [`ALPHA_MASK`], each fragment draws when its alpha passes a threshold from a hash of
+    /// its place on the mesh, as three.js's `alphaHash` does, so the alpha sets the share of the
+    /// surface that draws. It wins over [`ALPHA_TO_COVERAGE`]. Custom materials have no such
+    /// builds, and test their alpha against the cutoff.
+    pub const ALPHA_HASH: u32 = 2048;
+    /// A double-sided surface that blends draws in one draw, both faces in the mesh's order, as
+    /// three.js's `forceSinglePass` does. Without it the transparent pass draws such a surface's
+    /// back faces first, then its front faces.
+    pub const SINGLE_PASS: u32 = 4096;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -178,7 +192,16 @@ pub mod feature {
         | NO_DEPTH_TEST
         | ADDITIVE
         | MULTIPLY
-        | NO_FOG;
+        | ALPHA_TO_COVERAGE
+        | NO_FOG
+        | ALPHA_HASH
+        | SINGLE_PASS;
+
+    /// True for features that test alpha with the masked shader variant: a mask that does not
+    /// blend.
+    pub const fn masks(features: u32) -> bool {
+        features & ALPHA_MASK != 0 && features & BLEND == 0
+    }
 }
 
 /// The blend state of a material's features (`state_flags::BLEND_*`), or 0 for a material that
@@ -1001,6 +1024,23 @@ mod tests {
         assert_eq!(row(&table, 2)[param::FLAGS], flag::NO_FOG as f32);
         let both = flag::FLAT_SHADING | flag::NO_FOG;
         assert_eq!(row(&table, 3)[param::FLAGS], both as f32);
+    }
+
+    #[test]
+    fn the_new_features_are_kept_and_leave_the_row_flags_alone() {
+        let mut table = MaterialTable::with_capacity(2);
+        let hashed = feature::ALPHA_MASK | feature::ALPHA_HASH;
+        let glass = feature::BLEND | feature::DOUBLE_SIDED | feature::SINGLE_PASS;
+        table
+            .create(Shading::Lit, hashed | feature::ALPHA_TO_COVERAGE, [1.0; 4])
+            .unwrap();
+        table.create(Shading::Lit, glass, [1.0; 4]).unwrap();
+        assert_eq!(table.features(0), hashed | feature::ALPHA_TO_COVERAGE);
+        assert_eq!(table.features(1), glass);
+        assert_eq!(row(&table, 0)[param::FLAGS], 0.0);
+        assert_eq!(row(&table, 1)[param::FLAGS], flag::BLEND as f32);
+        assert!(feature::masks(hashed));
+        assert!(!feature::masks(feature::ALPHA_MASK | feature::BLEND));
     }
 
     #[test]

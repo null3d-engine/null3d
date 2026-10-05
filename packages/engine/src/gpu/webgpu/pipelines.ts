@@ -24,6 +24,7 @@ import {
 	PERMUTATION_VERTEX_TANGENT,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_MAP_SLOTS,
+	STATE_ALPHA_TO_COVERAGE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
 	STATE_BLEND_MULTIPLY,
@@ -57,6 +58,8 @@ import {
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_SHADOW_CUTOUT,
+	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
@@ -480,6 +483,14 @@ export class Pipelines {
 				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
 			],
 			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_SHADOW_CUTOUT, 'shadow cutout', shaders.shadow_cutout, [0, 1], [LAYOUT_DEPTH]],
+			[
+				TEMPLATE_SHADOW_CUTOUT_MAP,
+				'shadow cutout map',
+				shaders.shadow_cutout_map,
+				[0, 1, 2, 3],
+				[LAYOUT_DEPTH, LAYOUT_TEXTURES],
+			],
 			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
@@ -715,7 +726,10 @@ export class Pipelines {
 						depthBiasClamp: 0,
 					}
 				: undefined,
-			multisample: { count: sampleCount },
+			multisample: {
+				count: sampleCount,
+				alphaToCoverageEnabled: (stateFlags & STATE_ALPHA_TO_COVERAGE) !== 0,
+			},
 		};
 	}
 

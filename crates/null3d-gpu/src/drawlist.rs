@@ -399,6 +399,15 @@ pub mod format {
         matches!(format, DEPTH24_PLUS | DEPTH32_FLOAT)
     }
 
+    /// True for the color formats that a render pipeline can draw into with alpha to coverage:
+    /// those with an alpha channel, as WebGPU requires.
+    pub const fn covers_by_alpha(format: u32) -> bool {
+        matches!(
+            format,
+            CANVAS | RGBA8_UNORM | BGRA8_UNORM | RGBA16_FLOAT | RGBA8_UNORM_SRGB
+        )
+    }
+
     /// True for the formats stored in compressed blocks of texels.
     pub const fn is_compressed(format: u32) -> bool {
         block_size(format) > 1
@@ -702,9 +711,21 @@ pub mod permutation {
     /// The outline mask template marks the parts of outlined objects that nothing hides. Without
     /// it, the template marks every part, hidden or not.
     pub const OUTLINE_VISIBLE: u32 = 65536;
+    /// The fragment shader of a masked surface writes its coverage of the pixel's samples itself,
+    /// through `sample_mask`, from the faded alpha of [`ALPHA_COVERAGE`]. WebGPU builds only, for
+    /// multisampled targets whose format has no alpha, where the pipeline cannot turn alpha to
+    /// coverage on.
+    pub const SAMPLE_MASK: u32 = 1 << 20;
+    /// A masked surface fades its alpha from nothing at the cutoff to full over about a pixel, and
+    /// writes the faded alpha, which alpha to coverage turns into the share of the pixel's samples
+    /// that it covers.
+    pub const ALPHA_COVERAGE: u32 = 1 << 21;
+    /// A masked surface keeps each fragment whose alpha passes a threshold from a hash of its place
+    /// on the mesh, instead of the cutoff.
+    pub const ALPHA_HASH: u32 = 1 << 22;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 17] = [
+    pub const NAMES: [(&str, u32); 20] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -722,6 +743,9 @@ pub mod permutation {
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("SAMPLE_MASK", SAMPLE_MASK),
+        ("ALPHA_COVERAGE", ALPHA_COVERAGE),
+        ("ALPHA_HASH", ALPHA_HASH),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -730,6 +754,38 @@ pub mod permutation {
     /// build writes the engine's variants into one module for each GPU path and each value of
     /// these bits, and a page loads only its own.
     pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP | HALF;
+
+    /// Bits that only make sense beside another bit, as (bit, the bit it needs). The shader build
+    /// writes no build that has the first without the second, and no pipeline asks for one.
+    pub const NEEDS: [(u32, u32); 3] = [
+        (SAMPLE_MASK, ALPHA_COVERAGE),
+        (ALPHA_COVERAGE, ALPHA_MASK),
+        (ALPHA_HASH, ALPHA_MASK),
+    ];
+    /// Bits that never go together, as pairs: a mask tests its alpha one way.
+    pub const APART: [(u32, u32); 1] = [(ALPHA_HASH, ALPHA_COVERAGE)];
+
+    /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
+    /// no two bits that stay apart ([`APART`]).
+    pub const fn complete(word: u32) -> bool {
+        let mut k = 0;
+        while k < NEEDS.len() {
+            let (bit, needed) = NEEDS[k];
+            if word & bit != 0 && word & needed == 0 {
+                return false;
+            }
+            k += 1;
+        }
+        let mut k = 0;
+        while k < APART.len() {
+            let (a, b) = APART[k];
+            if word & a != 0 && word & b != 0 {
+                return false;
+            }
+            k += 1;
+        }
+        true
+    }
 
     /// Every bit.
     pub const ALL: u32 = {
@@ -775,6 +831,9 @@ pub mod state_flags {
     pub const DEPTH_EQUAL: u32 = 128;
     /// Writes no color, as the depth prepass draws into the color target's render pass.
     pub const NO_COLOR_WRITE: u32 = 256;
+    /// The fragment's alpha decides which of the pixel's samples it covers. Only a multisampled
+    /// pipeline whose color format has alpha takes it (`format::covers_by_alpha`).
+    pub const ALPHA_TO_COVERAGE: u32 = 512;
     /// Every flag.
     pub const ALL: u32 = CULL_NONE
         | LINE_LIST
@@ -783,7 +842,8 @@ pub mod state_flags {
         | NO_DEPTH_TEST
         | BLEND
         | DEPTH_EQUAL
-        | NO_COLOR_WRITE;
+        | NO_COLOR_WRITE
+        | ALPHA_TO_COVERAGE;
 }
 
 /// Vertex formats. Every vertex has a position and a normal. A format adds optional attributes
@@ -1283,6 +1343,13 @@ pub mod template {
     /// Ambient occlusion's edge-aware blur, three.js's Poisson denoise: it writes the occlusion
     /// that the opaque pass reads, beside the depth it blurred at.
     pub const AO_DENOISE: u32 = 34;
+    /// The depth of a masked shadow caster: [`SHADOW_DEPTH`]'s vertices, with each fragment of the
+    /// caster's material tested as its shading tests it, by the material's opacity and vertex
+    /// alpha, so masked surfaces cut holes in their shadows. It binds as the depth template does.
+    pub const SHADOW_CUTOUT: u32 = 37;
+    /// [`SHADOW_CUTOUT`] times the alpha of the material's base color map. The bind group of index
+    /// 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
+    pub const SHADOW_CUTOUT_MAP: u32 = 38;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1603,6 +1670,7 @@ pub fn typescript_constants() -> String {
                 ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
                 ("DEPTH_EQUAL", state_flags::DEPTH_EQUAL),
                 ("NO_COLOR_WRITE", state_flags::NO_COLOR_WRITE),
+                ("ALPHA_TO_COVERAGE", state_flags::ALPHA_TO_COVERAGE),
             ],
         ),
         (
@@ -1634,6 +1702,8 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH_MS", template::AO_DEPTH_MS),
                 ("AO", template::AO),
                 ("AO_DENOISE", template::AO_DENOISE),
+                ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
+                ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

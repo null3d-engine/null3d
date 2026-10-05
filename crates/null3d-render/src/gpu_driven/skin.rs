@@ -69,12 +69,14 @@ use crate::sorted::SkinnedPipeline;
 use crate::view::ViewFrame;
 
 /// The templates with SKIN builds, which skin in the vertex shader.
-const SKIN_TEMPLATES: [u32; 6] = [
+const SKIN_TEMPLATES: [u32; 8] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
     template::INSTANCED_UNLIT,
     template::INSTANCED_UNLIT_MAP,
     template::SHADOW_DEPTH,
+    template::SHADOW_CUTOUT,
+    template::SHADOW_CUTOUT_MAP,
     template::OUTLINE_MASK,
 ];
 /// The most mesh pages that hold skinned meshes. Each page holds meshes of one vertex format up
