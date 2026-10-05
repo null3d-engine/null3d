@@ -16,6 +16,7 @@ import { DeviceShaderSet } from '../gpu/device-shaders';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
 	contextFinished,
+	reclaimContext,
 	releaseContext,
 	simulateContextLoss,
 	webgl2Context,
@@ -373,8 +374,10 @@ export async function createRenderer(
 		void contextLoss(canvas, starting.signal);
 		try {
 			// After a loss, the context must come back before the engine can draw with it again. A
-			// scene's shaders download meanwhile.
-			const [, shaders, timing] = await Promise.all([
+			// context that an earlier engine on the canvas gave up comes back when asked. A scene's
+			// shaders download meanwhile.
+			const [, , shaders, timing] = await Promise.all([
+				reclaimContext(gl),
 				contextRestored(gl),
 				scene && deviceShaders(device, options, loadGlslShaders, loadGlslFeature),
 				options.glTiming && import('../gpu/webgl2/call-timing'),

@@ -2,7 +2,12 @@
 // thread that runs the sketch on the page never hangs the page. Engines follow one another on one
 // canvas, as React's StrictMode starts them, and code that outlives an engine never reaches the next.
 import { expect, type Page, test } from '@playwright/test';
-import { ENGINE_MODES, THREADED_MODES } from '../lib/engine-checks.ts';
+import {
+	ENGINE_MODES,
+	type SameCanvasResult,
+	sameCanvasProblems,
+	THREADED_MODES,
+} from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 interface FailureResult {
@@ -63,28 +68,21 @@ for (const mode of THREADED_MODES) {
 	});
 }
 
-for (const mode of ENGINE_MODES)
-	for (const pattern of ['then', 'abort'])
-		test(`engines follow one another on one canvas, ${pattern}, ${mode.name}`, async ({ page }) => {
-			await page.goto(`failures.html?case=same-canvas&pattern=${pattern}&${mode.query}`);
-			const result = await pageResult<{
-				workersOfOne: number;
-				workersOfSecond: number;
-				workersAfter: number;
-				workersAfterRemoval: number;
-				reuse: string;
-				frames: number;
-				error?: string;
-			}>(page, 60_000);
-			expect(result.error).toBeUndefined();
-			expect(result.frames).toBeGreaterThan(0);
-			// Every worker of the engines that stopped has stopped, but the one that keeps the canvas.
-			expect(result.workersOfSecond).toBe(result.workersOfOne);
-			const workerDraws = mode.renderThread !== 'main';
-			expect(result.workersAfter).toBe(workerDraws ? 1 : 0);
-			expect(result.workersAfterRemoval).toBe(0);
-			expect(result.reuse).toBe(workerDraws ? 'E1419' : 'started');
-		});
+// On WebGL2 an engine that stops loses the canvas's context, to free its GPU memory at once, and the
+// next engine on the canvas gets that context back.
+for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
+	for (const mode of ENGINE_MODES)
+		for (const pattern of ['then', 'abort'])
+			test(`engines follow one another on one canvas, ${pattern}, ${mode.name} on ${gpu}`, async ({
+				page,
+			}) => {
+				await page.goto(
+					`failures.html?case=same-canvas&pattern=${pattern}&gpu=${gpu}&${mode.query}`,
+				);
+				const result = await pageResult<SameCanvasResult & { error?: string }>(page, 60_000);
+				expect(result.error).toBeUndefined();
+				expect(sameCanvasProblems(result, mode)).toEqual([]);
+			});
 
 test('a second engine on the canvas of a running one fails with E1419', async ({ page }) => {
 	await page.goto('failures.html?case=two-live');

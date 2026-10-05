@@ -26,11 +26,12 @@ Which path does each failure take to the page, and what may a page do with a can
 | The frame step throws, in the 5 thread modes | 3 of 5 froze with no report | 5 of 5 report E1404 | `tests/image/failures.spec.ts` |
 | A job worker dies inside a chunk, in the 4 threaded modes | 4 of 4 froze; with the sketch on the page the tab hung for the whole 90 s test | 4 of 4 report E1404, and the page's own timer runs on | the same spec, which makes job worker 0's clock throw |
 | A second engine on the same canvas, 2 StrictMode patterns in 5 modes | 9 of 10 failed: InvalidStateError, E1403 or no frames | 10 of 10 draw, with as many workers as one engine | the same spec |
+| The same on WebGL2, 2 patterns in 5 modes (measured after the first fix) | 10 of 10 failed with E1405, "the WebGL2 context did not come back" | 10 of 10 draw | the same spec, with `gpu=webgl2` |
 | A call from sketch code after `destroy()` | A TypeError, then success against the next engine | E1420 both times | the same spec |
 | WebGL2 context lost inside a framebuffer check | E1404 | recovers and draws on | `gpu-loss.html?mid-frame` |
 | A WebGPU buffer past the device's limit | a black canvas, no code | E1305 | `tests/image/gpu-errors.spec.ts` |
 
-How the data was produced: the new specs ran on the Mac's GPU in Chrome on 4 October 2026. They ran on this branch, and again with the engine's source of main (3aadcee0) put back. On main, 19 of the 22 tests in `failures.spec.ts` failed. The 3 that passed cover paths that were already guarded. Low latency and the single-threaded build already reported a frame step that throws. Drawing on the page could already start again after a cancelled start.
+How the data was produced: the new specs ran on the Mac's GPU in Chrome on 4 October 2026. They ran on this branch, and again with the engine's source of main (3aadcee0) put back. On main, 19 of the 22 tests in `failures.spec.ts` failed. The 3 that passed cover paths that were already guarded. Low latency and the single-threaded build already reported a frame step that throws. Drawing on the page could already start again after a cancelled start. The canvas test ran only on WebGPU then. It gained WebGL2 and compatibility mode on 5 October 2026, on the Mac's GPU in Chrome. All 30 tests then passed with the WebGL2 fix, and all 10 WebGL2 tests failed without it.
 
 ## Decision
 
@@ -50,6 +51,9 @@ The canvas:
   - Refusing a canvas that moved to a worker, as the review proposed. StrictMode mounts would then fail in every app.
   - A parked worker that stays until the canvas is collected. The restart tests keep every canvas, so each would keep a worker.
   - A parked worker with a time limit. A page could not know how long it has.
+- On WebGL2, a stop loses the canvas's context on purpose, so the GPU frees the engine's memory at once. The canvas keeps that context, so the next engine on the canvas gets the same context, still lost. The browser restores a context only when the loss event was cancelled and has run. So the stop cancels the event and keeps the `WEBGL_lose_context` extension, and the next renderer on the canvas waits for the event and calls `restoreContext()`. The context holds no GPU memory between the two engines. Options rejected:
+  - Deleting each WebGL2 object and keeping the context. The GPU would then free only what the engine deletes. Anything missed would stay until the browser collects the context, which a kept canvas never allows. A loss frees it all at once.
+  - Restoring the context at the stop. The context would then hold its drawing buffers for as long as the page keeps the canvas, with no engine on it.
 - Sketch code that outlives its engine fails with E1420. The sketch's `onDestroy` runs first, on its own thread. Then the runner swaps the core for a stand-in whose every function throws, and views on engine memory cannot be made again. The swap costs nothing per call. The loaders' helper workers stop at the same time.
 
 Long runs:

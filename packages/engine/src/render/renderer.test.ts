@@ -9,11 +9,13 @@ type ContextRequest = { type: string; settings: unknown };
  * A canvas that records each request for a context. Like a browser's canvas, it keeps the first
  * request's context, whose settings later requests cannot change. `loseContext` and
  * `restoreContext` act out a loss as a browser does: the context counts as lost at once, and the
- * event follows.
+ * event follows. The context's `WEBGL_lose_context` acts as a browser's does: its loss event runs
+ * in a later task, and a restore works only after that event ran and was cancelled.
  */
 function fakeCanvas() {
 	const requests: ContextRequest[] = [];
 	let lost = false;
+	let restorable = false;
 	const canvas = Object.assign(new EventTarget(), {
 		width: 300,
 		height: 150,
@@ -22,7 +24,30 @@ function fakeCanvas() {
 			return context;
 		},
 	});
-	const context = { canvas, isContextLost: () => lost };
+	const extension = {
+		loseContext() {
+			lost = true;
+			setTimeout(() => {
+				const event = new Event('webglcontextlost', { cancelable: true });
+				canvas.dispatchEvent(event);
+				restorable = event.defaultPrevented;
+			}, 0);
+		},
+		restoreContext() {
+			if (!lost || !restorable) return;
+			restorable = false;
+			setTimeout(() => {
+				lost = false;
+				canvas.dispatchEvent(new Event('webglcontextrestored'));
+			}, 0);
+		},
+	};
+	const context = {
+		canvas,
+		isContextLost: () => lost,
+		// A lost context has no extensions.
+		getExtension: (name: string) => (name === 'WEBGL_lose_context' && !lost ? extension : null),
+	};
 	return {
 		canvas: canvas as unknown as RenderCanvas,
 		requests,
@@ -97,6 +122,25 @@ describe('the WebGL2 renderer', () => {
 		expect(loseContext().defaultPrevented).toBe(true);
 		await settle();
 		expect(heard).toBe(true);
+	});
+
+	it('gives the context up when destroyed, and a later renderer on the canvas takes it back', async () => {
+		const { canvas } = fakeCanvas();
+		const options = { tier: 'webgl2', device: {} as CoreDevice } as const;
+		const first = await createRenderer(canvas, options);
+		let heard = false;
+		void first.lost.then(() => {
+			heard = true;
+		});
+		first.destroy();
+		const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
+		expect(gl.isContextLost()).toBe(true);
+		const second = await createRenderer(canvas, options);
+		expect(gl.isContextLost()).toBe(false);
+		// The first renderer gave the context up itself, so it heard no loss.
+		expect(heard).toBe(false);
+		second.destroy();
+		expect(gl.isContextLost()).toBe(true);
 	});
 });
 
