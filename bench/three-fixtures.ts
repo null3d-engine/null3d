@@ -19,6 +19,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+	type AnimationAction,
 	AnimationClip,
 	AnimationMixer,
 	AnimationUtils,
@@ -838,7 +839,104 @@ const SCRIPTS: { name: string; run(s: ScriptRun): void }[] = [
 			check(18);
 		},
 	},
+	{
+		// play('grid24', { time: 0.3 }): it starts 0.3 s in, and loops after 27 steps.
+		name: 'start time',
+		run({ mixer, clips, check }) {
+			const action = mixer.clipAction(clips[2] as AnimationClip);
+			action.time = Math.fround(0.3);
+			action.play();
+			check(10);
+			check(30);
+		},
+	},
+	{
+		// play('grid30', { time: 0.1, weight: 0.25 }); play('grid24', { time: 0.4, weight: 0.5 }):
+		// two clips side by side, with the rest pose for the weight they leave. Then
+		// setWeight('grid30', 0.75).
+		name: 'clip weights',
+		run({ mixer, clips, check }) {
+			const first = startAt(mixer.clipAction(clips[0] as AnimationClip), 0.1, 0.25);
+			startAt(mixer.clipAction(clips[2] as AnimationClip), 0.4, 0.5);
+			check(9);
+			first.setEffectiveWeight(Math.fround(0.75));
+			check(11);
+		},
+	},
+	{
+		// play('grid30', { time: 0.62, weight: 0.6 }); play('uneven', { weight: 0.9 });
+		// play('grid24', { time: 0.45, weight: 0.5 }): weights that add up to more than 1.
+		name: 'weights above one',
+		run({ mixer, clips, check }) {
+			startAt(mixer.clipAction(clips[0] as AnimationClip), 0.62, 0.6);
+			startAt(mixer.clipAction(clips[1] as AnimationClip), 0, 0.9);
+			startAt(mixer.clipAction(clips[2] as AnimationClip), 0.45, 0.5);
+			check(7);
+		},
+	},
+	{
+		// play('grid30', { weight: 0.5, fade: 0.4 }) from the rest pose: the fade scales the weight.
+		name: 'weight and fade',
+		run({ mixer, clips, check }) {
+			mixer
+				.clipAction(clips[0] as AnimationClip)
+				.setEffectiveWeight(Math.fround(0.5))
+				.fadeIn(Math.fround(0.4))
+				.play();
+			check(12);
+			check(30);
+		},
+	},
+	{
+		// play('grid24'); play('grid30', { additive: true, weight: 0.5 }) on the same layer: the
+		// additive clip plays beside the base clip. Then crossFade('uneven', 0.3): the base clips
+		// fade, and the additive clip plays on.
+		name: 'additive on the base layer',
+		run({ mixer, clips, check }) {
+			const base = mixer.clipAction(clips[2] as AnimationClip).play();
+			const additive = AnimationUtils.makeClipAdditive((clips[0] as AnimationClip).clone());
+			mixer.clipAction(additive).setEffectiveWeight(Math.fround(0.5)).play();
+			check(15);
+			const next = mixer.clipAction(clips[1] as AnimationClip).play();
+			base.crossFadeTo(next, Math.fround(0.3), false);
+			check(9);
+			check(24);
+		},
+	},
+	{
+		// playBlend({ grid30: 0, grid24: 1 }, { value: 0.25, phase: 0.2 }), then setBlend(0.75). In
+		// three.js: each clip at its share of the blend, and at a rate of its length over the
+		// weight-averaged length, from the same share of its length.
+		name: 'phase-synced blend',
+		run({ mixer, clips, check }) {
+			const members = [0, 2].map((c) => mixer.clipAction(clips[c] as AnimationClip));
+			const blend = (value: number) => {
+				const shares = [1 - value, value];
+				const lengths = members.map((a) => a.getClip().duration);
+				const length = shares.reduce((sum, s, k) => sum + s * (lengths[k] as number), 0);
+				members.forEach((action, k) => {
+					action.setEffectiveWeight(Math.fround(shares[k] as number));
+					action.timeScale = (lengths[k] as number) / length;
+				});
+			};
+			blend(0.25);
+			for (const action of members) {
+				action.time = Math.fround(0.2) * action.getClip().duration;
+				action.play();
+			}
+			check(10);
+			blend(0.75);
+			check(20);
+			check(40);
+		},
+	},
 ];
+
+/** Gives an action its start time and weight, as play's options do, and plays it. */
+function startAt(action: AnimationAction, time: number, weight: number): AnimationAction {
+	action.time = Math.fround(time);
+	return action.setEffectiveWeight(Math.fround(weight)).play();
+}
 
 function scriptsFixture(clips: AnimationClip[], inverses: Matrix4[]): string {
 	let out = `

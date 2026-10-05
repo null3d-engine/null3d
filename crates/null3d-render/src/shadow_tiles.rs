@@ -6,9 +6,14 @@
 //! The shadow atlas is one depth texture array, and each of its layers is a tile of the same size.
 //! A spot light's shadows take one tile: a perspective view from the light along its direction,
 //! wide enough to hold its cone. A point light's shadows take six tiles in a row, one for each
-//! face of a cube around the light, from the first. The atlas has as many layers as the lights
-//! that cast shadows could fill, up to the frame builder's tile budget, so it changes size only
-//! when such a light is added, removed, shown or hidden.
+//! face of a cube around the light, from the first. Each tile's view keeps the shadow filter's
+//! reach inside its edges, so the filter never reads past what the tile drew.
+//!
+//! The atlas has as many layers as the lights that cast shadows have needed since it was made, up
+//! to the frame builder's tile budget. It grows when more lights cast, and it keeps its layers
+//! when a light stops casting, so a light whose shadows turn off and on again does not make the
+//! atlas again, nor the render graph's passes. It goes only when no light casts, or when the
+//! settings change.
 //!
 //! # Which lights get tiles
 //!
@@ -25,12 +30,25 @@
 //!
 //! - it goes to another light, or the atlas is made again;
 //! - its light moves, turns, or changes its cone, its range or its layers;
-//! - a shadow caster moves, turns, scales, shows or hides within its light's range, or leaves it;
+//! - a shadow caster moves, turns, scales, shows, hides or changes its layers within the tile's
+//!   view, or leaves it;
+//! - a skinned or morphed caster within the tile's view changes its pose or its weights;
 //! - the scene's structure changes, as casters may then come or go.
 //!
 //! The frame builder learns which casters moved from the frame's upload list. Moving objects are
-//! listed in every frame, so the module keeps each caster's last world matrix and bounding sphere,
-//! and counts a caster as moved only when they differ.
+//! listed in every frame, so the module keeps each caster's last world matrix, bounding sphere and
+//! layers, and counts a caster as moved only when they differ. A caster marks only the tiles whose
+//! views its sphere touches, before or after its move: one to three of a point light's six faces
+//! for a caster near the light. A pose need not move the sphere, so the module also keeps a stamp
+//! of each skinned or morphed caster's pose, and compares it in each frame while the caster lies
+//! within a shadowed light's range.
+//!
+//! A tile whose view misses the camera's view waits: no receiver on screen reads it. It draws when
+//! the camera turns toward it. A tile that holds no depth of its light yet draws at once. Other
+//! tiles that must draw again share a cap of [`MAX_REDRAWS`] per frame, so a burst of moving
+//! casters near many lights spreads over frames. Whole lights take the cap, those that waited
+//! longest first, then the largest on screen; the others keep their last depth for a frame or
+//! two (decision record D-61).
 //!
 //! A draw counts only once the GPU really drew it. Draws whose pipelines are still building draw
 //! nothing (see `null3d_gpu::drawlist`), so a tile drawn in a frame whose pipelines may not all be
@@ -48,10 +66,12 @@
 //! depth stays.
 
 use null3d_core::cells::{CellCoords, CellPosition};
+use null3d_core::culling::Frustum;
 use null3d_core::lights::{LightShadow, NOT_VISIBLE, VisibleLight, kind};
+use null3d_core::morph::NOT_LINKED;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_core::world::HIDDEN_RADIUS;
+use null3d_core::world::{HIDDEN_RADIUS, MATRIX_FLOATS};
 use null3d_gpu::drawlist::sizes::SHADOW_TILES_UNIFORM_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage};
 
@@ -72,6 +92,16 @@ const MAX_HALF_ANGLE: f32 = 85.0 * std::f32::consts::PI / 180.0;
 
 /// The near plane of a tile's view, as a share of its light's range.
 const NEAR_SHARE: f32 = 1e-3;
+
+/// The texels that the widest shadow filter, the 5 x 5 square, reads past the point it filters. A
+/// tile's view keeps this many texels inside each edge, so the filter never reads past what the
+/// tile drew.
+pub const FILTER_REACH: u32 = 3;
+
+/// The most tiles that draw again in one frame because a caster or a light moved, apart from
+/// tiles that hold no depth of their light yet (decision record D-61). Two point lights' cubes:
+/// the High preset's sixteen tiles and the Ultra preset's twenty-four take two frames at most.
+pub const MAX_REDRAWS: usize = 12;
 
 /// How the shadow atlas is set up: the start values of the quality preset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +154,69 @@ struct Slot {
     key: Option<TileKey>,
     /// True when the tile's depth shows its key, so it need not draw.
     clean: bool,
+    /// True when the tile holds depth that it drew for its key's light, if from an older place of
+    /// the light or its casters. Receivers can read it while the tile waits to draw again.
+    held: bool,
+    /// The frames that the tile has waited to draw again under the redraw cap.
+    waited: u32,
+}
+
+/// The shape of a tile's view from its light: its axes, x and y across the view and z against
+/// it, and the tangent of half its field of view, with the filter's margin.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct TileShape {
+    axes: [[f32; 3]; 3],
+    half_tan: f32,
+}
+
+impl TileShape {
+    /// The view of `face` of `light`, for tiles of `size` texels on each side.
+    fn of(light: &LightShadow, face: u32, size: u32) -> Self {
+        let (direction, half_tan) = if light.kind == kind::POINT {
+            (FACE_DIRECTIONS[face as usize], 1.0)
+        } else {
+            (light.direction, light.angle.min(MAX_HALF_ANGLE).tan())
+        };
+        let margin = 1.0 - 2.0 * FILTER_REACH as f32 / size.max(4 * FILTER_REACH) as f32;
+        Self {
+            axes: view_axes(direction),
+            half_tan: half_tan / margin,
+        }
+    }
+
+    /// True when a sphere of `radius` whose center lies `center` from the light touches the inside
+    /// of the view's four sides.
+    fn touches(&self, center: [f32; 3], radius: f32) -> bool {
+        let [x, y, z] = self.axes;
+        let along = -dot(center, z);
+        let reach = radius * (self.half_tan * self.half_tan + 1.0).sqrt();
+        [x, y]
+            .iter()
+            .all(|&axis| self.half_tan * along - dot(center, axis).abs() >= -reach)
+    }
+
+    /// False when the view, out to `range` from its light at `position` relative to the camera,
+    /// lies wholly outside `frustum`, a frustum relative to the camera: then no receiver in the
+    /// frustum reads the tile.
+    fn meets(&self, position: [f32; 3], range: f32, frustum: &Frustum) -> bool {
+        let [x, y, z] = self.axes;
+        let side = range * self.half_tan;
+        let corner = |a: f32, b: f32| -> [f32; 3] {
+            std::array::from_fn(|k| position[k] - z[k] * range + (x[k] * a + y[k] * b) * side)
+        };
+        let points = [
+            position,
+            corner(-1.0, -1.0),
+            corner(-1.0, 1.0),
+            corner(1.0, -1.0),
+            corner(1.0, 1.0),
+        ];
+        !frustum.planes().iter().any(|plane| {
+            points
+                .iter()
+                .all(|p| p[0] * plane[0] + p[1] * plane[1] + p[2] * plane[2] + plane[3] < 0.0)
+        })
+    }
 }
 
 /// The tiles as receivers read them, laid out as the shaders' `ShadowTiles` structure.
@@ -166,20 +259,48 @@ impl TileUniform {
     }
 }
 
-/// A shadow caster's world matrix and bounding sphere when the module last saw it, and its cell.
+/// A shadow caster as the module last saw it: its world matrix, bounding sphere, cell and layers,
+/// and the stamp of its pose (see [`pose_of`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Caster {
     matrix: [f32; 12],
     sphere: [f32; 4],
     cell: CellCoords,
+    layers: u32,
+    pose: u64,
 }
 
-/// A light that the frame gives tiles: its place in the shadow list, its first tile, and its
-/// position relative to the camera.
+impl Caster {
+    /// True when the caster draws into the tile of `light` whose view is `shape`: it shows, shares
+    /// a layer with the light, and its sphere reaches into the light's range and the tile's view.
+    fn casts_into(&self, light: &LightShadow, shape: &TileShape) -> bool {
+        let Some(center) = self.center_from(light) else {
+            return false;
+        };
+        shape.touches(center, self.sphere[3])
+    }
+
+    /// Where the caster's sphere center lies from `light`, when the caster shows, shares a layer
+    /// with the light and its sphere reaches into the light's range.
+    fn center_from(&self, light: &LightShadow) -> Option<[f32; 3]> {
+        let [x, y, z, radius] = self.sphere;
+        if radius == HIDDEN_RADIUS || light.layers & self.layers == 0 {
+            return None;
+        }
+        let offset = light.at.offset_to(self.cell);
+        let center = [offset[0] + x, offset[1] + y, offset[2] + z];
+        let reach = light.range + radius;
+        (dot(center, center) <= reach * reach).then_some(center)
+    }
+}
+
+/// A light that the frame gives tiles: its place in the shadow list, its first tile, its tiles,
+/// and its position relative to the camera.
 #[derive(Clone, Copy, Debug)]
 struct Lit {
     shadow: u32,
     first: u32,
+    faces: u32,
     position: [f32; 3],
 }
 
@@ -189,8 +310,12 @@ pub struct ShadowTiles {
     settings: TileSettings,
     shape: AtlasShape,
     slots: [Slot; MAX_TILES],
+    /// The shape of each tile's view in the frame planned last, for the tiles that lights hold.
+    shapes: [TileShape; MAX_TILES],
     /// Each tile's view in the frame planned last, for the tiles that draw in it.
     frames: [Option<ViewFrame>; MAX_TILES],
+    /// The tiles that the frame planned last left to wait under the redraw cap.
+    waiting: usize,
     /// The lights that hold tiles in the frame planned last.
     lit: Vec<Lit>,
     /// The candidates of the frame being planned, ranked: how large each looks, and its place in
@@ -202,6 +327,8 @@ pub struct ShadowTiles {
     /// Each scene slot's caster as last seen, while `casters_known` holds.
     casters: Vec<Caster>,
     casters_known: bool,
+    /// The scene slots of skinned and morphed objects, while `casters_known` holds.
+    posed: Vec<u32>,
     /// The last frame whose draw list created a pipeline.
     last_new_pipeline: u32,
 }
@@ -218,13 +345,16 @@ impl ShadowTiles {
             settings: TileSettings::default(),
             shape: AtlasShape { layers: 0, size: 0 },
             slots: [Slot::default(); MAX_TILES],
+            shapes: [TileShape::default(); MAX_TILES],
             frames: [None; MAX_TILES],
+            waiting: 0,
             lit: Vec::new(),
             ranked: Vec::new(),
             uniform: TileUniform::default(),
             held: None,
             casters: Vec::new(),
             casters_known: false,
+            posed: Vec::new(),
             last_new_pipeline: 0,
         }
     }
@@ -245,23 +375,30 @@ impl ShadowTiles {
         self.frames.iter().filter(|f| f.is_some()).count()
     }
 
+    /// The tiles that the frame planned last left to draw in a later frame under the redraw cap
+    /// ([`MAX_REDRAWS`]).
+    pub fn waiting(&self) -> usize {
+        self.waiting
+    }
+
     /// The uniform block of the frame planned last.
     pub fn uniform(&self) -> &TileUniform {
         &self.uniform
     }
 
     /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
-    /// `filter` texels, for a camera at `camera`, or for no camera: then no tile draws. Allocates
-    /// only when more lights cast shadows, or the scene holds more objects, than in any frame
-    /// before.
+    /// `filter` texels, for the camera's view `camera`, or for no camera: then no tile draws.
+    /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
+    /// frame before.
     pub fn plan(
         &mut self,
         input: &FrameInput<'_>,
         settings: TileSettings,
         filter: u32,
-        camera: Option<&CellPosition>,
+        camera: Option<&ViewFrame>,
     ) {
         self.frames = [None; MAX_TILES];
+        self.waiting = 0;
         self.lit.clear();
         let shadows = input.shadow_lights;
         let shape = self.shape_for(shadows, settings);
@@ -275,17 +412,25 @@ impl ShadowTiles {
             return;
         };
         self.assign(input.lights, shadows);
+        for lit in &self.lit {
+            let light = &shadows[lit.shadow as usize];
+            for face in 0..lit.faces {
+                self.shapes[(lit.first + face) as usize] = TileShape::of(light, face, shape.size);
+            }
+        }
         self.mark_moved_casters(input, shadows);
+        self.mark_posed_casters(input, shadows);
         self.uniform = TileUniform::default();
         let size = shape.size as f32;
         self.uniform.kernel = [size, 1.0 / size, filter as f32, 0.0];
+        let mut fresh = 0;
         for k in 0..self.lit.len() {
             let lit = self.lit[k];
             let light = &shadows[lit.shadow as usize];
-            let faces = faces_of(light);
-            for face in 0..faces {
+            for face in 0..lit.faces {
                 let tile = (lit.first + face) as usize;
-                let view = TileView::of(light, face, lit.position, shape.size);
+                let tile_shape = &self.shapes[tile];
+                let view = TileView::from_shape(tile_shape, light, lit.position, shape.size);
                 let key = TileKey {
                     light: light.light,
                     kind: light.kind,
@@ -302,13 +447,69 @@ impl ShadowTiles {
                     view.texel_per_meter,
                     light.bias,
                     light.normal_bias,
-                    faces as f32,
+                    lit.faces as f32,
                 ];
                 let slot = &mut self.slots[tile];
-                if slot.key != Some(key) || !slot.clean {
+                if slot.key != Some(key) {
                     slot.key = Some(key);
                     slot.clean = false;
-                    self.frames[tile] = Some(view.frame(*camera, light.layers));
+                }
+                if slot.clean || !tile_shape.meets(lit.position, light.range, &camera.frustum) {
+                    continue;
+                }
+                fresh += usize::from(!slot.held);
+                self.frames[tile] = Some(view.frame(camera.camera, light.layers));
+            }
+        }
+        self.cap_redraws(fresh);
+        for (slot, frame) in self.slots.iter_mut().zip(&self.frames) {
+            if frame.is_some() {
+                slot.held = true;
+                slot.waited = 0;
+            }
+        }
+    }
+
+    /// Keeps the frame's redraws, the tiles that draw again for their own light, within
+    /// [`MAX_REDRAWS`] less the `fresh` tiles that draw for the first time. Whole lights keep
+    /// their redraws, those whose tiles waited longest first, then the largest on screen. The
+    /// other lights' tiles wait for a later frame and keep the depth they hold.
+    fn cap_redraws(&mut self, fresh: usize) {
+        let redraws = |tiles: &Self, k: usize| {
+            let lit = tiles.lit[k];
+            (lit.first..lit.first + lit.faces)
+                .map(|t| t as usize)
+                .filter(|&t| tiles.frames[t].is_some() && tiles.slots[t].held)
+                .fold((0, 0), |(count, waited), t| {
+                    (count + 1, waited.max(tiles.slots[t].waited))
+                })
+        };
+        let total: usize = (0..self.lit.len()).map(|k| redraws(self, k).0).sum();
+        let mut left = MAX_REDRAWS.saturating_sub(fresh);
+        if total <= left {
+            return;
+        }
+        // Each light holds a tile at least, so a mask of the lights fits a word.
+        let mut done = 0u32;
+        while let Some((k, count)) = (0..self.lit.len())
+            .filter(|&k| done & (1 << k) == 0)
+            .map(|k| (k, redraws(self, k)))
+            .filter(|(_, (count, _))| *count > 0)
+            .max_by(|(a, (_, wa)), (b, (_, wb))| wa.cmp(wb).then(b.cmp(a)))
+            .map(|(k, (count, _))| (k, count))
+        {
+            done |= 1 << k;
+            if count <= left {
+                left -= count;
+                continue;
+            }
+            let lit = self.lit[k];
+            for t in lit.first..lit.first + lit.faces {
+                let t = t as usize;
+                if self.frames[t].is_some() && self.slots[t].held {
+                    self.frames[t] = None;
+                    self.slots[t].waited = self.slots[t].waited.saturating_add(1);
+                    self.waiting += 1;
                 }
             }
         }
@@ -343,7 +544,7 @@ impl ShadowTiles {
         if created_pipelines {
             self.last_new_pipeline = frame;
         }
-        if pipelines_built < self.last_new_pipeline {
+        if null3d_core::frames::frame_after(self.last_new_pipeline, pipelines_built) {
             return;
         }
         for (slot, drawn) in self.slots.iter_mut().zip(&self.frames) {
@@ -386,19 +587,25 @@ impl ShadowTiles {
     /// allocates nothing.
     pub fn reserve(&mut self, slots: usize) -> Result<(), std::collections::TryReserveError> {
         self.casters
-            .try_reserve(slots.saturating_sub(self.casters.len()))
+            .try_reserve(slots.saturating_sub(self.casters.len()))?;
+        self.posed
+            .try_reserve(slots.saturating_sub(self.posed.len()))
     }
 
     /// Forgets what the GPU holds, after the thread that draws replaced the GPU: every tile draws
-    /// again, and the uniform block uploads again.
+    /// again as a tile that holds no depth, and the uniform block uploads again.
     pub fn forget_gpu(&mut self) {
-        self.slots.iter_mut().for_each(|slot| slot.clean = false);
+        self.slots.iter_mut().for_each(|slot| {
+            slot.clean = false;
+            slot.held = false;
+        });
         self.held = None;
         self.last_new_pipeline = 0;
     }
 
     /// The atlas's shape for the lights that cast shadows: a layer for each tile that they could
-    /// fill, within the budget.
+    /// fill, within the budget, and no fewer than it has while some light casts and the settings
+    /// stay.
     fn shape_for(&self, shadows: &[LightShadow], settings: TileSettings) -> AtlasShape {
         let tiles: u32 = shadows
             .iter()
@@ -408,7 +615,10 @@ impl ShadowTiles {
                 _ => 0,
             })
             .sum();
-        let layers = tiles.min(settings.tiles).min(MAX_TILES as u32);
+        let mut layers = tiles.min(settings.tiles).min(MAX_TILES as u32);
+        if layers > 0 && settings == self.settings {
+            layers = layers.max(self.shape.layers);
+        }
         AtlasShape {
             layers,
             size: if layers > 0 { settings.size.max(1) } else { 0 },
@@ -528,6 +738,7 @@ impl ShadowTiles {
                 self.lit.push(Lit {
                     shadow: index,
                     first,
+                    faces: faces_of(light),
                     position,
                 });
             }
@@ -548,12 +759,12 @@ impl ShadowTiles {
             .find(|&first| (first..first + count).all(free))
     }
 
-    /// Marks the tiles of every light within reach of a caster that moved since the module last
-    /// saw it, before or after the move, as tiles that must draw. Remembers every caster from
-    /// scratch, and marks every tile, when it knows none yet or the upload list overflowed.
+    /// Marks the tiles whose views a caster that moved since the module last saw it touches,
+    /// before or after the move, as tiles that must draw. Remembers every caster from scratch, and
+    /// marks every tile, when it knows none yet, the upload list overflowed or the structure
+    /// changed.
     fn mark_moved_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
         let scene = input.scene;
-        let parity = input.parity();
         let slots = scene.slots().high_water() as usize + 1;
         if self.casters.len() < slots {
             if self.reserve(slots).is_err() {
@@ -564,8 +775,13 @@ impl ShadowTiles {
             self.casters.resize(slots, Caster::default());
         }
         if !self.casters_known || input.snapshot.overflowed() || input.structure_changed {
+            self.posed.clear();
             for (slot, caster) in self.casters[..slots].iter_mut().enumerate().skip(1) {
-                *caster = caster_of(scene, parity, slot);
+                *caster = caster_of(input, slot);
+                if caster.pose != 0 {
+                    // Room for every slot is reserved above, so this never allocates.
+                    self.posed.push(slot as u32);
+                }
             }
             self.casters_known = true;
             self.slots.iter_mut().for_each(|slot| slot.clean = false);
@@ -576,35 +792,56 @@ impl ShadowTiles {
                 continue;
             }
             for slot in range.start as usize..(range.start + range.count) as usize {
-                // Objects without a mesh, such as the lights themselves, draw nothing.
-                let casts = scene.flags()[slot] & flags::CAST_SHADOWS != 0;
-                if slot >= slots || !casts || scene.meshes()[slot] == NO_MESH {
+                if slot >= slots || !casts(scene, slot) {
                     continue;
                 }
-                let now = caster_of(scene, parity, slot);
+                let now = caster_of(input, slot);
                 let before = std::mem::replace(&mut self.casters[slot], now);
-                if before == now {
-                    continue;
+                if before != now {
+                    self.mark(shadows, &before, &now);
                 }
-                let layers = scene.layers()[slot];
-                for lit in &self.lit {
-                    let light = &shadows[lit.shadow as usize];
-                    if light.layers & layers == 0 {
-                        continue;
-                    }
-                    let reaches = |caster: &Caster| {
-                        let offset = light.at.offset_to(caster.cell);
-                        let [x, y, z, radius] = caster.sphere;
-                        let gap = [offset[0] + x, offset[1] + y, offset[2] + z];
-                        let reach = light.range + radius;
-                        radius != HIDDEN_RADIUS
-                            && gap[0] * gap[0] + gap[1] * gap[1] + gap[2] * gap[2] <= reach * reach
-                    };
-                    if reaches(&before) || reaches(&now) {
-                        for face in 0..faces_of(light) {
-                            self.slots[(lit.first + face) as usize].clean = false;
-                        }
-                    }
+            }
+        }
+    }
+
+    /// Marks the tiles whose views a skinned or morphed caster touches as tiles that must draw,
+    /// when its pose changed since the module last saw it. A pose can change while the caster's
+    /// sphere stays, as when an animated character moves its hands in front of its body. Only
+    /// casters within reach of a light that holds tiles stamp their pose.
+    fn mark_posed_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+        if !self.casters_known {
+            return;
+        }
+        for k in 0..self.posed.len() {
+            let slot = self.posed[k] as usize;
+            let Some(&before) = self.casters.get(slot) else {
+                continue;
+            };
+            let reached = self
+                .lit
+                .iter()
+                .any(|lit| before.center_from(&shadows[lit.shadow as usize]).is_some());
+            if !reached || !casts(input.scene, slot) {
+                continue;
+            }
+            let pose = pose_of(input, slot);
+            if pose != before.pose {
+                let now = Caster { pose, ..before };
+                self.casters[slot] = now;
+                self.mark(shadows, &before, &now);
+            }
+        }
+    }
+
+    /// Marks the tiles of the frame's lights into which `before` or `now`, a caster before and
+    /// after a change, draws as tiles that must draw.
+    fn mark(&mut self, shadows: &[LightShadow], before: &Caster, now: &Caster) {
+        for lit in &self.lit {
+            let light = &shadows[lit.shadow as usize];
+            for tile in lit.first as usize..(lit.first + lit.faces) as usize {
+                let shape = &self.shapes[tile];
+                if before.casts_into(light, shape) || now.casts_into(light, shape) {
+                    self.slots[tile].clean = false;
                 }
             }
         }
@@ -620,14 +857,67 @@ fn faces_of(light: &LightShadow) -> u32 {
     }
 }
 
-/// A scene slot's world matrix, bounding sphere and cell in the frame of `parity`.
-fn caster_of(scene: &SceneStorage, parity: usize, slot: usize) -> Caster {
+/// True when the object at scene slot `slot` casts shadows. Objects without a mesh, such as the
+/// lights themselves, draw nothing.
+fn casts(scene: &SceneStorage, slot: usize) -> bool {
+    scene.flags()[slot] & flags::CAST_SHADOWS != 0 && scene.meshes()[slot] != NO_MESH
+}
+
+/// A scene slot's caster in the frame `input`: its world matrix, bounding sphere, cell and
+/// layers, and its pose.
+fn caster_of(input: &FrameInput<'_>, slot: usize) -> Caster {
+    let (scene, parity) = (input.scene, input.parity());
     let world = scene.world(parity);
     Caster {
         matrix: *world.matrix(slot),
         sphere: world.sphere(slot),
         cell: scene.cell_position(slot as u32, parity).cell,
+        layers: scene.layers()[slot],
+        pose: pose_of(input, slot),
     }
+}
+
+/// A stamp of the pose that the object at scene slot `slot` draws with in the frame `input`: a
+/// hash of its animated instance's skinning matrices and of its morph weights, with the matrices
+/// of the instance that animates the weights. 0 for an object that is neither skinned nor
+/// morphed. Two poses that differ get different stamps, but for a chance of one in 2^64.
+fn pose_of(input: &FrameInput<'_>, slot: usize) -> u64 {
+    let scene = input.scene;
+    let skin = scene.skins().get(slot).copied().unwrap_or(0);
+    let morph = scene.morphs().get(slot).copied().unwrap_or(0);
+    if skin == 0 && morph == 0 {
+        return 0;
+    }
+    // 64-bit FNV-1a over the bits of each float.
+    let mut stamp = 0xcbf2_9ce4_8422_2325u64;
+    let mut add = |values: &[f32]| {
+        for value in values {
+            stamp = (stamp ^ u64::from(value.to_bits())).wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    let matrices = |instance: u32| {
+        let animations = input.animations?;
+        let (first, joints) = animations.instance_joints(instance)?;
+        let first = first as usize * MATRIX_FLOATS;
+        animations
+            .matrices()
+            .get(first..first + joints as usize * MATRIX_FLOATS)
+    };
+    if let Some(pose) = skin.checked_sub(1).and_then(matrices) {
+        add(pose);
+    }
+    if let Some(id) = morph.checked_sub(1) {
+        add(input.morphs.weights(id));
+        let linked = input.morphs.block(id).map_or(NOT_LINKED, |b| b.instance);
+        if let Some(pose) = (linked != NOT_LINKED).then(|| matrices(linked)).flatten() {
+            add(pose);
+        }
+    }
+    stamp
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 /// The axes of a view along `direction`, which has length 1: x and y across it, and z against
@@ -713,18 +1003,16 @@ pub struct TileView {
 
 impl TileView {
     /// The view of `face` of a light whose position relative to the camera is `position`, for
-    /// tiles of `size` texels on each side. A spot light's one tile holds its cone with a texel to
-    /// spare on each side, so the hardware filter never reads past the tile. A point light's tiles
-    /// each hold a quarter turn with the same margin.
+    /// tiles of `size` texels on each side. A spot light's one tile holds its cone with
+    /// [`FILTER_REACH`] texels to spare on each side, so the shadow filter never reads past what
+    /// the tile drew. A point light's tiles each hold a quarter turn with the same margin.
     pub fn of(light: &LightShadow, face: u32, position: [f32; 3], size: u32) -> Self {
-        let (direction, half_tan) = if light.kind == kind::POINT {
-            (FACE_DIRECTIONS[face as usize], 1.0)
-        } else {
-            (light.direction, light.angle.min(MAX_HALF_ANGLE).tan())
-        };
-        let margin = 1.0 - 2.0 / size.max(4) as f32;
-        let half_tan = half_tan / margin;
-        let [x, y, z] = view_axes(direction);
+        Self::from_shape(&TileShape::of(light, face, size), light, position, size)
+    }
+
+    fn from_shape(shape: &TileShape, light: &LightShadow, position: [f32; 3], size: u32) -> Self {
+        let half_tan = shape.half_tan;
+        let [x, y, z] = shape.axes;
         let world: Affine = [
             x[0],
             y[0],
@@ -794,6 +1082,12 @@ mod tests {
         }
     }
 
+    /// Where the edge of the view's cone or quarter turn lands in clip space, on a tile of `size`
+    /// texels: the filter's reach inside the tile's edge.
+    fn inside(size: u32) -> f32 {
+        1.0 - 2.0 * FILTER_REACH as f32 / size as f32
+    }
+
     /// A position relative to the camera through a column-major matrix, after the divide by w.
     fn project(m: &Mat4, p: [f32; 3]) -> [f32; 3] {
         let w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
@@ -803,16 +1097,16 @@ mod tests {
     }
 
     #[test]
-    fn a_spot_tile_holds_the_cone_with_a_texel_to_spare() {
+    fn a_spot_tile_holds_the_cone_with_the_filter_s_reach_to_spare() {
         let light = spot([0.0, -1.0, 0.0], 0.5);
         let at = [2.0, 5.0, -1.0];
         let view = TileView::of(&light, 0, at, 256);
-        // A point on the cone's edge, 6 m along it, lands one texel inside the tile.
+        // A point on the cone's edge, 6 m along it, lands the filter's reach inside the tile.
         let (sin, cos) = 0.5f32.sin_cos();
         let edge = [at[0] + 6.0 * sin, at[1] - 6.0 * cos, at[2]];
         let [x, y, depth] = project(&view.view_proj, edge);
         let largest = x.abs().max(y.abs());
-        assert!((largest - (1.0 - 2.0 / 256.0)).abs() < 1e-4, "{x} {y}");
+        assert!((largest - inside(256)).abs() < 1e-4, "{x} {y}");
         assert!((0.0..1.0).contains(&depth));
         // Depth is reversed: nearer the light is larger.
         let near = project(&view.view_proj, [at[0], at[1] - 1.0, at[2]])[2];
@@ -823,7 +1117,7 @@ mod tests {
         let r = view.depth.row;
         assert!((r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + r[3] - 4.0).abs() < 1e-5);
         // A texel at 4 m is 4 m times the texel per meter.
-        let half_tan = 0.5f32.tan() / (1.0 - 2.0 / 256.0);
+        let half_tan = 0.5f32.tan() / inside(256);
         assert!((view.texel_per_meter - 2.0 * half_tan / 256.0).abs() < 1e-7);
     }
 
@@ -863,7 +1157,7 @@ mod tests {
             let corner: [f32; 3] =
                 std::array::from_fn(|k| at[k] + (direction[k] + a[k] + b[k]) * 3.0);
             let [x, y, _] = project(&view.view_proj, corner);
-            let inside = 1.0 - 2.0 / 512.0;
+            let inside = inside(512);
             assert!((x.abs() - inside).abs() < 1e-4 && (y.abs() - inside).abs() < 1e-4);
         }
     }
@@ -894,7 +1188,7 @@ mod tests {
                     assert!(along > 0.0, "{d:?}");
                     let p: [f32; 3] = std::array::from_fn(|k| at[k] + d[k] * 4.0);
                     let [px, py, depth] = project(&views[face as usize].view_proj, p);
-                    let inside = 1.0 - 2.0 / 256.0 + 1e-5;
+                    let inside = inside(256) + 1e-5;
                     assert!(
                         px.abs() <= inside && py.abs() <= inside,
                         "{d:?} face {face}"
@@ -909,7 +1203,7 @@ mod tests {
     fn wide_cones_stop_at_the_steepest_tile_and_vertical_lights_have_axes() {
         let view = TileView::of(&spot([0.0, 1.0, 0.0], 1.5), 0, [0.0; 3], 1024);
         assert!(view.view_proj.iter().all(|v| v.is_finite()));
-        let half_tan = MAX_HALF_ANGLE.tan() / (1.0 - 2.0 / 1024.0);
+        let half_tan = MAX_HALF_ANGLE.tan() / inside(1024);
         assert!((view.texel_per_meter - 2.0 * half_tan / 1024.0).abs() < 1e-6);
     }
 
@@ -921,6 +1215,49 @@ mod tests {
         for (a, b) in ours.iter().zip(&camera) {
             assert!((a - b).abs() < 1e-5, "{ours:?} {camera:?}");
         }
+    }
+
+    #[test]
+    fn a_sphere_touches_the_faces_it_reaches_into_and_no_other() {
+        let mut light = spot([0.0; 3], 0.0);
+        light.kind = kind::POINT;
+        let faces: Vec<TileShape> = (0..POINT_FACES as u32)
+            .map(|face| TileShape::of(&light, face, 512))
+            .collect();
+        let touched = |center: [f32; 3], radius: f32| -> Vec<usize> {
+            (0..POINT_FACES)
+                .filter(|&f| faces[f].touches(center, radius))
+                .collect()
+        };
+        // Well inside one face, across the edge of two, at a corner of three, around the light.
+        assert_eq!(touched([0.0, -3.0, 0.0], 0.5), [3]);
+        assert_eq!(touched([3.0, -3.0, 0.0], 0.5), [0, 3]);
+        assert_eq!(touched([3.0, -3.0, 3.0], 0.5), [0, 3, 4]);
+        assert_eq!(touched([0.2, 0.0, 0.0], 0.5), [0, 1, 2, 3, 4, 5]);
+        // A point on a face's edge lies in both faces.
+        assert_eq!(touched([2.0, 2.0, 0.0], 0.0), [0, 2]);
+    }
+
+    #[test]
+    fn a_tile_meets_the_camera_s_view_unless_its_view_lies_wholly_outside_one_plane() {
+        // A view straight down -z from the camera, 90 degrees wide, from 0.1 m to 100 m.
+        let projection =
+            crate::camera::perspective_reversed(std::f32::consts::FRAC_PI_2, 1.0, 0.1, 100.0);
+        let frustum = Frustum::from_view_projection(&projection);
+        let mut light = spot([0.0; 3], 0.0);
+        light.kind = kind::POINT;
+        // 5 m behind the camera, the light reaches 5 m into the view through its -z face alone.
+        let behind = [0.0, 0.0, 5.0];
+        let met: Vec<u32> = (0..POINT_FACES as u32)
+            .filter(|&f| TileShape::of(&light, f, 512).meets(behind, 10.0, &frustum))
+            .collect();
+        assert_eq!(met, [5]);
+        // In front of the camera, every face meets the view.
+        let ahead = [0.0, 0.0, -20.0];
+        assert!(
+            (0..POINT_FACES as u32)
+                .all(|f| TileShape::of(&light, f, 512).meets(ahead, 10.0, &frustum))
+        );
     }
 
     #[test]

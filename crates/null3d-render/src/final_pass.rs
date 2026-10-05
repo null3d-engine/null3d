@@ -1,11 +1,11 @@
 //! The final pass: one triangle over the canvas, which reads the scene color and writes the canvas
-//! (see [`crate::output`]). On the HDR path it applies the exposure and the tone mapping, encodes
-//! sRGB and dithers. In the FXAA mode it smooths edges first. On the 8-bit path the scene shaders
+//! (see [`crate::output`]). On the HDR path it applies the tone mapping, encodes sRGB and dithers.
+//! The scene color holds exposed color already, so the pass's exposure is 1. In the FXAA mode it smooths edges first. On the 8-bit path the scene shaders
 //! did the output transform, and the pass runs when the scene has one sample per pixel or the
 //! render scale can drop: it copies the scene color, or runs FXAA on it. Below the whole canvas's
 //! render scale, it scales the scene's corner of the scene color up to the canvas instead. With
-//! bloom (see [`crate::bloom`]), the pass draws with its bloom build, which adds bloom's levels to
-//! the scene color before the output transform. While objects are outlined, the pass paints the
+//! bloom (see [`crate::bloom`]), the pass draws with its bloom build, which blends the base level of
+//! bloom's chain into the scene color before the output transform. While objects are outlined, the pass paints the
 //! outline's line around them after the output transform (see [`crate::outline`]). Last, it grades
 //! the canvas color with a color grading table and the vignette while the sketch sets them (see
 //! [`crate::grading`]). Each frame builder owns one, with GPU object ids from its own ranges, and
@@ -16,11 +16,11 @@ use null3d_gpu::drawlist::{
     permutation, resource_kind, state_flags, template, texture_usage, view,
 };
 
-use crate::bloom::{BloomIds, FINAL_OFFSET, LEVELS};
+use crate::bloom::{BloomIds, FINAL_OFFSET};
 use crate::frame::{RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::outline::Outline;
-use crate::output::{Antialias, Output, OutputUniform, SceneColor};
+use crate::output::{Antialias, Output, OutputUniform, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
 /// Bytes of the final pass's settings: the output settings, then the vignette's vector, the color
@@ -66,8 +66,8 @@ impl FinalUniform {
 
 /// The final pass's pipeline: it draws into the canvas, with no depth and no antialiasing. The
 /// shader makes its triangle from the vertex index, so it reads no vertex buffer, and the triangle
-/// covers the canvas whichever way it winds. The FXAA build smooths edges, and the bloom build adds
-/// bloom's levels.
+/// covers the canvas whichever way it winds. The FXAA build smooths edges, and the bloom build
+/// blends in bloom's base level.
 const fn pipeline(fxaa: bool, bloom: bool) -> PipelineKey {
     PipelineKey {
         template: if bloom {
@@ -112,21 +112,21 @@ pub(crate) struct OutlineInputs {
 }
 
 /// What the final pass's bloom build reads: bloom's uniform buffer and sampler, and the texture of
-/// each level.
+/// the chain's base level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct BloomInputs {
     pub(crate) buffer: u32,
     pub(crate) sampler: u32,
-    pub(crate) levels: [u32; LEVELS],
+    pub(crate) base: u32,
 }
 
 impl BloomInputs {
-    /// The inputs of `ids`'s buffer and sampler, with each level's texture.
-    pub(crate) fn new(ids: BloomIds, levels: [u32; LEVELS]) -> Self {
+    /// The inputs of `ids`'s buffer and sampler, with the base level's texture.
+    pub(crate) fn new(ids: BloomIds, base: u32) -> Self {
         Self {
             buffer: ids.buffer,
             sampler: ids.sampler,
-            levels,
+            base,
         }
     }
 }
@@ -186,19 +186,24 @@ impl FinalPass {
     /// Asks `pipelines` for the pass's pipeline, once, and for its bloom build's once a frame has
     /// `bloom`. A builder asks before it records the pipelines that its frame creates, so the list
     /// creates them with the others, at its start.
-    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache, bloom: bool) {
+    pub(crate) fn request_pipeline(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        bloom: bool,
+    ) -> Option<u32> {
         if self.pipeline.is_none() {
             self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false)));
         }
         if bloom && self.bloom_pipeline.is_none() {
             self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true)));
         }
+        self.bloom_pipeline
     }
 
-    /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for `output`,
-    /// the scene's size in pixels, `render_size`, `grading` and `outline` when they changed, and
-    /// binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom build, the
-    /// color grading table and the outline mask, when they are new. The frame's list made
+    /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for
+    /// `tone_mapping`, the scene's size in pixels, `render_size`, `grading` and `outline` when they
+    /// changed, and binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom
+    /// build, the color grading table and the outline mask, when they are new. The frame's list made
     /// the plan's textures again when `textures_made`, which leaves an older bind group reading a
     /// texture that is gone.
     #[allow(clippy::too_many_arguments)]
@@ -206,7 +211,7 @@ impl FinalPass {
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
-        output: Output,
+        tone_mapping: ToneMapping,
         render_size: (u32, u32),
         scene_color: u32,
         bloom: Option<BloomInputs>,
@@ -219,6 +224,10 @@ impl FinalPass {
             Self::create_objects(list, ids)?;
             self.created = true;
         }
+        let output = Output {
+            tone_mapping,
+            exposure: 1.0,
+        };
         let mut settings = FinalUniform {
             output: OutputUniform {
                 flags: self.flags,
@@ -276,9 +285,7 @@ impl FinalPass {
                 None => bind_layout::FINAL,
                 Some(bloom) => {
                     entry(2, resource_kind::BUFFER, bloom.buffer, FINAL_OFFSET, 0);
-                    for (level, &texture) in bloom.levels.iter().enumerate() {
-                        entry(3 + level as u32, resource_kind::TEXTURE, texture, 0, 0);
-                    }
+                    entry(3, resource_kind::TEXTURE, bloom.base, 0, 0);
                     entry(8, resource_kind::SAMPLER, bloom.sampler, 0, 0);
                     bind_layout::FINAL_BLOOM
                 }
@@ -404,7 +411,7 @@ mod tests {
         pass.prepare(
             &mut list,
             &mut arena,
-            Output::default(),
+            ToneMapping::default(),
             (64, 64),
             5,
             None,
@@ -438,7 +445,7 @@ mod tests {
                 let (key, settings, _) = prepared(scene, antialias, Grading::default());
                 assert_eq!(key.permutation, bits, "{antialias:?}");
                 assert_eq!(settings.output.flags, flags, "{scene}");
-                assert_eq!(settings.output.exposure, Output::default().exposure);
+                assert_eq!(settings.output.exposure, 1.0);
             }
         }
     }

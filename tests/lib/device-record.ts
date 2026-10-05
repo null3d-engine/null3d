@@ -168,13 +168,37 @@ export interface DeviceFacts extends BrowserFacts {
 	devicePixelRatio?: number;
 	/** The address the runner page loaded from, which names the cloud for a cloud device. */
 	origin?: string;
+	/** The display's refresh rate in hertz, or null when the page got no animation frames in time. */
+	refreshRateHz?: number | null;
+	/** Whether the browser reported the page `visible` or `hidden` when the page read the device. */
+	visibility?: string;
 }
+
+/**
+ * The record that a runner page posts, beside its results, when the browser gives it no animation
+ * frames in time. The runner page then stops, and the runner tool ends its turn.
+ */
+export const NO_FRAMES = 'no-frames';
+
+/** What the no-frames record holds. */
+export interface NoFramesRecord {
+	/** Whether the browser reported the page `visible` or `hidden`. */
+	visibility: string;
+	/** The step that waited for frames: `device`, or the id of the page about to run. */
+	step: string;
+}
+
+/** Why a page got no animation frames, from what the browser reported about it. */
+export const noFramesText = (visibility: string | undefined) =>
+	visibility === 'hidden'
+		? 'the browser reports the page hidden, so it gets no animation frames'
+		: 'the browser gives the page no animation frames, although it does not report the page hidden';
 
 /**
  * How the runner reached a browser: an app on this Mac, the phone over USB, the network, or a
  * session that it opened on a device cloud.
  */
-export type LaunchKind = 'mac' | 'android' | 'lan' | 'cloud';
+export type LaunchKind = 'mac' | 'linux' | 'android' | 'lan' | 'cloud';
 
 /** One runner's outcome in a run, with what the record's row needs besides the device. */
 export interface RowInput {
@@ -287,6 +311,7 @@ function whereText(launch: LaunchKind, origin: string | undefined): string {
 	if (origin?.includes('bs-local.com')) return 'BrowserStack Live';
 	if (origin?.includes('testingbot')) return "TestingBot's device cloud";
 	if (launch === 'mac') return "the owner's Mac";
+	if (launch === 'linux') return 'a Linux machine';
 	if (launch === 'android') return "the owner's phone";
 	return '';
 }

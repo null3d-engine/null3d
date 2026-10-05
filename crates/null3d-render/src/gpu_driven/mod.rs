@@ -112,9 +112,9 @@ mod transparent;
 
 use std::collections::TryReserveError;
 
-use null3d_gpu::caps::{BUDGET, Limit};
+use null3d_gpu::caps::{BUDGET, Limit, MAX_WORKGROUPS_PER_DIMENSION};
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, format, sizes, texture_usage, view,
+    DrawList, MAX_WORDS, Op, buffer_usage as usage, format, sizes, texture_usage, view,
 };
 
 use crate::ao::{self, AoIds};
@@ -123,6 +123,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
@@ -132,7 +133,7 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
-use crate::meshes::{MeshStorage, Packing};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
@@ -176,7 +177,7 @@ pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDIN
 /// The largest storage binding the builder can use: the instance buffer of the most sources one
 /// dispatch covers. A device that offers more gains nothing from a larger binding.
 pub const MAX_USEFUL_BINDING_BYTES: u32 =
-    u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
+    MAX_WORKGROUPS_PER_DIMENSION * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
 
 /// The error of a table that memory could not grow for.
 fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
@@ -240,11 +241,15 @@ mod ids {
     pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = LIGHT_PARAMS + 1;
-    /// The skinned vertices that the skinning pass writes and the passes that draw skinned meshes
-    /// read.
-    pub const SKINNED: u32 = BLOOM + 1;
-    /// The skinning pass's table of formats and parts, one segment per mesh page.
-    pub const SKIN_TABLE: u32 = SKINNED + 1;
+    /// The skinned vertex buffers that the skinning pass writes and the passes that draw skinned
+    /// meshes read, one id each from here.
+    const SKINNED: u32 = BLOOM + 1;
+
+    pub const fn skinned(buffer: u32) -> u32 {
+        SKINNED + buffer
+    }
+    /// The skinning pass's table of formats and parts, one segment per dispatch.
+    pub const SKIN_TABLE: u32 = SKINNED + super::skin::MAX_SKINNED_BUFFERS;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = SKIN_TABLE + 1;
     /// The outlined objects' bucket table and bucket records, which the outline view's culling
@@ -260,8 +265,10 @@ mod ids {
     pub const CUSTOM_VALUES: u32 = DFG + 1;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
+    /// The blank cube that the frame's groups bind while the scene has no environment.
+    pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = BLANK_LUT + 1;
+    pub const JOINTS: u32 = BLANK_ENVIRONMENT + 1;
     /// Every morphed mesh's deltas, in half floats (see [`crate::morph`]).
     pub const MORPHS: u32 = JOINTS + 1;
     /// Every morphed object's weights (see [`crate::morph`]).
@@ -274,22 +281,30 @@ mod ids {
     pub const TARGETS: u32 = BLANK_OUTLINE + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The comparison sampler of the shadow map.
+    /// The comparison sampler of the shadow atlas.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
     /// The linear sampler of the final pass's color grading table.
     pub const LUT_SAMPLER: u32 = 3;
+    /// The sampler of the environment's cube texture.
+    pub const ENVIRONMENT_SAMPLER: u32 = 4;
+    /// The sampler that reads four texels of the shadow map at once.
+    pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 4;
+    pub const SAMPLERS: u32 = 6;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
     pub const LIGHT_COUNT: u32 = 2;
     pub const LIGHT_PLACE: u32 = 3;
     pub const LIGHT_WRITE: u32 = 4;
-    /// The skinning pass's pipeline.
+    /// The skinning pass's pipelines: for vertex formats without a tangent, and with one, then
+    /// the same for formats whose color the pass morphs.
     pub const SKIN: u32 = 5;
+    pub const SKIN_TANGENT: u32 = 6;
+    pub const SKIN_COLOR: u32 = 7;
+    pub const SKIN_TANGENT_COLOR: u32 = 8;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
     pub const fn frame_group(view: ViewId) -> u32 {
@@ -308,11 +323,10 @@ mod ids {
     }
     /// The bind group of each step of bloom, after the groups of the depth prepass.
     pub const BLOOM_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
-    /// The skinning pass's bind group for each mesh page that holds skinned meshes, by its place
-    /// among those pages, after bloom's.
+    /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
-    pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_PAGES;
+    pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_SEGMENTS;
     /// The bind group of each step of ambient occlusion, after the joint texture's.
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
     /// The bind groups of materials' maps, after ambient occlusion's.
@@ -336,8 +350,10 @@ pub struct RendererConfig {
     /// memory (`Capabilities::TRANSIENT_ATTACHMENTS`).
     pub transient_attachments: bool,
     pub max_materials: u32,
-    /// Words of each frame's draw list.
+    /// Words of room in each frame's draw list at the start. A list grows when a frame needs more.
     pub draw_list_words: usize,
+    /// The most words that a frame's draw list grows to. A frame that needs more fails.
+    pub draw_list_limit: usize,
     /// The device's largest storage binding, at most [`MAX_USEFUL_BINDING_BYTES`]. It caps the
     /// builder's buffers and the sources it can draw.
     pub storage_binding_bytes: u32,
@@ -361,6 +377,7 @@ impl Default for RendererConfig {
             transient_attachments: false,
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 16 * 1024,
+            draw_list_limit: MAX_WORDS,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
             cell_culling: true,
             light_limits: LightLimits::default(),
@@ -425,12 +442,16 @@ pub struct GpuDrivenRenderer {
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
+    /// The cube texture that the camera views' frame groups bind: the environment's, or the
+    /// blank one.
+    bound_environment: u32,
 }
 
-/// The builder's scene settings: meshes in shared buffers, `max_materials` materials, textures
+/// The builder's scene settings from `config`: meshes in shared buffers, each page within one
+/// storage binding, which the skinning pass reads it through, `max_materials` materials, textures
 /// with the builder's ids, as large as every WebGPU device allows, and frames that reach the canvas
 /// as `canvas` says.
-fn scene_settings(max_materials: u32, canvas: CanvasOutput) -> SceneSettings {
+fn scene_settings(config: &RendererConfig) -> SceneSettings {
     let textures = TextureStore::new(
         TextureIds {
             first_texture: ids::TEXTURE_ARRAYS,
@@ -440,10 +461,13 @@ fn scene_settings(max_materials: u32, canvas: CanvasOutput) -> SceneSettings {
         BUDGET[Limit::TextureDimension2D as usize],
     );
     SceneSettings::new(
-        MeshStorage::new(Packing::SharedBuffers),
-        max_materials,
+        MeshStorage::with_page_limit(
+            Packing::SharedBuffers,
+            MAX_BUFFER_BYTES.min(u64::from(config.storage_binding_bytes)),
+        ),
+        config.max_materials,
         textures,
-        canvas,
+        config.canvas,
     )
 }
 
@@ -451,10 +475,10 @@ impl GpuDrivenRenderer {
     pub fn new(config: RendererConfig) -> Self {
         Self {
             config,
-            settings: scene_settings(config.max_materials, config.canvas),
+            settings: scene_settings(&config),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
-            lists: ParityLists::new(config.draw_list_words),
+            lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
             graph: {
                 let mut graph = FrameGraph::new(
                     true,
@@ -510,6 +534,7 @@ impl GpuDrivenRenderer {
             cascades_held: false,
             created: false,
             dfg_pending: false,
+            bound_environment: ids::BLANK_ENVIRONMENT,
         }
     }
 
@@ -568,7 +593,13 @@ impl GpuDrivenRenderer {
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
-        let camera = self.settings.camera_position(input.scene, parity);
+        let camera = self.settings.view_frame(
+            ViewId::CAMERA,
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
+        );
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
         self.tiles
@@ -583,11 +614,19 @@ impl GpuDrivenRenderer {
             .ao()
             .zip(self.settings.camera_projection(input.canvas));
         self.graph.set_ao(ao, self.settings.ao_scale());
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skinning
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         let upload_everything = input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
-            || self.graph.depth_prepass() != self.layout_prepass;
+            || self.graph.depth_prepass() != self.layout_prepass
+            || skinned_appear;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
@@ -597,7 +636,9 @@ impl GpuDrivenRenderer {
                 input.animations,
                 input.morphs,
                 self.settings.meshes(),
-            );
+                self.config.storage_binding_bytes,
+            )?;
+            self.skinning.open_before_first_frame(input.pipelines_built);
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -623,10 +664,7 @@ impl GpuDrivenRenderer {
                     |_, _| (0, 0),
                     0,
                     shadows,
-                    |slot, key| {
-                        let object = skinning.object(slot as u32)?;
-                        Some(skinning.skinned_key(&object, key))
-                    },
+                    |slot, key| skinning.sorted_pipeline(slot as u32, key),
                 )
                 .map_err(out_of_memory)?;
             // The casters' layout holds buckets only while the light casts shadows.
@@ -646,6 +684,7 @@ impl GpuDrivenRenderer {
             } else {
                 self.casters.clear();
             }
+            self.skinning.asked();
             self.layouts_shadowed = shadows;
             // The outlined layout holds buckets only while outlines are on.
             if outlines {
@@ -683,11 +722,6 @@ impl GpuDrivenRenderer {
         self.transparent
             .reserve(&self.sorted, views)
             .map_err(out_of_memory)?;
-        list.reserve_words(
-            self.config.draw_list_words
-                + Transparent::words_bound(&self.sorted, views)
-                + self.bundles_bound(),
-        );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         let mut created_pipelines = !self.created;
@@ -701,18 +735,19 @@ impl GpuDrivenRenderer {
             self.graph.scene_targets(),
         );
         self.graph
-            .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
+            .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
-        self.graph.request_pipelines(&mut self.pipelines);
+        self.graph
+            .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        created_pipelines |= self.skinning.create_pipeline(list)?;
-        created_pipelines |= self.pipelines.create_new(list)? > 0;
+        created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
+        created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }
@@ -750,7 +785,14 @@ impl GpuDrivenRenderer {
                 shadow::bind_depth(list, ids::prepass_group(view), view)?;
             }
             if index >= first_new || self.graph.textures_made() {
-                opaque::bind_frame(list, view, shadow_map, atlas, occlusion)?;
+                opaque::bind_frame(
+                    list,
+                    view,
+                    shadow_map,
+                    atlas,
+                    occlusion,
+                    self.bound_environment,
+                )?;
             }
         }
         self.views_made = self.views_made.max(views);
@@ -823,6 +865,19 @@ impl GpuDrivenRenderer {
         let groups_remade = self
             .settings
             .record_materials(list, arena, table, input.frame)?;
+        // The environment's map may have finished its upload, or gone, with this frame's texture
+        // work, so the views read it from here on.
+        let (environment, lit) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
+        if environment != self.bound_environment {
+            self.bound_environment = environment;
+            for index in 0..views {
+                let view = ViewId::from_index(index);
+                opaque::bind_frame(list, view, shadow_map, atlas, occlusion, environment)?;
+            }
+        }
+        for frame in self.frames.iter_mut().flatten() {
+            frame.uniform.environment = lit;
+        }
         self.graph.upload(
             list,
             arena,
@@ -1094,7 +1149,12 @@ impl GpuDrivenRenderer {
     /// and three.js's table of specular terms, whose sizes never change, and of the shadows'
     /// uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
+        shadows::create_objects(
+            list,
+            ids::SHADOWS,
+            ids::SHADOW_SAMPLER,
+            Some(ids::SHADOW_TEXEL_SAMPLER),
+        )?;
         ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         let materials = self.config.max_materials.max(1);
         list.push(
@@ -1120,24 +1180,12 @@ impl GpuDrivenRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         lights::create(list, &self.lights)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
-    }
-
-    /// The most words that one frame's bundles take for the scene as it stands, when the frame
-    /// records them all: each camera view's, and its depth prepass's, each cascade's and shadow
-    /// tile's, and the outline view's, which draws its buckets twice. The list grows only when the
-    /// layouts do, so steady frames allocate nothing.
-    fn bundles_bound(&self) -> usize {
-        let cameras = 2 * self.settings.views().len();
-        let tiles = self.settings.tile_settings().tiles as usize;
-        let shadow_views = MAX_CASCADES + tiles.min(MAX_TILES);
-        cameras * opaque::bundle_words(&self.layout)
-            + shadow_views * opaque::bundle_words(&self.casters)
-            + 2 * opaque::bundle_words(&self.outlined)
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
@@ -1202,10 +1250,9 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
-        let (mut list, mut arena) = self.lists.take(input.frame);
+        let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
-        self.lists.restore(input.frame, list, arena);
-        result
+        self.lists.restore(input.frame, list, arena, result)
     }
 
     fn casts_tile_shadows(&self) -> bool {
@@ -1213,7 +1260,9 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn reset_gpu(&mut self) {
+        self.lists.reset_gpu();
         self.created = false;
+        self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();

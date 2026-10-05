@@ -14,18 +14,23 @@
 // S4, the phone scene, with its shadows, street lights and quality governor. `--blend` makes
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass.
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
-// and an additive one, and fire events to the sketch's handlers through the animator. `--morphed 64`
+// and an additive one, play phase-synced blends and clips at weights that the sketch moves, and
+// fire events to the sketch's handlers through the animator. `--morphed 64`
 // adds 64 spheres with three morph targets each, whose weights the sketch sets in every frame.
 // `--grading`
 // gives S1 a color grading table and the vignette, and changes both every frame. `--sprites` draws
 // S1's swarm as one dynamic batch of blended sprites instead of boxes, and `--lines` as one dynamic
 // batch of dashed line segments, whose dashes move every frame. `--labels 256` adds 256
 // objects to S1, each with an HTML label that the page binds. `--ao` turns ambient occlusion
-// on in S1, and changes its intensity every frame. The camera orbits, so each frame
+// on in S1, and changes its intensity every frame. `--bloom` turns bloom on in S1, and changes
+// its intensity every frame, so the core writes the chain's settings again in each frame. The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
-// line's width every frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build of the
-// benchmark pages, as a developer ships the engine, and names
+// line's width every frame. `--tile-shadows` adds two point lights and two spot lights that cast
+// shadows to S1, with casters that circle them, so tiles of the shadow atlas draw again every
+// frame. `--environment` lights S1 with the built-in room, and turns it and changes its intensity
+// every frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build
+// of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
 // objects count in its own place, not in its caller's; budgets then do not hold, so read the places,
@@ -43,10 +48,12 @@
 //   bun run bench:allocation --sprites --gpu webgl2
 //   bun run bench:allocation --lines --gpu webgl2
 //   bun run bench:allocation --ao --gpu webgl2
+//   bun run bench:allocation --bloom --gpu webgl2
 //   bun run bench:allocation --outline --gpu webgl2
 //   bun run bench:allocation --scene s4 --prepass --gpu webgl2
 //   bun run bench:allocation --labels 256 --gpu webgl2
 //   bun run bench:allocation --labels 256 --no-inline
+//   bun run bench:allocation --environment --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
@@ -139,6 +146,21 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
 
+/**
+ * What `--tile-shadows` adds to the WebGPU replay's budget: the browser's encoder of each tile's
+ * culling pass and render pass, about 17 bytes each, for the most tiles that draw again in a frame
+ * (`MAX_REDRAWS` in `shadow_tiles.rs`). Moving casters draw tiles in every frame of that page.
+ */
+const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
+
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the
+ * encoders of bloom's render passes, which the browser returns for each pass. The default bloom
+ * draws 15 passes, and with them the replay allocated about 56 bytes more per pass, 836 per frame
+ * in all, on the Mac.
+ */
+const BLOOM_REPLAY_BUDGET = 15 * 64;
+
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
@@ -219,13 +241,20 @@ async function main(): Promise<void> {
 		if (lines && scene !== 's1') throw new Error('--lines draws S1 as lines only');
 		const ao = args.includes('--ao') ? '&ao' : '';
 		if (ao && scene !== 's1') throw new Error('--ao turns ambient occlusion on in S1 only');
+		const bloom = args.includes('--bloom') ? '&bloom' : '';
+		if (bloom && scene !== 's1') throw new Error('--bloom turns bloom on in S1 only');
 		const outline = args.includes('--outline') ? '&outline' : '';
 		if (outline && scene !== 's1') throw new Error('--outline outlines boxes in S1 only');
 		const prepass = args.includes('--prepass') ? '&prepass=on' : '';
 		const labelCount = option('--labels', 0);
 		if (labelCount > 0 && scene !== 's1') throw new Error('--labels adds labels to S1 only');
 		const labels = labelCount > 0 ? `&labels=${labelCount}` : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${outline}${prepass}${labels}`;
+		const tileShadows = args.includes('--tile-shadows') ? '&tileShadows' : '';
+		if (tileShadows && scene !== 's1')
+			throw new Error('--tile-shadows adds shadowed spot and point lights to S1 only');
+		const environment = args.includes('--environment') ? '&environment' : '';
+		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -304,7 +333,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
@@ -314,7 +343,11 @@ async function main(): Promise<void> {
 			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
-				const budget = budgets[name] ?? OTHER_BUDGET;
+				const replay = name === 'replay webgpu/backend.ts';
+				const extra =
+					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
+					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0);
+				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
 					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)} (${most.toFixed(1).padStart(6)})  ${name}${callers ? ` < ${callers}` : ''}`,

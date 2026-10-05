@@ -1,14 +1,14 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: the render scale first, then how often far shadow cascades draw, then the
-// shadow filter, then bloom's samples, then ambient occlusion's scale. When the frames have time to
+// shadow filter, then bloom's base, then ambient occlusion's scale. When the frames have time to
 // spare again, it raises them in the reverse order. It never changes a setting that is fixed while
 // a preset runs.
 //
 // The render scale is a part of the canvas's width and height, in whole thousandths, which the core
 // turns into an exact size in pixels. Scene passes draw into that corner of targets the size of the
 // canvas, and the final pass scales it up to the canvas, so a new scale makes no GPU object. The
-// shadow steps are numbers in a uniform and a schedule, bloom's samples numbers in a uniform, and
-// ambient occlusion's scale a corner of the same targets, so they make none either.
+// shadow steps are numbers in a uniform and a schedule, and bloom's base and ambient occlusion's
+// scale corners of the same targets, so they make none either.
 //
 // The governor judges the frames in windows of a quarter second. It takes a step down when the
 // frames of the last second, on average, missed the line at which the benchmark reports count a
@@ -21,13 +21,16 @@
 // quick. A shadow step happens only where the scene has a light that casts shadows, and only where
 // the step changes what the frame draws: the far cascades need a directional light with two
 // cascades or more, and the filter any light that casts shadows. A bloom step happens only while
-// the sketch has bloom on: each halves the taps of bloom's blurs. The ambient occlusion step happens
-// only while it draws at half the render size: it draws at a quarter.
+// the sketch has bloom on, above the smallest base: it halves the base, and the chain drops its
+// narrowest level, so the glow keeps its size. The ambient occlusion step happens only while it
+// draws at half the render size: it draws at a quarter.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
-// times a second, so the browser may never optimize it, and unoptimized code makes a number object
-// for each fraction. So it works in whole numbers alone: clock times in whole ms, and frame times in
-// whole microseconds, in typed arrays of 32-bit integers.
+// times a second, so the browser may never optimize it. Unoptimized code makes a number object for
+// each fraction, for each number it reads from a typed array of floats, and for each whole number
+// past 31 bits. So the governor works in small whole numbers alone, in typed arrays of 32-bit
+// integers: frame times in whole microseconds, and clock times in whole ms from an origin that the
+// frame loop moves forward while the page runs.
 
 import { SHADOW_CASTERS_CASCADE_MASK, SHADOW_CASTERS_TILES } from '../generated/core';
 import {
@@ -55,19 +58,11 @@ export function thousandths(scale: number): number {
 export const LONGEST_FAR_INTERVAL = QUALITY_SETTINGS.farCascadeInterval.values.max;
 /** The lightest shadow filter, in texels on each side. */
 export const LIGHTEST_FILTER = QUALITY_SETTINGS.shadowFilter.values[0];
-/** The fewest of three.js's taps that bloom's blurs read: one in this many. */
-export const LONGEST_BLOOM_DIVISOR = 1 / QUALITY_SETTINGS.bloomSamples.values[0];
+/** The smallest base of bloom's chain, in texels on the short side, which its step stops above. */
+export const SMALLEST_BLOOM_SIZE = QUALITY_SETTINGS.bloomSize.values[0];
 
 /** The smallest scale of ambient occlusion's targets above none, in thousandths of the render size. */
 export const LOWEST_AO_SCALE = thousandths(QUALITY_SETTINGS.aoScale.values[1]);
-
-/**
- * The divisor of bloom's taps for a share of them from the `bloomSamples` setting: 1 for all of
- * them, 2 for half, 4 for a quarter.
- */
-export function bloomDivisor(samples: number): number {
-	return Math.min(LONGEST_BLOOM_DIVISOR, Math.max(1, Math.round(1 / samples)));
-}
 
 /**
  * The governor's steps of the far cascades' interval from `interval` on: each step doubles it, up to
@@ -118,9 +113,19 @@ export const ROOM_PERCENT = 102;
  * never show room there.
  */
 export const ROOM_DELAY_PERCENT = 125;
+/**
+ * The governor's clock moves its origin forward when it reaches this time, in ms: about 6 days, well
+ * within the 31 bits of a whole number that the browser keeps without a number object.
+ */
+export const CLOCK_LIMIT_MS = 2 ** 29;
+/**
+ * The clock's time after its origin moves, in ms. It is longer than any span that the rules compare,
+ * so a time older than the new origin can take the origin's place and every verdict stays the same.
+ */
+const CLOCK_KEPT_MS = 2 * LONGEST_RAISE_AFTER_MS;
 
 // The figures of one window of frames, by index in `Governor.window`.
-/** The time at the window's end, in whole ms. */
+/** The time at the window's end, in whole ms of the governor's clock. */
 export const WINDOW_END = 0;
 /** The window's frame time: the longer of the mean presented and completed intervals, in µs. */
 export const FRAME_US = 1;
@@ -129,7 +134,8 @@ export const GPU_DELAY_US = 2;
 /** The frame budget: the interval of the target frame rate, in µs. */
 export const BUDGET_US = 3;
 
-// The governor's times, by index in its state, in whole ms. -1 marks one that has not happened.
+// The governor's times, by index in its state, in whole ms of its clock. -1 marks one that has not
+// happened.
 const ROOM_SINCE = 0;
 const JUDGE_FROM = 1;
 /** The windows since the room started. */
@@ -146,8 +152,7 @@ const STATE_SIZE = 6;
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
  * step down. They cover every scale of the widest range and every step past the scale.
  */
-const LEVELS =
-	FULL_SCALE / SCALE_STEP + 1 + farIntervalSteps(1) + 1 + Math.log2(LONGEST_BLOOM_DIVISOR) + 1;
+const LEVELS = FULL_SCALE / SCALE_STEP + 1 + farIntervalSteps(1) + 1 + 1 + 1;
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
@@ -166,15 +171,15 @@ export class Governor {
 	farInterval = 1;
 	/** The shadow filter that frames draw with: the setting's, or the lightest after a step. */
 	filter: number = LIGHTEST_FILTER;
-	/** How many times fewer taps than three.js's bloom's blurs read: the setting's, or more after a step. */
-	bloomDivisor = 1;
+	/** The halvings of bloom's base during play: 0 with the setting as set, or 1 after its step. */
+	bloomHalvings = 0;
 	/**
 	 * The scale of ambient occlusion's targets in thousandths of the render size: the setting's, or
 	 * the lowest above none after a step.
 	 */
 	aoScale = 0;
 	/**
-	 * Counts each change of `farInterval`, `filter`, `bloomDivisor` or `aoScale`, so the frame loop
+	 * Counts each change of `farInterval`, `filter`, `bloomHalvings` or `aoScale`, so the frame loop
 	 * applies them.
 	 */
 	stepChanges = 0;
@@ -196,8 +201,8 @@ export class Governor {
 	private cascades = 0;
 	/** True when point or spot lights cast shadows, which the filter's step lightens too. */
 	private tiles = false;
-	/** The divisor of bloom's taps that the bloom steps start from, and whether bloom is on. */
-	private bloomSetting = 1;
+	/** The base of bloom's chain that its step halves, and whether bloom is on. */
+	private bloomSetting: number = SMALLEST_BLOOM_SIZE;
 	private bloom = false;
 	/** The scale of ambient occlusion that its step starts from, and whether it is on. */
 	private aoSetting = 0;
@@ -240,13 +245,13 @@ export class Governor {
 	}
 
 	/**
-	 * Sets the divisor of bloom's taps that the bloom steps start from, and whether the sketch has
-	 * bloom on, which the steps need.
+	 * Sets the base of bloom's chain that its step halves, in texels on the short side, and whether
+	 * the sketch has bloom on, which the step needs.
 	 */
-	setBloom(on: boolean, divisor: number): void {
-		if (on === this.bloom && divisor === this.bloomSetting) return;
+	setBloom(on: boolean, size: number): void {
+		if (on === this.bloom && size === this.bloomSetting) return;
 		this.bloom = on;
-		this.bloomSetting = divisor;
+		this.bloomSetting = size;
 		this.applySteps();
 	}
 
@@ -281,13 +286,27 @@ export class Governor {
 	/**
 	 * Forgets the frames before `from`, a time in whole ms: no step before it, and no window over or
 	 * under the budget yet. The frame loop calls it at the first frame, as the grace starts, after a
-	 * pause, and while the scene loads.
+	 * pause, and while the scene loads. It never moves the first judgement earlier: a stall within
+	 * the grace or the wait after a step leaves the rest of it.
 	 */
 	restart(from: number): void {
 		const { state } = this;
 		state[ROOM_SINCE] = -1;
-		state[JUDGE_FROM] = from;
+		state[JUDGE_FROM] = Math.max(from, state[JUDGE_FROM] as number);
 		state[RECENT_WINDOWS] = 0;
+	}
+
+	/**
+	 * Moves the clock's origin `by` ms forward: each time that the governor holds moves back by as
+	 * much. A time from before the new origin takes the origin's place, which the frame loop keeps
+	 * longer ago than any span that the rules compare.
+	 */
+	moveOrigin(by: number): void {
+		const { state, raisedAt } = this;
+		state[ROOM_SINCE] = earlier(state[ROOM_SINCE] as number, by);
+		state[JUDGE_FROM] = earlier(state[JUDGE_FROM] as number, by);
+		for (let level = 0; level < LEVELS; level++)
+			raisedAt[level] = earlier(raisedAt[level] as number, by);
 	}
 
 	/** Judges the window in `window`, and takes one step when the rules say so. */
@@ -439,12 +458,9 @@ export class Governor {
 		return (this.cascades > 0 || this.tiles) && this.filterSetting > LIGHTEST_FILTER ? 1 : 0;
 	}
 
-	/** Bloom's steps while it is on: each doubles the divisor of its taps, up to the longest. */
+	/** Bloom's step while it is on above the smallest base: it halves the base. */
 	private bloomSteps(): number {
-		let steps = 0;
-		if (this.bloom)
-			for (let divisor = this.bloomSetting; divisor < LONGEST_BLOOM_DIVISOR; divisor *= 2) steps++;
-		return steps;
+		return this.bloom && this.bloomSetting > SMALLEST_BLOOM_SIZE ? 1 : 0;
 	}
 
 	/** Ambient occlusion's step while it draws above the lowest scale: to the lowest. */
@@ -455,8 +471,8 @@ export class Governor {
 	/**
 	 * Brings the steps within what the settings and the scene allow, and works out the settings
 	 * that frames draw with: the far cascades' interval doubles with each of its steps, the filter
-	 * takes the lightest after them, then bloom's divisor doubles with each of its steps, and last
-	 * ambient occlusion takes its lowest scale.
+	 * takes the lightest after them, then bloom's base halves, and last ambient occlusion takes its
+	 * lowest scale.
 	 */
 	private applySteps(): void {
 		const intervalSteps = this.intervalSteps();
@@ -464,21 +480,20 @@ export class Governor {
 		const bloomSteps = this.bloomSteps();
 		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + this.aoSteps());
 		const doublings = Math.min(this.steps, intervalSteps);
-		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting * 2 ** doublings);
+		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting << doublings);
 		const filter = this.steps > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
-		const bloomDivisor = this.bloomSetting * 2 ** bloomHalvings;
 		const aoScale = this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
 		if (
 			farInterval === this.farInterval &&
 			filter === this.filter &&
-			bloomDivisor === this.bloomDivisor &&
+			bloomHalvings === this.bloomHalvings &&
 			aoScale === this.aoScale
 		)
 			return;
 		this.farInterval = farInterval;
 		this.filter = filter;
-		this.bloomDivisor = bloomDivisor;
+		this.bloomHalvings = bloomHalvings;
 		this.aoScale = aoScale;
 		this.stepChanges++;
 	}
@@ -507,8 +522,11 @@ export class GovernorLoop {
 	private readonly refresh: RefreshRate;
 	/** The highest frame rate the governor aims for, in hertz: `TARGET_CAP_HZ`, or less under ?fps=. */
 	private readonly targetHz: number;
-	/** The window's start and the last frame's time, in ms, or -1 before the first frame. */
-	private readonly times = new Float64Array([-1, -1]);
+	/**
+	 * The window's start and the last frame's time, in ms, or -1 before the first frame, then the
+	 * origin of the governor's clock on the frame loop's clock.
+	 */
+	private readonly times = new Float64Array([-1, -1, 0]);
 
 	/** `fps` is the frame rate that ?fps= holds, or undefined where the display's rate sets it. */
 	constructor(
@@ -542,7 +560,7 @@ export class GovernorLoop {
 		times[1] = now;
 		if (last < 0 || now - last >= GAP_MS) {
 			// The first frame, or the first after a pause: the windows start again from here.
-			governor.restart(Math.round(now) + (last < 0 ? GRACE_MS : 0));
+			governor.restart(this.clock(now) + (last < 0 ? GRACE_MS : 0));
 		} else {
 			if (now - (times[0] as number) < WINDOW_MS) return;
 			const casters = this.scene.shadowCasters();
@@ -556,7 +574,7 @@ export class GovernorLoop {
 			const done = completed.sums;
 			const shownFrames = shown[SUM_RECORDS] as number;
 			const doneFrames = done[SUM_RECORDS] as number;
-			if (this.scene.loading()) governor.restart(Math.round(now));
+			if (this.scene.loading()) governor.restart(this.clock(now));
 			else if (shownFrames > 0) {
 				const window = governor.window;
 				const shownMs = (shown[SUM_INTERVAL_MS] as number) / shownFrames;
@@ -564,7 +582,7 @@ export class GovernorLoop {
 				const delayMs = doneFrames > 0 ? (done[SUM_BUSY_MS] as number) / doneFrames : 0;
 				const hz = this.refresh.hz;
 				const target = this.targetHz;
-				window[WINDOW_END] = Math.round(now);
+				window[WINDOW_END] = this.clock(now);
 				window[FRAME_US] = Math.round(Math.max(shownMs, doneMs) * 1000);
 				window[GPU_DELAY_US] = Math.round(delayMs * 1000);
 				window[BUDGET_US] = Math.round(1_000_000 / (hz > 0 ? Math.min(hz, target) : target));
@@ -576,4 +594,27 @@ export class GovernorLoop {
 		presented.clear();
 		completed.clear();
 	}
+
+	/**
+	 * The governor's clock at `now`, a reading of the frame loop's clock, in whole ms. When it
+	 * reaches its limit, its origin moves forward, and the clock reads just past the longest span
+	 * that the rules compare.
+	 */
+	private clock(now: number): number {
+		const { times } = this;
+		const clock = Math.round(now - (times[2] as number));
+		if (clock < CLOCK_LIMIT_MS) return clock;
+		const by = clock - CLOCK_KEPT_MS;
+		this.governor.moveOrigin(by);
+		times[2] = (times[2] as number) + by;
+		return CLOCK_KEPT_MS;
+	}
+}
+
+/**
+ * The time `by` ms before `time`, and at least 0. -1, which marks a time that has not happened,
+ * stays.
+ */
+function earlier(time: number, by: number): number {
+	return time < 0 ? time : Math.max(0, time - by);
 }

@@ -2,17 +2,17 @@
 //! neither side copies them by hand.
 
 use null3d_core::animation::{
-    Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND,
-    MAX_LAYERS as MAX_ANIMATION_LAYERS, REST_FLOATS, event_kind,
+    Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, event_kind,
 };
 use null3d_core::cells::CELL_SIZE;
-use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
+use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
 use null3d_core::lines::LineMode;
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
-use null3d_gpu::caps::Capabilities;
+use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, Capabilities};
 use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
@@ -115,10 +115,10 @@ pub mod map_slot {
 pub mod post_value {
     /// The exposure.
     pub const EXPOSURE: u32 = 0;
-    /// Bloom's strength, radius and threshold.
-    pub const BLOOM_STRENGTH: u32 = 1;
-    pub const BLOOM_RADIUS: u32 = 2;
-    pub const BLOOM_THRESHOLD: u32 = 3;
+    /// Bloom's intensity, threshold and the threshold's soft edge.
+    pub const BLOOM_INTENSITY: u32 = 1;
+    pub const BLOOM_THRESHOLD: u32 = 2;
+    pub const BLOOM_KNEE: u32 = 3;
     /// The color grading table's intensity.
     pub const LUT_INTENSITY: u32 = 4;
     /// The colors of the table's first texels, red first, then of its last texels.
@@ -142,8 +142,25 @@ pub mod post_value {
     /// 1 where the outline draws around hidden parts, else 0, then the line's width in CSS pixels.
     pub const OUTLINE_HIDDEN: u32 = 26;
     pub const OUTLINE_WIDTH: u32 = 27;
+    /// Bloom's blend (0 mixes, 1 adds, 2 screens), then the share of each of its 10 levels.
+    pub const BLOOM_BLEND: u32 = 28;
+    pub const BLOOM_WEIGHTS: u32 = 29;
     /// The values in the block.
-    pub const COUNT: u32 = 28;
+    pub const COUNT: u32 = 39;
+}
+
+/// The places of the environment's values in the block that `environmentValues` gives: 32-bit
+/// floats that TypeScript writes before it calls `setEnvironment`, as the post-processing values
+/// come.
+pub mod environment_value {
+    /// The factor of the environment's light.
+    pub const INTENSITY: u32 = 0;
+    /// The environment's turn as Euler angles in radians, in the order X, Y, Z.
+    pub const ROTATION: u32 = 1;
+    /// The nine coefficients of its diffuse light: red, green and blue for each.
+    pub const SH: u32 = 4;
+    /// The values in the block.
+    pub const COUNT: u32 = 31;
 }
 
 pub mod texture_stat {
@@ -267,6 +284,32 @@ pub mod animation_field {
     pub const EVENTS: u32 = 6;
     /// Two words: the last frame step's event records, and the events that did not fit.
     pub const EVENT_TOTALS: u32 = 7;
+    /// The clip that a play put in each sample slot, as 32-bit unsigned integers, or
+    /// `NO_SOURCE` for a slot that no play fills.
+    pub const SLOT_SOURCES: u32 = 8;
+    /// The blend value of each layer of each instance, `MAX_LAYERS` per instance, which
+    /// TypeScript writes.
+    pub const BLEND_VALUES: u32 = 9;
+    /// The numbers of the next `animatorPlay` or `animatorPlayBlend` call, `play_arg::COUNT`
+    /// floats, which TypeScript writes before the call.
+    pub const PLAY_ARGS: u32 = 10;
+}
+
+/// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
+/// call arguments, so a play allocates nothing in the browser whatever numbers its options hold.
+pub mod play_arg {
+    /// Seconds of the fade.
+    pub const FADE: usize = 0;
+    /// The rate of the clip's time, or of the blend.
+    pub const SPEED: usize = 1;
+    /// The start time in seconds, or the blend's start phase.
+    pub const TIME: usize = 2;
+    /// The clip's weight.
+    pub const WEIGHT: usize = 3;
+    /// The blend's value.
+    pub const VALUE: usize = 4;
+    /// The numbers in the array.
+    pub const COUNT: usize = 5;
 }
 
 /// The words of each track's header in `createClip`'s staging words: joint, channel,
@@ -276,12 +319,20 @@ pub const TRACK_WORDS: u32 = 4;
 /// What `clipReady` returns while a job worker still resamples the clip: no clip id reaches it.
 pub const CLIP_PENDING: u32 = u32::MAX;
 
-/// The bits of `animatorPlay`'s `flags`.
+/// The bits of `animatorPlay`'s and `animatorPlayBlend`'s `flags`.
 pub mod play_flag {
     /// The clip repeats.
     pub const LOOP: u32 = 1;
     /// The clip adds its change from its first frame to the pose.
     pub const ADDITIVE: u32 = 2;
+    /// The play gives a start time, or a blend a start phase.
+    pub const TIME: u32 = 4;
+    /// The play gives the clip's weight.
+    pub const WEIGHT: u32 = 8;
+    /// The clip plays beside the other clips of its layer.
+    pub const JOIN: u32 = 16;
+    /// The blend gives its layer's blend value.
+    pub const VALUE: u32 = 32;
 }
 
 /// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
@@ -295,8 +346,9 @@ pub mod animation_problem {
     pub const LENGTH: u32 = 3;
     /// The second detail is the joint whose value is NaN or infinite.
     pub const NOT_FINITE: u32 = 4;
-    /// The second detail is the frame count the clip would need.
-    pub const FRAMES: u32 = 5;
+    /// The second detail is the keys the clip would hold, its frames times its tracks, which pass
+    /// the core's limit per clip.
+    pub const KEYS: u32 = 5;
     /// The second detail is the skeleton id.
     pub const UNKNOWN_SKELETON: u32 = 6;
     /// The second detail is the clip's joint count.
@@ -528,6 +580,7 @@ pub fn typescript() -> String {
             &[
                 ("SLOT_BITS", SLOT_BITS),
                 ("GENERATION_BITS", GENERATION_BITS),
+                ("DEAD_GENERATION", DEAD_GENERATION),
             ],
         ),
         (
@@ -667,6 +720,7 @@ pub fn typescript() -> String {
                 ("NORMAL_SCALE", param::NORMAL_SCALE as u32),
                 ("OCCLUSION_STRENGTH", param::OCCLUSION_STRENGTH as u32),
                 ("LIGHT_MAP_INTENSITY", param::LIGHT_MAP_INTENSITY as u32),
+                ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
             ],
@@ -675,9 +729,9 @@ pub fn typescript() -> String {
             "POST_VALUE",
             &[
                 ("EXPOSURE", post_value::EXPOSURE),
-                ("BLOOM_STRENGTH", post_value::BLOOM_STRENGTH),
-                ("BLOOM_RADIUS", post_value::BLOOM_RADIUS),
+                ("BLOOM_INTENSITY", post_value::BLOOM_INTENSITY),
                 ("BLOOM_THRESHOLD", post_value::BLOOM_THRESHOLD),
+                ("BLOOM_KNEE", post_value::BLOOM_KNEE),
                 ("LUT_INTENSITY", post_value::LUT_INTENSITY),
                 ("LUT_DOMAIN_MIN", post_value::LUT_DOMAIN_MIN),
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
@@ -694,7 +748,18 @@ pub fn typescript() -> String {
                 ("OUTLINE_HIDDEN_COLOR", post_value::OUTLINE_HIDDEN_COLOR),
                 ("OUTLINE_HIDDEN", post_value::OUTLINE_HIDDEN),
                 ("OUTLINE_WIDTH", post_value::OUTLINE_WIDTH),
+                ("BLOOM_BLEND", post_value::BLOOM_BLEND),
+                ("BLOOM_WEIGHTS", post_value::BLOOM_WEIGHTS),
                 ("COUNT", post_value::COUNT),
+            ],
+        ),
+        (
+            "ENVIRONMENT_VALUE",
+            &[
+                ("INTENSITY", environment_value::INTENSITY),
+                ("ROTATION", environment_value::ROTATION),
+                ("SH", environment_value::SH),
+                ("COUNT", environment_value::COUNT),
             ],
         ),
         (
@@ -733,6 +798,8 @@ pub fn typescript() -> String {
                 ("FORMAT_SRGB", format::RGBA8_UNORM_SRGB),
                 ("FORMAT_LINEAR", format::RGBA8_UNORM),
                 ("FORMAT_HALF_FLOAT", format::RGBA16_FLOAT),
+                ("FORMAT_SHARED_EXPONENT", format::RGB9E5_UFLOAT),
+                ("CUBE_MAX_SIZE", CUBE_TEXTURE_SIZE),
                 ("FORMAT_ASTC", format::ASTC_4X4_UNORM),
                 ("FORMAT_ASTC_SRGB", format::ASTC_4X4_UNORM_SRGB),
                 ("FORMAT_BC7", format::BC7_RGBA_UNORM),
@@ -829,6 +896,9 @@ pub fn typescript() -> String {
                 ("LAYER_WEIGHTS", animation_field::LAYER_WEIGHTS),
                 ("EVENTS", animation_field::EVENTS),
                 ("EVENT_TOTALS", animation_field::EVENT_TOTALS),
+                ("SLOT_SOURCES", animation_field::SLOT_SOURCES),
+                ("BLEND_VALUES", animation_field::BLEND_VALUES),
+                ("PLAY_ARGS", animation_field::PLAY_ARGS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
@@ -838,10 +908,22 @@ pub fn typescript() -> String {
             &[
                 ("MAX_BLEND", MAX_BLEND as u32),
                 ("MAX_LAYERS", MAX_ANIMATION_LAYERS as u32),
+                ("MAX_CLIP_KEYS", MAX_CLIP_KEYS as u32),
                 ("EVENT_CAPACITY", EVENT_CAPACITY as u32),
                 ("EVENT_WORDS", EVENT_WORDS as u32),
                 ("PLAY_LOOP", play_flag::LOOP),
                 ("PLAY_ADDITIVE", play_flag::ADDITIVE),
+                ("PLAY_TIME", play_flag::TIME),
+                ("PLAY_WEIGHT", play_flag::WEIGHT),
+                ("PLAY_JOIN", play_flag::JOIN),
+                ("PLAY_VALUE", play_flag::VALUE),
+                ("NO_SOURCE", NO_SOURCE),
+                ("ARG_FADE", play_arg::FADE as u32),
+                ("ARG_SPEED", play_arg::SPEED as u32),
+                ("ARG_TIME", play_arg::TIME as u32),
+                ("ARG_WEIGHT", play_arg::WEIGHT as u32),
+                ("ARG_VALUE", play_arg::VALUE as u32),
+                ("ARGS", play_arg::COUNT as u32),
                 ("EVENT_CLIP", event_kind::EVENT),
                 ("EVENT_LOOP", event_kind::LOOP),
                 ("EVENT_FINISHED", event_kind::FINISHED),
@@ -864,7 +946,7 @@ pub fn typescript() -> String {
                 ("PARENT", animation_problem::PARENT),
                 ("LENGTH", animation_problem::LENGTH),
                 ("NOT_FINITE", animation_problem::NOT_FINITE),
-                ("FRAMES", animation_problem::FRAMES),
+                ("KEYS", animation_problem::KEYS),
                 ("UNKNOWN_SKELETON", animation_problem::UNKNOWN_SKELETON),
                 ("WRONG_SKELETON", animation_problem::WRONG_SKELETON),
                 ("EVENTS", animation_problem::EVENTS),

@@ -7,11 +7,14 @@
 
 mod common;
 
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers, character, mul4, perspective, reversed_perspective, translation};
-use null3d_core::animation::{Animations, MAX_LAYERS, Play};
+use common::{
+    Rng, Workers, character, mul4, perspective, reversed_perspective, translation, wait_until,
+};
+use null3d_core::animation::{Animations, Blend, MAX_BLEND, MAX_LAYERS, Play};
 use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{ClusterScratch, RowCells, RowClusters};
@@ -306,7 +309,9 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         frustum,
         layers: 0x5555_5555,
     };
-    world.lights.gather(&world.scene, parity, Some(&light_view));
+    world
+        .lights
+        .gather(&world.scene, parity, Some(&light_view), 0.5);
     assert!(!world.lights.visible().is_empty());
     let (scene, clusters, order) = (&world.scene, &world.clusters, &world.order);
     // The moving rows are reached through the order list, and the still rows through it with
@@ -390,9 +395,9 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
 }
 
 /// A crowd of 64 animated characters of 40 joints. A third of them have clip times and weights
-/// that sketch code writes each frame. The others play clips: a base clip, a masked second layer,
-/// and an additive clip on a third, with events in both clips, so every path of the frame step
-/// runs.
+/// that sketch code writes each frame. The others play clips: a base clip, a phase-synced blend
+/// or two clips side by side with start times and weights, a masked second layer, and an
+/// additive clip on a third, with events in both clips, so every path of the frame step runs.
 fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
     let (skeleton, clips) = character(40);
     let mut animations = Animations::new(jobs, 64, 64 * 40).unwrap();
@@ -415,11 +420,37 @@ fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
             continue;
         }
         let looping = i % 2 == 0;
-        let base = Play {
-            looping,
-            ..Play::default()
-        };
-        animations.play(instance, ids[0], base).unwrap();
+        match i % 6 {
+            1 => {
+                let blend = Blend {
+                    looping,
+                    phase: Some(i as f32 / 64.0),
+                    ..Blend::default()
+                };
+                animations
+                    .play_blend(instance, &ids, &[0.0, 1.0], blend)
+                    .unwrap();
+            }
+            5 => {
+                for (k, &clip) in ids.iter().enumerate() {
+                    let side = Play {
+                        looping,
+                        time: Some(i as f32 / 64.0),
+                        weight: Some(0.5 + 0.25 * k as f32),
+                        join: true,
+                        ..Play::default()
+                    };
+                    animations.play(instance, clip, side).unwrap();
+                }
+            }
+            _ => {
+                let base = Play {
+                    looping,
+                    ..Play::default()
+                };
+                animations.play(instance, ids[0], base).unwrap();
+            }
+        }
         let layer = Play {
             layer: 1,
             fade: 0.3,
@@ -438,8 +469,9 @@ fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
     (animations, ids)
 }
 
-/// Sketch code moves the clip times and weights of a third of the characters, sets layer weights
-/// and time scales, and now and then cross-fades or stops a clip. Then the frame step runs.
+/// Sketch code moves the clip times and weights of a third of the characters, sets layer weights,
+/// blend values, clip weights and time scales, and now and then cross-fades, blends or stops a
+/// clip. Then the frame step runs.
 fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame: u32) {
     for i in 0..animations.instances() {
         let t = (frame + i) as f32 / 60.0;
@@ -450,6 +482,14 @@ fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame
             continue;
         }
         animations.layer_weights_mut()[i as usize * MAX_LAYERS + 1] = 0.5 + 0.5 * t.sin();
+        animations.blend_values_mut()[i as usize * MAX_LAYERS] = 0.5 + 0.6 * t.cos();
+        // A clip's weight, as `setWeight` writes it into each slot that plays the clip.
+        let slots = i as usize * MAX_BLEND..(i as usize + 1) * MAX_BLEND;
+        for s in slots {
+            if animations.slots().source[s] == clips[1] {
+                animations.slots_mut().weight[s] = 0.75 + 0.25 * t.sin();
+            }
+        }
         animations.time_scales_mut()[i as usize] = 1.0 + 0.25 * (i % 4) as f32;
         let fade = Play {
             fade: 0.25,
@@ -460,6 +500,15 @@ fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame
                 .play(i, clips[(frame / 40 % 2) as usize], fade)
                 .unwrap(),
             20 => animations.stop(i, Some(clips[1]), 0.1).unwrap(),
+            30 if i % 2 == 1 => {
+                let blend = Blend {
+                    fade: 0.2,
+                    ..Blend::default()
+                };
+                animations
+                    .play_blend(i, &clips, &[0.0, 1.0], blend)
+                    .unwrap();
+            }
             _ => {}
         }
     }
@@ -555,6 +604,49 @@ fn threads_that_an_earlier_test_tracked_never_count_in_a_later_one() {
         }
         assert_eq!(CountingAllocator::disarm(), 0, "round {round}");
     }
+}
+
+/// Set once the test counts again after the scope of its tracked thread has returned.
+static COUNTING_AGAIN: AtomicBool = AtomicBool::new(false);
+/// Set once the tracked thread has freed its memory as it exits.
+static FREED_ON_EXIT: AtomicBool = AtomicBool::new(false);
+
+/// Memory that a thread frees as it exits, once the test counts again.
+struct FreeOnExit(Cell<Option<Box<u64>>>);
+
+impl Drop for FreeOnExit {
+    fn drop(&mut self) {
+        wait_until("the test to count again", || {
+            COUNTING_AGAIN.load(Ordering::Acquire)
+        });
+        drop(self.0.take());
+        FREED_ON_EXIT.store(true, Ordering::Release);
+    }
+}
+
+thread_local! {
+    static FREE_ON_EXIT: FreeOnExit = const { FreeOnExit(Cell::new(None)) };
+}
+
+#[test]
+fn a_thread_that_tracks_its_work_never_counts_as_it_exits() {
+    // A scoped thread can free memory after its scope has returned, while the same test counts
+    // again, as job workers that a test starts and stops for each case do. Here the thread frees
+    // a value it keeps until it exits, and frees it only once counting has started again.
+    let _only = CountingAllocator::exclusive();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            CountingAllocator::track_while(|| {
+                FREE_ON_EXIT.with(|value| value.0.set(Some(Box::new(1))));
+            });
+        });
+    });
+    CountingAllocator::arm();
+    COUNTING_AGAIN.store(true, Ordering::Release);
+    wait_until("the thread to free memory as it exits", || {
+        FREED_ON_EXIT.load(Ordering::Acquire)
+    });
+    assert_eq!(CountingAllocator::disarm(), 0);
 }
 
 #[test]

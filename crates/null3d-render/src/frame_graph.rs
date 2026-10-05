@@ -37,19 +37,20 @@
 //!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
-//! scene color and draws the canvas: it applies the exposure and the tone mapping, and encodes the
-//! color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
+//! scene color, which holds exposed color, and draws the canvas: it applies the tone mapping, and
+//! encodes the color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
 //! instead: the render pass that draws the scene resolves its multisampled color straight into
 //! the canvas, with no pass, copy or target of its own. With one sample, or while the render scale
 //! can drop below the whole canvas, the final pass copies the scene color into the canvas. In the
 //! FXAA mode the final pass smooths edges on either path.
 //!
 //! On the HDR path, bloom's passes come between the transparent passes and the final pass (see
-//! [`crate::bloom`]): the bright pass reads the scene color, and each step after it reads the step
-//! before it, each into a target of its own at a fraction of the render size. The final pass then
-//! runs in its bloom build, which reads bloom's levels too. They are declared with the other
-//! passes and switched on only while the sketch turns bloom on, so a frame without bloom has none
-//! of their targets. The 8-bit path has no bloom: its scene color holds display color, which no
+//! [`crate::bloom`]): a step down into each level of its mip chain, the first from the scene
+//! color, then a step up into each level but the last, which blends the level below into it. The
+//! final pass then runs in its bloom build, which reads the base level too. They are declared with
+//! the other passes and switched on only while the sketch turns bloom on, so a frame without bloom
+//! has none of their targets. The governor's step leaves the plan as it is: the recording skips
+//! the render passes of the levels that the frame drops. The 8-bit path has no bloom: its scene color holds display color, which no
 //! longer knows how bright a pixel was.
 //!
 //! While the sketch turns outlines on and some object is outlined, the outline passes come after
@@ -101,7 +102,7 @@ use std::borrow::Cow;
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
-use crate::bloom::{self, Bloom, BloomIds, BloomPass, LEVELS, STEPS};
+use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
@@ -165,48 +166,36 @@ const SHADOW_CASCADES: [&str; MAX_CASCADES] = [
     "ShadowCascade2",
     "ShadowCascade3",
 ];
-/// Each step of bloom's chain, and the target it creates: the bright pass, then each level's blur
-/// across and its blur down. Each step reads the target of the step before it, and the bright pass
-/// the scene color.
-const BLOOM_PASSES: [&str; STEPS] = [
-    "BloomBright",
-    "BloomBlurX0",
-    "BloomBlurY0",
-    "BloomBlurX1",
-    "BloomBlurY1",
-    "BloomBlurX2",
-    "BloomBlurY2",
-    "BloomBlurX3",
-    "BloomBlurY3",
-    "BloomBlurX4",
-    "BloomBlurY4",
+/// Bloom's steps down, each creating its level's target, its steps up, each blending the level
+/// below into its level's target, and the levels' targets. The final pass reads the first level.
+const BLOOM_DOWN: [&str; LEVELS] = [
+    "BloomDown0",
+    "BloomDown1",
+    "BloomDown2",
+    "BloomDown3",
+    "BloomDown4",
+    "BloomDown5",
+    "BloomDown6",
+    "BloomDown7",
+    "BloomDown8",
+    "BloomDown9",
 ];
-const BLOOM_TARGETS: [&str; STEPS] = [
-    "bloomBright",
-    "bloomX0",
-    "bloomY0",
-    "bloomX1",
-    "bloomY1",
-    "bloomX2",
-    "bloomY2",
-    "bloomX3",
-    "bloomY3",
-    "bloomX4",
-    "bloomY4",
+const BLOOM_UP: [&str; LEVELS] = [
+    "BloomUp0", "BloomUp1", "BloomUp2", "BloomUp3", "BloomUp4", "BloomUp5", "BloomUp6", "BloomUp7",
+    "BloomUp8", "BloomUp9",
 ];
-/// The step whose target holds one of bloom's levels, which the final pass reads: its blur down.
-const fn bloom_level(level: usize) -> usize {
-    2 + 2 * level
-}
-/// The target that step `step` of bloom reads: the scene color for the bright pass, else the
-/// target of the step before it.
-const fn bloom_source(step: usize) -> &'static str {
-    if step == 0 {
-        SCENE_COLOR
-    } else {
-        BLOOM_TARGETS[step - 1]
-    }
-}
+const BLOOM_LEVELS: [&str; LEVELS] = [
+    "bloomLevel0",
+    "bloomLevel1",
+    "bloomLevel2",
+    "bloomLevel3",
+    "bloomLevel4",
+    "bloomLevel5",
+    "bloomLevel6",
+    "bloomLevel7",
+    "bloomLevel8",
+    "bloomLevel9",
+];
 /// The outline view's culling pass on WebGPU, and the buffer of its compacted instances and
 /// indirect draws.
 const OUTLINE_CULLING: &str = "OutlineCulling";
@@ -381,8 +370,15 @@ pub(crate) struct FrameGraph {
     bloom_passes: Vec<PassId>,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
-    /// The sample divisor of bloom's blurs.
-    bloom_divisor: u32,
+    /// True once bloom's pipelines draw: built, after the frame whose list created them.
+    bloom_built: bool,
+    /// True once ambient occlusion's pipelines draw: built, after the frame whose list created them.
+    ao_built: bool,
+    /// The size of bloom's base and the governor's halvings of it.
+    bloom_chain: ChainFrame,
+    /// The texture that each of bloom's steps reads, and the base level's, found once for each
+    /// compile of the graph, which the count says.
+    bloom_textures: Option<(u32, [u32; STEPS], u32)>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -465,11 +461,14 @@ impl FrameGraph {
             outputs: None,
             bloom_pass: scene_color
                 .is_hdr()
-                .then(|| BloomPass::new(ids.bloom, scene_color.format(), !gpu_culling)),
+                .then(|| BloomPass::new(ids.bloom, bloom::MAX_SIZE, !gpu_culling)),
             bloom_passes: Vec::new(),
             bloom_ids: ids.bloom,
             bloom: None,
-            bloom_divisor: 1,
+            bloom_built: false,
+            ao_built: false,
+            bloom_chain: ChainFrame::default(),
+            bloom_textures: None,
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -508,10 +507,7 @@ impl FrameGraph {
         self.samples = antialias.samples();
         self.resolves = !scene_color.is_hdr() && antialias == Antialias::Msaa;
         self.final_pass.set_mode(scene_color, antialias);
-        let rows_from_bottom = !self.gpu_culling;
-        self.bloom_pass = scene_color
-            .is_hdr()
-            .then(|| BloomPass::new(self.bloom_ids, scene_color.format(), rows_from_bottom));
+        self.make_bloom_pass();
         // The depth step reads the depth's samples, which the new mode may change.
         self.ao_pass = None;
         self.declared = false;
@@ -563,8 +559,16 @@ impl FrameGraph {
     /// from, or `None` while ambient occlusion draws no frame. Valid once the frame's
     /// [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn ao_texture(&self) -> Option<u32> {
-        self.ao
-            .and_then(|_| self.sampled_id(AO_TARGETS[ao::STEPS - 1]))
+        self.ao_draws()
+            .then(|| self.sampled_id(AO_TARGETS[ao::STEPS - 1]))
+            .flatten()
+    }
+
+    /// True while ambient occlusion draws: the sketch turned it on, and its pipelines are built.
+    /// Until then the prepass runs, so its pipelines build too, and the opaque pass reads no
+    /// ambient occlusion.
+    pub(crate) fn ao_draws(&self) -> bool {
+        self.ao.is_some() && self.ao_built
     }
 
     /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
@@ -634,7 +638,7 @@ impl FrameGraph {
         } else {
             0
         };
-        let ao = if self.ao.is_some() {
+        let ao = if self.ao_draws() {
             AoPass::UPLOAD_BYTES
         } else {
             0
@@ -708,20 +712,44 @@ impl FrameGraph {
         self.outline.is_some() && self.outlined
     }
 
-    /// Turns bloom on with its settings, or off with `None`, for the next frames, with each blur
-    /// reading `divisor` times fewer taps than three.js's. The graph compiles again only when
-    /// bloom turns on or off. The 8-bit path draws no bloom.
-    pub(crate) fn set_bloom(&mut self, bloom: Option<Bloom>, divisor: u32) {
+    /// Turns bloom on with its settings, or off with `None`, for the next frames, with the chain's
+    /// base size and the governor's halvings from `chain`. The graph compiles again only when
+    /// bloom turns on or off, or its base size changes, which declares the passes again with new
+    /// targets. The governor's halvings change only what the frames draw. The 8-bit path draws no
+    /// bloom.
+    pub(crate) fn set_bloom(&mut self, bloom: Option<Bloom>, chain: ChainFrame) {
+        let resized = chain.size != self.bloom_chain.size;
+        self.bloom_chain = chain;
+        if resized && self.bloom_pass.is_some() {
+            self.make_bloom_pass();
+            self.declared = false;
+        }
         let was = self.bloom_draws();
         self.bloom = bloom;
-        self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
         if self.bloom_draws() != was {
             self.enable_outputs();
         }
     }
 
-    /// True while bloom draws: the sketch turned it on, and the scene color holds HDR color.
+    /// Makes bloom's steps for the chain's base size on the HDR path. Its GPU objects keep their
+    /// ids, so the new steps make them again over the old ones.
+    fn make_bloom_pass(&mut self) {
+        let rows_from_bottom = !self.gpu_culling;
+        self.bloom_pass = self
+            .scene_color
+            .is_hdr()
+            .then(|| BloomPass::new(self.bloom_ids, self.bloom_chain.size, rows_from_bottom));
+        self.bloom_textures = None;
+    }
+
+    /// True while bloom draws: the sketch turned it on, the scene color holds HDR color, and
+    /// bloom's pipelines are built.
     pub(crate) fn bloom_draws(&self) -> bool {
+        self.bloom_wanted() && self.bloom_built
+    }
+
+    /// True while the sketch turns bloom on and the scene color holds HDR color.
+    fn bloom_wanted(&self) -> bool {
         self.bloom.is_some() && self.bloom_pass.is_some()
     }
 
@@ -840,7 +868,7 @@ impl FrameGraph {
                 if self.skins() {
                     prepass = prepass.reads(SKINNED);
                 }
-                let occludes = index == ViewId::CAMERA.index() && self.ao.is_some();
+                let occludes = index == ViewId::CAMERA.index() && self.ao_draws();
                 if occludes {
                     prepass = prepass.creates(PREPASS_COLOR, color);
                 }
@@ -961,26 +989,39 @@ impl FrameGraph {
             .get_or_insert_with(|| AoPass::new(self.ao_ids, samples))
     }
 
-    /// Declares bloom's steps, each reading the target of the step before it, and returns the
-    /// declaration of the final pass with bloom, which reads every level.
+    /// Declares bloom's steps: a step down into each level, the first from the scene color and
+    /// each later one from the level above as the steps before it leave it, then a step up into
+    /// each level but the last, which reads the level below and blends into its own. Returns the
+    /// declaration of the final pass with bloom, which reads the base level.
     fn declare_bloom(&mut self) -> Pass {
-        let target = Target::color(self.scene_color.format());
-        for step in 0..STEPS {
-            let pass = Pass::new(BLOOM_PASSES[step], PassKind::Fullscreen)
-                .size(bloom::step_size(step))
-                .reads(bloom_source(step))
-                .creates(BLOOM_TARGETS[step], target);
+        let target = Target::color(bloom::FORMAT);
+        let size = self.bloom_chain.size;
+        let levels = self.bloom_pass.as_ref().map_or(LEVELS, BloomPass::levels);
+        for level in 0..levels {
+            let pass = Pass::new(BLOOM_DOWN[level], PassKind::Fullscreen)
+                .size(bloom::level_size(size, level))
+                .creates(BLOOM_LEVELS[level], target);
+            let pass = match level {
+                0 => pass.reads(SCENE_COLOR),
+                _ => pass.reads_so_far(BLOOM_LEVELS[level - 1]),
+            };
+            let pass = self.add(pass, Role::Bloom(level as u8));
+            self.bloom_passes.push(pass);
+        }
+        for level in (0..levels - 1).rev() {
+            let step = 2 * levels - 2 - level;
+            let pass = Pass::new(BLOOM_UP[level], PassKind::Fullscreen)
+                .size(bloom::level_size(size, level))
+                .reads(BLOOM_LEVELS[level + 1])
+                .writes(BLOOM_LEVELS[level]);
             let pass = self.add(pass, Role::Bloom(step as u8));
             self.bloom_passes.push(pass);
         }
-        let mut final_bloom = Pass::new("FinalBloom", PassKind::Fullscreen)
+        Pass::new("FinalBloom", PassKind::Fullscreen)
             .size(Size::Canvas)
             .reads(SCENE_COLOR)
-            .writes(CANVAS);
-        for level in 0..LEVELS {
-            final_bloom = final_bloom.reads(BLOOM_TARGETS[bloom_level(level)]);
-        }
-        final_bloom
+            .reads(BLOOM_LEVELS[0])
+            .writes(CANVAS)
     }
 
     /// Declares each cascade's culling pass on WebGPU, and its shadow pass, which draws into the
@@ -1063,17 +1104,48 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's. A builder
-    /// asks before it records the pipelines that its frame creates. Frames that resolve into the
-    /// canvas ask too, so the pipeline is ready once the render scale can drop.
-    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
-        let blooms = self.bloom_draws();
-        self.final_pass.request_pipeline(pipelines, blooms);
-        if self.ao.is_some() {
-            self.ao_steps().request_pipelines(pipelines);
+    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's, and those of
+    /// bloom and ambient occlusion while the sketch turns them on. A builder asks before it records
+    /// the pipelines that its frame creates. Frames that resolve into the canvas ask too, so the
+    /// pipeline is ready once the render scale can drop. Bloom's and ambient occlusion's passes
+    /// draw once their pipelines are built, by `pipelines_built`, the newest frame that the thread
+    /// that draws drew with every pipeline built. Until then the frame keeps its passes without
+    /// them: a pass whose pipeline still builds, or waits for its shader file, draws nothing, and a
+    /// final pass that draws nothing leaves the canvas without its frame.
+    pub(crate) fn request_pipelines(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) {
+        let wanted = self.bloom_wanted();
+        let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
+        let built = match (wanted, final_bloom, self.bloom_pass.as_mut()) {
+            (true, Some(final_bloom), Some(bloom)) => {
+                let (down, up) = bloom.request_pipelines(pipelines);
+                pipelines.built(down, pipelines_built)
+                    && pipelines.built(up, pipelines_built)
+                    && pipelines.built(final_bloom, pipelines_built)
+            }
+            _ => false,
+        };
+        let ao_built = self.ao.is_some() && {
+            let steps = self.ao_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        if ao_built != self.ao_built {
+            let was = self.ao_draws();
+            self.ao_built = ao_built;
+            if self.ao_draws() != was {
+                self.declared = false;
+            }
         }
-        if let (true, Some(bloom)) = (blooms, self.bloom_pass.as_mut()) {
-            bloom.request_pipeline(pipelines);
+        if built != self.bloom_built {
+            let was = self.bloom_draws();
+            self.bloom_built = built;
+            if self.bloom_draws() != was {
+                self.enable_outputs();
+            }
         }
     }
 
@@ -1098,26 +1170,18 @@ impl FrameGraph {
             .expect("the final pass samples the scene color");
         let render_size = Size::Full.viewport(self.canvas, self.scale);
         let bloom = if self.bloom_draws() {
-            let sources: [u32; STEPS] = std::array::from_fn(|step| {
-                self.sampled_id(bloom_source(step))
-                    .expect("each step of bloom reads a planned texture")
-            });
-            let levels = std::array::from_fn(|level| {
-                self.sampled_id(BLOOM_TARGETS[bloom_level(level)])
-                    .expect("the final pass reads each of bloom's levels")
-            });
-            let (canvas, scale, divisor, made) = (
+            let (sources, base) = self.bloom_textures();
+            let (canvas, scale, chain, made) = (
                 self.canvas,
                 self.scale,
-                self.bloom_divisor,
+                self.bloom_chain,
                 self.textures_made,
             );
             match (self.bloom, self.bloom_pass.as_mut()) {
                 (Some(settings), Some(pass)) => {
-                    pass.prepare(
-                        list, arena, canvas, scale, settings, divisor, &sources, made,
-                    )?;
-                    Some(BloomInputs::new(pass.ids(), levels))
+                    let bloom = (settings, output.exposure);
+                    pass.prepare(list, arena, canvas, scale, chain, bloom, &sources, made)?;
+                    Some(BloomInputs::new(pass.ids(), base))
                 }
                 _ => None,
             }
@@ -1136,7 +1200,7 @@ impl FrameGraph {
         self.final_pass.prepare(
             list,
             arena,
-            output,
+            output.tone_mapping,
             render_size,
             scene_color,
             bloom,
@@ -1146,6 +1210,36 @@ impl FrameGraph {
         )
     }
 
+    /// The texture that each of bloom's declared steps reads, and the base level's, found by name
+    /// once for each compile of the graph.
+    fn bloom_textures(&mut self) -> ([u32; STEPS], u32) {
+        let compiles = self.graph.compiles();
+        if let Some((at, sources, base)) = self.bloom_textures
+            && at == compiles
+        {
+            return (sources, base);
+        }
+        let levels = self.bloom_pass.as_ref().map_or(1, BloomPass::levels);
+        let id = |name: &str| {
+            self.sampled_id(name)
+                .expect("each step of bloom reads a planned texture")
+        };
+        let sources = std::array::from_fn(|step| {
+            if step >= 2 * levels - 1 {
+                0
+            } else if step == 0 {
+                id(SCENE_COLOR)
+            } else if step < levels {
+                id(BLOOM_LEVELS[step - 1])
+            } else {
+                id(BLOOM_LEVELS[2 * levels - 1 - step])
+            }
+        });
+        let base = id(BLOOM_LEVELS[0]);
+        self.bloom_textures = Some((compiles, sources, base));
+        (sources, base)
+    }
+
     /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
     /// textures it reads.
     fn upload_ao(
@@ -1153,7 +1247,7 @@ impl FrameGraph {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<(), RecordError> {
-        let Some(settings) = self.ao else {
+        let Some(settings) = self.ao.filter(|_| self.ao_built) else {
             return Ok(());
         };
         let id = |name: &str| {
@@ -1269,7 +1363,10 @@ impl FrameGraph {
                 }
                 StepKind::Render { size, .. } => {
                     let passes = plan.passes(step);
-                    if passes.iter().all(|&pass| skips(self.roles[pass.index()])) {
+                    if passes.iter().all(|&pass| {
+                        let role = self.roles[pass.index()];
+                        skips(role) || !self.draws(role)
+                    }) {
                         continue;
                     }
                     let masks = passes
@@ -1305,6 +1402,15 @@ impl FrameGraph {
         }
         list.push(Op::Submit, &[])?;
         Ok(())
+    }
+
+    /// False for a step of bloom that the frame drops, as the governor's step drops the last
+    /// level. Every other pass draws.
+    fn draws(&self, role: Role) -> bool {
+        match (role, &self.bloom_pass) {
+            (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
+            _ => true,
+        }
     }
 
     /// Begins a render pass with the step's attachments and their load and store operations.
@@ -1958,83 +2064,176 @@ mod tests {
     }
 
     #[test]
-    fn bloom_runs_its_steps_between_the_scene_and_the_final_pass_only_while_it_is_on() {
+    fn bloom_runs_its_chain_between_the_scene_and_the_final_pass_only_while_it_is_on() {
+        let canvas = (1920, 1080);
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
         frames.sync_views(&[View::default()]);
-        let mut list = DrawList::with_capacity(4096);
+        let mut list = DrawList::with_capacity(8192);
         frames
-            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         let without = frames.graph().plan().unwrap().textures().len();
         assert_eq!(steps(&frames).last().unwrap(), &["Final"]);
 
-        frames.set_bloom(Some(Bloom::default()), 1);
-        frames.request_pipelines(&mut PipelineCache::default());
+        let chain = ChainFrame::default();
+        frames.set_bloom(Some(Bloom::default()), chain);
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         frames
-            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         let names = steps(&frames);
-        let mut expected: Vec<Vec<String>> = BLOOM_PASSES
+        let mut expected: Vec<Vec<String>> = BLOOM_DOWN
             .iter()
+            .chain(BLOOM_UP[..LEVELS - 1].iter().rev())
             .map(|name| vec![name.to_string()])
             .collect();
         expected.push(vec!["FinalBloom".into()]);
         assert_eq!(names[names.len() - expected.len()..], expected[..]);
-        // Each step draws at its size into a target of its own: the bright pass and level 0's blur
-        // down share one texture, as their steps do not overlap, and every other target has one.
+        // Each level has a target of its own at its size, which its step down creates and its step
+        // up blends into.
         let plan = frames.graph().plan().unwrap();
         let textures = plan.textures();
-        assert_eq!(textures.len(), without + STEPS - 1);
+        assert_eq!(textures.len(), without + LEVELS);
         let texture = |name: &str| plan.texture_of(frames.graph().find_resource(name).unwrap());
-        assert_eq!(texture("bloomBright"), texture("bloomY0"));
-        for step in 1..STEPS {
-            let surface = texture(BLOOM_TARGETS[step]).unwrap();
-            let Surface::Texture(index) = surface else {
+        for (level, name) in BLOOM_LEVELS.iter().enumerate() {
+            let Some(Surface::Texture(index)) = texture(name) else {
                 panic!("bloom draws into textures")
             };
-            assert_eq!(textures[usize::from(index)].size, bloom::step_size(step));
-            assert_ne!(
-                texture(BLOOM_TARGETS[step - 1]),
-                Some(surface),
-                "no step reads its target"
+            assert_eq!(
+                textures[usize::from(index)].size,
+                bloom::level_size(512, level)
             );
         }
 
-        // A new render scale makes no GPU object: the frame only uploads new settings.
+        // A new render scale and the governor's step make no GPU object: the frame only uploads
+        // new settings.
         let mut arena = UploadArena::default();
         let output = Output::default();
         arena.reset(frames.upload_bound());
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
-        list.clear();
         frames.set_scaling(true);
+        let only_uploads =
+            |frames: &mut FrameGraph, list: &mut DrawList, arena: &mut UploadArena| {
+                list.clear();
+                frames
+                    .prepare(list, canvas, RenderScale::from_thousandths(500))
+                    .unwrap();
+                arena.reset(frames.upload_bound());
+                frames
+                    .upload(list, arena, output, Grading::default())
+                    .unwrap();
+                let ops: Vec<Op> = null3d_gpu::drawlist::decode(list.words())
+                    .map(|command| command.unwrap().op)
+                    .collect();
+                assert!(ops.iter().all(|&op| op == Op::WriteBuffer), "{ops:?}");
+            };
+        // The scale switches the final pass's output on once, which compiles the graph again.
+        list.clear();
         frames
-            .prepare(&mut list, (320, 180), RenderScale::from_thousandths(500))
+            .prepare(&mut list, canvas, RenderScale::from_thousandths(700))
             .unwrap();
         arena.reset(frames.upload_bound());
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
-        let ops: Vec<Op> = null3d_gpu::drawlist::decode(list.words())
-            .map(|command| command.unwrap().op)
-            .collect();
-        assert!(ops.iter().all(|&op| op == Op::WriteBuffer), "{ops:?}");
-        list.clear();
+        only_uploads(&mut frames, &mut list, &mut arena);
+        let record = |frames: &FrameGraph, list: &mut DrawList| {
+            list.clear();
+            frames
+                .record(list, [0.0; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            (
+                operands(list, Op::BeginRenderPass).len(),
+                operands(list, Op::SetViewport),
+            )
+        };
+        let (passes, viewports) = record(&frames, &mut list);
+        // The scene's corner, then each level's whole target: the base first, the default weights'
+        // widest level, and the base again for its step up. The two widest levels have no weight,
+        // so they do not draw.
+        assert_eq!(viewports[0][2..4], [960, 540]);
+        assert_eq!(viewports[1][2..4], [910, 512]);
+        assert_eq!(viewports[8][2..4], [8, 4]);
+        assert_eq!(viewports.last().unwrap()[2..4], [910, 512]);
+        assert_eq!(viewports.len(), 1 + 15);
+
+        // The governor's halving draws each level into a corner of half its target, and drops the
+        // last level's two steps.
+        frames.set_bloom(
+            Some(Bloom::default()),
+            ChainFrame {
+                halvings: 1,
+                ..chain
+            },
+        );
+        only_uploads(&mut frames, &mut list, &mut arena);
+        let (halved, viewports) = record(&frames, &mut list);
+        assert_eq!(halved, passes - 2);
+        assert_eq!(viewports[1][2..4], [455, 256]);
+        assert_eq!(viewports[7][2..4], [8, 4]);
+
+        // A smaller base declares the chain again with one level fewer.
+        frames.set_bloom(
+            Some(Bloom::default()),
+            ChainFrame {
+                size: 256,
+                halvings: 0,
+            },
+        );
+        frames.sync_views(&[View::default()]);
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         frames
-            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
-        // Each step draws its corner: half of each side, rounded up.
-        let viewports = operands(&list, Op::SetViewport);
-        assert_eq!(viewports[1][2..4], [80, 45]);
-        assert_eq!(viewports.last().unwrap()[2..4], [5, 3]);
+        let plan = frames.graph().plan().unwrap();
+        assert_eq!(plan.textures().len(), without + LEVELS - 1);
+        assert!(frames.graph().find_pass(BLOOM_DOWN[LEVELS - 1]).is_none());
 
         // Off again, the steps and their targets are gone.
-        frames.set_bloom(None, 1);
+        frames.set_bloom(None, chain);
+        frames.sync_views(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+    }
+
+    #[test]
+    fn bloom_draws_after_the_first_frame_only_once_its_pipelines_are_built() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        let mut list = DrawList::with_capacity(4096);
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        // The sketch turns bloom on in frame 5, after the thread that draws drew frame 3.
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 3);
+        pipelines.create_new(&mut list, 5).unwrap();
+        assert!(!frames.bloom_draws(), "bloom waits for its pipelines");
         frames
             .prepare(&mut list, (320, 180), RenderScale::FULL)
             .unwrap();
-        assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+        assert_eq!(steps(&frames).last().unwrap(), &["Final"]);
+        frames.request_pipelines(&mut pipelines, 4);
+        assert!(!frames.bloom_draws());
+        frames.request_pipelines(&mut pipelines, 5);
+        assert!(
+            frames.bloom_draws(),
+            "bloom draws once a frame drew them built"
+        );
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames).last().unwrap(), &["FinalBloom"]);
+        frames.set_bloom(None, ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 6);
+        assert!(!frames.bloom_draws());
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 6);
+        assert!(frames.bloom_draws(), "built pipelines draw at once");
     }
 
     #[test]
@@ -2057,7 +2256,7 @@ mod tests {
             assert_eq!(steps(&frames), without);
 
             frames.set_outline(Some(Outline::default()), true);
-            frames.request_pipelines(&mut PipelineCache::default());
+            frames.request_pipelines(&mut PipelineCache::default(), 0);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
@@ -2160,8 +2359,8 @@ mod tests {
                 frames.depth_prepass(),
                 "ambient occlusion needs the prepass's depth"
             );
+            frames.request_pipelines(&mut PipelineCache::default(), 0);
             frames.sync_views(&[View::default(), View::default()]);
-            frames.request_pipelines(&mut PipelineCache::default());
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
@@ -2254,13 +2453,13 @@ mod tests {
     fn the_8_bit_path_draws_no_bloom() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
         frames.sync_views(&[View::default()]);
-        frames.set_bloom(Some(Bloom::default()), 1);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         assert!(!frames.bloom_draws());
         let mut list = DrawList::with_capacity(1024);
         frames
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
-        assert!(frames.graph().find_pass("BloomBright").is_none());
+        assert!(frames.graph().find_pass("BloomDown0").is_none());
         assert_eq!(steps(&frames), [vec!["Opaque", "Resolve"]]);
     }
 }

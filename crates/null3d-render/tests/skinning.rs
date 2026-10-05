@@ -12,8 +12,6 @@ use common::skinned::{AROUND, RINGS, column};
 use common::{World, count};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
-use null3d_core::layers::DEFAULT_LAYERS;
-use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{
     Op, buffer_usage, format, layout, permutation, template, texture_usage, vertex,
@@ -30,6 +28,9 @@ use null3d_render::view::ViewId;
 /// and the column.
 fn skinned(position: [f32; 3]) -> (World, Handle) {
     let mut world = World::new();
+    // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
+    // objects at once.
+    world.pipelines_built = 0;
     let column = world.add_skinned(position);
     (world, column)
 }
@@ -132,6 +133,64 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
     );
 }
 
+/// The column with a float tangent beside its texture coordinates.
+fn column_with_tangents() -> null3d_render::geometry::Geometry {
+    let plain = column();
+    let format = plain.format | vertex::TANGENT;
+    let mut g = null3d_render::geometry::Geometry {
+        format,
+        indices: plain.indices.clone(),
+        ..Default::default()
+    };
+    let stride = vertex::stride(plain.format) as usize;
+    // The tangent sits after the texture coordinates, before the joints.
+    let uv_end = (vertex::offset(plain.format, 2).unwrap() + 8) as usize;
+    for v in plain.vertices.chunks(stride) {
+        g.vertices.extend_from_slice(&v[..uv_end]);
+        for t in [1.0f32, 0.0, 0.0, 1.0] {
+            g.vertices.extend_from_slice(&t.to_le_bytes());
+        }
+        g.vertices.extend_from_slice(&v[uv_end..]);
+    }
+    assert_eq!(vertex::offset(format, 4), Some(uv_end as u32));
+    g
+}
+
+#[test]
+fn the_skinning_pass_skins_formats_with_a_tangent_with_a_build_of_their_own() {
+    let mut world = World::new();
+    world.add_skinned([-1.0, 0.0, 0.0]);
+    world.add_skinned_mesh([1.0, 0.0, 0.0], &column_with_tangents());
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    // One pipeline for each kind of format: the plain build, and the build with the tangent's code.
+    let skins: Vec<Vec<u32>> = operands(&first, Op::CreateComputePipeline)
+        .into_iter()
+        .filter(|p| p[1] == template::SKIN)
+        .collect();
+    assert_eq!(skins.len(), 2);
+    let plain = skins.iter().find(|p| p[2] == 0).expect("the plain build")[0];
+    let tangent = skins
+        .iter()
+        .find(|p| p[2] == permutation::VERTEX_TANGENT)
+        .expect("the tangent build")[0];
+    assert_ne!(plain, tangent);
+    // Each column's page skins in a dispatch of its own pipeline.
+    let groups = (RINGS * AROUND).div_ceil(64);
+    assert_eq!(skin_dispatches(&first, plain), [groups]);
+    assert_eq!(skin_dispatches(&first, tangent), [groups]);
+
+    // A scene without a tangent never builds the tangent's pipeline.
+    let (mut world, _) = skinned([0.0; 3]);
+    let first = world.step(&mut MockBackend::default(), true);
+    let skins: Vec<Vec<u32>> = operands(&first, Op::CreateComputePipeline)
+        .into_iter()
+        .filter(|p| p[1] == template::SKIN)
+        .collect();
+    assert_eq!(skins.iter().map(|p| p[2]).collect::<Vec<_>>(), [0]);
+}
+
 #[test]
 fn a_skinned_object_that_no_view_draws_is_not_skinned() {
     // Behind the camera, which looks down -z from z = 20, and with no shadows.
@@ -157,21 +216,7 @@ fn a_skinned_caster_that_only_a_cascade_sees_is_skinned_for_its_shadow() {
     // Out of the camera's view to the side, but inside the cascades' boxes, which reach toward the
     // light past the view.
     let (mut world, column) = skinned([0.0, 30.0, 0.0]);
-    world
-        .renderer
-        .settings_mut()
-        .set_sun([0.0, -1.0, 0.0], [3.0; 3]);
-    world
-        .renderer
-        .settings_mut()
-        .set_sun_shadow(Some(SunShadow {
-            cascades: 2,
-            map_size: 1024,
-            bias: 0.5,
-            normal_bias: 1.0,
-            distance: 40.0,
-            layers: DEFAULT_LAYERS,
-        }));
+    world.cast_sun_shadows(2);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
     let skin = operands(&first, Op::CreateComputePipeline)
@@ -201,6 +246,7 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
         ..RendererConfig::default()
     };
     let mut world = World::with_config(config);
+    world.pipelines_built = 0;
     world.add_skinned([0.0, 0.0, 0.0]);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
@@ -239,6 +285,9 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
             vertex_skinning,
             ..RendererConfig::default()
         });
+        // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
+        // objects at once.
+        world.pipelines_built = 0;
         let object = world.add_skinned([0.0, 0.0, 0.0]);
         world
             .renderer
@@ -287,44 +336,47 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
     }
 }
 
+#[test]
+fn an_outlined_skinned_object_added_during_play_asks_for_both_mask_pipelines_while_it_waits() {
+    for vertex_skinning in [false, true] {
+        let mut world = World::with_config(RendererConfig {
+            vertex_skinning,
+            ..RendererConfig::default()
+        });
+        let object = world.add_skinned([0.0, 0.0, 0.0]);
+        world
+            .renderer
+            .settings_mut()
+            .set_outline(Some(Outline::default()));
+        world
+            .scene
+            .apply_commands(
+                &[Command::set_flags(object, flags::OUTLINED, flags::OUTLINED)],
+                world.frame,
+            )
+            .unwrap();
+        let mut mock = MockBackend::default();
+        // Frames have drawn, so the skinned object waits for its pipelines, the outline mask's
+        // two among them, which the layouts ask for in the same frame.
+        let first = world.step(&mut mock, true);
+        let masks = operands(&first, Op::CreateRenderPipeline)
+            .into_iter()
+            .filter(|p| p[1] == template::OUTLINE_MASK)
+            .count();
+        assert_eq!(masks, 2, "both mask pipelines");
+    }
+}
+
 /// The WebGL2 frame builder, with `WEBGL_multi_draw` or without.
 fn webgl2(multi_draw: bool) -> World<CpuCulledRenderer> {
-    World::build(CpuCulledRenderer::new(CpuCulledConfig {
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig {
         multi_draw,
         ..CpuCulledConfig::default()
-    }))
-}
-
-/// Adds a second skinned object of `first`'s mesh and material at `position`, with an animated
-/// instance of its own.
-fn add_twin<B: FrameBuilder>(world: &mut World<B>, first: Handle, position: [f32; 3]) -> Handle {
-    let slot = world.scene.resolve(first).unwrap() as usize;
-    let (mesh, material) = (world.scene.meshes()[slot], world.scene.materials()[slot]);
-    let animations = world.animations.as_mut().unwrap();
-    let instance = animations.add_instance(0).unwrap();
-    let object = world.scene.reserve().unwrap();
-    world.scene.set_position(object, position).unwrap();
-    let commands = [
-        Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
-        Command::set_material(object, material),
-        Command::set_skin(object, Some(instance)),
-    ];
-    world.scene.apply_commands(&commands, world.frame).unwrap();
-    object
-}
-
-/// Turns on the sun's shadows, straight down, with two cascades.
-fn cast_sun_shadows<B: FrameBuilder>(world: &mut World<B>) {
-    let settings = world.renderer.settings_mut();
-    settings.set_sun([0.0, -1.0, 0.0], [3.0; 3]);
-    settings.set_sun_shadow(Some(SunShadow {
-        cascades: 2,
-        map_size: 1024,
-        bias: 0.5,
-        normal_bias: 1.0,
-        distance: 40.0,
-        layers: DEFAULT_LAYERS,
     }));
+    // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
+    // objects at once.
+    world.pipelines_built = 0;
+    world
 }
 
 /// The views' instance groups that a frame made.
@@ -353,7 +405,7 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
     for multi_draw in [false, true] {
         let mut world = webgl2(multi_draw);
         world.add_skinned([0.0; 3]);
-        cast_sun_shadows(&mut world);
+        world.cast_sun_shadows(2);
         let mut mock = MockBackend::default();
         let first = world.step(&mut mock, true);
 
@@ -414,7 +466,7 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
 fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
     let mut world = webgl2(true);
     let left = world.add_skinned([-2.0, 0.0, 0.0]);
-    let objects = [left, add_twin(&mut world, left, [2.0, 0.0, 0.0])];
+    let objects = [left, world.add_twin(left, [2.0, 0.0, 0.0])];
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
 
@@ -516,13 +568,14 @@ const CROWD: usize = 5_000;
 /// A crowd of `CROWD` skinned copies of one mesh in rows, with the sun's shadows in two cascades,
 /// on the frame builder of `world`. Returns the commands of its first frame.
 fn crowd<B: FrameBuilder>(mut world: World<B>) -> Vec<(Op, Vec<u32>)> {
+    world.pipelines_built = 0;
     world.make_room_for_crowd(CROWD as u32);
     let first = world.add_skinned([0.0, 0.0, 0.0]);
     for k in 1..CROWD {
         let position = [(k % 100) as f32 - 50.0, 0.0, -((k / 100) as f32)];
-        add_twin(&mut world, first, position);
+        world.add_twin(first, position);
     }
-    cast_sun_shadows(&mut world);
+    world.cast_sun_shadows(2);
     world.step(&mut MockBackend::default(), true)
 }
 
@@ -542,4 +595,37 @@ fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgl2() {
     let renderer = CpuCulledRenderer::new(CpuCulledConfig::default());
     let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
     assert!(count(&first, Op::MultiDrawIndexed) + count(&first, Op::DrawIndexed) > 0);
+}
+
+#[test]
+fn a_skinned_object_added_during_play_draws_once_its_pipelines_are_built() {
+    // A frame has drawn, so a pipeline counts as built from the frame after the one that created it.
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.step(&mut mock, true);
+    world.add_skinned([0.0, 0.0, 0.0]);
+    let asked = world.step(&mut mock, true);
+    assert_eq!(
+        count(&asked, Op::CreateComputePipeline),
+        1,
+        "the skinning pass's pipeline"
+    );
+    let pool = operands(&asked, Op::CreateBuffer)
+        .into_iter()
+        .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX)
+        .expect("the skinned vertex buffer");
+    let draws_pool = |commands: &[(Op, Vec<u32>)]| {
+        operands(commands, Op::SetVertexBuffer)
+            .iter()
+            .any(|v| v[0] == 0 && v[1] == pool[0])
+    };
+    assert!(
+        !draws_pool(&asked),
+        "no pass draws the skinned vertices before they are written"
+    );
+    let drawn = world.step(&mut mock, false);
+    assert!(
+        draws_pool(&drawn),
+        "every pass takes the object in once its pipelines are built"
+    );
 }

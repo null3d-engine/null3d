@@ -78,6 +78,8 @@ What the technique review adds:
 - The room is made over several frames at first use. A GPU loss in that time must restart it through R2-01's recovery.
 - Add-ons run inside the engine's job workers, so their failures reach the page through the paths that R3-01 and R3-02 add.
 
+The owner ruled on R3-03 on 5 October 2026 ([D-67](decisions/D-67-rulings-2026-10-05.md) ruling 3). After `destroy()`, the engine keeps one drawing worker for each canvas still in the document. A new engine can then draw on a canvas whose control moved to a worker. Refusing such a canvas was rejected. M2-R15 builds it.
+
 Rank: unchanged; R2-04 joins.
 
 ### D. Queries
@@ -124,7 +126,7 @@ The low findings go with the group whose files they touch. The issues below go w
 - R6-01: a multi-object reserve can grow WebAssembly memory without refreshing views. The single-threaded build then loses writes and throws.
 - R5-03: a frame that fails part way is still drawn, with half-applied state. Textures can lose their mips for good.
 - R2-02, R2-04: a WebGL2 context loss during the shader download is never restored. WebGPU never listens for GPU errors, so out-of-memory leaves a black canvas.
-- R1: a failed glTF load leaks textures, materials and the skeleton. Models can never be freed. Each destroyed sprite batch leaks a material, against a cap of 1,024.
+- R1: a failed glTF load leaks textures, materials and the skeleton. Models can never be freed (R1-07). Each destroyed sprite batch leaks a material, against a cap of 1,024. The owner ruled on 5 October 2026 that `mesh.destroy()` and `prefab.destroy()` come before 1.0, as task M2-R21, which completes R1-07 after `material.destroy()` ([D-67](decisions/D-67-rulings-2026-10-05.md) ruling 4).
 - R4-04 to R4-07: an additive play stops base clips on its layer. Step tracks hold the wrong key at a clip's end. The stored-tree reader accepts a damaged slot. Raycasts test characters in their rest pose, though the docs say otherwise.
 - R5-05 to R5-09: texture memory briefly doubles past the iPad's crash point. Narrow views get lit holes in shadows. Spot and point shadows go stale after a layer change, or on a still animated character. One light's shadow toggle rebuilds the whole pass plan.
 - R3-05, R3-06: a page-thread sketch's leftovers reach the next engine after `destroy()`; the preset check counts hidden-tab time and stores a lower preset for a week.
@@ -132,7 +134,7 @@ The low findings go with the group whose files they touch. The issues below go w
 Pairings with M2 work:
 
 - R5-06 (lit holes for cameras of 45 degrees or narrower) shares its cause with the cascade blend's fit. Each cascade's sphere fits only its slice along the view. Fix both in M2-R1, with a test that picks each point's cascade as the shader does.
-- R5-07, R5-08 and R5-09 pair with the tile changes (proposed M2-R9). They are per-face marks, a margin of the filter's reach, and a cap on redraws per frame.
+- R5-07, R5-08 and R5-09 are fixed with the tile changes of M2-R9: per-face marks, a margin of the filter's reach, and a cap on redraws per frame ([D-61](decisions/D-61-shadow-tile-redraws.md)).
 - R5-05 pairs with M2-A4's texture budget, which drops over-quality textures first, in Godot's order.
 - R4-04 pairs with the animator changes (proposed M2-C9).
 
@@ -145,7 +147,7 @@ Each was read on main fe137a6b.
 | 1 | The culling shader adds 1 to its bucket's single counter for every surviving object, and once more for each further mesh part. Instance batches put thousands of rows on one address. Qualcomm, Arm and Apple advise adding per workgroup first | `crates/null3d-shaders/wgsl/cull.wgsl` | Medium (speed) | Proposed M2-I5, after G2 |
 | 2 | Below render scale 1 the final pass runs 4 tone curves, 4 sRGB encodes and 4 dither hashes per canvas pixel, and skips FXAA, so Low at scale 0.5 has no anti-aliasing | `crates/null3d-shaders/wgsl/final.wgsl` | Medium (speed, image) | Proposed M2-F10, after P1 |
 | 3 | WebGPU skinning skins every seen object every frame with no test that its pose changed, and copies UVs and colors into each object's region | `crates/null3d-render/src/gpu_driven/skin.rs`; `wgsl/skin.wgsl` | Medium (speed, memory) | Proposed M2-C8, with group C |
-| 4 | Spot and point shadow tiles keep a margin of 1 texel, but the 5x5 filter reads 3 texels past the point. A moved caster marks all six faces of a point light dirty | `crates/null3d-render/src/shadow_tiles.rs` | Low | Proposed M2-R9 |
+| 4 | Spot and point shadow tiles keep a margin of 1 texel, but the 5x5 filter reads 3 texels past the point. A moved caster marks all six faces of a point light dirty | `crates/null3d-render/src/shadow_tiles.rs` | Low | Fixed in M2-R9 |
 | 5 | On desktop Linux, Mesa offers ETC2 and ASTC on GPUs that lack them and decodes them in software on the main thread. The transcoder picks ETC2 first for ETC1S data, so such a page stalls. three.js has a guard | `packages/engine/src/scene/ktx2.ts` | Medium | Proposed M2-A7 |
 | 6 | KTX2 textures whose sizes are not a multiple of 4 transcode to RGBA8, 4 to 8 times the memory, and the tool does not enforce whole blocks | `packages/engine/src/scene/ktx2.ts` | Low | M2-B1 follow-up, M2-A4 |
 | 7 | `assets optimize --lod` simplifies positions only, with no weld, `Prune` or `Regularize`, skips quantized inputs, and bakes a 1,080-pixel screen into the file. 122 of the 213 Kenney models get no levels | `packages/cli/src/assets/geometry.js` | Medium | Proposed M2-B8, after A3 |

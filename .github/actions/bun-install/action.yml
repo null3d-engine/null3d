@@ -1,0 +1,22 @@
+name: Install the packages
+description: >-
+  Installs the packages of bun.lock, with bun's download cache kept in the Actions cache. The
+  cache saves only when the workflow's SAVE_CACHES is true, after a run whose key found no full
+  match, so that a run on main keeps the cache that the other runs restore.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@v4
+      id: restore
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+        restore-keys: bun-${{ runner.os }}-
+    - shell: bash
+      run: bun install --frozen-lockfile
+    - uses: actions/cache/save@v4
+      if: env.SAVE_CACHES == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}

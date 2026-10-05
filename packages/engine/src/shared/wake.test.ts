@@ -8,7 +8,7 @@ import {
 	slotChangeOrRecheck,
 	WAKE,
 	type WakeTarget,
-	wakeFrom,
+	wakeWaiters,
 } from './wake';
 
 /** A wake target that records what it was sent. */
@@ -37,7 +37,7 @@ describe('waits that end at wake messages', () => {
 		if (!change) throw new Error('the wait ended before the slot changed');
 		expect(await settled(change)).toBe(false);
 		const { port1, port2 } = new MessageChannel();
-		wakeFrom(port1);
+		port1.onmessage = wakeWaiters;
 		port2.postMessage(WAKE);
 		await change;
 		port1.close();
@@ -106,6 +106,16 @@ describe('waits of a start', () => {
 	test('need no wait when the slot holds another value already', () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		Atomics.store(slots, Slot.PipelinesBuilt, 2);
+		expect(slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0)).toBeUndefined();
+	});
+	test('check again after a short time on memory that no other thread shares', async () => {
+		const { slots } = controlViews(createControlBuffer(false));
+		const started = performance.now();
+		const change = slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0);
+		if (!change) throw new Error('the wait ended before the slot changed');
+		Atomics.store(slots, Slot.PipelinesBuilt, 1);
+		await change;
+		expect(performance.now() - started).toBeGreaterThanOrEqual(RECHECK_MS - 5);
 		expect(slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0)).toBeUndefined();
 	});
 });

@@ -32,9 +32,10 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
     return out;
 }
 
-/// The texture's color, opaque. Sampling decodes an sRGB texture to linear values.
+/// The texture's color, opaque, times the exposure. Sampling decodes an sRGB texture to linear
+/// values.
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
     let texel = textureSample(layers, layer_sampler, in.uv, in.layer);
-    return null3d::tonemap::finish(texel.rgb, in.clip.xy, frame.output);
+    return null3d::tonemap::finish(texel.rgb * frame.output.exposure, in.clip.xy, frame.output);
 }

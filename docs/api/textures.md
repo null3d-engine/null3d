@@ -85,7 +85,8 @@ The engine turns the file's data into the first format on its list that the devi
 
 - UASTC keeps the most detail in ASTC and BC7. ETC1S data is ETC1 data, which ETC2 takes as it is. Without alpha, ETC2 also takes half the memory of the other formats.
 - Phones and tablets have ASTC and ETC2. Desktop GPUs have BC7, and Macs with Apple chips have all three. A device with none gets `rgba8unorm`.
-- A texture whose width or height is not a multiple of 4 texels gets `rgba8unorm` too. WebGPU keeps compressed textures in whole blocks of 4 x 4 texels.
+- On WebGL2, a device with BC7 gets `bc7-rgba-unorm` for both kinds of data. Some desktop drivers, such as Mesa on Linux, offer ETC2 and ASTC on GPUs without them. They then decode those textures in software on the page's thread, which stalls the page. WebGPU offers a format only where the GPU has it.
+- A texture whose width or height is not a multiple of 4 texels gets `rgba8unorm` too, at 4 to 8 times the memory. WebGPU keeps compressed textures in whole blocks of 4 x 4 texels. Development builds warn when a file loads this way. `bunx @null3d/cli assets optimize` writes sides that are whole blocks.
 - `texture.format` says which format the device got, and `texture.bytes` its GPU memory.
 
 A KTX2 file takes the texture options above, with these differences:
@@ -94,6 +95,7 @@ A KTX2 file takes the texture options above, with these differences:
 - The color space comes from the file, which `basisu` writes as sRGB unless you give it `-linear`. The `colorSpace` option overrides it.
 - The file's first row goes to v = 0, the bottom of a plane, as with three.js's `KTX2Loader`. glTF models expect that order. For a plane, encode the file flipped, as `basisu -y_flip` does. Compressed rows cannot turn over. So in development builds, `flipY: true` throws E1208, and so does `premultipliedAlpha: true`. A production build ignores both.
 - A KTX2 file of several layers makes a texture of several layers. Cube maps, 3D textures, UASTC HDR data and KTX2 files of other formats throw [E1412](../errors/E1412.md).
+- A file whose sides pass `textures.maxSize` throws E1412 before the transcoder runs. So do files of more than 256 layers or more mip levels than the size has. A file of more than 256 MiB of texels in the device's format throws it too.
 - `texture.update` throws E1208 on a texture from a KTX2 file. Load the file again instead.
 
 The first KTX2 file starts the transcoder: a worker that runs the official build of Basis Universal. It downloads about 365 KB after Brotli, once. A page that loads no KTX2 file never downloads it. The worker transcodes outside the sketch's frames. A build copies the transcoder's files beside the engine's other files, and the host serves them all alike. When they do not download, the load throws [E1406](../errors/E1406.md).
@@ -208,7 +210,7 @@ A texture: an image or data on the GPU, which materials sample. Its texels uploa
 | Member | Description |
 | --- | --- |
 | `readonly depth: number` | Layers: 1, or more for a texture from data with a depth. |
-| `readonly format: TextureFormat \| CompressedTextureFormat` | How the texture stores its texels on the GPU. A texture from a KTX2 file has the compressed format that the device supports, or `rgba8unorm` where it supports none. |
+| `readonly format: TextureFormat \| CompressedTextureFormat \| EnvironmentFormat` | How the texture stores its texels on the GPU. A texture from a KTX2 file has the compressed format that the device supports, or `rgba8unorm` where it supports none. |
 | `readonly colorSpace: TextureColorSpace` | Whether sampling turns the texels from sRGB into linear values, or reads them as they are. |
 | `readonly uvSet: 0 \| 1` | The set of texture coordinates that materials read the texture at. |
 | `readonly width: number` | Texels in each row. An update with an image of another size changes it. |
@@ -245,7 +247,7 @@ A texture's size and texels for `textures.fromData`, with its options.
 type TextureDataArray = Uint8Array | Uint8ClampedArray | Uint16Array | Float32Array;
 ```
 
-Texel data: bytes for `rgba8unorm`, and for `rgba16float` either half floats as 16-bit words or 32-bit floats, which the engine turns into half floats.
+Texel data: bytes for `rgba8unorm`, and for `rgba16float` either half floats as 16-bit words or 32-bit floats, which the engine turns into half floats. A 32-bit float outside the half float range of -65,504 to 65,504 takes the nearer end of it, because an infinite texel would draw black.
 
 ### `TextureFilter`
 

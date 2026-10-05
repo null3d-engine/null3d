@@ -92,7 +92,9 @@ use null3d_core::culling::{BucketedCull, NO_BUCKET};
 use null3d_core::handle::Handle;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
-use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
+use null3d_gpu::drawlist::{
+    DrawList, MAX_WORDS, Op, format, permutation, sizes, texture_usage, view,
+};
 
 use crate::ao::{self, AoIds};
 use crate::background::BackgroundPass;
@@ -100,6 +102,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
@@ -182,8 +185,10 @@ mod ids {
     pub const LIGHTS: u32 = LIGHT_GRID + RING;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = LIGHTS + RING;
+    /// The blank cube that the frame's groups bind while the scene has no environment.
+    pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
-    pub const BLANK_OUTLINE: u32 = BLANK_LUT + 1;
+    pub const BLANK_OUTLINE: u32 = BLANK_ENVIRONMENT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_OUTLINE + 1;
     /// The first joint of the instance that skins each source row, then the first texel of the
@@ -199,14 +204,16 @@ mod ids {
     pub const TARGETS: u32 = BLANK_AO + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The comparison sampler of the shadow map.
+    /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
     /// The linear sampler of the final pass's color grading table.
     pub const LUT_SAMPLER: u32 = 3;
+    /// The sampler of the environment's cube texture.
+    pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 4;
+    pub const SAMPLERS: u32 = 5;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -242,8 +249,10 @@ pub struct CpuCulledConfig {
     pub canvas: CanvasOutput,
     /// Materials the table holds, at most [`sizes::MAX_MATERIALS`].
     pub max_materials: u32,
-    /// Words of each frame's draw list.
+    /// Words of room in each frame's draw list at the start. A list grows when a frame needs more.
     pub draw_list_words: usize,
+    /// The most words that a frame's draw list grows to. A frame that needs more fails.
+    pub draw_list_limit: usize,
     /// The device's largest texture width and height; WebGL2 allows at least 2,048.
     pub max_texture_size: u32,
     /// True when the device has `WEBGL_multi_draw`.
@@ -264,6 +273,7 @@ impl Default for CpuCulledConfig {
             canvas: CanvasOutput::default(),
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 64 * 1024,
+            draw_list_limit: MAX_WORDS,
             max_texture_size: 2048,
             multi_draw: false,
             cell_culling: true,
@@ -347,6 +357,9 @@ pub struct CpuCulledRenderer {
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
+    /// The cube texture that the camera views' frame groups bind: the environment's, or the
+    /// blank one.
+    bound_environment: u32,
 }
 
 impl CpuCulledRenderer {
@@ -374,7 +387,7 @@ impl CpuCulledRenderer {
                 textures,
                 config.canvas,
             ),
-            lists: ParityLists::new(config.draw_list_words),
+            lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
             graph: {
@@ -439,6 +452,7 @@ impl CpuCulledRenderer {
             skins: Skins::default(),
             created: false,
             dfg_pending: false,
+            bound_environment: ids::BLANK_ENVIRONMENT,
         }
     }
 
@@ -547,6 +561,7 @@ impl CpuCulledRenderer {
             .map_err(|_| RecordError::OutOfMemory {
                 bytes: rows.saturating_mul(4),
             })?;
+        self.skins.open_before_first_frame(input.pipelines_built);
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
@@ -613,9 +628,10 @@ impl CpuCulledRenderer {
                 place,
                 RESIDENT,
                 shadows,
-                |slot, key| skins.key(slot, key),
+                |slot, key| skins.sorted_pipeline(slot, key),
             )
             .map_err(out_of_memory)?;
+        self.skins.asked();
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
         self.layout.add_sorted(records, self.sorted.scene_slots());
         self.clusters
@@ -746,7 +762,7 @@ impl CpuCulledRenderer {
     /// material it holds and one for each material's custom values, of three.js's table of
     /// specular terms, and of the shadows' uniform block and comparison sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
+        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER, None)?;
         ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         list.push(
             Op::CreateTexture,
@@ -763,6 +779,7 @@ impl CpuCulledRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         self.dfg_pending = true;
         self.created = true;
@@ -968,9 +985,6 @@ impl CpuCulledRenderer {
         }
         self.add_culled_views()?;
         let views = self.settings.views().len();
-        list.reserve_words(
-            self.config.draw_list_words + Transparent::words_bound(&self.sorted, views),
-        );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         self.lines.request_pipeline(
@@ -979,17 +993,18 @@ impl CpuCulledRenderer {
             self.graph.scene_targets(),
         );
         self.graph
-            .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
+            .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
-        self.graph.request_pipelines(&mut self.pipelines);
+        self.graph
+            .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        let created_pipelines = self.pipelines.create_new(list)? > 0;
+        let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }
@@ -1009,10 +1024,11 @@ impl CpuCulledRenderer {
             .shadow_map()
             .zip(self.graph.shadow_atlas())
             .expect("the builder's graph binds a shadow map and a shadow atlas");
-        let lit = LitTextures {
+        let mut lit = LitTextures {
             shadow_map,
             atlas,
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
+            environment: self.bound_environment,
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1056,6 +1072,21 @@ impl CpuCulledRenderer {
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings
             .record_materials(list, arena, table, input.frame)?;
+        // The environment's map may have finished its upload, or gone, with this frame's texture
+        // work, so the views read it from here on.
+        let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
+        if environment != self.bound_environment {
+            self.bound_environment = environment;
+            lit.environment = environment;
+            for index in 0..self.opaque.views() {
+                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit))?;
+            }
+        }
+        for index in 0..views {
+            if let Some(frame) = self.culling.frame_mut(ViewId::from_index(index)) {
+                frame.uniform.environment = uniform;
+            }
+        }
         self.graph.upload(
             list,
             arena,
@@ -1309,7 +1340,9 @@ impl FrameBuilder for CpuCulledRenderer {
             input.render_scale,
         );
         self.shadow = self.settings.shadow_frame(input);
-        let camera = self.settings.camera_position(scene, parity);
+        let camera = self
+            .settings
+            .view_frame(ViewId::CAMERA, scene, parity, canvas, scale);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
         self.tiles
@@ -1325,11 +1358,19 @@ impl FrameBuilder for CpuCulledRenderer {
             .zip(self.settings.camera_projection(canvas));
         self.graph.set_ao(ao, self.settings.ao_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skins
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         if input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || prepass_changed
+            || skinned_appear
         {
             self.rebuild_layout(input, shadows, outlines)?;
         }
@@ -1410,10 +1451,9 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
-        let (mut list, mut arena) = self.lists.take(input.frame);
+        let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
-        self.lists.restore(input.frame, list, arena);
-        result
+        self.lists.restore(input.frame, list, arena, result)
     }
 
     fn visible_entries(&self, frame: u32) -> Option<u32> {
@@ -1441,7 +1481,9 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn reset_gpu(&mut self) {
+        self.lists.reset_gpu();
         self.created = false;
+        self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

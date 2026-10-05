@@ -18,7 +18,9 @@ import {
 	compareResults,
 	FUNCTIONS,
 	INPUT_TEXELS,
+	probeFault,
 	RESULT_VALUES,
+	TARGET_PROBE,
 } from './lib/shader-library-cases';
 
 type Tier = 'webgpu' | 'compat' | 'webgl2';
@@ -65,6 +67,23 @@ function moduleRows(cases: readonly Case[], module: string): [number, number][] 
 interface Drawn {
 	bits: Uint32Array;
 	failures: Map<string, string>;
+	/** On WebGL2: the kind of storage that held the results. */
+	target?: string;
+	/**
+	 * On WebGL2: why the device cannot hand back 32-bit results whole, from the probe of the
+	 * target. The values it read back then say nothing of the library.
+	 */
+	deviceFault?: string;
+	/**
+	 * On WebGL2: how the library's own shader changed whole numbers that it passed to a target that
+	 * keeps them. Engine shaders keep whole numbers the same way, so the values say nothing more.
+	 */
+	shaderFault?: string;
+	/**
+	 * On WebGL2: how a shader changed whole numbers that it declares without a precision, under
+	 * `precision highp int;`. The GLSL build declares each one `highp`, which avoids this.
+	 */
+	precisionFault?: string;
 }
 
 function message(error: unknown): string {
@@ -249,22 +268,45 @@ function compile(gl: WebGL2RenderingContext, type: GLenum, source: string): WebG
 	return compiled;
 }
 
-/** Links a module's program and makes it current, or throws with the compiler's or linker's log. */
-function useProgram(gl: WebGL2RenderingContext, glsl: GlslProgram): void {
+/** Links a program and makes it current, or throws with the compiler's or linker's log. */
+function linkProgram(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
 	const program = gl.createProgram();
-	gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, glsl.vertex.source));
-	gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, glsl.fragment.source));
+	gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
+	gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
 	gl.linkProgram(program);
 	if (!gl.getProgramParameter(program, gl.LINK_STATUS))
 		throw new Error(`GLSL link: ${gl.getProgramInfoLog(program) ?? ''}`);
 	gl.useProgram(program);
+	return program;
+}
+
+/** Links a module's program, makes it current, and points its samplers at their units. */
+function useProgram(gl: WebGL2RenderingContext, glsl: GlslProgram): void {
+	const program = linkProgram(gl, glsl.vertex.source, glsl.fragment.source);
 	// The cases go in unit 0 and the table of specular terms in unit 1.
 	for (const texture of glsl.fragment.textures)
 		gl.uniform1i(gl.getUniformLocation(program, texture.name), texture.binding === 3 ? 1 : 0);
 }
 
+/**
+ * A function number that no case has. The library's test shader gives back the first input texel
+ * of such a row.
+ */
+const ECHO_FUNCTION = 0xffffffff;
+
+/** The input texels with one more row: the probe's, whose shader gives back `TARGET_PROBE`. */
+function withProbeRow(input: Uint32Array): Uint32Array {
+	const texels = new Uint32Array(input.length + CASE_TEXELS * 4);
+	texels.set(input);
+	texels[input.length] = ECHO_FUNCTION;
+	texels.set(TARGET_PROBE, input.length + 4);
+	return texels;
+}
+
 function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 	const rows = cases.length;
+	// The row after the cases is the probe's, in the inputs and in the target.
+	const probeRow = rows;
 	const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
 	if (!gl) throw new Error('no WebGL2 context');
 
@@ -279,11 +321,11 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 		0,
 		gl.RGBA32UI,
 		CASE_TEXELS,
-		rows,
+		rows + 1,
 		0,
 		gl.RGBA_INTEGER,
 		gl.UNSIGNED_INT,
-		input,
+		withProbeRow(input),
 	);
 	// The table of specular terms is read with texelFetch.
 	const dfg = gl.createTexture();
@@ -303,25 +345,31 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 		dfgTexels(),
 	);
 
-	const target = gl.createRenderbuffer();
-	gl.bindRenderbuffer(gl.RENDERBUFFER, target);
-	gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA32UI, RESULT_TEXELS, rows);
-	const framebuffer = gl.createFramebuffer();
-	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-	gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, target);
-	if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-		throw new Error('the rgba32uint target is not complete');
-	gl.viewport(0, 0, RESULT_TEXELS, rows);
+	const { target, deviceFault, precisionFault } = integerTarget(gl, rows + 1);
 	gl.enable(gl.SCISSOR_TEST);
 	// GL counts rows from the bottom, in the fragment position, the scissor box and readPixels, so
 	// row k of the target and of the readback is case k, as on WebGPU.
 	const failures = new Map<string, string>();
+	// The first module that draws also draws the probe's row, when the target keeps every bit: the
+	// probe's whole numbers then take the library's own way through its shader to the target.
+	let echoed = deviceFault !== undefined;
+	let shaderFault: string | undefined;
 	for (const [module, variant] of VARIANTS) {
 		try {
 			useProgram(gl, variant.glsl!.main);
 			for (const [first, count] of moduleRows(cases, module)) {
 				gl.scissor(0, first, RESULT_TEXELS, count);
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
+			}
+			if (!echoed) {
+				gl.scissor(0, probeRow, RESULT_TEXELS, 1);
+				gl.drawArrays(gl.TRIANGLES, 0, 3);
+				shaderFault = probeFault(
+					`the library test shader's write (its ${module} module) into the ${target} target`,
+					texelAt(gl, probeRow),
+				);
+				if (shaderFault) progress(shaderFault);
+				echoed = true;
 			}
 			const error = gl.getError();
 			if (error !== gl.NO_ERROR) throw new Error(`WebGL2 error ${error} after the draws`);
@@ -335,13 +383,140 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 	if (error !== gl.NO_ERROR) throw new Error(`WebGL2 error ${error} after the readback`);
 	if (gl.isContextLost()) throw new Error('the WebGL2 context was lost');
 	gl.getExtension('WEBGL_lose_context')?.loseContext();
-	return { bits, failures };
+	return {
+		bits,
+		failures,
+		target,
+		...(deviceFault && { deviceFault }),
+		...(shaderFault && { shaderFault }),
+		...(precisionFault && { precisionFault }),
+	};
+}
+
+/** A full-screen triangle for the probes' shaders. */
+const PROBE_VERTEX = `#version 300 es
+void main() {
+	vec2 corner = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+	gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/**
+ * A probe's fragment shader: it writes the probe's values from a uniform, through a struct and a
+ * function's result, as the library's shader passes its results. `precision` goes before each
+ * declaration of a whole number: `highp ` as the GLSL build writes it, or nothing, which leaves
+ * each to the shader's default precision.
+ */
+function probeFragment(precision: string): string {
+	return `#version 300 es
+precision highp float;
+precision highp int;
+struct Probe {
+	${precision}uvec4 value;
+};
+uniform ${precision}uvec4 probe;
+layout(location = 0) out ${precision}uvec4 color;
+Probe echo(${precision}uvec4 value) {
+	return Probe(value);
+}
+void main() {
+	color = echo(probe).value;
+}`;
+}
+
+/** The kinds of storage that the page tries for its target, in order. */
+type TargetKind = 'texture' | 'renderbuffer';
+const TARGET_KINDS: readonly TargetKind[] = ['texture', 'renderbuffer'];
+
+/** Reads the first texel of a row of the bound target. */
+function texelAt(gl: WebGL2RenderingContext, row: number): Uint32Array {
+	const texel = new Uint32Array(4);
+	gl.readPixels(0, row, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, texel);
+	return texel;
+}
+
+/** Links a probe's program, with the probe's values in its uniform. */
+function probeProgram(gl: WebGL2RenderingContext, precision: string): WebGLProgram {
+	const program = linkProgram(gl, PROBE_VERTEX, probeFragment(precision));
+	gl.uniform4uiv(gl.getUniformLocation(program, 'probe'), new Uint32Array(TARGET_PROBE));
+	return program;
+}
+
+/** Draws a probe's program over the bound target, and returns what its first texel lost. */
+function drawnFault(
+	gl: WebGL2RenderingContext,
+	program: WebGLProgram,
+	what: string,
+): string | undefined {
+	gl.useProgram(program);
+	gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
+	gl.drawArrays(gl.TRIANGLES, 0, 3);
+	return probeFault(what, texelAt(gl, 0));
+}
+
+/** Binds a framebuffer with an rgba32uint target of this kind, or throws when it is incomplete. */
+function bindTarget(gl: WebGL2RenderingContext, kind: TargetKind, rows: number): void {
+	gl.bindFramebuffer(gl.FRAMEBUFFER, gl.createFramebuffer());
+	if (kind === 'texture') {
+		// A unit of its own, as the library's programs read units 0 and 1.
+		gl.activeTexture(gl.TEXTURE2);
+		const texture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, texture);
+		gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, RESULT_TEXELS, rows);
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+	} else {
+		const storage = gl.createRenderbuffer();
+		gl.bindRenderbuffer(gl.RENDERBUFFER, storage);
+		gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA32UI, RESULT_TEXELS, rows);
+		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, storage);
+	}
+	if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+		throw new Error(`the rgba32uint ${kind} target is not complete`);
+}
+
+/**
+ * Binds an rgba32uint target for the results, after a probe of its 32 bits: a clear with whole
+ * numbers that use both halves of each value, read back, then a shader's write of the same
+ * numbers, each declared `highp`, read back. The page takes the first kind of storage that keeps
+ * every bit. When none does, the device cannot hand back the library's results whole,
+ * `deviceFault` says what each probe read, and the target is the last kind tried. On a target
+ * that keeps them, the same shader with each whole number left to the default precision then
+ * tells whether the driver honours `precision highp int;`, in `precisionFault`.
+ */
+function integerTarget(
+	gl: WebGL2RenderingContext,
+	rows: number,
+): { target: TargetKind; deviceFault?: string; precisionFault?: string } {
+	const declared = probeProgram(gl, 'highp ');
+	const defaulted = probeProgram(gl, '');
+	gl.viewport(0, 0, RESULT_TEXELS, rows);
+	const faults: string[] = [];
+	for (const kind of TARGET_KINDS) {
+		bindTarget(gl, kind, rows);
+		gl.clearBufferuiv(gl.COLOR, 0, new Uint32Array(TARGET_PROBE));
+		const found = [
+			probeFault(`a clear of the ${kind} target`, texelAt(gl, 0)),
+			drawnFault(gl, declared, `a shader's write into the ${kind} target`),
+		].filter((fault) => fault !== undefined);
+		for (const fault of found) progress(fault);
+		if (found.length === 0) {
+			const precisionFault = drawnFault(
+				gl,
+				defaulted,
+				`a shader's write of whole numbers declared without a precision, under precision highp int, into the ${kind} target`,
+			);
+			if (precisionFault) progress(precisionFault);
+			gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
+			return { target: kind, ...(precisionFault && { precisionFault }) };
+		}
+		faults.push(...found);
+	}
+	return { target: TARGET_KINDS.at(-1)!, deviceFault: faults.join('; ') };
 }
 
 run('shader-library', async () => {
 	const cases = allCases();
 	const input = inputTexels(cases);
-	const { bits, failures } =
+	const { bits, failures, target, deviceFault, shaderFault, precisionFault } =
 		tier === 'webgl2' ? runWebGL2(cases, input) : await runWebGPU(cases, input);
 	// The rows of a module that could not draw hold no results, so its failure alone reports it.
 	const drawn = cases.flatMap((c, row) => (failures.has(MODULES[c.function]!) ? [] : [row]));
@@ -354,9 +529,16 @@ run('shader-library', async () => {
 		functions: FUNCTIONS.length,
 		cases: cases.length,
 		failures: [...failures].map(([module, reason]) => `${module}: ${reason}`),
-		mismatches: compareResults(
-			drawn.map((row) => cases[row]!),
-			drawnBits,
-		),
+		...(target && { target }),
+		...(deviceFault && { deviceFault }),
+		...(shaderFault && { shaderFault }),
+		...(precisionFault && { precisionFault }),
+		mismatches:
+			deviceFault || shaderFault
+				? []
+				: compareResults(
+						drawn.map((row) => cases[row]!),
+						drawnBits,
+					),
 	};
 });

@@ -1,5 +1,5 @@
 // The final pass: one triangle over the whole canvas. Each pixel reads the scene color under it,
-// applies the exposure and the tone mapping, encodes sRGB and dithers. The FXAA build smooths
+// which holds exposed color, applies the tone mapping, encodes sRGB and dithers. The FXAA build smooths
 // edges first. On the 8-bit path the scene shaders did the output transform already, so the scene
 // color holds display color, and the pass keeps the color as it reads it.
 //
@@ -15,10 +15,11 @@
 // as the canvas's premultiplied alpha. WebGL2 keeps GL's row order, bottom row first, in the scene
 // color and the canvas alike.
 //
-// The BLOOM build adds bloom's five levels to the scene color before the output transform, each
-// read with a linear filter and weighted as three.js's UnrealBloomPass weights its mips. Bloom is
-// smooth, so a pixel reads it once at its own place, also where it blends four texels of the
-// corner. Bloom adds coverage as its brightest channel, so it glows over a transparent canvas.
+// The BLOOM build reads the base level of bloom's mip chain once, with a linear filter, and blends
+// it into the scene color before the output transform: it mixes it in by the intensity, which keeps
+// the image's light, or adds or screens it. Bloom is smooth, so a pixel reads it once at its own
+// place, also where it blends four texels of the corner. Bloom adds coverage as its brightest
+// channel, so it glows over a transparent canvas.
 //
 // While objects are outlined, the pass draws a crisp line around them from the outline mask, after
 // the output transform: outside the objects, the highest coverage of the mask at 8 places on a
@@ -29,6 +30,7 @@
 // after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
 // table is a 3D texture that maps a display color to its graded color, read with a linear filter.
 // Grading works on the color that a pixel's coverage divides out, and multiplies it back after.
+#import null3d::color::{limit_hdr}
 #import null3d::tonemap
 
 /// The settings flag that says the scene color holds display color.
@@ -112,39 +114,61 @@ fn outlined(color: vec4f, uv: vec2f, size: vec2f, render: vec2f) -> vec4f {
 }
 
 #ifdef BLOOM
-/// Each level's weight, with the strength in it: levels 0 to 3, then level 4 in `last.x`.
+/// Bloom's settings: in xy the base level's drawn corner in texels, in z the intensity, and in w
+/// the blend: 0 mixes, 1 adds, 2 screens.
 struct Bloom {
-    weights: vec4f,
-    last: vec4f,
+    glow: vec4f,
 }
 
 @group(0) @binding(2) var<uniform> bloom: Bloom;
-@group(0) @binding(3) var bloom_level0: texture_2d<f32>;
-@group(0) @binding(4) var bloom_level1: texture_2d<f32>;
-@group(0) @binding(5) var bloom_level2: texture_2d<f32>;
-@group(0) @binding(6) var bloom_level3: texture_2d<f32>;
-@group(0) @binding(7) var bloom_level4: texture_2d<f32>;
+@group(0) @binding(3) var bloom_base: texture_2d<f32>;
 @group(0) @binding(8) var bloom_sampler: sampler;
 
-/// Bloom at `uv` on the drawn corner, with its coverage.
-fn glow(uv: vec2f, render: vec2f) -> vec4f {
-    let at0 = level_uv(textureDimensions(bloom_level0), 1u, uv, render);
-    let at1 = level_uv(textureDimensions(bloom_level1), 2u, uv, render);
-    let at2 = level_uv(textureDimensions(bloom_level2), 3u, uv, render);
-    let at3 = level_uv(textureDimensions(bloom_level3), 4u, uv, render);
-    let at4 = level_uv(textureDimensions(bloom_level4), 5u, uv, render);
-    let light = bloom.weights.x * textureSampleLevel(bloom_level0, bloom_sampler, at0, 0.0).rgb
-        + bloom.weights.y * textureSampleLevel(bloom_level1, bloom_sampler, at1, 0.0).rgb
-        + bloom.weights.z * textureSampleLevel(bloom_level2, bloom_sampler, at2, 0.0).rgb
-        + bloom.weights.w * textureSampleLevel(bloom_level3, bloom_sampler, at3, 0.0).rgb
-        + bloom.last.x * textureSampleLevel(bloom_level4, bloom_sampler, at4, 0.0).rgb;
+/// The glow at `uv` on the drawn corner, times the intensity, with its coverage. The base level
+/// covers the whole image in its own drawn corner.
+fn glow(uv: vec2f) -> vec4f {
+    let extent = vec2f(textureDimensions(bloom_base));
+    let corner = bloom.glow.xy;
+#ifdef WEBGL2
+    // WebGL2 counts rows from the bottom, and draws a corner into its target's top rows.
+    let origin = vec2f(0.0, extent.y - corner.y);
+#else
+    let origin = vec2f(0.0);
+#endif
+    let at = (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
+    let light = bloom.glow.z * textureSampleLevel(bloom_base, bloom_sampler, at, 0.0).rgb;
     return vec4f(light, max(light.r, max(light.g, light.b)));
 }
+
+/// Scene color `texel` with the glow `light` blended in: mixed, which moves the color toward the
+/// glow by the intensity, added, or screened as pmndrs's SCREEN blend does.
+fn with_glow(texel: vec4f, light: vec4f) -> vec4f {
+    if bloom.glow.w > 1.5 {
+        let screened = texel.rgb + light.rgb - min(texel.rgb * light.rgb, vec3f(1.0));
+        return vec4f(screened, max(texel.a, light.a));
+    }
+    if bloom.glow.w > 0.5 {
+        return texel + light;
+    }
+    return vec4f(texel.rgb * (1.0 - bloom.glow.z) + light.rgb, max(texel.a, light.a));
+}
 #else
-fn glow(uv: vec2f, render: vec2f) -> vec4f {
+fn glow(uv: vec2f) -> vec4f {
     return vec4f(0.0);
 }
+
+fn with_glow(texel: vec4f, light: vec4f) -> vec4f {
+    return texel;
+}
 #endif
+
+/// The scene color's texel at `pixel`, no brighter than a 16-bit float holds. The scene shaders
+/// write no brighter color, but additive blending can add past it, and some GPUs store the sum as
+/// infinity, which the tone mapping curves would turn into black.
+fn scene_texel(pixel: vec2i) -> vec4f {
+    let texel = textureLoad(scene_color, pixel, 0);
+    return vec4f(limit_hdr(texel.rgb), texel.a);
+}
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
@@ -186,7 +210,7 @@ fn squeeze(texel: vec4f) -> vec4f {
     if display_color() {
         return texel;
     }
-    return vec4f(texel.rgb / (1.0 + settings.output.exposure * dot(texel.rgb, LUMINANCE)), texel.a);
+    return vec4f(texel.rgb / (1.0 + dot(texel.rgb, LUMINANCE)), texel.a);
 }
 
 /// Undoes `squeeze`.
@@ -194,13 +218,13 @@ fn unsqueeze(c: vec4f) -> vec4f {
     if display_color() {
         return c;
     }
-    let squeezed = min(settings.output.exposure * dot(c.rgb, LUMINANCE), 0.999);
+    let squeezed = min(dot(c.rgb, LUMINANCE), 0.999);
     return vec4f(c.rgb / (1.0 - squeezed), c.a);
 }
 
 /// The squeezed texel at `pixel`, clamped inside the scene color, whose last texel is `last`.
 fn texel_at(pixel: vec2i, last: vec2i) -> vec4f {
-    return squeeze(textureLoad(scene_color, clamp(pixel, vec2i(0), last), 0));
+    return squeeze(scene_texel(clamp(pixel, vec2i(0), last)));
 }
 
 /// The squeezed color at a point in pixels, filtered between its four nearest texels.
@@ -213,18 +237,18 @@ fn tap(point: vec2f, last: vec2i) -> vec4f {
     return mix(top, bottom, f.y);
 }
 
-/// The brightness that FXAA compares, from 0 to 1 as the eye sees it. Squeezed HDR color takes
-/// the exposure and a square root, near the sRGB curve.
+/// The brightness that FXAA compares, from 0 to 1 as the eye sees it. Squeezed HDR color takes a
+/// square root, near the sRGB curve.
 fn luma(c: vec4f) -> f32 {
     let y = dot(c.rgb, LUMINANCE);
-    return select(sqrt(settings.output.exposure * y), y, display_color());
+    return select(sqrt(y), y, display_color());
 }
 
 /// The scene color of the pixel at `position`, smoothed along the edge that crosses it.
 fn pixel_color(position: vec2f) -> vec4f {
     let last = vec2i(textureDimensions(scene_color)) - 1;
     let pixel = vec2i(position);
-    let texel = textureLoad(scene_color, pixel, 0);
+    let texel = scene_texel(pixel);
     let m = luma(squeeze(texel));
     let nw = luma(texel_at(pixel + vec2i(-1, -1), last));
     let ne = luma(texel_at(pixel + vec2i(1, -1), last));
@@ -250,7 +274,7 @@ fn pixel_color(position: vec2f) -> vec4f {
 #else
 /// The scene color of the pixel at `position`.
 fn pixel_color(position: vec2f) -> vec4f {
-    return textureLoad(scene_color, vec2i(position), 0);
+    return scene_texel(vec2i(position));
 }
 #endif
 
@@ -311,10 +335,10 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
     // target of the frame shares.
     let uv = position.xy / size;
-    let light = glow(uv, render);
+    let light = glow(uv);
     var color = vec4f(0.0);
     if whole {
-        color = display(pixel_color(position.xy) + light, position.xy);
+        color = display(with_glow(pixel_color(position.xy), light), position.xy);
     }
 #ifdef WEBGL2
     let from_top = vec2f(position.x, size.y - position.y);
@@ -334,7 +358,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let corner = vec2f(f32(tap & 1u), f32(tap >> 1u));
         let weights = mix(1.0 - share, share, corner);
         let texel = corner_texel(min(first + corner, render - 1.0), size);
-        let texel_color = textureLoad(scene_color, texel, 0) + light;
+        let texel_color = with_glow(scene_texel(texel), light);
         color += weights.x * weights.y * display(texel_color, position.xy);
     }
     return grade(outlined(color, uv, size, render), position.xy, size);

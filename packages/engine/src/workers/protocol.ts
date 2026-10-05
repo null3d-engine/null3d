@@ -65,6 +65,8 @@ export interface RendererSetup {
 	hold?: boolean;
 	/** How ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */
 	glTiming?: GlTimingMode;
+	/** The features whose shader files load before the first frame, as `createEngine` lists them. */
+	preload?: readonly string[];
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -81,8 +83,11 @@ export type SketchWorkerInit = CoreHandoff & {
 	jobWorkers: number;
 	/** The GPU path the engine chose, and what it offers, for the sketch's `engine.capabilities`. */
 	capabilities: EngineCapabilities;
-	/** Present in low-latency mode, where the sketch worker also draws. */
-	renderer?: RendererSetup;
+	/**
+	 * Present in low-latency mode, where the sketch worker also draws. A worker that kept the canvas
+	 * of an engine that stopped gets no canvas: it draws on the one it kept.
+	 */
+	renderer?: DrawingWorkerSetup;
 	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */
 	hold?: number;
 	/** The quality preset and settings that the page chose. */
@@ -95,8 +100,11 @@ export type SketchWorkerInit = CoreHandoff & {
 	threads: [string, number[]][];
 };
 
+/** The setup of a worker that draws, whose canvas is absent when it kept one from an engine before. */
+export type DrawingWorkerSetup = Omit<RendererSetup, 'canvas'> & { canvas?: OffscreenCanvas };
+
 export type RenderWorkerInit = CoreHandoff &
-	RendererSetup & {
+	DrawingWorkerSetup & {
 		type: 'init';
 		/** The port that texture images come through from the sketch worker. */
 		imagePort: MessagePort;
@@ -106,13 +114,15 @@ export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
 
 /**
  * A request any worker that owns a renderer takes: a capture, which it answers with the frame's
- * pixels, or with a PNG file of the frame when `image` is true; a simulated loss; or a stop, which
- * it answers once it has destroyed its GPU objects and its device.
+ * pixels, or with a PNG file of the frame when `image` is true; a simulated loss; a stop, which it
+ * answers once it has destroyed its GPU objects and its device; or a park after the stop, which lets
+ * go of the engine's core and keeps the canvas for the next engine.
  */
 export type RendererRequest =
 	| { type: 'capture'; image?: boolean }
 	| { type: 'lose-gpu' }
-	| { type: 'stop-drawing' };
+	| { type: 'stop-drawing' }
+	| { type: 'park' };
 
 /**
  * Sent to the worker that draws as soon as the probe has chosen the GPU path, before the core
@@ -134,6 +144,13 @@ export type WorkerReply =
 			tier?: Tier;
 	  }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
+	/**
+	 * A thread's loop failed after the start, such as the sketch's frame loop, the render loop or a
+	 * job worker's part in the job system. The page reports it as E1404.
+	 */
+	| { type: 'fault'; role: 'sketch' | 'render' | 'job'; index?: number; message: string }
+	/** The GPU of the thread that draws ran out of memory or rejected a command; the engine draws on. */
+	| { type: 'gpu-error'; role: 'sketch' | 'render'; outOfMemory: boolean; message: string }
 	/** A job worker left the job system after the engine stopped, so it no longer blocks. */
 	| { type: 'stopped'; role: 'job'; index: number }
 	/** The worker that draws stopped drawing, and destroyed its GPU objects and its device. */

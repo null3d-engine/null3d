@@ -11,10 +11,8 @@ import { type WebDriver, WebDriverError } from './webdriver.ts';
 export interface CloudAccount {
 	/** The session's W3C capabilities for a device. */
 	capabilities(device: CloudDevice, runner: string): Record<string, unknown>;
-	/** Whether the device's browser needs the cloud's command that passes a certificate warning. */
-	needsAcceptSsl(device: CloudDevice): boolean;
-	/** The script that passes the certificate warning. */
-	acceptSslScript: string;
+	/** The script that passes the device's certificate warning after a load, where one shows. */
+	certificateScript(device: CloudDevice): string | undefined;
 	/** The session's page on the cloud's dashboard, or undefined when the cloud did not say. */
 	link(session: string): Promise<string | undefined>;
 	/** Marks a session passed or failed, with a reason. */
@@ -24,6 +22,26 @@ export interface CloudAccount {
 /** The script that reads the runner page's status line, or the page's title before it loads. */
 export const STATUS_SCRIPT =
 	"var line = document.getElementById('status'); return line ? line.textContent : document.title;";
+
+/** The script that reads whether the browser shows the page or reports it hidden. */
+export const VISIBILITY_SCRIPT = 'return document.visibilityState;';
+
+/**
+ * The script that asks the page for one animation frame, and returns whether the frame that its
+ * last run asked for came. Its first run in a page arms it and returns false.
+ */
+export const FRAME_SCRIPT =
+	'var w = window; var came = w.__null3dFrameCame === true; w.__null3dFrameCame = false; requestAnimationFrame(function () { w.__null3dFrameCame = true; }); return came;';
+
+/**
+ * How long a session waits for an animation frame before it counts the page as not drawing. A
+ * page that the browser draws gets one within a few frames. The runner page waits far longer for
+ * the frames of its first step, so the session has time for each way to bring it to the front.
+ */
+export const FRAME_WAIT_MS = 3_000;
+
+/** The longest pause between two reads of whether the asked-for frame came. */
+const FRAME_READ_MS = 250;
 
 /** How often a live session gets a command, which keeps it from ending as idle. */
 export const POLL_MS = 30_000;
@@ -59,6 +77,7 @@ export class CloudSessions {
 		private readonly account: CloudAccount,
 		private readonly log: (line: string) => void = console.log,
 		private readonly pollMs = POLL_MS,
+		private readonly frameWaitMs = FRAME_WAIT_MS,
 	) {}
 
 	/**
@@ -87,20 +106,80 @@ export class CloudSessions {
 			await this.close(runner);
 			return false;
 		}
+		await this.bringToFront(runner, device, id, url);
 		session.timer = setInterval(() => void this.poll(runner), this.pollMs);
 		return true;
 	}
 
 	/** Loads a page, then passes the certificate warning where the browser shows one. */
 	private async load(device: CloudDevice, id: string, url: string): Promise<void> {
-		const needsAccept = this.account.needsAcceptSsl(device);
+		const script = this.account.certificateScript(device);
 		try {
 			await this.driver.navigate(id, url);
 		} catch (e) {
-			// Safari can report the warning page as a failed load, which acceptSsl then passes.
-			if (!needsAccept || (e instanceof WebDriverError && e.code === 'invalid session id')) throw e;
+			// Safari can report the warning page as a failed load, which the script then passes.
+			if (!script || (e instanceof WebDriverError && e.code === 'invalid session id')) throw e;
 		}
-		if (needsAccept) await this.driver.execute(id, this.account.acceptSslScript);
+		if (script) await this.driver.execute(id, script);
+	}
+
+	/** Whether the page gets an animation frame within the session's wait. */
+	private async draws(id: string): Promise<boolean> {
+		await this.driver.execute(id, FRAME_SCRIPT);
+		const end = Date.now() + this.frameWaitMs;
+		do {
+			await new Promise((resolve) =>
+				setTimeout(resolve, Math.min(FRAME_READ_MS, this.frameWaitMs)),
+			);
+			if ((await this.driver.execute(id, FRAME_SCRIPT)) === true) return true;
+		} while (Date.now() < end);
+		return false;
+	}
+
+	/**
+	 * Brings the runner page to the front when it gets no animation frames, as Samsung Internet on
+	 * Automate can right after a load. The browser may report such a page hidden, or visible with
+	 * still no frames, so only a frame counts. Each way is tried only while the page gets none: a
+	 * switch to its own window, which brings that tab to the front, then a second load. The runner
+	 * page waits for frames for a while, so a way that works in time lets the run go on. When none
+	 * works, the runner page stops at the end of its wait and says why, which ends the turn.
+	 */
+	private async bringToFront(
+		runner: string,
+		device: CloudDevice,
+		id: string,
+		url: string,
+	): Promise<void> {
+		const visibility = async () => String(await this.driver.execute(id, VISIBILITY_SCRIPT));
+		const wait = `${this.frameWaitMs / 1000} s`;
+		const ways: [string, () => Promise<void>][] = [
+			[
+				'a switch to its window',
+				async () => this.driver.switchToWindow(id, await this.driver.windowHandle(id)),
+			],
+			['a second load', () => this.load(device, id, url)],
+		];
+		try {
+			if (await this.draws(id)) return;
+			this.log(
+				`${runner}: the page got no animation frame in ${wait}; the browser reports it ${await visibility()}`,
+			);
+			for (const [way, attempt] of ways) {
+				await attempt();
+				if (await this.draws(id)) {
+					this.log(`${runner}: ${way} brought the page to the front, and it draws`);
+					return;
+				}
+				this.log(
+					`${runner}: still no animation frame in ${wait} after ${way}; the browser reports the page ${await visibility()}`,
+				);
+			}
+			this.log(
+				`${runner}: no way brought the page to the front, so the runner page ends the turn when its wait for frames runs out`,
+			);
+		} catch (e) {
+			this.log(`${runner}: bringing the page to the front failed: ${(e as Error).message}`);
+		}
 	}
 
 	/**
@@ -142,18 +221,21 @@ export class CloudSessions {
 		return this.sessions.get(runner)?.lost !== undefined;
 	}
 
-	/** Ends a runner's session, if it has one that is still open. */
+	/**
+	 * Ends a runner's session, if the driver has not closed it yet. A lost session gets the command
+	 * too: the cloud can keep a session open that stopped answering, and it holds one of the plan's
+	 * parallel sessions until it ends.
+	 */
 	async close(runner: string): Promise<void> {
 		const session = this.sessions.get(runner);
 		if (!session || session.closed) return;
 		session.closed = true;
 		clearInterval(session.timer);
-		if (session.lost) return;
 		try {
 			await this.driver.deleteSession(session.id);
 			this.log(`${runner}: session ended`);
 		} catch (e) {
-			this.log(`${runner}: ending the session failed: ${(e as Error).message}`);
+			if (!session.lost) this.log(`${runner}: ending the session failed: ${(e as Error).message}`);
 		}
 	}
 

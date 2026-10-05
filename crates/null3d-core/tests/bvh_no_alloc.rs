@@ -169,7 +169,13 @@ fn query_frame_allocations(jobs: &JobSystem) -> u64 {
             queries.overlap_box(&view, low, low.map(|v| v + 20.0), u32::MAX);
         }
         let batch = queries
-            .raycast_batch(&view, jobs, BATCH_RAYS, &|i| rays[i as usize], u32::MAX)
+            .raycast_batch(
+                &view,
+                jobs,
+                BATCH_RAYS,
+                &|i| Some(rays[i as usize]),
+                u32::MAX,
+            )
             .unwrap();
         hits += batch.iter().filter(|h| h.is_some()).count() as u32;
         if frame == 60 {

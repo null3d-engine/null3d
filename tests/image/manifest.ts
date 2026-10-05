@@ -54,6 +54,12 @@ import { PRECISION } from '../pages/lib/depth-precision.ts';
 const FAR_OUT_TOLERANCE = { threshold: 0, maxDiffRatio: 0.00005 };
 
 /**
+ * The tolerance of other devices against the real-GPU references of the debug lines. A frame of
+ * thin lines puts a larger share of its pixels on slanted edges, which GPUs rasterize a pixel apart.
+ */
+const LINE_EDGE_TOLERANCE = { maxDiffRatio: 0.0075 };
+
+/**
  * The switch of tests that compare exact colors with another test's references, such as a scene far
  * out against its image at the origin. Half precision rounds colors differently, by one step in
  * most changed pixels, so these tests keep full precision even when a run turns half precision on
@@ -145,6 +151,52 @@ function bloomTests(): ImageTest[] {
 			expect: { hdr: false },
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
+/** The sketch of the HDR limit tests: light past the largest 16-bit float. */
+export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
+
+/**
+ * Light far past the largest 16-bit float, without bloom and with it, on every tier: an emissive
+ * sphere and the sun's highlight on a smooth metal floor. Both must draw white, and the sphere must
+ * glow with bloom. The HDR limit spec checks those pixels too, so CI's software GPU, which stores
+ * such light as infinity without the limit, fails even where a reference would match.
+ */
+function hdrLimitTests(): ImageTest[] {
+	return [
+		{ name: 'hdr-limit', sketch: HDR_LIMIT_SKETCH, hold: 0 },
+		{ name: 'hdr-limit-bloom', sketch: `${HDR_LIMIT_SKETCH}?bloom`, hold: 0 },
+	];
+}
+
+/** The sketch of the real-units tests: a sun of 100,000 lux at EV100 15, with bloom. */
+export const REAL_UNITS_SKETCH = 'tests/pages/sketches/real-units-sketch.ts';
+
+/**
+ * How far the real-units scene in three.js's units may stray from its image in real units. The
+ * lights take the same exposed values either way, and only the rounding of a 32-bit float apart.
+ */
+const REAL_UNITS_TOLERANCE = { maxDiffRatio: 0.001 };
+
+/**
+ * A scene in real units at EV100 15 with bloom, and the same scene in three.js's units with the
+ * exposure set as a number, which must draw the same image. The engine multiplies the exposure into
+ * the lights, so the sun's highlight stays white and glows on every tier. The real-units spec
+ * checks those pixels too, so the fault of an exposure at the end fails even where a reference
+ * would match.
+ */
+function realUnitsTests(): ImageTest[] {
+	return [
+		{ name: 'real-units', sketch: REAL_UNITS_SKETCH, hold: 0 },
+		{
+			name: 'real-units-exposure',
+			sketch: `${REAL_UNITS_SKETCH}?exposure`,
+			hold: 0,
+			reference: 'real-units',
+			tolerance: REAL_UNITS_TOLERANCE,
+			deviceTolerance: REAL_UNITS_TOLERANCE,
 		},
 	];
 }
@@ -410,12 +462,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 	},
 	// Mip levels that the GPU makes: a checkerboard that shrinks and a floor that recedes, with and
-	// without mip levels, and with anisotropic filtering.
+	// without mip levels, and with anisotropic filtering. Each GPU picks its own samples for
+	// anisotropic filtering, and a software renderer's differ most from a GPU's: Firefox on Linux
+	// draws the far squares of the anisotropic floor in another pattern. So other devices get a
+	// wider tolerance here.
 	{
 		name: 'texture-mipmaps',
 		sketch: 'tests/pages/sketches/texture-mipmaps-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+		deviceTolerance: { maxDiffRatio: 0.01 },
 	},
 	// The texture calls of a sketch: loadTexture with and without the flip, loadImageBitmap with
 	// fromImageBitmap, data in bytes, half floats and layers, updates that bring new texels and a new
@@ -604,6 +660,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...hdrLimitTests(),
+	...realUnitsTests(),
 	...aoTests(),
 	...outlineTests(),
 	...occlusionTests(),
@@ -661,6 +719,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
 	// the same lines. The S24+'s GPU puts some lines one pixel off, in 1.6% of the pixels, so it
 	// keeps its own references, which the S24 shares and the test 1,000 km out compares with too.
+	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
+	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
+	// a scene has, so other devices get a wider tolerance here.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -669,6 +730,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},
 	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
@@ -682,6 +744,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'debug',
 		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
+		deviceTolerance: LINE_EDGE_TOLERANCE,
 	},
 	// Each debug view of a scene with lit, unlit, see-through and instanced objects, on every tier.
 	...(['normals', 'depth', 'overdraw', 'wireframe', 'shadows'] as const).map(
@@ -763,6 +826,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'point-shadows',
 		sketch: 'tests/pages/sketches/point-shadows-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024', 'pointLightShadows'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same scene with the 5 x 5 filter, whose reads reach 3 texels past each point. Each tile
+	// keeps that reach inside its edges, so no seam shows where two faces' shadows meet.
+	{
+		name: 'point-shadows-wide',
+		sketch: 'tests/pages/sketches/point-shadows-sketch.ts?wide',
 		hold: 0,
 		size: [480, 270],
 		switches: ['shadowTileSize=1024', 'pointLightShadows'],
@@ -1005,6 +1079,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The same spheres lit by an environment alone: the built-in room, which three.js's
+	// RoomEnvironment builds, and Poly Haven's Venice Sunset through the asset tool, whose low sun
+	// shows in the smooth spheres. The last turns the sunset a quarter turn about +Y, which moves the
+	// sun's reflection. The GPU makes the room, and its generator reaches the thread that draws in
+	// each thread mode's own way, so the room draws in every mode. A held frame makes the whole room
+	// at once, which a software GPU on a busy machine does slowly, so the room's runs take a longer
+	// limit (D-19).
+	...(['room', 'venice', 'venice&rotate'] as const).map(
+		(env): ImageTest => ({
+			name: `environment-${env.replace('&rotate', '-rotated')}`,
+			sketch: `tests/pages/sketches/standard-sketch.ts?scene=grid&env=${env}`,
+			hold: 0,
+			size: [GRID_IMAGE.width, GRID_IMAGE.height],
+			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

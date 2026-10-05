@@ -162,6 +162,35 @@ Notes on the figures:
 
 - The desktop target's run overlapped other work on the Mac: SwiftShader image checks, an allocation run, and the iPad's reruns served from the Mac. 10.8% passes by a wide margin, so the overlap cannot change the verdict. null3D's own work, 0.35 ms, is 2.5 times M0's 0.14 ms ([D-06](decisions/D-06-success-targets.md)). three.js's own work rose from about 0.8 ms to 3.25 ms when the scenes moved to the standard material. The gate's clean run confirms the null3D figure.
 - T-28's target is on the S24+ in Chrome on Slow 4G: a cold start within 4.5 s, and a warm one within 1 s ([D-06](decisions/D-06-success-targets.md)). The Mac is inside both, but the gate's figures come from the S24+ and the iPad. On the iPad, the preset check took about 1 s for each preset it measured. Pull request #234 skips the check on repeat visits ([D-17](decisions/D-17-stored-preset-check.md)), so the warm figures change on the gate commit.
+- T-28 on the S24+ at 1533939f, after the early shader download (#296): cold 4.64 to 4.70 s in the five thread modes, over 4.5 s; warm 0.95 to 0.98 s. [T-28: the core's download](#t-28-the-cores-download) has the fix and its figures.
+
+### T-28: the core's download
+
+At 1533939f the S24+'s page script ran at 1.51 s and the core was ready at 4.48 to 4.56 s, so the core's download came last. Its request went out only once the page's own scripts had arrived and run. The Vite plugin now adds an early script that starts that request as soon as the early script arrives ([Start order](implementation-notes.md#start-order)). A cold load makes one request more, for the early script's 0.2 KB, and downloads the core once.
+
+These are the medians of 5 loads, Chrome on Slow 4G, WebGL2, with the first frame done at the time given. The Mac ran `bun run bench:startup -- --runs 5 --gpu webgl2 --modes all --loads cold,warm` on main at fd681ea5 and on the change. The S24+ ran `bun run bench:startup -- --android` on the change, on 5 October 2026:
+
+| Thread mode | Mac cold, before | Mac cold, after | Mac warm, before | Mac warm, after | S24+ cold | S24+ warm |
+| --- | --- | --- | --- | --- | --- | --- |
+| Pipelined | 4,429 ms | 4,240 ms | 677 ms | 658 ms | 4,529 ms | 937 ms |
+| Low latency | 4,417 ms | 4,220 ms | 657 ms | 642 ms | 4,474 ms | 964 ms |
+| Single-threaded | 4,358 ms | 4,167 ms | 658 ms | 637 ms | 4,501 ms | 956 ms |
+| Drawing on the main thread | 4,408 ms | 4,207 ms | 666 ms | 664 ms | 4,527 ms | 957 ms |
+| Sketch on the main thread | 4,389 ms | 4,191 ms | 671 ms | 669 ms | 4,478 ms | 995 ms |
+
+The S24+ gained about 0.3 s, but main's core had grown from about 249 KB to 267 KB after Brotli since 1533939f, which costs about 0.11 s. Three modes still miss 4.5 s, by 1 to 29 ms. On the phone the core's request now goes out at 1.31 s. From its first byte at about 1.88 s the link stays full until the core ends, so each KB taken off the start saves about 6.5 ms.
+
+With #306 (M2-R14 and M2-R11) merged in as well, the start downloads about 6 KB less, and every mode passes on the S24+ (same command, 5 October 2026). The margin is 11 to 61 ms:
+
+| Thread mode | S24+ cold | S24+ warm |
+| --- | --- | --- |
+| Pipelined | 4,489 ms | 939 ms |
+| Low latency | 4,464 ms | 976 ms |
+| Single-threaded | 4,439 ms | 951 ms |
+| Drawing on the main thread | 4,476 ms | 944 ms |
+| Sketch on the main thread | 4,454 ms | 954 ms |
+
+About 2 KB more at the start would push the pipelined mode over its target again.
 
 ### The allocation fix for S4
 
@@ -180,6 +209,26 @@ Per frame, S4 draws 4 render passes and S1 draws 2. S4's 2 extra passes are dept
 | S4, WebGPU | 237 | 604, with the replay at 263 of 320 | Pass |
 | S4, WebGL2 | 237 | 164 | Pass |
 
+### S4's GPU time at Low against the older commit
+
+The gate compares S4's GPU time on one iPad, in turns: the gate commit 5309dba5 against the older commit f46c0686. S4 runs on WebGPU at Low, with the governor off. On the cloud iPad (10th generation, Safari 27), the gate commit read 11.93 and 12.03 ms. The older commit read 10.89 and 10.88 ms. So the gate commit was 1.1 ms (10%) slower, with 63 draw calls against 56. The owner ruled it a regression to find.
+
+The same runs on the Mac in Chrome found where it came from. Each commit ran S4 at Low twice for 10 s, with the governor off (5 October 2026):
+
+| Commit | Draw calls per frame | GPU ms per frame | What changed |
+| --- | --- | --- | --- |
+| f46c0686, the older commit | 56, and 63 in 1 frame of 4 | 1.19 | |
+| 5bdea5dc, before #227 | 56, and 63 in 1 frame of 4 | 1.19 | |
+| deb77723 (#227) | 63 | 1.36 | The far cascade draws in every frame while a moving caster touches it ([D-16](decisions/D-16-moving-casters-and-bias.md)) |
+| f980a754, before #257 | 63 | 1.36 | |
+| 2ab66e2e (#257) | 63 | 1.47 | The shadow filter compares each read with the receiver's plane, against acne on flat casters |
+| 5309dba5, the gate commit | 63 | 1.47 | |
+| 1533939f, main on 5 October | 63 | 1.55 | |
+| fix/gate-ab-regression, without the ruling | 63 | 1.48 | Surfaces that face away from the sun skip the shadow lookup, and the GPU timer times every phase of the far cascade's turns |
+| fix/gate-ab-regression | 56, and 63 in 1 frame of 4 | 1.32 | Low keeps its far cascade's turns while cars move in it, by the owner's ruling |
+
+The owner ruled on 5 October 2026 ([D-16](decisions/D-16-moving-casters-and-bias.md)). At Low, a far cascade keeps its turns while moving casters touch it. So a far moving shadow can trail its caster by up to 3 frames. Medium and up keep the far cascade drawing in every frame. The receiver plane stays on every preset, so no surface shows acne. The older commit's figure was also too low. The GPU timer timed one frame in 8, and the far cascade drew once in 4 frames, so no timed frame held it. [Implementation notes](implementation-notes.md#shadows) gives the rule and the test that holds S4's draw calls and passes.
+
 ### What the gate still needs
 
 On the gate commit, the Mac runs `bun run gate` with every step, and with no other heavy work during the timing steps. The rehearsal's figures do not count for the gate.
@@ -193,3 +242,10 @@ The coordinator runs these device runs on the gate commit:
 5. The soak plan on S4 in Safari on the iPad.
 6. T-28: `bun run bench:startup -- --android` on the S24+ in Chrome, cold and warm on Slow 4G, and the iPad's first frame.
 7. After each run, a row in [the record of tested devices](tested-devices.md).
+
+### The owner's rulings of 5 October 2026
+
+The owner ruled on two gate results on 5 October 2026 ([D-67](decisions/D-67-rulings-2026-10-05.md)).
+
+- The GPU time of S4 is a regression, and the gate does not pass until it is fixed. The cloud iPad 10th ran S4 in Safari 27.0, at Low on WebGPU with the governor off. Two commits took turns in one session, 30 seconds each. The gate commit 5309dba5 took 11.93 and 12.03 ms of GPU time per frame. The older commit f46c0686 took 10.89 and 10.88 ms. The gate commit takes about 1.1 ms more, 10%, and makes 63 draw calls against 56. CPU time stayed at 0.32 to 0.34 ms on both. A fix is in progress, and the comparison runs again once it lands.
+- The owner's iPad Pro 11-inch runs the gate's iPad items that are still open. Among them are the two 30-minute soaks and the first frame, which only the cloud iPad has run so far. Results from the cloud iPad are kept as evidence, and they do not replace a run on the owner's iPad.

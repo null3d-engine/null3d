@@ -10,7 +10,19 @@
 /** Staging buffers at most. The GPU runs a frame or two behind, so a frame rarely finds none free. */
 const MAX_SLOTS = 3;
 /** The smallest staging buffer; the ring makes bigger ones when frames need more. */
-const MIN_CAPACITY = 1024 * 1024;
+export const MIN_CAPACITY = 1024 * 1024;
+/**
+ * The largest staging buffer. A frame that stages more, as when content loads, writes the rest
+ * through the queue, so the ring never holds mapped memory of that size for the device's life.
+ */
+export const MAX_CAPACITY = 16 * 1024 * 1024;
+/**
+ * The frames of each window over which the ring keeps the most that one staging buffer had to
+ * hold. Recent frames' needs are the largest of the last window and the current one.
+ */
+export const WINDOW_FRAMES = 120;
+/** How many times more than recent frames need a free buffer may hold before a smaller one replaces it. */
+export const SHRINK_RATIO = 4;
 /** Waiting copies the list holds before it first grows. */
 const INITIAL_COPIES = 64;
 /** Numbers per waiting copy: the target offset, the staging offset and the size. */
@@ -33,8 +45,13 @@ export class StagingRing {
 	private bytes: Uint8Array | undefined;
 	/** The next free byte in the current slot. */
 	private used = 0;
-	/** The capacity that recent frames needed, which the slots grow to. */
-	private wanted = MIN_CAPACITY;
+	/** The most that one use of a slot held or asked for, in the current window and in the last. */
+	private windowPeak = 0;
+	private lastWindowPeak = 0;
+	/** The frames that the current window has counted. */
+	private windowFrames = 0;
+	/** The most that the current use of a slot asked for, including writes it had no room for. */
+	private asked = 0;
 	/** The targets of the copies that wait for the current slot to be unmapped. */
 	private targets: (GPUBuffer | undefined)[] = new Array(INITIAL_COPIES).fill(undefined);
 	/** The offsets and size of each waiting copy. */
@@ -68,10 +85,8 @@ export class StagingRing {
 		if (!this.slot && !this.take(size)) return false;
 		const slot = this.slot as Slot;
 		const at = this.used;
-		if (at + size > slot.capacity) {
-			this.wanted = Math.max(this.wanted, at + size);
-			return false;
-		}
+		if (at + size > this.asked) this.asked = at + size;
+		if (at + size > slot.capacity) return false;
 		(this.bytes as Uint8Array).set(new Uint8Array(source, sourceOffset, size), at);
 		if (this.waiting === this.targets.length) this.grow();
 		const field = this.waiting * COPY_FIELDS;
@@ -110,6 +125,21 @@ export class StagingRing {
 		this.slot = undefined;
 		this.bytes = undefined;
 		this.flushed[this.flushedCount++] = slot;
+		if (this.asked > this.windowPeak) this.windowPeak = this.asked;
+		this.asked = 0;
+	}
+
+	/** Counts a frame, so that the ring learns what recent frames needed. Call it once per frame. */
+	endFrame(): void {
+		if (++this.windowFrames < WINDOW_FRAMES) return;
+		this.lastWindowPeak = this.windowPeak;
+		this.windowPeak = 0;
+		this.windowFrames = 0;
+	}
+
+	/** The capacities of the staging buffers, for tests. */
+	capacities(): number[] {
+		return this.slots.map((slot) => slot.capacity);
 	}
 
 	/** Asks for the staging buffers of the frame just submitted back, mapped, once the GPU is done. */
@@ -151,16 +181,24 @@ export class StagingRing {
 
 	/**
 	 * Takes a free slot for this frame. A free slot too small for recent frames is replaced by a
-	 * bigger one, and a new slot is made while the ring has room.
+	 * bigger one, a free slot far larger than they need by a smaller one, and a new slot is made
+	 * while the ring has room. No slot grows past the largest capacity.
 	 */
 	private take(size: number): boolean {
-		const needed = Math.max(this.wanted, size);
+		if (size > MAX_CAPACITY) return false;
+		const recent = Math.max(this.windowPeak, this.lastWindowPeak);
+		const needed = Math.min(MAX_CAPACITY, Math.max(MIN_CAPACITY, recent, size));
+		const fitting = 2 ** Math.ceil(Math.log2(needed));
 		let slot: Slot | undefined;
 		let small = -1;
-		for (let i = 0; i < this.slots.length && !slot; i++) {
+		for (let i = this.slots.length - 1; i >= 0; i--) {
 			const candidate = this.slots[i] as Slot;
 			if (!candidate.free) continue;
-			if (candidate.capacity >= needed) slot = candidate;
+			if (candidate.capacity > fitting * SHRINK_RATIO) {
+				candidate.buffer.destroy();
+				this.slots.splice(i, 1);
+				if (small > i) small--;
+			} else if (candidate.capacity >= needed) slot ??= candidate;
 			else small = i;
 		}
 		if (!slot) {
@@ -169,7 +207,7 @@ export class StagingRing {
 				this.slots.splice(small, 1);
 			}
 			if (this.slots.length >= MAX_SLOTS) return false;
-			slot = this.create(2 ** Math.ceil(Math.log2(needed)));
+			slot = this.create(fitting);
 		}
 		slot.free = false;
 		this.slot = slot;

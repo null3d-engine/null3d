@@ -18,8 +18,12 @@ const RING = 8192;
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 
 /** A core with the scene's arrays and command ring, which counts the calls a test watches. */
-/** A core with the scene's arrays in a memory of its own. With `largeWorld`, positions hold cells. */
-function fakeCore(largeWorld = false) {
+/**
+ * A core with the scene's arrays in a memory of its own. With `largeWorld`, positions hold cells.
+ * With `growOnReserve`, the memory grows in each reserve of many objects, as the single-threaded
+ * build's can, which detaches every view made before it.
+ */
+function fakeCore(largeWorld = false, growOnReserve = false) {
 	const rows = CAPACITY + 1;
 	const sizes = { positions: rows * 12, rotations: rows * 16, scales: rows * 12, radii: rows * 4 };
 	type Field =
@@ -53,6 +57,12 @@ function fakeCore(largeWorld = false) {
 	const memory = new WebAssembly.Memory({ initial: Math.ceil(next / 65536) + 1 });
 	let slot = 1;
 	let instances = 0;
+	/** The failure the next failing call reports: its code, and its two details. */
+	const failure = { code: 0, details: [0, 0], lights: false, animations: false };
+	/** The layers each batch was given, by id. */
+	const batchLayers = new Map<number, number>();
+	/** The batches destroyed, by id. */
+	const destroyedBatches: number[] = [];
 	const calls = { reserveObjects: 0, reserveObject: 0, createLight: 0, copyLight: 0 };
 	/** Each block of morph weights by id: its first weight, its count and its link. */
 	const morphs: { first: number; count: number; link: number[] }[] = [];
@@ -86,12 +96,14 @@ function fakeCore(largeWorld = false) {
 		},
 		reserveObjects: (count: number) => {
 			calls.reserveObjects++;
+			if (growOnReserve) memory.grow(1);
 			const handles = new Uint32Array(memory.buffer, at.handles, count);
 			for (let k = 0; k < count; k++) handles[k] = slot++;
 			return at.handles;
 		},
 		createLight: (_: number, kind: number) => {
 			calls.createLight++;
+			if (failure.lights) return 0;
 			lights.set(lights.size + 1, { kind, values: new Map() });
 			return lights.size;
 		},
@@ -121,11 +133,17 @@ function fakeCore(largeWorld = false) {
 			return 0;
 		},
 		setBatchActiveCount: () => 0,
-		setBatchLayers: () => 0,
+		setBatchLayers: (id: number, layers: number) => {
+			batchLayers.set(id, layers);
+			return 0;
+		},
 		markBatchDirty: () => 0,
-		destroyBatch: () => 0,
+		destroyBatch: (id: number) => {
+			destroyedBatches.push(id);
+			return 0;
+		},
 		initAnimations: () => 0,
-		createAnimatedInstance: () => ++instances,
+		createAnimatedInstance: () => (failure.animations ? 0 : ++instances),
 		removeAnimatedInstance: () => 0,
 		createMorphWeights: (count: number) => {
 			morphs.push({ first: morphEnd, count, link: [] });
@@ -142,8 +160,8 @@ function fakeCore(largeWorld = false) {
 		},
 		morphWeightsAddress: () => at.morphs,
 		morphWeightsFirst: (id: number) => morphs[id]?.first ?? 0,
-		lastErrorCode: () => 0,
-		lastErrorDetail: () => 0,
+		lastErrorCode: () => failure.code,
+		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	const scene = new Scene(core, { frame: 3 }, false);
@@ -156,6 +174,9 @@ function fakeCore(largeWorld = false) {
 		batches,
 		morphs,
 		origins,
+		failure,
+		batchLayers,
+		destroyedBatches,
 		/** A batch's first rows of positions. */
 		batchPositions(count: number) {
 			return [...new Float32Array(memory.buffer, at.batch, count * 3)];
@@ -221,6 +242,14 @@ function chainPrefab(core: CoreMemory, count: number, extra: TemplateNode[] = []
 		[],
 	);
 }
+
+test('a copy whose reserve grows the memory places its objects', () => {
+	const { core, scene, positionOf, take } = fakeCore(false, true);
+	const prefab = chainPrefab(core, 2);
+	const copy = scene.instantiate(prefab, { position: [5, 0, 0] });
+	expect(positionOf(copy)).toEqual([5, 0, 0]);
+	expect(take()).toHaveLength(1 + 2 * 2);
+});
 
 describe('scene.instantiate', () => {
 	test('a prefab of 1,000 objects costs one slot call and one batch of commands', () => {
@@ -569,5 +598,129 @@ describe('animated prefabs', () => {
 		expect(animator.instance).toBe(2);
 		expect(animator.skinned).toEqual([twin.find('Leg') as Mesh]);
 		expect((twin.find('Leg') as Mesh).animation).toBeUndefined();
+	});
+});
+
+describe('whole copies', () => {
+	/** The chain prefab with instancing of its own on its first link. */
+	function instancedPrefab(core: CoreMemory): Prefab {
+		const chain = chainPrefab(core, 2);
+		const spec = {
+			node: 1,
+			count: 2,
+			positions: new Float32Array(6),
+			rotations: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1]),
+			scales: new Float32Array([1, 1, 1, 1, 1, 1]),
+			parts: chain.parts.slice(0, 1),
+		};
+		return new Prefab(core, chain.url, chain.template, chain.parts, [spec], chain.bounds, [], []);
+	}
+
+	test('layers reach every object of the copy and its batches, not the group alone', () => {
+		const { core, scene, take, batchLayers } = fakeCore();
+		const copy = scene.instantiate(instancedPrefab(core), { layers: 1 << 2 });
+		const records = take();
+		const creates = records.filter((r) => ((r[0] as number) & 0xff) === C.COMMAND_CREATE);
+		const layered = records.filter((r) => r[0] === C.COMMAND_SET_LAYERS);
+		expect(creates).toHaveLength(3);
+		expect(layered.map((r) => [r[1], r[2]])).toEqual(creates.map((r) => [r[1], 1 << 2]));
+		expect(copy.objects.map((o) => o.layerMask)).toEqual([4, 4, 4]);
+		expect([...batchLayers.values()]).toEqual([4]);
+	});
+
+	test("destroying a copy's group removes every object of the copy and its batches", () => {
+		const { core, scene, take, destroyedBatches } = fakeCore();
+		const copy = scene.instantiate(instancedPrefab(core));
+		const [batch] = copy.batches;
+		const kept = scene.createGroup({ name: 'kept', parent: copy.find('link 1') });
+		take();
+		// Destroy marks each handle dead, so the commands name the handles from before.
+		const handles = copy.objects.map((o) => o.handle);
+		copy.destroy();
+		const destroyed = take().filter((r) => r[0] === C.COMMAND_DESTROY);
+		expect(destroyed.map((r) => r[1])).toEqual(handles);
+		expect(copy.objects.every((o) => o.destroyedFrame >= 0)).toBe(true);
+		expect(destroyedBatches).toEqual([batch?.id as number]);
+		// An object that the sketch put under the copy later becomes a root.
+		expect(kept.destroyedFrame).toBe(-1);
+		expect(kept.liveParent).toBeNull();
+	});
+
+	test('a copy that the animation table cannot hold leaves no object behind', () => {
+		const { core, scene, take, failure } = fakeCore();
+		const rig = new AnimationRig(1, new Map([['Wave', 1]]), [
+			{
+				name: 'Hip',
+				parent: -1,
+				translation: [0, 0, 0],
+				rotation: [0, 0, 0, 1],
+				scale: [1, 1, 1],
+				inverseBind: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+			},
+		]);
+		const chain = chainPrefab(core, 2);
+		const prefab = new Prefab(core, chain.url, chain.template, [], [], chain.bounds, [], [], rig);
+		Object.assign(failure, { animations: true, code: 1102, details: [6, 1024] });
+		expect(() => scene.instantiate(prefab, { name: 'hero' })).toThrow('E1102');
+		const records = take();
+		const created = records.filter((r) => ((r[0] as number) & 0xff) === C.COMMAND_CREATE);
+		const destroyed = records.filter((r) => r[0] === C.COMMAND_DESTROY);
+		expect(created).toHaveLength(3);
+		expect(destroyed.map((r) => r[1]).sort()).toEqual(created.map((r) => r[1]).sort());
+		expect(scene.find('hero')).toBeUndefined();
+		expect(scene.find('link 0')).toBeUndefined();
+	});
+
+	test('a full command ring fails createMesh before it reserves a slot', () => {
+		const { core, scene, calls, take } = fakeCore();
+		const group = scene.createGroup();
+		take();
+		const reserved = calls.reserveObject;
+		// Leave room for one record, where a mesh takes two: its create and its material.
+		for (let k = 0; k < RING - 1; k++) group.setVisible(k % 2 === 0);
+		const mesh = new MeshGeometry(3, 1, core);
+		const material = new Material(2, core, 'materials.standard.set');
+		expect(() => scene.createMesh({ name: 'late', mesh, material })).toThrow('E1102');
+		expect(calls.reserveObject).toBe(reserved);
+		expect(take()).toHaveLength(RING - 1);
+		expect(scene.find('late')).toBeUndefined();
+	});
+
+	test('a light that the light table cannot hold leaves no object behind', () => {
+		const { scene, take, failure } = fakeCore();
+		Object.assign(failure, { lights: true, code: 1102, details: [8, 4096] });
+		expect(() => scene.createPointLight({ name: 'lamp', range: 5 })).toThrow();
+		const records = take();
+		expect(records.map((r) => (r[0] as number) & 0xff)).toEqual([
+			C.COMMAND_CREATE,
+			C.COMMAND_DESTROY,
+		]);
+		expect(scene.find('lamp')).toBeUndefined();
+	});
+});
+
+describe('clone walks the tree it copies', () => {
+	test('objects moved into and out of a tree with setParent are copied where they are now', () => {
+		const { scene, take } = fakeCore();
+		const cart = scene.createGroup({ name: 'cart' });
+		const wheel = scene.createGroup({ name: 'wheel', parent: cart });
+		const crate = scene.createGroup({ name: 'crate' });
+		crate.setParent(wheel);
+		wheel.setParent(null);
+		take();
+		scene.clone(cart);
+		expect(take()).toHaveLength(1);
+		scene.clone(wheel);
+		expect(take()).toHaveLength(2);
+	});
+
+	test('destroyed children leave the tree that a clone copies', () => {
+		const { scene, take } = fakeCore();
+		const leaf = scene.createGroup({ name: 'leaf' });
+		for (let k = 0; k < 2000; k++) scene.createGroup({ parent: k % 2 ? leaf : null }).destroy();
+		expect(leaf.childObjects?.size ?? 0).toBe(0);
+		take();
+		scene.clone(leaf);
+		expect(take()).toHaveLength(1);
 	});
 });
