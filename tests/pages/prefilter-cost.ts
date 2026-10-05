@@ -8,7 +8,10 @@
 //   ?format=rgba16float|rg11b10ufloat   the float format of `spare` and `direct`; `pack` is RGB9_E5
 //   ?nofloat=1                          WebGL2 only: enable no float color extension, as on a
 //                                       device that cannot draw half floats
-//   ?sizing=kind|adaptive|first|fixed   how the steps are sized (lib/room-sizing.ts)
+//   ?sizing=kind|level|adaptive|first|fixed   how the steps are sized (lib/room-sizing.ts)
+//   ?samples=512,8192                   the filter's directions per texel at level 1, and the most
+//                                       at any level (each level takes twice the one before); the
+//                                       tool's file always takes 512 and 8192
 //   ?target=6                           the time that a sized step aims at, in ms
 //   ?probe=16                           a first step holds 1/probe of the modelled work: of each
 //                                       kind of draw under `kind` (16), else of the map (64)
@@ -18,6 +21,8 @@
 //   ?debug=1                            WebGL2 only: name the draw kind of each GL error
 //   ?slices=32                          the fixed split's slice count
 //   ?runs=2                             maps after the first, which runs on fresh pipelines
+//   ?load=1                             also make one map in a single step before the sized maps,
+//                                       right after the warm-up draws, as a room made at load would
 //
 // Each map's steps run one at a time, each waited for until the GPU finished it, as the engine
 // runs one a frame. A step's time is from its first call until the GPU had finished it. The
@@ -33,6 +38,7 @@ import {
 	fromRgb9e5,
 	type Generator,
 	LEVELS,
+	type SampleSchedule,
 	type StepTime,
 	UNSUPPORTED,
 	type Write,
@@ -53,6 +59,11 @@ const probeShare = 1 / Number(params.get('probe') ?? (sizing === 'kind' ? '16' :
 const slices = Number(params.get('slices') ?? '32');
 const runs = Number(params.get('runs') ?? '2');
 const warmUp = params.get('warm') !== '0';
+const sampleSwitch = params.get('samples')?.split(',').map(Number);
+const samples: SampleSchedule | undefined = sampleSwitch && {
+	first: sampleSwitch[0] as number,
+	most: sampleSwitch[1] ?? 8192,
+};
 /** `gpu` sizes from the GPU's timer where the device has one; `wall` always from the step's time. */
 const measure = params.get('measure') === 'wall' ? 'wall' : 'gpu';
 
@@ -181,8 +192,15 @@ run('prefilter-cost', async () => {
 	try {
 		generator =
 			gpu === 'webgl2'
-				? await webgl2Generator(GLSL.webgl2, format, write, noFloat, params.get('debug') === '1')
-				: await webgpuGenerator(WGSL.webgpu, gpu === 'compat', format, write);
+				? await webgl2Generator(
+						GLSL.webgl2,
+						format,
+						write,
+						noFloat,
+						params.get('debug') === '1',
+						samples,
+					)
+				: await webgpuGenerator(WGSL.webgpu, gpu === 'compat', format, write, samples);
 	} catch (e) {
 		const message = (e as Error).message;
 		if (message.startsWith(UNSUPPORTED)) return { gpu, write, format, unsupported: message };
@@ -196,6 +214,11 @@ run('prefilter-cost', async () => {
 	for (let k = 0; k < 5; k++) empty.push((await generator.run([])).wallMs);
 	const delayMs = median(empty);
 	const warm = warmUp ? await generator.warm() : undefined;
+	let load: StepTime | undefined;
+	if (params.get('load') === '1') {
+		progress('whole map at load');
+		load = await generator.run(wholeMap(generator.steps));
+	}
 	const maps = [];
 	for (let k = 0; k <= runs; k++) {
 		progress(`map ${k}`);
@@ -233,6 +256,7 @@ run('prefilter-cost', async () => {
 		targetMs,
 		probeShare,
 		slices,
+		samples: samples ?? { first: 512, most: 8192 },
 		levelCount: LEVELS,
 		measure,
 		prepareMs: round(prepareMs),
@@ -240,6 +264,7 @@ run('prefilter-cost', async () => {
 		warm: warm && Object.fromEntries(Object.entries(warm).map(([k, t]) => [k, timeText(t)])),
 		maps,
 		whole: timeText(whole),
+		load: load && timeText(load),
 		draws,
 		levels,
 		errors,

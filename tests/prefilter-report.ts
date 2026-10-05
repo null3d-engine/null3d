@@ -54,7 +54,7 @@ for (const [device, variants] of devices) {
 	const any = [...variants.values()].flat().find((r) => r.ok && !r.unsupported);
 	console.log(`\n### ${device}${any ? `: ${any.adapter ?? any.renderer ?? ''}` : ''}\n`);
 	console.log(
-		'| Variant | Format, write | Matches (worst level mean / p99, light) | First map: steps, total, most | Later maps: steps, total, most | Whole map in one step, GPU | Prepare | Notes |',
+		'| Variant | Format, write | Matches (worst level mean / p99, light) | First map: steps, total, most | Later maps: steps, total, most | Whole map in one step: at load, after the maps | Prepare | Notes |',
 	);
 	console.log('| --- | --- | --- | --- | --- | --- | --- | --- |');
 	for (const [id, rounds] of variants) {
@@ -77,9 +77,18 @@ for (const [device, variants] of devices) {
 		const most = (ms: MapSummary[]) => Math.max(...ms.map((m) => Math.max(m.maxMs, m.cpuMaxMs)));
 		const mapText = (ms: MapSummary[]) =>
 			`${text(median(ms.map((m) => m.steps)), 0)}, ${text(median(ms.map((m) => m.totalMs)))}, ${text(most(ms))}`;
-		const whole = median(ok.map((r) => (r.whole as { gpuMs?: number }).gpuMs ?? Number.NaN));
+		// A map in one step: the GPU's time where the device has a timer, else the time from the call
+		// until the GPU had finished it.
+		type Time = { gpuMs?: number; wallMs: number };
+		const oneStep = (t: Time | undefined) => (t ? (t.gpuMs ?? t.wallMs) : Number.NaN);
+		const load = median(ok.map((r) => oneStep(r.load as Time | undefined)));
+		const whole = median(ok.map((r) => oneStep(r.whole as Time)));
 		const errors = [...new Set(ok.flatMap((r) => r.errors as string[]))];
+		const schedule = first.samples as { first: number; most: number } | undefined;
 		const notes = [
+			...(schedule && (schedule.first !== 512 || schedule.most !== 8192)
+				? [`filter directions ${schedule.first} to ${schedule.most}`]
+				: []),
 			...(first.fallback ? ['fell back to packing'] : []),
 			...(first.measure === 'gpu' && first.timestamps === false ? ['no GPU timer'] : []),
 			...(first.measure === 'gpu' && first.timer === false ? ['no GPU timer'] : []),
@@ -87,7 +96,7 @@ for (const [device, variants] of devices) {
 			...(rounds.length > ok.length ? [`${rounds.length - ok.length} rounds failed`] : []),
 		];
 		console.log(
-			`| ${name} | ${first.format}, ${first.write}, ${first.sizing} | ${matched ? 'yes' : 'NO'}: ${worst} | ${mapText(cold)} | ${mapText(warm)} | ${text(whole)} | ${text(median(ok.map((r) => r.prepareMs as number)))} | ${notes.join('; ')} |`,
+			`| ${name} | ${first.format}, ${first.write}, ${first.sizing} | ${matched ? 'yes' : 'NO'}: ${worst} | ${mapText(cold)} | ${mapText(warm)} | ${text(load)}, ${text(whole)} | ${text(median(ok.map((r) => r.prepareMs as number)))} | ${notes.join('; ')} |`,
 		);
 	}
 	// Each draw's cost, from the engine's packed path, against its modelled work.

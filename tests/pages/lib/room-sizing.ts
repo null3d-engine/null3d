@@ -11,6 +11,10 @@
 //   of the kind fill the target at that rate, and their times correct it. A step never holds work
 //   of a kind whose rate is unknown. The rows of one draw cost the same, but the kinds differ by
 //   more than ten times per unit of modelled work on the Mac's GPU.
+// - `level`: as `kind`, but a filter draw of a small level runs whole, in a step of its own. Each of
+//   its texels runs a loop of thousands of reads, and a band of a few rows holds too few texels to
+//   keep the GPU's cores busy, so on the cloud phones a step of one row took as long as the whole
+//   level, or longer.
 import {
 	type Band,
 	rowCost,
@@ -18,7 +22,7 @@ import {
 	sliceBands,
 } from '../../../packages/engine/src/gpu/environment-steps';
 
-export type Sizing = 'fixed' | 'first' | 'adaptive' | 'kind';
+export type Sizing = 'fixed' | 'first' | 'adaptive' | 'kind' | 'level';
 
 export interface SizingOptions {
 	sizing: Sizing;
@@ -42,6 +46,14 @@ export interface PlannedStep {
 	predictedMs: number;
 	/** Whether the step measures a rate that no step measured before. */
 	probe: boolean;
+}
+
+/** The most texels of a filter draw that `level` sizing runs whole: six faces of 32 by 32. */
+export const WHOLE_TEXELS = 6 * 32 * 32;
+
+/** Whether `level` sizing runs a draw whole, in a step of its own. */
+export function runsWhole(step: Step): boolean {
+	return step.pipeline === 'prefilter' && 6 * step.size * step.size <= WHOLE_TEXELS;
 }
 
 /** The kind of a draw: its pipeline, and for the filter, its level. */
@@ -71,7 +83,7 @@ export class StepPlanner {
 		this.total = steps.reduce((sum, s) => sum + s.size * rowCost(s), 0);
 		this.fixed = options.sizing === 'fixed' ? sliceBands(steps, options.slices) : [];
 		this.key =
-			options.sizing === 'kind'
+			options.sizing === 'kind' || options.sizing === 'level'
 				? drawKind
 				: options.sizing === 'adaptive'
 					? (s) => s.pipeline
@@ -90,7 +102,16 @@ export class StepPlanner {
 			return undefined;
 		}
 		if (this.step >= this.steps.length) return undefined;
-		const key = this.key(this.steps[this.step] as Step);
+		const current = this.steps[this.step] as Step;
+		if (this.options.sizing === 'level' && runsWhole(current)) {
+			// A small filter level: every row at once, whatever its rate.
+			const bands: Band[] = [{ step: this.step, y: this.row, rows: current.size - this.row }];
+			const probe = !this.rate.has(this.key(current));
+			this.step++;
+			this.row = 0;
+			return this.plan(bands, probe);
+		}
+		const key = this.key(current);
 		const probe = !this.rate.has(key);
 		const bands: Band[] = [];
 		let cost = 0;
@@ -101,6 +122,7 @@ export class StepPlanner {
 		while (this.step < this.steps.length) {
 			const s = this.steps[this.step] as Step;
 			const units = rowCost(s);
+			if (this.options.sizing === 'level' && runsWhole(s)) break;
 			if (probe) {
 				// A first step measures one key alone, up to its share of the key's work.
 				if (this.key(s) !== key) break;

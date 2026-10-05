@@ -1,9 +1,11 @@
-// Prototype L1's variants of the room's generator, as page switches. For each GPU path: the engine's
-// packed path, half floats through a spare texture and straight into each face, and the 11-11-10
-// format through a spare texture, all sized by each kind of draw's first step. Then the packed path
-// with the engine's fixed split, with the first step's rate alone, with that rate corrected by
-// pipeline, and sized from step times without the GPU's timer. On WebGL2 also a context without
-// float color targets. The device plan and the Mac's driver share them.
+// Prototype L1's variants of the room's generator, as page switches, for the second sitting of the
+// cloud phones. The first sitting (5 October 2026) ruled out the 11-11-10 format and drawing
+// straight into the cube's faces, and showed that the filter's small levels cost as much a row as
+// a whole level. So each GPU path runs the packed path sized by kind (the first sitting's, which
+// here also makes one map in a single step first, as a room made at load would), then
+// with the small filter levels whole, then that with fewer filter directions per texel. WebGL2
+// also runs its two other paths that passed: half floats through a spare texture, and a context
+// without float color targets. The device plan and the Mac's driver share them.
 
 export interface PrefilterVariant {
 	id: string;
@@ -11,23 +13,27 @@ export interface PrefilterVariant {
 	switches: string[];
 }
 
-const GPUS = ['webgpu', 'compat', 'webgl2'] as const;
+/** Filter directions per texel at level 1 and the most at any level, by variant name. */
+const SCHEDULES = { s2048: '512,2048', s1024: '512,1024', s256: '256,1024' } as const;
 
 export function prefilterVariants(): PrefilterVariant[] {
 	const out: PrefilterVariant[] = [];
-	for (const gpu of GPUS) {
-		const add = (name: string, switches: string[]) =>
-			out.push({ id: `prefilter-${gpu}-${name}`, gpu, switches: [`gpu=${gpu}`, ...switches] });
-		add('pack', ['write=pack']);
-		add('spare-half', ['write=spare', 'format=rgba16float']);
-		add('spare-r11', ['write=spare', 'format=rg11b10ufloat']);
-		add('direct-half', ['write=direct', 'format=rgba16float']);
-		if (gpu === 'webgl2') add('nofloat', ['write=spare', 'format=rgba16float', 'nofloat=1']);
-		add('pack-fixed', ['write=pack', 'sizing=fixed']);
-		add('pack-first', ['write=pack', 'sizing=first']);
-		add('pack-adaptive', ['write=pack', 'sizing=adaptive']);
-		add('pack-wall', ['write=pack', 'measure=wall']);
+	const add = (gpu: PrefilterVariant['gpu'], name: string, switches: string[]) =>
+		out.push({ id: `prefilter-${gpu}-${name}`, gpu, switches: [`gpu=${gpu}`, ...switches] });
+	for (const gpu of ['webgpu', 'webgl2'] as const) {
+		add(gpu, 'pack', ['write=pack', 'load=1']);
+		add(gpu, 'pack-level', ['write=pack', 'sizing=level']);
+		for (const [name, samples] of Object.entries(SCHEDULES))
+			add(gpu, `pack-level-${name}`, ['write=pack', 'sizing=level', `samples=${samples}`]);
 	}
+	add('compat', 'pack-level', ['write=pack', 'sizing=level']);
+	add('webgl2', 'spare-half-level', ['write=spare', 'format=rgba16float', 'sizing=level']);
+	add('webgl2', 'nofloat-level', [
+		'write=spare',
+		'format=rgba16float',
+		'nofloat=1',
+		'sizing=level',
+	]);
 	return out;
 }
 

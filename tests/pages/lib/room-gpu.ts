@@ -152,6 +152,26 @@ function decode(format: Format, bytes: Uint8Array, texels: number): Float32Array
 
 const bytesPerTexel = (format: Format) => (format === 'rgba16float' ? 8 : 4);
 
+/**
+ * The filter's directions per texel: `first` at level 1, twice as many at each smaller level, up to
+ * `most`. The engine and the asset tool take 512 and 8192.
+ */
+export interface SampleSchedule {
+	first: number;
+	most: number;
+}
+
+/** The room's steps, with the filter's directions per texel from `samples` when it is given. */
+function stepsOf(stride: number, samples?: SampleSchedule): Step[] {
+	const [steps] = roomSteps(SIZE, LEVELS, stride);
+	if (!samples) return steps;
+	return steps.map((step) =>
+		step.pipeline === 'prefilter'
+			? { ...step, samples: Math.min(samples.first << (step.level - 1), samples.most) }
+			: step,
+	);
+}
+
 // ---------------------------------------------------------------------------------------------
 // WebGPU
 
@@ -164,6 +184,7 @@ export async function webgpuGenerator(
 	compat: boolean,
 	format: Format,
 	write: Write,
+	samples?: SampleSchedule,
 ): Promise<Generator> {
 	const wgsl = shader.wgsl;
 	if (!wgsl) throw new Error('the environment shader has no WebGPU build');
@@ -201,7 +222,7 @@ export async function webgpuGenerator(
 	device.lost.then((info) => {
 		if (info.reason !== 'destroyed') errorList.push(`device lost: ${info.message}`);
 	});
-	const [steps] = roomSteps(SIZE, LEVELS, ALIGNMENT);
+	const steps = stepsOf(ALIGNMENT, samples);
 	const raw = write !== 'pack';
 	const values = slotValues(steps, ALIGNMENT, raw);
 	const target: GPUTextureFormat = write === 'pack' ? 'rgba8unorm' : format;
@@ -515,6 +536,7 @@ export async function webgl2Generator(
 	write: Write,
 	noFloat: boolean,
 	debug = false,
+	samples?: SampleSchedule,
 ): Promise<Generator> {
 	const canvas = new OffscreenCanvas(1, 1);
 	const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false });
@@ -557,7 +579,7 @@ export async function webgl2Generator(
 	const programs = {} as Record<Pipeline, WebGLProgram>;
 	const alignment = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT) as number;
 	const stride = Math.ceil(STEP_BYTES / alignment) * alignment;
-	const [steps] = roomSteps(SIZE, LEVELS, stride);
+	const steps = stepsOf(stride, samples);
 	const values = slotValues(steps, stride, write !== 'pack');
 	const made: WebGLTexture[] = [];
 	const texture = (kind: number, storage: (kind: number) => void) => {
