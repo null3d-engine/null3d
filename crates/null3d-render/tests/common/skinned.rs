@@ -117,14 +117,7 @@ impl<B: FrameBuilder> World<B> {
             .get_or_insert_with(|| animation_table(jobs, 64, 1024));
         self.animation_step = 1.0 / 60.0;
         let instance = animations.add_instance(0).unwrap();
-        let play = Play {
-            layer: 0,
-            fade: 0.0,
-            speed: 1.0,
-            looping: true,
-            additive: false,
-        };
-        animations.play(instance, 0, play).unwrap();
+        animations.play(instance, 0, Play::default()).unwrap();
         let settings = self.renderer.settings_mut();
         let mesh = settings.meshes_mut().add(geometry).unwrap() + 1;
         let material = settings

@@ -7,8 +7,8 @@ use naga::compact::{KeepUnused, compact};
 use naga::proc::BoundsCheckPolicies;
 use naga::valid::{Capabilities, ModuleInfo, ValidationFlags, Validator};
 use naga::{
-    ArraySize, Binding as IoBinding, BuiltIn, EntryPoint, Handle, Module, ShaderStage, Type,
-    TypeInner, VectorSize,
+    AddressSpace, ArraySize, Binding as IoBinding, BuiltIn, EntryPoint, Expression, Function,
+    Handle, Module, ShaderStage, Type, TypeInner, VectorSize,
 };
 
 use crate::{Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Pipeline};
@@ -32,6 +32,11 @@ pub(crate) fn write_program(
 ) -> Result<GlslProgram, String> {
     let [vertex, fragment] = pipeline.stages().map(|(stage, stage_name, entry_point)| {
         let (stage_module, info) = stage_module(module, capabilities, stage, entry_point)?;
+        if let Some(function) = copied_uniform_array(&stage_module, &info) {
+            return Err(format!(
+                "pipeline `{name}`: the function `{function}` copies a value that holds an array out of a uniform block. Adreno 830's WebGL2 driver leaves such a copy's arrays empty. Read the elements from the block where the function needs them, or hold the vectors in named fields."
+            ));
+        }
         write_stage(
             &stage_module,
             &info,
@@ -253,6 +258,51 @@ fn metal_layout(module: &Module, ty: Handle<Type>, path: &str) -> Result<(u32, u
         }
         _ => return Err(format!("`{path}` is no type that a uniform block holds")),
     })
+}
+
+/// The name of the first function that loads a value holding an array (an array, or a struct with
+/// one at any depth) out of a uniform block, as a whole: a struct field read into a local or
+/// passed by value. Reads of single elements, such as `block.list[i]`, load no array.
+fn copied_uniform_array(module: &Module, info: &ModuleInfo) -> Option<String> {
+    fn holds_array(module: &Module, inner: &TypeInner) -> bool {
+        match inner {
+            TypeInner::Array { .. } | TypeInner::BindingArray { .. } => true,
+            TypeInner::Struct { members, .. } => members
+                .iter()
+                .any(|m| holds_array(module, &module.types[m.ty].inner)),
+            _ => false,
+        }
+    }
+    let in_uniform = |function: &Function, mut pointer: Handle<Expression>| loop {
+        match function.expressions[pointer] {
+            Expression::Access { base, .. } | Expression::AccessIndex { base, .. } => {
+                pointer = base;
+            }
+            Expression::GlobalVariable(global) => {
+                break module.global_variables[global].space == AddressSpace::Uniform;
+            }
+            _ => break false,
+        }
+    };
+    let copies = |function: &Function, function_info: &naga::valid::FunctionInfo| {
+        function.expressions.iter().any(|(handle, expression)| {
+            matches!(*expression, Expression::Load { pointer } if in_uniform(function, pointer))
+                && holds_array(module, function_info[handle].ty.inner_with(&module.types))
+        })
+    };
+    let functions = module
+        .functions
+        .iter()
+        .map(|(handle, f)| (f, &info[handle]));
+    let entry_points = module
+        .entry_points
+        .iter()
+        .enumerate()
+        .map(|(i, ep)| (&ep.function, info.get_entry_point(i)));
+    functions
+        .chain(entry_points)
+        .find(|(function, function_info)| copies(function, function_info))
+        .map(|(function, _)| function.name.clone().unwrap_or_default())
 }
 
 /// True when the entry point reads `@builtin(draw_index)`, directly or in a struct argument.
@@ -721,6 +771,40 @@ mod tests {
             error.contains("`U.kind` starts at byte 16 there"),
             "{error}"
         );
+    }
+
+    /// The function that `copied_uniform_array` names in `source`.
+    fn uniform_array_copy(source: &str) -> Option<String> {
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+        copied_uniform_array(&module, &info)
+    }
+
+    #[test]
+    fn a_copy_of_an_array_out_of_a_uniform_block_is_refused() {
+        let block = "struct Light { sh: array<vec4f, 2>, params: vec4f }\nstruct Flat { a: vec4f, b: vec4f }\nstruct U { light: Light, flat: Flat, list: array<vec4f, 4> }\n@group(0) @binding(0) var<uniform> u: U;\n";
+        let copy = |body: &str| {
+            uniform_array_copy(&format!("{block}fn f(i: u32) -> vec4f {{ {body} }}\n"))
+        };
+        assert_eq!(
+            copy("let l = u.light; return l.params;"),
+            Some("f".to_owned())
+        );
+        assert_eq!(copy("let l = u.list; return l[i];"), Some("f".to_owned()));
+        assert_eq!(
+            copy("return u.light.sh[i] + u.list[i] + u.light.params;"),
+            None
+        );
+        assert_eq!(copy("let l = u.flat; return l.a;"), None);
+        let passed = format!(
+            "{block}fn g(l: Light) -> vec4f {{ return l.params; }}\n@fragment fn main() -> @location(0) vec4f {{ return g(u.light); }}\n"
+        );
+        assert_eq!(uniform_array_copy(&passed), Some("main".to_owned()));
     }
 
     #[test]
