@@ -161,7 +161,7 @@ A rehearsal ran every Mac step before the gate commit, on a MacBook Pro M5 Max i
 Notes on the figures:
 
 - The desktop target's run overlapped other work on the Mac: SwiftShader image checks, an allocation run, and the iPad's reruns served from the Mac. 10.8% passes by a wide margin, so the overlap cannot change the verdict. null3D's own work, 0.35 ms, is 2.5 times M0's 0.14 ms ([D-06](decisions/D-06-success-targets.md)). three.js's own work rose from about 0.8 ms to 3.25 ms when the scenes moved to the standard material. The gate's clean run confirms the null3D figure.
-- T-28's target is on the S24+ in Chrome on Slow 4G: a cold start within 4.5 s, and a warm one within 1 s ([D-06](decisions/D-06-success-targets.md)). The Mac is inside both, but the gate's figures come from the S24+ and the iPad. On the iPad, the preset check took about 1 s for each preset it measured. Pull request #234 skips the check on repeat visits ([D-17](decisions/D-17-stored-preset-check.md)), so the warm figures change on the gate commit.
+- T-28's target is on the S24+ in Chrome on Slow 4G: a cold start within 5.5 s, and a warm one within 1 s ([D-06](decisions/D-06-success-targets.md)). The cold target was 4.5 s until the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). The Mac is inside both, but the gate's figures come from the S24+ and the iPad. On the iPad, the preset check took about 1 s for each preset it measured. Pull request #234 skips the check on repeat visits ([D-17](decisions/D-17-stored-preset-check.md)), so the warm figures change on the gate commit.
 - T-28 on the S24+ at 1533939f, after the early shader download (#296): cold 4.64 to 4.70 s in the five thread modes, over 4.5 s; warm 0.95 to 0.98 s. [T-28: the core's download](#t-28-the-cores-download) has the fix and its figures.
 
 ### T-28: the core's download
@@ -209,9 +209,9 @@ Per frame, S4 draws 4 render passes and S1 draws 2. S4's 2 extra passes are dept
 | S4, WebGPU | 237 | 604, with the replay at 263 of 320 | Pass |
 | S4, WebGL2 | 237 | 164 | Pass |
 
-### Results on the gate commit
+### Results on the first gate commit, 5309dba5
 
-The gate commit is 5309dba5 (#271), and main's CI passed on it. Each device run below served the pages from a checkout at that commit. The run names are in UTC.
+The gate commit was 5309dba5 (#271), and main's CI passed on it. Each device run below served the pages from a checkout at that commit. The run names are in UTC.
 
 | Item | Device and browser | Check | Figure | Result |
 | --- | --- | --- | --- | --- |
@@ -261,24 +261,62 @@ The same runs on the Mac in Chrome found where it came from. Each commit ran S4 
 
 The owner ruled on 5 October 2026 ([D-16](decisions/D-16-moving-casters-and-bias.md)). At Low, a far cascade keeps its turns while moving casters touch it. So a far moving shadow can trail its caster by up to 3 frames. Medium and up keep the far cascade drawing in every frame. The receiver plane stays on every preset, so no surface shows acne. The older commit's figure was also too low. The GPU timer timed one frame in 8, and the far cascade drew once in 4 frames, so no timed frame held it. [Implementation notes](implementation-notes.md#shadows) gives the rule and the test that holds S4's draw calls and passes.
 
+### Results on the gate commit 89a1d6295
+
+The gate moved to 89a1d6295 (#321), the cold-load fix, and ran on the night of 5 to 6 October 2026. CI passed on it. The iPad's runs before T-28 ran on main at 03a1ad198. That commit differs from 89a1d6295 only in how the start's download begins, so their results stand for the gate commit ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). The Mac ran on a MacBook Pro M5 Max in Chrome 154.0.8037.93, with its timing steps inside a quiet window. Its 1-minute load was 7.2 when they started. The iPad Pro 11-inch ran in Safari 26.6.2, charging, with Limit Frame Rate on, so its screen ran at 60 Hz. The Galaxy S24+ ran in Chrome 154.0.8037.126 over USB, at 60 Hz, and each timed run started at Android thermal status 0. The run names are in UTC.
+
+| Item | Device and browser | Check | Figure | Result |
+| --- | --- | --- | --- | --- |
+| 1 | Mac, Chrome on the Mac's GPU | The image test manifest on all three tiers (gate step `images-gpu`) | 591 passed | Pass |
+| 1 | Mac, Chrome with SwiftShader | The image test manifest on all three tiers, `CI=1 bun run test:images --workers 6`. It ran on its own, outside the gate's record, to keep the Mac's load down | 591 passed | Pass |
+| 1, 3 | GitHub Actions | CI and the benchmark job on the gate commit (gate step `workflows`). The benchmark job now runs once an hour on main's newest commit, so it ran by hand on a branch at the gate commit (run 37311229382) | CI passed. The benchmark job's first attempt failed: S1 on WebGPU read 10% more on the busiest thread and 15.6% more own work than the commit before, with run ranges that overlap widely. Its rerun passed | Pass |
+| 1 | Mac, Firefox 157.0 | The full checks plan through the device runner (run 20261005-191616-checks) | 825 passed, 6 failed. The room environment on WebGL2 failed in all 5 thread modes: 5.2% to 6.3% of pixels differ from the Chrome reference, against 0.5%, and the modes differ from each other. The WebGPU engine page with the sketch on the main thread had no GPU times, although the device has timestamp queries | Fail. Runs again after the fixes merge |
+| 1 | Mac, Safari 26.6.2 | The full checks plan through the device runner (run 20261005-223110-checks) | 825 passed, 6 failed. The 100,000-sprite scene: on WebGPU the frame's read-back failed (E1408, `getMappedRange` failed), and in compatibility mode 98.5% of pixels differ. Engine restarts with the sketch on the main thread: start 3 of 10 took more than 20 s to its first frame. Engine starts in a frame, pipelined, low latency and drawing on the main thread: start 1 of 5 took more than 20 s in each. An earlier run that night is not a result: the screen was locked, and every page failed | Fail. Runs again after the fixes merge |
+| 1 | iPad Pro 11-inch, Safari 26.6.2 | The full checks plan on WebGPU, compatibility mode and WebGL2, on 03a1ad198 (run 20261005-135655-checks) | 831 passed, 0 failed | Pass |
+| 1 | Galaxy S24+ (SM-S926B), Chrome 154.0.8037.126 | The full checks plan on WebGL2 (run 20261005-163754-checks) | 307 passed, 524 skipped (the WebGPU and compatibility mode pages), 0 failed | Pass |
+| 2 | Mac, Chrome on the Mac's GPU | The parity scenes on core WebGPU and WebGL2 (`bun run parity -- --tier webgpu,webgl2`, on its own) | 112 of 112 comparisons pass | Pass |
+| 3 | Mac, Chrome | S1's own work on the busiest thread, WebGPU (gate step `desktop-target`) | null3D 0.160 ms, three.js 1.400 ms after its 1.370 ms of scene code: 11.4%, against at most 50% | Pass |
+| 3 | Mac, Chrome | S3, S1-cells and S4 against three.js (gate step `scenes`) | CPU time per frame. S3: null3D 30% of three.js on WebGPU (0.09 against 0.30 ms) and 72% with WebGL2. S1-cells: null3D on WebGPU 183% of three.js on WebGL (0.06 against 0.03 ms) and 48% of three.js on WebGPU, and with WebGL2 167%. S4: null3D 5% of three.js on WebGL (0.09 against 1.74 ms) on WebGPU, and 14% with WebGL2 | Recorded. S1-cells is a finding: null3D takes more time than three.js on WebGL, though both figures are under 0.1 ms |
+| 3 | iPad Pro 11-inch, Safari 26.6.2 | S1 at phone scale, 256,000 boxes, against three.js, 5 runs of each page, on 03a1ad198 (run 20261005-123824-bench) | 27 of 27 passed. CPU time per frame: null3D on WebGPU 16.46 ms, 53% of three.js on WebGPU (30.80 ms). With WebGL2 forced 17.30 ms, 56%. Own work on the busiest thread 14% and 24%. Target: at most 100% | Pass |
+| 3 | iPad Pro 11-inch, Safari 26.6.2 | S4 at Low with dynamic resolution, WebGPU, 5 minutes of warm-up and 5 measured, on 03a1ad198 (run 20261005-111656-bench) | 295 of 300 seconds at 60 fps, 98%. Lowest 56 fps, lowest render scale 0.75, 34 quality steps against 8 on 5309dba5. 0.20 ms of CPU and 12.82 ms of GPU time per frame. Target: 95% | Pass |
+| 3 | iPad Pro 11-inch, Safari 26.6.2 | S4 at Low with dynamic resolution, WebGL2 forced, 5 minutes of warm-up and 5 measured, on 03a1ad198 | First run (20261005-121546-bench): 297 of 300 seconds, 99%, lowest 54 fps, 18 quality steps. Its lowest fell below 5309dba5's 56, so the iPad rested 10 minutes and the item ran again (20261005-130618-bench): 299 of 299 seconds, 100%, lowest 57 fps, lowest render scale 0.5, 4 quality steps, 0.84 ms per frame. Target: 95% | Pass, on the second run |
+| 3 | iPad Pro 11-inch, Safari 26.6.2 | The governor's stress test on WebGPU and WebGL2, on 03a1ad198 (run 20261005-122606-governor) | 4 of 4 passed. 9 live quality steps down and back up on each path. Under the heavy scene, the last 15 seconds held 54 to 60 fps on WebGPU, at a lowest render scale of 0.85, and 59 to 61 fps on WebGL2, at 0.75 | Pass |
+| 3 | iPad Pro 11-inch, Safari 26.6.2 | S3 and S1-cells against three.js, 5 runs of each page, on 03a1ad198 (run 20261005-132155-bench) | 49 passed, 5 failed. three.js on WebGL cannot draw S3 on this iPad: its shader needs more than 1,024 fragment uniform vectors, so its 5 pages failed. Every null3D page passed. S3: null3D 0.22 ms per frame on WebGPU and 0.90 ms with WebGL2, 7% and 29% of three.js on WebGPU (3.14 ms). S1-cells: 0.20 ms and 0.80 ms, 28% and 111% of three.js on WebGL (0.72 ms) | Recorded |
+| 3 | Galaxy S24+ (SM-S926B), Chrome 154.0.8037.126 | S1 at phone scale, 300,000 boxes, against three.js, 5 runs of each page (run 20261005-160642-bench) | 16 passed, 5 skipped. CPU time per frame: null3D on WebGL2 16.80 ms, 57% of three.js on WebGL (29.56 ms). Own work on the busiest thread 19% (3.57 against 18.42 ms). Target: at most 100% | Pass |
+| 3 | Galaxy S24+ (SM-S926B), Chrome 154.0.8037.126 | S4 at Low with dynamic resolution on WebGL2, 5 minutes of warm-up and 5 measured (run 20261005-155424-bench) | 300 of 300 seconds at 60 fps, 100%. Lowest 58 fps, render scale 1 all through, no quality steps. Target: 95% | Pass |
+| 3 | Galaxy S24+ (SM-S926B), Chrome 154.0.8037.126 | The governor's stress test on WebGL2 (run 20261005-160442-governor) | 2 passed, and the 2 WebGPU pages skipped. 9 live quality steps down and back up. Under the heavy scene, the last 15 seconds held 59 to 60 fps, at a lowest render scale of 0.7 | Pass |
+| 3 | Galaxy S24+ (SM-S926B), Chrome 154.0.8037.126 | S3 and S1-cells against three.js, 5 runs of each page (run 20261005-162110-bench) | 27 passed, 10 skipped, 5 failed. three.js on WebGL cannot draw S3 on this GPU, for the same reason as on the iPad, so its 5 pages failed. S3: null3D with WebGL2 3.86 ms per frame. S1-cells: null3D 1.15 ms, 264% of three.js on WebGL (0.44 ms) | Recorded |
+| 3 | iPad Pro 11-inch, Safari 26.6.2 | GPU time of S4 at Low with the governor off, on WebGPU: the older commit f46c0686 (A) against the gate commit (B), in turns A, B, A, B, 30 seconds measured each, with one tab whose dev server changed sides before each run. First round: A 20261005-155921-bench and 20261005-160221-bench, B 20261005-160051-bench and 20261005-160350-bench. Second round, after 10 minutes of rest: A 20261005-172151-bench and 20261005-172459-bench, B 20261005-172327-bench and 20261005-172629-bench | First round: A 9.46 ms at 60 fps, B 10.08 ms at 59.9 fps, then A 11.75 ms and B 11.37 ms, both at 30 fps. Second round: A 11.79, B 11.45, A 16.76 and B 18.02 ms, all at 18.6 to 29.4 fps. Both sides drew 56 calls per frame. A run that drops to 30 fps does not count, so only the first pair stands: B takes 0.62 ms more, 6.6% | Invalid: one clean pair only. Runs again on a cool iPad |
+| 4 | Mac | The WebAssembly builds and the engine's JavaScript (gate step `budgets`) | WebAssembly: threaded 275.9 KB and single-threaded 275.2 KB after Brotli, 46% of 600 KB. Engine JavaScript: 109.1 to 116.8 KB after Brotli in the five thread modes, 78.0% to 83.5% of the current budget | Pass |
+| 4 | Mac, Chrome | Allocation, S4 on WebGPU (gate step `allocation-s4-webgpu`) | Sketch worker 254.0 bytes per frame, render worker 640.5 | Pass |
+| 4 | Mac, Chrome | Allocation, S4 on WebGL2 (gate step `allocation-s4-webgl2`) | The governor's judge step allocates 4.1 bytes per frame against its budget of 4, and 4.6 at most. Sketch worker 243.5 bytes per frame, render worker 150.8. The cause is the float arrays that #318 put in the governor. #335 keeps its times in 32-bit integers | Fail. Runs again on the new gate commit |
+| 4 | Mac, Chrome | Soak, S4, 10 minutes (gate step `soak-s4`) | After the 2-minute warm-up, the sketch worker's heap grew 11 KB and the render worker's 32 KB, of 256 KB each. WebAssembly memory +0.00 MB | Pass |
+| 4 | iPad Pro 11-inch, Safari 26.6.2 | The soak plan on S4: the GPU-loss pages and two 30-minute soaks, at the preset the engine chose (run 20261005-161025-soak) | 12 of 12 passed. The 10 GPU-loss pages each counted 1 GPU loss, drew again and matched their references. Each soak ran 30 of 30 minutes, with no GPU loss, no growth of WebAssembly memory and no engine failure. The preset check chose Low. But the median frame rate was 14.8 fps on WebGPU and 32.2 fps with WebGL2, against 59.1 and 53.3 on 5309dba5. GPU time per frame stayed at 13 to 14 ms | Invalid: the iPad slowed, see the notes. Runs again on a cool iPad |
+| 5 | Mac, Chrome | T-28, first frame done, median of 3, pipelined, WebGPU (gate step `startup`) | Slow 4G: cold 4,288 ms, warm 669 ms. Full speed: cold 93 ms, warm 90 ms. 13 requests and 404.9 KB on a cold load | Recorded |
+| 5 | iPad Pro 11-inch, Safari 26.6.2 | T-28: the runner's startup plan on WebGPU, 5 cold and 5 warm loads of each thread mode, over the local network with no throttling (run 20261005-154744-startup) | 55 of 55 passed. First frame done, median, pipelined: 175 ms cold and 136 ms warm. The other thread modes: 141 to 194 ms cold and 132 to 142 ms warm | Recorded |
+| 5 | Galaxy S24+ (SM-S926B), Chrome 154.0.8037.126 | T-28: `bun run bench:startup -- --android`, 5 cold and 5 warm loads of each thread mode on Slow 4G and at full speed, WebGL2. It ran twice, the second time after 10 idle minutes at thermal status 0 | First frame done, median, pipelined, Slow 4G: cold 4,532 ms and warm 945 ms, then cold 4,557 ms and warm 945 ms. The other thread modes: cold 4,507 to 4,550 ms and 4,474 to 4,536 ms, warm 942 to 966 ms and 961 to 984 ms. Full speed, pipelined: cold 338 ms, warm 340 ms. A cold load fetched 12 files, 402 KB after compression. Targets: cold within 5.5 s, warm within 1 s | Pass, by the owner's target of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). Against the earlier 4.5 s it missed by 32 and 57 ms |
+| 6 | Mac | `bun run docs:check`, `docs:style`, `skills:check` and `release -- --release-type minor` (gate steps `docs`, `docs-style`, `skills`, `release`) | No problems in each check. The release script prints 0.1.0 | Pass |
+
+Notes on the figures:
+
+- The iPad slowed during the night, whichever commit it served. In the first GPU time round, its frame rate fell from 60 to 30 fps. From the soak on, it held 15 fps on WebGPU. The rate fell in exact halves of the 60 Hz screen, and GPU time per frame barely moved. The older commit ran as slowly as the gate commit. So the iPad capped its own frame rate, most likely from heat after hours of charging and load. It does not point to the engine. Its soak and GPU time comparison run again on a cool iPad.
+- The owner watched the soak's S4 page on 03a1ad198, in run 20261005-143144-soak. That run stopped after its GPU-loss pages, for the Mac's quiet window. The shadows jerkily trail the cars, very obviously. At Low, a far cascade draws once in 4 frames and keeps its turns while cars move in it ([D-16](decisions/D-16-moving-casters-and-bias.md)). So a far shadow can trail by up to 3 frames. Each shadow step of the governor makes the far cascade's turns longer, up to every 8th frame. S4's 10-minute WebGPU run took 34 quality steps, against 8 on 5309dba5. S4 does not report the far cascade's interval, so how far the governor took it is not known.
+- On the Mac, the GPU image step ran while the jitter branch built, and the Mac's 1-minute load reached about 40. The SwiftShader images, the parity scenes, Safari and Firefox then ran one at a time, each at a load below 18.
+
 ### What the gate still needs
 
-On the gate commit, the Mac runs `bun run gate` with every step, and with no other heavy work during the timing steps. The rehearsal's figures do not count for the gate.
+The gate moves to a newer main commit that holds the governor's allocation fix (#335), by the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). Only these items run again there. Every other item keeps its result from 89a1d6295, or from 03a1ad198 for the iPad runs before T-28.
 
-The owner decided two changes on 4 October 2026:
+1. Allocation, S4 on WebGL2, in Chrome on the Mac (gate step `allocation-s4-webgl2`), inside a quiet window.
+2. The iPad's soak plan on S4, on a cool iPad.
+3. The iPad's GPU time comparison of S4 at Low against the older commit f46c0686, A, B, A, B, on a cool iPad. A run that drops to 30 fps does not count.
+4. Firefox and Safari on the Mac through the device runner, after the fixes for their failures merge.
+5. After each run, a row in [the record of tested devices](tested-devices.md).
+
+### The owner's changes of 4 October 2026
 
 - Brave is no longer tested. It draws as Chrome does, so the gate drops its Brave items.
 - The phone items run on BrowserStack Automate's phones where they can, and on the S24+ where they cannot.
-
-The coordinator runs these device runs on the gate commit:
-
-1. Image tests through the device runner: Safari and Firefox on the Mac, on WebGPU and with WebGL2 forced. Safari on the iPad, on both paths. Chrome on the S24+, on WebGL2.
-2. S1 at phone scale against three.js: the iPad in Safari on WebGPU and with WebGL2 forced, and the S24+ in Chrome.
-3. S4's 10-minute run with dynamic resolution: the S24+ in Chrome, the iPad with WebGL2 forced, and the iPad on WebGPU again at 60 Hz. The governor's stress test runs on each.
-4. S3 and S1-cells against three.js on the S24+ and the iPad.
-5. The soak plan on S4 in Safari on the iPad.
-6. T-28: `bun run bench:startup -- --android` on the S24+ in Chrome, cold and warm on Slow 4G, and the iPad's first frame.
-7. After each run, a row in [the record of tested devices](tested-devices.md).
 
 ### The owner's rulings of 5 October 2026
 
@@ -286,3 +324,10 @@ The owner ruled on two gate results on 5 October 2026 ([D-67](decisions/D-67-rul
 
 - The GPU time of S4 is a regression, and the gate does not pass until it is fixed. The cloud iPad 10th ran S4 in Safari 27.0, at Low on WebGPU with the governor off. Two commits took turns in one session, 30 seconds each. The gate commit 5309dba5 took 11.93 and 12.03 ms of GPU time per frame. The older commit f46c0686 took 10.89 and 10.88 ms. The gate commit takes about 1.1 ms more, 10%, and makes 63 draw calls against 56. CPU time stayed at 0.32 to 0.34 ms on both. A fix is in progress, and the comparison runs again once it lands.
 - The owner's iPad Pro 11-inch runs the gate's iPad items that are still open. Among them are the two 30-minute soaks and the first frame, which only the cloud iPad has run so far. Results from the cloud iPad are kept as evidence, and they do not replace a run on the owner's iPad.
+
+### The owner's rulings of 6 October 2026
+
+The owner ruled on the gate's results on 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)).
+
+- The gate commit moves to a newer main commit that holds #335. Only the items that failed, or that gave no valid result, run again there. [What the gate still needs](#what-the-gate-still-needs) lists them.
+- T-28's cold-start target on the S24+ in Chrome on Slow 4G is 5.5 s, up from 4.5 s. The warm target stays at 1 s. So the gate commit's 4,532 and 4,557 ms pass.
