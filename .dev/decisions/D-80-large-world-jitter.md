@@ -35,7 +35,8 @@ Each range covers WebGPU, compatibility mode and WebGL2. `bun run --cwd tests te
 
 | Device and browser | GPU path | Far flights, jitter | Flights without cells, jitter | Date |
 | --- | --- | --- | --- | --- |
-| Mac, Safari | | | | |
+| Mac, Safari 26.6.2 | WebGPU | under 0.0001 px (own 0.2007) | 3.4993 px at 1,000 km, 7.7509 px at 6,378 km | 2026-10-05 |
+| Mac, Safari 26.6.2 | WebGL2 | under 0.0001 px (own 0.1996) | 3.4998 px at 1,000 km, 7.7503 px at 6,378 km | 2026-10-05 |
 | iPad, Safari | | | | |
 | Galaxy S24+, Chrome | | | | |
 
