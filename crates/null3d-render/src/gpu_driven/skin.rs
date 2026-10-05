@@ -7,21 +7,29 @@
 //! # Layout
 //!
 //! When the scene's structure changes, each skinned or morphed scene object (see
-//! [`crate::skinning`] and [`crate::morph`]) gets a
-//! region of the skinned vertex buffer for each part of its mesh, as large as the part's vertices
-//! in the mesh's skinned format. The regions stay until the structure changes again, so the
-//! views' bundles draw from them without being recorded again. A skinned object draws from a bucket
-//! of its own, as every object with bounds of its own does, and its bucket's draws read its
-//! regions in place of its mesh page's vertices, with the page's indices.
+//! [`crate::skinning`] and [`crate::morph`]) gets a region of a skinned vertex buffer for each part
+//! of its mesh, as large as the part's vertices in the mesh's skinned format. The regions stay
+//! until the structure changes again, so the views' bundles draw from them without being recorded
+//! again. A skinned object draws from a bucket of its own, as every object with bounds of its own
+//! does, and its bucket's draws read its regions in place of its mesh page's vertices, with the
+//! page's indices.
+//!
+//! The pass binds each skinned vertex buffer whole, so none grows past the device's largest
+//! storage binding. The regions fill one buffer, then the next, up to [`MAX_SKINNED_BUFFERS`],
+//! with the parts of one mesh page together. Each run of parts of one page in one buffer is a
+//! segment of the pass's table, with a bind group of its own. A mesh page also fits one storage
+//! binding (see the builder's mesh storage), so the pass reads any part of it. Past either cap, a
+//! frame fails with an error that names it: no skinned or morphed object goes without its region.
 //!
 //! # Each frame
 //!
 //! The CPU tests each skinned object's world sphere against each view that draws in the frame: the
 //! camera views, and for objects that cast shadows, the cascades and tiles that draw. An object that
 //! no view draws is not skinned, and keeps the vertices of an earlier frame, which no view draws.
-//! The pass's table lists, for each mesh page that holds skinned parts, the page's vertex format
-//! and the parts of the objects that some view draws, with their regions and their first joints.
-//! Each page that has parts to skin gets one dispatch, with one thread per vertex.
+//! The pass's table lists, for each segment, the page's vertex format and the parts of the objects
+//! that some view draws, with their regions and their first joints. Each segment that has parts to
+//! skin gets one dispatch, with one thread per vertex. A dispatch reaches at most 65,535 workgroups
+//! along each axis, so one with more spreads them over two axes.
 //!
 //! The joint texture uploads the frame's skinning matrices before the passes run (see
 //! [`crate::skinning::JointTexture`]), and the morph texture the frame's morph weights (see
@@ -41,6 +49,7 @@
 use null3d_core::animation::Animations;
 use null3d_core::morph::MorphWeights;
 use null3d_core::scene::{SceneStorage, flags};
+use null3d_gpu::caps::MAX_WORKGROUPS_PER_DIMENSION;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
     vertex,
@@ -68,8 +77,16 @@ const SKIN_TEMPLATES: [u32; 6] = [
     template::SHADOW_DEPTH,
     template::OUTLINE_MASK,
 ];
-/// The most mesh pages whose skinned parts the pass skins; parts in later pages stay unskinned.
+/// The most mesh pages that hold skinned meshes. Each page holds meshes of one vertex format up
+/// to a storage binding, so it takes skinned meshes of more than this many vertex formats, or more
+/// skinned meshes than this many bindings hold, to pass it.
 pub(super) const MAX_PAGES: u32 = 32;
+/// The most skinned vertex buffers, each as large as a storage binding at most: 1 GiB in all at
+/// WebGPU's default binding size.
+pub const MAX_SKINNED_BUFFERS: u32 = 8;
+/// The most segments of the table. Each page's parts lie together, so the segments number at most
+/// the pages plus the buffers that their runs cross into.
+pub(super) const MAX_SEGMENTS: u32 = MAX_PAGES + MAX_SKINNED_BUFFERS;
 /// Threads per workgroup of the skinning pass.
 const WORKGROUP_SIZE: u32 = 64;
 /// 32-bit words of one table entry.
@@ -103,24 +120,33 @@ pub(super) struct SkinnedObject {
     parts: u32,
 }
 
-/// One part of a skinned object's mesh, and its region of the skinned vertex buffer.
+/// One part of a skinned object's mesh, and its region of a skinned vertex buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct SkinnedPart {
-    /// The mesh page that holds the part, and its place among the pages that hold skinned parts.
-    pub(super) page: u32,
+    /// The mesh page that holds the part, and the segment of the table that skins it.
+    page: u32,
     segment: u32,
     /// The part's first vertex in its page, and its vertex count.
     first_vertex: u32,
     vertices: u32,
-    /// The byte where its region starts in the skinned vertex buffer.
-    pub(super) region: u32,
+    /// The skinned vertex buffer that holds its region, and the byte where the region starts.
+    buffer: u32,
+    region: u32,
 }
 
-/// A mesh page that holds skinned parts: the format that the pass reads, its segment of the table,
-/// and this frame's parts in it.
+impl SkinnedPart {
+    /// The GPU id of the buffer that holds the part's skinned vertices, and their first byte.
+    pub(super) fn vertices(&self) -> (u32, u32) {
+        (ids::skinned(self.buffer), self.region)
+    }
+}
+
+/// A run of skinned parts of one mesh page whose regions lie in one skinned vertex buffer: the
+/// format that the pass reads, its segment of the table, and this frame's parts in it.
 #[derive(Clone, Copy, Debug)]
 struct Segment {
     page: u32,
+    buffer: u32,
     /// The table entries of its format (see `skin.wgsl`).
     format: [[u32; 4]; 3],
     /// Its first table entry, and the parts it has room for.
@@ -138,10 +164,14 @@ pub(super) struct Skinning {
     vertex_shader: bool,
     objects: Vec<SkinnedObject>,
     parts: Vec<SkinnedPart>,
+    /// The mesh pages that hold skinned parts, in the order the objects first name them, with
+    /// their vertex formats.
+    pages: Vec<(u32, u32)>,
     segments: Vec<Segment>,
-    /// Bytes of skinned vertices the layout needs, and that the GPU's buffer holds.
-    skinned_bytes: u32,
-    skinned_made: u32,
+    /// Bytes of skinned vertices that the layout needs in each skinned vertex buffer, and that
+    /// each of the GPU's holds.
+    skinned_bytes: [u32; MAX_SKINNED_BUFFERS as usize],
+    skinned_made: [u32; MAX_SKINNED_BUFFERS as usize],
     /// Table entries the layout needs, and that the GPU's buffer holds.
     table_entries: u32,
     table_made: u32,
@@ -175,9 +205,10 @@ impl Skinning {
             vertex_shader,
             objects: Vec::new(),
             parts: Vec::new(),
+            pages: Vec::new(),
             segments: Vec::new(),
-            skinned_bytes: 0,
-            skinned_made: 0,
+            skinned_bytes: [0; MAX_SKINNED_BUFFERS as usize],
+            skinned_made: [0; MAX_SKINNED_BUFFERS as usize],
             table_entries: 0,
             table_made: 0,
             groups_stale: true,
@@ -396,22 +427,58 @@ impl Skinning {
         Some(&self.parts[first..first + object.parts as usize])
     }
 
-    /// Lays out the skinned and morphed objects of the scene as it stands: a region of the skinned
-    /// vertex buffer for each part of each such object's mesh that the pass skins or morphs, in
-    /// slot order, and a segment of the table for each mesh page that holds such parts.
+    /// Lays out the skinned and morphed objects of the scene as it stands: a region of a skinned
+    /// vertex buffer of at most `buffer_bytes` for each part of each such object's mesh that the
+    /// pass skins or morphs, page by page, and a segment of the table for each run of one page's
+    /// parts in one buffer. Fails, with no object laid out, when the parts need more mesh pages or
+    /// skinned vertex buffers than the pass has.
     pub(super) fn rebuild(
         &mut self,
         scene: &SceneStorage,
         animations: Option<&Animations>,
         morphs: &MorphWeights,
         meshes: &MeshStorage,
-    ) {
+        buffer_bytes: u32,
+    ) -> Result<(), RecordError> {
+        self.morph.rebuild(scene, morphs, meshes);
+        let laid_out = self
+            .gather(scene, animations, morphs, meshes)
+            .and_then(|()| self.place(buffer_bytes));
+        if laid_out.is_err() {
+            self.objects.clear();
+            self.parts.clear();
+            self.segments.clear();
+            self.computed = 0;
+        }
+        let mut entries = 0;
+        for segment in &mut self.segments {
+            segment.first_entry = entries;
+            let used = HEADER_ENTRIES + PART_ENTRIES * segment.capacity;
+            entries += used.next_multiple_of(SEGMENT_ALIGN);
+        }
+        self.table_entries = entries;
+        self.seen.clear();
+        self.seen.resize(self.objects.len(), false);
+        // A segment's bind group binds its part of the table and its buffer, which a new layout
+        // can move.
+        self.groups_stale = true;
+        laid_out
+    }
+
+    /// Lists the skinned and morphed objects in slot order and the parts of their meshes that the
+    /// pass skins or morphs, with the mesh pages that hold those parts and the pages' vertex
+    /// formats.
+    fn gather(
+        &mut self,
+        scene: &SceneStorage,
+        animations: Option<&Animations>,
+        morphs: &MorphWeights,
+        meshes: &MeshStorage,
+    ) -> Result<(), RecordError> {
         self.objects.clear();
         self.parts.clear();
-        self.segments.clear();
-        self.skinned_bytes = 0;
+        self.pages.clear();
         self.computed = 0;
-        self.morph.rebuild(scene, morphs, meshes);
         let rows = scene.capacity() as usize + 1;
         for slot in 0..rows {
             if !scene.created().get(slot as u32) {
@@ -427,33 +494,23 @@ impl Skinning {
             };
             let computed = morphed || !self.vertex_shader;
             self.computed += u32::from(computed);
-            let stride = vertex::stride(skinned_format(mesh.format));
             let first_part = self.parts.len() as u32;
             let parts = if computed { meshes.parts(mesh) } else { &[] };
             for part in parts {
-                let segment = match self.segments.iter().position(|s| s.page == part.page) {
-                    Some(segment) => segment,
-                    None => {
-                        self.segments.push(Segment {
-                            page: part.page,
-                            format: format_entries(mesh.format),
-                            first_entry: 0,
-                            capacity: 0,
-                            parts: 0,
-                            groups: 0,
-                        });
-                        self.segments.len() - 1
+                if !self.pages.iter().any(|&(page, _)| page == part.page) {
+                    if self.pages.len() == MAX_PAGES as usize {
+                        return Err(RecordError::SkinnedPagesFull { limit: MAX_PAGES });
                     }
-                };
-                self.segments[segment].capacity += 1;
+                    self.pages.push((part.page, mesh.format));
+                }
                 self.parts.push(SkinnedPart {
                     page: part.page,
-                    segment: segment as u32,
+                    segment: 0,
                     first_vertex: part.base_vertex,
                     vertices: part.vertex_count,
-                    region: self.skinned_bytes,
+                    buffer: 0,
+                    region: 0,
                 });
-                self.skinned_bytes += part.vertex_count * stride;
             }
             self.objects.push(SkinnedObject {
                 slot: slot as u32,
@@ -463,16 +520,54 @@ impl Skinning {
                 parts: self.parts.len() as u32 - first_part,
             });
         }
-        self.segments.truncate(MAX_PAGES as usize);
-        let mut entries = 0;
-        for segment in &mut self.segments {
-            segment.first_entry = entries;
-            let used = HEADER_ENTRIES + PART_ENTRIES * segment.capacity;
-            entries += used.next_multiple_of(SEGMENT_ALIGN);
+        Ok(())
+    }
+
+    /// Gives each part its region, page by page so that each page's parts lie together: in the
+    /// skinned vertex buffer being filled while the region fits `buffer_bytes`, and in the next
+    /// buffer otherwise. Starts a segment wherever the page or the buffer changes.
+    fn place(&mut self, buffer_bytes: u32) -> Result<(), RecordError> {
+        self.segments.clear();
+        self.skinned_bytes = [0; MAX_SKINNED_BUFFERS as usize];
+        let full = RecordError::SkinnedVerticesFull {
+            megabytes: ((u64::from(MAX_SKINNED_BUFFERS) * u64::from(buffer_bytes)) >> 20) as u32,
+        };
+        let mut buffer = 0;
+        for &(page, format) in &self.pages {
+            let stride = vertex::stride(skinned_format(format));
+            for part in self.parts.iter_mut().filter(|part| part.page == page) {
+                let bytes = part.vertices * stride;
+                let used = self.skinned_bytes[buffer];
+                if u64::from(used) + u64::from(bytes) > u64::from(buffer_bytes) {
+                    buffer += 1;
+                    if used == 0 || buffer == MAX_SKINNED_BUFFERS as usize {
+                        return Err(full);
+                    }
+                }
+                let continues = self
+                    .segments
+                    .last()
+                    .is_some_and(|s| s.page == page && s.buffer == buffer as u32);
+                if !continues {
+                    self.segments.push(Segment {
+                        page,
+                        buffer: buffer as u32,
+                        format: format_entries(format),
+                        first_entry: 0,
+                        capacity: 0,
+                        parts: 0,
+                        groups: 0,
+                    });
+                }
+                let segment = self.segments.len() - 1;
+                self.segments[segment].capacity += 1;
+                part.segment = segment as u32;
+                part.buffer = buffer as u32;
+                part.region = self.skinned_bytes[buffer];
+                self.skinned_bytes[buffer] += bytes;
+            }
         }
-        self.table_entries = entries;
-        self.seen.clear();
-        self.seen.resize(self.objects.len(), false);
+        Ok(())
     }
 
     /// Records the creation of the pass's pipeline in the list of `frame` while the scene draws
@@ -493,10 +588,10 @@ impl Skinning {
     }
 
     /// Records the GPU objects the layout needs that the GPU lacks: the joint texture, the morph
-    /// texture, the skinned vertex buffer and the table, and the bind groups when a buffer they
-    /// bind is new, mesh pages' buffers included (`pages_remade`). Returns true when it made the
-    /// skinned vertex buffer again, or the bind group of the joint texture that the vertex shaders
-    /// read, which the bundles that draw from them must see.
+    /// texture, the skinned vertex buffers and the table, and the bind groups when the layout or a
+    /// buffer they bind is new, mesh pages' buffers included (`pages_remade`). Returns true when it
+    /// made a skinned vertex buffer again, or the bind group of the joint texture that the vertex
+    /// shaders read, which the bundles that draw from them must see.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn apply(
         &mut self,
@@ -524,11 +619,19 @@ impl Skinning {
             list.push(Op::CreateBindGroup, &words)?;
             remade = true;
         }
-        if self.skinned_made < self.skinned_bytes {
-            self.skinned_made = grown_size(self.skinned_bytes, binding_bytes);
-            let flags = usage::STORAGE | usage::VERTEX;
-            list.push(Op::CreateBuffer, &[ids::SKINNED, self.skinned_made, flags])?;
-            remade = true;
+        for (buffer, (&needed, made)) in self
+            .skinned_bytes
+            .iter()
+            .zip(&mut self.skinned_made)
+            .enumerate()
+        {
+            if *made < needed {
+                *made = grown_size(needed, binding_bytes);
+                let flags = usage::STORAGE | usage::VERTEX;
+                let id = ids::skinned(buffer as u32);
+                list.push(Op::CreateBuffer, &[id, *made, flags])?;
+                remade = true;
+            }
         }
         let table_bytes = self.table_entries * ENTRY_WORDS * 4;
         if self.table_made < table_bytes {
@@ -550,7 +653,7 @@ impl Skinning {
                 let entries = [
                     entry(0, resource_kind::BUFFER, ids::SKIN_TABLE, first, size),
                     entry(1, resource_kind::BUFFER, vertices, 0, source),
-                    entry(2, resource_kind::BUFFER, ids::SKINNED, 0, 0),
+                    entry(2, resource_kind::BUFFER, ids::skinned(segment.buffer), 0, 0),
                     entry(3, resource_kind::TEXTURE, self.joints.id(), 0, 0),
                     entry(4, resource_kind::TEXTURE, deltas, 0, 0),
                     entry(5, resource_kind::TEXTURE, weights, 0, 0),
@@ -646,11 +749,6 @@ impl Skinning {
                     continue;
                 };
                 let groups = part.vertices.div_ceil(WORKGROUP_SIZE);
-                // One dispatch reaches at most 65,535 workgroups; later parts wait for a frame
-                // whose views draw fewer.
-                if segment.groups + groups > u32::from(u16::MAX) {
-                    continue;
-                }
                 let entry = segment.first_entry + HEADER_ENTRIES + PART_ENTRIES * segment.parts;
                 let at = (entry * ENTRY_WORDS) as usize;
                 self.table[at..at + 8].copy_from_slice(&[
@@ -702,14 +800,14 @@ impl Skinning {
                 pipeline_set = true;
             }
             list.push(Op::SetBindGroup, &[0, ids::SKIN_GROUPS + k as u32, 0])?;
-            list.push(Op::Dispatch, &[segment.groups, 1, 1])?;
+            list.push(Op::Dispatch, &dispatch_size(segment.groups))?;
         }
         Ok(())
     }
 
     /// Forgets the GPU objects, after the thread that draws replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {
-        self.skinned_made = 0;
+        self.skinned_made = [0; MAX_SKINNED_BUFFERS as usize];
         self.table_made = 0;
         self.groups_stale = true;
         self.pipeline_made = false;
@@ -717,6 +815,14 @@ impl Skinning {
         self.joints.forget_gpu();
         self.morph.forget_gpu();
     }
+}
+
+/// The workgroups of a dispatch of `groups` workgroups along its axes: along one while they fit,
+/// and otherwise over the fewest rows that fit, with at most one workgroup per row more than
+/// `groups`. The shader numbers a workgroup by its row and its place in the row.
+fn dispatch_size(groups: u32) -> [u32; 3] {
+    let rows = groups.div_ceil(MAX_WORKGROUPS_PER_DIMENSION);
+    [groups.div_ceil(rows.max(1)), rows.max(1), 1]
 }
 
 // The workgroups of the skinning pass and the culling pass are within WebGPU's default limits.
@@ -727,6 +833,27 @@ mod tests {
     use null3d_gpu::drawlist::vertex::{self, Type};
 
     use super::*;
+
+    #[test]
+    fn a_dispatch_spreads_past_an_axis_over_rows_that_cover_every_workgroup() {
+        assert_eq!(dispatch_size(141), [141, 1, 1]);
+        assert_eq!(
+            dispatch_size(MAX_WORKGROUPS_PER_DIMENSION),
+            [MAX_WORKGROUPS_PER_DIMENSION, 1, 1]
+        );
+        for groups in [
+            MAX_WORKGROUPS_PER_DIMENSION + 1,
+            66_270,
+            1_000_000,
+            MAX_WORKGROUPS_PER_DIMENSION * 300 + 7,
+        ] {
+            let [x, y, z] = dispatch_size(groups);
+            assert!(
+                x <= MAX_WORKGROUPS_PER_DIMENSION && y <= MAX_WORKGROUPS_PER_DIMENSION && z == 1
+            );
+            assert!(x * y >= groups && x * y - groups < y, "{groups}: {x} x {y}");
+        }
+    }
 
     #[test]
     fn a_format_tells_the_pass_where_each_attribute_sits_and_what_to_copy() {

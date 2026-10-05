@@ -16,7 +16,7 @@ use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, sizes};
 
 use super::ids;
-use super::skin::{DrawGroups, Skinning};
+use super::skin::{DrawGroups, SkinnedPart, Skinning};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
 use crate::sorted::{SortedLayout, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
@@ -25,14 +25,6 @@ use crate::view::{ViewFrame, ViewId};
 const PARALLEL_ROWS: usize = 8192;
 /// Rows per chunk of that write.
 const ROWS_PER_CHUNK: u32 = 2048;
-/// Words that one draw of a sorted run records at most, beside those of its mesh's parts: its
-/// pipeline, its maps' bind group, the joint texture's bind group and its slice of the instances.
-const RUN_WORDS: usize = 2 + 4 + 4 + 5;
-/// Words that each part of a run's mesh records at most: its page's buffers and its draw.
-const PART_WORDS: usize = 5 + 5 + 6;
-/// Words that each view's pass records besides its draws: its frame group.
-const PASS_WORDS: usize = 4;
-
 /// Each view's sorted rows and instance buffer.
 #[derive(Debug, Default)]
 pub(super) struct Transparent {
@@ -42,12 +34,6 @@ pub(super) struct Transparent {
 }
 
 impl Transparent {
-    /// The most words that the transparent passes of `views` views can record.
-    pub(super) fn words_bound(layout: &SortedLayout, views: usize) -> usize {
-        let per_draw = RUN_WORDS + PART_WORDS * layout.most_parts() as usize;
-        views * (PASS_WORDS + layout.draws_room() as usize * per_draw)
-    }
-
     /// The most bytes that one frame's instances take in its arena.
     pub(super) fn upload_bound(layout: &SortedLayout, views: usize) -> usize {
         views * layout.rows() as usize * sizes::INSTANCE_STRIDE as usize
@@ -234,7 +220,7 @@ impl Transparent {
                 let (page_vertices, page_indices) = meshes.ids(part.page);
                 // A skinned part draws its region of skinned vertices with its page's indices.
                 let region = regions.and_then(|regions| regions.get(k));
-                let source = region.map_or((page_vertices, 0), |r| (ids::SKINNED, r.region));
+                let source = region.map_or((page_vertices, 0), SkinnedPart::vertices);
                 if vertices != Some(source) {
                     list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
                     vertices = Some(source);
