@@ -3,6 +3,8 @@
 // the frame metrics, how many times the sketch updated, its largest step, the names of the
 // messages it sent, how long the engine took to stop, and the page's steps. With ?pause, it pauses
 // and resumes the sketch before it asks, and reports the frames drawn during the pause and after.
+// ?resumed-frames= sets the fewest frames to count after the pause: the page measures again until
+// they come.
 // It also reports when it called createEngine, from navigation start, which places the engine's
 // own start times on the page's timeline. With ?memory-option=<MiB>, it passes that maximum in the
 // memory option of createEngine, and reports the maximum of each shared memory that the engine
@@ -10,6 +12,7 @@
 // file arrived, from the browser's resource timing.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
+import { measureUntil } from './lib/measure';
 import { progress, run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -21,8 +24,15 @@ const PAUSE_MS = 600;
  * counts the frames of the pause.
  */
 const SETTLE_MS = 100;
-/** How long the page counts frames after the sketch resumes. */
+/** How long the page counts frames after the sketch resumes, at first. */
 const RESUMED_MS = 500;
+/**
+ * The most times the page doubles its count after the pause to reach the fewest frames: the counts
+ * then take 7.5 seconds in all, within the test's wait.
+ */
+const MAX_RESUMED_DOUBLINGS = 3;
+/** The fewest frames that ?resumed-frames= asks the page to count after the pause. */
+const resumedFrames = Number(params.get('resumed-frames') ?? '0');
 /** The maximum that ?memory-option= asks the page to pass in createEngine's memory option. */
 const memoryOption = params.has('memory-option') ? Number(params.get('memory-option')) : undefined;
 
@@ -56,8 +66,18 @@ async function pauseAndCount(engine: Engine) {
 	await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 	const paused = await engine.measure((PAUSE_MS - SETTLE_MS) / 1000);
 	engine.setPaused(false);
-	const resumed = await engine.measure(RESUMED_MS / 1000);
-	return { paused: frameCounts(paused), resumed: frameCounts(resumed) };
+	const resumed: FrameCounts = { frames: 0, presented: 0 };
+	await measureUntil(
+		engine,
+		RESUMED_MS / 1000,
+		MAX_RESUMED_DOUBLINGS,
+		(stats) => {
+			resumed.frames += stats.frames;
+			resumed.presented += stats.intervalMs.count;
+		},
+		() => resumed.frames >= resumedFrames,
+	);
+	return { paused: frameCounts(paused), resumed };
 }
 
 run('engine', async () => {

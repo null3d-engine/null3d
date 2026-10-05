@@ -229,6 +229,98 @@ S5 draws animated characters, 500 by default, with shadows. Its scene and pages 
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGL2 | 500 | 1.25 / 54.02 (WebGL) | 2% | 1.20 / 54.00 (WebGL) | 2% | 120.0 / 18.4 | n/a | 5711b3b4 | 20261004-112928-bench |
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGPU | 500 | 2.32 / 54.02 (WebGL) | 4% | 2.32 / 54.00 (WebGL) | 4% | 60.0 / 18.4 | 7.38 | 5711b3b4 | 20261004-112928-bench |
 
+## Feature GPU costs on phones
+
+These tables give what single features cost on cloud phones, from BrowserStack Automate. They are not comparisons with three.js. Each figure is GPU time from the browser's GPU timer, on WebGPU, unless a row says otherwise. Chrome on these phones has no GPU timer for WebGL2. The Galaxy S25's screen ran at 30 Hz in these runs, so the device runner marks its frame figures unreliable. Its GPU times do not depend on the screen. The archive in `bench/results` keeps no runs of these plans, so the run folders' names are the sources.
+
+### Bloom by base size
+
+Bloom's cost is the GPU time per frame with bloom on, less the time with it off, on the same page. The base is the height of the mip chain's first level, in rows ([D-21](decisions/D-21-effect-chain.md)). Commit fb9d0b1d, on the branch `feat/m2-f7-mip-bloom`, on 5 October 2026. Sources: the `bloom-sizes` plan's runs 20261005-010104-bloom-sizes (Galaxy S25, Pixel 9) and 20261005-010847-bloom-sizes (Pixel 11).
+
+| Device and browser | Render scale | Base 512 | Base 256 | Base 128 | Base 64 |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S25 (Adreno 830), Chrome 149 | 1 | 1.57 ms | 1.57 ms | 1.25 ms | 0.92 ms |
+| Galaxy S25 (Adreno 830), Chrome 149 | 0.5 | 1.67 ms | 1.64 ms | 1.25 ms | 1.11 ms |
+| Pixel 9 (Mali-G715), Chrome 149 | 1 | 0.79 ms | 0.72 ms | 0.66 ms | 0.79 ms |
+| Pixel 9 (Mali-G715), Chrome 149 | 0.5 | 0.79 ms | 0.98 ms | 0.79 ms | 0.59 ms |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | 1 | 4.59 ms | 4.26 ms | 3.80 ms | 3.28 ms |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | 0.5 | 4.26 ms | 4.39 ms | 3.80 ms | 3.21 ms |
+
+The presets' chains: Low has a base of 128 rows; Medium, High and Ultra 512. The `bloom` plan runs each phone's own preset. Its runs, 20261005-011315-bloom (Galaxy S25, Pixel 9) and 20261005-011736-bloom (Pixel 11), gave:
+
+| Device and browser | Render scale 1 | Render scale 0.5 |
+| --- | --- | --- |
+| Galaxy S25 (Adreno 830), Chrome 149 | 1.25 ms | 1.21 ms |
+| Pixel 9 (Mali-G715), Chrome 149 | 0.85 ms | 0.85 ms |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | 3.87 ms | 3.60 ms |
+
+The Galaxy S25's and the Pixel 11's figures match the 128-row base of Low. The Pixel 9's figures vary by about 0.3 ms between runs of one size, so they do not show its chain. With WebGL2, every page held the screen's frame rate with bloom on and off.
+
+### The room's prefilter
+
+The prototype of M2-E2's built-in room makes the room's environment map on the GPU, in steps across frames. The table gives the first map of the packed path (`rgb9e5ufloat` packed into RGBA8), with steps sized by the kind of draw. The limits that the prototype tests are under 8 ms for each step and under 200 ms in all. Commit 0a0a7d90, on the branch `proto/l1-room`, on 5 October 2026. Sources: runs 20261005-004323-prefilter (Galaxy S25), 20261005-004623-prefilter (Pixel 9), 20261005-005022-prefilter (Pixel 10) and 20261005-005528-prefilter (Pixel 11). With WebGL2 the times are wall times from the call to the finish, because there is no GPU timer.
+
+| Device and browser | GPU path | Total | Steps | Largest step | Steps over 8 ms | Map matches the asset tool's file |
+| --- | --- | --- | --- | --- | --- | --- |
+| Galaxy S25 (Adreno 830), Chrome 149 | WebGPU | 377.5 ms | 61 | 12.06 ms | 24 | yes |
+| Galaxy S25 (Adreno 830), Chrome 149 | Compatibility mode | 244.4 ms | 48 | 8.72 ms | 8 | yes |
+| Galaxy S25 (Adreno 830), Chrome 149 | WebGL2, wall time | 498.3 ms | 64 | 101.18 ms | 11 | yes |
+| Pixel 9 (Mali-G715), Chrome 149 | WebGPU | 651.4 ms | 96 | 12.19 ms | 16 | yes |
+| Pixel 9 (Mali-G715), Chrome 149 | Compatibility mode | 622.7 ms | 96 | 12.19 ms | 12 | yes |
+| Pixel 9 (Mali-G715), Chrome 149 | WebGL2, wall time | 464.4 ms | 75 | 9.96 ms | 11 | yes |
+| Pixel 10 (PowerVR D-Series), Chrome 149 | WebGPU | 399.4 ms | 59 | 14.75 ms | 24 | yes |
+| Pixel 10 (PowerVR D-Series), Chrome 149 | Compatibility mode | 400.8 ms | 59 | 14.81 ms | 24 | yes |
+| Pixel 10 (PowerVR D-Series), Chrome 149 | WebGL2, wall time | 1307.3 ms | 136 | 143.58 ms | 51 | yes |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | WebGPU | 367.8 ms | 57 | 12.85 ms | 24 | yes |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | Compatibility mode | 364.1 ms | 57 | 12.71 ms | 24 | yes |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | WebGL2, wall time | 716.0 ms | 67 | 256.20 ms | 20 | yes |
+
+The whole map in one step took this GPU time:
+
+- Galaxy S25: 81.9 ms
+- Pixel 9: 106.0 ms
+- Pixel 10: 83.6 ms
+- Pixel 11: 38.7 ms
+
+The largest WebGL2 steps of 101 to 256 ms are single stalls. The same runs found two faults. The 11-11-10 format misses D-19's tolerance on every path. WebGL2 cannot write half floats straight into the cube (GL error 0x502).
+
+The second run of the prototype, at commit c0c104e4 on 5 October 2026, timed the design that M2-E9 takes. The engine makes the whole map in one step at load (`load=1`), right after the warm-up draws. Sources: runs 20261005-024553-prefilter (Galaxy S25, Pixel 9, Pixel 10) and 20261005-025041-prefilter (Pixel 11). WebGL2 gives wall time from the call to the finish. The pipelines build first, in the background.
+
+| Device and browser | Map at load, WebGPU | Map at load, WebGL2 | Pipelines, WebGPU | Pipelines, WebGL2 |
+| --- | --- | --- | --- | --- |
+| Galaxy S25 (Adreno 830), Chrome 149 | 66.7 ms | 76.6 ms | 92.7 ms | 109.3 ms |
+| Pixel 9 (Mali-G715), Chrome 149 | 99.7 ms | 107.3 ms | 128.7 ms | 173.6 ms |
+| Pixel 10 (PowerVR D-Series), Chrome 149 | 87.2 ms | 57.7 ms | 128.2 ms | 225.5 ms |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | 47.8 ms | 72.5 ms | 111.5 ms | 100.3 ms |
+
+The same day, held sessions timed the engine's generator on the branch `feat/m2-e9-room-at-load` (commit 0d49786c). On the Galaxy S25 its first map at load took 92.7 ms on WebGPU, 89.7 ms in compatibility mode and 94.3 ms with WebGL2. On the Pixel 9 it took 126.2, 120.6 and 127.1 ms. Its map matched the asset tool's on every path.
+
+### Two commits on one cloud device
+
+Each comparison ran in one held Automate session, which moved between two dev servers, one per commit, in turns A, B, A, B. Each turn measured 30 s of S4 at Low with the governor off.
+
+The gate fix's GPU time on the cloud iPad (iPad 10th, Safari 27.0, WebGPU, screen at 60 Hz), 5 October 2026:
+
+| Turn | Commit | Run | GPU ms | Draw calls | fps |
+| --- | --- | --- | --- | --- | --- |
+| A | 1533939f (main) | 20261005-031515-bench | 13.02 | 63 | 22.1 |
+| B | 84e2bd47 (`fix/gate-ab-regression`) | 20261005-031849-bench | 12.58 | 56 | 22.7 |
+| A | 1533939f (main) | 20261005-032203-bench | 13.40 | 63 | 22.2 |
+| B | 84e2bd47 (`fix/gate-ab-regression`) | 20261005-032547-bench | 12.14 | 56 | 22.8 |
+
+The cloud iPad draws S4 at about 22 fps on WebGPU and 33 fps with WebGL2. Its screen runs at 60 Hz, and its video recording makes no difference. The page's GPU work takes 12 to 15 ms a frame, but each frame waits 44 to 60 ms for the GPU. So its frame rates do not compare with the owner's iPad. Its GPU times do compare between commits in one session.
+
+The shadow fix's cost with WebGL2 on the Galaxy S25 (Chrome 149, screen at 24 to 30 Hz, no GPU timer), 5 October 2026:
+
+| Turn | Commit | Run | fps, seconds at 30 fps | Frame interval p95 | CPU ms per frame, median / p95 |
+| --- | --- | --- | --- | --- | --- |
+| A | fd681ea5 (main) | 20261005-034131-bench | 30.0, 30 of 30 | 33.33 ms | 0.77 / 1.84 |
+| B | c1a764dc (`fix/shadow-contact-gap`) | 20261005-034457-bench | 30.0, 30 of 30 | 33.34 ms | 0.81 / 1.79 |
+| A | fd681ea5 (main) | 20261005-034842-bench | 30.0, 30 of 30 | 33.34 ms | 0.83 / 1.86 |
+| B | c1a764dc (`fix/shadow-contact-gap`) | 20261005-035202-bench | 30.0, 30 of 30 | 33.33 ms | 0.77 / 1.79 |
+
+Both commits held the screen's rate, so the fix's extra shadow reads fit in the frame there. The screen's low rate hides a GPU cost below about 33 ms.
+
 ## The other runs in the archive
 
 The archive also keeps runs that compare no engine with three.js. Their records hold the figures that the guides and decision records cite.
