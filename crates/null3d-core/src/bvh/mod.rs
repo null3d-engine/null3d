@@ -5,7 +5,8 @@
 //!
 //! The bottom level is one tree per mesh, over its triangles ([`mesh::MeshBvh`]). The asset tool
 //! can store it in a file ([`format`]), or a job worker builds it when the mesh loads. A skinned
-//! character has no triangle tree: it is tested as one capsule per bone ([`capsule`]).
+//! character's mesh uses the same tree, so queries test it in its bind pose, moved by its
+//! object's matrix. The test of one capsule per bone ([`capsule`]) is not yet in the queries.
 //!
 //! The top level is a tree over objects' bounds ([`top::TopTree`]). [`scene::SceneBvh`] keeps two
 //! of them for a scene:
@@ -25,6 +26,9 @@
 //! [`child::MAX_LEAF_COUNT`] primitives in the tree's order array), or empty. Nodes are stored
 //! with each child after its parent, so a refit walks them backwards once, and a loaded tree that
 //! keeps this rule cannot loop.
+//!
+//! A walk never follows an empty child, whatever its box test gives. A ray or a box that is not
+//! finite in 32 bits can pass the test of an empty box, so the walks check the child word too.
 //!
 //! # Cells
 //!
@@ -566,7 +570,7 @@ impl<T: Copy + Default> Stack<T> {
 }
 
 /// Pushes the children that `mask` marks onto `stack` so the nearest pops first, each with its
-/// entry distance.
+/// entry distance. Empty children are never pushed.
 #[inline(always)]
 pub(crate) fn push_near_first(
     stack: &mut Stack<(u32, f32)>,
@@ -578,7 +582,7 @@ pub(crate) fn push_near_first(
     let mut hits = [(0u32, 0.0f32); 4];
     let mut n = 0;
     for i in 0..4 {
-        if mask.test(i) {
+        if mask.test(i) && node.children[i] != child::EMPTY {
             hits[n] = (node.children[i], near[i]);
             n += 1;
         }
@@ -669,7 +673,7 @@ pub(crate) fn walk_any(
 }
 
 /// Walks the leaves of the tree under `root` whose boxes `test` marks, until `leaf` returns
-/// true. Returns true when it did.
+/// true. Returns true when it did. Empty children are never followed.
 #[inline(always)]
 pub(crate) fn walk_overlap(
     nodes: &[Node],
@@ -682,7 +686,7 @@ pub(crate) fn walk_overlap(
     loop {
         let mask = test(node);
         for (i, &w) in node.children.iter().enumerate() {
-            if !mask.test(i) {
+            if !mask.test(i) || w == child::EMPTY {
                 continue;
             }
             if child::is_leaf(w) {

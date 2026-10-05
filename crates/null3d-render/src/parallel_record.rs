@@ -64,7 +64,7 @@ impl ParallelRecorder {
             threads: (0..threads.max(1))
                 .map(|_| {
                     UnsafeCell::new(ThreadList {
-                        list: DrawList::with_capacity(words),
+                        list: DrawList::with_limit(words, words),
                         spans: Vec::with_capacity(max_chunks as usize),
                     })
                 })

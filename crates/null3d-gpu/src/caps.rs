@@ -118,6 +118,10 @@ pub const BUDGET: [u32; LIMIT_COUNT] = [
     8,                 // vertex buffers
 ];
 
+/// The most workgroups of a dispatch along each axis: WebGPU's default
+/// `maxComputeWorkgroupsPerDimension`, which compatibility mode keeps.
+pub const MAX_WORKGROUPS_PER_DIMENSION: u32 = 65_535;
+
 /// The largest side of a cube texture's faces that every path allows: the smallest
 /// `MAX_CUBE_MAP_TEXTURE_SIZE` that WebGL2 permits. WebGPU allows its 2D texture size.
 pub const CUBE_TEXTURE_SIZE: u32 = 2048;

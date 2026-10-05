@@ -88,3 +88,40 @@ for (const tone of TONE_MAPPINGS)
 			}
 		});
 	}
+
+/**
+ * The exposure in stops of the bright tiles test: it lights the brightest tiles to about 250, past
+ * where the half precision builds once clipped each channel at 64. On CI's software GPU that clip
+ * drew colored tiles 5 to 7 steps of 255 from full precision under AgX and Neutral, toward white or
+ * another hue.
+ */
+const BRIGHT_STOPS = 4;
+
+/** A run's page with the bright tiles' exposure and the precision that `half` names. */
+const brightPage = (path: string, half: 'on' | 'off') =>
+	`${path.replace('stops%3D0', `stops%3D${BRIGHT_STOPS}`)}&half=${half}`;
+
+for (const tone of TONE_MAPPINGS.filter((tone) => tone !== 'none'))
+	test(`${tone} tone mapping draws very bright colored light at half precision as at full precision`, async ({
+		page,
+	}) => {
+		const runs = IMAGE_RUNS.filter((run) =>
+			[toneMappingTest(tone, 0), eightBitTest(tone)].includes(run.test),
+		);
+		expect(runs.length).toBe(5);
+		for (const run of runs) {
+			expect(run.path).toContain('stops%3D0');
+			const full = tileColors(await frameOf(page, brightPage(run.path, 'off')));
+			const half = tileColors(await frameOf(page, brightPage(run.path, 'on')));
+			const worst = half.map((color, tile) =>
+				Math.max(...color.map((value, c) => Math.abs(value - (full[tile]?.[c] ?? 0)))),
+			);
+			const tile = worst.indexOf(Math.max(...worst));
+			expect
+				.soft(
+					worst[tile],
+					`${run.id}: tile ${tile} is ${half[tile]?.map((v) => v.toFixed(1))} at half precision, and ${full[tile]?.map((v) => v.toFixed(1))} at full precision`,
+				)
+				.toBeLessThanOrEqual(MAX_DIFFERENCE);
+		}
+	});
