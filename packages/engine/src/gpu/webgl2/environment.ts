@@ -1,20 +1,20 @@
 // Environment maps made on WebGL2 (D-19), which the thread that draws loads with the first
-// generator that a sketch asks for. Each band of environment-steps.ts draws rows of a level's six
-// faces, side by side, into an RGBA8 texture, as shared-exponent texels packed into its bytes. A
-// pixel pack buffer then takes the bytes, and the same buffer unpacks each face's part into its face
-// of the level of an RGB9_E5 cube texture: WebGL2 renders into no shared-exponent format, and the
-// copy stays on the GPU. The
-// textures and buffers of a map last from its first slice to its last. The programs and the
-// sampler stay for the next map in the context.
+// generator that a sketch asks for. Each step of environment-steps.ts draws a level's six faces,
+// side by side, into an RGBA8 texture, as shared-exponent texels packed into its bytes. A pixel
+// pack buffer then takes the bytes, and the same buffer unpacks each face's part into its face of
+// the level of an RGB9_E5 cube texture: WebGL2 renders into no shared-exponent format, and the copy
+// stays on the GPU. This path needs no float render target, so every device takes it (D-66). One
+// call runs every step, before the frame's passes, so the map is whole before any frame reads it.
+// The GL objects of a map go at the end of the call; the programs and the sampler stay for the
+// next map in the context.
 
 import type { ShaderVariant } from '../../generated/shaders';
 import {
-	type Band,
+	chainLevels,
 	roomSteps,
 	STEP_BYTES,
 	type Step,
 	type StepTexture,
-	sliceBands,
 } from '../environment-steps';
 import type { ProgramHost } from './programs';
 
@@ -22,36 +22,32 @@ import type { ProgramHost } from './programs';
 type Pipeline = Step['pipeline'];
 
 /**
- * Hears each band of rows of the map's own levels once its texels are in the pixel pack buffer,
- * which is bound then, before they go into the cube: for tests, which read the bytes back. Each
- * row holds the six faces' rows side by side, `size` texels each.
+ * Hears each of the map's own levels once its texels are in the pixel pack buffer, which is bound
+ * then, before they go into the cube: for tests, which read the bytes back. Each row holds the six
+ * faces' rows side by side, `size` texels each.
  */
-export type BandRead = (level: number, y: number, rows: number, size: number) => void;
+export type LevelRead = (level: number, size: number) => void;
 
 /** A generator that fills every level of every face of a cube texture on the GPU. */
 export interface CubeGenerator {
 	/**
-	 * Compiles the context's programs in the background where the context can, so that the first
-	 * slice waits for no compile. A slice in a context that has none compiles them at once.
+	 * Compiles the context's programs in the background where the context can, so that the map
+	 * waits for no compile. A map in a context that has none compiles them at once.
 	 */
 	prepare(host: ProgramHost): Promise<void>;
 	/**
-	 * Runs slice `slice` of `slices` of the work that fills an RGB9_E5 cube texture, `size` texels
-	 * wide with `levels` levels. Slice 0 starts the map. A slice that comes before the slices ahead
-	 * of it ran runs them first, and a slice of a map that is done does nothing. A slice changes the
-	 * context's bindings, which the caller sets again: the program, the active texture unit with its
-	 * texture and sampler, uniform block binding 0, the framebuffer, the pixel pack and unpack
-	 * buffers, and the viewport. It leaves no vertex array, framebuffer, pixel buffer, texture or
-	 * sampler bound.
+	 * Fills every level of every face of an RGB9_E5 cube texture, `size` texels wide with `levels`
+	 * levels. It changes the context's bindings, which the caller sets again: the program, the
+	 * active texture unit with its texture and sampler, uniform block binding 0, the framebuffer,
+	 * the pixel pack and unpack buffers, and the viewport. It leaves no vertex array, framebuffer,
+	 * pixel buffer, texture or sampler bound.
 	 */
 	run(
 		host: ProgramHost,
 		target: WebGLTexture,
 		size: number,
 		levels: number,
-		slice: number,
-		slices: number,
-		read?: BandRead,
+		read?: LevelRead,
 	): void;
 }
 
@@ -66,26 +62,10 @@ interface Kept {
 	unit: number;
 }
 
-/** A map on its way: its steps, the slices' bands, its own GL objects, and the next slice. */
-interface Making {
-	steps: Step[];
-	plan: Band[][];
-	stride: number;
-	textures: Record<StepTexture, WebGLTexture>;
-	framebuffer: WebGLFramebuffer | null;
-	texels: WebGLBuffer | null;
-	uniforms: WebGLBuffer | null;
-	/** The textures that the map made, which go with its last slice. */
-	made: WebGLTexture[];
-	next: number;
-}
-
 /** The generator of the built-in room, from the environment shader's GLSL build. */
 export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 	const variants = { webgl2: shader };
 	const kept = new WeakMap<WebGL2RenderingContext, Kept>();
-	const making = new WeakMap<WebGLTexture, Making>();
-	const done = new WeakSet<WebGLTexture>();
 	const preparing = new WeakMap<WebGL2RenderingContext, Promise<void>>();
 	const pipelines: Pipeline[] = ['trace', 'blur', 'half', 'prefilter'];
 	const makeSampler = (gl: WebGL2RenderingContext) => {
@@ -128,17 +108,16 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 		}
 		return ready;
 	};
-	/** Makes the GL objects of a map, and uploads every step's uniform values. */
-	const start = (
-		gl: WebGL2RenderingContext,
-		target: WebGLTexture,
-		size: number,
-		levels: number,
-		slices: number,
-	): Making => {
+	const run: CubeGenerator['run'] = (host, target, size, levels, read) => {
+		const { gl } = host;
+		const { programs, sampler, unit } = keep(host);
 		const alignment = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT) as number;
 		const stride = Math.ceil(STEP_BYTES / alignment) * alignment;
 		const [steps, values] = roomSteps(size, levels, stride);
+		// The step values' uniform block binding, as the shader binds it. Every texture binds on the
+		// source's unit, the only one that the generator changes.
+		const binding = host.slot(0, 0);
+		gl.activeTexture(gl.TEXTURE0 + unit);
 		const made: WebGLTexture[] = [];
 		const texture = (kind: number, storage: (kind: number) => void) => {
 			const t = gl.createTexture();
@@ -150,8 +129,11 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 		};
 		const cube = (count: number) =>
 			texture(gl.TEXTURE_CUBE_MAP, (t) => gl.texStorage2D(t, count, gl.RGB9_E5, size, size));
-		const traced = cube(1);
-		const chain = cube(Math.log2(size) + 1);
+		const textures: Record<StepTexture, WebGLTexture> = {
+			traced: cube(1),
+			chain: cube(chainLevels(size)),
+			target,
+		};
 		const staging = texture(gl.TEXTURE_2D, (t) => gl.texStorage2D(t, 1, gl.RGBA8, 6 * size, size));
 		const framebuffer = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
@@ -159,91 +141,44 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 		const texels = gl.createBuffer();
 		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, texels);
 		gl.bufferData(gl.PIXEL_PACK_BUFFER, 6 * size * size * 4, gl.STREAM_COPY);
-		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
 		const uniforms = gl.createBuffer();
 		gl.bindBuffer(gl.UNIFORM_BUFFER, uniforms);
 		gl.bufferData(gl.UNIFORM_BUFFER, values, gl.STATIC_DRAW);
-		return {
-			steps,
-			plan: sliceBands(steps, slices),
-			stride,
-			textures: { traced, chain, target },
-			framebuffer,
-			texels,
-			uniforms,
-			made,
-			next: 0,
-		};
-	};
-	/** Draws and copies one slice's bands. */
-	const run = (host: ProgramHost, map: Making, slice: number, read?: BandRead) => {
-		const { gl } = host;
-		const { programs, sampler, unit } = keep(host);
-		// The step values' uniform block binding, as the shader binds it.
-		const binding = host.slot(0, 0);
-		gl.bindFramebuffer(gl.FRAMEBUFFER, map.framebuffer);
 		gl.bindVertexArray(null);
 		gl.bindSampler(unit, sampler);
-		for (const { step: k, y, rows } of map.plan[slice] ?? []) {
-			const step = map.steps[k] as Step;
+		steps.forEach((step, k) => {
 			gl.useProgram(programs[step.pipeline]);
-			gl.bindBufferRange(gl.UNIFORM_BUFFER, binding, map.uniforms, k * map.stride, STEP_BYTES);
-			gl.bindTexture(gl.TEXTURE_CUBE_MAP, map.textures[step.source]);
-			// Fragments keep their place in the whole level, so the band's rows read as the faces'. GL
-			// counts rows from the bottom, where the faces' first rows lie.
+			gl.bindBufferRange(gl.UNIFORM_BUFFER, binding, uniforms, k * stride, STEP_BYTES);
+			gl.bindTexture(gl.TEXTURE_CUBE_MAP, textures[step.source]);
 			const width = 6 * step.size;
-			gl.viewport(0, y, width, rows);
+			gl.viewport(0, 0, width, step.size);
 			gl.drawArrays(gl.TRIANGLES, 0, 3);
-			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, map.texels);
-			gl.readPixels(0, y, width, rows, gl.RGBA, gl.UNSIGNED_BYTE, 0);
-			if (read && step.into.includes('target')) read(step.level, y, rows, step.size);
+			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, texels);
+			gl.readPixels(0, 0, width, step.size, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+			if (read && step.into.includes('target')) read(step.level, step.size);
 			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, map.texels);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, texels);
 			// Each face's part of a row starts its face's size of texels after the one before.
 			gl.pixelStorei(gl.UNPACK_ROW_LENGTH, width);
 			const type = gl.UNSIGNED_INT_5_9_9_9_REV;
 			for (const into of step.into) {
-				gl.bindTexture(gl.TEXTURE_CUBE_MAP, map.textures[into]);
+				gl.bindTexture(gl.TEXTURE_CUBE_MAP, textures[into]);
 				for (let face = 0; face < 6; face++) {
 					const plane = gl.TEXTURE_CUBE_MAP_POSITIVE_X + face;
 					const at = face * step.size * 4;
-					gl.texSubImage2D(plane, step.level, 0, y, step.size, rows, gl.RGB, type, at);
+					gl.texSubImage2D(plane, step.level, 0, 0, step.size, step.size, gl.RGB, type, at);
 				}
 			}
 			gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
 			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-		}
+		});
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 		gl.bindSampler(unit, null);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.deleteFramebuffer(framebuffer);
+		gl.deleteBuffer(texels);
+		gl.deleteBuffer(uniforms);
+		for (const t of made) gl.deleteTexture(t);
 	};
-	const end = (gl: WebGL2RenderingContext, map: Making) => {
-		gl.deleteFramebuffer(map.framebuffer);
-		gl.deleteBuffer(map.texels);
-		gl.deleteBuffer(map.uniforms);
-		for (const t of map.made) gl.deleteTexture(t);
-	};
-	const runSlice: CubeGenerator['run'] = (host, target, size, levels, slice, slices, read) => {
-		const { gl } = host;
-		// Every texture binds on the source's unit, the only one that the generator changes.
-		gl.activeTexture(gl.TEXTURE0 + keep(host).unit);
-		let map = making.get(target);
-		if (slice === 0) {
-			if (map) end(gl, map);
-			done.delete(target);
-			map = start(gl, target, size, levels, slices);
-			making.set(target, map);
-		} else if (!map) {
-			// A list that a capture replays again can name a slice of a map that is done.
-			if (done.has(target)) return;
-			map = start(gl, target, size, levels, slices);
-			making.set(target, map);
-		}
-		for (; map.next <= slice; map.next++) run(host, map, map.next, read);
-		if (slice < slices - 1) return;
-		end(gl, map);
-		making.delete(target);
-		done.add(target);
-	};
-	return { prepare, run: runSlice };
+	return { prepare, run };
 }

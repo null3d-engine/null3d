@@ -1458,10 +1458,10 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Runs a slice of the work of a generator that the table holds, which fills a cube texture on
-	 * the GPU. The generator draws full-screen triangles with no depth test, culling, scissor or
-	 * blending, and writes every channel. It changes bindings that the state cache holds, so the
-	 * cache forgets them, and the next draws bind what they need again.
+	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
+	 * generator draws full-screen triangles with no depth test, culling, scissor or blending, and
+	 * writes every channel. It changes bindings that the state cache holds, so the cache forgets
+	 * them, and the next draws bind what they need again.
 	 */
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
@@ -1480,8 +1480,6 @@ export class WebGL2Backend {
 			texture.texture as WebGLTexture,
 			texture.width,
 			texture.mips,
-			words[a + 2] as number,
-			words[a + 3] as number,
 		);
 		this.program = null;
 		this.activeUnit = -1;
