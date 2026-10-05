@@ -180,6 +180,25 @@ Per frame, S4 draws 4 render passes and S1 draws 2. S4's 2 extra passes are dept
 | S4, WebGPU | 237 | 604, with the replay at 263 of 320 | Pass |
 | S4, WebGL2 | 237 | 164 | Pass |
 
+### S4's GPU time at Low against the older commit
+
+The gate compares S4's GPU time on one iPad, in turns: the gate commit 5309dba5 against the older commit f46c0686. S4 runs on WebGPU at Low, with the governor off. On the cloud iPad (10th generation, Safari 27), the gate commit read 11.93 and 12.03 ms. The older commit read 10.89 and 10.88 ms. So the gate commit was 1.1 ms (10%) slower, with 63 draw calls against 56. The owner ruled it a regression to find.
+
+The same runs on the Mac in Chrome found where it came from. Each commit ran S4 at Low twice for 10 s, with the governor off (5 October 2026):
+
+| Commit | Draw calls per frame | GPU ms per frame | What changed |
+| --- | --- | --- | --- |
+| f46c0686, the older commit | 56, and 63 in 1 frame of 4 | 1.19 | |
+| 5bdea5dc, before #227 | 56, and 63 in 1 frame of 4 | 1.19 | |
+| deb77723 (#227) | 63 | 1.36 | The far cascade draws in every frame while a moving caster touches it ([D-16](decisions/D-16-moving-casters-and-bias.md)) |
+| f980a754, before #257 | 63 | 1.36 | |
+| 2ab66e2e (#257) | 63 | 1.47 | The shadow filter compares each read with the receiver's plane, against acne on flat casters |
+| 5309dba5, the gate commit | 63 | 1.47 | |
+| 1533939f, main on 5 October | 63 | 1.55 | |
+| fix/gate-ab-regression | 63 | 1.48 | Surfaces that face away from the sun skip the shadow lookup, and the GPU timer times every phase of the far cascade's turns |
+
+Both shadow changes keep rules that the owner set. A moving caster's shadow sits under it in every frame, and no surface shows acne. So the 7 draws and the extra pass stay. The older commit's figure was also too low. The GPU timer timed one frame in 8, and the far cascade drew once in 4 frames, so no timed frame held it. [Implementation notes](implementation-notes.md#shadows) gives the rule and the test that holds S4's draw calls and passes.
+
 ### What the gate still needs
 
 On the gate commit, the Mac runs `bun run gate` with every step, and with no other heavy work during the timing steps. The rehearsal's figures do not count for the gate.

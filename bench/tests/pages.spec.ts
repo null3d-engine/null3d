@@ -141,6 +141,10 @@ interface BenchReport extends Report {
 	cpuMs: { median: number; p95: number; p99: number; mean: number };
 	intervalMs: { median: number; p95: number; p99: number };
 	userAgent: string;
+	stats: {
+		drawCalls: { median: number; p99: number };
+		gpuPassMs: { name: string }[] | null;
+	};
 }
 
 /** How many pixels of an RGBA8 image have the background color, within the tolerance. */
@@ -266,6 +270,44 @@ for (const kind of [
 	});
 }
 
+/**
+ * The draw calls and passes of each S4 frame at Low with the governor off, as the gate's GPU
+ * comparison on the iPad runs it. On WebGPU the GPU culls, so the draw calls do not depend on the
+ * view: the camera's opaque pass and each of Low's two shadow cascades draw S4's buckets, and the
+ * final pass draws one triangle. S4's cars drive through both cascades, so both draw in every
+ * frame (D-16). A new pass or draw in this frame costs every phone that runs S4, so a change to
+ * these figures needs its reason in .dev/implementation-notes.md.
+ */
+const S4_LOW_DRAW_CALLS = 63;
+/** The passes of each S4 frame at Low: the culling, the two cascades, the scene and the final pass. */
+const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
+
+function s4LowPassesTest(): void {
+	test('s4 on null3d-webgpu at Low draws the same passes and draw calls in every frame', async ({
+		page,
+	}) => {
+		await page.setViewportSize(PHONE_VIEWPORT);
+		const result = await runPage<BenchReport>(
+			page,
+			pagePath(
+				's4',
+				'null3d-webgpu',
+				`seconds=${shortRunSeconds('s4', 'null3d-webgpu')}&preset=low&governor=off`,
+			),
+		);
+		expect(result.frames).toBeGreaterThan(0);
+		const { drawCalls, gpuPassMs } = result.stats;
+		expect([drawCalls.median, drawCalls.p99]).toEqual([S4_LOW_DRAW_CALLS, S4_LOW_DRAW_CALLS]);
+		// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
+		if (gpuPassMs) {
+			const passes = gpuPassMs.map((part) => part.name);
+			expect(passes.filter((name) => name !== 'copies' && name !== 'between passes')).toEqual(
+				S4_LOW_PASSES,
+			);
+		}
+	});
+}
+
 for (const scene of SCENES) {
 	if (isPhoneScene(scene))
 		// S4 and S5 keep SwiftShader's processor busy, so two runs of one side by side can measure no
@@ -273,6 +315,7 @@ for (const scene of SCENES) {
 		test.describe(`${scene.toUpperCase()}'s pages take turns`, () => {
 			test.describe.configure({ mode: 'default' });
 			sceneTests(scene);
+			if (scene === 's4') s4LowPassesTest();
 		});
 	else sceneTests(scene);
 }

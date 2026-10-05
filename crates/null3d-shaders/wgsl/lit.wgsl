@@ -454,7 +454,12 @@ fn light_surface(
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
-    sun_color *= sun_shadow(relative, normal, -engine_frame.sun_direction.xyz);
+    // A surface that faces away from the sun gets none of its light whatever the shadow map
+    // holds, so it skips the lookup and the filter's reads.
+    let to_sun = -engine_frame.sun_direction.xyz;
+    if dot(normal, to_sun) > 0.0 {
+        sun_color *= sun_shadow(relative, normal, to_sun);
+    }
 #endif
     let sun = direct_light(
         m,
