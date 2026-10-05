@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci/faster-checks]
   pull_request:
   # The merge queue tests each pull request on top of main and the pull requests ahead of it.
   merge_group:
@@ -76,7 +76,9 @@ jobs:
           bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
           bun tools/hooks/check-trailers.ts ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
 
-  rust:
+  rust-lint:
+    # Formatting and Clippy. Clippy only checks the code and the tests compile it in full, so the
+    # two share almost no build output and run as jobs of their own.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -84,13 +86,13 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       # The cache's own key leaves out the build profiles in the workspace's Cargo.toml, so a
-      # profile change would keep restoring a cache built with the old profile.
+      # profile change would keep restoring a cache built with the old profile. The cache also
+      # names the job, so each job restores what it built itself.
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
       - name: Clippy rejects a call to the system clock
         run: |
           if cargo clippy --manifest-path tools/fixtures/disallowed-clock/Cargo.toml --target-dir target/lint-fixture 2> clippy.log; then
@@ -98,6 +100,25 @@ jobs:
             exit 1
           fi
           grep -q 'disallowed method `std::time::SystemTime::now`' clippy.log
+
+  rust-tests:
+    # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
+    # cargo test runs the files one after another, and a few slow files then set the job's time.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.146
+      - run: cargo nextest run --workspace
+      # nextest runs no documentation tests.
+      - run: cargo test --workspace --doc
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
@@ -137,20 +158,111 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  wasm-checks:
-    # The size check builds the WebAssembly files and the engine test page itself, and then the
-    # base's build, so it runs beside the build job instead of after it.
+  size-base:
+    # The sizes of the size check's base commit, built at that commit with its own toolchain,
+    # packages and build script, as the check builds a base in a worktree. Many runs share a base:
+    # pull requests build on main's newest commit, whose own run keeps its sizes (wasm-checks below).
+    # So the sizes stay in the Actions cache by commit, and a run that finds them builds nothing. A
+    # merge queue run builds on the pull request ahead of it, which has no kept sizes, so this job
+    # builds the base beside the build job, and the size check waits for both.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       HUSKY: "0"
     steps:
-      # The size check finds its base in the history and reads the commits since it. A pull request
-      # compares with main, and a merge queue run with the commit that its group builds on, which
-      # holds the pull requests ahead of it, so their growth never counts against it.
+      # The size check finds its base in the history. A pull request compares with main, and a merge
+      # queue run with the commit that its group builds on, which holds the pull requests ahead of
+      # it, so their growth never counts against it.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Find the size check's base
+        id: base
+        run: echo "sha=$(bun tools/build-wasm.ts --print-base)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: kept
+        with:
+          path: target/.size-base/${{ steps.base.outputs.sha }}.json
+          key: size-base-${{ steps.base.outputs.sha }}
+      - name: Check out the base
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: git checkout --force --detach ${{ steps.base.outputs.sha }}
+      - name: Install the base's Rust toolchain
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        if: steps.kept.outputs.cache-hit != 'true'
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
+      - name: Build the base and keep its sizes
+        if: steps.kept.outputs.cache-hit != 'true'
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          bun install --frozen-lockfile
+          bun tools/build-wasm.ts --sizes-only
+          mkdir -p target/.size-base
+          cp target/size-report.json "target/.size-base/$BASE.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: size-base
+          path: target/.size-base/${{ steps.base.outputs.sha }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+  wasm-checks:
+    # The size check: the files of the build job, and the engine test page built here, against the
+    # base's sizes from the size-base job. The build job builds the same files with the same flags,
+    # so the check builds no WebAssembly.
+    needs: [build, size-base]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      # The check reads the trailers of the commits since the base.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: size-base
+          path: target/.size-base
+      - name: Check the sizes of the build job's files against the base's build
+        run: bun tools/build-wasm.ts --check-size --prebuilt
+      # Main's sizes are the base of the pull requests that build on it.
+      - name: Keep the sizes of this commit of main
+        if: github.event_name == 'push' && !cancelled() && hashFiles('target/size-report.json') != ''
+        run: |
+          mkdir -p target/.size-base
+          cp target/size-report.json "target/.size-base/$GITHUB_SHA.json"
+      - uses: actions/cache/save@v4
+        if: github.event_name == 'push' && !cancelled() && hashFiles('target/size-report.json') != ''
+        with:
+          path: target/.size-base/${{ github.sha }}.json
+          key: size-base-${{ github.sha }}
+
+  shader-compiler:
+    # The shader crate's build tests again through the build job's shader compiler, which must give
+    # the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -160,8 +272,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Build both WebAssembly files and the shader compiler, and check their sizes against the base's build
-        run: bun run build:check-size
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
       - name: The shader compiler gives the native shader build's results
         run: bun run test:shader-compiler
 
@@ -195,7 +308,9 @@ jobs:
 
   browser:
     # The browser tests, the image test manifest among them, split into shards that run at once.
-    # Add a shard to the list when one takes more than about 5 minutes.
+    # Playwright splits them by count, in its order of the tests, and the weights below give each
+    # shard its share, so that the shards take about the same time. .dev/image-tests.md says how to
+    # set them, and when to add a shard.
     name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
     runs-on: ubuntu-latest
@@ -219,6 +334,9 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
+        env:
+          # One weight for each shard of the matrix, in its order.
+          PWTEST_SHARD_WEIGHTS: "233:310:174:109:150:118:175"
         run: bun run test:browser --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -264,17 +382,18 @@ jobs:
           if-no-files-found: ignore
 
   real-browsers:
-    # Safari and Firefox on GitHub's macOS machines, through the same test pages, each browser in
-    # shards of its own. A missing WebGPU adapter or WebGL2 context is reported as a skip, because
-    # these virtual machines may not give a browser one: Safari gets no WebGPU there, and Firefox no
-    # WebGL2. GitHub gives few macOS machines at once, so .dev/devices.md says when to add a shard:
+    # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
+    # pages, each browser in shards of its own. GitHub gives few macOS machines at once, so only
+    # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display. A missing
+    # WebGPU adapter or WebGL2 context is reported as a skip, because these virtual machines may not
+    # give a browser one: Safari gets no WebGPU there. .dev/devices.md says when to add a shard:
     # add it to the list, and raise the count in the name and the command.
     # Until 1.0, the browsers run only in the merge queue, once for each pull request before it
     # merges. Elsewhere the jobs are skipped, and ci-passed accepts that.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
     needs: build
-    if: github.event_name == 'merge_group'
-    runs-on: macos-15
+    if: github.event_name == 'merge_group' || github.ref_name == 'ci/faster-checks'
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # A full run in one job takes about 14 minutes, and a runner page that goes quiet costs about a
     # minute more each time the runner replaces it. The limit stays at a full run's, with that
     # margin, until the shards' own times are known.
@@ -282,7 +401,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [Safari, Firefox]
+        browser: ${{ fromJSON(github.event_name == 'merge_group' && '["Safari","Firefox"]' || '["Firefox"]') }}
         shard: [1, 2]
     env:
       HUSKY: "0"
@@ -296,12 +415,14 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/samples
-      # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
-      - name: Let Firefox open without the first-launch prompt
-        if: matrix.browser == 'Firefox'
-        run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
+      - name: The Linux machine's Firefox and virtual display
+        if: runner.os == 'Linux'
+        run: |
+          firefox --version
+          which xvfb-run
+          glxinfo -B 2>/dev/null || true
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 2
-        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
@@ -317,7 +438,18 @@ jobs:
     # every other job, also after a failure or a cancel, and fails unless each job passed. Outside
     # the merge queue a job may be skipped by its own condition; in the queue every job must pass.
     if: always()
-    needs: [docs-and-tools, rust, build, wasm-checks, packages, browser, bench, real-browsers]
+    needs:
+      - docs-and-tools
+      - rust-lint
+      - rust-tests
+      - build
+      - size-base
+      - wasm-checks
+      - shader-compiler
+      - packages
+      - browser
+      - bench
+      - real-browsers
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
