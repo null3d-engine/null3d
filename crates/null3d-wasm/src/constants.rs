@@ -6,7 +6,7 @@ use null3d_core::animation::{
     MAX_LAYERS as MAX_ANIMATION_LAYERS, REST_FLOATS, event_kind,
 };
 use null3d_core::cells::CELL_SIZE;
-use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
+use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
 use null3d_core::lines::LineMode;
@@ -544,6 +544,7 @@ pub fn typescript() -> String {
             &[
                 ("SLOT_BITS", SLOT_BITS),
                 ("GENERATION_BITS", GENERATION_BITS),
+                ("DEAD_GENERATION", DEAD_GENERATION),
             ],
         ),
         (

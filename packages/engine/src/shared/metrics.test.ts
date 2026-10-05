@@ -36,6 +36,19 @@ function record(recorder: FrameRecorder, frame: number, busy: number, update = 0
 }
 
 describe('frame records', () => {
+	it('keep costly timing on until the last of two overlapping measurements ends', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const recorder = new FrameRecorder(buffer, Role.Render);
+		const first = new MetricsReader(buffer);
+		const second = new MetricsReader(buffer);
+		first.begin();
+		second.begin();
+		first.end();
+		expect(recorder.measuring).toBe(true);
+		second.end();
+		expect(recorder.measuring).toBe(false);
+	});
+
 	it('carry times, phases, counters and intervals from the writer to the reader', () => {
 		const buffer = createMetricsBuffer(true, 2);
 		const reader = new MetricsReader(buffer);

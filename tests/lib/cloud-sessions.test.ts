@@ -11,8 +11,10 @@ import {
 	type CloudAccount,
 	CloudSessions,
 	deviceText,
+	FRAME_SCRIPT,
 	STATUS_SCRIPT,
 	UNANSWERED_POLLS,
+	VISIBILITY_SCRIPT,
 } from './cloud-sessions.ts';
 import { type WebDriver, WebDriverError, webDriver } from './webdriver.ts';
 
@@ -28,12 +30,25 @@ interface Received {
 
 /**
  * A fake WebDriver server: it opens sessions, records each command, answers scripts with the
- * status line it holds, and answers `invalid session id` for a session it was told to drop.
+ * status line it holds, and answers `invalid session id` for a session it was told to drop. Its
+ * page draws, or after each load and each switch to its window takes the next state of `drawing`
+ * while they last. It reports the page `visible`, or each state of `visibility` in turn.
  */
-function fakeHub(options: { refuseSessions?: boolean; failNavigate?: boolean } = {}) {
+function fakeHub(
+	options: {
+		refuseSessions?: boolean;
+		failNavigate?: boolean;
+		drawing?: boolean[];
+		visibility?: string[];
+	} = {},
+) {
 	const received: Received[] = [];
 	const live = new Set<string>();
 	let count = 0;
+	let drawing = true;
+	const change = () => {
+		drawing = options.drawing?.shift() ?? drawing;
+	};
 	let status = 'bsiphone17-safari: waiting for a run';
 	const answer = (value: unknown, httpStatus = 200) =>
 		Response.json({ value }, { status: httpStatus });
@@ -71,9 +86,21 @@ function fakeHub(options: { refuseSessions?: boolean; failNavigate?: boolean } =
 			if (command === 'url') {
 				if (options.failNavigate)
 					return answer({ error: 'unknown error', message: 'no page' }, 500);
+				change();
 				return answer(null);
 			}
-			if (command === 'execute') return answer(status);
+			if (command === 'execute') {
+				const body = JSON.parse(text) as { script?: string };
+				if (body.script === VISIBILITY_SCRIPT)
+					return answer(options.visibility?.shift() ?? 'visible');
+				if (body.script === FRAME_SCRIPT) return answer(drawing);
+				return answer(status);
+			}
+			if (command === 'window') {
+				if (request.method === 'GET') return answer(`window-of-${id}`);
+				change();
+				return answer(null);
+			}
 			return answer({ error: 'unknown command', message: path }, 404);
 		},
 	});
@@ -114,8 +141,18 @@ function sessionsOn(
 		},
 	};
 	const driver = webDriver(fake.url, authHeaders(CREDENTIALS), redactor(CREDENTIALS));
-	return new CloudSessions(devices, wrap(driver), account, (line) => lines.push(line), pollMs);
+	return new CloudSessions(
+		devices,
+		wrap(driver),
+		account,
+		(line) => lines.push(line),
+		pollMs,
+		FRAME_WAIT_MS,
+	);
 }
+
+/** The tests' wait for a frame, short, as the fake page answers at once. */
+const FRAME_WAIT_MS = 20;
 
 const PAGE = 'https://bs-local.com:3001/tests/pages/runner.html?listen&runner=bsiphone17-safari';
 
@@ -156,9 +193,62 @@ describe('CloudSessions', () => {
 
 	it('sends no certificate command to Chrome on Android, whose capability accepts the certificate', async () => {
 		hub = fakeHub();
-		const sessions = sessionsOn(hub, []);
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
 		expect(await sessions.open('bspixel10-chrome', PAGE)).toBe(true);
-		expect(hub.received.map((r) => r.path)).toEqual(['/session', '/session/session-1/url']);
+		expect(hub.received.map((r) => r.path)).toEqual([
+			'/session',
+			'/session/session-1/url',
+			'/session/session-1/execute/sync',
+			'/session/session-1/execute/sync',
+		]);
+		expect(hub.received.slice(-2).map((r) => r.body?.script)).toEqual([FRAME_SCRIPT, FRAME_SCRIPT]);
+		expect(lines.filter((line) => line.includes('frame'))).toEqual([]);
+		await sessions.closeAll();
+	});
+
+	it('brings a page that gets no frames to the front by a switch to its window', async () => {
+		hub = fakeHub({ drawing: [false, true], visibility: ['hidden'] });
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
+		expect(await sessions.open('bspixel10-chrome', PAGE)).toBe(true);
+		expect(
+			hub.received.find((r) => r.method === 'POST' && r.path.endsWith('/window'))?.body,
+		).toEqual({ handle: 'window-of-session-1' });
+		expect(hub.received.filter((r) => r.path.endsWith('/url'))).toHaveLength(1);
+		expect(lines.slice(-2)).toEqual([
+			'bspixel10-chrome: the page got no animation frame in 0.02 s; the browser reports it hidden',
+			'bspixel10-chrome: a switch to its window brought the page to the front, and it draws',
+		]);
+		await sessions.closeAll();
+	});
+
+	it('loads the page again when it reads visible after the switch but still gets no frames, as Samsung Internet on the Galaxy S25 did', async () => {
+		hub = fakeHub({ drawing: [false, false, true], visibility: ['hidden', 'visible'] });
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
+		expect(await sessions.open('bspixel10-chrome', PAGE)).toBe(true);
+		expect(hub.received.filter((r) => r.path.endsWith('/url'))).toHaveLength(2);
+		expect(lines.slice(-3)).toEqual([
+			'bspixel10-chrome: the page got no animation frame in 0.02 s; the browser reports it hidden',
+			'bspixel10-chrome: still no animation frame in 0.02 s after a switch to its window; the browser reports the page visible',
+			'bspixel10-chrome: a second load brought the page to the front, and it draws',
+		]);
+		await sessions.closeAll();
+	});
+
+	it('leaves the page to end the turn when neither way brings it frames', async () => {
+		hub = fakeHub({ drawing: [false], visibility: ['hidden', 'visible', 'hidden'] });
+		const lines: string[] = [];
+		const sessions = sessionsOn(hub, lines);
+		expect(await sessions.open('bspixel10-chrome', PAGE)).toBe(true);
+		expect(hub.received.filter((r) => r.path.endsWith('/url'))).toHaveLength(2);
+		expect(lines.slice(-4)).toEqual([
+			'bspixel10-chrome: the page got no animation frame in 0.02 s; the browser reports it hidden',
+			'bspixel10-chrome: still no animation frame in 0.02 s after a switch to its window; the browser reports the page visible',
+			'bspixel10-chrome: still no animation frame in 0.02 s after a second load; the browser reports the page hidden',
+			'bspixel10-chrome: no way brought the page to the front, so the runner page ends the turn when its wait for frames runs out',
+		]);
 		await sessions.closeAll();
 	});
 
@@ -290,7 +380,11 @@ describe('CloudSessions', () => {
 		hub = fakeHub({ failNavigate: true });
 		const sessions = sessionsOn(hub, []);
 		expect(await sessions.open('bsiphone17-safari', PAGE)).toBe(true);
-		expect(hub.received.at(-1)?.body?.script).toBe(ACCEPT_SSL_SCRIPT);
+		expect(hub.received.map((r) => r.body?.script).filter(Boolean)).toEqual([
+			ACCEPT_SSL_SCRIPT,
+			FRAME_SCRIPT,
+			FRAME_SCRIPT,
+		]);
 		await sessions.closeAll();
 	});
 

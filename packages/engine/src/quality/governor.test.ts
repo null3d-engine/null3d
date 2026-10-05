@@ -42,12 +42,15 @@ const holds = (fps: number) => fps * 100 >= HELD_PERCENT * TARGET_CAP_HZ;
 
 type Frames = { frame: number; delay: number };
 
-/** A governor over synthetic windows of frames, and its clock. */
-function controlled(low = 500, high = FULL_SCALE, scale = high) {
+/**
+ * A governor over synthetic windows of frames, and its clock, which starts at `start` ms of the
+ * page's clock.
+ */
+function controlled(low = 500, high = FULL_SCALE, scale = high, start = 0) {
 	const controller = new Governor();
 	controller.setRange(low, high);
 	controller.scale = scale;
-	let now = 0;
+	let now = start;
 	/** Judges one window of `frames`, and returns true when the governor took a step. */
 	const judge = (frames: Frames): boolean => {
 		const before = controller.scale;
@@ -161,6 +164,14 @@ describe('the render scale steps', () => {
 	it('counts a GPU delay of two frames or more as over the budget at the full frame rate', () => {
 		const { run } = controlled();
 		expect(run(QUEUED, DROP_AFTER_MS).at(-1)).toBe(FULL_SCALE - SCALE_STEP);
+	});
+
+	it('raises one step after the same wait on a page open for more than 2^31 ms', () => {
+		// About 24.9 days, past the largest whole number of ms that 32 bits hold.
+		const { run } = controlled(500, FULL_SCALE, 700, 2 ** 31 - 1000);
+		const scales = run(EASY, RAISE_AFTER_MS + 2000);
+		expect(steps(scales, 700)).toEqual([RAISE_AFTER_MS]);
+		expect(scales.at(-1)).toBe(750);
 	});
 
 	it('raises one step only after several seconds with room to spare', () => {
