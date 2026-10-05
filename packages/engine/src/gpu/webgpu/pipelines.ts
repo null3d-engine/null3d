@@ -21,6 +21,7 @@ import {
 	LAYOUT_TEXTURES,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
+	PERMUTATION_VERTEX_TANGENT,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -777,15 +778,20 @@ export class Pipelines {
 		return template === TEMPLATE_SKIN ? this.skin : undefined;
 	}
 
-	/** How to build a compute pipeline of a template: culling, skinning, or a step of light clustering. */
-	compute(template: number): GPUComputePipelineDescriptor {
+	/**
+	 * How to build a compute pipeline of a template: culling, skinning, or a step of light
+	 * clustering. The skinning pass takes the build of its permutation bits: with the vertex tangent
+	 * bit for vertex formats that have a tangent.
+	 */
+	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
-			const skin = variantFor(this.skin, 0, 'wgsl')?.wgsl;
-			if (!skin) throw new Error("the device's shader modules have no skinning shader");
+			const tangent = (permutation & PERMUTATION_VERTEX_TANGENT) !== 0;
+			const shader = variantFor(this.skin, permutation, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no skinning shader");
 			return {
-				label: 'skin',
+				label: tangent ? 'skin tangent' : 'skin',
 				layout: this.skinLayout,
-				compute: { module: this.module('skin', skin), entryPoint: 'main' },
+				compute: { module: this.module('skin', shader), entryPoint: 'main' },
 			};
 		}
 		if (template === TEMPLATE_CULL) {
