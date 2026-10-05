@@ -1,5 +1,5 @@
-//! The precision rules of GLSL ES 3.00 under the strictest WebGL2 driver, which the tests check
-//! every GLSL shader against.
+//! The rules of WebGL2's GLSL ES 3.00 that the tests check every GLSL shader against: its
+//! precision rules under the strictest WebGL2 driver, and the built-in functions it lacks.
 
 /// The breaks of GLSL ES 3.00's precision rules in one shader, as messages, under the strictest
 /// WebGL2 driver: Arm's Mali compiler. A fragment shader sets the default precision of `float`
@@ -116,4 +116,49 @@ fn integer_without_precision(text: &str) -> bool {
         previous = word;
     }
     false
+}
+
+/// The built-in functions that GLSL ES 3.10 added, which WebGL2's GLSL ES 3.00 lacks. naga writes
+/// some of them for WGSL built-ins: `bitCount` for `countOneBits`, `findMSB` for
+/// `firstLeadingBit`, `bitfieldExtract` for `extractBits`.
+const GLSL_ES_310_BUILT_INS: [&str; 16] = [
+    "bitCount",
+    "findLSB",
+    "findMSB",
+    "bitfieldExtract",
+    "bitfieldInsert",
+    "bitfieldReverse",
+    "uaddCarry",
+    "usubBorrow",
+    "umulExtended",
+    "imulExtended",
+    "frexp",
+    "ldexp",
+    "packUnorm4x8",
+    "packSnorm4x8",
+    "unpackUnorm4x8",
+    "unpackSnorm4x8",
+];
+
+/// The calls of a GLSL shader to built-in functions that WebGL2 lacks, as messages. A program
+/// that calls one does not compile in any WebGL2 browser.
+pub fn newer_built_in_calls(source: &str) -> Vec<String> {
+    let mut calls = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        for name in GLSL_ES_310_BUILT_INS {
+            let called = line.match_indices(name).any(|(at, _)| {
+                let before = line[..at].bytes().next_back();
+                let named_alone = !before.is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_');
+                named_alone && line[at + name.len()..].starts_with('(')
+            });
+            if called {
+                calls.push(format!(
+                    "line {}: `{name}` is GLSL ES 3.10, which WebGL2 lacks: {}",
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    calls
 }

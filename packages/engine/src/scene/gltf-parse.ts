@@ -1074,7 +1074,8 @@ function parsePrimitive(
 	const corners = indices ? indices.length : vertices;
 	if (corners % 3 !== 0) broken(`${what} has ${corners} corners, which make no whole triangles`);
 	if (vertices === 0) return undefined;
-	const morph = parseMorphTargets(primitive, vertices, what, read, budget, notes);
+	const colors = out.colors ? out.colors.array.length / vertices : 0;
+	const morph = parseMorphTargets(primitive, vertices, colors, what, read, budget, notes);
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
