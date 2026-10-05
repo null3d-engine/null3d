@@ -1047,3 +1047,69 @@ fn additive_clips_hold_no_change_at_their_first_frame() {
         }
     }
 }
+
+#[test]
+fn a_removed_skeleton_takes_its_clips_and_masks_and_gives_back_their_ids() {
+    let jobs = JobSystem::new(0);
+    let (small, small_clips) = character(4);
+    let (large, large_clips) = character(8);
+    let mut animations = Animations::new(&jobs, 2, 12).unwrap();
+    let small_id = animations.add_skeleton(small.clone()).unwrap();
+    let large_id = animations.add_skeleton(large.clone()).unwrap();
+    let small_clip = animations
+        .add_clip(small_id, small_clips[0].clone())
+        .unwrap();
+    let large_clip = animations
+        .add_clip(large_id, large_clips[0].clone())
+        .unwrap();
+    let additive = animations.additive_clip(large_clip).unwrap();
+    let large_mask = animations.add_mask(large_id, &[1.0; 8]).unwrap();
+    let kept = animations.add_instance(small_id).unwrap();
+    let user = animations.add_instance(large_id).unwrap();
+    animations.play(kept, small_clip, Play::default()).unwrap();
+    // An instance still uses the skeleton, so it stays.
+    assert_eq!(
+        animations.remove_skeleton(large_id).unwrap_err(),
+        AnimationError::SkeletonInUse { instance: user }
+    );
+    animations.remove_instance(user).unwrap();
+    animations.remove_skeleton(large_id).unwrap();
+    assert!(animations.skeleton(large_id).is_none());
+    assert!(animations.clip(large_clip).is_none() && animations.clip(additive).is_none());
+    assert_eq!(
+        animations.remove_skeleton(large_id).unwrap_err(),
+        AnimationError::UnknownSkeleton { skeleton: large_id }
+    );
+    assert_eq!(
+        animations.add_instance(large_id).unwrap_err(),
+        AnimationError::UnknownSkeleton { skeleton: large_id }
+    );
+    // The next skeleton, clips and mask take the removed ids, and play as new ones do.
+    let again = animations.add_skeleton(large).unwrap();
+    assert_eq!(again, large_id);
+    let clips: Vec<u32> = (0..2)
+        .map(|_| animations.add_clip(again, large_clips[0].clone()).unwrap())
+        .collect();
+    let mut taken = clips.clone();
+    taken.sort_unstable();
+    let mut removed = vec![large_clip, additive];
+    removed.sort_unstable();
+    assert_eq!(taken, removed);
+    assert_eq!(animations.add_mask(again, &[0.5; 8]).unwrap(), large_mask);
+    let instance = animations.add_instance(again).unwrap();
+    animations
+        .play(instance, clips[0], Play::default())
+        .unwrap();
+    animations
+        .set_layer_mask(instance, 0, Some(large_mask))
+        .unwrap();
+    animations.update(&jobs, 0.1);
+    for id in [kept, instance] {
+        assert!(
+            animations
+                .instance_matrices(id)
+                .iter()
+                .all(|v| v.is_finite())
+        );
+    }
+}

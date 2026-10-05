@@ -60,15 +60,31 @@ import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
 /**
+ * @internal What a destroy asks before it frees anything: a description of the first live object
+ * or instance batch that uses one of `meshes` or `materials`, or that `rig` animates, or undefined
+ * when none does. The scene answers.
+ */
+export interface ResourceUsers {
+	userOf(
+		meshes: ReadonlySet<MeshGeometry>,
+		materials?: ReadonlySet<Material>,
+		rig?: object,
+	): string | undefined;
+}
+
+/**
  * A mesh the engine can draw: its id in the engine core, its bounding radius, and its morph
  * targets.
  *
  * @category api/geometry
  */
 export class MeshGeometry {
+	/** The engine core's id, or 0 once the mesh is destroyed. */
+	private liveId: number;
+
 	/** @internal */
 	constructor(
-		/** @internal */ readonly id: number,
+		id: number,
 		/** The distance from the mesh's origin to its farthest vertex, at rest. */
 		readonly radius: number,
 		/** @internal */ readonly core: CoreMemory,
@@ -79,7 +95,63 @@ export class MeshGeometry {
 		 * three.js's `morphTargetDictionary`, turned around. `mesh.setMorphWeight` takes a name too.
 		 */
 		readonly morphTargetNames: readonly string[] = [],
-	) {}
+		/** The geometry that made the mesh, whose scene says which objects use it. */
+		private readonly maker?: Geometry,
+	) {
+		this.liveId = id;
+	}
+
+	/** @internal The engine core's id. Throws E1101 once the mesh is destroyed. */
+	get id(): number {
+		if (this.liveId === 0)
+			throw new EngineError('E1101', 'a call used a mesh after its destroy().');
+		return this.liveId;
+	}
+
+	/** @internal True until `destroy` runs. */
+	get live(): boolean {
+		return this.liveId !== 0;
+	}
+
+	/**
+	 * Destroys the mesh, like three.js's `geometry.dispose()`. The engine frees its GPU memory and
+	 * its other data at once, and later meshes take its room. Destroy the objects and instance
+	 * batches that use it first, in the same frame or before. Throws E1111 while one
+	 * still uses it, and E1101 for a mesh that is destroyed already. Later calls that pass the mesh
+	 * throw E1101.
+	 */
+	destroy(): void {
+		const call = 'mesh.destroy';
+		const user = this.maker?.users?.userOf(new Set([this]));
+		if (user)
+			throw new EngineError(
+				'E1111',
+				`${call}() was called on a mesh that ${user} still uses. Destroy the objects and instance batches that use it first.`,
+			);
+		destroyMeshes(this.core, [this], call);
+	}
+
+	/** @internal Marks the mesh destroyed, once the engine core freed it. */
+	ended(): void {
+		this.liveId = 0;
+	}
+}
+
+/**
+ * @internal Frees live meshes in the engine core in one pass, which no object or batch uses any
+ * more, and marks them destroyed. The meshes that stay move once for all of them.
+ */
+export function destroyMeshes(
+	core: CoreMemory,
+	meshes: readonly MeshGeometry[],
+	call: string,
+): void {
+	if (meshes.length === 0) return;
+	const ids = meshes.map((mesh) => mesh.id);
+	const at = core.checkGrowth(core.glue.meshArrays(ids.length), call);
+	core.u32(at, ids.length).set(ids);
+	core.check(core.glue.destroyMeshes(meshes.length), call, 'a mesh', true);
+	for (const mesh of meshes) mesh.ended();
 }
 
 /**
@@ -490,11 +562,32 @@ export interface MeshArrays {
  * @category api/geometry
  */
 export class Geometry {
+	/** @internal The scene, which says which objects use a mesh that a destroy names. */
+	users: ResourceUsers | undefined;
+
 	constructor(private readonly core: CoreMemory) {}
+
+	/**
+	 * The GPU bytes that every mesh holds: the shared vertex and index buffers, which keep room to
+	 * grow, and the texture of morph target deltas. It counts what the frames made so far, so it
+	 * grows once a frame draws a new mesh. Destroyed meshes give their room to later ones, so a
+	 * scene that loads and destroys the same models keeps the same figure.
+	 */
+	get memoryBytes(): number {
+		return this.core.glue.meshMemoryBytes();
+	}
+
+	/**
+	 * @internal Frees live meshes that no object or batch uses any more, in one pass, as a model's
+	 * destroy does.
+	 */
+	destroyMeshes(meshes: readonly MeshGeometry[], call: string): void {
+		destroyMeshes(this.core, meshes, call);
+	}
 
 	private mesh(id: number, call: string): MeshGeometry {
 		this.core.checkGrowth(id, call);
-		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core);
+		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core, 0, [], this);
 	}
 
 	/**
@@ -587,6 +680,7 @@ export class Geometry {
 			this.core,
 			morphTargetCount(morphTargets),
 			morphTargets?.names?.slice() ?? [],
+			this,
 		);
 	}
 }
@@ -1197,6 +1291,11 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		protected readonly call: string,
 	) {
 		this.liveId = id;
+	}
+
+	/** @internal True until `destroy` runs. */
+	get live(): boolean {
+		return this.liveId !== 0;
 	}
 
 	/** @internal The engine core's id. Throws E1101 once the material is destroyed. */

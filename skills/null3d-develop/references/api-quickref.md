@@ -264,7 +264,8 @@ const mesh = geometry.fromArrays({
 });
 mesh.radius;                // the distance from the mesh's origin to its farthest vertex
 mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lists their names
-mesh.destroy();             // (0.2)
+mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
+geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 ```
 
@@ -368,7 +369,7 @@ const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bu
 const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment, made on the GPU; no file
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
-ship.destroy();   // (0.2) frees GPU data once no instance uses it
+ship.destroy();   // (0.2) frees its meshes, materials, textures, skeleton and clips; destroy its copies first, else E1111
 ```
 
 Every load runs outside the sketch's frames, so a frame never waits for a download or a decode. Loads of one address at the same time share one download.

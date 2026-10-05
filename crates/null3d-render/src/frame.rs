@@ -38,7 +38,7 @@ use crate::graph::{GraphError, RenderScale, Size};
 use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
-use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
@@ -290,6 +290,19 @@ pub trait FrameBuilder {
     fn casts_tile_shadows(&self) -> bool {
         false
     }
+    /// Removes the live meshes among `ids`, which no object or batch names any more, packs the
+    /// storage over their data, and makes the next frame upload the data that moved. The next
+    /// frame rebuilds the draw tables, as after any structure change.
+    fn remove_meshes(&mut self, ids: &[u32]) {
+        let moves = self.settings_mut().meshes_mut().remove(ids);
+        self.meshes_moved(ids, &moves);
+    }
+    /// Makes the GPU copies of the meshes follow a removal: the pages and the delta texels upload
+    /// again from where `moves` says they changed, and the removed `ids` lose what the builder
+    /// kept for them.
+    fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves);
+    /// The GPU bytes of the meshes: the buffers of every page and the texture of morph deltas.
+    fn mesh_gpu_bytes(&self) -> u64;
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.
@@ -1604,6 +1617,25 @@ impl MeshBuffers {
             }
         }
         Ok(remade)
+    }
+
+    /// Makes the next upload send each page's data again from where a removal of meshes changed
+    /// it.
+    pub(crate) fn moved(&mut self, moves: &MeshMoves) {
+        for &(page, vertices, indices) in &moves.pages {
+            if let Some(buffers) = self.pages.get_mut(page as usize) {
+                buffers.vertices = buffers.vertices.min(vertices);
+                buffers.indices = buffers.indices.min(indices);
+            }
+        }
+    }
+
+    /// The bytes of every page's buffers on the GPU.
+    pub(crate) fn gpu_bytes(&self) -> u64 {
+        self.pages
+            .iter()
+            .map(|buffers| u64::from(buffers.vertex_bytes) + u64::from(buffers.index_bytes))
+            .sum()
     }
 
     /// Forgets every buffer, after the thread that draws replaced the GPU, so the next upload

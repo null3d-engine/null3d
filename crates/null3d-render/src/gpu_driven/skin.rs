@@ -805,6 +805,16 @@ impl Skinning {
         Ok(())
     }
 
+    /// The morph texture, which a removal of meshes changes.
+    pub(super) fn morph_mut(&mut self) -> &mut MorphTexture {
+        &mut self.morph
+    }
+
+    /// The morph texture.
+    pub(super) fn morph(&self) -> &MorphTexture {
+        &self.morph
+    }
+
     /// Forgets the GPU objects, after the thread that draws replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {
         self.skinned_made = [0; MAX_SKINNED_BUFFERS as usize];

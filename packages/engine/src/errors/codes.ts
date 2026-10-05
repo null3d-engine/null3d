@@ -92,6 +92,14 @@ const DOCS = {
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
 		since: '0.1',
 	},
+	E1111: {
+		title: 'Mesh or model still in use',
+		cause:
+			'A call to destroy() named a mesh, or a model that assets.loadGltf loaded, while an object or an instance batch still uses it. For a model, that includes objects that use one of its meshes or materials, and objects that its animation clips move. The engine keeps the mesh or model, so nothing draws freed memory.',
+		example:
+			'E1111: mesh.destroy() was called on a mesh that "Crate" (slot 7) still uses. Destroy the objects and instance batches that use it first.',
+		since: '0.2',
+	},
 	E1203: {
 		title: 'Invalid number',
 		cause: 'A call received a number that is not finite, such as NaN or Infinity.',

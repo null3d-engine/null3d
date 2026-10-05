@@ -8,7 +8,7 @@ summary: "Generators with three.js parameters; meshes from arrays; morph targets
 
 # Geometry
 
-> Ships in null3D 0.1. Integer attributes, joints and weights, and morph targets ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: the call `destroy` on a mesh, and a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use them.
+> Ships in null3D 0.1. Integer attributes, joints and weights, and morph targets ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use it.
 
 ```mermaid
 flowchart LR
@@ -152,6 +152,21 @@ A mesh keeps the attributes that you give it, each in the type that it came in. 
 
 Meshes of one vertex format share GPU buffers, so the engine draws them with few changes of GPU state. Meshes of different formats draw apart, so keep the meshes of a scene in few formats. Give a mesh only the attributes that its materials use. The generators' meshes all have one format: a position, a normal and `uvs` as floats, 32 bytes per vertex.
 
+## Destroying a mesh
+
+`mesh.destroy()` frees a mesh that the scene no longer draws. Destroy the objects and instance batches that use it first. They can go in the same frame, just before the mesh:
+
+```ts
+crate.destroy();
+crateMesh.destroy();
+```
+
+The engine frees the mesh's data at once. Meshes of one vertex format share GPU buffers, so the engine moves the meshes after it down into its room. The next frame uploads the moved data once. The buffers keep their size, and later meshes take the room. So a game that loads and drops levels keeps the same GPU memory. `geometry.memoryBytes` gives the GPU bytes that all meshes hold.
+
+The move costs an upload of the meshes that follow in the same buffer. So destroy meshes between levels or scenes, not in every frame.
+
+While an object or an instance batch still uses the mesh, `destroy` throws [E1111](../errors/E1111.md) and keeps the mesh. To keep an object and drop its mesh, give the object another mesh with `setMesh` first. Calls on a destroyed mesh, and calls that pass it, throw [E1101](../errors/E1101.md). To free a glTF model with all its meshes, materials and textures, call [`prefab.destroy()`](assets.md#freeing-a-model).
+
 ## Large meshes
 
 A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. A mesh with more vertices splits into parts that draw one after another. Each part holds a copy of the vertices that it shares with the part before it. For the fewest draw calls, keep meshes under 65,535 vertices.
@@ -169,6 +184,7 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 | `geometry.computeBoundingSphere()` | Nothing: the engine computes bounds itself |
 | `geometry.morphAttributes.position = [...]` with `morphTargetsRelative = true` | `morphTargets: { positions: [...] }` |
 | `mesh.morphTargetDictionary` | `mesh.mesh.morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
+| `geometry.dispose()` | `mesh.destroy()`, once no object or batch uses the mesh |
 
 [three.js to null3D](../porting/threejs-mapping.md) lists every mapping.
 
@@ -259,6 +275,7 @@ Mesh generators with the parameters and defaults of three.js's geometry classes,
 
 | Member | Description |
 | --- | --- |
+| `readonly memoryBytes: number` | The GPU bytes that every mesh holds: the shared vertex and index buffers, which keep room to grow, and the texture of morph target deltas. It counts what the frames made so far, so it grows once a frame draws a new mesh. Destroyed meshes give their room to later ones, so a scene that loads and destroys the same models keeps the same figure. |
 | `box(options: BoxOptions = {}): MeshGeometry` | A box, like three.js's `BoxGeometry`. |
 | `sphere(options: SphereOptions = {}): MeshGeometry` | A sphere, like three.js's `SphereGeometry`. |
 | `plane(options: PlaneOptions = {}): MeshGeometry` | A flat rectangle, like three.js's `PlaneGeometry`. |
@@ -310,6 +327,7 @@ A mesh the engine can draw: its id in the engine core, its bounding radius, and 
 | `readonly radius: number` | The distance from the mesh's origin to its farthest vertex, at rest. |
 | `readonly morphTargets: number` | How many morph targets the mesh has. 0 for a mesh without any. |
 | `readonly morphTargetNames: readonly string[]` | The morph targets' names, by target, or none when the mesh's arrays named none. Like three.js's `morphTargetDictionary`, turned around. `mesh.setMorphWeight` takes a name too. |
+| `destroy(): void` | Destroys the mesh, like three.js's `geometry.dispose()`. The engine frees its GPU memory and its other data at once, and later meshes take its room. Destroy the objects and instance batches that use it first, in the same frame or before. Throws E1111 while one still uses it, and E1101 for a mesh that is destroyed already. Later calls that pass the mesh throw E1101. |
 
 ### `MorphTargets`
 

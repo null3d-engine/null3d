@@ -1828,6 +1828,8 @@ export class InstanceBatch {
 		private readonly hasColors: boolean,
 		/** @internal The batches of a model's other meshes, which read this batch's rows. */
 		readonly parts: readonly number[] = [],
+		/** @internal The meshes and materials that the batch and its parts draw. */
+		readonly uses: BatchUses = NO_USES,
 	) {}
 
 	/**
@@ -1941,6 +1943,14 @@ export class InstanceBatch {
 		this.generation = -1;
 	}
 }
+
+/** @internal The meshes and materials that an instance batch draws, which their destroy checks. */
+export interface BatchUses {
+	readonly meshes: readonly MeshGeometry[];
+	readonly materials: readonly Material[];
+}
+
+const NO_USES: BatchUses = { meshes: [], materials: [] };
 
 /** The class of each kind of light that a model's node can create, by the core's light kind. */
 const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
@@ -2423,6 +2433,34 @@ export class Scene {
 		for (const part of batch.parts) this.batchSlots[part & SLOT_MASK] = batch;
 	}
 
+	/**
+	 * @internal The first live object or instance batch that uses one of `meshes` or `materials`,
+	 * or whose animator plays `rig`, as error messages describe it, or undefined when none does.
+	 * It looks at every object and batch, so destroys call it, never the frame loop.
+	 */
+	userOf(
+		meshes: ReadonlySet<MeshGeometry>,
+		materials: ReadonlySet<Material> = new Set(),
+		rig?: object,
+	): string | undefined {
+		for (const object of this.objectSlots) {
+			if (object === undefined || object.destroyedFrame !== -1) continue;
+			if (rig !== undefined && object.animation?.rig === rig && object.animation.instance !== 0)
+				return object.describe();
+			if (!(object instanceof Mesh)) continue;
+			const { mesh, material } = object;
+			if ((mesh && meshes.has(mesh)) || (material && materials.has(material)))
+				return object.describe();
+		}
+		for (const batch of this.batchSlots) {
+			if (batch === undefined || batch.destroyedFrame !== -1) continue;
+			const { uses } = batch;
+			if (uses.meshes.some((m) => meshes.has(m)) || uses.materials.some((m) => materials.has(m)))
+				return 'an instance batch';
+		}
+		return undefined;
+	}
+
 	/** @internal Takes a destroyed object out of the index of names. */
 	forget(object: Object3D): void {
 		const { name } = object;
@@ -2567,6 +2605,7 @@ export class Scene {
 	 */
 	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
 		const call = 'instantiate';
+		prefab.checkLive(call);
 		const { template } = prefab;
 		if (DEV) {
 			checkSameEngine(call, 'model', prefab.core, this);
@@ -2854,7 +2893,8 @@ export class Scene {
 			throw error;
 		}
 		if (DEV) this.countBatchRows(count * ids.length);
-		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1));
+		const uses = { meshes: parts.map((p) => p.mesh), materials: parts.map((p) => p.material) };
+		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1), uses);
 		this.rememberBatch(batch);
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.origin) batch.setOrigin(options.origin, call);
@@ -2883,6 +2923,7 @@ export class Scene {
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		if ('template' in source) {
+			source.checkLive(call);
 			const problem =
 				source.instancing.length > 0
 					? 'has instancing of its own. Use scene.instantiate for it'
@@ -2906,7 +2947,10 @@ export class Scene {
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
+		const batch = new InstanceBatch(this, id, count, options.colors ?? false, [], {
+			meshes: [mesh],
+			materials: [material],
+		});
 		this.rememberBatch(batch);
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
@@ -2957,7 +3001,10 @@ export class Scene {
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const instances = new InstanceBatch(this, id, count, false);
+		const instances = new InstanceBatch(this, id, count, false, [], {
+			meshes: [parts.mesh],
+			materials: [parts.material],
+		});
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
@@ -3003,7 +3050,10 @@ export class Scene {
 		);
 		const rows = LINE_SEGMENTS[mode](points);
 		if (DEV) this.countBatchRows(rows);
-		const instances = new InstanceBatch(this, id, rows, false);
+		const instances = new InstanceBatch(this, id, rows, false, [], {
+			meshes: [parts.mesh],
+			materials: [],
+		});
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new lines.LineBatch(core, id, points, parts.material, instances, LINE_CHECKS);

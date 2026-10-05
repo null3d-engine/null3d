@@ -50,8 +50,9 @@ impl<T> Groups<T> {
     }
 }
 
-/// An animation clip for one skeleton, stored for sampling. [`super::resample`] builds it.
-#[derive(Clone, Debug)]
+/// An animation clip for one skeleton, stored for sampling. [`super::resample`] builds it. The
+/// default clip is empty: what a removed clip's place holds.
+#[derive(Clone, Debug, Default)]
 pub struct Clip {
     joints: u32,
     duration: f32,
