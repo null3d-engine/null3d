@@ -22,13 +22,16 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 	// first, draw first and win every depth tie.
 	const back = materials.unlit({ color: PRECISION.back });
 	const front = materials.unlit({ color: PRECISION.front });
-	for (const { back: farther, position, rotation, scale } of precisionSurfaces())
-		scene.createMesh({
-			mesh: surface,
-			material: farther ? back : front,
-			position,
-			rotation,
-			scale,
-		});
+	const only = new URL(import.meta.url).searchParams.get('tiles');
+	const keep = only ? new Set(only.split('.').map(Number)) : undefined;
+	for (const { tile, back: farther, position, rotation, scale } of precisionSurfaces())
+		if (!keep || keep.has(tile))
+			scene.createMesh({
+				mesh: surface,
+				material: farther ? back : front,
+				position,
+				rotation,
+				scale,
+			});
 	return {};
 });

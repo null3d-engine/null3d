@@ -143,7 +143,7 @@ export async function run(
 	body: () => Promise<Record<string, unknown>>,
 ): Promise<void> {
 	try {
-		await publish(name, { ok: true, ...(await body()) });
+		await publish(name, { ok: true, ...(await body()), trail: [...trail] });
 	} catch (e) {
 		await publish(name, { ok: false, error: (e as Error).message, trail: [...trail] });
 	}

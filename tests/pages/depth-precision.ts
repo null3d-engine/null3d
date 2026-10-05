@@ -11,7 +11,10 @@ run('depth-precision', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/depth-precision-sketch.ts', import.meta.url),
+		sketch: new URL(
+			`./sketches/depth-precision-sketch.ts?tiles=${new URLSearchParams(location.search).get('tiles') ?? ''}`,
+			import.meta.url,
+		),
 		maxPixelRatio: 1,
 	});
 	const frame = await engine.captureFrame();
@@ -24,5 +27,6 @@ run('depth-precision', async () => {
 		width: frame.width,
 		height: frame.height,
 		pixels: toBase64(withoutFighting(frame.pixels)),
+		raw: toBase64(frame.pixels),
 	};
 });
