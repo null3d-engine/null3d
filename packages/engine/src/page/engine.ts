@@ -50,6 +50,7 @@ import type {
 	WorkerReply,
 } from '../workers/protocol';
 import { abortable } from './abortable';
+import { checkBrowser } from './browser-check';
 import { type CanvasWatch, watchCanvas } from './canvas-watch';
 import {
 	type CapabilityReport,
@@ -539,12 +540,6 @@ function loadRunnerModule(): Promise<RunnerModule> {
 	return awaitLater(import('../sketch/runner'));
 }
 
-/** WebAssembly that uses a SIMD instruction; a browser without SIMD rejects it. */
-const SIMD_PROBE = new Uint8Array([
-	0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15,
-	253, 98, 11,
-]);
-
 /** What the page does with the replies of a worker that answer no request. */
 interface WorkerEvents {
 	/** A message that the sketch sent with `ctx.page.post`. */
@@ -1010,8 +1005,7 @@ async function startEngine(
 		presetValue('memoryMaximumMiB', memoryPreset(presetRequest)),
 	);
 	// Checked before any download, so an old browser learns at once why the engine cannot run.
-	if (!WebAssembly.validate(SIMD_PROBE))
-		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
+	checkBrowser();
 	const build: Build = threaded ? 'threaded' : 'single';
 	let latency: EngineMode['latency'] = threaded
 		? (switches.latency ?? options.latency ?? 'pipelined')

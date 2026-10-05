@@ -221,6 +221,14 @@ const DOCS = {
 			"E1305: the render worker's GPU rejected a command: Buffer size (377487360) exceeds the max buffer size limit (268435456).",
 		since: '0.2',
 	},
+	E1306: {
+		title: 'Safari before 18',
+		cause:
+			'The browser runs the WebKit engine of a Safari before 18, which null3D does not support. Every browser on iPhone and iPad runs WebKit, so Chrome, Edge and Firefox there count too.',
+		example:
+			'E1306: this browser runs the WebKit engine of Safari 17, and the engine needs Safari 18 or later.',
+		since: '0.2',
+	},
 	E1401: {
 		title: 'Not a sketch module',
 		cause:
