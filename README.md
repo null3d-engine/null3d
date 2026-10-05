@@ -200,7 +200,7 @@ An engine's own time leaves out the sketch code that moves the instances, which 
 
 ## Where it runs
 
-null3D picks its GPU path at startup from feature tests. It never checks browser or GPU names, because some browsers hide them.
+null3D picks its GPU path at startup from feature tests. It never picks the path by browser or GPU names, because some browsers hide them.
 
 | Device and browser | GPU path |
 | --- | --- |
@@ -209,11 +209,11 @@ null3D picks its GPU path at startup from feature tests. It never checks browser
 | Firefox 141+ on Windows, and 147+ on Apple silicon Macs | WebGPU |
 | Chrome 121+ on Android 12+ with ARM, Qualcomm or Intel GPUs | WebGPU |
 | Chrome 146+ on devices with only OpenGL ES 3.1 or Direct3D 11 | WebGPU compatibility mode |
-| iPhones on iOS 16.4 to 18 | WebGL2 |
+| iPhones and iPads on iOS and iPadOS 18 | WebGL2 |
 | Android phones without WebGPU, such as those with Samsung Xclipse GPUs | WebGL2 |
 | Firefox on Android and Linux | WebGL2 |
 
-The minimum versions are Safari 16.4, Chrome and Edge 91, and Firefox 89. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3D runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
+The minimum versions are Safari 18 on macOS, iOS and iPadOS, Chrome and Edge 91, and Firefox 89. In an older browser, `createEngine` fails with a clear error ([E1306](docs/errors/E1306.md) for Safari, [E1303](docs/errors/E1303.md) for the others), so the page can show its own message. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3D runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
 
 ## Porting from three.js
 

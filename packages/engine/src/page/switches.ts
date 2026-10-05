@@ -98,6 +98,12 @@ export interface Switches {
 	 */
 	wakeByMessage: boolean;
 	/**
+	 * False when ?display-check=off stops the checks of the display where the page's thread draws.
+	 * The checks draw nothing at two callbacks now and then while the frames run slower than the
+	 * display, and the switch lets a run measure what they cost.
+	 */
+	displayChecks: boolean;
+	/**
 	 * False when ?hdr=off makes the engine take the 8-bit path, where the scene shaders tone map
 	 * themselves, on a device that draws HDR color.
 	 */
@@ -241,6 +247,7 @@ export function parseSwitches(search: string): Switches {
 		freshShaders: params.get('shaders') === 'fresh',
 		freshCheck: params.get('check') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
+		displayChecks: params.get('display-check') !== 'off',
 		hdr: params.get('hdr') !== 'off',
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',

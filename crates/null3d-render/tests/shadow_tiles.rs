@@ -509,14 +509,7 @@ fn a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes<B: Tiles>(
     });
     let clip = resample(animations.skeleton(0).unwrap(), &tracks, 30.0).unwrap();
     let clip = animations.add_clip(0, clip).unwrap();
-    let play = Play {
-        layer: 0,
-        fade: 0.0,
-        speed: 1.0,
-        looping: true,
-        additive: false,
-    };
-    animations.play(0, clip, play).unwrap();
+    animations.play(0, clip, Play::default()).unwrap();
     world.add_spot([-3.0, 4.0, 0.0], 8.0);
     let mut mock = MockBackend::default();
     world.frame = 0;

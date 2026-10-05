@@ -16,6 +16,7 @@ export const ASSET_FORMATS_URL = new URL('../../dist/assets.wasm', import.meta.u
  * @property {() => number} mesh_bvh
  * @property {() => number} environment
  * @property {() => number} blocker
+ * @property {() => number} clip
  * @property {() => number} response
  * @property {() => number} response_length
  */
@@ -182,4 +183,77 @@ export function environmentMap(source, { size, format, samples = 0 }) {
 	view.setUint32(12, samples, true);
 	request.set(body, 16);
 	return respond((m) => m.environment(), request);
+}
+
+/** The channels of clip tracks, in the module's numbering. */
+export const CLIP_CHANNELS = /** @type {const} */ (['translation', 'rotation', 'scale']);
+
+/** The interpolations of clip tracks, in the module's numbering. */
+export const CLIP_INTERPOLATIONS = /** @type {const} */ (['LINEAR', 'STEP', 'CUBICSPLINE']);
+
+/**
+ * @typedef {object} ClipTrack
+ * @property {number} joint A number from 0 up that names what the track moves; no two tracks of a
+ *   channel share one.
+ * @property {(typeof CLIP_CHANNELS)[number]} channel
+ * @property {(typeof CLIP_INTERPOLATIONS)[number]} interpolation
+ * @property {Float32Array} times The key times in seconds.
+ * @property {Float32Array} values Three values per key, or four for a rotation, and three times as
+ *   many for a cubic spline track.
+ */
+
+/**
+ * @typedef {object} BakedClip
+ * @property {Float32Array} times The time of each frame in seconds.
+ * @property {(Int16Array | Float32Array)[]} tracks Each track's keys, in the order given: rotation
+ *   keys that change as 16-bit integers, the quaternion times 32767, one key per frame; other keys
+ *   that change as floats, one key per frame; and a track that never changes as one key of floats.
+ */
+
+/**
+ * Puts a clip's tracks on the frames that the engine stores the clip at, with the engine core's
+ * own resampler, in the form that the engine copies at load instead of resampling. Its bytes are
+ * the same on every machine.
+ *
+ * @param {readonly ClipTrack[]} tracks
+ * @param {number} joints One more than the largest `joint` of the tracks.
+ * @returns {BakedClip}
+ */
+export function bakeClip(tracks, joints) {
+	const header = 3 + tracks.length * 4;
+	const words = tracks.reduce((sum, t) => sum + t.times.length + t.values.length, header);
+	const request = new Uint8Array(words * 4);
+	const view = new DataView(request.buffer);
+	view.setUint32(0, tracks.length, true);
+	view.setUint32(4, joints, true);
+	// A rate of 0 takes the engine's default, as its loader does.
+	view.setFloat32(8, 0, true);
+	let at = header * 4;
+	tracks.forEach((track, k) => {
+		const head = 12 + k * 16;
+		view.setUint32(head, track.joint, true);
+		view.setUint32(head + 4, CLIP_CHANNELS.indexOf(track.channel), true);
+		view.setUint32(head + 8, CLIP_INTERPOLATIONS.indexOf(track.interpolation), true);
+		view.setUint32(head + 12, track.times.length, true);
+		for (const values of [track.times, track.values])
+			for (const value of values) {
+				view.setFloat32(at, value, true);
+				at += 4;
+			}
+	});
+	const bytes = respond((m) => m.clip(), request);
+	const out = new DataView(bytes.buffer);
+	const frames = out.getUint32(0, true);
+	const times = new Float32Array(bytes.buffer.slice(4, 4 + frames * 4));
+	let read = 4 + frames * 4;
+	const baked = tracks.map(() => {
+		const kind = out.getUint32(read, true);
+		const count = out.getUint32(read + 4, true);
+		read += 8;
+		const size = kind === 0 ? 2 : 4;
+		const keys = bytes.buffer.slice(read, read + count * size);
+		read += count * size;
+		return kind === 0 ? new Int16Array(keys) : new Float32Array(keys);
+	});
+	return { times, tracks: baked };
 }

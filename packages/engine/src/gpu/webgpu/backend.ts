@@ -371,16 +371,15 @@ export class WebGPUBackend {
 	}
 
 	/**
-	 * Runs a slice of the work of a generator that the table holds, which fills a cube texture on
-	 * the GPU. The generator submits its commands at once, ahead of the frame's, which never write
-	 * the texture.
+	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
+	 * generator submits its commands at once, ahead of the frame's, which never write the texture.
 	 */
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
 		const generator = words[a + 1] as number;
 		const [name, generators] =
 			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
-		generators[name].run(this.device, texture, words[a + 2] as number, words[a + 3] as number);
+		generators[name].run(this.device, texture);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -492,16 +491,17 @@ export class WebGPUBackend {
 	/**
 	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
 	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the skinning pass's pipeline, whose layout is fixed. A render pipeline also needs the targets,
+	 * the skinning pass's pipelines, whose layout is fixed. A render pipeline also needs the targets,
 	 * the vertex format and the state of the objects that draw with it, which the scene gives, so
 	 * `scene.warmUp()` builds those. Skinning's builds for the vertex shader serve only the
 	 * `?skinning=vertex` switch, and are left out.
 	 */
 	precompile(feature: string, module: FirstUseShaders): void {
 		if (feature === 'skinning') {
-			this.device
-				.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN))
-				.catch(() => undefined);
+			for (const bits of [0, G.PERMUTATION_VERTEX_TANGENT])
+				this.device
+					.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN, bits))
+					.catch(() => undefined);
 			return;
 		}
 		for (const [name, builds] of Object.entries(module))
@@ -510,9 +510,11 @@ export class WebGPUBackend {
 	}
 
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
-	private computeReady(template: number): boolean {
+	private computeReady(template: number, permutation: number): boolean {
 		const variants = this.pipelines.computeVariants(template);
-		return variants === undefined || (this.moreShaders?.ready(variants, 0, 'wgsl') ?? true);
+		return (
+			variants === undefined || (this.moreShaders?.ready(variants, permutation, 'wgsl') ?? true)
+		);
 	}
 
 	/** Starts to build each parked pipeline whose shader has arrived. */
@@ -521,7 +523,7 @@ export class WebGPUBackend {
 			this.templateReady(operands[1] as number, operands[2] as number),
 		);
 		this.unparkEach(this.parkedCompute, G.OP_CREATE_COMPUTE_PIPELINE, (operands) =>
-			this.computeReady(operands[1] as number),
+			this.computeReady(operands[1] as number, operands[2] as number),
 		);
 	}
 
@@ -550,14 +552,14 @@ export class WebGPUBackend {
 		const id = words[a] as number;
 		const device = this.device;
 		if (op === G.OP_CREATE_COMPUTE_PIPELINE) {
-			if (!this.computeReady(words[a + 1] as number)) {
+			if (!this.computeReady(words[a + 1] as number, words[a + 2] as number)) {
 				// Its dispatches do nothing until its shader file arrives and the pipeline builds.
 				this.computePipelines[id] = null;
 				this.builds++;
 				this.parkedCompute.push(words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 				return;
 			}
-			const descriptor = this.pipelines.compute(words[a + 1] as number);
+			const descriptor = this.pipelines.compute(words[a + 1] as number, words[a + 2] as number);
 			if (!background) {
 				this.computePipelines[id] = device.createComputePipeline(descriptor);
 				return;

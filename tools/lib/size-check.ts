@@ -8,6 +8,14 @@ import type { SizeEntry } from './size-report';
 /** Growth after Brotli over the base build that fails the check unless a trailer explains it. */
 export const MAX_GROWTH = 0.02;
 
+/**
+ * The fewest bytes after Brotli that a file must grow by to fail the check. Below it, a small file's
+ * growth comes from the hashed names of the files it imports or loads and the bundler's short names
+ * for them, which change with nearly every change to the engine, not from code of its own. A file
+ * larger than the floor divided by the share limit fails on its share alone, as before.
+ */
+export const MIN_GROWTH_BYTES = 64;
+
 /** A file's size after Brotli in the base build and in this build. A build that lacks the file has none. */
 export interface SizeChange {
 	file: string;
@@ -31,9 +39,20 @@ export function growthOf({ base, head }: SizeChange): number {
 	return (head - base) / base;
 }
 
-/** The files that grew more than the limit, new files among them. */
+/**
+ * True when a file is new, or grew both by more than the share limit and by at least the byte
+ * floor. Such a file fails the check unless a trailer explains it.
+ */
+export function overLimit(change: SizeChange): boolean {
+	const { base, head } = change;
+	if (head === undefined) return false;
+	if (base === undefined) return true;
+	return growthOf(change) > MAX_GROWTH && head - base >= MIN_GROWTH_BYTES;
+}
+
+/** The files that grew past the limit, new files among them. */
 export function grownFiles(changes: readonly SizeChange[]): SizeChange[] {
-	return changes.filter((change) => growthOf(change) > MAX_GROWTH);
+	return changes.filter(overLimit);
 }
 
 /** The commit that the size check compares with, before git resolves it. */
@@ -80,7 +99,7 @@ export function growthText(change: SizeChange): string {
 
 /** The verdict on a file: blank within the limit, else the commit whose trailer explains its growth. */
 function verdict(change: SizeChange, explainedBy: ReadonlyMap<string, string>): string {
-	if (growthOf(change) <= MAX_GROWTH) return '';
+	if (!overLimit(change)) return '';
 	const commit = explainedBy.get(change.file);
 	return commit ? `explained in ${commit.slice(0, 8)}` : 'not explained';
 }
@@ -117,9 +136,9 @@ export function growthSummary(
 	return [
 		'### Download sizes against the base',
 		'',
-		`The base is ${base}. Sizes are bytes after Brotli. A file that grows more than ${MAX_GROWTH * 100}% needs a \`Size-Growth:\` trailer that names it and gives the reason.`,
+		`The base is ${base}. Sizes are bytes after Brotli. A file that grows more than ${MAX_GROWTH * 100}% and by ${MIN_GROWTH_BYTES} bytes or more needs a \`Size-Growth:\` trailer that names it and gives the reason.`,
 		'',
-		`| File | Base | This build | Growth | Over ${MAX_GROWTH * 100}% |`,
+		'| File | Base | This build | Growth | Over the limit |',
 		'| --- | ---: | ---: | ---: | --- |',
 		...changes.map(
 			(change) =>

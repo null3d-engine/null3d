@@ -225,6 +225,7 @@ fn material_of(id: u32) -> Material {
     m.uv_v = textureLoad(materials, vec2u(5u, id), 0);
     m.maps = textureLoad(materials, vec2u(6u, id), 0);
     m.more_maps = textureLoad(materials, vec2u(7u, id), 0);
+    m.specular = textureLoad(materials, vec2u(8u, id), 0);
     return m;
 #else
     return materials[id];

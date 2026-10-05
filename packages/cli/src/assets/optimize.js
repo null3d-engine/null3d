@@ -36,6 +36,8 @@ its file.
 
 Meshes: vertices reordered for the GPU's vertex cache, then stored as 8-bit and 16-bit integers
 (KHR_mesh_quantization).
+Clips: keys at the rate the engine keeps them, 16-bit rotations, one key for a track that never
+changes, so the engine copies them at load. No key or track is dropped.
 Textures: PNG and JPEG images encoded to KTX2 with every mip level, each side at its nearest
 power of two. Normal maps take UASTC; color and data maps take ETC1S, or UASTC with
 --texture-quality high. Every texture encodes on its own worker thread, and the same input gives

@@ -3,7 +3,7 @@
 
 use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
-    MAX_LAYERS as MAX_ANIMATION_LAYERS, REST_FLOATS, event_kind,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
 use null3d_core::cells::CELL_SIZE;
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
@@ -105,6 +105,8 @@ pub mod map_slot {
     pub const OCCLUSION: u32 = MapSlot::Occlusion as u32;
     pub const EMISSIVE: u32 = MapSlot::Emissive as u32;
     pub const LIGHT: u32 = MapSlot::Light as u32;
+    pub const SPECULAR_INTENSITY: u32 = MapSlot::SpecularIntensity as u32;
+    pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -282,21 +284,51 @@ pub mod animation_field {
     pub const EVENTS: u32 = 6;
     /// Two words: the last frame step's event records, and the events that did not fit.
     pub const EVENT_TOTALS: u32 = 7;
+    /// The clip that a play put in each sample slot, as 32-bit unsigned integers, or
+    /// `NO_SOURCE` for a slot that no play fills.
+    pub const SLOT_SOURCES: u32 = 8;
+    /// The blend value of each layer of each instance, `MAX_LAYERS` per instance, which
+    /// TypeScript writes.
+    pub const BLEND_VALUES: u32 = 9;
+    /// The numbers of the next `animatorPlay` or `animatorPlayBlend` call, `play_arg::COUNT`
+    /// floats, which TypeScript writes before the call.
+    pub const PLAY_ARGS: u32 = 10;
 }
 
-/// The words of each track's header in `createClip`'s staging words: joint, channel,
-/// interpolation and key count.
-pub const TRACK_WORDS: u32 = 4;
+/// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
+/// call arguments, so a play allocates nothing in the browser whatever numbers its options hold.
+pub mod play_arg {
+    /// Seconds of the fade.
+    pub const FADE: usize = 0;
+    /// The rate of the clip's time, or of the blend.
+    pub const SPEED: usize = 1;
+    /// The start time in seconds, or the blend's start phase.
+    pub const TIME: usize = 2;
+    /// The clip's weight.
+    pub const WEIGHT: usize = 3;
+    /// The blend's value.
+    pub const VALUE: usize = 4;
+    /// The numbers in the array.
+    pub const COUNT: usize = 5;
+}
 
 /// What `clipReady` returns while a job worker still resamples the clip: no clip id reaches it.
 pub const CLIP_PENDING: u32 = u32::MAX;
 
-/// The bits of `animatorPlay`'s `flags`.
+/// The bits of `animatorPlay`'s and `animatorPlayBlend`'s `flags`.
 pub mod play_flag {
     /// The clip repeats.
     pub const LOOP: u32 = 1;
     /// The clip adds its change from its first frame to the pose.
     pub const ADDITIVE: u32 = 2;
+    /// The play gives a start time, or a blend a start phase.
+    pub const TIME: u32 = 4;
+    /// The play gives the clip's weight.
+    pub const WEIGHT: u32 = 8;
+    /// The clip plays beside the other clips of its layer.
+    pub const JOIN: u32 = 16;
+    /// The blend gives its layer's blend value.
+    pub const VALUE: u32 = 32;
 }
 
 /// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
@@ -668,6 +700,8 @@ pub fn typescript() -> String {
                 ("OCCLUSION", map_slot::OCCLUSION),
                 ("EMISSIVE", map_slot::EMISSIVE),
                 ("LIGHT", map_slot::LIGHT),
+                ("SPECULAR_INTENSITY", map_slot::SPECULAR_INTENSITY),
+                ("SPECULAR_COLOR", map_slot::SPECULAR_COLOR),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -687,6 +721,9 @@ pub fn typescript() -> String {
                 ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+                ("REFLECTANCE", param::REFLECTANCE as u32),
+                ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
+                ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
             ],
         ),
         (
@@ -859,6 +896,9 @@ pub fn typescript() -> String {
                 ("LAYER_WEIGHTS", animation_field::LAYER_WEIGHTS),
                 ("EVENTS", animation_field::EVENTS),
                 ("EVENT_TOTALS", animation_field::EVENT_TOTALS),
+                ("SLOT_SOURCES", animation_field::SLOT_SOURCES),
+                ("BLEND_VALUES", animation_field::BLEND_VALUES),
+                ("PLAY_ARGS", animation_field::PLAY_ARGS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
@@ -873,6 +913,17 @@ pub fn typescript() -> String {
                 ("EVENT_WORDS", EVENT_WORDS as u32),
                 ("PLAY_LOOP", play_flag::LOOP),
                 ("PLAY_ADDITIVE", play_flag::ADDITIVE),
+                ("PLAY_TIME", play_flag::TIME),
+                ("PLAY_WEIGHT", play_flag::WEIGHT),
+                ("PLAY_JOIN", play_flag::JOIN),
+                ("PLAY_VALUE", play_flag::VALUE),
+                ("NO_SOURCE", NO_SOURCE),
+                ("ARG_FADE", play_arg::FADE as u32),
+                ("ARG_SPEED", play_arg::SPEED as u32),
+                ("ARG_TIME", play_arg::TIME as u32),
+                ("ARG_WEIGHT", play_arg::WEIGHT as u32),
+                ("ARG_VALUE", play_arg::VALUE as u32),
+                ("ARGS", play_arg::COUNT as u32),
                 ("EVENT_CLIP", event_kind::EVENT),
                 ("EVENT_LOOP", event_kind::LOOP),
                 ("EVENT_FINISHED", event_kind::FINISHED),
