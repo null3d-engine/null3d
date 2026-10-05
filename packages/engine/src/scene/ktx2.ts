@@ -151,30 +151,16 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
 		if (supercompression !== SUPERCOMPRESSION_BASIS_LZ) refuse('its ETC1S data is not in BasisLZ');
 		codec = 'etc1s';
 		alpha = samples > 1 && channel(1) === ETC1S_CHANNEL_AAA;
-	} else if (model === MODEL_UASTC) {
+	} else if (model === MODEL_UASTC || model === MODEL_UASTC_HDR) {
+		const hdr = model === MODEL_UASTC_HDR;
 		if (
 			supercompression !== SUPERCOMPRESSION_NONE &&
 			supercompression !== SUPERCOMPRESSION_ZSTANDARD
 		)
-			refuse(`its UASTC data has supercompression scheme ${supercompression}`);
-		codec = 'uastc';
-		alpha = channel(0) === UASTC_CHANNEL_RGBA || channel(0) === UASTC_CHANNEL_RRRG;
-	} else if (model === MODEL_UASTC_HDR) {
-		if (
-			supercompression !== SUPERCOMPRESSION_NONE &&
-			supercompression !== SUPERCOMPRESSION_ZSTANDARD
-		)
-			refuse(`its UASTC HDR data has supercompression scheme ${supercompression}`);
-		// The formats it becomes hold no alpha, and its values are linear whatever the file says.
-		return {
-			width,
-			height,
-			layers: Math.max(1, layers),
-			levels: Math.max(1, levels),
-			codec: 'uastc-hdr',
-			alpha: false,
-			colorSpace: 'linear',
-		};
+			refuse(`its UASTC${hdr ? ' HDR' : ''} data has supercompression scheme ${supercompression}`);
+		codec = hdr ? 'uastc-hdr' : 'uastc';
+		// The formats that HDR data becomes hold no alpha.
+		alpha = !hdr && (channel(0) === UASTC_CHANNEL_RGBA || channel(0) === UASTC_CHANNEL_RRRG);
 	} else
 		refuse(
 			`it holds data of color model ${model}, and the engine loads ETC1S, UASTC and UASTC HDR data`,
@@ -186,7 +172,8 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
 		levels: Math.max(1, levels),
 		codec,
 		alpha,
-		colorSpace: file[dfd + 14] === TRANSFER_SRGB ? 'srgb' : 'linear',
+		// HDR values are linear, whatever transfer function the file names.
+		colorSpace: codec !== 'uastc-hdr' && file[dfd + 14] === TRANSFER_SRGB ? 'srgb' : 'linear',
 	};
 }
 

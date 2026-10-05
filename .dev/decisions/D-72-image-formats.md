@@ -31,7 +31,7 @@ Browser support of the image formats, against the engine's minimum browsers: Chr
 
 The test pictures (`quadrants.*`, 64 x 64): PNG 510 bytes, WebP 122 bytes, AVIF 552 bytes. All three draw the same image in the `gltf-image-formats` image test.
 
-The KTX2 page check (`tests/image/ktx2.spec.ts`) ran on the Mac's GPU on 2026-10-05: the HDR file became `bc6h-rgb-ufloat` on WebGPU and on WebGL2, and `rgb9e5ufloat` with `?compression=none`, `astc` or `etc2`. The `ktx2-hdr` image test draws the file beside the same values as half floats made in code, and both formats draw the half floats' image.
+The KTX2 page check (`tests/image/ktx2.spec.ts`) passed on the Mac's GPU on 2026-10-05, on WebGPU and on WebGL2, in every thread mode and with each `?compression=` family and none: the HDR file took `bc6h-rgb-ufloat` wherever the device reported BC, and `rgb9e5ufloat` elsewhere, with the GPU bytes that each format counts. The `ktx2-hdr` image test draws the file beside the same values as half floats made in code, and both formats draw the half floats' image.
 
 ## Decision
 
