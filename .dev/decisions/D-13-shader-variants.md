@@ -187,6 +187,6 @@ The library code review of 4 October 2026 measured the shader files again (R6-03
 
 The owner's decisions of 4 October 2026 change the layout:
 
-- A feature's shaders may load on first use, in a file of their own, of up to about 24 KB after Brotli ([D-14](D-14-js-budget.md#first-use-shader-files)). The morph builds and the room's generator do so first.
+- A feature's shaders may load on first use, in a file of their own, of up to 32 KB after Brotli ([D-14](D-14-js-budget.md#first-use-shader-files)). The morph builds and the room's generator do so first.
 - The size is fixed at its cause ([D-53](D-53-technique-defaults.md) ruling 23). M2-R11, whose own record is D-56, comes before any new feature that adds shader code; branches already built move their shaders in a follow-up. It stores each unique stage source once per file, with variants as indexes into it, and moves each feature's templates into a first-use file. It then measures `bench:startup` on BrowserStack's Galaxy S25 and Pixel 9, and decides whether the `standard_maps` builds (1.72 MB, 32 builds) split by a second fixed bit. Its figures replace this record's.
 - Add-on modules need first-use shader files too ([D-54](D-54-addon-modules.md)).

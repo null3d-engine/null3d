@@ -62,7 +62,7 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 	const { slots } = controlViews(control);
 	const imageTable = setup.imageTable ?? new ImageTable();
 	imageTable.loadGeneratorsWith(generatorLoader(setup.tier));
-	if (setup.imagePort) receiveImages(setup.imagePort, imageTable, slots);
+	const receiving = setup.imagePort && receiveImages(setup.imagePort, imageTable, slots);
 	const options = { ...setup, imageTable };
 	const create = () => createRenderer(canvas, options);
 	const run = (renderer: Renderer) =>
@@ -71,9 +71,11 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 			: sketch
 				? runDirectLoop(sketch, renderer, control, metrics, fps, queue, fault, presented)
 				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort, fault, presented);
-	return new Drawing(await create(), create, run, slots, setup.fail, !hold, () =>
-		imageTable.clear(),
-	);
+	const renderer = await create();
+	// Firefox can fail to read an image that reached this thread while it made its first renderer,
+	// so the sketch thread sends its images only once the renderer exists.
+	receiving?.();
+	return new Drawing(renderer, create, run, slots, setup.fail, !hold, () => imageTable.clear());
 }
 
 /**

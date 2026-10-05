@@ -3,11 +3,15 @@
 // receives shadows but casts none, a post casts but receives none, and an unlit box shows no shadow
 // on itself. The page's ?pointLightShadows switch turns point light shadows on, as the presets of
 // some GPU tiers leave them off, and ?shadowTileSize= fixes the tile size. The sketch fixes the
-// 3 x 3 shadow filter, so every GPU tier draws the same image whatever preset it runs.
+// 3 x 3 shadow filter, so every GPU tier draws the same image whatever preset it runs. ?wide takes
+// the 5 x 5 filter instead, whose reads reach 3 texels from each point: the widest reach, where
+// the shadows that cross from one face's tile to the next would show a seam.
 import { defineSketch } from '@null3d/engine';
 
+const WIDE = new URL(import.meta.url).searchParams.has('wide');
+
 export default defineSketch(({ scene, materials, geometry, quality }) => {
-	quality.set({ shadowFilter: 3 });
+	quality.set({ shadowFilter: WIDE ? 5 : 3 });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,

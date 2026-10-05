@@ -283,7 +283,7 @@ mod ids {
     pub const TARGETS: u32 = BLANK_OUTLINE + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The comparison sampler of the shadow map.
+    /// The comparison sampler of the shadow atlas.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
@@ -291,8 +291,10 @@ mod ids {
     pub const LUT_SAMPLER: u32 = 3;
     /// The sampler of the environment's cube texture.
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
+    /// The sampler that reads four texels of the shadow map at once.
+    pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 5;
+    pub const SAMPLERS: u32 = 6;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -596,7 +598,13 @@ impl GpuDrivenRenderer {
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
-        let camera = self.settings.camera_position(input.scene, parity);
+        let camera = self.settings.view_frame(
+            ViewId::CAMERA,
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
+        );
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
         self.tiles
@@ -1138,7 +1146,12 @@ impl GpuDrivenRenderer {
     /// and three.js's table of specular terms, whose sizes never change, and of the shadows'
     /// uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
+        shadows::create_objects(
+            list,
+            ids::SHADOWS,
+            ids::SHADOW_SAMPLER,
+            Some(ids::SHADOW_TEXEL_SAMPLER),
+        )?;
         ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         let materials = self.config.max_materials.max(1);
         list.push(
