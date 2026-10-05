@@ -259,8 +259,9 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first environment its reader, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error, or the connection broke off.',
-		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first environment its reader, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+		example:
+			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
 	},
 	E1407: {
@@ -349,6 +350,14 @@ const DOCS = {
 			'E1417: assets.loadGltf() cannot load https://example.com/ship.glb: it requires KHR_draco_mesh_compression, which the engine does not read.',
 		since: '0.2',
 	},
+	E1418: {
+		title: 'WebAssembly blocked by the page',
+		cause:
+			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core or the KTX2 transcoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
+		example:
+			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
+		since: '0.2',
+	},
 	E1419: {
 		title: 'Canvas held by another engine',
 		cause:
@@ -362,6 +371,14 @@ const DOCS = {
 		cause:
 			'Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing.',
 		example: 'E1420: a call reached the engine after it stopped.',
+		since: '0.2',
+	},
+	E1421: {
+		title: 'Unknown feature to preload',
+		cause:
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, morph, skinning and sprites, and texcoords for the engine's own tests.",
+		example:
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, lines, morph, skinning, sprites, texcoords.",
 		since: '0.2',
 	},
 	E1501: {

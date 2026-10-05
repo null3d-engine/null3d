@@ -2,7 +2,14 @@
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
-import { type DeviceShaders, loadGlslShaders, loadWgslShaders } from '../generated/shaders';
+import {
+	type DeviceShaders,
+	type FirstUseShaders,
+	loadGlslFeature,
+	loadGlslShaders,
+	loadWgslFeature,
+	loadWgslShaders,
+} from '../generated/shaders';
 import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { DeviceShaderSet } from '../gpu/device-shaders';
@@ -110,6 +117,11 @@ export interface RendererOptions {
 	 * draws reports each kind once per device, as E1304 or E1305.
 	 */
 	gpuError?: GpuErrorReport;
+	/**
+	 * The features whose shader files load with the start's, before the first frame, as
+	 * `createEngine`'s `preload` lists them.
+	 */
+	preload?: readonly string[];
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -291,19 +303,47 @@ class WebGL2Renderer implements Renderer {
 }
 
 /** The loaded shaders, or a fresh copy that the browser must compile again when the device asks. */
-const freshIf = (device: CoreDevice, shaders: DeviceShaders) =>
-	device.freshShaders ? saltShaders(shaders, freshSalt()) : shaders;
+const freshIf = <Shaders extends FirstUseShaders>(device: CoreDevice, shaders: Promise<Shaders>) =>
+	device.freshShaders ? shaders.then((loaded) => saltShaders(loaded, freshSalt())) : shaders;
 
 /**
- * The device's shaders, from the module of its fixed bits, as a set that loads the module of
- * other fixed bits through `load` when a pipeline needs it.
+ * The feature whose file holds another feature's work on WebGPU. WebGPU morphs in the skinning
+ * pass and has no MORPH builds (decision record D-51), so a morphed mesh there needs the skinning
+ * file.
+ */
+const WGSL_FEATURE_FILES: Readonly<Record<string, string>> = { morph: 'skinning' };
+
+/**
+ * The device's shaders, from the start's module of its fixed bits, as a set that loads the module
+ * of other fixed bits through `load`, and the module of a feature that loads on first use through
+ * `loadFeature`, when a pipeline needs it. The modules of the features that `options` preloads
+ * download with the start's, and the set holds them before the renderer starts. The features that
+ * the sketch asks for later, through the image table, load as soon as they are asked for.
+ * `featureFiles` names, for a feature whose work this path does with another feature's builds,
+ * the feature whose file to load in its place.
  */
 async function deviceShaders(
 	device: CoreDevice,
+	options: RendererOptions,
 	load: (bits: number) => Promise<DeviceShaders>,
+	loadFeature: (feature: string, bits: number) => Promise<FirstUseShaders>,
+	featureFiles: Readonly<Record<string, string>> = {},
 ): Promise<DeviceShaderSet> {
-	const loadFresh = (bits: number) => load(bits).then((loaded) => freshIf(device, loaded));
-	return new DeviceShaderSet(await loadFresh(device.shaderBits), device.shaderBits, loadFresh);
+	const fileOf = (feature: string) => featureFiles[feature] ?? feature;
+	const bits = device.shaderBits;
+	const preload = (options.preload ?? []).map(fileOf);
+	// Every download starts at once: a module that the set imports again comes from the cache.
+	for (const feature of preload) loadFeature(feature, bits).catch(() => undefined);
+	const shaders = new DeviceShaderSet(await freshIf(device, load(bits)), bits, (more, feature) =>
+		freshIf(device, feature === undefined ? load(more) : loadFeature(feature, more)),
+	);
+	await shaders.preload(preload);
+	const table = options.imageTable;
+	if (table) {
+		void shaders.preload([...table.preloads].map(fileOf));
+		table.onPreload = (feature) => void shaders.preload([fileOf(feature)]);
+	}
+	return shaders;
 }
 
 /**
@@ -336,7 +376,7 @@ export async function createRenderer(
 			// scene's shaders download meanwhile.
 			const [, shaders, timing] = await Promise.all([
 				contextRestored(gl),
-				scene && deviceShaders(device, loadGlslShaders),
+				scene && deviceShaders(device, options, loadGlslShaders, loadGlslFeature),
 				options.glTiming && import('../gpu/webgl2/call-timing'),
 			]);
 			// The context may have been lost again during the downloads. The renderer starts on a
@@ -360,7 +400,7 @@ export async function createRenderer(
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
-		scene && deviceShaders(device, loadWgslShaders),
+		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature, WGSL_FEATURE_FILES),
 	]);
 	if (scene && shaders)
 		return new WebGPUSceneRenderer(

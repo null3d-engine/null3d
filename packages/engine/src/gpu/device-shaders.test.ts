@@ -1,23 +1,131 @@
 import { describe, expect, it } from 'bun:test';
-import { PERMUTATION_TONE_MAP } from '../generated/gpu';
-import type { DeviceShaders, ShaderVariants } from '../generated/shaders';
+import { PERMUTATION_BLOOM, PERMUTATION_HALF, PERMUTATION_TONE_MAP } from '../generated/gpu';
+import type { DeviceShaders, FirstUseShaders, ShaderVariant } from '../generated/shaders';
 import { DeviceShaderSet } from './device-shaders';
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** A WGSL build with the permutation word `permutation`. */
+const build = (permutation: number): ShaderVariant<'main'> => ({
+	permutation,
+	wgsl: { source: '', pipelines: { main: { vertex: 'vs', fragment: 'fs' } } },
+	glsl: null,
+});
+
+/** The start's module of a device: the final pass without bloom, and no sprite builds. */
+function start(): DeviceShaders {
+	return {
+		final: { webgpu: build(0) },
+		bloom: {},
+		sprite: {},
+	} as unknown as DeviceShaders;
+}
+
+/** A loader that records each module it is asked for, and settles each when the test says so. */
+function loader() {
+	const asked: string[] = [];
+	const pending: (() => void)[] = [];
+	const load = (bits: number, feature: string | undefined) => {
+		asked.push(feature === undefined ? `start ${bits}` : `${feature} ${bits}`);
+		const shaders: FirstUseShaders =
+			feature === 'bloom'
+				? ({ final: { webgpu_bloom: build(PERMUTATION_BLOOM) } } as FirstUseShaders)
+				: feature === 'sprites'
+					? ({ sprite: { webgpu: build(0) } } as unknown as FirstUseShaders)
+					: ({ final: { webgpu_tone_map: build(PERMUTATION_TONE_MAP) } } as FirstUseShaders);
+		return new Promise<FirstUseShaders>((resolve) => pending.push(() => resolve(shaders)));
+	};
+	const settle = async () => {
+		for (const resolve of pending.splice(0)) resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+	};
+	return { asked, load, settle };
+}
 
 describe('DeviceShaderSet', () => {
 	it('names the failed download when a pipeline needs the shaders of a module that failed to load', async () => {
-		const loads: number[] = [];
-		const set = new DeviceShaderSet({} as DeviceShaders, PERMUTATION_TONE_MAP, async (bits) => {
-			loads.push(bits);
+		const asked: string[] = [];
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, async (bits, feature) => {
+			asked.push(feature === undefined ? `start ${bits}` : `${feature} ${bits}`);
 			throw new Error('404 Not Found');
 		});
-		const variants = {} as ShaderVariants;
-		expect(set.ready(variants, 0, 'wgsl')).toBe(false);
-		await settle();
-		expect(() => set.ready(variants, 0, 'wgsl')).toThrow(
+		const sprite = set.shaders.sprite;
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(() => set.ready(sprite, 0, 'wgsl')).toThrow(
 			'the engine could not download the shaders that a pipeline needs: 404 Not Found',
 		);
-		expect(loads).toEqual([0]);
+		expect(asked).toEqual(['sprites 0']);
+	});
+
+	it("loads a feature's module once, the first time a pipeline asks for one of its shaders", async () => {
+		const { asked, load, settle } = loader();
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, load);
+		const sprite = set.shaders.sprite;
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+		expect(asked).toEqual(['sprites 0']);
+		await settle();
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(true);
+		expect(Object.keys(sprite)).toEqual(['webgpu']);
+		expect(asked).toEqual(['sprites 0']);
+	});
+
+	it("loads a feature's module for a build with the feature's bit, with the device's half bit", async () => {
+		const { asked, load, settle } = loader();
+		const set = new DeviceShaderSet(start(), PERMUTATION_HALF, load);
+		const final = set.shaders.final;
+		expect(set.ready(final, 0, 'wgsl')).toBe(true);
+		expect(set.ready(final, PERMUTATION_BLOOM, 'wgsl')).toBe(false);
+		expect(asked).toEqual([`bloom ${PERMUTATION_HALF}`]);
+		await settle();
+		expect(set.ready(final, PERMUTATION_BLOOM, 'wgsl')).toBe(true);
+	});
+
+	it("loads the start's module of other fixed bits for a build of no feature", async () => {
+		const { asked, load, settle } = loader();
+		const set = new DeviceShaderSet(start(), 0, load);
+		expect(set.ready(set.shaders.final, PERMUTATION_TONE_MAP, 'wgsl')).toBe(false);
+		expect(asked).toEqual([`start ${PERMUTATION_TONE_MAP}`]);
+		await settle();
+		expect(set.ready(set.shaders.final, PERMUTATION_TONE_MAP, 'wgsl')).toBe(true);
+	});
+
+	it("preloads a feature's module, which a pipeline then finds without loading it again", async () => {
+		const { asked, load, settle } = loader();
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP, load);
+		const preloaded = set.preload(['sprites']);
+		expect(asked).toEqual([`sprites ${PERMUTATION_TONE_MAP}`]);
+		expect(set.ready(set.shaders.sprite, PERMUTATION_TONE_MAP, 'wgsl')).toBe(false);
+		await settle();
+		await preloaded;
+		expect(set.ready(set.shaders.sprite, PERMUTATION_TONE_MAP, 'wgsl')).toBe(true);
+		await set.preload(['sprites']);
+		expect(asked).toEqual([`sprites ${PERMUTATION_TONE_MAP}`]);
+	});
+
+	it("preloads bloom's HDR builds and the start's on the 8-bit path, which bloom moves to HDR", () => {
+		const { asked, load } = loader();
+		const set = new DeviceShaderSet(start(), PERMUTATION_TONE_MAP | PERMUTATION_HALF, load);
+		void set.preload(['bloom']);
+		const half = PERMUTATION_HALF;
+		expect(asked).toEqual([
+			`bloom ${PERMUTATION_TONE_MAP | half}`,
+			`start ${half}`,
+			`bloom ${half}`,
+		]);
+	});
+
+	it('hands each preloaded module to its listener once it arrives, and those that arrived before', async () => {
+		const { load, settle } = loader();
+		const set = new DeviceShaderSet(start(), 0, load);
+		const heard: string[] = [];
+		set.onPreloaded((feature) => heard.push(`early ${feature}`));
+		const preloaded = set.preload(['sprites']);
+		expect(set.ready(set.shaders.final, PERMUTATION_BLOOM, 'wgsl')).toBe(false);
+		await settle();
+		await preloaded;
+		expect(heard).toEqual(['early sprites']);
+		set.onPreloaded((feature) => heard.push(`late ${feature}`));
+		expect(heard).toEqual(['early sprites', 'late sprites']);
 	});
 });

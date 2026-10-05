@@ -53,8 +53,9 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
+| [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 10 seconds of tries. |
-| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
+| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
@@ -319,6 +320,7 @@ Options for `createEngine`.
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 | `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
+| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
 
 ### `ErrorCode`
 
@@ -369,8 +371,10 @@ type ErrorCode =
 	| 'E1415'
 	| 'E1416'
 	| 'E1417'
+	| 'E1418'
 	| 'E1419'
 	| 'E1420'
+	| 'E1421'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'
@@ -424,6 +428,22 @@ type LatencyMode = 'pipelined' | 'low';
 ```
 
 How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame while the sketch computes the next one. In `low` mode, the sketch worker draws each frame right after its update.
+
+### `ShaderFeature`
+
+```ts
+type ShaderFeature =
+	| 'ao'
+	| 'background'
+	| 'bloom'
+	| 'lines'
+	| 'morph'
+	| 'skinning'
+	| 'sprites'
+	| 'texcoords';
+```
+
+A feature whose shader builds load on first use, which `createEngine`'s `preload` lists.
 
 ### `SketchThread`
 

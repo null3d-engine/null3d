@@ -8,6 +8,7 @@ import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error'
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
+import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import type { PresetCheck } from '../quality/check';
 import {
 	choosePreset,
@@ -30,6 +31,7 @@ import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
+import { URL_SWITCHES } from '../shared/dev';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
@@ -87,6 +89,7 @@ import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
+	jobWorkerCount,
 	type LatencyMode,
 	parseSwitches,
 	type SketchThread,
@@ -256,6 +259,18 @@ export interface EngineOptions {
 	 * switch overrides this time, and a bare `?hold` holds at it, or at 0 without it.
 	 */
 	hold?: number;
+	/**
+	 * Features whose shaders load before the first frame, for a game that must fetch nothing while
+	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
+	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
+	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
+	 * batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so
+	 * there `'morph'` loads the skinning shaders. Listed features download beside the engine's own
+	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
+	 * targets, or making a batch, also starts its feature's download at once, before the objects
+	 * draw. Throws E1421 for a name it does not know.
+	 */
+	preload?: readonly ShaderFeature[];
 }
 
 /**
@@ -459,8 +474,6 @@ export interface Engine {
 const BENCH_GLOBAL = '__null3dEngine';
 /** The GPU the engine asks for on a device with two: the faster one. */
 const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
-/** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
-const RESERVED_CORES = 2;
 /** How often the page reads the frame records while it measures. */
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
@@ -750,7 +763,7 @@ function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
  * when it draws, and the job workers. The page starts them before the core has compiled, so their
  * scripts and the core's loader download while the core does. Each worker waits for its start
  * message, which carries the core. A job worker that fails to start is reported as a failure of the
- * running engine, and never holds up the start. `kept` is the drawing worker that kept the canvas
+ * running engine, and never holds up the start. `reused` is the drawing worker that kept the canvas
  * when an engine before stopped, which serves in its role again.
  */
 function startWorkers(
@@ -759,53 +772,75 @@ function startWorkers(
 	jobWorkers: number,
 	slots: Int32Array,
 	events: WorkerEvents,
-	kept?: { worker: Worker; role: DrawingRole },
+	reused?: { worker: Worker; role: DrawingRole },
 ): EngineWorkers {
-	const sketch = sketchWorker
-		? new EngineWorker(
-				kept?.role === 'sketch'
-					? kept.worker
-					: new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-							type: 'module',
-							name: 'null3d-sketch',
-						}),
-				'sketch',
+	/** Each worker as it starts, so that a refusal can stop the ones before it. */
+	const made: Worker[] = [];
+	const kept = (worker: Worker) => {
+		made.push(worker);
+		return worker;
+	};
+	try {
+		const sketch = sketchWorker
+			? new EngineWorker(
+					reused?.role === 'sketch'
+						? reused.worker
+						: kept(
+								new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+									type: 'module',
+									name: 'null3d-sketch',
+								}),
+							),
+					'sketch',
+					events,
+				)
+			: undefined;
+		const render = renderWorker
+			? new EngineWorker(
+					reused?.role === 'render'
+						? reused.worker
+						: kept(
+								new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
+									type: 'module',
+									name: 'null3d-render',
+								}),
+							),
+					'render',
+					events,
+				)
+			: undefined;
+		const jobs = Array.from({ length: jobWorkers }, (_, index) => {
+			const job = new EngineWorker(
+				kept(
+					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+						type: 'module',
+						name: `null3d-job-${index}`,
+					}),
+				),
+				`job ${index}`,
 				events,
-			)
-		: undefined;
-	const render = renderWorker
-		? new EngineWorker(
-				kept?.role === 'render'
-					? kept.worker
-					: new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-							type: 'module',
-							name: 'null3d-render',
-						}),
-				'render',
-				events,
-			)
-		: undefined;
-	const jobs = Array.from({ length: jobWorkers }, (_, index) => {
-		const job = new EngineWorker(
-			new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-				type: 'module',
-				name: `null3d-job-${index}`,
-			}),
-			`job ${index}`,
-			events,
-		);
-		// Job workers join the job system as each becomes ready: until then the sketch thread and the
-		// job workers already running take every chunk, so no frame waits for them.
-		job.ready().catch((error: unknown) => {
-			if (Atomics.load(slots, Slot.Running) !== 0)
-				events.failure(
-					error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
-					false,
-				);
+			);
+			// Job workers join the job system as each becomes ready: until then the sketch thread and
+			// the job workers already running take every chunk, so no frame waits for them.
+			job.ready().catch((error: unknown) => {
+				if (Atomics.load(slots, Slot.Running) !== 0)
+					events.failure(
+						error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
+						false,
+					);
+			});
+			return job;
 		});
-		return job;
-	});
-	return { sketch, render, jobs };
+		return { sketch, render, jobs };
+	} catch (thrown) {
+		// A browser refuses a dedicated worker whose script comes from another origin, such as a CDN.
+		for (const worker of made) worker.terminate();
+		const reason = thrown instanceof Error ? thrown.message : String(thrown);
+		throw new EngineError(
+			'E1405',
+			`the browser refused to start an engine worker: ${reason}. A worker's script must come from the page's own origin.`,
+		);
+	}
 }
 
 /**
@@ -832,7 +867,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	// The page's errors end with the fixes from its own table, and each worker gets the same table
 	// in its handoff.
 	setErrorFixes(ERROR_FIXES);
-	const switches = parseSwitches(globalThis.location?.search ?? '');
+	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
 	const canvas = canvasHold(options.canvas);
@@ -845,6 +880,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		holder.endStop();
 	};
 	try {
+		checkPreload(options.preload);
 		const hold = holdSeconds(options.hold, switches.hold);
 		if (holding) publishHold(undefined);
 		if (place.sketchThread === 'main')
@@ -883,6 +919,17 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	} finally {
 		holder.startSettled();
 	}
+}
+
+/** Throws E1421 for a name in `preload` that names no feature whose shaders load on first use. */
+function checkPreload(preload: readonly string[] | undefined): void {
+	const known: readonly string[] = SHADER_FEATURES;
+	for (const feature of preload ?? [])
+		if (!known.includes(feature))
+			throw new EngineError(
+				'E1421',
+				`createEngine() got '${feature}' in preload. The features are ${known.join(', ')}.`,
+			);
 }
 
 /** Where the engine runs: its build, and the thread that runs the sketch and the core. */
@@ -1048,7 +1095,7 @@ async function startEngine(
 	let pageLabels: PageLabels | undefined;
 
 	const jobWorkers = threaded
-		? (switches.jobs ?? Math.max(1, (navigator.hardwareConcurrency ?? 1) - RESERVED_CORES))
+		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
 		: 0;
 	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
@@ -1301,6 +1348,7 @@ async function startEngine(
 			queue: switches.queue,
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
+			preload: options.preload,
 		};
 
 		const device = coreDevice(tier, report, {

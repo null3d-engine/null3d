@@ -3,7 +3,7 @@
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
 import * as G from '../../generated/gpu';
-import type { DeviceShaders } from '../../generated/shaders';
+import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { type GeneratorName, ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
@@ -96,6 +96,11 @@ export class WebGPUBackend {
 	 * this thread yet. Each builds once its shader arrives.
 	 */
 	private readonly parked: Uint32Array[] = [];
+	/**
+	 * The operands of each `CreateComputePipeline` whose shader file has not arrived yet: the
+	 * skinning pass's, which loads with the first skinned mesh. Each builds once its file arrives.
+	 */
+	private readonly parkedCompute: Uint32Array[] = [];
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
@@ -466,7 +471,7 @@ export class WebGPUBackend {
 
 	/** True while a pipeline is building. Pipelines whose shaders arrived start to build first. */
 	get building(): boolean {
-		if (this.parked.length > 0) this.unpark();
+		if (this.parked.length > 0 || this.parkedCompute.length > 0) this.unpark();
 		return this.builds > 0;
 	}
 
@@ -484,16 +489,55 @@ export class WebGPUBackend {
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
 	}
 
-	/** Starts to build each parked pipeline whose custom material's shader has arrived. */
+	/**
+	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
+	 * it creates each build's shader module, which the feature's pipelines then share, and builds
+	 * the skinning pass's pipeline, whose layout is fixed. A render pipeline also needs the targets,
+	 * the vertex format and the state of the objects that draw with it, which the scene gives, so
+	 * `scene.warmUp()` builds those. Skinning's builds for the vertex shader serve only the
+	 * `?skinning=vertex` switch, and are left out.
+	 */
+	precompile(feature: string, module: FirstUseShaders): void {
+		if (feature === 'skinning') {
+			this.device
+				.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN))
+				.catch(() => undefined);
+			return;
+		}
+		for (const [name, builds] of Object.entries(module))
+			for (const build of Object.values(builds))
+				if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+	}
+
+	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
+	private computeReady(template: number): boolean {
+		const variants = this.pipelines.computeVariants(template);
+		return variants === undefined || (this.moreShaders?.ready(variants, 0, 'wgsl') ?? true);
+	}
+
+	/** Starts to build each parked pipeline whose shader has arrived. */
 	private unpark(): void {
-		const parked = this.parked;
+		this.unparkEach(this.parked, G.OP_CREATE_RENDER_PIPELINE, (operands) =>
+			this.templateReady(operands[1] as number, operands[2] as number),
+		);
+		this.unparkEach(this.parkedCompute, G.OP_CREATE_COMPUTE_PIPELINE, (operands) =>
+			this.computeReady(operands[1] as number),
+		);
+	}
+
+	/** Starts to build each pipeline of `parked` that is `ready`, with the command `op`. */
+	private unparkEach(
+		parked: Uint32Array[],
+		op: number,
+		ready: (operands: Uint32Array) => boolean,
+	): void {
 		for (let k = parked.length - 1; k >= 0; k--) {
 			const operands = parked[k] as Uint32Array;
-			if (!this.templateReady(operands[1] as number, operands[2] as number)) continue;
+			if (!ready(operands)) continue;
 			parked.splice(k, 1);
 			this.builds--;
 			this.counts.pipelines--;
-			this.createPipeline(G.OP_CREATE_RENDER_PIPELINE, operands, 0, true);
+			this.createPipeline(op, operands, 0, true);
 		}
 	}
 
@@ -506,6 +550,13 @@ export class WebGPUBackend {
 		const id = words[a] as number;
 		const device = this.device;
 		if (op === G.OP_CREATE_COMPUTE_PIPELINE) {
+			if (!this.computeReady(words[a + 1] as number)) {
+				// Its dispatches do nothing until its shader file arrives and the pipeline builds.
+				this.computePipelines[id] = null;
+				this.builds++;
+				this.parkedCompute.push(words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
+				return;
+			}
 			const descriptor = this.pipelines.compute(words[a + 1] as number);
 			if (!background) {
 				this.computePipelines[id] = device.createComputePipeline(descriptor);
