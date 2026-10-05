@@ -276,6 +276,27 @@ The sunset from its Radiance file draws the sphere grid as its tool map does. It
 
 The times come from Chrome on the Mac (Apple M5 Max), at a load of 15 to 26. The readers took 94 to 125 ms per file on the page's main thread. The worker runs the same code. The map took 19 to 21 ms from the call until the GPU had finished, as the room's does. On WebGL2 it took 16 to 17 ms by timer queries. The `panorama` step replaces the trace and the blur, and the filter costs most.
 
+On cloud devices, the device runner's `environment-load` plan asked for each environment during play (runs `20261005-134447-environment-load` and `20261005-134805-environment-load`, BrowserStack Automate). Every item passed: iPad 6 of 6, Pixel 10 6 of 6, and Galaxy S24 3 of 3, which has no WebGPU. In every frame that used an environment, the sphere showed its light. The figures are milliseconds from the request until the first captured frame that used the environment. The figure in brackets is the time until the environment resolved. The HDR files came through the cloud's tunnel from the Mac, so their times include a download of 5.7 MB (`.hdr`) or 1.3 MB (`.exr`).
+
+| Device, path | Room | Venice Sunset, 2K `.hdr` | Studio, 1K `.exr` |
+| --- | --- | --- | --- |
+| iPad Pro 13, Safari 26.6.1, WebGPU | 1,204 (1,071) | 2,291 (2,213) | 1,613 (1,570) |
+| iPad Pro 13, WebGL2 | 912 (784) | 1,544 (1,467) | 1,554 (1,490) |
+| Pixel 10, Chrome 149, WebGPU | 965 (815) | 2,621 (2,448) | 2,390 (2,259) |
+| Pixel 10, WebGL2 | 974 (840) | 2,681 (2,554) | 2,128 (2,003) |
+| Galaxy S24 (Xclipse 940), Chrome 149, WebGL2 | 1,120 (1,006) | 3,191 (3,066) | 2,278 (2,186) |
+
+Two parts make each figure:
+
+- Until the environment resolves, the frames go on as before; the captures in that time drew the sphere unlit, 145 to 4,583 of them. This part holds the download, the reading, the generator's code and the background build of its shaders.
+- From then until the first lit frame, the next frame makes the map, draws, and comes back to the page. It took 114 to 150 ms for the room, and 43 to 173 ms for the HDR files. The one long frame lies in this part.
+
+Why the iPad's `.hdr` took 2,291 ms on WebGPU and 1,544 ms on WebGL2: the gap lies before the environment resolved. That part took 2,213 against 1,467 ms, and the part after it 77 ms on both paths. The room shows that the setup before it resolves costs about 290 ms more on WebGPU on this iPad (1,071 against 784 ms). That setup is the generator's code and the build of its shaders. That leaves about 460 ms. The `.exr` file differs by only 80 ms between the paths, and the readers run the same code on both. So the rest most likely came from the 5.7 MB download through the tunnel, which varies from load to load. Each item ran once, and the page does not time the download apart, so the record cannot prove it.
+
+The task's done-when line asks only that an HDR file lights a scene on all three tiers, and sets no time. Its note took prototype L1's rule: under 200 ms in all on the slowest cloud phone. Option A (D-66) then made the map in one submit, and the rule's 200 ms is the map's own cost. Here, the part after the environment resolved holds the map, its frame and the capture. It stayed under 200 ms on every device and path: at most 150 ms for the room and 173 ms for a file. The first second or more is the download and the background setup, during which frames keep their pace. So the room's 1 s on phones passes the rule.
+
+The generator's code and shaders start to load only when the first generator reaches the thread that draws. For an HDR file, that is after the download and the reading, so the two waits add up. Starting them at the call would overlap them, saving up to the room's time until it resolved: 0.8 to 1.1 s on these devices.
+
 The code that loads on first use, after Brotli: the reader's worker 5.8 KB, and its loader 0.6 KB in the sketch's thread. The generators' file grew from 2.1 to 2.7 KB. The environment shaders grew from 4.2 to 4.7 KB in WGSL, and from 4.4 to 4.8 KB in GLSL.
 
 A KTX2 map from the tool is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. The studio's 1K OpenEXR file takes 1.23 MB, and its map 1.36 MB.
@@ -318,7 +339,8 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 - Open: the lookup's GPU cost on the iPad, and the frame time at a GPU-bound size on the S24+. The device runner's `environment` plan measures both (`tests/pages/environment-cost.html`). Its scene draws 8 planes of the standard material over the whole window, without and with the room in turns. The difference over the layers is the lookup's cost. A functional run in Chrome on the Mac (Apple M5 Max) drew 1280 x 800 pixels. It gave 0.46 ms of GPU time without the room and 0.52 ms with it.
 - Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
-- Open: the HDR load time on the iPad and the S24+. The device runner's `environment-load` plan measures it (`tests/pages/room-light.html?source=`), with the room's.
+- Open: the HDR load time on the owner's iPad and S24+. The cloud's iPad Pro 13, Pixel 10 and Galaxy S24 ran the `environment-load` plan on 5 October 2026, as above.
+- Open: start the generator's code and shaders at the first HDR load's call, so they load during the download.
 - Open: a size option for HDR files at load, such as `--size 512` for sharp backgrounds.
 - Open: KTX2 supercompression. A map of 256 is 2.0 MB. The room's was 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of a map's bytes. Zstandard in the file would need a decoder in the engine.
 - The tool and the GPU's generator keep their filter, and do not copy three.js r187's. Release r187 shares the tool's GGX lobe, its 256 cube with 6 levels and its roughness of each level. It differs in three ways. Its levels 1 and 2 take 256 samples of the visible normals, with a bias of half a level. The tool takes 512 and then 1,024 there, with a bias of one level. Its levels 3 to 5 weigh every texel of a 16 x 16 copy of the source. The tool samples 2,048 to 8,192 directions of the full chain there. Its blur takes two passes of a 20-tap golden-angle spiral. The tool's takes one pass of a 13 x 13 grid. Under [D-52](D-52-intent-parity.md) a look need not match three.js's pixels. The tool's method takes more samples than r187's at every level, so its map is at least as good. The generator's counts, biases and blur match the tool's. They are in `packages/engine/src/gpu/environment-steps.ts` and `crates/null3d-shaders/wgsl/environment.wgsl`.
