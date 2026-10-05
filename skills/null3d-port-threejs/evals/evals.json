@@ -29,7 +29,7 @@
       "files": ["evals/files/Viewer.jsx"],
       "expectations": [
         "Provides a React component wrapping createEngine that creates its canvas inside the effect and calls destroy in cleanup",
-        "Explains why a canvas cannot be reused (handed to a worker once; StrictMode mounts twice)",
+        "Explains how StrictMode's double mount reaches one engine (the kept engine is attached again, or a second start waits for destroy)",
         "sketch.ts loads the model with assets.loadGltf and scene.instantiate",
         "The drei Environment preset studio becomes an environment map made with bunx @null3d/cli assets env and loaded with assets.loadEnvironment, or assets.builtinEnvironment('room') for neutral light, with scene.setEnvironment, marked as 0.2",
         "useFrame rotation becomes onUpdate on a dynamic object",

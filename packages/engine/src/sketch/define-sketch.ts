@@ -48,6 +48,12 @@ export interface SketchCallbacks {
 	 * here does not lag a frame behind it.
 	 */
 	onLateUpdate?(dt: number): void;
+	/**
+	 * Runs once when the engine stops, on the sketch's thread, before its workers stop. Remove the
+	 * timers, event listeners and message handlers that the sketch added outside the engine here.
+	 * After it, every call to the engine fails with E1420.
+	 */
+	onDestroy?(): void;
 }
 
 /**

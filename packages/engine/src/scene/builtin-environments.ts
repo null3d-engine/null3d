@@ -3,17 +3,12 @@
 // (D-19), so the engine's package ships no file for it. Only the nine coefficients of each one's
 // diffuse light live here.
 
-/**
- * A built-in environment: the size and the levels of its cube map, the frames that the GPU takes
- * to make it, and its diffuse light.
- */
+/** A built-in environment: the size and the levels of its cube map, and its diffuse light. */
 export interface BuiltinEnvironment {
 	/** The width of the largest faces of its cube map. */
 	readonly size: number;
 	/** Its cube map's mip levels, one for each roughness step. */
 	readonly levels: number;
-	/** The slices of the GPU's work, of about the same cost, one a frame. */
-	readonly slices: number;
 	/** The nine coefficients' red, green and blue values, in three.js's order. */
 	readonly sh: Float32Array;
 }
@@ -29,19 +24,12 @@ const ROOM_SH = [
 	-0.609752,
 ];
 
-/**
- * The frames over which the GPU makes the room: about 1 ms of GPU time each on a MacBook Pro, and
- * half a second in all at 60 frames per second. A held frame makes it in one.
- */
-const ROOM_SLICES = 32;
-
 /** The built-in environments, by name. Each cube map has faces of 256 texels down to 8. */
 export const BUILTIN_ENVIRONMENTS = {
 	/** The room that three.js's `RoomEnvironment` builds: a white room with boxes and lit panels. */
 	room: {
 		size: 256,
 		levels: 6,
-		slices: ROOM_SLICES,
 		sh: Float32Array.from(ROOM_SH.flatMap((c) => [c, c, c])),
 	},
 } as const satisfies Record<string, BuiltinEnvironment>;

@@ -260,7 +260,7 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows, the strong bloom, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the points, the shadows, the strong bloom, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
 		expect(featureScene('bloom-strong')?.limit).toBe(BLOOM_STRONG_MAX_DIFFERENT_PERCENT);
@@ -269,6 +269,7 @@ describe('feature scenes', () => {
 		expect(featureScene('outline-hidden')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
+			'points',
 			'gltf-instancing',
 			'gltf-ktx2',
 			'gltf-meshopt-ext',
