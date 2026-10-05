@@ -275,7 +275,7 @@ describe('environments', () => {
 		serve({ 'https://game.example/env/flat.ktx2': 'not a ktx2 file' });
 		const assets = new Assets(cubeTextures().textures, PAGE);
 		expect(await codeOf(assets.loadEnvironment('/env/flat.ktx2'))).toBe(
-			'E1412: assets.loadEnvironment() could not read https://game.example/env/flat.ktx2 as an environment map: it is not a KTX2 file.',
+			'E1412: assets.loadEnvironment() could not read https://game.example/env/flat.ktx2 as an environment map: it is neither a KTX2 file from bunx @null3d/cli assets env nor a Radiance (.hdr) or OpenEXR (.exr) file.',
 		);
 		expect(
 			await codeOf(

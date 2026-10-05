@@ -1,6 +1,6 @@
 # D-19: Environment maps: format, size, levels and where they are prefiltered
 
-Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The same day, the owner moved the built-in room out of the engine's package: the GPU makes it at first use. That is now the rule for every built-in asset. D-53 then decided the lookup: each material reads its own roughness. A later task makes that change, so the table of three.js's roughness below stays until then. On 2026-10-05 the owner ruled that the GPU makes the room whole at load, in one submit (D-66), and M2-E9 built it. The lookup's cost on the iPad and the S24+ is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2, M2-E9.
+Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The same day, the owner moved the built-in room out of the engine's package: the GPU makes it at first use. That is now the rule for every built-in asset. D-53 then decided the lookup: each material reads its own roughness. A later task makes that change, so the table of three.js's roughness below stays until then. On 2026-10-05 the owner ruled that the GPU makes the room whole at load, in one submit (D-66), and M2-E9 built it. The same day M2-E4 added HDR files at load, on the room's generator. The lookup's cost and the HDR load time on the iPad and the S24+ are pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2, M2-E9, M2-E4.
 
 ## Question
 
@@ -23,7 +23,7 @@ Note, 2026-10-04: the owner's decision of that day ([D-52](D-52-intent-parity.md
 
 | Choice | Options | Taken |
 | --- | --- | --- |
-| Where the filtering runs | In the tool, once, before release; or in the browser on every visit, as three.js does | The tool. Loading an HDR file at run time is M2-E4, a later path whose result must match the tool's |
+| Where the filtering runs | In the tool, once, before release; or in the browser on every visit, as three.js does | The tool, as the fast path. HDR files also load as they are, and the GPU filters them at load with the tool's steps (M2-E4) |
 | Texel format | `rgb9e5ufloat` (4 bytes) or `rgba16float` (8 bytes): both filter on every path and in compatibility mode. `rg11b10ufloat` filters too, but WebGL2 uploads no packed data for it, and 6 bits of mantissa band in a sky | `rgb9e5ufloat` by default, `rgba16float` on request |
 | Layout | A cube map with a mip chain, one roughness per level; or three.js's CubeUV atlas, a 2D texture of faces and extra blurred levels | A cube map. The GPU filters across face edges and between levels, so the lookup is one `textureSampleLevel` |
 | Face size | 128, 256 or 512, down to faces of 8 texels | 256 |
@@ -219,6 +219,67 @@ The options rejected:
 - Float render targets for every step. WebGL2 renders into `rgba16float` only with an extension that some devices lack, and the map would still need packing for `rgb9e5ufloat`.
 - The nine coefficients of diffuse light on the GPU. The room never changes, so its coefficients never change. Reading them back would need a path from the thread that draws to the sketch's thread in every thread mode. In hold mode that thread draws only when a capture asks, so the sketch would wait for a frame that never comes. The engine keeps the tool's 27 numbers instead, nine for a gray room, in the file that loads on first use. They are derived data, not a shipped file, so they fit the owner's rule (agreed on 4 October 2026). A test of the tool checks that they are its own.
 
+### HDR files at load
+
+`assets.loadEnvironment` also takes Radiance (`.hdr`) and OpenEXR (`.exr`) files. three.js ports load them with `HDRLoader` or `EXRLoader` and `PMREMGenerator`. The owner moved this to P0 on 4 October 2026 (decision 8 of D-53), on the room's generator. On 5 October the owner ruled that HDR maps are made whole at load, in one submit. The room is made the same way (option A of prototype L1, D-66). The earlier plan of steps sized by the kind of draw no longer applies.
+
+How a file becomes a map:
+
+1. The sketch's thread downloads the file. The environment reader tells the file's kind by its first bytes: KTX2, Radiance (`#?`) or OpenEXR.
+2. A worker of its own, `null3d-panorama`, reads the file off the sketch's frames. It decodes each row into 32-bit floats of red, green and blue.
+3. The worker projects each row onto the nine coefficients of diffuse light. It averages squares of texels while the image is wider than 2,048 texels, eight for each texel across a face of 256. Then it packs the panorama as shared-exponent texels.
+4. The panorama's texels move to the thread that draws, as an image does. The generator maps them onto the cube with a new step, `panorama`. Then it runs the room's chain and filter steps. All of it is one submit, before the first frame that uses the map.
+
+The `panorama` step averages 2 to 8 directions a side over each cube texel, by the tool's rule (`samples_per_texel`). It reads the panorama with the GPU's linear filter, as the tool's sampler does. The filter repeats across the width and clamps at the top and bottom rows. The map has faces of 256 and 6 levels, the tool's default. `loadEnvironment` takes no size option yet.
+
+#### Light past the format's limit
+
+A file can hold a sun far brighter than 65,408, the largest shared-exponent value. The tool filters in 32-bit floats and clamps only the stored texels. The analysis asked to limit bright texels on upload, as Filament compresses HDR before it sums samples. A plain limit loses the sun's share of the rough levels and of the diffuse light. Kloofendal's sky peaks at 73,216; a sky with an unclipped sun can peak near a million.
+
+The options:
+
+| Option | Rough levels and diffuse light | Cost |
+| --- | --- | --- |
+| Limit each texel at 65,408 on upload | Lose the light above the limit | None |
+| Compress the range before the sums and expand it after, as Filament's `IBLPrefilterContext` does | Lose some light: the expansion of an average is not the average of the expansions | A few operations per sample |
+| Divide the panorama by a power of two that brings its peak within the limit, and multiply it back where the map is stored | Keep all of it, as the tool's 32-bit filter does | One multiply per stored texel |
+
+The engine takes the power of two, the gain. The panorama and the chain hold the light divided by it. A power of two lowers only each texel's shared exponent, so its 9 bits stay. Only light below a few millionths of the peak grows coarse. The `panorama` step that fills level 0 of the map, and the `prefilter` step, multiply the gain back. Their texels then stop at 65,408, as the tool's do. With a gain above 1, level 0 takes a second `panorama` draw, since the chain and the map hold different light. The diffuse light comes from the worker's 32-bit sums, so it keeps all the light too. Nothing reaches an `rgba16float` target above 65,504, which R7-01 asked for.
+
+#### The readers
+
+The Radiance reader follows the tool's: flat rows, or Radiance's run-length rows, from the top row down. The OpenEXR reader ports three.js's `EXRLoader` decoders (MIT, after TinyEXR and OpenEXR, BSD-3-Clause; `THIRD-PARTY-NOTICES.txt` holds their notices). It reads single-part scanline files with R, G and B channels of any pixel type. It reads every compression but DWAA and DWAB, as the tool does: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. ZIP data inflates through the browser's `DecompressionStream`, so the engine ships no inflate code. Up to 8 chunks inflate at once. Tiled, deep and multi-part files fail with E1412, which says how to save the file. The tool reads tiled files through the `exr` crate; the engine does not, since HDR panoramas are saved with scanlines.
+
+Options rejected for the readers:
+
+- The tool's own readers, built to WebAssembly for the engine. The same bytes would come out on every machine. But the `exr` crate is most of the tool's 115 KB after Brotli, against 5.8 KB for the TypeScript readers.
+- Reading on the sketch's thread. A 2K file takes about 100 ms on the Mac, and several times that on a phone. That would hold the sketch's frames, and in the modes without a sketch worker, the page.
+- Reading on the thread that draws. That thread must keep drawing frames.
+
+#### Memory
+
+The panorama on the GPU is at most 2,048 texels wide, 8 MB as shared-exponent texels. The thread that draws keeps the panorama's texels in its image table, as it keeps a room generator. So a new GPU device makes the map again. `environment.destroy()` releases them with the texture. A larger image becomes the averages of squares of texels in the worker, before the panorama exists. The worker's sums take 12 bytes a texel of the panorama, up to 25 MB for a short time.
+
+#### Results
+
+The test `tests/image/environment-generator.spec.ts` makes each file's map with the engine's readers and generator on every GPU path. It compares each level with the tool's map of the same file, tone mapped as above. The figures are steps of 1/255 as mean / p99, and the total light over the tool's. Chrome on the Mac's GPU, 5 October 2026:
+
+| File | Level 0 | Level 1 | Level 5 | Total light, levels 0 to 5 | Diffuse light, largest difference |
+| --- | --- | --- | --- | --- | --- |
+| Venice Sunset, 2K `.hdr` | 0.003 / 0.10 | 0.024 / 0.38 | 0.094 / 0.32 | 1.0000 to 1.0018 | 0.18% of the first coefficient |
+| Kloofendal, 2K `.hdr`, gain 2 | 0.002 / 0.11 | 0.018 / 0.24 | 0.074 / 0.26 | 0.9999 to 1.0016 | 0.07% |
+| Studio, 1K `.exr`, PIZ floats | 0.004 / 0.16 | 0.023 / 0.23 | 0.082 / 0.23 | 1.0001 to 1.0015 | 0.01% |
+
+The three paths gave the same figures. Each level stays within the room's tolerance of 0.25 / 1 step and 0.5% of total light, which the test now asks of HDR files too. Kloofendal's peak passes the format's limit, and its map matches the tool's as closely as the others. A plain limit would drop the light above 65,408 from its rough levels.
+
+The sunset from its Radiance file draws the sphere grid as its tool map does. Its image test, `environment-venice-hdr`, borrows the references of `environment-venice`. On all three tiers they lie at most 2 steps of 255 apart per pixel, with no pixel past the image rule. Against three.js's `HDRLoader` and `PMREMGenerator`, 0.000% of pixels differ on WebGPU and WebGL2, and 0.044% in compatibility mode. The studio's OpenEXR file passes three.js's image rule against `EXRLoader` on WebGPU (0.086%) and WebGL2 (0.093%). In compatibility mode 0.498% differ, past three.js's own 0.350% between its renderers. The differences lie on the spheres' bright edges, where that mode's 8-bit MSAA path differs, as above. The studio's map matches the tool's on every path, so the parity list keeps only the sunset.
+
+The times come from Chrome on the Mac (Apple M5 Max), at a load of 15 to 26. The readers took 94 to 125 ms per file on the page's main thread. The worker runs the same code. The map took 19 to 21 ms from the call until the GPU had finished, as the room's does. On WebGL2 it took 16 to 17 ms by timer queries. The `panorama` step replaces the trace and the blur, and the filter costs most.
+
+The code that loads on first use, after Brotli: the reader's worker 5.8 KB, and its loader 0.6 KB in the sketch's thread. The generators' file grew from 2.1 to 2.7 KB. The environment shaders grew from 4.2 to 4.7 KB in WGSL, and from 4.4 to 4.8 KB in GLSL.
+
+A KTX2 map from the tool is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. The studio's 1K OpenEXR file takes 1.23 MB, and its map 1.36 MB.
+
 ### The lookup as a value, not a build
 
 The engine builds a shader for each combination of its permutation bits. A bit for the environment would double the variants of the standard material and of its maps build. Every device module would then nearly double in size. Instead, the frame's group always binds a cube: the environment's, or a blank cube of one texel. The frame uniform says whether to read it. Without an environment, each pixel pays one branch on a uniform, which every pixel takes the same way. Color grading tables work the same way (D-33).
@@ -237,6 +298,7 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
   - 4 / 14 for diffuse light;
   - the total light within 2% from roughness 0.1 up.
 - The built-in room repeats three.js's `RoomEnvironment` scene. The tool traces it from the center. It shades it as `MeshStandardMaterial` does with its defaults, with no shadows, as three.js draws it. It then blurs it by 0.04 radians, as three.js's examples prefilter it.
+- `assets.loadEnvironment` reads Radiance and OpenEXR files as well as the tool's files. A worker reads them; the GPU filters them at load with the tool's steps, in one submit before the first frame that uses the map. A power-of-two gain keeps light past 65,408 in the rough levels and the diffuse light. Each level lies within 0.25 / 1 step of the tool's map, and its total light within 0.5% (`tests/image/environment-generator.spec.ts`).
 - The engine makes the built-in room on the GPU when a sketch first asks for it, with the tool's steps, on every tier. It makes the whole map in one submit, before the first frame that uses it (D-66); `tests/image/room-light.spec.ts` checks that no frame with the room lacks its light. Its package ships no file for it. Its map lies within 0.25 / 1 step of the tool's at every level, and its total light within 0.5% (`tests/image/environment-generator.spec.ts`). The tool's `--builtin room` stays: it is the reference of that test and of the parity test.
 - Built-in assets are made at run time, never shipped as files in the engine's package: the owner's rule of 4 October 2026, which [D-52](D-52-intent-parity.md#built-in-assets) records. A built-in asset's code and shaders load on first use, within the budgets for such files.
 - The built-in environment is named `room`, after three.js's `RoomEnvironment`, which porters know. A sketch calls `assets.builtinEnvironment('room')` for it. The tool, the docs, the skills and the mapping all use that name. The studio preset of drei is an HDR file of its own, which ports through the tool.
@@ -250,11 +312,13 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 
 - `bunx @null3d/cli assets env <in.hdr|in.exr> <out.ktx2>` writes the file, and `--builtin room` writes the built-in room. A unit test of the tool checks that the room's nine coefficients are those that the engine keeps (`packages/engine/src/scene/builtin-environments.ts`).
 - OpenEXR files read through the `exr` crate (BSD-3-Clause), which reads every compression but DWAA and DWAB. The tool's module grew from 16 KB to 115 KB after Brotli, most of it the reader.
-- `assets.loadEnvironment(url)` reads the tool's files. Its reader loads on first use, under 1 KB after Brotli. `assets.builtinEnvironment('room')` makes the room on the GPU. Its code and shaders load on first use, about 6.6 KB after Brotli in all.
+- `assets.loadEnvironment(url)` reads the tool's files. Its reader loads on first use, under 1 KB after Brotli. An HDR file loads its reader and worker, 6.4 KB after Brotli, and the generator. `assets.builtinEnvironment('room')` makes the room on the GPU. Its code and shaders load on first use, about 6.6 KB after Brotli in all.
 - The image tests `environment-room`, `environment-venice` and `environment-venice-rotated` draw the grid on all three tiers, and the parity scenes of the same names compare it with three.js. The dev server builds the Venice map from the sample content's HDR file with the tool, on the first request (`tools/lib/sample-environments.ts`).
 - On WebGL2 the cube map takes one texture unit of the fragment stage. The standard material with all six maps reads 13 of the 16 that every device allows.
 - Open: the lookup's GPU cost on the iPad, and the frame time at a GPU-bound size on the S24+. The device runner's `environment` plan measures both (`tests/pages/environment-cost.html`). Its scene draws 8 planes of the standard material over the whole window, without and with the room in turns. The difference over the layers is the lookup's cost. A functional run in Chrome on the Mac (Apple M5 Max) drew 1280 x 800 pixels. It gave 0.46 ms of GPU time without the room and 0.52 ms with it.
 - Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
+- Open: the HDR load time on the iPad and the S24+. The device runner's `environment-load` plan measures it (`tests/pages/room-light.html?source=`), with the room's.
+- Open: a size option for HDR files at load, such as `--size 512` for sharp backgrounds.
 - Open: KTX2 supercompression. A map of 256 is 2.0 MB. The room's was 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of a map's bytes. Zstandard in the file would need a decoder in the engine.
 - The tool and the GPU's generator keep their filter, and do not copy three.js r187's. Release r187 shares the tool's GGX lobe, its 256 cube with 6 levels and its roughness of each level. It differs in three ways. Its levels 1 and 2 take 256 samples of the visible normals, with a bias of half a level. The tool takes 512 and then 1,024 there, with a bias of one level. Its levels 3 to 5 weigh every texel of a 16 x 16 copy of the source. The tool samples 2,048 to 8,192 directions of the full chain there. Its blur takes two passes of a 20-tap golden-angle spiral. The tool's takes one pass of a 13 x 13 grid. Under [D-52](D-52-intent-parity.md) a look need not match three.js's pixels. The tool's method takes more samples than r187's at every level, so its map is at least as good. The generator's counts, biases and blur match the tool's. They are in `packages/engine/src/gpu/environment-steps.ts` and `crates/null3d-shaders/wgsl/environment.wgsl`.

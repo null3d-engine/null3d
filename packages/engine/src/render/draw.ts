@@ -4,7 +4,7 @@
 // (load-draw.ts). A page then downloads the GPU layer once, for the thread that draws.
 
 import { controlViews, Slot } from '../shared/control';
-import { type GeneratorName, ImageTable, receiveImages } from '../shared/images';
+import { ImageTable, receiveImages } from '../shared/images';
 import type { Tier } from '../shared/tier';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
@@ -89,16 +89,14 @@ function generatorLoader(tier: Tier): () => Promise<unknown> {
 				import('../gpu/environment'),
 				import('../generated/shaders-environment-glsl'),
 			]);
-			const room = code.webgl2RoomGenerator(shaders.ENVIRONMENT_SHADER.webgl2);
-			return { room } satisfies Record<GeneratorName, unknown>;
+			return code.webgl2EnvironmentGenerator(shaders.ENVIRONMENT_SHADER.webgl2);
 		};
 	return async () => {
 		const [code, shaders] = await Promise.all([
 			import('../gpu/environment'),
 			import('../generated/shaders-environment-wgsl'),
 		]);
-		const room = code.webgpuRoomGenerator(shaders.ENVIRONMENT_SHADER.webgpu);
-		return { room } satisfies Record<GeneratorName, unknown>;
+		return code.webgpuEnvironmentGenerator(shaders.ENVIRONMENT_SHADER.webgpu);
 	};
 }
 

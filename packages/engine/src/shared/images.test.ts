@@ -181,8 +181,26 @@ describe('texture generators on their way to the thread that draws', () => {
 		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
 		await imagesArrived(slots, 1);
 		expect(() => table.generator(1)).toThrow(
-			'the code of the room generator did not download: offline',
+			'the code of the environment generator did not download: offline',
 		);
+	});
+
+	test("move a panorama's texels across a port, and keep them until the texture goes", async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const panorama = { width: 2, height: 1, texels: Uint32Array.of(1, 2), gain: 4 };
+		sendThrough(sketchEnd).sendImage(3, panorama);
+		deliver(sketchEnd, RECEIVING);
+		expect(sketchEnd.posted).toEqual([[{ id: 3, generator: panorama }, [panorama.texels.buffer]]]);
+		receiveImages(drawingEnd, table, slots);
+		const code = { run: () => {} };
+		table.loadGeneratorsWith(() => Promise.resolve(code));
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
+		await imagesArrived(slots, 1);
+		expect(table.generator(3)).toEqual([panorama, code]);
+		table.release(3);
+		expect(() => table.generator(3)).toThrow('draw list names generator 3, which does not exist');
 	});
 });
 

@@ -22,7 +22,7 @@
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -509,11 +509,7 @@ export class WebGL2Backend {
 		this.depth = setDepthMode(gl, depthMode);
 		this.programHost = programHost(gl, this.depth, this.parallel);
 		const host = this.programHost;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(host)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(host));
 		this.depthFunc = this.nearerPasses();
 		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
 		this.clearDepth = this.depth.standard ? 0 : 1;
@@ -1462,8 +1458,7 @@ export class WebGL2Backend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
@@ -1471,11 +1466,12 @@ export class WebGL2Backend {
 		if (this.blend) this.setBlend(0);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
-		generators[name].run(
+		code.run(
 			this.programHost,
 			texture.texture as WebGLTexture,
 			texture.width,
 			texture.mips,
+			source,
 		);
 		this.program = null;
 		this.activeUnit = -1;
