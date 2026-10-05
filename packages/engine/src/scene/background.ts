@@ -28,6 +28,7 @@ import {
 	BACKGROUND_VALUE_TIME,
 	BACKGROUND_VALUE_TURBIDITY,
 } from '../generated/core';
+import type { ShaderFeature } from '../generated/shader-features';
 import { Environment } from './environment';
 import type { CoreMemory } from './memory';
 import { Texture } from './textures';
@@ -188,7 +189,11 @@ export class SceneBackground {
 	/** The memory's generation that `values` was made in. */
 	private generation = -1;
 
-	constructor(private readonly core: CoreMemory) {}
+	constructor(
+		private readonly core: CoreMemory,
+		/** Asks the thread that draws for a feature's shader file, once; it allocates nothing after. */
+		private readonly need: (feature: ShaderFeature) => void = () => {},
+	) {}
 
 	/**
 	 * Draws `source` behind every object from the next frame on, with `options`. Throws E1203 for
@@ -206,6 +211,7 @@ export class SceneBackground {
 		values[BACKGROUND_VALUE_ROTATION + 2] = rotation ? rotation[2] : 0;
 		let kind = BACKGROUND_KIND_SKY;
 		let texture = 0;
+		this.need(isSkyBackground(source) ? 'sky' : 'background');
 		if (source instanceof Texture) {
 			kind = BACKGROUND_KIND_TEXTURE;
 			texture = source.handle;

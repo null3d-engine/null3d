@@ -140,8 +140,6 @@ export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
 export const PERMUTATION_OUTLINE_VISIBLE = 65536;
 
-export const PERMUTATION_ON_DEMAND = 128;
-
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
 export const VERTEX_TANGENT = 4;

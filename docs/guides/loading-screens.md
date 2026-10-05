@@ -3,7 +3,7 @@ id: guides/loading-screens
 title: Loading screens and warm-up
 status: experimental
 since: "0.1"
-summary: "preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen."
+summary: "preload; onProgress; scene.warmUp; shader files that load up front; the preset check; upload budgets; switching presets behind a loading screen."
 ---
 
 # Loading screens and warm-up
@@ -126,6 +126,38 @@ for (const piece of pieces) piece.setVisible(true);
 `scene.warmUp()` builds the pipelines of every object in the scene, hidden objects too, and resolves once they are all built. The scene keeps drawing while it waits. Without a warm-up, each new object appears when its pipeline is built, which can be a few frames after the others.
 
 In hold mode, the engine draws one frame, which waits for its pipelines, so `scene.warmUp()` resolves at once.
+
+## Loading everything up front
+
+Most shaders come with the engine's start. The shaders of a feature that many games leave out download the first time the sketch uses it. So a page that never uses the feature never downloads them. These features are:
+
+| Feature | Its shaders download |
+| --- | --- |
+| `'skinning'` | with the first skinned mesh, or as soon as the sketch reads a glTF file with skins |
+| `'morph'` | with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders |
+| `'bloom'` | when `post.set` turns bloom on |
+| `'ao'` | when `post.set` turns ambient occlusion on |
+| `'sprites'` | with the first sprite batch |
+| `'lines'` | with the first line batch |
+| `'background'` | with the first texture, environment or cube map background |
+| `'sky'` | with the first sky background |
+
+Each feature's file is 1 to 19 KB after Brotli. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
+
+A game that must fetch nothing while it plays lists its features in `createEngine`:
+
+```ts
+// main.ts
+const engine = await createEngine({
+  canvas,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  preload: ['skinning', 'bloom', 'lines'],
+});
+```
+
+The listed files download beside the engine's own shaders, so the start waits only for the largest file. Their shaders compile before the first frame, as far as the files alone allow. On the Mac, a list of three features added about 70 ms to the start. When the sketch turns a listed feature on during play, the engine downloads nothing. On WebGL2 the feature's first objects then draw at once. On WebGPU a new object's pipeline still needs the scene's targets and its material's state, so it can take a frame to build. Skinned meshes wait for their pipelines in the same way: which ones they need depends on their materials. To build those too before the loading screen goes, create the objects in the setup and `await scene.warmUp()`, as "A later loading stage" shows. The `createEngine` call throws E1421 for a name it does not know.
+
+The engine does not put every feature into the start's file. That file would then grow for every page, also for the pages that never use a feature. A list keeps the cost on the games that ask for it.
 
 ## A change of preset
 

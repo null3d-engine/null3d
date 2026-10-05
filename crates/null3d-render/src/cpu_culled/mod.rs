@@ -570,6 +570,7 @@ impl CpuCulledRenderer {
             .map_err(|_| RecordError::OutOfMemory {
                 bytes: rows.saturating_mul(4),
             })?;
+        self.skins.open_before_first_frame(input.pipelines_built);
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
@@ -636,9 +637,10 @@ impl CpuCulledRenderer {
                 place,
                 RESIDENT,
                 shadows,
-                |slot, key| skins.key(slot, key),
+                |slot, key| skins.sorted_pipeline(slot, key),
             )
             .map_err(out_of_memory)?;
+        self.skins.asked();
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
         self.layout.add_sorted(records, self.sorted.scene_slots());
         self.clusters
@@ -1005,13 +1007,14 @@ impl CpuCulledRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
-        self.graph.request_pipelines(&mut self.pipelines);
+        self.graph
+            .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        let created_pipelines = self.pipelines.create_new(list)? > 0;
+        let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }
@@ -1365,11 +1368,19 @@ impl FrameBuilder for CpuCulledRenderer {
             .zip(self.settings.camera_projection(canvas));
         self.graph.set_ao(ao, self.settings.ao_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skins
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         if input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || prepass_changed
+            || skinned_appear
         {
             self.rebuild_layout(input, shadows, outlines)?;
         }

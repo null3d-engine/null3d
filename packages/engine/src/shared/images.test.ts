@@ -106,6 +106,19 @@ describe('images on their way to the thread that draws', () => {
 		expect(sketchEnd.posted.at(-1)?.[0]).toEqual({ id: 3, image: third });
 	});
 
+	test('features to preload cross at once, while images wait for the thread that draws', () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const { sendImage, sendPreload } = sendThrough(sketchEnd);
+		sendImage(1, image());
+		sendPreload(['skinning']);
+		expect(sketchEnd.posted).toEqual([[{ preload: ['skinning'] }, []]]);
+		receiveImages(drawingEnd, table, slots);
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
+		expect([...table.preloads]).toEqual(['skinning']);
+	});
+
 	test('a message that the browser cannot read stops the thread that draws with an error', () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		const drawingEnd = fakePort();
@@ -195,5 +208,20 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 		expect(table.shaders.get(65)).toBe(shader);
 		table.clear();
 		expect(table.shaders.size).toBe(0);
+	});
+});
+
+describe('features whose shader files the sketch asks for early', () => {
+	test("reach the renderer's listener once each, and a cleared table lets go of the listener", () => {
+		const table = new ImageTable();
+		const heard: string[] = [];
+		table.onPreload = (feature) => heard.push(feature);
+		table.preload(['skinning', 'bloom']);
+		table.preload(['skinning']);
+		expect(heard).toEqual(['skinning', 'bloom']);
+		// A stopped drawing clears its table. The page's end of the image port keeps the table, so
+		// a listener that stayed would keep the stopped renderer and the engine's memory.
+		table.clear();
+		expect(table.onPreload).toBeUndefined();
 	});
 });

@@ -534,6 +534,21 @@ export function differentPixels(a: Uint8Array, b: Uint8Array): number {
 	return count;
 }
 
+/**
+ * The share of pixels of two RGBA images of one size whose red, green or blue differs by more than
+ * `channel`, which allows for rounding between two draws of the same scene.
+ */
+export function differentShare(a: Uint8Array, b: Uint8Array, channel: number): number {
+	let different = 0;
+	for (let i = 0; i < a.length; i += 4)
+		for (let c = 0; c < 3; c++)
+			if (Math.abs((a[i + c] as number) - (b[i + c] as number)) > channel) {
+				different++;
+				break;
+			}
+	return different / (a.length / 4);
+}
+
 /** Whether a GPU adapter's description names a software GPU. */
 const softwareAdapter = (adapter: string) => adapter.toLowerCase().includes('swiftshader');
 

@@ -230,6 +230,7 @@ The sky lights nothing. For light that matches it, add a directional light along
 
 - Each background is one draw of at most 12 triangles. The sky reads no texture.
 - An environment or a cube map reads one texel of its cube map per pixel. The sky computes its light in each pixel, and does more work above the horizon while it draws clouds. `cloudCoverage: 0` skips the clouds.
+- The shaders download with the first background of their kind: `'background'` for a texture, an environment or a cube map, and `'sky'` for the sky. A page with neither downloads none of them.
 - The settings are a small block of values that the GPU reads, and the engine writes them again only when they change. Setting or moving a background builds no pipeline. The first background of each kind builds one.
 - A cube map's six images upload in the frames after the load, within the frame's upload budget. Its faces have one level, so large faces seen small can shimmer.
 
