@@ -26,6 +26,19 @@ export interface RenderLoop {
 /** Hears the error that ended a frame loop. */
 export type LoopFault = (error: unknown) => void;
 
+/** How the thread that draws paces its frames, as the page's switches set it. */
+export interface FramePacing {
+	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	fps?: number;
+	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
+	queue?: number;
+	/**
+	 * False when ?display-check=off stops the checks of the display on the page's thread, so a run
+	 * can compare the frame rate with and without them.
+	 */
+	displayChecks?: boolean;
+}
+
 /**
  * An animation frame callback that runs `step`, which asks for the next callback itself. When
  * `step` throws, the loop ends, and `fault` hears the error. Without `fault` the error goes on to
@@ -64,14 +77,26 @@ const MICROSECONDS_PER_MS = 1000;
 const MAX_FRAMES_IN_FLIGHT = 2;
 /**
  * The intervals of each measurement of the display on the page's thread. Under load, one comes
- * about every `CHECK_AFTER` callbacks, so few keep the measurement quick.
+ * with each check, so few keep the measurement quick.
  */
 const DISPLAY_SAMPLES = 8;
 /**
  * Callbacks in a row that drew a frame, on the page's thread, after which a check of the display
- * starts, while the frames run slower than the display.
+ * starts, while the frames run slower than the display. Each measurement that finds the display's
+ * rate unchanged doubles the stretch, up to `LONGEST_CHECK_AFTER`. A first measurement, a changed
+ * rate or a quiet interval that suggests a slower display starts it again from here.
  */
 const CHECK_AFTER = 30;
+/**
+ * The longest stretch of callbacks that drew between two checks: a page that stays slower than the
+ * display delays one frame every few seconds, and a display that turned slower shows within them.
+ */
+const LONGEST_CHECK_AFTER = 240;
+/**
+ * A quiet interval this percentage of the display's period or longer suggests that the display
+ * turned slower, and the checks come quickly again until it is measured.
+ */
+const LONG_PERCENT = 125;
 /**
  * Callbacks in a row that draw nothing in a check of the display. In Safari, the callback after a
  * frame that the GPU held up comes at no refresh, and the next comes at the display's next refresh,
@@ -163,6 +188,12 @@ export class Presenter {
 	private quietCallbacks = 0;
 	/** True while a check of the display holds back the frames on the page's thread. */
 	private checking = false;
+	/** False when the page's thread makes no checks of the display. */
+	private readonly displayChecks: boolean;
+	/** The most frames that may wait unfinished on the GPU. */
+	private readonly queue: number;
+	/** The callbacks in a row that drew, after which the next check starts. */
+	private checkAfter = CHECK_AFTER;
 	/** The last callback's timestamp, or -1 before the first, in a typed array as `lastPresented`. */
 	private readonly lastCallback = Float64Array.of(-1);
 	/** The label tables, whose presented table follows each frame this thread presents. */
@@ -170,22 +201,21 @@ export class Presenter {
 	readonly record: FrameRecorder;
 
 	/**
-	 * `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. `queue`
-	 * is the most frames that may wait unfinished on the GPU. `wake` carries wake messages to the
-	 * sketch thread, where another thread runs the sketch. `presented` runs after each frame this
-	 * thread presents, once the frame's labels are in place.
+	 * `wake` carries wake messages to the sketch thread, where another thread runs the sketch.
+	 * `presented` runs after each frame this thread presents, once the frame's labels are in place.
 	 */
 	constructor(
 		private readonly slots: Int32Array,
 		private readonly renderer: Renderer,
 		metrics: ArrayBufferLike,
-		fps: number | undefined,
-		private readonly queue = MAX_FRAMES_IN_FLIGHT,
+		pacing: FramePacing,
 		private readonly wake?: WakeTarget,
 		private readonly presented?: () => void,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
-		this.pacer = new FramePacer(fps);
+		this.pacer = new FramePacer(pacing.fps);
+		this.queue = pacing.queue ?? MAX_FRAMES_IN_FLIGHT;
+		this.displayChecks = !this.inWorker && pacing.displayChecks !== false;
 		this.labels = controlLabels(slots.buffer);
 	}
 
@@ -240,8 +270,15 @@ export class Presenter {
 		this.busyCallbacks = 0;
 		if (++this.quietCallbacks < QUIET_RUN || timestamp <= last) return;
 		this.checking = false;
-		const hz = this.display.add(timestamp - last);
+		const ms = timestamp - last;
+		if (this.displayMeasured && ms * this.displayHz * 100 >= MS_PER_SECOND * LONG_PERCENT)
+			this.checkAfter = CHECK_AFTER;
+		const hz = this.display.add(ms);
 		if (hz === undefined) return;
+		this.checkAfter =
+			this.displayMeasured && hz === this.displayHz
+				? Math.min(this.checkAfter * 2, LONGEST_CHECK_AFTER)
+				: CHECK_AFTER;
 		this.displayMeasured = true;
 		this.setDisplayHz(hz);
 	}
@@ -254,16 +291,16 @@ export class Presenter {
 
 	/**
 	 * True when a callback on the page's thread should draw nothing, as a check of the display. A
-	 * check starts after `CHECK_AFTER` callbacks in a row that drew, while all the callbacks come
+	 * check starts after `checkAfter` callbacks in a row that drew, while all the callbacks come
 	 * slower than the display, and lasts `QUIET_RUN` callbacks. Until the quiet intervals have
 	 * measured the display, the display counts as at least the highest rate the engine aims for:
 	 * callbacks slowed from the first frame on would otherwise pass for the display. A display that slowed,
 	 * such as a window moved to a slower screen, comes out the same way.
 	 */
 	private checksDisplay(): boolean {
-		if (this.inWorker) return false;
+		if (!this.displayChecks) return false;
 		if (this.checking) return true;
-		if (this.busyCallbacks < CHECK_AFTER || this.callbackHz === 0) return false;
+		if (this.busyCallbacks < this.checkAfter || this.callbackHz === 0) return false;
 		const display = this.displayMeasured ? this.displayHz : Math.max(this.displayHz, TARGET_CAP_HZ);
 		this.checking = this.callbackHz * 100 < display * SLOW_PERCENT;
 		return this.checking;
@@ -373,15 +410,7 @@ export class HoldLoop implements RenderLoop {
 		metrics: ArrayBufferLike,
 		presented?: () => void,
 	) {
-		this.presenter = new Presenter(
-			slots,
-			renderer,
-			metrics,
-			undefined,
-			undefined,
-			undefined,
-			presented,
-		);
+		this.presenter = new Presenter(slots, renderer, metrics, {}, undefined, presented);
 	}
 
 	drawHeld(): Promise<void> {
@@ -418,14 +447,13 @@ export function runRenderLoop(
 	renderer: Renderer,
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,
-	fps: number | undefined,
-	queue?: number,
+	pacing: FramePacing,
 	wake?: WakeTarget,
 	fault?: LoopFault,
 	presented?: () => void,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue, wake, presented);
+	const presenter = new Presenter(slots, renderer, metrics, pacing, wake, presented);
 	let taken = 0;
 	let stopped = false;
 

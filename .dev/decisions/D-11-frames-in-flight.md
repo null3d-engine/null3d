@@ -261,10 +261,12 @@ The iPad then passed all 4 pages (`bun tests/real-browsers.ts --plan governor --
 - A probe logged each callback's interval. Idle, before the load, they came 13 to 15 ms apart. Under the load, they came 26 to 36 ms apart, spread evenly, at no refresh. No frame was unfinished on the GPU at any callback. So the callbacks wait for the GPU, and their timing tells nothing of the display.
 - After one callback that drew nothing, the next came part of a refresh later, and 8 such intervals read 120 Hz. After a second callback that drew nothing, all the intervals but one measured 13 to 15 ms.
 
-The fix measures the display from the interval after two callbacks in a row that drew nothing. While all the callbacks come slower than 90% of the display rate, the thread makes such a pair after every 30 frames. Callbacks never come faster than the display, so a faster measurement of all the callbacks raises the display rate at once. The metrics hold the display rate. The thresholds:
+The fix measures the display from the interval after two callbacks in a row that drew nothing. While all the callbacks come slower than 90% of the display rate, the thread makes such a pair after a stretch of frames. The stretch starts at 30 and doubles while the display keeps its rate. Callbacks never come faster than the display, so a faster measurement of all the callbacks raises the display rate at once. The metrics hold the display rate. The thresholds:
 
 - Two quiet callbacks: one measured part of a refresh, as above.
-- A check after 30 frames: a check costs about two refreshes of one frame. Under the hold's load that is under 2% of the frame rate, and none once the governor brings the frames back to the display rate.
+- A check after 30 frames at first: a check costs about two refreshes of one frame. Under the hold's load that is under 2% of the frame rate, and none once the governor brings the frames back to the display rate.
+- The stretch doubles with each measurement that finds the display's rate unchanged, up to 240 frames. A page can stay slower than the display for good. S4 on the warm iPad at Medium runs at about 45 fps once the governor has run out of steps. Pairs after every 30 frames would cost it up to two refreshes in every 32 callbacks for as long as it runs. After every 240 frames, the pairs cost under 1%.
+- 125% of the display's period: a quiet interval this long or longer suggests a slower display, and the stretch starts at 30 again. So a window moved to a slower screen shows in about as many checks as a first measurement. The stretch also starts at 30 again after a measurement of a changed rate.
 - 8 intervals per measurement: under load, one comes per check, so the 32 of the callbacks' meter would take half a minute.
 - At least 60 Hz to compare with, until the quiet intervals have measured the display. Callbacks slowed from the first frame would otherwise pass for the display.
 - 90%: callbacks at the display's rate measure within a few percent of it.
@@ -274,6 +276,7 @@ Rejected:
 - The highest rate measured since the start, as for #222: it misses a real drop, such as a low power mode at 30 Hz.
 - The rate measured before the first frame alone. A scene too heavy from its first frame would never be measured right, nor a display that changes later.
 - Longer pauses to measure: each would show as a stall.
+- A fixed stretch of 30 frames: it costs a page that stays slow for good the most, and the display rarely changes.
 
 After the fix, the governor plan with `?render=main` passed 4 of 4 in Safari on the Mac, in three runs. The refresh rate held 72 Hz in every measurement. The last run (`20261005-093503-governor`, the final code):
 
@@ -291,6 +294,8 @@ Other runs on the same day:
 - Safari in single-threaded mode (`?threads=off`) passed 4 of 4. A first version read 28 Hz in the walk's first 6 to 8 seconds of load. The start left no quiet pair, and the load slowed the callbacks before the first check. The rise to the callbacks' faster rate fixed it. With the final code, every measurement read 72 Hz (`20261005-093142-governor`).
 
 The iPad run of the same plan decides the task (`bun tests/real-browsers.ts --plan governor --switches render=main --lan ipad-safari`).
+
+The doubling stretch came after the Mac runs above, and no Mac run covers it. The unit tests copy Safari's callback timing. The stretch reaches 240 frames while the display keeps its rate. A display that turns from 72 to 30 Hz is measured within 800 callbacks. At the longest stretch, 8 checks would take some 1,900. `?display-check=off` stops the checks, so a run can measure their cost. The A/B run on the iPad is still to run ([Device runs](../devices.md#the-governor-plan)). It plays S4 at Medium with the governor off and `?render=main`, with the checks on and off in turn.
 
 ### How three.js handles it
 

@@ -223,6 +223,10 @@ To collect the numbers, rest each device first and close its other tabs:
 - The hold shows the governor holding a target under stress. A plane in front of the camera runs a loop for each pixel, so the GPU's work follows the render scale. With the governor off, the page grows the loop until the GPU draws under 75% of the target. With the governor on, the render scale must bring the rate back: 70% of the last 15 seconds must hold 90% of the target. One failed step up costs about two seconds, which the share allows.
 - Run it on the phone and the iPad: `bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari`. Each stage takes about a minute. `?work=` fixes the hold's load, and the engine's `?fps=30` lowers the target. CI skips both stages: its software GPU takes 300 to 400 ms for some frames of the scene without a load.
 - Run it with drawing on the page's thread too, where Safari's frame callbacks slow with the GPU: `bun tests/real-browsers.ts --plan governor --switches render=main --lan ipad-safari`, and `Safari` in place of `--lan ipad-safari` on the Mac. Each measurement's refresh rate must stay at the display's.
+- The cost of the page thread's checks of the display: S4 on the warm iPad at Medium with the governor off. The checks are on and off in turn. There the frames run under 90% of the display rate, so the checks run. Warm the iPad first, then run each command twice, in the order A, B, A, B:
+  - A: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages null3d-webgpu,null3d-webgl2 --runs 3 --switches 'render=main&preset=medium&governor=off'`
+  - B: the same with `--switches 'render=main&preset=medium&governor=off&display-check=off'`
+  - Compare the presented frame rates of A and B on each GPU path. Each run's refresh rate must stay at 60 Hz in A. [D-11](decisions/D-11-frames-in-flight.md#drawing-on-the-pages-thread-m2-r3) gives the expected cost.
 
 ## The tab memory plan
 
