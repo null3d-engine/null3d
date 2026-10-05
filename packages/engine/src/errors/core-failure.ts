@@ -27,6 +27,7 @@ const RESOURCES: Record<number, readonly [store: string, unit: string]> = {
 	5: ['frame arena', 'bytes'],
 	6: ['animation table', 'animated objects'],
 	7: ['animation table', 'joints'],
+	8: ['morph weight table', 'morph weights'],
 };
 
 /** What the renderer ran out of, by the first detail of E1501. */

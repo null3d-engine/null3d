@@ -1,12 +1,15 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
-// occlusion, which darkens the ambient light of the camera's opaque objects, and the color grading
-// table and the vignette, which the final pass applies after the tone mapping. The core takes one
-// exposure: the sketch's exposure times the camera exposure of its EV100.
+// occlusion, which darkens the ambient light of the camera's opaque objects, outlines, and the
+// color grading table and the vignette, which the final pass applies after the tone mapping. The
+// core takes one exposure: the sketch's exposure times the camera exposure of its EV100.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
+import { fromHex } from '../math/color';
+import { hexValue, invalidColor } from '../math/hex';
+import { type ColorInput, isComponent } from './color';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 
@@ -38,6 +41,7 @@ const SETTINGS = [
 	'lut',
 	'lutIntensity',
 	'vignette',
+	'outline',
 ] as const;
 const BLOOM_SETTINGS = ['strength', 'radius', 'threshold'] as const;
 const AO_SETTINGS = [
@@ -52,6 +56,7 @@ const AO_SETTINGS = [
 /** The most samples of ambient occlusion's horizon search. */
 const MAX_AO_SAMPLES = 64;
 const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
+const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
 
 /** The lowest and highest EV100 that `post.set` takes. */
@@ -151,6 +156,30 @@ export interface VignetteSettings {
 }
 
 /**
+ * The outline's settings: a sharp line of one width around the objects that `setOutlined(true)`
+ * marks. A setting that a call leaves out keeps its value.
+ *
+ * @category api/post
+ */
+export interface OutlineSettings {
+	/**
+	 * The color of the line around the parts that nothing hides. The canvas shows this color
+	 * exactly: the exposure and the tone mapping do not change it. It is white by default.
+	 */
+	color?: ColorInput;
+	/**
+	 * The color of the line around the parts that other objects hide, or `false` for no line
+	 * there. It is `false` by default.
+	 */
+	hiddenColor?: ColorInput | false;
+	/**
+	 * The line's width in CSS pixels: 0 or more, and 2 by default. Above about 4 pixels of the
+	 * canvas, parts thinner than the line can leave a gap between themselves and their line.
+	 */
+	width?: number;
+}
+
+/**
  * Settings for `post.set`. A setting that the call leaves out keeps its value.
  *
  * @category api/post
@@ -204,6 +233,33 @@ export interface PostSettings {
 	 * vignette on, `{}` with the values it had, and `false` turns it off. It is off by default.
 	 */
 	vignette?: VignetteSettings | false;
+	/**
+	 * A sharp line around the objects that `setOutlined(true)` marks. Settings turn outlines on,
+	 * `{}` with the values they had, and `false` turns them off. They are off by default.
+	 */
+	outline?: OutlineSettings | false;
+}
+
+/** Scratch for a hex color's linear components, so reading one allocates nothing. */
+const linear = [0, 0, 0];
+
+/**
+ * Writes a color input's linear components into the post-processing values from `place` on. It
+ * throws E1204 for a color it cannot read.
+ */
+function writeColor(values: Float32Array, place: number, color: ColorInput, call: string): void {
+	if (typeof color === 'string' || typeof color === 'number') {
+		if (hexValue(color) < 0) throw invalidColor(color, call);
+		fromHex(linear, color);
+		values[place] = linear[0] as number;
+		values[place + 1] = linear[1] as number;
+		values[place + 2] = linear[2] as number;
+		return;
+	}
+	if (color?.length !== 3 || !color.every(isComponent)) throw invalidColor(color, call);
+	values[place] = color[0];
+	values[place + 1] = color[1];
+	values[place + 2] = color[2];
 }
 
 /**
@@ -223,6 +279,7 @@ export class Post {
 	private warnedNoAo = false;
 	private lut: Lut | false = false;
 	private vignette = false;
+	private outline = false;
 	/**
 	 * The core's block of post-processing values, which holds the numbers of every setting. The
 	 * calls read it, so no fraction travels as an argument: the browser stores each fraction that
@@ -245,13 +302,15 @@ export class Post {
 
 	/**
 	 * Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so
-	 * a sketch can change the exposure, bloom, the table's intensity or the vignette every frame.
-	 * It throws E1213 for a setting or a tone mapping it does not know, or a value out of its range,
-	 * E1203 for a value that is not a number, and E1101 for a table that was destroyed.
+	 * a sketch can change the exposure, bloom, the outline, the table's intensity or the vignette
+	 * every frame. It throws E1213 for a setting or a tone mapping it does not know, or a value out
+	 * of its range, E1203 for a value that is not a number, E1204 for a color it cannot read, and
+	 * E1101 for a table that was destroyed.
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette } = settings;
+		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+			settings;
 		const { core } = this;
 		const { glue } = core;
 		const values = this.block();
@@ -288,6 +347,20 @@ export class Post {
 			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
 		}
 		if (ao !== undefined) this.setAo(ao, values);
+		if (outline !== undefined) {
+			this.outline = outline !== false;
+			if (outline !== false) {
+				const { color, hiddenColor, width } = outline;
+				if (color !== undefined) writeColor(values, C.POST_VALUE_OUTLINE_COLOR, color, 'post.set');
+				if (hiddenColor !== undefined) {
+					values[C.POST_VALUE_OUTLINE_HIDDEN] = hiddenColor === false ? 0 : 1;
+					if (hiddenColor !== false)
+						writeColor(values, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, hiddenColor, 'post.set');
+				}
+				if (width !== undefined) values[C.POST_VALUE_OUTLINE_WIDTH] = width;
+			}
+			core.check(glue.setOutline(this.outline), 'post.set', undefined, true);
+		}
 		if (bloom === undefined) return;
 		this.bloom = bloom !== false;
 		if (bloom !== false) {
@@ -375,9 +448,10 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity and vignette.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette and outline.`,
 			);
-	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette } = settings;
+	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+		settings;
 	checkGroup(
 		'ao',
 		ao,
@@ -411,6 +485,8 @@ function checkSettings(settings: PostSettings): void {
 		checkNumber('vignette.offset', vignette.offset);
 		checkNumber('vignette.darkness', vignette.darkness);
 	}
+	checkGroup('outline', outline, OUTLINE_SETTINGS, 'color, hiddenColor and width');
+	if (outline) checkNumber('outline.width', outline.width);
 	if (toneMapping !== undefined && !Object.hasOwn(CODES, toneMapping))
 		throw new EngineError(
 			'E1213',

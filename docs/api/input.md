@@ -3,12 +3,12 @@ id: api/input
 title: Input
 status: experimental
 since: "0.1"
-summary: "Pointer, keyboard, touch and gamepad; action maps."
+summary: "Pointer, keyboard, touch and gamepad; action maps; pointer events on objects."
 ---
 
 # Input
 
-> This API is experimental: it ships in null3D 0.1, and it can still change between versions.
+> Ships in null3D 0.1, with pointer events on objects from null3D 0.2. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -101,6 +101,78 @@ if (touches.length === 2) {
 ```
 
 A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch, which the sketch sees as a release.
+
+## Pointer events on objects
+
+`object.on(type, handler)` calls `handler` for each pointer event of `type` on an object, and `object.off(type, handler)` removes it. Instance batches take the same calls, and the event's `instance` names the row. The engine finds the object under the pointer itself, so the sketch needs no raycast of its own.
+
+```ts
+export default defineSketch(({ scene, geometry, materials, page }) => {
+  // A camera and lights, as on the Scene page, go here.
+  const crate = geometry.box();
+  const wood = materials.standard({ color: '#b07d4f' });
+  for (let i = 0; i < 5; i++) {
+    const box = scene.createMesh({ name: `crate ${i}`, mesh: crate, material: wood, position: [i * 2 - 4, 0.5, 0] });
+    box.on('pointerenter', () => box.setScale(1.2, 1.2, 1.2));
+    box.on('pointerleave', () => box.setScale(1, 1, 1));
+    box.on('click', () => page.post('picked', box.name));
+  }
+});
+```
+
+| Type | When it comes |
+| --- | --- |
+| `pointerdown` | A button or a finger goes down over the object |
+| `pointerup` | A button or a finger comes up over the object |
+| `click` | The main button or a finger goes down and comes up over the object. Between the two, a mouse or a pen may move 2 CSS pixels and a finger 10, so a drag that turns the camera is no click |
+| `pointermove` | The pointer moves over the object. Moves of one pointer that follow each other in a frame give one event, at the last position |
+| `pointerenter` | The pointer comes over the object or one of its children |
+| `pointerleave` | The pointer leaves the object and all its children |
+
+### Which object gets the event
+
+- The engine casts a ray from the camera through the pointer. The closest object or instance row that the ray hits gets the event. Objects behind it get nothing, so a wall in front of a box takes the click.
+- The ray tests the objects on the layers that the camera draws, as [Raycasting](raycast.md) tests them. Hidden objects are never hit. A see-through object, such as a glass pane, takes the event too. To pick through it, cast your own ray with `camera.screenToRay` and `scene.raycast` on the layers you choose.
+- The event then goes to the object's parent, and on up to the root object. An event on a web page goes up through the elements that hold its target in the same way. So a handler on a model's group hears the clicks on every part of the model. `event.stopPropagation()` stops the event before the next parent.
+- A `click` goes to the closest object that was under the pointer at both the press and the release. A press on one child of a group and a release on another click the group.
+- `pointerenter` and `pointerleave` do not go on to parents: each object gets its own. A move from one child of a group to another leaves the first child and enters the second, and the group stays entered. Each `pointerenter` gets one `pointerleave` later, unless the object is destroyed or its handler is removed first.
+- A finger enters the object at its press, and leaves it after its release. A mouse or a pen that leaves the canvas leaves every object. An HTML element over the canvas counts as outside it.
+
+### When handlers run
+
+- Handlers run on the sketch's thread at the start of each frame, before `onFixedUpdate` and `onUpdate`, in the order of the events.
+- Each ray comes from the camera of the frame that was on screen at its event, as with [`camera.screenToRay`](cameras.md). So a click during a fast camera pan hits what the user saw.
+- Objects are tested where the last frame's update put them. A moving object can be up to a frame of its motion away from where the user saw it.
+- While a mouse or a pen rests over the canvas, the engine casts its ray again in each frame. So `pointerenter` and `pointerleave` follow objects and cameras that move under a still pointer.
+
+### The event
+
+The engine passes one event object to every handler and reuses it, so copy any value that you keep after the handler returns.
+
+| Field | Value |
+| --- | --- |
+| `type` | The event's type |
+| `object` | The object under the pointer, or the instance batch of a row. It can be a child of the object whose handler runs. For `pointerleave`, it is the object that the pointer moved onto, or null |
+| `instance` | The row of an instance batch, or -1 for an object |
+| `point`, `normal`, `distance`, `triangle` | Where the ray hit `object`, as a [raycast's hit](raycast.md#raycasts) gives them |
+| `ray` | The ray from the camera through the pointer, from the frame that was on screen at the event |
+| `x`, `y` | The pointer's position in CSS pixels from the canvas's top-left corner |
+| `pointerId` | The browser's pointer id. Each finger on a touch screen has its own |
+| `isTouch` | True when the pointer is a finger |
+| `button` | The button that went down or came up, as `PointerEvent.button` gives it: 0 for the main button or a finger. -1 for the other types |
+| `buttons` | The buttons held, as `input.pointer.buttons` gives them |
+
+### What it costs
+
+In a frame in which no object listens, pointer events cast no ray and copy nothing. Otherwise each event casts one ray, which takes one to three microseconds in a scene of 20,000 objects. The first ray in a frame also updates the scene's trees, as any query does. The engine casts only the rays that the handlers need: with only `click` handlers, a move casts none. Moves of one pointer that follow each other in a frame share one ray.
+
+### Compared with three.js
+
+three.js has no pointer events on objects. An app adds DOM listeners to the canvas, then calls `Raycaster.setFromCamera` and `intersectObjects` in each one. In the sketch, `object.on` replaces both. react-three-fiber's mesh events map to `on`: `onClick` to `'click'`, `onPointerDown` to `'pointerdown'`, `onPointerEnter` to `'pointerenter'`, and so on. Three differences:
+
+- react-three-fiber casts rays only against objects with handlers. It passes an event to every one that the ray hits, nearest first, until a handler calls `stopPropagation`. null3D passes it to the closest object that the camera draws and to its parents only. So an object without handlers in front still takes the event.
+- react-three-fiber's `onClick` also comes after a drag, with the drag's length in `event.delta`. null3D gives no click after a drag of more than 2 CSS pixels, or 10 for a finger.
+- react-three-fiber's `onPointerMissed` has no equivalent. Set a flag in your `click` handlers, and in `onUpdate` treat `input.wasReleased('Mouse0')` without the flag as a click on nothing.
 
 ## Actions
 
@@ -197,5 +269,51 @@ A finger on the canvas.
 | `readonly y: number` | Distance from the canvas's top edge in CSS pixels. |
 | `readonly dx: number` | Movement to the right since the previous frame, in CSS pixels. |
 | `readonly dy: number` | Movement down since the previous frame, in CSS pixels. |
+
+### `ObjectEventHandler`
+
+```ts
+type ObjectEventHandler = (event: ObjectPointerEvent) => void;
+```
+
+A handler of pointer events on an object.
+
+### `ObjectEventType`
+
+```ts
+type ObjectEventType =
+	| 'click'
+	| 'pointerdown'
+	| 'pointerup'
+	| 'pointermove'
+	| 'pointerenter'
+	| 'pointerleave';
+```
+
+The pointer events that objects take, as `object.on` names them. The section on pointer events above says when each one comes.
+
+### `ObjectPointerEvent`
+
+Interface `ObjectPointerEvent`.
+
+A pointer event on an object, which the handlers of `object.on` take. The engine reuses one event object for every handler, so copy any value that you keep after the handler returns.
+
+| Member | Description |
+| --- | --- |
+| `readonly type: ObjectEventType` | The event's type. |
+| `readonly object: Object3D \| InstanceBatch \| null` | The object under the pointer: the closest object that the ray hits, or the instance batch of a row. It can be a child of the object whose handler runs. For `pointerleave`, it is the object that the pointer moved onto, or null when the pointer is over nothing. |
+| `readonly instance: number` | The row of an instance batch, or -1 for an object. |
+| `readonly point: Vec3Like` | Where the ray hits `object`, in world space. |
+| `readonly normal: Vec3Like` | The unit normal of the hit triangle in world space, on the side that faces the camera. |
+| `readonly distance: number` | The distance from the ray's origin to the hit, in meters. |
+| `readonly triangle: number` | The index of the hit triangle in its mesh, as three.js's `faceIndex`. |
+| `readonly ray: Ray` | The ray from the camera through the pointer, from the frame that was on screen at the event. |
+| `readonly x: number` | The pointer's distance from the canvas's left edge in CSS pixels. |
+| `readonly y: number` | The pointer's distance from the canvas's top edge in CSS pixels. |
+| `readonly pointerId: number` | The browser's `pointerId`: each finger on a touch screen has its own. |
+| `readonly isTouch: boolean` | True when the pointer is a finger on a touch screen. |
+| `readonly button: number` | The button that went down or came up, as `PointerEvent.button` gives it: 0 for the main button or a finger, 1 for the middle button and 2 for the right button. -1 for the other events. |
+| `readonly buttons: number` | The buttons held, as `PointerEvent.buttons` gives them: 1 for the main button, 2 for the right. |
+| `stopPropagation(): void` | Stops the event from going on to the parents of the object whose handler runs. |
 
 <!-- null3d:api:end -->

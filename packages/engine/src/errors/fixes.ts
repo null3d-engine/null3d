@@ -33,7 +33,7 @@ export const ERROR_FIXES = {
 	E1204:
 		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three linear components from 0 to 1, such as [0.07, 0.26, 1].",
 	E1205:
-		"Use a KeyboardEvent.code name such as 'KeyW' or 'ArrowLeft', or a mouse button from 'Mouse0' to 'Mouse4'. Gamepad names start with 'Gamepad', such as 'GamepadA' or 'GamepadLeftStickUp'. Define an action with input.actions.define() before you use it, and give it a name that no key or button has.",
+		"Use a KeyboardEvent.code name such as 'KeyW' or 'ArrowLeft', or a mouse button from 'Mouse0' to 'Mouse4'. Gamepad names start with 'Gamepad', such as 'GamepadA' or 'GamepadLeftStickUp'. Define an action with input.actions.define() before you use it, and give it a name that no key or button has. Objects take the pointer events 'click', 'pointerdown', 'pointerup', 'pointermove', 'pointerenter' and 'pointerleave'.",
 	E1206:
 		'Give positions and normals three numbers per vertex, uvs and uvs1 two, colors three or four, and tangents four. Give three indices per triangle, each below the vertex count. Without indices, use a vertex count that is a multiple of three. Pass normals or computeNormals: true, and pass uvs with computeTangents: true. Replace NaN and Infinity values.',
 	E1207:
@@ -51,7 +51,7 @@ export const ERROR_FIXES = {
 	E1217:
 		"Give alphaMode 'opaque', 'mask' or 'blend', and blending 'normal', 'additive' or 'multiply'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff.",
 	E1218:
-		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself.",
+		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames.",
 	E1219:
 		"Give each label an id of its own, such as 'hp-12', and pass the same id to engine.labels.bind on the page. Untrack labels that you no longer show with ui.untrackLabel. To track more labels at once, raise createEngine's maxLabels option.",
 	E1301:

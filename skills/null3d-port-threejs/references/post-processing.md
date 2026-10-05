@@ -35,7 +35,7 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs inside the final pass; the Low preset uses it |
 | `SMAAPass`, `SSAARenderPass` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` | No SMAA or SSAA |
 | `TAARenderPass` | Not in 1.0 | MSAA meanwhile |
-| `OutlinePass` (`edgeStrength`, `edgeThickness`, `visibleEdgeColor`, `hiddenEdgeColor`, `pulsePeriod`, `selectedObjects`) | `outline: { color, thickness }` and `obj.setOutlined(true)` (0.2) | Hidden-edge color and pulsing: custom effect or after 1.0 |
+| `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeThickness`, `selectedObjects`) | `outline: { color, hiddenColor, width }` and `mesh.setOutlined(true)` (0.2) | A crisp line, with no blur. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`. `OutlinePass` draws its edge at half size, so `width` is about 2 × `edgeThickness`. three.js draws a dark brown hidden line by default; keep it with `hiddenColor: [0.1, 0.04, 0.02]`, as null3D draws none by default. `edgeStrength` has no setting, as the line is opaque. `edgeGlow` above 0, `pulsePeriod` and the pattern texture have no setting: list the soft look as a visible difference. To pulse the line, change its color or width every frame. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh |
 | `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file |
 | `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { offset, darkness }` (0.2) | Same meanings, so keep the two numbers |
 | `BokehPass` (depth of field) | Not in 1.0 | Custom `hdr` effect with `sampleDepth` (0.2), or skip |
@@ -57,7 +57,8 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2; per-pixel, so they merge into the final pass) |
 | `DepthOfFieldEffect`, `GodRaysEffect`, `SSREffect` | Not in 1.0; custom `hdr` effects (0.2) where essential |
-| `OutlineEffect`, `SelectiveBloomEffect` | `outline` (0.2); selective bloom through emissive strength and the bloom threshold (0.2) |
+| `OutlineEffect` (`visibleEdgeColor`, `hiddenEdgeColor`, `xRay`, `resolutionScale`, `blur`, `pulseSpeed`) | `outline: { color, hiddenColor, width }` (0.2): a crisp line. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`; `xRay: false` becomes `hiddenColor: false`. The edge is one texel of the effect's mask, so `width` is about 1 / `resolutionScale` (2 at the default 0.5). `blur` and `pulseSpeed` have no setting: list them as visible differences |
+| `SelectiveBloomEffect` | Selective bloom through emissive strength and the bloom threshold (0.2) |
 
 ## 4. three.js WebGPU post nodes (TSL)
 

@@ -24,7 +24,7 @@ import {
 	type QualityPreset,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
-import { type DrawModule, loadDrawModule } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadShaders } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -43,6 +43,7 @@ import type {
 	CoreHandoff,
 	RendererRequest,
 	RendererSetup,
+	ShaderPreload,
 	SketchWorkerInit,
 	WorkerReply,
 } from '../workers/protocol';
@@ -165,6 +166,12 @@ export interface EngineOptions {
 	 * Another value fails with E1213.
 	 */
 	depthPrepass?: boolean;
+	/**
+	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
+	 * 1 to 256. Each object keeps the weights farthest from 0. Without it, the quality preset sets
+	 * it. WebGPU draws every weight. Another value fails with E1213.
+	 */
+	morphTargets?: number;
 	/**
 	 * True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide
 	 * the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without
@@ -810,6 +817,7 @@ async function startEngine(
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 	};
 	checkSettings('createEngine()', pageSettings);
@@ -934,8 +942,8 @@ async function startEngine(
 					: 'sketch-worker'
 				: 'render-worker';
 	// A page that draws loads the renderer while the core downloads too. When the probe finds that a
-	// worker cannot draw here, the page loads it later, once it knows.
-	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
+	// worker cannot draw here, the page loads it as soon as the probe ends.
+	let drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
 	// into the browser's cache, and still runs the module only after it has started the core.
 	const threads = threaded
@@ -981,6 +989,7 @@ async function startEngine(
 		choice = pickTier(false);
 		threads?.render?.terminate();
 		if (threads) threads.render = undefined;
+		drawModule ??= loadDrawModule();
 	}
 	if (!choice)
 		throw failEarly(
@@ -1039,11 +1048,6 @@ async function startEngine(
 		glTiming: switches.glTiming,
 	};
 
-	const core = await abortable(coreLoad, signal).catch((e: unknown) => {
-		throw failEarly(e);
-	});
-	onProgress?.('core');
-	let wasmMemory = core.memory;
 	const device = coreDevice(tier, report, {
 		...switches,
 		antialias: quality.settings.antialias,
@@ -1051,6 +1055,18 @@ async function startEngine(
 		depthPrepass: quality.settings.depthPrepass,
 		largeWorld: options.largeWorld === true,
 	});
+	// The GPU path and the device's fixed bits choose the shader file that the renderer loads first,
+	// so the thread that draws starts its download now, while the core downloads.
+	const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
+	if (renderThread === 'render-worker') threads?.render?.worker.postMessage(shaderPreload);
+	else if (renderThread === 'sketch-worker') threads?.sketch?.worker.postMessage(shaderPreload);
+	else if (drawModule) preloadShaders(drawModule, tier, device.shaderBits);
+
+	const core = await abortable(coreLoad, signal).catch((e: unknown) => {
+		throw failEarly(e);
+	});
+	onProgress?.('core');
+	let wasmMemory = core.memory;
 	const capabilities: EngineCapabilities = {
 		tier,
 		threaded,

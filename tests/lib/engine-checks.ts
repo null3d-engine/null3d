@@ -172,10 +172,30 @@ export function jobWorkersProblem(
 	return `started ${started ?? 'no'} job workers, not the ${asked} that ?jobs= asked for`;
 }
 
+/** Which of the engine page's checks a test runs. */
+export interface EngineChecks {
+	/**
+	 * False leaves out the frame-rate checks: the median frame interval, the floors on the frames
+	 * and the sketch's updates, and the need for a measured refresh rate, which takes the thread that
+	 * draws a few dozen frames. The engine must still draw frames and update the sketch, at any rate,
+	 * and a refresh rate it measured must still be a display's. A test whose job is not the loop's
+	 * pace sets it, such as a test of the start's downloads or of a start option: a busy runner can
+	 * slow every frame of its short measurement, which says nothing about what that test checks.
+	 */
+	pacing?: boolean;
+}
+
 /** What is wrong with a result of the engine page, run in a mode on a GPU tier; empty when nothing is. */
-export function engineProblems(result: EngineResult, mode: EngineMode, tier: string): string[] {
+export function engineProblems(
+	result: EngineResult,
+	mode: EngineMode,
+	tier: string,
+	{ pacing = true }: EngineChecks = {},
+): string[] {
 	const { stats } = result;
-	const minFrames = ((result.seconds * 1000) / MAX_MEDIAN_INTERVAL_MS) * MIN_FRAME_SHARE;
+	const minFrames = pacing
+		? ((result.seconds * 1000) / MAX_MEDIAN_INTERVAL_MS) * MIN_FRAME_SHARE
+		: 1;
 	const problems = modeProblems(result.mode, mode);
 	if (result.mode.jobWorkers >= 1 !== (mode.build === 'threaded'))
 		problems.push(`started ${result.mode.jobWorkers} job workers`);
@@ -183,7 +203,7 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	if (jobs) problems.push(jobs);
 	if (!result.capabilities.tier.startsWith(tier)) problems.push(`used ${result.capabilities.tier}`);
 	if (stats.frames < minFrames) problems.push(`measured only ${stats.frames} frames`);
-	if (stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
+	if (pacing && stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
 		problems.push(`median frame interval ${stats.intervalMs.median} ms`);
 	// A page without cross-origin isolation gets a coarse timer (0.1 ms steps in Chrome), and an
 	// empty frame can take less than one step.
@@ -207,7 +227,8 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	if (stats.completionSignal !== signal)
 		problems.push(`completions came from a ${stats.completionSignal}, expected a ${signal}`);
 	const hz = stats.refreshHz ?? 0;
-	if (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1])
+	const checkRefresh = pacing || stats.refreshHz !== null;
+	if (checkRefresh && (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1]))
 		problems.push(`measured a refresh rate of ${stats.refreshHz} Hz`);
 	// With the sketch and the drawing in workers, the page's thread must stay free (design
 	// principle 6).

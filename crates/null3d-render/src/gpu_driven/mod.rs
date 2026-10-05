@@ -84,6 +84,13 @@
 //! With the depth prepass, each camera view also replays a bundle of its opaque buckets' depth
 //! before its opaque bundle (see [`crate::pipelines`] and [`opaque`]).
 //!
+//! # Outlines
+//!
+//! While the sketch turns outlines on, a third layout holds the objects that it outlines, grouped
+//! by mesh (see [`crate::outline`]). The outline view culls it with the camera's frustum and layers
+//! into buffers of its own, and its bundle draws them into the outline mask. Outlining an object,
+//! or turning outlines on or off, rebuilds the layouts, as casting shadows does.
+//!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
 //! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
 //! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
@@ -136,6 +143,7 @@ use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::{Drawn, Layout};
 use lights::LightClusters;
+use opaque::Bundle;
 use skin::Skinning;
 use transparent::Transparent;
 
@@ -153,9 +161,9 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
     }
 }
 
-/// Bytes of each source in the builder's tables: its entries in the bucket table, the layer table
-/// and the casters' bucket table, and its place in the cell order.
-const TABLE_BYTES_PER_SOURCE: u32 = 16;
+/// Bytes of each source in the builder's tables: its entries in the bucket table, the layer table,
+/// the casters' and the outlined objects' bucket tables, and its place in the cell order.
+const TABLE_BYTES_PER_SOURCE: u32 = 20;
 
 /// Engine memory the builder keeps for each source: its entries in the tables, and room for them
 /// in both frames' upload arenas.
@@ -239,8 +247,12 @@ mod ids {
     pub const SKIN_TABLE: u32 = SKINNED + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = SKIN_TABLE + 1;
+    /// The outlined objects' bucket table and bucket records, which the outline view's culling
+    /// reads.
+    pub const OUTLINE_BUCKETS: u32 = AO + 1;
+    pub const OUTLINE_RECORDS: u32 = OUTLINE_BUCKETS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = AO + 1;
+    pub const PAGES: u32 = OUTLINE_RECORDS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -250,10 +262,16 @@ mod ids {
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_LUT + 1;
+    /// Every morphed mesh's deltas, in half floats (see [`crate::morph`]).
+    pub const MORPHS: u32 = JOINTS + 1;
+    /// Every morphed object's weights (see [`crate::morph`]).
+    pub const MORPH_WEIGHTS: u32 = MORPHS + 1;
     /// The texture that frame groups bind in place of ambient occlusion's while it draws none.
-    pub const BLANK_AO: u32 = JOINTS + 1;
+    pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
+    /// The final pass's blank outline texture, which it binds while no outline draws.
+    pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_AO + 1;
+    pub const TARGETS: u32 = BLANK_OUTLINE + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -365,8 +383,14 @@ pub struct GpuDrivenRenderer {
     layout: Layout,
     /// The shadow casters' layout, which the shadow cascades draw.
     casters: Layout,
+    /// The outlined objects' layout, which the outline view draws.
+    outlined: Layout,
     /// True when the layouts were built for a frame with shadows.
     layouts_shadowed: bool,
+    /// True when the layouts were built while outlines are on.
+    layouts_outlined: bool,
+    /// True once the outline view's GPU objects exist.
+    outline_made: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     /// The views whose depth prepass has its bind group.
@@ -443,6 +467,7 @@ impl GpuDrivenRenderer {
                             group: ids::FINAL_GROUP,
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
+                            blank_outline: ids::BLANK_OUTLINE,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
@@ -461,7 +486,10 @@ impl GpuDrivenRenderer {
             },
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
+            outlined: Layout::new(Drawn::Outlined),
             layouts_shadowed: false,
+            layouts_outlined: false,
+            outline_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, false),
@@ -547,6 +575,7 @@ impl GpuDrivenRenderer {
             .plan(input, tile_settings, filter, camera.as_ref());
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
         let shadows = shadow.is_some() || self.tiles.shape().is_some();
+        let outlines = self.settings.outline().is_some();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
         let ao = self
@@ -557,13 +586,18 @@ impl GpuDrivenRenderer {
         let upload_everything = input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
+            || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
                 .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
-            self.skinning
-                .rebuild(input.scene, input.animations, self.settings.meshes());
+            self.skinning.rebuild(
+                input.scene,
+                input.animations,
+                input.morphs,
+                self.settings.meshes(),
+            );
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -590,8 +624,8 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| {
-                        let skinned = skinning.object(slot as u32).is_some();
-                        skinned.then(|| skinning.skinned_key(key))
+                        let object = skinning.object(slot as u32)?;
+                        Some(skinning.skinned_key(&object, key))
                     },
                 )
                 .map_err(out_of_memory)?;
@@ -613,13 +647,33 @@ impl GpuDrivenRenderer {
                 self.casters.clear();
             }
             self.layouts_shadowed = shadows;
+            // The outlined layout holds buckets only while outlines are on.
+            if outlines {
+                self.outlined.rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    self.graph.outline_targets(),
+                    input.scene,
+                    input.batches,
+                    parity,
+                    limit,
+                    shadows,
+                    Prepass::Off,
+                    &self.skinning,
+                )?;
+            } else {
+                self.outlined.clear();
+            }
+            self.layouts_outlined = outlines;
             // The cell order holds every object that a view or a cascade culls: blended casters
             // have no bucket in the scene's layout, as the transparent pass draws them, but cast
-            // all the same.
-            let (layout, casters) = (&self.layout, &self.casters);
+            // all the same. Blended objects can be outlined too.
+            let (layout, casters, outlined) = (&self.layout, &self.casters, &self.outlined);
             self.cells
                 .classify(input.scene, &|slot| {
-                    layout.draws(slot) || (shadows && casters.draws(slot))
+                    layout.draws(slot)
+                        || (shadows && casters.draws(slot))
+                        || (outlines && outlined.draws(slot))
                 })
                 .map_err(|_| RecordError::OutOfMemory {
                     bytes: (input.scene.capacity() + 1).saturating_mul(16),
@@ -649,6 +703,8 @@ impl GpuDrivenRenderer {
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
         self.graph.set_grading(self.settings.grades());
+        self.graph
+            .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.request_pipelines(&mut self.pipelines);
         self.background.request_pipeline(
             &self.settings,
@@ -717,6 +773,13 @@ impl GpuDrivenRenderer {
             self.culling.add_view(list, view)?;
         }
         self.tiles_made = self.tiles_made.max(tiles);
+        let outline_drawn = self.graph.outline_draws();
+        let new_outline = outline_drawn && !self.outline_made;
+        if new_outline {
+            shadow::create_view(list, ViewId::OUTLINE)?;
+            self.culling.add_view(list, ViewId::OUTLINE)?;
+            self.outline_made = true;
+        }
 
         self.cells.update(input);
         // Each view's values first: the camera's light grid sets how much its upload takes.
@@ -747,6 +810,7 @@ impl GpuDrivenRenderer {
         let skinned_remade = self.skinning.apply(
             list,
             input.animations,
+            self.settings.meshes(),
             &self.meshes,
             pages_remade,
             self.config.storage_binding_bytes,
@@ -770,11 +834,18 @@ impl GpuDrivenRenderer {
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
             let casters = shadows && self.casters.apply(list, arena, binding_bytes)?;
+            if outlines {
+                self.outlined.apply(list, arena, binding_bytes)?;
+            }
             (shared, casters)
         } else {
             self.layout.update_membership(list, arena, input, parity)?;
             if shadows {
                 self.casters.update_membership(list, arena, input, parity)?;
+            }
+            if outlines {
+                self.outlined
+                    .update_membership(list, arena, input, parity)?;
             }
             (false, false)
         };
@@ -791,10 +862,21 @@ impl GpuDrivenRenderer {
             let view = ViewId::from_index(index);
             self.culling
                 .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets, false)?;
+            let (layout, meshes) = (&self.layout, &self.meshes);
+            opaque::record_bundle(list, view, layout, meshes, scene_targets, Bundle::Opaque)?;
             if prepass {
-                opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets, true)?;
+                opaque::record_bundle(list, view, layout, meshes, scene_targets, Bundle::Prepass)?;
             }
+        }
+        if outline_drawn && (upload_everything || buffers_remade || new_outline) {
+            let view = ViewId::OUTLINE;
+            // The outlined layout's tables are new whenever the layouts are.
+            let recreated = shared_recreated || upload_everything;
+            self.culling
+                .apply(list, view, &self.outlined, recreated, binding_bytes)?;
+            let targets = self.graph.outline_targets();
+            let (outlined, meshes) = (&self.outlined, &self.meshes);
+            opaque::record_bundle(list, view, outlined, meshes, targets, Bundle::Outline)?;
         }
         let first_cascade_to_apply = if upload_everything || buffers_remade {
             0
@@ -814,13 +896,23 @@ impl GpuDrivenRenderer {
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes)?;
             let (casters, meshes) = (&self.casters, &self.meshes);
-            opaque::record_bundle(list, view, casters, meshes, shadows::TARGETS, false)?;
+            opaque::record_bundle(
+                list,
+                view,
+                casters,
+                meshes,
+                shadows::TARGETS,
+                Bundle::Opaque,
+            )?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout.update_skinned(list, arena, input.scene)?;
         if shadows {
             self.casters.update_skinned(list, arena, input.scene)?;
+        }
+        if outlines {
+            self.outlined.update_skinned(list, arena, input.scene)?;
         }
         self.skinning.begin_frame();
         self.layout.update_order(list, arena, &self.cells, input)?;
@@ -846,6 +938,21 @@ impl GpuDrivenRenderer {
                 self.skinning
                     .see(frame, offsets, input.scene, parity, false);
             }
+        }
+        if let (true, Some(frame)) = (outline_drawn, self.frames[ViewId::CAMERA.index()]) {
+            let view = ViewId::OUTLINE;
+            opaque::upload(list, arena, view, &frame)?;
+            let (layout, outlined, cells) = (&self.layout, &self.outlined, &self.cells);
+            self.culling.upload(
+                list,
+                arena,
+                view,
+                &frame,
+                layout,
+                outlined,
+                input.scene,
+                cells,
+            )?;
         }
         self.cascade_frames = [None; MAX_CASCADES];
         if shadow.is_none() && self.cascades_held && shadows {
@@ -899,7 +1006,9 @@ impl GpuDrivenRenderer {
                 self.cascade_frames[cascade] = Some(frame);
             }
         }
-        self.skinning.upload(list, arena, input.animations)?;
+        let storage = self.settings.meshes();
+        self.skinning
+            .upload(list, arena, input.animations, input.morphs, storage)?;
         let (scene, batches) = (input.scene, input.batches);
         self.sorted
             .gather(scene, batches, parity)
@@ -932,15 +1041,21 @@ impl GpuDrivenRenderer {
 
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
+        let outlined = &self.outlined;
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
         let (background, light_clusters) = (&self.background, &self.light_clusters);
         let skinning = &self.skinning;
         let drawn = |view: ViewId| match (view.cascade_index(), view.tile_index()) {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
             (_, Some(tile)) => tiles.frame(tile).is_some(),
+            _ if view == ViewId::OUTLINE => outline_drawn && frames[0].is_some(),
             _ => frames[view.index()].is_some(),
         };
-        let layout_of = |view: ViewId| if view.is_camera() { layout } else { casters };
+        let layout_of = |view: ViewId| match view {
+            ViewId::OUTLINE => outlined,
+            view if view.is_camera() => layout,
+            _ => casters,
+        };
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| matches!(role, Role::Shadow(view) if !drawn(view));
         let (sorted, transparent) = (&self.sorted, &self.transparent);
@@ -959,6 +1074,9 @@ impl GpuDrivenRenderer {
                         background.record(list, ids::frame_group(view), &[])?;
                     }
                     opaque::record(list, view, false)
+                }
+                Role::OutlineMask if drawn(ViewId::OUTLINE) => {
+                    opaque::record(list, ViewId::OUTLINE, false)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
@@ -1010,14 +1128,16 @@ impl GpuDrivenRenderer {
     }
 
     /// The most words that one frame's bundles take for the scene as it stands, when the frame
-    /// records them all: each camera view's, and its depth prepass's, and each cascade's and shadow
-    /// tile's. The list grows only when the layouts do, so steady frames allocate nothing.
+    /// records them all: each camera view's, and its depth prepass's, each cascade's and shadow
+    /// tile's, and the outline view's, which draws its buckets twice. The list grows only when the
+    /// layouts do, so steady frames allocate nothing.
     fn bundles_bound(&self) -> usize {
         let cameras = 2 * self.settings.views().len();
         let tiles = self.settings.tile_settings().tiles as usize;
         let shadow_views = MAX_CASCADES + tiles.min(MAX_TILES);
         cameras * opaque::bundle_words(&self.layout)
             + shadow_views * opaque::bundle_words(&self.casters)
+            + 2 * opaque::bundle_words(&self.outlined)
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
@@ -1034,14 +1154,15 @@ impl GpuDrivenRenderer {
                 + layout.draws.len() * INDIRECT_BYTES as usize
         };
         let camera_views = self.settings.views().len();
-        let views = camera_views * per_view(&self.layout);
+        let views = camera_views * per_view(&self.layout) + per_view(&self.outlined);
         let tiles = self.settings.tile_settings().tiles as usize;
         let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
-        let tables = self.layout.upload_bound() + self.casters.upload_bound();
+        let tables =
+            self.layout.upload_bound() + self.casters.upload_bound() + self.outlined.upload_bound();
         let lights = self.lights.upload_room();
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views);
-        let skinning = self.skinning.upload_bound();
+        let skinning = self.skinning.upload_bound(self.settings.meshes());
         meshes
             + skinning
             + materials
@@ -1071,6 +1192,7 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
         self.layout.reserve(sources)?;
         self.casters.reserve(sources)?;
+        self.outlined.reserve(sources)?;
         let added = sources.saturating_sub(self.layout.sources);
         let bound = self.upload_bound() + (added * TABLE_BYTES_PER_SOURCE) as usize;
         for arena in self.lists.arenas_mut() {
@@ -1096,6 +1218,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();
         self.casters.forget_gpu();
+        self.outlined.forget_gpu();
+        self.outline_made = false;
         self.culling.forget_gpu();
         self.views_made = 0;
         self.prepass_views = 0;

@@ -136,6 +136,9 @@ export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
+export const PERMUTATION_OUTLINE_VISIBLE = 65536;
+
+export const PERMUTATION_ON_DEMAND = 128;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -143,8 +146,9 @@ export const VERTEX_TANGENT = 4;
 export const VERTEX_COLOR = 8;
 export const VERTEX_JOINTS = 16;
 export const VERTEX_WEIGHTS = 32;
-export const VERTEX_ALL = 63;
-export const VERTEX_INSTANCE_LOCATION = 8;
+export const VERTEX_MORPH = 134217728;
+export const VERTEX_ALL = 134217791;
+export const VERTEX_INSTANCE_LOCATION = 9;
 
 export const VERTEX_TYPE_F32 = 0;
 export const VERTEX_TYPE_UNORM8 = 1;
@@ -185,6 +189,7 @@ export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_SKIN = 20;
+export const TEMPLATE_OUTLINE_MASK = 21;
 export const TEMPLATE_SPRITE = 22;
 export const TEMPLATE_SPRITE_MAP = 23;
 export const TEMPLATE_LINE = 29;
@@ -240,4 +245,4 @@ export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 
 /** Each vertex attribute type by code: its bytes per value, its largest value (1 for floats), and whether it reads as fractions. */
 export const VERTEX_TYPES: readonly (readonly [bytes: number, max: number, normalized: boolean])[] = [[4, 1, false], [1, 255, true], [1, 127, true], [2, 65535, true], [2, 32767, true], [1, 255, false], [1, 127, false], [2, 65535, false], [2, 32767, false]];
 /** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */
-export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [[0, 3, 6, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [0, 3, 10, [0, 2, 4], false], [1, 2, 12, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [2, 2, 16, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [4, 4, 20, [0, 2, 4], false], [8, 4, 22, [0, 1, 3], false], [16, 4, 24, [5, 7], true], [32, 4, 25, [0, 1, 3], false]];
+export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [[0, 3, 6, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [0, 3, 10, [0, 2, 4], false], [1, 2, 12, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [2, 2, 16, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [4, 4, 20, [0, 2, 4], false], [8, 4, 22, [0, 1, 3], false], [16, 4, 24, [5, 7], true], [32, 4, 25, [0, 1, 3], false], [134217728, 2, 27, [0], false]];

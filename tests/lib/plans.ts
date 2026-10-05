@@ -1724,6 +1724,19 @@ export function benchSummary(
 	items: readonly PlanItem<Check>[],
 	resultOf: (id: string) => ItemResult | undefined,
 ): string | undefined {
+	const rows = benchRows(items, resultOf);
+	return rows && benchReport(rows).join('\n');
+}
+
+/**
+ * One runner's benchmark pages, each with its successful runs summarized and its visual figures,
+ * apart for each job worker count. A page whose runs all failed has no row. Undefined when the
+ * plan has no benchmarks.
+ */
+export function benchRows(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): SummaryRow[] | undefined {
 	type Group = Omit<SummaryRow, 'summary'> & { results: BenchResult[]; visualKey?: string };
 	const groups = new Map<string, Group>();
 	const visual = new Map<string, VisualResult>();
@@ -1749,7 +1762,7 @@ export function benchSummary(
 		groups.set(key, group);
 	}
 	if (groups.size === 0) return undefined;
-	const rows: SummaryRow[] = [...groups.values()]
+	return [...groups.values()]
 		.filter((group) => group.results.length > 0)
 		.map(({ results, visualKey, ...row }) => {
 			const figures = visualKey === undefined ? undefined : visual.get(visualKey);
@@ -1758,7 +1771,6 @@ export function benchSummary(
 				...(figures && { visual: visualFigures(row.scene, figures) }),
 			};
 		});
-	return benchReport(rows).join('\n');
 }
 
 /**

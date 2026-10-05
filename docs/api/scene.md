@@ -207,6 +207,8 @@ Many copies of one mesh and material. Write rows straight into the typed arrays;
 | `readonly colors: Float32Array \| undefined` | Linear RGBA colors, 4 floats per row, when the batch was created with colors. This version stores them but does not draw them yet. |
 | `setActiveCount(count: number): void` | Draws only the first `count` rows. |
 | `setLayers(mask: number): void` | Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A new mask needs no rebuild. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does. The event's `instance` names the row. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks rows of a static batch to update and upload. |
 | `destroy(): void` | Removes the batch and frees its rows. Its typed arrays are not valid after this: another batch can take their memory. |
 
@@ -289,6 +291,7 @@ The group that holds a copy of a model, which `scene.instantiate` returns. Its c
 | --- | --- |
 | `batches: readonly InstanceBatch[]` | The instance batches of the nodes with instancing of their own, as the file gives them. Their rows are placed in the world when the copy is created, and they do not move with the group. |
 | `find(name: string): Object3D \| undefined` | The copy's first object with `name`, in the file's order, which is not destroyed, or undefined. It searches the copy's objects, so call it at setup. |
+| `setOutlined(outlined: boolean): void` | Outlines every mesh of the copy, or stops, as `Mesh.setOutlined` does for one mesh: the whole model takes one outline, as three.js's `OutlinePass` outlines a selected group. The copy's instance batches take none. |
 
 ### `Scene`
 

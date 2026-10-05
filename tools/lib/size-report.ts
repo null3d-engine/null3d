@@ -121,6 +121,22 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 ];
 
 /**
+ * The shader build's modules of the builds of features that load on demand, beside the device
+ * modules: the MORPH builds of WebGL2, which a page loads the first time it draws a morphed mesh.
+ * No start counts them, and each has a budget of its own ([`ON_DEMAND_SHADER_BUDGET_BYTES`]).
+ */
+export const ON_DEMAND_SHADER_PARTS: readonly string[] = [
+	'shaders-glsl-morph.js',
+	'shaders-glsl-tone-map-morph.js',
+	'shaders-glsl-draw-index-morph.js',
+	'shaders-glsl-draw-index-tone-map-morph.js',
+	'shaders-glsl-morph-half.js',
+	'shaders-glsl-tone-map-morph-half.js',
+	'shaders-glsl-draw-index-morph-half.js',
+	'shaders-glsl-draw-index-tone-map-morph-half.js',
+];
+
+/**
  * The shader build's device modules, by part name: one file for each target and each value of the
  * permutation bits that a device fixes, named after its module. The part that draws loads its
  * device's one on demand. Each build that draws holds a copy of each file, and the report measures
@@ -139,6 +155,7 @@ export const SHADER_PARTS: readonly string[] = [
 	'shaders-glsl-tone-map-half.js',
 	'shaders-glsl-draw-index-half.js',
 	'shaders-glsl-draw-index-tone-map-half.js',
+	...ON_DEMAND_SHADER_PARTS,
 ];
 
 /**
@@ -341,7 +358,7 @@ export function downloadSizes(
 ): { mode: string; size: SizeEntry }[] {
 	return downloads.map(({ mode, parts, shaders }) => {
 		const largest = [...sizes]
-			.filter(([part]) => part.startsWith(shaders))
+			.filter(([part]) => part.startsWith(shaders) && !ON_DEMAND_SHADER_PARTS.includes(part))
 			.map(([, size]) => size)
 			.sort((a, b) => b.brotli - a.brotli)
 			.slice(0, 1);
@@ -362,13 +379,23 @@ export const START_BUDGET_BYTES = 140 * 1024;
 export const LATER_BUDGET_BYTES = 16 * 1024;
 
 /**
- * A problem for each thread mode whose start passes the start budget, and for each part that loads
- * after the start and passes its own budget.
+ * Brotli budget for each shader module of a feature that loads on demand. Such a module is shader
+ * data, as the device modules are, so it has a limit of its own: the size of a device module that
+ * a page loads at its start. The owner decided so on 4 October 2026 (decision records D-14 and
+ * D-51).
+ */
+export const ON_DEMAND_SHADER_BUDGET_BYTES = 24 * 1024;
+
+/**
+ * A problem for each thread mode whose start passes the start budget, for each part that loads
+ * after the start and passes its own budget, and for each shader module of a feature that loads on
+ * demand and passes its budget.
  */
 export function budgetProblems(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 	later: readonly EnginePart[] = LATER_PARTS,
+	onDemand: readonly string[] = ON_DEMAND_SHADER_PARTS,
 ): string[] {
 	const kb = (bytes: number) => `${bytes / 1024} KB`;
 	return [
@@ -383,6 +410,14 @@ export function budgetProblems(
 			return brotli > LATER_BUDGET_BYTES
 				? [
 						`js/${name}, which loads after the start, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(LATER_BUDGET_BYTES)} budget`,
+					]
+				: [];
+		}),
+		...onDemand.flatMap((name) => {
+			const brotli = sizes.get(name)?.brotli ?? 0;
+			return brotli > ON_DEMAND_SHADER_BUDGET_BYTES
+				? [
+						`js/${name}, the shader builds of a feature that loads on demand, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(ON_DEMAND_SHADER_BUDGET_BYTES)} budget`,
 					]
 				: [];
 		}),

@@ -5,14 +5,16 @@ import { join } from 'node:path';
 import { cloudRuns, parseCloudArgs, pickDevices, runnerArgs } from '../devices-cloud.ts';
 import { parseArgs } from '../real-browsers.ts';
 import {
+	ACCEPT_SSL_SCRIPT,
 	type AutomateBrowser,
 	type AutomatePlan,
 	automateApi,
 	capabilities,
+	certificateScript,
 	deviceProblems,
 	IDLE_TIMEOUT_SECONDS,
 	KEY_FILE,
-	needsAcceptSsl,
+	PROCEED_SCRIPT,
 	parallelSessions,
 	readCredentials,
 	redactor,
@@ -65,7 +67,7 @@ describe('redactor', () => {
 describe('capabilities', () => {
 	const names = { build: 'null3D 20261003-120000-smoke', session: 'bsiphone17-safari' };
 
-	it('asks for a real phone with its system, through BrowserStack Local, with the longest idle time', () => {
+	it('asks for a real phone with its system, through BrowserStack Local, with the longest idle time and interactive debugging', () => {
 		expect(capabilities(device('bsiphone17-safari'), names)).toEqual({
 			browserName: 'safari',
 			acceptInsecureCerts: true,
@@ -78,6 +80,7 @@ describe('capabilities', () => {
 				buildName: 'null3D 20261003-120000-smoke',
 				sessionName: 'bsiphone17-safari',
 				idleTimeout: IDLE_TIMEOUT_SECONDS,
+				interactiveDebugging: 'true',
 				video: 'true',
 				consoleLogs: 'info',
 				acceptInsecureCerts: 'true',
@@ -116,11 +119,13 @@ describe('capabilities', () => {
 		expect(text).not.toMatch(/userName|accessKey|user|key/i);
 	});
 
-	it('passes the certificate warning with a command in Safari and on iOS only', () => {
-		expect(needsAcceptSsl(device('bsiphone17-chromium'))).toBe(true);
-		expect(needsAcceptSsl(device('bsmacsequoia-safari'))).toBe(true);
-		expect(needsAcceptSsl(device('bsgalaxys25-chrome'))).toBe(false);
-		expect(needsAcceptSsl(device('bswin11-firefox'))).toBe(false);
+	it("passes the certificate warning with BrowserStack's command in Safari and on iOS, and with the warning page's link in Edge on Android", () => {
+		expect(certificateScript(device('bsiphone17-chromium'))).toBe(ACCEPT_SSL_SCRIPT);
+		expect(certificateScript(device('bsmacsequoia-safari'))).toBe(ACCEPT_SSL_SCRIPT);
+		expect(certificateScript(device('bsgalaxys25-edge'))).toBe(PROCEED_SCRIPT);
+		expect(certificateScript(device('bswin11-edge'))).toBeUndefined();
+		expect(certificateScript(device('bsgalaxys25-chrome'))).toBeUndefined();
+		expect(certificateScript(device('bswin11-firefox'))).toBeUndefined();
 	});
 });
 
@@ -310,6 +315,8 @@ describe('devices:cloud', () => {
 			passOn: ['--only', 'x'],
 		});
 		expect(() => parseCloudArgs(['--tier', 'C'])).toThrow('--tier: use A, B');
+		expect(parseCloudArgs(['--part', '2/3']).part).toEqual({ index: 2, count: 3 });
+		expect(() => parseCloudArgs(['--part', '4/3'])).toThrow('--part: use <i>/<n>');
 		expect(() => parseCloudArgs(['--parallel', '0'])).toThrow('--parallel');
 		expect(() => parseCloudArgs(['--allow-no-webgpu'])).toThrow(
 			"put the device runner's options after --",
@@ -326,6 +333,20 @@ describe('devices:cloud', () => {
 		expect(() => pickDevices({ tiers: ['A'], only: ['bsnokia-chrome'] })).toThrow(
 			'has no runner bsnokia-chrome',
 		);
+	});
+
+	it('splits the picked devices into parts in the list order, every device in one part', () => {
+		const all = pickDevices({ tiers: ['A'] }).map((d) => d.runner);
+		const parts = [1, 2, 3].map((index) =>
+			pickDevices({ tiers: ['A'], part: { index, count: 3 } }).map((d) => d.runner),
+		);
+		expect(parts.map((part) => part.length)).toEqual([3, 3, 4]);
+		expect(parts.flat()).toEqual(all);
+		expect(
+			pickDevices({ tiers: ['A'], only: all.slice(0, 2), part: { index: 2, count: 2 } }).map(
+				(d) => d.runner,
+			),
+		).toEqual(all.slice(1, 2));
 	});
 
 	it('runs the devices that need core WebGPU apart from those that may lack it', () => {

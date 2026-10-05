@@ -11,10 +11,8 @@ import { type WebDriver, WebDriverError } from './webdriver.ts';
 export interface CloudAccount {
 	/** The session's W3C capabilities for a device. */
 	capabilities(device: CloudDevice, runner: string): Record<string, unknown>;
-	/** Whether the device's browser needs the cloud's command that passes a certificate warning. */
-	needsAcceptSsl(device: CloudDevice): boolean;
-	/** The script that passes the certificate warning. */
-	acceptSslScript: string;
+	/** The script that passes the device's certificate warning after a load, where one shows. */
+	certificateScript(device: CloudDevice): string | undefined;
 	/** The session's page on the cloud's dashboard, or undefined when the cloud did not say. */
 	link(session: string): Promise<string | undefined>;
 	/** Marks a session passed or failed, with a reason. */
@@ -28,6 +26,13 @@ export const STATUS_SCRIPT =
 /** How often a live session gets a command, which keeps it from ending as idle. */
 export const POLL_MS = 30_000;
 
+/**
+ * How many status reads in a row may get no answer before the session counts as lost. A busy
+ * browser, such as Safari on an iPhone while a page compiles its shaders, can leave one read
+ * unanswered while the page goes on and finishes its run.
+ */
+export const UNANSWERED_POLLS = 3;
+
 interface Session {
 	id: string;
 	link?: string;
@@ -35,6 +40,8 @@ interface Session {
 	polling?: boolean;
 	/** The status line read last, printed when it changes. */
 	status?: string;
+	/** Status reads in a row that got no answer. */
+	unanswered: number;
 	/** Why the cloud ended the session, when it did before the driver closed it. */
 	lost?: string;
 	closed?: boolean;
@@ -67,7 +74,7 @@ export class CloudSessions {
 			this.log(`${runner}: the cloud did not open a session: ${(e as Error).message}`);
 			return false;
 		}
-		const session: Session = { id };
+		const session: Session = { id, unanswered: 0 };
 		this.sessions.set(runner, session);
 		session.link = await this.account.link(id).catch(() => undefined);
 		this.log(`${runner}: session ${session.link ?? id}`);
@@ -84,19 +91,20 @@ export class CloudSessions {
 
 	/** Loads a page, then passes the certificate warning where the browser shows one. */
 	private async load(device: CloudDevice, id: string, url: string): Promise<void> {
-		const needsAccept = this.account.needsAcceptSsl(device);
+		const script = this.account.certificateScript(device);
 		try {
 			await this.driver.navigate(id, url);
 		} catch (e) {
-			// Safari can report the warning page as a failed load, which acceptSsl then passes.
-			if (!needsAccept || (e instanceof WebDriverError && e.code === 'invalid session id')) throw e;
+			// Safari can report the warning page as a failed load, which the script then passes.
+			if (!script || (e instanceof WebDriverError && e.code === 'invalid session id')) throw e;
 		}
-		if (needsAccept) await this.driver.execute(id, this.account.acceptSslScript);
+		if (script) await this.driver.execute(id, script);
 	}
 
 	/**
 	 * Sends the session a light command, and prints the runner page's status line when it changed.
-	 * A session that the cloud ended counts as lost, and its polls stop.
+	 * A session that the cloud ended counts as lost, and its polls stop, as does one that gave no
+	 * answer to several reads in a row.
 	 */
 	async poll(runner: string): Promise<void> {
 		const session = this.sessions.get(runner);
@@ -106,8 +114,19 @@ export class CloudSessions {
 			const status = String((await this.driver.execute(session.id, STATUS_SCRIPT)) ?? '').trim();
 			if (status && status !== session.status) this.log(`${runner}: ${status}`);
 			session.status = status;
+			session.unanswered = 0;
 		} catch (e) {
 			if (session.closed) return;
+			if (
+				e instanceof WebDriverError &&
+				e.code === 'no answer' &&
+				++session.unanswered < UNANSWERED_POLLS
+			) {
+				this.log(
+					`${runner}: no answer to the status read, ${session.unanswered} of ${UNANSWERED_POLLS} in a row: ${e.message}`,
+				);
+				return;
+			}
 			session.lost = (e as Error).message;
 			clearInterval(session.timer);
 			this.log(`${runner}: the cloud ended the session: ${session.lost}`);

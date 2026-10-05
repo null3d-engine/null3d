@@ -3,6 +3,7 @@ import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import { LATER_PARTS, TRANSCODER_FILES } from '../../tools/lib/size-report.ts';
 import {
 	ENGINE_MODES,
+	type EngineChecks,
 	type EngineMode,
 	type EngineResult,
 	engineProblems,
@@ -37,8 +38,19 @@ async function workersCannotDraw(page: Page): Promise<void> {
 	);
 }
 
+/**
+ * The engine checks without their frame-rate checks, for the tests whose job is not the pace of the
+ * frame loop. The engine must still run after its start, at whatever rate the machine draws. A busy
+ * runner can slow every frame of a short measurement, which says nothing about what these tests
+ * check. The tests that run each thread mode, and those that wake the threads with messages, check
+ * the pace.
+ */
+const notPacing: EngineChecks = { pacing: false };
+
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
+const drawingOnPage = ENGINE_MODES.find(({ name }) => name === 'drawing on the main thread');
+if (!drawingOnPage) throw new Error('no mode that draws on the main thread');
 
 // A page gets the shared memory maximum that its memory option asks for, and the ?memory= switch
 // wins over the option. The single-threaded build's memory is not shared, so it has none.
@@ -51,7 +63,7 @@ for (const mode of ENGINE_MODES) {
 			await page.goto(`engine.html?gpu=webgl2&seconds=1&${query}&${mode.query}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+			expect(engineProblems(result, mode, 'webgl2', notPacing)).toEqual([]);
 			maxima.push(result.sharedMemoryMiB);
 		}
 		expect(maxima).toEqual(mode.build === 'threaded' ? [[2048], [512]] : [[], []]);
@@ -69,7 +81,7 @@ for (const mode of ENGINE_MODES) {
 		await page.goto(`engine.html?gpu=webgl2&seconds=1&downloads&${mode.query}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+		expect(engineProblems(result, mode, 'webgl2', notPacing)).toEqual([]);
 		const trail = result.trail ?? [];
 		const step = (name: string) => trail.findIndex((line) => line.endsWith(` ms ${name}`));
 		const core = step('core');
@@ -93,6 +105,72 @@ for (const mode of ENGINE_MODES) {
 			expect(step(`${worker}: started`), worker).toBeGreaterThanOrEqual(0);
 			expect(step(`${worker}: started`), worker).toBeLessThan(core);
 		}
+	});
+}
+
+/** The core, on the dev server and in a production build. */
+const CORE_FILE = /\/null3d_bg(-[\w-]+)?\.wasm(\?|$)/;
+/** A device's shader file of either GPU path, on the dev server and in a production build. */
+const SHADER_FILE = /\/shaders-(glsl|wgsl)[^/]*\.[jt]s(\?|$)/;
+/** The longest time that a test holds the core's download back. */
+const CORE_HOLD_MS = 10_000;
+
+/**
+ * Holds the core's download back until any thread asks for a device's shader file, or for at most
+ * `CORE_HOLD_MS`. Returns the order of the two events, each named once: `shaders` when a thread
+ * asks for the shader file, and `core` when the core's download goes on.
+ */
+async function holdCoreForShaders(page: Page): Promise<string[]> {
+	const order: string[] = [];
+	const note = (event: string) => {
+		if (!order.includes(event)) order.push(event);
+	};
+	let shadersAsked: () => void = () => undefined;
+	const asked = new Promise<void>((resolve) => {
+		shadersAsked = resolve;
+	});
+	page.context().on('request', (request) => {
+		if (!SHADER_FILE.test(request.url())) return;
+		note('shaders');
+		shadersAsked();
+	});
+	await page.context().route(CORE_FILE, async (route) => {
+		await Promise.race([asked, new Promise((resolve) => setTimeout(resolve, CORE_HOLD_MS))]);
+		note('core');
+		await route.continue();
+	});
+	return order;
+}
+
+// The thread that draws asks for the device's shader file as soon as the probe has chosen the GPU
+// path and the device's fixed bits, so the file downloads with the core. The test holds the core
+// back until a thread asks for the file. A start that asks for it only after the core would wait
+// for the hold's limit, and see the file's request after the core's. This holds in every thread
+// mode, and where the page draws because a worker cannot.
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	for (const mode of ENGINE_MODES)
+		test(`the thread that draws asks for its shaders while the core downloads, ${mode.name} on ${gpu}`, async ({
+			page,
+		}) => {
+			const order = await holdCoreForShaders(page);
+			await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
+			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+			await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+			expect(result.error).toBeUndefined();
+			expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
+			expect(order).toEqual(['shaders', 'core']);
+		});
+	test(`the page asks for its shaders while the core downloads where a worker cannot draw, on ${gpu}`, async ({
+		page,
+	}) => {
+		await workersCannotDraw(page);
+		const order = await holdCoreForShaders(page);
+		await page.goto(`engine.html?gpu=${gpu}&seconds=1`);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+		await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+		expect(result.error).toBeUndefined();
+		expect(engineProblems(result, drawingOnPage, gpu, notPacing)).toEqual([]);
+		expect(order).toEqual(['shaders', 'core']);
 	});
 }
 
@@ -131,7 +209,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, gpu)).toEqual([]);
+			expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 			expect(requests.some((path) => /\/null3d_bg(-[\w-]+)?\.wasm$/.test(path))).toBe(true);
 			expect(requests.filter((path) => FIRST_USE_FILES.some((file) => file.test(path)))).toEqual(
 				[],
@@ -174,7 +252,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			await page.goto(`engine.html?gpu=${gpu}&seconds=1&power=${power}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, pipelined, gpu)).toEqual([]);
+			expect(engineProblems(result, pipelined, gpu, notPacing)).toEqual([]);
 		});
 	}
 	test(`the engine starts the job workers that ?jobs= asks for on ${gpu}`, async ({ page }) => {
@@ -182,7 +260,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(engineProblems(result, mode, gpu)).toEqual([]);
+		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 		// Each job worker records every frame, so the figures name exactly three.
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));
 		expect(jobThreads).toEqual(['job-0', 'job-1', 'job-2']);
@@ -197,15 +275,13 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		await page.unrouteAll({ behavior: 'ignoreErrors' });
 		expect(result.error).toBeUndefined();
 		expect(result.report.crossOriginIsolated).toBe(false);
-		expect(engineProblems(result, singleThreaded, gpu)).toEqual([]);
+		expect(engineProblems(result, singleThreaded, gpu, notPacing)).toEqual([]);
 	});
 }
 
 // Where a worker cannot draw, the page draws, and the sketch worker computes the frames in
 // pipelined mode. Low latency needs the sketch worker to draw, so it falls back to pipelined mode
 // too, with a warning in development builds, and engine.mode says so.
-const drawingOnPage = ENGINE_MODES.find(({ name }) => name === 'drawing on the main thread');
-if (!drawingOnPage) throw new Error('no mode that draws on the main thread');
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const latency of ['pipelined', 'low'] as const)
 		test(`a ${latency} latency start draws on the page where a worker cannot draw, on ${gpu}`, async ({
@@ -220,7 +296,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			await page.context().unrouteAll({ behavior: 'ignoreErrors' });
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, drawingOnPage, gpu)).toEqual([]);
+			expect(engineProblems(result, drawingOnPage, gpu, notPacing)).toEqual([]);
 			const fallback = warnings.filter((text) => text.includes('pipelined mode'));
 			const development = testInfo.project.name !== 'production build';
 			expect(fallback.length).toBe(latency === 'low' && development ? 1 : 0);

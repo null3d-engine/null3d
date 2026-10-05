@@ -3,12 +3,12 @@ id: api/objects
 title: Objects and transforms
 status: experimental
 since: "0.1"
-summary: "Setters and getters; parents; flags; destroy."
+summary: "Setters and getters; parents; flags; destroy; pointer events."
 ---
 
 # Objects and transforms
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with pointer events from null3D 0.2. The API is experimental, so it can still change between versions.
 
 Groups, meshes, cameras and lights are objects: nodes in the scene with a position, a rotation, a scale and a parent. Each class extends `Object3D`, so the calls in the first sections of this page work on all of them. Meshes have more calls, which [Mesh calls](#mesh-calls) lists, and [Lights](lights.md) gives the calls of each kind of light.
 
@@ -109,16 +109,27 @@ A mesh has these calls besides the ones above. Like the structural calls, they t
 
 - `setMaterial(material)` changes the material, and `setMesh(mesh)` changes the shape. The new mesh's bounding sphere replaces any bounds that `setBounds` gave.
 - `setCastShadows(true)` and `setReceiveShadows(true)` make the mesh cast and receive the directional light's shadows, as three.js's `castShadow` and `receiveShadow` do. The `castShadows` and `receiveShadows` options of `createMesh` set them at the start. Both are false by default. Unlit materials show no shadows. [Shadows](../concepts/shadows.md) explains them.
+- `setOutlined(true)` draws an outline around the mesh while `post.set({ outline })` turns outlines on, as adding it to three.js's `OutlinePass.selectedObjects` does. It is false by default. A model's copy from `scene.instantiate` has `setOutlined` too, which outlines each of its meshes. [Outlines](post.md#outlines) gives the outline's settings.
 - `setRenderOrder(order)` sets the order in which blended objects draw, lower first, as three.js's `renderOrder` does. Objects of one order draw farthest first. The engine orders opaque and masked objects itself, for speed, as the depth test decides what shows. The order costs nothing: the engine sorts blended objects in every frame anyway. [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort.
 - `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view, as three.js's `frustumCulled = false` does.
 - `setBounds(center, radius)` gives the mesh a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A negative radius throws E1108 in development builds.
 - `setOccluder(true)` makes the mesh block the view on WebGL2: the objects wholly behind it skip the GPU. The `occluder` option of `createMesh` and `instantiate` sets it at the start. It is false by default, and needs no rebuild. A model that `assets optimize` gave blockers starts with its meshes that have one blocking, and each draws its blocker in place of its mesh. Mark large, solid meshes of up to 4,096 triangles, such as buildings. Meshes that blend, use an alpha mask or a custom material, or are skinned never block. WebGPU ignores it. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method.
 
-`setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows` rebuild the draw tables, so call them at setup or behind a loading screen. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
+`setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows`, `setReceiveShadows` and `setOutlined` rebuild the draw tables, so call them at setup or behind a loading screen. A click that outlines the picked object rebuilds them once, which is fine. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
 
 ## Animation
 
 An object that a model with animations created has an animator, and `animator()` returns it. The animator plays, fades and layers the model's clips, and calls your handlers for their events. On an object without animation clips, `animator()` throws E1218. Destroying the object stops its clips. The engine cannot load animated models yet. [Animation](animation.md) describes the animator.
+
+## Pointer events
+
+`on(type, handler)` calls `handler` for each pointer event of `type` on the object: `'click'`, `'pointerdown'`, `'pointerup'`, `'pointermove'`, `'pointerenter'` or `'pointerleave'`. `off(type, handler)` removes the handler. An event on a child goes on to its parents, so a handler on a group hears the events of everything under it.
+
+```ts
+door.on('click', () => door.rotateY(Math.PI / 2));
+```
+
+The engine tests objects where the last frame's update put them, with the camera of the frame that was on screen at each event. Destroying an object removes its handlers. An event type that objects do not have throws [E1205](../errors/E1205.md) in development builds. [Input](input.md#pointer-events-on-objects) describes the events in full.
 
 ## Names
 
@@ -132,6 +143,7 @@ The `name` option gives an object a name that error messages show, such as `"Cra
 - [Render layers](../concepts/render-layers.md): which cameras draw which objects.
 - [Math helpers](math.md): vectors, quaternions and matrices for the setters and getters.
 - [Animation](animation.md): the animator of an animated object.
+- [Input](input.md#pointer-events-on-objects): pointer events on objects.
 
 ## API reference
 
@@ -151,10 +163,14 @@ A drawn object: a mesh and a material.
 
 | Member | Description |
 | --- | --- |
+| `setMorphWeight(target: number \| string, weight: number): void` | Sets how far the mesh moves toward one of its morph targets, from the next frame: 0 keeps the target's shape out, 1 adds all of it, and other numbers scale it. Like setting three.js's `morphTargetInfluences[target]`. `target` is the target's number, from 0, or its name. A clip that animates the weight blends its own value with this one while it plays, as three.js's mixer does, and this one holds when no clip moves it. A WebGL2 device draws a preset's count of each mesh's largest weights (the `morphTargets` quality setting). Throws E1218 for a target that the mesh does not have, and E1203 for a weight that is not a finite number. |
+| `getMorphWeight(target: number \| string): number` | The weight of one of the mesh's morph targets, as `setMorphWeight` or the model's file set it, without what a playing clip adds. Throws E1218 for a target that the mesh does not have. |
+| `destroy(): void` | Removes the object at the next frame, and frees its morph weights. Its children become roots. |
 | `setMaterial(material: Material): void` | Changes the material from the next frame. |
 | `setMesh(mesh: MeshGeometry): void` | Changes the shape from the next frame. The mesh's bounds replace the object's, so call `setBounds` again after this when the object needs bounds of its own. |
 | `setCastShadows(cast: boolean): void` | Makes the mesh cast the shadows of a directional light, or stop. The default is false. A change rebuilds the engine's tables of what it draws, as a new material does. |
 | `setReceiveShadows(receive: boolean): void` | Makes shadows fall on the mesh, or stop. The default is false. Unlit materials show no shadows. A change rebuilds the engine's tables of what it draws, as a new material does. |
+| `setOutlined(outlined: boolean): void` | Draws an outline around the mesh, or stops, as adding it to three.js's `OutlinePass.selectedObjects` does. The outline shows while `post.set({ outline })` turns outlines on, and every outlined mesh takes its settings. The default is false. A change rebuilds the engine's tables of what it draws, as a new material does. |
 | `setOccluder(occluder: boolean): void` | Makes the mesh block the view, or stop. The default is false, except for the meshes of a model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small depth buffer every frame, and the engine skips every object that lies wholly behind the blockers. Mark large, solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles. A mesh that the asset tool gave a blocker draws that blocker instead, a few boxes inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha mask, use a custom material or are skinned never block, whatever this says. WebGPU culls hidden objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables. |
 | `setRenderOrder(order: number): void` | Sets the order in which the mesh draws among blended objects, lower first, as three.js's `renderOrder`. Objects of one order draw farthest first. The default is 0. The engine orders opaque and masked objects itself. |
 | `setFrustumCulled(culled: boolean): void` | With false, the engine draws the mesh even where its bounds are out of view, as three.js's `frustumCulled = false` does. The default is true. For vertices that a shader moves, larger bounds from `setBounds` cost less. |
@@ -190,6 +206,8 @@ A node in the scene: position, rotation and scale, a parent, visibility.
 | `setDynamic(dynamic: boolean): void` | Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. |
 | `animator(): Animator` | The object's animator, which plays the clips of the model that created the object. An object without animation clips has none, and the call throws. |
 | `destroy(): void` | Removes the object at the next frame. Its children become roots. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on the object: 'click', 'pointerdown', 'pointerup', 'pointermove', 'pointerenter' or 'pointerleave'. An event on a child goes on to its parents, so a handler on a model's group hears clicks on all its parts. The engine casts a ray from the frame that was on screen at each event, against objects where they are now. Handlers run on the sketch's thread at the start of the next frame, before `onUpdate`. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 
 ### `ParentOptions`
 

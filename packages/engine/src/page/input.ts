@@ -8,6 +8,7 @@ import {
 	EVENT_KEY_DOWN,
 	EVENT_KEY_UP,
 	EVENT_POINTER_DOWN,
+	EVENT_POINTER_LEAVE,
 	EVENT_POINTER_MOVE,
 	EVENT_POINTER_UP,
 	EVENT_WHEEL,
@@ -77,12 +78,14 @@ export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike
 			if (ring.busy()) return;
 		}
 		// A release of a pointer the canvas never saw pressed belongs to the rest of the page.
-		else if (!held.pointerUp(id)) return;
+		else if (type === EVENT_POINTER_UP && !held.pointerUp(id)) return;
 		ring.write(type, x, y, event.button, id, event.buttons, flags);
 	};
 	const onMove = pointer(EVENT_POINTER_MOVE);
 	const onDown = pointer(EVENT_POINTER_DOWN);
 	const onUp = pointer(EVENT_POINTER_UP);
+	// A drag holds the pointer on the canvas, so the browser sends this only once no drag runs.
+	const onLeave = pointer(EVENT_POINTER_LEAVE);
 	const writeKeyUp = (key: number) => ring.write(EVENT_KEY_UP, 0, 0, key, 0, 0, 0);
 	const onKeyDown = (event: KeyboardEvent) => {
 		const key = keys.get(event.code);
@@ -126,6 +129,7 @@ export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike
 			if (on) {
 				canvas.addEventListener('pointermove', onMove);
 				canvas.addEventListener('pointerdown', onDown);
+				canvas.addEventListener('pointerleave', onLeave);
 				window.addEventListener('pointerup', onUp);
 				// The browser cancels a touch that becomes a page scroll or a system gesture: a release too.
 				window.addEventListener('pointercancel', onUp);
@@ -142,6 +146,7 @@ export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike
 			gamepads.stop();
 			canvas.removeEventListener('pointermove', onMove);
 			canvas.removeEventListener('pointerdown', onDown);
+			canvas.removeEventListener('pointerleave', onLeave);
 			window.removeEventListener('pointerup', onUp);
 			window.removeEventListener('pointercancel', onUp);
 			window.removeEventListener('keydown', onKeyDown);

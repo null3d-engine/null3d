@@ -3,12 +3,18 @@ import {
 	ACCEPT_SSL_SCRIPT,
 	authHeaders,
 	capabilities,
-	needsAcceptSsl,
+	certificateScript,
 	redactor,
 } from './browserstack.ts';
 import { type CloudDevice, cloudDevice } from './browserstack-devices.ts';
-import { type CloudAccount, CloudSessions, deviceText, STATUS_SCRIPT } from './cloud-sessions.ts';
-import { webDriver } from './webdriver.ts';
+import {
+	type CloudAccount,
+	CloudSessions,
+	deviceText,
+	STATUS_SCRIPT,
+	UNANSWERED_POLLS,
+} from './cloud-sessions.ts';
+import { type WebDriver, WebDriverError, webDriver } from './webdriver.ts';
 
 const CREDENTIALS = { user: 'tester-user-1', key: 'secret-access-key-123' };
 
@@ -91,6 +97,7 @@ function sessionsOn(
 	lines: string[],
 	marks: unknown[] = [],
 	pollMs = 60_000,
+	wrap: (driver: WebDriver) => WebDriver = (driver) => driver,
 ) {
 	const devices = new Map(
 		['bsiphone17-safari', 'bspixel10-chrome'].map((name) => [
@@ -100,15 +107,14 @@ function sessionsOn(
 	);
 	const account: CloudAccount = {
 		capabilities: (device, runner) => capabilities(device, { build: 'build-1', session: runner }),
-		needsAcceptSsl,
-		acceptSslScript: ACCEPT_SSL_SCRIPT,
+		certificateScript,
 		link: async (id) => `https://automate.example/sessions/${id}`,
 		mark: async (id, passed, reason) => {
 			marks.push({ id, passed, reason });
 		},
 	};
 	const driver = webDriver(fake.url, authHeaders(CREDENTIALS), redactor(CREDENTIALS));
-	return new CloudSessions(devices, driver, account, (line) => lines.push(line), pollMs);
+	return new CloudSessions(devices, wrap(driver), account, (line) => lines.push(line), pollMs);
 }
 
 const PAGE = 'https://bs-local.com:3001/tests/pages/runner.html?listen&runner=bsiphone17-safari';
@@ -204,6 +210,34 @@ describe('CloudSessions', () => {
 				'bspixel10-chrome: https://automate.example/sessions/session-1 (the cloud ended it early',
 			),
 		]);
+	});
+
+	it('keeps a session whose status reads go unanswered a few times, and counts it lost after that', async () => {
+		hub = fakeHub();
+		const lines: string[] = [];
+		let silent = false;
+		const sessions = sessionsOn(hub, lines, [], 60_000, (driver) => ({
+			...driver,
+			execute: (id, script) =>
+				silent
+					? Promise.reject(
+							new WebDriverError('no answer', 'POST execute: The operation timed out.'),
+						)
+					: driver.execute(id, script),
+		}));
+		await sessions.open('bspixel10-chrome', PAGE);
+		silent = true;
+		for (let i = 1; i < UNANSWERED_POLLS; i++) await sessions.poll('bspixel10-chrome');
+		expect(sessions.lost('bspixel10-chrome')).toBe(false);
+		expect(lines.at(-1)).toContain(`no answer to the status read, ${UNANSWERED_POLLS - 1} of`);
+		silent = false;
+		await sessions.poll('bspixel10-chrome');
+		silent = true;
+		for (let i = 1; i < UNANSWERED_POLLS; i++) await sessions.poll('bspixel10-chrome');
+		expect(sessions.lost('bspixel10-chrome')).toBe(false);
+		await sessions.poll('bspixel10-chrome');
+		expect(sessions.lost('bspixel10-chrome')).toBe(true);
+		expect(lines.at(-1)).toContain('the cloud ended the session: POST execute');
 	});
 
 	it('reports a session the cloud refused, without the credentials that the error quoted', async () => {
