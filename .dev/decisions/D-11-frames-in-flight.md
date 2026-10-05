@@ -12,7 +12,7 @@ On 3 October 2026:
 | --- | --- | --- |
 | Frames in flight | Decided by the owner, 2026-09-30: at most two frames unfinished on the GPU, on both paths | The iPad's rows of the GPU-bound page. The four Mac browsers and the S24+ support the decision, so these rows can only confirm it or reopen it |
 | The preset check's thresholds | Proposed by M1-G3 | The owner's answer on the grace, the window and the target on 120 Hz displays (below) |
-| The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. In M1-G6's S4 reruns, the render scale held still in every measured second. M1-K5 moved the step-down line to the line at which the benchmark reports count a held second, and gave each setting its own wait after a failed step up (below) | The iPad's S4 rerun at Low, warm; the owner's answer |
+| The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. M2-R3 gave the page's thread a measurement of the display of its own, for Safari with `?render=main`. In M1-G6's S4 reruns, the render scale held still in every measured second. M1-K5 moved the step-down line to the line at which the benchmark reports count a held second, and gave each setting its own wait after a failed step up (below) | The iPad's S4 rerun at Low, warm; the owner's answer |
 | The preset values | Set by M1-G6 (#215), 2026-10-03. The S24+ passed its S4 gate at Low. Warm, the iPad held about 45 fps at Medium, so the owner decided to judge its gate at Low. It passed at Low: 298 of 299 seconds at 60 fps | Open for later: the chooser starts the S24+ at Low, though it held Medium for 5 minutes. A follow-up measures the render scale on tile-based GPUs |
 | The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
 
@@ -252,6 +252,46 @@ The iPad then passed all 4 pages (`bun tests/real-browsers.ts --plan governor --
 | Hold | WebGPU | Lowest scale 0.85; the last 15 seconds at 57 to 60 fps |
 | Hold | WebGL2 | Lowest scale 0.65; the last 15 seconds at 59 to 61 fps |
 
+### Drawing on the page's thread (M2-R3)
+
+#222's fix needs a thread that does not draw. With `?render=main`, the page draws on its own thread, and its callbacks are the only display clock. Safari 26.6.2 on the Mac, 72 Hz display, 5 October 2026, before the fix (`--plan governor --switches render=main Safari`):
+
+- The hold on WebGL2 failed. The meter read 34 to 35 Hz, so the budget grew to 29 ms, and the render scale never dropped. The last 15 seconds held 33 to 35 fps.
+- The hold on WebGPU passed. Safari's page callbacks kept 72 Hz on that path.
+- A probe logged each callback's interval. Idle, before the load, they came 13 to 15 ms apart. Under the load, they came 26 to 36 ms apart, spread evenly, at no refresh. No frame was unfinished on the GPU at any callback. So the callbacks wait for the GPU, and their timing tells nothing of the display.
+- After one callback that drew nothing, the next came part of a refresh later, and 8 such intervals read 120 Hz. After a second callback that drew nothing, all the intervals but one measured 13 to 15 ms.
+
+The fix measures the display from the interval after two callbacks in a row that drew nothing. While all the callbacks come slower than 90% of the display rate, the thread makes such a pair after every 30 frames. Callbacks never come faster than the display, so a faster measurement of all the callbacks raises the display rate at once. The metrics hold the display rate. The thresholds:
+
+- Two quiet callbacks: one measured part of a refresh, as above.
+- A check after 30 frames: a check costs about two refreshes of one frame. Under the hold's load that is under 2% of the frame rate, and none once the governor brings the frames back to the display rate.
+- 8 intervals per measurement: under load, one comes per check, so the 32 of the callbacks' meter would take half a minute.
+- At least 60 Hz to compare with, until the quiet intervals have measured the display. Callbacks slowed from the first frame would otherwise pass for the display.
+- 90%: callbacks at the display's rate measure within a few percent of it.
+
+Rejected:
+
+- The highest rate measured since the start, as for #222: it misses a real drop, such as a low power mode at 30 Hz.
+- The rate measured before the first frame alone. A scene too heavy from its first frame would never be measured right, nor a display that changes later.
+- Longer pauses to measure: each would show as a stall.
+
+After the fix, the governor plan with `?render=main` passed 4 of 4 in Safari on the Mac, in three runs. The refresh rate held 72 Hz in every measurement. The last run (`20261005-093503-governor`, the final code):
+
+| Stage | Path | Result |
+| --- | --- | --- |
+| Walk | WebGPU | All 9 steps, down and back up |
+| Walk | WebGL2 | All 9 steps, down and back up |
+| Hold | WebGPU | Lowest scale 0.75; the last 15 seconds at 58 to 60 fps |
+| Hold | WebGL2 | Lowest scale 0.75; the last 15 seconds at 57 to 65 fps |
+
+Other runs on the same day:
+
+- Chrome with `?render=main` passed 4 of 4, at 120 Hz in every measurement.
+- Safari in the default mode, where a worker draws, passed 4 of 4.
+- Safari in single-threaded mode (`?threads=off`) passed 4 of 4. A first version read 28 Hz in the walk's first 6 to 8 seconds of load. The start left no quiet pair, and the load slowed the callbacks before the first check. The rise to the callbacks' faster rate fixed it. With the final code, every measurement read 72 Hz (`20261005-093142-governor`).
+
+The iPad run of the same plan decides the task (`bun tests/real-browsers.ts --plan governor --switches render=main --lan ipad-safari`).
+
 ### How three.js handles it
 
 three.js draws at the pixel ratio that the app sets with `renderer.setPixelRatio`, and never changes it by itself. A change of pixel ratio resizes the canvas's drawing buffer, and the app resizes its own render targets to match. three.js lowers no shadow setting by itself either.
@@ -263,7 +303,7 @@ null3D builds the loop in, so an app gets it with no code of its own. The govern
 ### Open for the owner
 
 - The shadow steps help only a scene whose shadows cost much. The render scale helps only a GPU-bound scene. A CPU-bound scene walks down every step for nothing. The governor could undo a step that did not shorten the frames.
-- A slow sketch on the thread that draws slows the frame callbacks, as in low latency and single-threaded modes. The refresh meter reads them as a slower display. The budget then grows, and the governor misses the overload.
+- A slow sketch on the thread that draws slows the frame callbacks, as in low latency and single-threaded modes. The refresh meter reads them as a slower display. The budget then grows, and the governor misses the overload. M2-R3's measurement covers single-threaded mode, where the page's thread draws. Low latency mode, where a worker draws, is still open.
 - The S4 benchmark kept its render scale at 1, to match its three.js twin's pixels. Since M1-G6 it keeps the preset's range of render scales, as exit gate item 3 measures it.
 
 ### The warm iPad's gate at Low (M1-K5)

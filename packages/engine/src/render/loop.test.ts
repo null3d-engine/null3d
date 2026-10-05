@@ -437,3 +437,110 @@ describe('the hold to the display rate', () => {
 		}
 	});
 });
+
+describe("the display's rate on the page's thread", () => {
+	let loop: RenderLoop | undefined;
+	const scope = globalThis as { document?: unknown };
+	beforeEach(() => {
+		scope.document = {};
+	});
+	afterEach(() => {
+		loop?.stop();
+		delete scope.document;
+	});
+
+	const DISPLAY_MS = 1000 / 72;
+	/** Callbacks before the sketch publishes its first frame, as while the pipelines build. */
+	const IDLE = 20;
+	const CALLS = 600;
+
+	/**
+	 * Runs the render loop on the page, with callbacks as Safari's page makes them while the GPU
+	 * falls behind: the callback after one that drew a frame comes `drawnMs` later, at no refresh.
+	 * The callback after one that drew nothing comes at the display's next refresh, part of a
+	 * refresh later when the one before it drew, and a whole refresh later when it drew nothing too.
+	 * Each callback after the first `idle` finds a new frame. Returns the frames drawn and the
+	 * refresh rate that the metrics hold at the end.
+	 */
+	function runSlowed(drawnMs: number, idle = IDLE) {
+		const { control, metrics, slots, drawn, renderer, reader } = setup();
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		let time = 0;
+		let lastDrew = false;
+		for (let call = 0; call < CALLS; call++) {
+			if (call >= idle) Atomics.store(slots, Slot.FramesPublished, call + 1);
+			const before = drawn.length;
+			const callbacks = pending;
+			pending = [];
+			for (const callback of callbacks) callback(time);
+			const drew = drawn.length > before;
+			time += drew ? drawnMs : lastDrew ? DISPLAY_MS / 2 : DISPLAY_MS;
+			lastDrew = drew;
+		}
+		return { drawn, refreshHz: reader.refreshHz };
+	}
+
+	it('records the display rate while slowed callbacks draw every frame', () => {
+		// Safari's page callbacks at 34 a second under the hold's load, on a 72 Hz display.
+		const { drawn, refreshHz } = runSlowed(1000 / 34);
+		expect(refreshHz).toBe(72);
+		// Two callbacks in about 32 draw nothing, so the interval after them measures the display.
+		const skipped = CALLS - IDLE - drawn.length;
+		expect(skipped).toBeGreaterThan(25);
+		expect(skipped).toBeLessThan(45);
+	});
+
+	it('measures the display through such callbacks when every callback found a frame', () => {
+		expect(runSlowed(1000 / 34, 0).refreshHz).toBe(72);
+	});
+
+	it('keeps the rate of callbacks that ran at the display rate once they slow', () => {
+		// The page's thread runs the sketch and draws from the first callback on, so no callback
+		// drew nothing before the load came.
+		const { control, metrics, renderer, reader } = setup();
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		let time = 0;
+		const run = (calls: number, ms: number) => {
+			for (let call = 0; call < calls; call++) {
+				const callbacks = pending;
+				pending = [];
+				for (const callback of callbacks) callback(time);
+				time += ms;
+			}
+		};
+		run(CALLBACKS, DISPLAY_MS);
+		expect(reader.refreshHz).toBe(72);
+		// A sketch that spins for two refreshes slows every callback that steps it.
+		run(CALLBACKS, 1000 / 28);
+		expect(reader.refreshHz).toBe(72);
+	});
+
+	it('draws every callback where the callbacks keep the display rate', () => {
+		const { drawn, refreshHz } = runSlowed(DISPLAY_MS);
+		expect(refreshHz).toBe(72);
+		expect(drawn).toHaveLength(CALLS - IDLE);
+	});
+
+	it('follows a display that turns slower, then draws every callback again', () => {
+		const { control, metrics, slots, drawn, renderer, reader } = setup();
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		let time = 0;
+		const run = (calls: number, ms: number, publish: boolean) => {
+			for (let call = 0; call < calls; call++) {
+				if (publish) Atomics.store(slots, Slot.FramesPublished, drawn.length + 1);
+				const callbacks = pending;
+				pending = [];
+				for (const callback of callbacks) callback(time);
+				time += ms;
+			}
+		};
+		run(CALLS, DISPLAY_MS, false);
+		expect(reader.refreshHz).toBe(72);
+		// A window moved to a 30 Hz screen: every callback comes 33 ms after the last.
+		run(CALLS, 1000 / 30, true);
+		expect(reader.refreshHz).toBe(30);
+		const before = drawn.length;
+		run(CALLS, 1000 / 30, true);
+		expect(drawn.length - before).toBe(CALLS);
+	});
+});
