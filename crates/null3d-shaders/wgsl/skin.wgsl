@@ -20,6 +20,13 @@
 //   the joint texture, or every bit set for a mesh that no joint skins, the first texel of its
 //   object's morph weights in the morph texture, and padding.
 //
+// The VERTEX_TANGENT build skins the formats that have a tangent, and the other build those that
+// have none. The build without the bit holds no code that reads or writes a tangent, so no thread
+// can write the tangent's words, which lie past the vertex's own words in a format without one.
+// Adreno 830's driver runs the tangent's write behind a runtime check even where the check is false,
+// and takes the wrong branch by type in a reader with a return in each branch ("Browser faults" in
+// .dev/implementation-notes.md). So the format picks the build, and `component` has no branch.
+//
 // A skinned vertex has its position as 32-bit floats, then its normal, then the source's other
 // attributes in their order. The normal and a tangent take one word each, as 8-bit normalized
 // integers of their unit directions, with the tangent's handedness in the fourth byte. A pipeline
@@ -68,27 +75,24 @@ const NONE: u32 = 0xffffffffu;
 
 /// Component `c` of the attribute that `field` places, in the source vertex at word `vertex`, as
 /// a vertex shader reads it: a float, a normalized integer as a fraction, or a plain integer as
-/// its whole value. The type codes are those of the engine's vertex types.
+/// its whole value. The type codes are those of the engine's vertex types. Every type reads one
+/// word and picks its value with `select`, with no branch (see the notes at the top).
 fn component(vertex: u32, field: u32, c: u32) -> f32 {
-    let at = vertex + (field & 0xffu);
     let kind = (field >> 8u) & 0xffu;
-    if kind == 0u {
-        return bitcast<f32>(source[at + c]);
-    }
-    if kind == 1u || kind == 2u || kind == 5u || kind == 6u {
-        let byte = (source[at + c / 4u] >> (8u * (c % 4u))) & 0xffu;
-        if kind == 1u || kind == 5u {
-            return select(f32(byte), f32(byte) / 255.0, kind == 1u);
-        }
-        let signed = f32(bitcast<i32>(byte << 24u) >> 24u);
-        return select(signed, max(signed / 127.0, -1.0), kind == 2u);
-    }
-    let half = (source[at + c / 2u] >> (16u * (c % 2u))) & 0xffffu;
-    if kind == 3u || kind == 7u {
-        return select(f32(half), f32(half) / 65535.0, kind == 3u);
-    }
-    let signed = f32(bitcast<i32>(half << 16u) >> 16u);
-    return select(signed, max(signed / 32767.0, -1.0), kind == 4u);
+    let bytes = kind == 1u || kind == 2u || kind == 5u || kind == 6u;
+    let halves = kind == 3u || kind == 4u || kind == 7u || kind == 8u;
+    let signed = kind == 2u || kind == 4u || kind == 6u || kind == 8u;
+    let normalized = kind >= 1u && kind <= 4u;
+    let index = select(select(c, c / 2u, halves), c / 4u, bytes);
+    let word = source[vertex + (field & 0xffu) + index];
+    // An integer's bits moved to the top of the word, so that a shift back down extends its sign.
+    let width = select(select(32u, 16u, halves), 8u, bytes);
+    let shift = select(select(0u, 16u * (c % 2u), halves), 8u * (c % 4u), bytes);
+    let bits = (word >> shift) << (32u - width);
+    let whole = select(f32(bits >> (32u - width)), f32(bitcast<i32>(bits) >> (32u - width)), signed);
+    let largest = select(select(65535.0, 32767.0, signed), select(255.0, 127.0, signed), bytes);
+    let integer = select(whole, max(whole / largest, -1.0), normalized);
+    return select(integer, bitcast<f32>(word), kind == 0u);
 }
 
 /// The three components of the attribute that `field` places.
@@ -215,9 +219,9 @@ fn main(
     let out = part.w + v * strides.y;
 
     var rest = Morphed(vector(vertex, strides.z), vector(vertex, strides.w), vec3f(0.0));
-    if more.x != NONE {
-        rest.tangent = vector(vertex, more.x);
-    }
+#ifdef VERTEX_TANGENT
+    rest.tangent = vector(vertex, more.x);
+#endif
     if more.w != NONE && object.y != NONE {
         let range = vec2f(component(vertex, more.w, 0u), component(vertex, more.w, 1u));
         rest = morphed(rest, range, object.y);
@@ -245,12 +249,12 @@ fn main(
     let n = rest.normal;
     let normal = vec3f(dot(row_x.xyz, n), dot(row_y.xyz, n), dot(row_z.xyz, n));
     store_direction(out + 3u, normal, 0.0, false);
-    if more.x != NONE {
-        let t = rest.tangent;
-        let at = out + ((more.x >> 16u) & 0xffu);
-        let turned = vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t));
-        store_direction(at, turned, component(vertex, more.x, 3u), true);
-    }
+#ifdef VERTEX_TANGENT
+    let t = rest.tangent;
+    let at = out + ((more.x >> 16u) & 0xffu);
+    let turned = vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t));
+    store_direction(at, turned, component(vertex, more.x, 3u), true);
+#endif
     copy_run(vertex, out, runs.x);
     copy_run(vertex, out, runs.y);
 }
