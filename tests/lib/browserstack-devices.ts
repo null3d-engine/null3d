@@ -143,7 +143,7 @@ export const CLOUD_DEVICES: readonly CloudDevice[] = [
 		tier: 'B',
 		device: 'iPhone 13',
 		os: 'ios',
-		osVersion: '17',
+		osVersion: '18',
 		browser: 'safari',
 		allowNoWebgpu: true,
 	},
