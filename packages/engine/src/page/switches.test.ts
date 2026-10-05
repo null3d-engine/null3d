@@ -22,6 +22,7 @@ describe('parseSwitches', () => {
 			prepass: undefined,
 			occlusion: undefined,
 			vertexSkinning: false,
+			shadowDepthBits: 16,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -36,6 +37,12 @@ describe('parseSwitches', () => {
 	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
 		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
 		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
+	});
+
+	it('keeps shadow cascades in 16-bit depth unless ?shadowdepth=32 asks for 32-bit floats', () => {
+		expect(parseSwitches('?shadowdepth=32').shadowDepthBits).toBe(32);
+		expect(parseSwitches('?shadowdepth=16').shadowDepthBits).toBe(16);
+		expect(parseSwitches('?shadowdepth=24').shadowDepthBits).toBe(16);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {

@@ -136,8 +136,8 @@ use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
-use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
-use crate::shadows::{self, MAX_CASCADES, ShadowUniform};
+use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
+use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -364,6 +364,8 @@ pub struct RendererConfig {
     /// True to skin skinned meshes in the vertex shader of each pass that draws them, false to
     /// skin each once per frame in the skinning pass.
     pub vertex_skinning: bool,
+    /// How the shadow cascades store depth.
+    pub cascade_depth: CascadeDepth,
 }
 
 impl Default for RendererConfig {
@@ -379,6 +381,7 @@ impl Default for RendererConfig {
             light_limits: LightLimits::default(),
             depth_prepass: false,
             vertex_skinning: false,
+            cascade_depth: CascadeDepth::default(),
         }
     }
 }
@@ -398,8 +401,8 @@ pub struct GpuDrivenRenderer {
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
-    /// True when the layouts were built for a frame with shadows.
-    layouts_shadowed: bool,
+    /// The shadow passes of the frame that the layouts were built for.
+    layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
     layouts_outlined: bool,
     /// True once the outline view's GPU objects exist.
@@ -464,6 +467,7 @@ fn scene_settings(config: &RendererConfig) -> SceneSettings {
         config.max_materials,
         textures,
         config.canvas,
+        config.cascade_depth,
     )
 }
 
@@ -500,14 +504,14 @@ impl GpuDrivenRenderer {
                         },
                     },
                 );
-                graph.bind_shadow_map();
+                graph.bind_shadow_map(config.cascade_depth);
                 graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             outlined: Layout::new(Drawn::Outlined),
-            layouts_shadowed: false,
+            layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             outline_made: false,
             layout_prepass: false,
@@ -600,8 +604,19 @@ impl GpuDrivenRenderer {
         let filter = self.settings.shadow_quality().filter;
         self.tiles
             .plan(input, tile_settings, filter, camera.as_ref());
-        // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
-        let shadows = shadow.is_some() || self.tiles.shape().is_some();
+        // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
+        // casters draw into the passes of each.
+        let passes = CasterPasses {
+            cascades: shadow
+                .is_some()
+                .then(|| self.settings.cascade_depth().targets()),
+            tiles: self
+                .tiles
+                .shape()
+                .is_some()
+                .then_some(shadow_tiles::TARGETS),
+        };
+        let shadows = passes.any();
         let outlines = self.settings.outline().is_some();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
@@ -619,7 +634,7 @@ impl GpuDrivenRenderer {
                 .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         let upload_everything = input.structure_changed
             || !self.layout.built
-            || shadows != self.layouts_shadowed
+            || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass
             || skinned_appear;
@@ -644,7 +659,7 @@ impl GpuDrivenRenderer {
                 input.batches,
                 parity,
                 limit,
-                shadows,
+                passes,
                 Prepass::DepthTemplate.if_on(self.graph.depth_prepass()),
                 &self.skinning,
             )?;
@@ -663,17 +678,17 @@ impl GpuDrivenRenderer {
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
                 )
                 .map_err(out_of_memory)?;
-            // The casters' layout holds buckets only while the light casts shadows.
+            // The casters' layout holds buckets only while a light casts shadows.
             if shadows {
                 self.casters.rebuild(
                     &self.settings,
                     &mut self.pipelines,
-                    shadows::TARGETS,
+                    targets,
                     input.scene,
                     input.batches,
                     parity,
                     limit,
-                    shadows,
+                    passes,
                     Prepass::Off,
                     &self.skinning,
                 )?;
@@ -681,7 +696,7 @@ impl GpuDrivenRenderer {
                 self.casters.clear();
             }
             self.skinning.asked();
-            self.layouts_shadowed = shadows;
+            self.layouts_shadowed = passes;
             // The outlined layout holds buckets only while outlines are on.
             if outlines {
                 self.outlined.rebuild(
@@ -692,7 +707,7 @@ impl GpuDrivenRenderer {
                     input.batches,
                     parity,
                     limit,
-                    shadows,
+                    passes,
                     Prepass::Off,
                     &self.skinning,
                 )?;
@@ -947,14 +962,12 @@ impl GpuDrivenRenderer {
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes)?;
             let (casters, meshes) = (&self.casters, &self.meshes);
-            opaque::record_bundle(
-                list,
-                view,
-                casters,
-                meshes,
-                shadows::TARGETS,
-                Bundle::Opaque,
-            )?;
+            let (targets, kind) = if view.tile_index().is_some() {
+                (shadow_tiles::TARGETS, Bundle::Tile)
+            } else {
+                (self.settings.cascade_depth().targets(), Bundle::Opaque)
+            };
+            opaque::record_bundle(list, view, casters, meshes, targets, kind)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;

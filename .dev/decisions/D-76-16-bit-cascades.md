@@ -1,0 +1,70 @@
+# D-76: 16-bit depth for the shadow cascades
+
+Status: decided. Date: 2026-10-05. Task: M2-R8. The cost on the iPad and the Automate S25 and Pixel 9, and the S25's check with a Chrome older than 149, are pending.
+
+## Question
+
+The directional light's shadow map stored 32-bit float depth, and so did the atlas of spot and point light tiles. Can the cascades store 16-bit depth? It halves their memory, the bytes that each cascade pass writes and the bytes that each receiver reads. What must change so that no shadow test gets worse?
+
+## Rule
+
+- Adopt 16-bit cascades when no shadow image test changes on any tier, on the Mac's GPU and on SwiftShader. The contact checks must stay within their limits. Memory alone justifies the change when the time is equal: Ultra saves 128 MiB.
+- Keep all bias in the shader. PlayCanvas finds hardware depth bias inconsistent across depth formats on WebGPU, and null3D's casters already draw with none.
+- The tiles change only if their precision holds at the far end of a perspective view.
+
+## Data
+
+One 16-bit step is a cascade's depth range over 65,535. The range is the box's depth: the sphere's diameter plus the margin toward the light, 2r + max(2r, distance) (`shadows.rs`, `fit_cascades`). For S4's 3 cascades over 200 m (technique deep dive, section 4.3):
+
+| Cascade | Radius | Depth range | One 16-bit step | Under the 10 mm bias and plane margin? |
+| --- | --- | --- | --- | --- |
+| 1 (0.1 to 24 m) | 28.3 m | 256.5 m | 3.9 mm | yes |
+| 2 (24 to 57 m) | 67.1 m | 334 m | 5.1 mm | yes |
+| 3 (57 to 200 m) | 235.5 m | 942 m | 14.4 mm | no |
+
+The step depends on the box, not on the map's size, so Ultra's 4,096 texels give the same steps. A plain format change would leave the last cascade's rounding above both defaults that cover it.
+
+A tile is a perspective view whose near plane sits at 1/1,000 of its range. In 16 bits, one step near its far end is about 1.5% of the distance from the light. That is 15 cm at 10 m. Godot stores 16-bit tiles only because it stores linear distance for point lights.
+
+Memory of the cascades (layers x texels squared x bytes per texel):
+
+| Preset | 32-bit | 16-bit |
+| --- | --- | --- |
+| Low (2 x 1,024) | 8 MiB | 4 MiB |
+| Medium and High (3 x 2,048) | 48 MiB | 24 MiB |
+| Ultra (4 x 4,096) | 256 MiB | 128 MiB |
+
+Image tests with 16-bit cascades against the references of 32-bit cascades, for every test whose scene casts shadows. Chrome 154 drew them on the MacBook Pro M5 Max on 5 October 2026:
+
+| GPU set | Tests | Passed |
+| --- | --- | --- |
+| Mac's GPU | 156 | 156 |
+| SwiftShader | 156 | 156 |
+
+The contact checks of S4's sun, 16-bit against 32-bit cascades on the Mac's GPU (Chrome 154, 5 October 2026). All 24 shadow checks passed with 16-bit cascades, and all 16 contact checks with 32-bit ones. The gap is the mean light between a box's foot and its shadow, in pixels. The acne is the mean shadow on the lit tops of slabs that cast shadows, in percent. D-16 gives 0.020 and 0.077 pixels for the near and far gaps:
+
+| View | Measure | WebGPU 16-bit | WebGPU 32-bit | WebGL2 16-bit | WebGL2 32-bit |
+| --- | --- | --- | --- | --- | --- |
+| Near | gap | 0.0202 px | 0.0199 px | 0.0178 px | 0.0163 px |
+| Last cascade | gap | 0.0766 px | 0.0771 px | 0.0838 px | 0.0813 px |
+| Turning camera | gap | 0.0447 px | 0.0453 px | 0.0431 px | 0.0391 px |
+| Slabs, S4's sun | acne | 0.249% | 0.249% | 0.216% | 0.216% |
+| Slabs, sun at 35 degrees | acne | 0.378% | 0.378% | 0.345% | 0.345% |
+| Slabs, sun at 20 degrees | acne | 0.445% | 0.445% | 0.413% | 0.414% |
+
+The gaps move by at most 0.0025 px, and the acne by at most 0.0005 percentage points. A run of 16-bit cascades with no floor gave the same figures as the floor, to four decimals. The likely reason: no caster in the contact scene lies within 2 cm under a receiver. A floor of 1,000 steps failed the last cascade's check on both paths, with a gap of 0.86 px. So the shader does apply the floor. The floor guards against the rounding that the table of steps above computes. A scene whose casters lie a step or less under their receivers would show it.
+
+How the data was produced: `bun run test:images -g "shadow|depth-bias|debug-view|vertex-types|ao-|grading|material-maps|outline|skinning|s4|s5|s1"`, with `CI=1` for SwiftShader. The contact checks ran with `bunx playwright test shadow-contact.spec.ts`, once as built and once with `NULL3D_SWITCHES=shadowdepth=32`.
+
+## Decision
+
+- The cascades store `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2, on every preset. The tiles stay `depth32float`.
+- In each cascade, the receiver's bias toward the light is at least 1.5 steps of stored depth, in meters, before the one-texel cap. The receiver plane's margin is at least 1.5 steps of depth. The shader gets the step in the shadow uniform's spare `kernel.w` and the depth per meter from the cascade's matrix, so the block keeps its size. A step of 1.5 covers the half step of rounding on each side with room to spare. In S4's last cascade the floor is 21.6 mm. The one-texel cap there is 23 cm, so the cap never cuts the floor.
+- `?shadowdepth=32` keeps 32-bit cascades, and the `-depth32` bench pages use it, so a device can time the two in one session.
+- WebGPU reads the cascades with `textureGather` through a plain sampler, not with the comparison sampler. So the Adreno comparison fault of decision 28 touches only the tiles there, and the format change does not widen it. WebGL2 reads the cascades through the comparison sampler, as before.
+
+## Consequences
+
+- `crates/null3d-render/src/shadows.rs` holds `CascadeDepth` and `CasterPasses`. Each caster bucket has a pipeline for the cascades and one for the tiles, each only while that kind of shadow is on ([implementation notes](../implementation-notes.md#shadows)).
+- [Shadows](../../docs/concepts/shadows.md#bias) and [Quality presets](../../docs/concepts/quality-presets.md#the-settings-of-each-preset) give the format, the floor and the memory of each preset.
+- Pending device runs: S4 and S2 with 3 cascades, each page against its `-depth32` twin. They run on the iPad and the Automate S25 and Pixel 9, on WebGPU and WebGL2. The shadow image tests also run on the S25 with Chrome 149 or later and, if BrowserStack offers one, an older Chrome. Decision 28 adds a guard only if the older Chrome draws wrong shadows.

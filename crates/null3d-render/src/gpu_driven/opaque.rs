@@ -102,6 +102,9 @@ pub(super) enum Bundle {
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
     Outline,
+    /// The casters' depth into a tile of the shadow atlas, each bucket with its pipeline for the
+    /// tiles, whose depth format may differ from the cascades'.
+    Tile,
 }
 
 /// Records a view's bundle of `kind`: each draw of every bucket of the layout, with the bucket's
@@ -147,6 +150,17 @@ pub(super) fn record_bundle(
             draw_buckets(list, view, layout, meshes, frame_group, pipeline, |b| {
                 b.prepass_own
             })?;
+        }
+        Bundle::Tile => {
+            draw_buckets(
+                list,
+                view,
+                layout,
+                meshes,
+                frame_group,
+                |b| b.prepass,
+                |_| true,
+            )?;
         }
         Bundle::Outline => {
             draw_buckets(

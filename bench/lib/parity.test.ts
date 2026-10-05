@@ -429,6 +429,8 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-depth32',
+			'null3d-webgl2-depth32',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -475,6 +477,15 @@ describe('the pages', () => {
 		);
 	});
 
+	test('runs the 32-bit shadow cascade pages on the pipelined pages with the depth switch', () => {
+		expect(pagePath('s4', 'null3d-webgpu-depth32', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowdepth=32&seconds=2',
+		);
+		expect(pagePath('s4', 'null3d-webgl2-depth32')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgl2&shadowdepth=32',
+		);
+	});
+
 	test('sweeps job worker counts on the null3D pages only', () => {
 		expect(JOBS_PAGES).toEqual(['null3d-webgpu', 'null3d-webgl2']);
 		expect(PAGE_KINDS.filter(isNull3dPage)).toEqual([
@@ -489,6 +500,8 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-depth32',
+			'null3d-webgl2-depth32',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -499,6 +512,8 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgpu',
+			'webgpu',
+			'webgl2',
 			'webgpu',
 			'webgl2',
 			'webgpu',

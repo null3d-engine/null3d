@@ -66,7 +66,7 @@ use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter,
 use crate::camera::{Affine, Lens, Mat4, ViewDepth};
 use crate::frame::{RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
-use crate::pipelines::PassTargets;
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 use crate::view::ViewFrame;
 
 /// The most cascades a directional light's shadow map has.
@@ -635,6 +635,8 @@ pub struct ShadowFrame {
     /// The cascades that draw in this frame, one bit each, the nearest in bit 0. The others keep
     /// what their layers hold.
     pub drawn: u32,
+    /// How the shadow map stores depth.
+    pub depth: CascadeDepth,
 }
 
 impl ShadowFrame {
@@ -677,17 +679,92 @@ impl ShadowFrame {
 
     /// The uniform block that receivers read.
     pub fn uniform(&self) -> ShadowUniform {
-        ShadowUniform::new(&self.cascades, &self.settings)
+        ShadowUniform::new(&self.cascades, &self.settings, self.depth)
     }
 }
 
-/// What the shadow passes draw into: a depth texture of one sample, with no color.
-pub const TARGETS: PassTargets = PassTargets {
-    color_format: format::NONE,
-    depth_format: format::DEPTH32_FLOAT,
-    samples: 1,
-    permutation: 0,
-};
+/// How the cascades' shadow map stores depth. Each cascade's depth runs from 0 to 1 over its box,
+/// whose length toward the light is fixed by its sphere and its margin, not by the map's size.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CascadeDepth {
+    /// 16-bit unsigned normalized depth: half the memory and half the bandwidth of 32-bit floats,
+    /// as Filament, Unity's URP and Godot store their cascades. One step of depth is the box's
+    /// length over 65,535: 14 mm in a far cascade 200 m out, so receivers floor their bias toward
+    /// the light and their plane's margin at [`DEPTH_STEPS_FLOOR`] steps.
+    #[default]
+    Unorm16,
+    /// 32-bit float depth, kept to compare the two formats on a device.
+    Float32,
+}
+
+/// The fewest steps of the cascade's stored depth that a receiver's bias toward the light and its
+/// plane's margin cover, so that the rounding of a caster's stored depth never shadows the
+/// receiver that it lies under.
+pub const DEPTH_STEPS_FLOOR: f32 = 1.5;
+
+impl CascadeDepth {
+    /// The format of `bits` bits per texel: 32-bit floats for 32, and 16-bit depth otherwise.
+    pub const fn from_bits(bits: u32) -> Self {
+        if bits == 32 {
+            CascadeDepth::Float32
+        } else {
+            CascadeDepth::Unorm16
+        }
+    }
+
+    /// The draw list's depth format.
+    pub const fn format(self) -> u32 {
+        match self {
+            CascadeDepth::Unorm16 => format::DEPTH16_UNORM,
+            CascadeDepth::Float32 => format::DEPTH32_FLOAT,
+        }
+    }
+
+    /// The step between two stored depths, in the cascade's depth from 0 to 1, or 0 for floats.
+    /// A float stores the depths near receivers finer than the plane's margin needs.
+    pub const fn step(self) -> f32 {
+        match self {
+            CascadeDepth::Unorm16 => 1.0 / 65_535.0,
+            CascadeDepth::Float32 => 0.0,
+        }
+    }
+
+    /// What the cascades' shadow passes draw into: a depth texture of this format with one
+    /// sample, and no color.
+    pub const fn targets(self) -> PassTargets {
+        PassTargets {
+            color_format: format::NONE,
+            depth_format: self.format(),
+            samples: 1,
+            permutation: 0,
+        }
+    }
+}
+
+/// The shadow passes that shadow casters draw into in a frame, each while its kind of shadow is
+/// on: the cascades' and the shadow atlas's tiles. The two can store depth in different formats,
+/// and a pipeline draws into one format only, so a caster has a pipeline for each.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CasterPasses {
+    /// The cascades' targets while the main directional light casts shadows.
+    pub cascades: Option<PassTargets>,
+    /// The tiles' targets while a point or spot light casts shadows.
+    pub tiles: Option<PassTargets>,
+}
+
+impl CasterPasses {
+    /// True while any light casts shadows, so receivers read the shadow maps.
+    pub const fn any(&self) -> bool {
+        self.cascades.is_some() || self.tiles.is_some()
+    }
+
+    /// The ids of the pipelines that draw a caster with `key` into the cascades and into the
+    /// tiles, or 0 for a pass that is off. Where both store the same format, the two are one.
+    pub fn pipelines(&self, cache: &mut PipelineCache, key: DrawKey) -> (u32, u32) {
+        let mut id = |targets: Option<PassTargets>| targets.map_or(0, |t| cache.id(key.in_pass(t)));
+        (id(self.cascades), id(self.tiles))
+    }
+}
 
 /// Records the creation of the cascades' uniform block under `uniform`, of the comparison sampler
 /// of the shadow atlas under `sampler`, and of the sampler that reads four texels of the shadow
@@ -783,7 +860,8 @@ pub struct ShadowUniform {
     /// 0.
     pub biases: [f32; 4],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
-    /// then the texels on each side of the filter's square, and 0.
+    /// then the texels on each side of the filter's square, and the step between two stored
+    /// depths ([`CascadeDepth::step`]).
     pub kernel: [f32; 4],
     /// The camera that draws, relative to the camera that fitted the cascades
     /// ([`Cascades::origin`]), then 0.
@@ -793,8 +871,9 @@ pub struct ShadowUniform {
 const _: () = assert!(std::mem::size_of::<ShadowUniform>() == SHADOW_UNIFORM_BYTES as usize);
 
 impl ShadowUniform {
-    /// The uniform of a frame's cascades, with the biases and the filter of `settings`.
-    pub fn new(cascades: &Cascades, settings: &ShadowSettings) -> Self {
+    /// The uniform of a frame's cascades, with the biases and the filter of `settings`, read from
+    /// a shadow map that stores `depth`.
+    pub fn new(cascades: &Cascades, settings: &ShadowSettings, depth: CascadeDepth) -> Self {
         let map_size = settings.map_size.max(1) as f32;
         let mut uniform = ShadowUniform {
             forward: [
@@ -809,7 +888,12 @@ impl ShadowUniform {
                 f32::from(u8::from(cascades.by_distance)),
                 0.0,
             ],
-            kernel: [map_size, 1.0 / map_size, settings.filter as f32, 0.0],
+            kernel: [
+                map_size,
+                1.0 / map_size,
+                settings.filter as f32,
+                depth.step(),
+            ],
             origin: [
                 cascades.origin[0],
                 cascades.origin[1],
@@ -961,7 +1045,7 @@ mod tests {
             assert!((a[k] - b[k]).abs() < 1e-4, "{a:?} {b:?}");
         }
         assert_eq!(own.origin, [0.0; 3]);
-        let uniform = ShadowUniform::new(&cascades, &SETTINGS);
+        let uniform = ShadowUniform::new(&cascades, &SETTINGS, CascadeDepth::default());
         assert_eq!(uniform.origin[..3], cascades.origin);
     }
 
@@ -1114,7 +1198,7 @@ mod tests {
             normal_bias: 0.5,
             ..SETTINGS
         };
-        let uniform = ShadowUniform::new(&cascades, &settings);
+        let uniform = ShadowUniform::new(&cascades, &settings, CascadeDepth::Unorm16);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
         assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
@@ -1131,8 +1215,34 @@ mod tests {
         );
         // The unused cascade ends where the last one does.
         assert_eq!(uniform.ends[3], 200.0);
-        // The filter's values follow the map size and the kernel.
-        assert_eq!(uniform.kernel, [2048.0, 1.0 / 2048.0, 3.0, 0.0]);
+        // The filter's values follow the map size and the kernel, then the depth's step.
+        assert_eq!(uniform.kernel, [2048.0, 1.0 / 2048.0, 3.0, 1.0 / 65_535.0]);
+        let floats = ShadowUniform::new(&cascades, &settings, CascadeDepth::Float32);
+        assert_eq!(floats.kernel[3], 0.0);
+    }
+
+    #[test]
+    fn cascades_store_16_bit_depth_unless_32_bits_are_asked_for() {
+        assert_eq!(CascadeDepth::default(), CascadeDepth::Unorm16);
+        for (bits, depth, format) in [
+            (16, CascadeDepth::Unorm16, format::DEPTH16_UNORM),
+            (0, CascadeDepth::Unorm16, format::DEPTH16_UNORM),
+            (32, CascadeDepth::Float32, format::DEPTH32_FLOAT),
+        ] {
+            assert_eq!(CascadeDepth::from_bits(bits), depth);
+            assert_eq!(depth.targets().depth_format, format);
+            assert_eq!(depth.targets().color_format, format::NONE);
+        }
+        // In the far cascade of 3 over 200 m, one 16-bit step is longer than the 1 cm that a
+        // receiver's plane margin covers, so the floor of steps is what keeps acne away there.
+        let cascades = fit(&camera(), &LENS, 16.0 / 9.0, DOWN_AND_ACROSS, &SETTINGS);
+        let steps: Vec<f32> = cascades
+            .used()
+            .iter()
+            .map(|c| CascadeDepth::Unorm16.step() / c.depth_per_meter)
+            .collect();
+        assert!(steps.windows(2).all(|pair| pair[0] < pair[1]), "{steps:?}");
+        assert!(steps[0] < 0.01 && steps[2] > 0.01, "{steps:?}");
     }
 
     #[test]
@@ -1143,6 +1253,7 @@ mod tests {
             camera: CellPosition::default(),
             layers: 1,
             drawn: 0b111,
+            depth: CascadeDepth::default(),
         };
         let size = SETTINGS.map_size as f32;
         for (k, cascade) in frame.cascades.used().iter().enumerate() {

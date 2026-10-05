@@ -616,7 +616,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
-      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. The directional light's map stores 16-bit depth, so in each cascade bias covers at least 1.5 of its depth steps, about 2 cm in a far cascade 200 m out. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
       "docs": "concepts/shadows",
       "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
     },

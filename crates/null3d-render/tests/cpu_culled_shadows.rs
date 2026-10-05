@@ -67,7 +67,7 @@ fn operands(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
 fn shadow_maps(commands: &[(Op, Vec<u32>)]) -> Vec<Vec<u32>> {
     operands(commands, Op::CreateTexture)
         .into_iter()
-        .filter(|o| o[4] == format::DEPTH32_FLOAT && o[8] == view::D2_ARRAY)
+        .filter(|o| format::is_depth(o[4]) && o[8] == view::D2_ARRAY)
         .collect()
 }
 
@@ -224,7 +224,7 @@ fn each_cascade_lists_the_casters_and_draws_their_depth_into_its_layer() {
             [
                 draw_index | permutation::CASTER_OFFSET,
                 format::NONE,
-                format::DEPTH32_FLOAT,
+                format::DEPTH16_UNORM,
                 1,
                 state_flags::CULL_FRONT
             ]

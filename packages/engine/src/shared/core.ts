@@ -42,6 +42,7 @@ export interface CoreGlue extends CoreErrors {
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
 		largeWorld: boolean,
+		shadowDepthBits: number,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/**
