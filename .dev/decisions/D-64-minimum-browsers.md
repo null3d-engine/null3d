@@ -28,8 +28,8 @@ The tier B smoke plan ran on BrowserStack Automate's iPhone 13 on 4 October 2026
 The owner's decision of 5 October 2026: Safari 17 and older are too old, and null3D does not support them. The minimum is Safari 18 on macOS, iOS and iPadOS. Chrome and Edge 91 and Firefox 89 stay the other minimums, which WebAssembly SIMD sets.
 
 - No work goes into the iPhone 13's two faults: the refused shared memory and the failed WebGL2 shader.
-- The engine refuses to start in Safari before 18, with a clear start error that names the minimum. Safari 16.4 to 17 pass the engine's feature tests, so without the check the engine would start there and meet the faults above. The check lands in its own change, on branch `feat/safari-18-minimum`, with the user docs' minimum versions.
-- Before Safari 16.4, WebAssembly SIMD is missing, as in Chrome before 91 and Firefox before 89. The engine stops with E1303 there, as before.
+- The engine refuses to start in Safari before 18, with the start error E1306, which names the minimum. Safari 16.4 to 17 and any browser on iOS or iPadOS 17 get E1306. Safari 16.4 to 17 pass the engine's feature tests, so without the check the engine would start there and meet the faults above. The check lands in its own change, on branch `feat/safari-18-minimum`, with the user docs' minimum versions.
+- Before Safari 16.4, WebAssembly SIMD is missing, as in Chrome before 91 and Firefox before 89. The engine stops with E1303 there, as before, because the SIMD check runs before the Safari check. So Safari 15 and older still get E1303.
 - The iPhone 13 run stays in the record of tested devices, marked as an unsupported browser.
 
 ## Options rejected
