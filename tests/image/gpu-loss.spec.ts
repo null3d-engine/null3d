@@ -9,6 +9,7 @@ interface LossResult {
 	tier: string;
 	code: string | null;
 	framesAfter?: number;
+	lostMidFrame?: boolean;
 	error?: string;
 }
 
@@ -33,3 +34,15 @@ for (const query of ['threads=off', 'render=main']) {
 		expect(result.code).toBe('E1302');
 	});
 }
+
+test('the engine draws on after a WebGL2 context loss in the middle of a frame', async ({
+	page,
+}) => {
+	await page.goto('gpu-loss.html?gpu=webgl2&render=main&mid-frame');
+	const result = await pageResult<LossResult>(page, 30_000);
+	expect(result.error).toBeUndefined();
+	expect(result.tier).toBe('webgl2');
+	expect(result.lostMidFrame).toBe(true);
+	expect(result.code).toBeNull();
+	expect(result.framesAfter ?? 0).toBeGreaterThan(0);
+});

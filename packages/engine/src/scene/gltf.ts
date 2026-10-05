@@ -29,6 +29,8 @@ import {
 	LIGHT_VALUE_PENUMBRA,
 	LIGHT_VALUE_RANGE,
 } from '../generated/core';
+import { DEV } from '../shared/dev';
+import { onEngineStop } from '../shared/helper-workers';
 import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, loadAnimationRig } from './animation';
 import { affineOf, multiplyAffine } from './gltf-math';
@@ -89,7 +91,10 @@ export interface GltfContext {
 		call: string,
 	): Promise<ImageBitmap>;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
-	error(code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417', message: string): EngineError;
+	error(
+		code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1418' | 'E1420',
+		message: string,
+	): EngineError;
 }
 
 /** A request that waits for the worker. */
@@ -120,12 +125,16 @@ class Parser {
 		};
 		this.worker.onerror = (event) => {
 			event.preventDefault();
-			this.worker.terminate();
-			this.stopped();
-			for (const { reject } of this.waiting.values())
-				reject(event.message || 'its script did not load');
-			this.waiting.clear();
+			this.stop(event.message || 'its script did not load');
 		};
+	}
+
+	/** Stops the worker, and fails every waiting request with `reason`. */
+	stop(reason: string): void {
+		this.worker.terminate();
+		this.stopped();
+		for (const { reject } of this.waiting.values()) reject(reason);
+		this.waiting.clear();
 	}
 
 	/** A new request's id, whose answers go to `resolve` until the last one. */
@@ -153,9 +162,14 @@ function parse(
 	address: URL,
 	call: string,
 ): Promise<{ data: GltfData; bitmaps: (ImageBitmap | undefined)[] }> {
-	parser ??= new Parser(() => {
-		parser = undefined;
-	});
+	if (!parser) {
+		const made: Parser = new Parser(() => {
+			forget();
+			if (parser === made) parser = undefined;
+		});
+		const forget = onEngineStop(() => made.stop('the engine stopped'));
+		parser = made;
+	}
 	const worker = parser;
 	return new Promise((resolve, reject) => {
 		const id = worker.start(
@@ -207,6 +221,12 @@ export async function loadGltf(
 	call: string,
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
+	// The thread that draws downloads the skinning and morph shader files while the textures
+	// decode, so a skinned or morphed model waits less for its pipelines. A skinned mesh's morph
+	// targets draw with skinning's builds.
+	if (data.nodes.some((n) => n.skinned)) context.materials.shaders.need('skinning');
+	if (data.nodes.some((n) => !n.skinned && n.mesh >= 0 && hasMorphTargets(data.meshes[n.mesh])))
+		context.materials.shaders.need('morph');
 	const textures = await makeTextures(context, data, bitmaps, address, call);
 	const materials = new FileMaterials(context, data, textures);
 	try {
@@ -310,7 +330,7 @@ async function buildPrefab(
 		if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
 	}
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
-	if (DEV_NOTES && data.notes.length > 0)
+	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
 	return new Prefab(
 		context.core,
@@ -325,16 +345,12 @@ async function buildPrefab(
 	);
 }
 
-declare const __NULL3D_DEV__: boolean | undefined;
-
-/**
- * True in development builds, which warn about what a file holds that the engine leaves out. The
- * loader reads the constant itself, as errors/checks.ts does, to import no engine module.
- */
-const DEV_NOTES: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
-
 const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+
+/** True when a primitive of `mesh` has morph targets. */
+const hasMorphTargets = (mesh: MeshData | undefined) =>
+	mesh?.primitives.some((p) => Boolean(p.morph)) ?? false;
 
 /**
  * The morph weights of a node's primitive as a template node keeps them: the node's default
@@ -497,7 +513,7 @@ function makeMeshes(
 				`${call}() could not read ${address}: primitive ${k} of mesh "${mesh.name}" makes no mesh: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
-		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV_NOTES)
+		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV)
 			console.warn(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
