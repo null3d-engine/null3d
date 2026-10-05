@@ -2,8 +2,14 @@
 // uniform block and texture that its reflection names must be declared in its source. A driver may
 // remove a declared one that the program never reads, as GLSL allows: the engine then binds nothing
 // to it, and the page lists it as removed. Each WGSL module must compile in WebGPU when the browser
-// has it. Failures carry the browser's info logs.
-import { declaresUniform, type GlslProgram } from '@null3d/engine/internal';
+// has it. Failures carry the browser's info logs. A link that fails with Safari's random Metal
+// fault is done once more, as the engine does, and the program is listed as linked again.
+import {
+	declaresUniform,
+	type GlslProgram,
+	METAL_FAULT,
+	RELINK_TAIL,
+} from '@null3d/engine/internal';
 import { progress } from './result';
 
 /** A shader that the browser rejected, with the stage and the browser's log. */
@@ -32,17 +38,21 @@ interface PendingProgram {
 /** The time between two reads of the programs' completion status. */
 const POLL_MS = 10;
 
-/** Starts one program's compile and link without waiting for either. */
+/**
+ * Starts one program's compile and link without waiting for either. `tail` goes at the end of both
+ * sources.
+ */
 function startProgram(
 	gl: WebGL2RenderingContext,
 	name: string,
 	program: GlslProgram,
+	tail = '',
 ): PendingProgram {
 	const vertex = gl.createShader(gl.VERTEX_SHADER);
 	const fragment = gl.createShader(gl.FRAGMENT_SHADER);
 	if (!vertex || !fragment) throw new Error(`createShader returned null for ${name}`);
-	gl.shaderSource(vertex, program.vertex.source);
-	gl.shaderSource(fragment, program.fragment.source);
+	gl.shaderSource(vertex, program.vertex.source + tail);
+	gl.shaderSource(fragment, program.fragment.source + tail);
 	gl.compileShader(vertex);
 	gl.compileShader(fragment);
 	const linked = gl.createProgram();
@@ -70,6 +80,23 @@ async function finished(
 			next++;
 		}
 	}
+}
+
+/** True when both stages compiled and the link failed with Safari's random Metal fault. */
+function metalFault(gl: WebGL2RenderingContext, p: PendingProgram): boolean {
+	return (
+		gl.getShaderParameter(p.vertex, gl.COMPILE_STATUS) &&
+		gl.getShaderParameter(p.fragment, gl.COMPILE_STATUS) &&
+		!gl.getProgramParameter(p.linked, gl.LINK_STATUS) &&
+		(gl.getProgramInfoLog(p.linked)?.includes(METAL_FAULT) ?? false)
+	);
+}
+
+/** Deletes a finished program and its shaders. */
+function release(gl: WebGL2RenderingContext, p: PendingProgram): void {
+	gl.deleteProgram(p.linked);
+	gl.deleteShader(p.vertex);
+	gl.deleteShader(p.fragment);
 }
 
 /**
@@ -119,7 +146,9 @@ function checkProgram(
  * skipped, with a note, when the browser lacks `WEBGL_multi_draw`. Every compile and link starts
  * before the first status read, so a driver that compiles in the background works on many programs
  * at once. Where the browser has `KHR_parallel_shader_compile`, the page waits for them without
- * blocking, so the runner page around it keeps its own clock.
+ * blocking, so the runner page around it keeps its own clock. Programs whose link met Safari's
+ * random Metal fault link once more, with the engine's comment at the end of each source, and go
+ * to `relinked` with the first log. A second failure counts as a failure.
  */
 export async function checkGlslPrograms(
 	programs: readonly (readonly [string, GlslProgram])[],
@@ -142,13 +171,23 @@ export async function checkGlslPrograms(
 	}
 	progress(`GLSL: ${pending.length} programs started`);
 	if (parallel) await finished(gl, parallel, pending);
+	const relinked: ShaderFailure[] = [];
+	const retries: PendingProgram[] = [];
 	for (const p of pending) {
-		checkProgram(gl, p, failures, removed);
-		gl.deleteProgram(p.linked);
-		gl.deleteShader(p.vertex);
-		gl.deleteShader(p.fragment);
+		if (metalFault(gl, p)) {
+			relinked.push({ shader: p.name, stage: 'link', log: gl.getProgramInfoLog(p.linked) ?? '' });
+			retries.push(startProgram(gl, p.name, p.program, RELINK_TAIL));
+		} else {
+			checkProgram(gl, p, failures, removed);
+		}
+		release(gl, p);
 	}
-	progress(`GLSL: ${pending.length} programs checked`);
+	if (parallel) await finished(gl, parallel, retries);
+	for (const p of retries) {
+		checkProgram(gl, p, failures, removed);
+		release(gl, p);
+	}
+	progress(`GLSL: ${pending.length} programs checked, ${retries.length} linked again`);
 	// Read only by the test harness, to refuse a software GPU in real-GPU runs.
 	const info = gl.getExtension('WEBGL_debug_renderer_info');
 	const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
@@ -158,6 +197,7 @@ export async function checkGlslPrograms(
 		parallel: parallel !== null,
 		skipped,
 		removed,
+		relinked,
 		renderer,
 	};
 }

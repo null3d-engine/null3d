@@ -349,6 +349,25 @@ describe('the GPU pages of the checks plan', () => {
 		).toEqual([`${removed.shader} fragment: ${undeclared.log}`]);
 	});
 
+	it("passes a program that linked at the second try after Safari's Metal fault, with a note", () => {
+		notes.length = 0;
+		const shader = 'standard_maps.webgl2_alpha_mask.main';
+		const error =
+			"program_source:2420:18: error: no matching function for call to '_uroughness_level'";
+		const log = `Internal error while linking shader. MSL compilation error:\nprogram_source:99:19: warning: unused variable 'p'\n${error}\n`;
+		const result = {
+			ok: true,
+			glslPrograms: 279,
+			webgpu: true,
+			failures: [],
+			relinked: [{ shader, stage: 'link', log }],
+		};
+		expect(judge(checkOf('shaders'), result, NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			`1 program linked at the second try after Safari's random Metal fault: ${shader} (${error})`,
+		]);
+	});
+
 	it("fails the mip levels page only on the engine's way, and notes the ways that work", () => {
 		notes.length = 0;
 		const level = (wrong: number) => ({ level: 1, status: '0x8cd5', left: [], right: [], wrong });
