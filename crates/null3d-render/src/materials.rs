@@ -265,11 +265,14 @@ pub mod param {
     /// The transform of the first texture coordinates as two rows of a 2 x 3 matrix. The row that
     /// gives u is 3 floats here, and the row that gives v is 3 floats at [`UV_V`].
     pub const UV_U: usize = 16;
-    /// The dielectric reflectance at normal incidence that the index of refraction gives,
-    /// `((ior - 1) / (ior + 1))^2`: 0.04 for glTF's default index of 1.5.
-    pub const REFLECTANCE: usize = 19;
+    /// The factor of the scene environment's light on the surface, as three.js's
+    /// `envMapIntensity`.
+    pub const ENV_INTENSITY: usize = 19;
     /// The row of the texture coordinate transform that gives v: 3 floats.
     pub const UV_V: usize = 20;
+    /// The dielectric reflectance at normal incidence that the index of refraction gives,
+    /// `((ior - 1) / (ior + 1))^2`: 0.04 for glTF's default index of 1.5.
+    pub const REFLECTANCE: usize = 23;
     /// The texture array layer of each map, in [`super::MapSlot`] order: one float per slot.
     pub const MAP_LAYERS: usize = 24;
     /// The specular color, which tints the dielectric reflectance at normal incidence: 3 floats,
@@ -285,9 +288,8 @@ pub mod param {
             COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR => Some(3),
             NORMAL_SCALE => Some(2),
             OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
-            | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | REFLECTANCE | SPECULAR_INTENSITY => {
-                Some(1)
-            }
+            | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
+            | SPECULAR_INTENSITY => Some(1),
             _ => None,
         }
     }
@@ -379,6 +381,7 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::OCCLUSION_STRENGTH] = 1.0;
     row[param::LIGHT_MAP_INTENSITY] = 1.0;
     row[param::EMISSIVE_INTENSITY] = 1.0;
+    row[param::ENV_INTENSITY] = 1.0;
     row[param::UV_U] = 1.0;
     row[param::UV_V + 1] = 1.0;
     row[param::REFLECTANCE] = 0.04;

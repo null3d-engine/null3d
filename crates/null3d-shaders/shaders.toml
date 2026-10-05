@@ -27,6 +27,10 @@
 #                              order, such as `webgl2_draw_index`. Each build records its bits as
 #                              its permutation word, which the backends pick it by.
 #                targets       "wgsl" for WebGPU, "glsl" for WebGL2 (GLSL ES 3.00), or both.
+#   first_use  true for a shader that the engine loads on a feature's first use. Its builds go into
+#              a module of their own for each target, generated/shaders-<name>-<target>.ts, which
+#              the feature's code imports, and not into shaders.ts or the device modules. So no
+#              page downloads them before it asks for the feature. Each variant has one target.
 #   custom_materials  True for the one template that custom materials build with: the shader
 #              compiler adds a material's WGSL after the file's last line, and builds every variant
 #              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
@@ -156,7 +160,7 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 
 # The final pass: one triangle over the canvas, which scales the scene color up to it and tone
 # maps HDR color. The FXAA builds smooth edges first, for the FXAA anti-aliasing mode. The BLOOM
-# builds add bloom's levels to the scene color before the tone mapping. The WebGL2 variant counts
+# builds blend bloom's base level into the scene color before the tone mapping. The WebGL2 variant counts
 # rows from the bottom. It loads by device, in every module of its target.
 [shaders.final]
 file = "final.wgsl"
@@ -165,9 +169,8 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
 
-# One step of bloom's chain at a fraction of the render size: the bright pass, or one direction
-# of a level's Gaussian blur, as its uniform block says. Every step reads the step before it with
-# a linear filter, into a target of its own.
+# One step of bloom's mip chain: a 13-tap step down or a tent step up, as its uniform block says.
+# Each step reads its source with a linear filter. A step up blends over its own level.
 [shaders.bloom]
 file = "bloom.wgsl"
 by_device = true
@@ -253,6 +256,20 @@ file = "mipmap.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# Environment maps made on the GPU (D-19): the built-in room, traced from its center, blurred as
+# three.js's examples blur it, halved into a chain of levels, and filtered for each roughness, one
+# face of one level per draw. It loads on first use, with the generator code that the thread that
+# draws loads when a sketch first asks for the room.
+[shaders.environment]
+file = "environment.wgsl"
+first_use = true
+pipelines.trace = { vertex = "vs_main", fragment = "fs_trace" }
+pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
+pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
+pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 

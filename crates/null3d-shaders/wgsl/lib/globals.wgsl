@@ -44,6 +44,22 @@ struct Frame {
     /// pixels, and the texels of its texture per pixel of the scene, across and down (see
     /// null3d::gtao).
     occlusion: vec4f,
+    /// The scene's environment, which null3d::ibl reads.
+    environment: EnvironmentLight,
+}
+
+/// The scene's environment, as the engine writes it into each frame's values: light from every
+/// direction around the scene, in a prefiltered cube map and nine spherical harmonics
+/// coefficients.
+struct EnvironmentLight {
+    /// The coefficients of the diffuse light in three.js's order, each in `xyz`.
+    sh: array<vec4f, 9>,
+    /// The rows of the matrix that turns a direction in the world into the map's direction, each
+    /// in `xyz`.
+    rotation: array<vec4f, 3>,
+    /// The map's last mip level, the environment's intensity, 1 while the map draws and 0 while
+    /// the scene has none, and a spare.
+    params: vec4f,
 }
 
 /// One material's row of the material table, as the core writes it (`materials.rs` in the
@@ -58,10 +74,11 @@ struct Material {
     /// The occlusion map's strength, the light map's intensity, the shading flags, and the
     /// emissive color's intensity.
     strengths: vec4f,
-    /// The row of the texture coordinate transform that gives u, and the dielectric reflectance at
-    /// normal incidence that the index of refraction gives.
+    /// The row of the texture coordinate transform that gives u, and the factor of the scene
+    /// environment's light.
     uv_u: vec4f,
-    /// The row of the texture coordinate transform that gives v, and a spare.
+    /// The row of the texture coordinate transform that gives v, and the dielectric reflectance at
+    /// normal incidence that the index of refraction gives.
     uv_v: vec4f,
     /// The texture array layers of the base color, metal-rough, normal and occlusion maps. A layer
     /// below 0 means that the map draws nothing.

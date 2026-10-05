@@ -79,7 +79,7 @@ The standard material's map slots grow from six to eight, so the map bind group 
 
 WebGPU allows 16 sampled textures and 16 samplers per stage by default. The fragment stage of the maps build now sees 12 textures and 9 samplers, and the vertex stage of a custom material 9 textures.
 
-WebGL2 needed a change. Each texture's binding slot was its texture unit, and the eight maps with the environment map's planned slots would have reached unit 32. Each program now numbers its own textures from unit 0, as the [implementation notes](../implementation-notes.md#textures-on-both-gpu-paths) describe. The busiest stage reads 15 of the 16 units that WebGL2 guarantees to a stage, and a unit test fails above 16.
+WebGL2 needed a change. Each texture's binding slot was its texture unit, and the eight maps with the environment map's planned slots would have reached unit 32. Each program now numbers its own textures from unit 0, as the [implementation notes](../implementation-notes.md#textures-on-both-gpu-paths) describe. The busiest stage read 15 of the 16 units that WebGL2 guarantees to a stage, and 16 once the environment map landed. A unit test fails above 16.
 
 ### The shader
 

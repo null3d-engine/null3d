@@ -177,7 +177,7 @@ fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let eye = engine_frame.camera_position;
     let normal = normalize(eye.xyz - relative * eye.w);
     let plain = pbr_material(base, m.surface.x, m.surface.y, 0.0);
-    let pbr = with_specular(plain, m.uv_u.w, m.specular.rgb, m.specular.w);
+    let pbr = with_specular(plain, m.uv_v.w, m.specular.rgb, m.specular.w);
     let dfg = dfg_lut(1.0, pbr.roughness);
     let compensation = multiscatter_compensation(pbr.specular_blended, dfg);
     let to_light = -engine_frame.sun_direction.xyz;

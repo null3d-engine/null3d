@@ -58,9 +58,10 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `ior` | 1 or more | 1.5 | The index of refraction of the non-metallic part. It sets how much light the surface reflects head on |
 | `specularIntensity` | 0 to 1 | 1 | The strength of the non-metallic part's specular reflection, at every angle |
 | `specularColor` | A [color](#color), or linear components of 0 or more | White | Tints the non-metallic part's specular reflection head on |
+| `envIntensity` | 0 or more | 1 | The factor of the scene environment's light on the surface, as three.js's `envMapIntensity` |
 | `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
-The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity` and `specularColor` have those of three.js's `MeshPhysicalMaterial`, as the next section explains. A metal takes its color from what it reflects. The scene has no environment map yet, so a smooth metal shows little more than its highlights.
+The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity` and `specularColor` have those of three.js's `MeshPhysicalMaterial`, as the next section explains. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
 
 ## Specular reflection and index of refraction
 
@@ -455,6 +456,7 @@ The values of a standard material, which `set` changes at any time.
 | `ior?: number` | The index of refraction of the surface's non-metallic part, 1 or more, as three.js's `MeshPhysicalMaterial.ior`. It sets how much light the surface reflects when seen head on: `((ior - 1) / (ior + 1))^2`. The default is 1.5, which reflects 4%, as glTF's metallic-roughness model does. |
 | `specularIntensity?: number` | The strength of the specular reflection of the surface's non-metallic part, from 0 to 1, as three.js's `specularIntensity`. It scales the reflection at every angle, so 0 leaves only diffuse light. Metals ignore it. The default is 1. |
 | `specularColor?: ColorInput` | The color that tints the specular reflection of the surface's non-metallic part when seen head on, as three.js's `specularColor`. At grazing angles the reflection stays white, and metals ignore it. It takes the forms that `color` takes, and its three linear components may also exceed 1, as glTF allows, to reflect more than the index of refraction gives, up to all the light. The default is white. |
+| `envIntensity?: number` | The factor of the scene environment's light on the surface, 0 or more, as three.js's `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The default is 1. |
 | `uvTransform?: UvTransform` | Where the maps sit on the texture coordinates. The default leaves them as they are. |
 
 ### `TextureValues`

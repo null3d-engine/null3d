@@ -26,6 +26,7 @@ import {
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
+	MATERIAL_PARAM_ENV_INTENSITY,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
@@ -701,6 +702,12 @@ export interface StandardValues extends MaterialOptions {
 	 * light. The default is white.
 	 */
 	specularColor?: ColorInput;
+	/**
+	 * The factor of the scene environment's light on the surface, 0 or more, as three.js's
+	 * `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The
+	 * default is 1.
+	 */
+	envIntensity?: number;
 	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
 	uvTransform?: UvTransform;
 }
@@ -927,7 +934,8 @@ type Ranged =
 	| 'emissiveIntensity'
 	| 'aoMapIntensity'
 	| 'lightMapIntensity'
-	| 'specularIntensity';
+	| 'specularIntensity'
+	| 'envIntensity';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -949,6 +957,7 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 		'lightMapIntensity',
 	],
 	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1, 'specularIntensity'],
+	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
 ];
 
 /** The core's slot of each map option. */

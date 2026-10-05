@@ -21,6 +21,7 @@ import {
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
+	MATERIAL_PARAM_ENV_INTENSITY,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
@@ -65,6 +66,7 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_NORMAL_SCALE, 2],
 	[MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
 	[MATERIAL_PARAM_LIGHT_MAP_INTENSITY, 1],
+	[MATERIAL_PARAM_ENV_INTENSITY, 1],
 	[MATERIAL_PARAM_UV_U, 3],
 	[MATERIAL_PARAM_UV_V, 3],
 	[MATERIAL_PARAM_REFLECTANCE, 1],
@@ -344,6 +346,8 @@ describe('Material.set', () => {
 		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0]);
 		stone.set({ lightMapIntensity: 3 });
 		expect(row()[MATERIAL_PARAM_LIGHT_MAP_INTENSITY]).toBe(3);
+		stone.set({ envIntensity: 0.25 });
+		expect(row()[MATERIAL_PARAM_ENV_INTENSITY]).toBe(0.25);
 	});
 
 	test('writes the specular values, with the reflectance that the index of refraction gives', () => {
@@ -393,6 +397,7 @@ describe('Material.set', () => {
 		const before = [...(table[0] as number[])];
 		expect(thrown(() => stone.set({ aoMapIntensity: 1.5 })).code).toBe('E1108');
 		expect(thrown(() => stone.set({ lightMapIntensity: -1 })).code).toBe('E1108');
+		expect(thrown(() => stone.set({ envIntensity: -0.5 })).code).toBe('E1108');
 		expect(thrown(() => stone.set({ normalScale: [Number.NaN, 1] })).code).toBe('E1108');
 		const turned = thrown(() => stone.set({ roughness: 0.5, uvTransform: { rotation: Infinity } }));
 		expect(turned.code).toBe('E1108');
