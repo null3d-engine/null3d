@@ -10,8 +10,9 @@
 // The cases change one thing at a time: the types of the joints and weights (8-bit and 16-bit
 // joints, normalized 8-bit and float weights), rigid cubes that each follow one joint, as the glTF
 // loader makes of meshes that a clip moves, a column whose vertices blend two joints, as a skinned
-// character does, and a tangent, which the pass's tangent build skins. Two cases are not the renderer's own: one dispatch for each part, and a
-// joint texture written whole. They tell a fault of the table from one of the joint texture.
+// character does, and tangents of three types, which the pass's tangent build skins. Two cases are
+// not the renderer's own: one dispatch for each part, and a joint texture written whole. They tell
+// a fault of the table from one of the joint texture.
 import type { DeviceShaders } from '@null3d/engine/internal';
 import { loadWgslShaders } from '@null3d/engine/internal';
 import { PERMUTATION_VERTEX_TANGENT } from '../../packages/engine/src/generated/gpu';
@@ -34,7 +35,7 @@ const ENTRY_BYTES = 16;
 const SEGMENT_ALIGN_BYTES = 256;
 const NONE = 0xffffffff;
 /** The engine's vertex type codes. */
-const TYPE = { f32: 0, unorm8: 1, uint8: 5, uint16: 7 } as const;
+const TYPE = { f32: 0, unorm8: 1, snorm8: 2, snorm16: 4, uint8: 5, uint16: 7 } as const;
 /** Joints that the cases name, and the largest difference a float may show. */
 const JOINTS = 6;
 const TOLERANCE = 1e-4;
@@ -43,6 +44,11 @@ const SHOWN = 4;
 
 type JointType = 'uint8' | 'uint16';
 type WeightType = 'unorm8' | 'f32';
+type TangentType = 'f32' | 'snorm8' | 'snorm16';
+
+/** Words of a tangent of each type, and the largest value of its integers. */
+const TANGENT_WORDS: Record<TangentType, number> = { f32: 4, snorm8: 1, snorm16: 2 };
+const TANGENT_LARGEST: Record<TangentType, number> = { f32: 1, snorm8: 127, snorm16: 32767 };
 
 /** A mesh: its vertices' positions, normals, and four joints and weights each. */
 interface Mesh {
@@ -62,8 +68,8 @@ interface Case {
 	apart?: boolean;
 	/** The joint texture written whole, where the renderer writes only the joints in use. */
 	wholeRow?: boolean;
-	/** A float tangent after the normal, which the pass's tangent build skins. */
-	tangent?: boolean;
+	/** The type of a tangent after the normal, which the pass's tangent build skins. */
+	tangent?: TangentType;
 }
 
 /** A cube of 24 vertices, 4 per face, around the origin, that joint `joint` alone moves. */
@@ -162,19 +168,21 @@ const CASES: Case[] = [
 		meshes: CUBES,
 		wholeRow: true,
 	},
-	{
-		name: 'cubes-tangent-u8-unorm8',
-		engine: true,
-		joints: 'uint8',
-		weights: 'unorm8',
-		meshes: CUBES,
-		tangent: true,
-	},
+	...(['f32', 'snorm8', 'snorm16'] as const).map(
+		(tangent): Case => ({
+			name: `cubes-tangent-${tangent}-u8-unorm8`,
+			engine: true,
+			joints: 'uint8',
+			weights: 'unorm8',
+			meshes: CUBES,
+			tangent,
+		}),
+	),
 ];
 
 /** Words of a source vertex: position, normal, the tangent if any, joints, then weights. */
 function sourceWords(c: Case): { stride: number; joints: number; weights: number } {
-	const joints = c.tangent ? 10 : 6;
+	const joints = 6 + (c.tangent ? TANGENT_WORDS[c.tangent] : 0);
 	const jointWords = c.joints === 'uint8' ? 1 : 2;
 	const weightWords = c.weights === 'unorm8' ? 1 : 4;
 	return { stride: joints + jointWords + weightWords, joints, weights: joints + jointWords };
@@ -214,8 +222,12 @@ function pageBytes(c: Case): ArrayBuffer {
 				view.setFloat32(at + 12 + k * 4, mesh.normals[i * 3 + k] as number, true);
 			}
 			if (c.tangent)
-				for (const [k, x] of tangentOf(mesh, i).entries())
-					view.setFloat32(at + 24 + k * 4, x, true);
+				for (const [k, x] of tangentOf(mesh, i).entries()) {
+					const whole = Math.round(x * TANGENT_LARGEST[c.tangent]);
+					if (c.tangent === 'f32') view.setFloat32(at + 24 + k * 4, x, true);
+					else if (c.tangent === 'snorm8') view.setInt8(at + 24 + k, whole);
+					else view.setInt16(at + 24 + k * 2, whole, true);
+				}
 			for (let k = 0; k < 4; k++) {
 				const joint = mesh.joints[i * 4 + k] as number;
 				const weight = mesh.weights[i * 4 + k] as number;
@@ -282,7 +294,7 @@ function tableOf(c: Case, segments: Part[][]): { words: Uint32Array; offsets: nu
 	const format = [
 		[stride, skinnedWords(c), 0 | (TYPE.f32 << 8), 3 | (TYPE.f32 << 8)],
 		[
-			c.tangent ? 6 | (TYPE.f32 << 8) | (6 << 16) : NONE,
+			c.tangent ? 6 | (TYPE[c.tangent] << 8) | (6 << 16) : NONE,
 			joints | (TYPE[c.joints] << 8),
 			weights | (TYPE[c.weights] << 8),
 			NONE,
