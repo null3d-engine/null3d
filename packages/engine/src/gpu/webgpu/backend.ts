@@ -362,16 +362,15 @@ export class WebGPUBackend {
 	}
 
 	/**
-	 * Runs a slice of the work of a generator that the table holds, which fills a cube texture on
-	 * the GPU. The generator submits its commands at once, ahead of the frame's, which never write
-	 * the texture.
+	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
+	 * generator submits its commands at once, ahead of the frame's, which never write the texture.
 	 */
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
 		const generator = words[a + 1] as number;
 		const [name, generators] =
 			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
-		generators[name].run(this.device, texture, words[a + 2] as number, words[a + 3] as number);
+		generators[name].run(this.device, texture);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {

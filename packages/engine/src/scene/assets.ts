@@ -214,10 +214,13 @@ export class Assets {
 	/**
 	 * Makes a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for
 	 * soft, neutral light with no file of your own. No file downloads: the GPU draws the room into
-	 * its cube map and filters it for each roughness, in parts over the next 32 frames, as three.js's
-	 * `PMREMGenerator.fromScene` does. The scene draws without the environment until the map is
-	 * made. The first one loads the code that makes it, about 7 KB after Brotli. Throws E1213 for
-	 * a name that no built-in environment has, and E1406 when its code does not download.
+	 * its cube map and filters it for each roughness, as three.js's `PMREMGenerator.fromScene` does.
+	 * It resolves once the code and the shaders that make the map are ready. The next frame then
+	 * makes the whole map before it draws, so the first frame with the environment already has its
+	 * light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a
+	 * call during play makes one long frame. The first one loads the code that makes it, about 7 KB
+	 * after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its
+	 * code does not download.
 	 */
 	async builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment> {
 		const call = 'assets.builtinEnvironment';
@@ -235,8 +238,8 @@ export class Assets {
 				'E1213',
 				`${call}() got ${JSON.stringify(name)}, which names no built-in environment. Use 'room'.`,
 			);
-		const { size, levels, slices, sh } = builtins.BUILTIN_ENVIRONMENTS[name];
-		const texture = this.textures.fromGenerator(name, size, levels, slices, call);
+		const { size, levels, sh } = builtins.BUILTIN_ENVIRONMENTS[name];
+		const texture = await this.textures.fromGenerator(name, size, levels, call);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 

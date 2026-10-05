@@ -3021,7 +3021,8 @@ export class Scene {
 	 * `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from
 	 * `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth
 	 * and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene
-	 * draws without the environment until its map is on the GPU. It allocates nothing, so a sketch
+	 * draws without a file's environment until its map is on the GPU. The built-in room's map is
+	 * whole in the first frame that uses it. It allocates nothing, so a sketch
 	 * can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for
 	 * a negative intensity, E1213 for a value that is not an environment, and E1101 for an
 	 * environment that was destroyed.
