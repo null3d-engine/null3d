@@ -19,7 +19,7 @@ A game or a full-screen app is different, because there the scene is the product
 Every failure leads to the same page: the content, with a poster image in place of the canvas. Four things lead there:
 
 - JavaScript is off.
-- `createEngine` rejects, for example because the browser lacks WebAssembly SIMD (E1303) or has no usable GPU path (E1301).
+- `createEngine` rejects, for example because the browser is Safari before 18 (E1306), lacks WebAssembly SIMD (E1303) or has no usable GPU path (E1301).
 - `engine.onFailure` reports a failure after the start, such as a GPU the engine could not get back (E1302).
 - The page crashed on its last visit (see [After a crash](#after-a-crash)).
 

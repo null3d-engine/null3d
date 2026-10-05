@@ -11,7 +11,13 @@ export { webgl2RoomGenerator, webgpuRoomGenerator } from './gpu/environment';
 export { readbackWebGL2, readbackWebGPU } from './gpu/readback';
 export { WebGL2Backend } from './gpu/webgl2/backend';
 export { DEPTH_SETUPS } from './gpu/webgl2/depth';
-export { declaresUniform, type GlslTemplate, programHost } from './gpu/webgl2/programs';
+export {
+	declaresUniform,
+	type GlslTemplate,
+	METAL_FAULT,
+	programHost,
+	RELINK_TAIL,
+} from './gpu/webgl2/programs';
 export { WebGPUBackend } from './gpu/webgpu/backend';
 export type { RenderTemplate } from './gpu/webgpu/pipelines';
 export {

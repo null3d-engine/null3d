@@ -10,7 +10,7 @@
 
 import { controlViews, frameAfter, Slot } from '../shared/control';
 import type { SketchRunner } from '../sketch/runner';
-import { guardFrame, type LoopFault, Presenter, type RenderLoop } from './loop';
+import { type FramePacing, guardFrame, type LoopFault, Presenter, type RenderLoop } from './loop';
 import type { Renderer } from './renderer';
 
 export function runDirectLoop(
@@ -18,13 +18,12 @@ export function runDirectLoop(
 	renderer: Renderer,
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,
-	fps: number | undefined,
-	queue?: number,
+	pacing: FramePacing,
 	fault?: LoopFault,
 	presented?: () => void,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue, undefined, presented);
+	const presenter = new Presenter(slots, renderer, metrics, pacing, undefined, presented);
 	let stopped = false;
 	/** A frame that is recorded and waits to draw, or 0. */
 	let pending = 0;
