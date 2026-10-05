@@ -10,6 +10,7 @@ import {
 	FRAME_US,
 	FULL_SCALE,
 	farIntervalSteps,
+	GAP_MS,
 	Governor,
 	GovernorLoop,
 	type GovernorScene,
@@ -452,6 +453,18 @@ describe('the governor in the frame loop', () => {
 		const { run } = loop();
 		expect(run(2 * BUDGET, BUDGET, GRACE_MS)).toBe(FULL_SCALE);
 		expect(run(2 * BUDGET, BUDGET, DROP_AFTER_MS + WINDOW_MS)).toBe(FULL_SCALE - SCALE_STEP);
+	});
+
+	it('keeps the rest of its grace after a stall early in play', () => {
+		// A stall long enough to start the windows again, as when a driver compiles the shaders of
+		// objects added during play at their first draw, comes before the grace ends.
+		const { run } = loop();
+		run(2 * BUDGET, BUDGET, 400);
+		run(GAP_MS + 100, BUDGET, GAP_MS + 100);
+		expect(run(2 * BUDGET, BUDGET, GRACE_MS + DROP_AFTER_MS - 2 * WINDOW_MS - 1000)).toBe(
+			FULL_SCALE,
+		);
+		expect(run(2 * BUDGET, BUDGET, 2 * WINDOW_MS)).toBe(FULL_SCALE - SCALE_STEP);
 	});
 
 	it('scales the budget from the refresh rate, up to the highest target rate', () => {
