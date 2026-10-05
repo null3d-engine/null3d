@@ -20,6 +20,8 @@ for (const mode of ENGINE_MODES)
 			unknownClip: 'E1218',
 			badLayer: 'E1218',
 			noClips: 'E1218',
+			weightOfIdleClip: 'E1218',
+			emptyBlend: 'E1218',
 			afterDestroy: 'E1101',
 		});
 		const of = (who: string) => result.heard.filter((e) => e.who === who);
@@ -46,4 +48,21 @@ for (const mode of ENGINE_MODES)
 		expect(names(dancer)).toContain('loop walk 0');
 		expect(names(dancer)).toContain('loop run 1');
 		expect(dancer.every((e) => e.time <= result.destroyedAt)).toBe(true);
+
+		// The pair's walk starts halfway through: its first footstep is the right one, a quarter of
+		// a second in. Its run plays beside it, at the weight the sketch moves, and loops too.
+		const pair = of('pair');
+		const first = pair.find((e) => e.name === 'left' || e.name === 'right');
+		expect(first?.name).toBe('right');
+		expect(first?.time).toBeLessThan(0.5);
+		expect(names(pair)).toContain('loop run 0');
+
+		// The strider's walk and run share one phase, so they loop in the same frames, though the
+		// run is shorter than the walk.
+		const loops = (clip: string) =>
+			of('strider')
+				.filter((e) => e.name === 'loop' && e.clip === clip)
+				.map((e) => e.time);
+		expect(loops('walk').length).toBeGreaterThanOrEqual(1);
+		expect(loops('run')).toEqual(loops('walk'));
 	});

@@ -16,6 +16,7 @@ describe('parseSwitches', () => {
 			freshShaders: false,
 			freshCheck: false,
 			wakeByMessage: false,
+			displayChecks: true,
 			hdr: true,
 			sceneFormat: undefined,
 			half: undefined,
@@ -159,6 +160,11 @@ describe('parseSwitches', () => {
 	it('makes the threads wake each other with messages with ?wake=message only', () => {
 		expect(parseSwitches('?wake=message').wakeByMessage).toBe(true);
 		expect(parseSwitches('?wake=atomics').wakeByMessage).toBe(false);
+	});
+
+	it('stops the checks of the display only with ?display-check=off', () => {
+		expect(parseSwitches('?display-check=off').displayChecks).toBe(false);
+		expect(parseSwitches('?display-check=on').displayChecks).toBe(true);
 	});
 
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {
