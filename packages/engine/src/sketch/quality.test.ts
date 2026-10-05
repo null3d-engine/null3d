@@ -232,6 +232,7 @@ describe('SketchQuality.lower', () => {
 			maxRenderScale: low.maxRenderScale,
 			shadowFilter: low.shadowFilter,
 			farCascadeInterval: low.farCascadeInterval,
+			followMovingCasters: low.followMovingCasters,
 			bloomSamples: low.bloomSamples,
 			aoScale: low.aoScale,
 			softwareOcclusion: low.softwareOcclusion,
@@ -248,11 +249,13 @@ describe('SketchQuality.lower', () => {
 			morphTargets: MEDIUM.morphTargets,
 		});
 		// The preset changed, and of the settings only the lowest render scale, the shadow filter, the
-		// far cascades' interval and software occlusion culling did.
+		// far cascades' interval, whether they follow moving casters, and software occlusion culling
+		// did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'shadowFilter',
 			'farCascadeInterval',
+			'followMovingCasters',
 			'softwareOcclusion',
 		]);
 	});

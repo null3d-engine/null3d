@@ -1151,12 +1151,12 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
-    /// The shadow filter and the far cascades' update interval.
+    /// The shadow filter and how the far cascades update.
     pub fn shadow_quality(&self) -> ShadowQuality {
         self.lighting.shadow_quality
     }
 
-    /// The shadow filter and the far cascades' update interval, from the next frame on.
+    /// The shadow filter and how the far cascades update, from the next frame on.
     pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
         self.lighting.shadow_quality = quality;
     }
@@ -1215,7 +1215,7 @@ impl SceneSettings {
             absolute,
             shadow.map_size,
             quality.far_interval,
-            |bounds| moving.touch(scene, parity, shadow.layers, bounds),
+            |bounds| quality.follow_movers && moving.touch(scene, parity, shadow.layers, bounds),
         );
         Some(ShadowFrame {
             cascades,

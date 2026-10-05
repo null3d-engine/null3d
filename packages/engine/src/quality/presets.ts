@@ -104,6 +104,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
+	// Whether a far cascade draws in every frame while a moving caster touches it. Low keeps each
+	// far cascade to its turns, so a moving shadow far from the camera can trail its caster by the
+	// frames between turns, and phones draw fewer shadow passes where cars or crowds fill the far
+	// cascades. D-16 gives the figures.
+	followMovingCasters: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The share of three.js's taps that each of bloom's blurs reads: 1 reads them all, and 0.5 or
 	// 0.25 spread the same kernel over half or a quarter as many filtered reads, which costs less
 	// and keeps the glow's size. The shaders read it from a uniform, so it changes during play with
@@ -264,6 +273,14 @@ export interface QualitySettings {
 	 * value costs less where far cascades hold still casters alone. It changes during play.
 	 */
 	farCascadeInterval: number;
+	/**
+	 * True when a far shadow cascade draws in every frame while a dynamic object that casts shadows
+	 * touches it, so moving shadows stay under their casters. False keeps each far cascade to its
+	 * turns of `farCascadeInterval` frames: a moving shadow far from the camera then trails its
+	 * caster by up to that many frames less one, and the frames draw fewer shadow passes. Low turns
+	 * it off. It changes during play.
+	 */
+	followMovingCasters: boolean;
 	/**
 	 * The share of three.js's `UnrealBloomPass` taps that each of bloom's blurs reads: 1, 0.5 or
 	 * 0.25. A lower share spreads the same blur over fewer reads, which costs less and keeps the

@@ -195,9 +195,10 @@ The same runs on the Mac in Chrome found where it came from. Each commit ran S4 
 | 2ab66e2e (#257) | 63 | 1.47 | The shadow filter compares each read with the receiver's plane, against acne on flat casters |
 | 5309dba5, the gate commit | 63 | 1.47 | |
 | 1533939f, main on 5 October | 63 | 1.55 | |
-| fix/gate-ab-regression | 63 | 1.48 | Surfaces that face away from the sun skip the shadow lookup, and the GPU timer times every phase of the far cascade's turns |
+| fix/gate-ab-regression, without the ruling | 63 | 1.48 | Surfaces that face away from the sun skip the shadow lookup, and the GPU timer times every phase of the far cascade's turns |
+| fix/gate-ab-regression | 56, and 63 in 1 frame of 4 | 1.32 | Low keeps its far cascade's turns while cars move in it, by the owner's ruling |
 
-Both shadow changes keep rules that the owner set. A moving caster's shadow sits under it in every frame, and no surface shows acne. So the 7 draws and the extra pass stay. The older commit's figure was also too low. The GPU timer timed one frame in 8, and the far cascade drew once in 4 frames, so no timed frame held it. [Implementation notes](implementation-notes.md#shadows) gives the rule and the test that holds S4's draw calls and passes.
+The owner ruled on 5 October 2026 ([D-16](decisions/D-16-moving-casters-and-bias.md)). At Low, a far cascade keeps its turns while moving casters touch it. So a far moving shadow can trail its caster by up to 3 frames. Medium and up keep the far cascade drawing in every frame. The receiver plane stays on every preset, so no surface shows acne. The older commit's figure was also too low. The GPU timer timed one frame in 8, and the far cascade drew once in 4 frames, so no timed frame held it. [Implementation notes](implementation-notes.md#shadows) gives the rule and the test that holds S4's draw calls and passes.
 
 ### What the gate still needs
 
