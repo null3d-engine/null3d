@@ -306,9 +306,12 @@ mod ids {
     pub const LIGHT_COUNT: u32 = 2;
     pub const LIGHT_PLACE: u32 = 3;
     pub const LIGHT_WRITE: u32 = 4;
-    /// The skinning pass's pipelines: for vertex formats without a tangent, and with one.
+    /// The skinning pass's pipelines: for vertex formats without a tangent, and with one, then
+    /// the same for formats whose color the pass morphs.
     pub const SKIN: u32 = 5;
     pub const SKIN_TANGENT: u32 = 6;
+    pub const SKIN_COLOR: u32 = 7;
+    pub const SKIN_TANGENT_COLOR: u32 = 8;
 
     /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
     /// the group of the pipelines that read their instances by index.
