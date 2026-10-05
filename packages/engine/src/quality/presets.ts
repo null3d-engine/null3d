@@ -104,12 +104,12 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
-	// Whether a far cascade draws in every frame while a moving caster touches it. Low keeps each
-	// far cascade to its turns, so a moving shadow far from the camera can trail its caster by the
-	// frames between turns, and phones draw fewer shadow passes where cars or crowds fill the far
+	// Whether a far cascade draws in every frame while a moving caster touches it. Every preset
+	// turns it on: a far cascade that keeps its turns leaves each moving shadow behind its caster
+	// until the next turn, and a camera high above a town sees nothing nearer than the far
 	// cascades. D-16 gives the figures.
 	followMovingCasters: {
-		presets: [false, true, true, true],
+		presets: [true, true, true, true],
 		changes: 'live',
 		values: 'flag',
 	},
@@ -280,9 +280,10 @@ export interface QualitySettings {
 	/**
 	 * True when a far shadow cascade draws in every frame while a dynamic object that casts shadows
 	 * touches it, so moving shadows stay under their casters. False keeps each far cascade to its
-	 * turns of `farCascadeInterval` frames: a moving shadow far from the camera then trails its
-	 * caster by up to that many frames less one, and the frames draw fewer shadow passes. Low turns
-	 * it off. It changes during play.
+	 * turns of `farCascadeInterval` frames: a moving shadow in a far cascade then trails its
+	 * caster by up to that many frames less one, and the frames draw fewer shadow passes. The
+	 * governor then leaves `farCascadeInterval` as set, so the trail never grows. Every preset turns
+	 * it on. It changes during play.
 	 */
 	followMovingCasters: boolean;
 	/**

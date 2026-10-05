@@ -199,7 +199,7 @@ describe('presetSettings', () => {
 			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
-			followMovingCasters: false,
+			followMovingCasters: true,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
 			antialias: 'fxaa',

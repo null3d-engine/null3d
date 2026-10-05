@@ -279,9 +279,16 @@ describe('the render scale steps', () => {
 
 describe('the shadow steps', () => {
 	/** A governor whose scene's sun casts shadows in `cascades`, with these shadow settings. */
-	function shadowed(cascades: number, filter: number, interval: number, low = 900, tiles = false) {
+	function shadowed(
+		cascades: number,
+		filter: number,
+		interval: number,
+		low = 900,
+		tiles = false,
+		followMovers = true,
+	) {
 		const governed = controlled(low);
-		governed.controller.setShadows(filter, interval);
+		governed.controller.setShadows(filter, interval, followMovers);
 		governed.controller.setCasters(cascades, tiles);
 		return governed;
 	}
@@ -324,13 +331,21 @@ describe('the shadow steps', () => {
 		expect(shadowed(2, 3, 3).ladder(SLOW).slice(2)).toEqual(['900 6 3', '900 8 3']);
 	});
 
+	it('leaves the far cascades to their interval while they keep their turns around moving casters', () => {
+		const { ladder, controller } = shadowed(3, 5, 4, 900, false, false);
+		expect(ladder(SLOW)).toEqual(['950 4 5', '900 4 5', '900 4 3']);
+		// Far cascades that follow moving casters again take the interval's step back.
+		controller.setShadows(5, 4, true);
+		expect([controller.steps, controller.farInterval, controller.filter]).toEqual([1, 8, 5]);
+	});
+
 	it('keeps its steps within new settings and shadows, and counts each change of what draws', () => {
 		const { controller, ladder } = shadowed(3, 5, 2);
 		const before = controller.stepChanges;
 		ladder(SLOW);
 		expect(controller.stepChanges - before).toBe(3);
 		// A longer interval leaves one far cascade step and the filter's.
-		controller.setShadows(5, 4);
+		controller.setShadows(5, 4, true);
 		expect([controller.steps, controller.farInterval, controller.filter]).toEqual([2, 8, 3]);
 		// The sun stops casting shadows: the steps go.
 		controller.setCasters(0, false);
@@ -360,7 +375,7 @@ describe('the shadow steps', () => {
 describe('the bloom steps', () => {
 	it("halves bloom's base after the shadow steps, only while bloom is on", () => {
 		const { controller, untilStep } = controlled(900);
-		controller.setShadows(5, 2);
+		controller.setShadows(5, 2, true);
 		controller.setCasters(1, false);
 		controller.setBloom(true, 512);
 		const seen: string[] = [];
@@ -525,7 +540,7 @@ describe('the governor in the frame loop', () => {
 		const { run, resolution, scene } = loop();
 		const { governor } = resolution;
 		governor.setRange(FULL_SCALE, FULL_SCALE);
-		governor.setShadows(5, 2);
+		governor.setShadows(5, 2, true);
 		run(BUDGET, BUDGET / 2, GRACE_MS + 1000);
 		scene.loading = true;
 		run(2 * BUDGET, BUDGET, 3000);

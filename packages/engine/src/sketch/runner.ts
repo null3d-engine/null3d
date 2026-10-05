@@ -625,8 +625,8 @@ export class SketchRunner {
 		const { governor } = this;
 		governor.setOn(settings.governor);
 		governor.setRange(low, high);
-		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
 		this.followMovers = settings.followMovingCasters;
+		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);

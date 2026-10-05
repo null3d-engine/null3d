@@ -183,16 +183,18 @@ A surface picks its cascade by its distance from the camera, which a turn on the
 
 The nearest cascade draws in every frame. The far cascades draw once every few frames, in turn, and keep their layers of the shadow map in between. Each frame then draws fewer casters. In S4 on a MacBook Pro, with far cascades every 2nd frame, that saves 0.19 ms of GPU time per frame.
 
-A kept layer shows each caster where it stood when the layer drew. So on Medium, High and Ultra, a far cascade draws in every frame while a moving caster touches its box. A moving caster is a dynamic object, or an object under a dynamic one. Its shadow then follows it in every frame. The cascade draws once more after the caster leaves, so no old shadow stays behind. Far cascades that hold only still casters keep their turns. A town whose cars drive through every cascade, as in S4, draws every cascade in every frame, as three.js's cascaded shadows always do. A character near the camera keeps the far cascades' saving.
+A kept layer shows each caster where it stood when the layer drew. So on every preset, a far cascade draws in every frame while a moving caster touches its box. A moving caster is a dynamic object, or an object under a dynamic one. Its shadow then follows it in every frame. The cascade draws once more after the caster leaves, so no old shadow stays behind. Far cascades that hold only still casters keep their turns. A town whose cars drive through every cascade, as in S4, draws every cascade in every frame, as three.js's cascaded shadows always do. A character near the camera keeps the far cascades' saving.
 
-Low keeps each far cascade to its turns, even while moving casters touch it, to spare phones the extra shadow passes. A fast object far from the camera can then leave its shadow a little behind it: up to 3 frames at Low's interval of 4. The shadow catches up at the cascade's next turn. The nearest cascade draws in every frame, so shadows near the camera always follow. The `followMovingCasters` quality setting picks the behavior on any preset. It changes during play:
+A camera high above a scene can see nothing near enough for the nearest cascade. S4's camera flies 42 m up, and Low's nearest cascade ends 38 m from the camera, so every shadow on screen comes from the far cascade. That is why far cascades follow moving casters on Low too.
+
+The `followMovingCasters` quality setting turns this off. Each far cascade then keeps its turns, even while moving casters touch it, and the frames draw fewer shadow passes. A moving shadow in a far cascade then trails its caster until the cascade's next turn: up to 3 frames at Low's interval of 4. The quality governor then leaves `farCascadeInterval` as you set it, so the trail never grows. The setting changes during play:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(({ quality }) => {
-  // A racing game on Low: far cars' shadows follow them in every frame.
-  quality.set({ followMovingCasters: true });
+  // A scene whose moving objects stay far away and small: save the far cascades' passes.
+  quality.set({ followMovingCasters: false });
 });
 ```
 
