@@ -82,7 +82,7 @@ Sizes after Brotli at quality 11, from `bun run build` on 4 October 2026:
 | The 12 start shader files | 1.7 to 3.4 MB | 23.2 to 24.4 KB |
 | The 8 morph shader files | 2.8 to 3.3 MB | 18.6 to 20.5 KB |
 
-The engine's other files that load later have a budget of 16 KB each. The morph shader files cannot fit it, as each holds every MORPH build of one device's bits. The owner decided on 4 October 2026 that shader files that load on first use have a limit of their own. It is the size of the start shader file, about 24 KB after Brotli. `ON_DEMAND_SHADER_BUDGET_BYTES` in `tools/lib/size-report.ts` holds it, and the size check enforces it.
+The engine's other files that load later have a budget of 16 KB each. The morph shader files cannot fit it, as each holds every MORPH build of one device's bits. The owner decided on 4 October 2026 that shader files that load on first use have a limit of their own. It was the size of the start shader file, about 24 KB after Brotli. On 5 October 2026 the owner raised it to 32 KB ([D-14](D-14-js-budget.md#first-use-shader-files)). `ON_DEMAND_SHADER_BUDGET_BYTES` in `tools/lib/size-report.ts` holds it, and the size check enforces it.
 
 Chrome on the MacBook Pro (M5 Max) parses and runs a morph shader file about as fast as a start shader file. The page imported each file seven times from memory, so no download counts. Medians, 4 October 2026:
 
