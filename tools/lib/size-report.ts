@@ -425,7 +425,7 @@ export const LATER_BUDGET_BYTES = 16 * 1024;
  * a page loads at its start. The owner decided so on 4 October 2026 (decision records D-14 and
  * D-51).
  */
-export const ON_DEMAND_SHADER_BUDGET_BYTES = 24 * 1024;
+export const ON_DEMAND_SHADER_BUDGET_BYTES = 32 * 1024;
 
 /**
  * A problem for each thread mode whose start passes the start budget, for each part that loads

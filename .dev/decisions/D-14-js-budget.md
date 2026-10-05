@@ -317,6 +317,8 @@ The morph builds (M2-C5) and the room's generator (M2-E2, [D-19](D-19-environmen
 
 The owner's decision: each shader file that loads on first use may take about 24 KB after Brotli, the size of the start's shader file. The size report lists these files apart from the start, with their share of that limit. The first two use little of it: the room's shaders are 4.2 KB of WGSL or 4.4 KB of GLSL.
 
+On 5 October 2026 the owner raised the limit to 32 KB after Brotli. The sun's shadow filter came to compare each shadow map texel with the receiver's plane at that texel. That added 4 to 6% to the WebGL2 morph files, which were about 23.2 to 23.3 KB on main. Two of them then passed 24 KB: `shaders-glsl-tone-map-morph-half.js` at 24,702 B and `shaders-glsl-draw-index-tone-map-morph-half.js` at 24,758 B. A loop in place of the filter's written-out blocks on WebGL2 saved at most 57 B. The growth is the cost of correct shadows, and the exposure and the specular maps would soon pass a tighter limit too. The other limits stay. The start keeps 140 KB after Brotli, 448 KB after gzip and 3,328 KB raw. Each first-use file keeps 320 KB after gzip and 1,536 KB raw.
+
 This is also the way to trim the start. Each feature's shaders move into a file of their own (M2-R11, with its own record D-56, [D-53](D-53-technique-defaults.md) ruling 23).
 
 ### Recorded exceptions

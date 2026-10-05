@@ -689,12 +689,15 @@ pub const TARGETS: PassTargets = PassTargets {
     permutation: 0,
 };
 
-/// Records the creation of the cascades' uniform block under `uniform`, and of the comparison
-/// sampler that reads the shadow map under `sampler`. Every scene view's frame group binds both.
+/// Records the creation of the cascades' uniform block under `uniform`, of the comparison sampler
+/// of the shadow atlas under `sampler`, and of the sampler that reads four texels of the shadow
+/// map at once under `texels`, where the frame builder's shaders have such reads. Every scene
+/// view's frame group binds them.
 pub(crate) fn create_objects(
     list: &mut DrawList,
     uniform: u32,
     sampler: u32,
+    texels: Option<u32>,
 ) -> Result<(), RecordError> {
     list.push(
         Op::CreateBuffer,
@@ -723,6 +726,27 @@ pub(crate) fn create_objects(
             1,
         ],
     )?;
+    // The receivers compare each texel of the shadow map with a depth of their own, so they read
+    // the texels' depths unfiltered.
+    if let Some(texels) = texels {
+        let nearest = filter::NEAREST;
+        list.push(
+            Op::CreateSampler,
+            &[
+                texels,
+                clamp,
+                clamp,
+                clamp,
+                nearest,
+                nearest,
+                nearest,
+                0f32.to_bits(),
+                0f32.to_bits(),
+                compare::NONE,
+                1,
+            ],
+        )?;
+    }
     Ok(())
 }
 
