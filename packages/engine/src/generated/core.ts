@@ -189,9 +189,9 @@ export const MATERIAL_PARAM_UV_U = 16;
 export const MATERIAL_PARAM_UV_V = 20;
 
 export const POST_VALUE_EXPOSURE = 0;
-export const POST_VALUE_BLOOM_STRENGTH = 1;
-export const POST_VALUE_BLOOM_RADIUS = 2;
-export const POST_VALUE_BLOOM_THRESHOLD = 3;
+export const POST_VALUE_BLOOM_INTENSITY = 1;
+export const POST_VALUE_BLOOM_THRESHOLD = 2;
+export const POST_VALUE_BLOOM_KNEE = 3;
 export const POST_VALUE_LUT_INTENSITY = 4;
 export const POST_VALUE_LUT_DOMAIN_MIN = 5;
 export const POST_VALUE_LUT_DOMAIN_MAX = 8;
@@ -208,7 +208,9 @@ export const POST_VALUE_OUTLINE_COLOR = 20;
 export const POST_VALUE_OUTLINE_HIDDEN_COLOR = 23;
 export const POST_VALUE_OUTLINE_HIDDEN = 26;
 export const POST_VALUE_OUTLINE_WIDTH = 27;
-export const POST_VALUE_COUNT = 28;
+export const POST_VALUE_BLOOM_BLEND = 28;
+export const POST_VALUE_BLOOM_WEIGHTS = 29;
+export const POST_VALUE_COUNT = 39;
 
 export const ENVIRONMENT_VALUE_INTENSITY = 0;
 export const ENVIRONMENT_VALUE_ROTATION = 1;

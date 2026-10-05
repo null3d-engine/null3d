@@ -1,24 +1,32 @@
-//! Bloom: light that spreads from the brightest parts of the scene, as three.js's UnrealBloomPass
-//! spreads it. The render graph's bloom passes run between the scene passes and the final pass,
-//! each a full-screen step at a fraction of the render size (see [`crate::frame_graph`]):
+//! Bloom: light that spreads from the brightest parts of the scene, through a chain of mip levels,
+//! as Call of Duty: Advanced Warfare, Bevy and Filament spread it. The render graph's bloom passes
+//! run between the scene passes and the final pass (see [`crate::frame_graph`]):
 //!
-//! 1. The bright pass reads the scene color at half size, with a linear filter, and keeps the
-//!    pixels whose luminance reaches the threshold.
-//! 2. Each of five levels blurs the level before it, the first the bright pass, with a Gaussian:
-//!    across into one target, then down into another. Each level has half the size of the level
-//!    before it, and a wider kernel, so the levels spread the light ever further.
-//! 3. The final pass reads every level with a linear filter and adds their weighted sum to the
-//!    scene color before the output transform, as three.js's composite and blend steps do.
+//! 1. Steps down: the first reads the scene color, limits it to what a 16-bit float holds, keeps
+//!    what passes the threshold, and takes a 13-tap filter with a Karis average into the base
+//!    level. Each later step takes the same filter, without the average, from the level above
+//!    into a level of half its size.
+//! 2. Steps up: from the smallest level back to the base, each step reads the level below with a
+//!    3x3 tent and blends it over its own level by the level's mix, through premultiplied
+//!    blending into the same target. So the base level ends with every level's light in it, each
+//!    level holding its share of the glow.
+//! 3. The final pass reads the base level once and mixes, adds or screens it into the scene color
+//!    before the output transform.
 //!
-//! Every step reads a target that another step wrote, never its own, so no draw samples a texture
-//! that it draws into. The kernels, the merged pairs of taps and the weights are three.js's, so a
-//! port that keeps its strength, radius and threshold keeps its look. The number of taps is a
-//! uniform value: a sample divisor spreads each kernel over that many times fewer filtered reads,
-//! and changes no pipeline.
+//! The levels have the canvas's shape and a fixed number of texels on its short side, so the glow
+//! keeps its size as a share of the screen at any pixel ratio, render scale or orientation. The
+//! reference chain has [`LEVELS`] levels from [`MAX_SIZE`] texels down to 1. Each level takes a
+//! share of the glow, its weight, and a frame draws only the levels up to the last one with a
+//! weight: the default weights reach the level of 4 texels, a quarter of the short side. A smaller
+//! base drops the narrowest levels and keeps the widest, so the glow keeps its size: its finest
+//! detail folds into the base level, with the shares of the levels it drops. The quality setting
+//! sets the base, which is never more than half the canvas's short side.
 //!
-//! The steps' settings live in one uniform buffer, a block of 256 bytes per step and one for the
-//! final pass. A frame uploads it only when a setting, the canvas or the render scale changed, and
-//! a new render scale makes no GPU object: the blocks clamp each read inside the drawn corner.
+//! The governor's step halves the base during play with no new GPU object: every level draws into
+//! a corner of half its target, and the steps of the last level do not run. A new render scale
+//! changes only where the first step reads the scene color. The steps' settings live in one
+//! uniform buffer, a block of 256 bytes per step and one for the final pass. A frame writes and
+//! uploads it only when a setting, the canvas, the render scale or the governor's step changed.
 //!
 //! WebGPU draws a corner into the first rows of its target. WebGL2 counts rows from the bottom and
 //! draws a corner into the last ones, at the top, so its blocks place each corner there.
@@ -32,27 +40,30 @@ use crate::frame::{RecordError, UploadArena};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
-/// Bloom's levels: blurred copies of the bright pass, each at half the size of the one before.
-pub const LEVELS: usize = 5;
+/// The levels of the reference chain, whose base has [`MAX_SIZE`] texels on the short side and
+/// whose last level has 1.
+pub const LEVELS: usize = 10;
 
-/// The steps of the chain before the final pass: the bright pass, then two blurs per level.
-pub(crate) const STEPS: usize = 1 + 2 * LEVELS;
+/// Texels on the short side of the reference chain's base level.
+pub const MAX_SIZE: u32 = 512;
 
-/// Each level's kernel, as three.js's UnrealBloomPass sizes it: the taps on one side of the
-/// center, the center included. The Gaussian's sigma is a third of it.
-const KERNELS: [u32; LEVELS] = [6, 10, 14, 18, 22];
+/// The fewest texels on the base's short side that the quality settings give it.
+pub const MIN_SIZE: u32 = 4;
 
-/// Each level's weight before the radius moves it, three.js's `bloomFactors`.
-const FACTORS: [f32; LEVELS] = [1.0, 0.8, 0.6, 0.4, 0.2];
+/// The format of the chain's levels: 16-bit floats, whatever the scene color's format. Each level
+/// is written twice, by its step down and its step up, from levels that were written the same way.
+/// In the scene color's smaller float format the rounding of those writes adds up, so the glow
+/// loses light, most in blue, which has the fewest bits (D-21).
+pub(crate) const FORMAT: u32 = null3d_gpu::drawlist::format::RGBA16_FLOAT;
 
-/// The most pairs of taps on each side of a blur's center: the widest kernel's, merged in pairs.
-const MAX_PAIRS: u32 = KERNELS[LEVELS - 1] / 2;
+/// The most steps of the chain: a step down into each level, then a step up into each but the
+/// last.
+pub(crate) const STEPS: usize = 2 * LEVELS - 1;
 
-/// The largest sample divisor: each blur reads at least a quarter of three.js's taps.
-pub const MAX_SAMPLE_DIVISOR: u32 = 4;
-
-/// The soft edge of the bright pass's threshold, in luminance, as three.js's `smoothWidth`.
-const KNEE: f32 = 0.01;
+/// The kinds of step that `bloom.wgsl` draws: the first step down, a later step down, a step up.
+const MODE_FIRST_DOWN: u32 = 0;
+const MODE_DOWN: u32 = 1;
+const MODE_UP: u32 = 2;
 
 /// Bytes between two steps' blocks in the uniform buffer: the offset alignment that bind groups
 /// need for a buffer range.
@@ -64,35 +75,189 @@ pub(crate) const FINAL_OFFSET: u32 = (STEPS * BLOCK) as u32;
 /// Bytes of the uniform buffer: every step's block, then the final pass's.
 const BUFFER_BYTES: usize = STEPS * BLOCK + std::mem::size_of::<FinalBlock>();
 
-/// How bloom looks, with three.js's UnrealBloomPass's meanings.
+/// Each reference level's share of the glow by default, narrowest first: the shares of Bevy's
+/// natural preset over its 8 levels, whose steps up keep 0.72, 0.74, then 0.745 of the light from
+/// below. The two widest levels take none, so they do not draw.
+pub const DEFAULT_WEIGHTS: [f32; LEVELS] = [
+    0.28, 0.1872, 0.1359, 0.1012, 0.0754, 0.0562, 0.0419, 0.1223, 0.0, 0.0,
+];
+
+/// How the glow meets the scene color in the final pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Blend {
+    /// The scene color moves toward the glow by the intensity, from 0 to 1, which keeps the
+    /// image's light, as Bevy's default does.
+    #[default]
+    Mix,
+    /// The glow, times the intensity, adds to the scene color, as three.js's bloom adds.
+    Add,
+    /// The glow, times the intensity, screens the scene color, as pmndrs's SCREEN blend does:
+    /// `a + b - min(a * b, 1)`.
+    Screen,
+}
+
+impl Blend {
+    /// The blend of its code: 0 mixes, 1 adds, 2 screens.
+    pub fn from_code(code: u32) -> Option<Self> {
+        match code {
+            0 => Some(Self::Mix),
+            1 => Some(Self::Add),
+            2 => Some(Self::Screen),
+            _ => None,
+        }
+    }
+
+    /// The code that `final.wgsl` reads.
+    const fn code(self) -> f32 {
+        match self {
+            Self::Mix => 0.0,
+            Self::Add => 1.0,
+            Self::Screen => 2.0,
+        }
+    }
+}
+
+/// How bloom looks.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bloom {
-    /// How bright the glow is: the sum of the levels' weights scales with it.
-    pub strength: f32,
-    /// From 0 to 1: how far the glow spreads, by moving weight from the narrow levels to the wide.
-    pub radius: f32,
-    /// The luminance from which a pixel glows, in linear color before the exposure.
+    /// The glow's weight in the blend: its share from 0 to 1 when it mixes, else its factor.
+    pub intensity: f32,
+    /// The luminance from which a pixel glows, in linear color before the exposure. At 0 every
+    /// pixel glows.
     pub threshold: f32,
+    /// The width of the threshold's soft edge, in luminance.
+    pub knee: f32,
+    /// How the glow meets the scene color.
+    pub blend: Blend,
+    /// Each reference level's share of the glow, narrowest first. They need not sum to 1: the
+    /// chain divides them by their sum.
+    pub weights: [f32; LEVELS],
 }
 
 impl Default for Bloom {
     fn default() -> Self {
         Self {
-            strength: 1.0,
-            radius: 0.5,
-            threshold: 1.0,
+            intensity: 0.15,
+            threshold: 0.0,
+            knee: 0.1,
+            blend: Blend::Mix,
+            weights: DEFAULT_WEIGHTS,
         }
     }
 }
 
 impl Bloom {
-    /// Each level's weight in the final pass: three.js's factor, moved toward its mirror by the
-    /// radius, times three times the strength.
-    pub fn level_weights(self) -> [f32; LEVELS] {
-        FACTORS.map(|factor| {
-            let mirror = 1.2 - factor;
-            3.0 * self.strength * (factor + (mirror - factor) * self.radius)
-        })
+    /// The levels that a chain whose base is reference level `offset` draws, of the `available`
+    /// ones: those up to the last level with a weight above 0, and at least the base.
+    fn drawn_levels(&self, offset: usize, available: usize) -> usize {
+        let last = self
+            .weights
+            .iter()
+            .rposition(|&w| w.is_finite() && w > 0.0)
+            .unwrap_or(0);
+        (last.saturating_sub(offset) + 1).clamp(1, available.max(1))
+    }
+
+    /// The mix of each step up of a chain whose base is reference level `offset`, so that each
+    /// level holds its share of the glow. The base takes the shares of the reference levels it
+    /// folds in. A step up into level `k` keeps `1 - mix` of level `k`'s own light, and the rest
+    /// comes from the levels below.
+    fn mixes(&self, offset: usize) -> [f32; LEVELS] {
+        let weights = self
+            .weights
+            .map(|w| if w.is_finite() { w.max(0.0) } else { 0.0 });
+        let sum: f32 = weights.iter().sum();
+        let mut shares = [0.0; LEVELS];
+        if sum > 0.0 {
+            for (reference, weight) in weights.iter().enumerate() {
+                shares[reference.saturating_sub(offset)] += weight / sum;
+            }
+        } else {
+            shares[0] = 1.0;
+        }
+        let mut mixes = [0.0; LEVELS];
+        let mut rest = 1.0f32;
+        for (mix, share) in mixes.iter_mut().zip(shares) {
+            *mix = if rest > 1e-6 {
+                (1.0 - share / rest).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            rest *= *mix;
+        }
+        mixes
+    }
+}
+
+/// The levels a chain declares for a base of `size` texels on the short side: the reference
+/// chain's, less one for each halving of [`MAX_SIZE`] down to `size`.
+pub fn declared_levels(size: u32) -> usize {
+    let size = size.clamp(MIN_SIZE, MAX_SIZE);
+    LEVELS - (MAX_SIZE / size).ilog2() as usize
+}
+
+/// The size of level `level` of a chain whose base has `size` texels on the short side.
+pub(crate) fn level_size(size: u32, level: usize) -> Size {
+    Size::ShortSide {
+        texels: size.clamp(MIN_SIZE, MAX_SIZE) as u16,
+        halvings: level as u8,
+    }
+}
+
+/// The chain's base size, which the quality setting sets, and the governor's halvings of it, which
+/// draw each level into a corner of its target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ChainFrame {
+    /// Texels on the base's short side, which the quality setting sets.
+    pub(crate) size: u32,
+    /// The governor's halvings of the base: each draws every level into a corner of half its
+    /// target, and drops the last level.
+    pub(crate) halvings: u32,
+}
+
+impl Default for ChainFrame {
+    fn default() -> Self {
+        Self {
+            size: MAX_SIZE,
+            halvings: 0,
+        }
+    }
+}
+
+impl ChainFrame {
+    /// The reference level that the frame's base draws for a canvas of `canvas` pixels, and the
+    /// levels it has from there: the declared levels, less one for each halving of the base that
+    /// half the canvas's short side needs, and less the governor's halvings. At least the base.
+    pub(crate) fn levels(self, canvas: (u32, u32)) -> (usize, usize) {
+        let size = self.size.clamp(MIN_SIZE, MAX_SIZE);
+        let fitted = Size::short_side(size as u16, canvas);
+        let canvas_halvings = (size / fitted.max(1)).ilog2() as usize;
+        let available = declared_levels(size)
+            .saturating_sub(canvas_halvings + self.halvings as usize)
+            .max(1);
+        (LEVELS - available, available)
+    }
+}
+
+/// The level that step `step` of a chain of `levels` declared levels draws into, the level it
+/// reads (`None` for the scene color), and whether it steps up.
+fn chain_step(step: usize, levels: usize) -> (usize, Option<usize>, bool) {
+    if step < levels {
+        (step, step.checked_sub(1), false)
+    } else {
+        let level = 2 * levels - 2 - step;
+        (level, Some(level + 1), true)
+    }
+}
+
+/// True when step `step` of a chain of `levels` declared levels draws in a frame that draws
+/// `active` levels: the steps down into those levels, and the steps up into each but the last.
+pub(crate) fn step_draws(step: usize, levels: usize, active: usize) -> bool {
+    let (level, _, up) = chain_step(step, levels);
+    if up {
+        level + 1 < active
+    } else {
+        level < active
     }
 }
 
@@ -103,79 +268,20 @@ struct StepBlock {
     scale: [f32; 4],
     origin: [f32; 4],
     bounds: [f32; 4],
-    center: f32,
-    pairs: u32,
     threshold: f32,
     knee: f32,
-    offsets: [f32; 12],
-    weights: [f32; 12],
+    mode: u32,
+    mix: f32,
 }
 
 const _: () = assert!(std::mem::size_of::<StepBlock>() <= BLOCK);
-const _: () = assert!(MAX_PAIRS as usize <= 12);
 
-/// The final pass's block, as `final.wgsl` lays out its `Bloom` struct: the levels' weights.
+/// The final pass's block, as `final.wgsl` lays out its `Bloom` struct: the base level's drawn
+/// corner in texels, the intensity, and the blend's code.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct FinalBlock {
-    weights: [f32; 8],
-}
-
-/// A Gaussian blur's taps on each side of its center: three.js's coefficients for a kernel of
-/// `kernel` taps with sigma a third of it, merged in pairs as three.js merges them, into
-/// `divisor` times fewer filtered reads per side, rounded up. Each read sits at the weighted mean
-/// of the texels it merges and carries their sum, so a linear filter reads two neighbors in one tap
-/// exactly. Fewer reads merge more texels each. Returns the center's weight, the number of reads
-/// per side, and each read's offset and weight.
-pub(crate) fn kernel(kernel: u32, divisor: u32) -> (f32, u32, [f32; 12], [f32; 12]) {
-    let sigma = kernel as f32 / 3.0;
-    let coefficient = |i: u32| {
-        let i = i as f32;
-        0.39894 * (-0.5 * i * i / (sigma * sigma)).exp() / sigma
-    };
-    let side = kernel - 1;
-    let reads = side.div_ceil(2).div_ceil(divisor.max(1));
-    let per_read = side.div_ceil(reads);
-    let (mut offsets, mut weights) = ([0.0; 12], [0.0; 12]);
-    let mut pairs = 0;
-    let mut first = 1;
-    while first <= side {
-        let last = (first + per_read - 1).min(side);
-        let (mut sum, mut moment) = (0.0, 0.0);
-        for i in first..=last {
-            sum += coefficient(i);
-            moment += i as f32 * coefficient(i);
-        }
-        offsets[pairs] = moment / sum;
-        weights[pairs] = sum;
-        pairs += 1;
-        first = last + 1;
-    }
-    (coefficient(0), pairs as u32, offsets, weights)
-}
-
-/// The size of the target that step `step` draws into.
-pub(crate) fn step_size(step: usize) -> Size {
-    if step == 0 {
-        Size::HALF
-    } else {
-        Size::Halved(step.div_ceil(2) as u8)
-    }
-}
-
-/// The size of the texture that step `step` reads: the scene color for the bright pass, else the
-/// step before it.
-fn source_size(step: usize) -> Size {
-    if step == 0 {
-        Size::Full
-    } else {
-        step_size(step - 1)
-    }
-}
-
-/// The level whose kernel step `step` blurs with, or `None` for the bright pass.
-fn level_of(step: usize) -> Option<usize> {
-    (step > 0).then(|| (step - 1) / 2)
+    glow: [f32; 4],
 }
 
 /// The rows before the drawn corner of a texture of `extent` rows whose corner has `corner` rows:
@@ -185,27 +291,67 @@ const fn rows_before(extent: u32, corner: u32, rows_from_bottom: bool) -> u32 {
     if rows_from_bottom { extent - corner } else { 0 }
 }
 
-/// The block of step `step` for a canvas of `canvas` pixels at render scale `scale`, with rows
-/// counted from the bottom on WebGL2 (`rows_from_bottom`).
-fn step_block(
-    step: usize,
+/// A texture's size and the corner that a frame draws into it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Area {
+    extent: (u32, u32),
+    corner: (u32, u32),
+}
+
+/// Where the chain's textures and corners lie in one frame.
+#[derive(Clone, Copy, Debug)]
+struct Layout {
     canvas: (u32, u32),
     scale: RenderScale,
-    bloom: Bloom,
-    divisor: u32,
+    size: u32,
+    halvings: u32,
+}
+
+impl Layout {
+    /// The area of level `level`: its target, and the corner of the governor's halvings.
+    fn level(self, level: usize) -> Area {
+        let base = level_size(self.size, 0).extent(self.canvas);
+        let halve = |times: usize| {
+            let by = 1u32 << times.min(31);
+            (base.0.div_ceil(by), base.1.div_ceil(by))
+        };
+        Area {
+            extent: halve(level),
+            corner: halve(level + self.halvings as usize),
+        }
+    }
+
+    /// The scene color's area: the canvas, and the corner of the render scale.
+    fn scene(self) -> Area {
+        Area {
+            extent: Size::Full.extent(self.canvas),
+            corner: Size::Full.viewport(self.canvas, self.scale),
+        }
+    }
+}
+
+/// The block of step `step` of a chain of `levels` declared levels, whose base is reference
+/// level `offset`, for the frame's `layout`, with rows counted from the bottom on WebGL2
+/// (`rows_from_bottom`).
+fn step_block(
+    step: usize,
+    levels: usize,
+    bloom: &Bloom,
+    mixes: &[f32; LEVELS],
+    layout: Layout,
     rows_from_bottom: bool,
 ) -> StepBlock {
-    let (source, target) = (source_size(step), step_size(step));
-    let corner = source.viewport(canvas, scale);
-    let extent = source.extent(canvas);
-    let drawn = target.viewport(canvas, scale);
+    let (level, source_level, up) = chain_step(step, levels);
+    let source = source_level.map_or(layout.scene(), |l| layout.level(l));
+    let target = layout.level(level);
+    let (extent, corner, drawn) = (source.extent, source.corner, target.corner);
     let per_pixel = [
         corner.0 as f32 / (drawn.0 as f32 * extent.0 as f32),
         corner.1 as f32 / (drawn.1 as f32 * extent.1 as f32),
     ];
     // A pixel's place in the target's corner maps onto the source's corner.
     let source_rows = rows_before(extent.1, corner.1, rows_from_bottom) as f32;
-    let target_rows = rows_before(target.extent(canvas).1, drawn.1, rows_from_bottom) as f32;
+    let target_rows = rows_before(target.extent.1, drawn.1, rows_from_bottom) as f32;
     let origin = [
         0.0,
         source_rows / extent.1 as f32 - target_rows * per_pixel[1],
@@ -218,45 +364,63 @@ fn step_block(
         (corner.0 as f32 - 0.5) / extent.0 as f32,
         (source_rows + corner.1 as f32 - 0.5) / extent.1 as f32,
     ];
-    match level_of(step) {
-        None => StepBlock {
-            scale: [per_pixel[0], per_pixel[1], 0.0, 0.0],
-            origin,
-            bounds,
-            center: 1.0,
-            pairs: 0,
-            threshold: bloom.threshold,
-            knee: KNEE,
-            ..StepBlock::default()
+    // A step down spaces its taps by half a pixel of its target: a source texel where the source
+    // has twice the target's size. A step up spaces its tent by a texel of its source.
+    let spacing = if up {
+        [1.0 / extent.0 as f32, 1.0 / extent.1 as f32]
+    } else {
+        [0.5 * per_pixel[0], 0.5 * per_pixel[1]]
+    };
+    let first = source_level.is_none();
+    StepBlock {
+        scale: [per_pixel[0], per_pixel[1], spacing[0], spacing[1]],
+        origin,
+        bounds,
+        threshold: if first { bloom.threshold.max(0.0) } else { 0.0 },
+        knee: bloom.knee.max(0.0),
+        mode: if up {
+            MODE_UP
+        } else if first {
+            MODE_FIRST_DOWN
+        } else {
+            MODE_DOWN
         },
-        Some(level) => {
-            let (center, pairs, offsets, weights) = kernel(KERNELS[level], divisor);
-            let across = step % 2 == 1;
-            let direction = if across {
-                [per_pixel[0], 0.0]
-            } else {
-                [0.0, per_pixel[1]]
-            };
-            StepBlock {
-                scale: [per_pixel[0], per_pixel[1], direction[0], direction[1]],
-                origin,
-                bounds,
-                center,
-                pairs,
-                // Every pixel passes: luminance is never below 0.
-                threshold: -1.0,
-                knee: 1.0,
-                offsets,
-                weights,
-            }
+        mix: if up { mixes[level] } else { 0.0 },
+    }
+}
+
+/// Texture reads per pixel of the canvas, counted over every step and the final pass's read, for
+/// `bloom` on a canvas of `canvas` pixels, with a base of `size` texels halved `halvings` times:
+/// the measure that D-21 compares methods by. The second number counts the reads of the steps
+/// up's blending, which reads each target once.
+pub fn texels_per_pixel(bloom: &Bloom, canvas: (u32, u32), size: u32, halvings: u32) -> (f64, f64) {
+    let frame = ChainFrame { size, halvings };
+    let layout = Layout {
+        canvas,
+        scale: RenderScale::FULL,
+        size,
+        halvings,
+    };
+    let (offset, available) = frame.levels(canvas);
+    let active = bloom.drawn_levels(offset, available);
+    let canvas_pixels = f64::from(canvas.0.max(1)) * f64::from(canvas.1.max(1));
+    let (mut reads, mut blends) = (0.0, 0.0);
+    for level in 0..active {
+        let (w, h) = layout.level(level).corner;
+        let pixels = f64::from(w) * f64::from(h);
+        reads += 13.0 * pixels;
+        if level + 1 < active {
+            reads += 9.0 * pixels;
+            blends += pixels;
         }
     }
+    (reads / canvas_pixels + 1.0, blends / canvas_pixels)
 }
 
 /// The GPU objects of bloom, which the frame builder's id ranges set.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BloomIds {
-    /// The uniform buffer of every step's settings and the final pass's weights.
+    /// The uniform buffer of every step's settings and the final pass's.
     pub(crate) buffer: u32,
     /// The linear sampler that every step and the final pass read with.
     pub(crate) sampler: u32,
@@ -264,8 +428,9 @@ pub(crate) struct BloomIds {
     pub(crate) first_group: u32,
 }
 
-/// The pipeline of the steps: one triangle into a target of bloom's format.
-const fn pipeline(format: u32) -> PipelineKey {
+/// The pipeline of the steps: one triangle into a target of bloom's format. The steps up blend
+/// over their target, premultiplied by the step's mix.
+const fn pipeline(format: u32, blend: bool) -> PipelineKey {
     PipelineKey {
         template: template::BLOOM,
         permutation: 0,
@@ -273,40 +438,60 @@ const fn pipeline(format: u32) -> PipelineKey {
         color_format: format,
         depth_format: null3d_gpu::drawlist::format::NONE,
         samples: 1,
-        state: state_flags::CULL_NONE,
+        state: if blend {
+            state_flags::CULL_NONE | state_flags::BLEND_NORMAL
+        } else {
+            state_flags::CULL_NONE
+        },
         bias: DepthBias::NONE,
     }
+}
+
+/// What a frame's settings depend on. The frame writes them again only when one changes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Staged {
+    canvas: (u32, u32),
+    scale: RenderScale,
+    frame: ChainFrame,
+    bloom: Bloom,
 }
 
 /// Bloom's GPU objects, its settings and what the GPU holds of them.
 #[derive(Debug)]
 pub(crate) struct BloomPass {
     ids: BloomIds,
-    /// The format of bloom's targets: the scene color's.
-    format: u32,
     /// True on WebGL2, which counts rows from the bottom.
     rows_from_bottom: bool,
-    pipeline: Option<u32>,
+    /// The levels declared, which the base's size sets.
+    levels: usize,
+    /// The pipelines of the steps down and of the steps up.
+    pipelines: Option<(u32, u32)>,
     created: bool,
-    /// The uniform buffer's contents for this frame, and what the GPU holds.
+    /// The uniform buffer's contents, and the inputs they were written for, which the GPU holds.
     staged: [u8; BUFFER_BYTES],
-    uploaded: Option<[u8; BUFFER_BYTES]>,
+    staged_for: Option<Staged>,
+    /// The levels that the frame draws.
+    active: usize,
+    /// The corner that each step draws into.
+    corners: [(u32, u32); STEPS],
     /// The texture that each step's bind group reads, or 0 before the group exists.
     bound: [u32; STEPS],
 }
 
 impl BloomPass {
-    /// Bloom's passes for targets of `format`, with GPU objects from `ids`, on WebGL2 with
-    /// `rows_from_bottom`.
-    pub(crate) fn new(ids: BloomIds, format: u32, rows_from_bottom: bool) -> Self {
+    /// Bloom's passes for a base of `size` texels on the short side, with GPU objects from `ids`,
+    /// on WebGL2 with `rows_from_bottom`.
+    pub(crate) fn new(ids: BloomIds, size: u32, rows_from_bottom: bool) -> Self {
         Self {
             ids,
-            format,
             rows_from_bottom,
-            pipeline: None,
+            levels: declared_levels(size),
+            pipelines: None,
             created: false,
             staged: [0; BUFFER_BYTES],
-            uploaded: None,
+            staged_for: None,
+            active: 0,
+            corners: [(1, 1); STEPS],
             bound: [0; STEPS],
         }
     }
@@ -314,16 +499,34 @@ impl BloomPass {
     /// Bytes a frame may copy into its arena: the whole uniform buffer.
     pub(crate) const UPLOAD_BYTES: usize = BUFFER_BYTES;
 
-    /// Asks `pipelines` for the steps' pipeline, once.
-    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache) -> u32 {
-        *self
-            .pipeline
-            .get_or_insert_with(|| pipelines.id(pipeline(self.format)))
+    /// The levels declared.
+    pub(crate) fn levels(&self) -> usize {
+        self.levels
     }
 
-    /// Makes the buffer and the sampler when the GPU lacks them, uploads the settings for the
-    /// sample divisor `divisor` when they changed, and binds each step to `sources[step]`, the texture it reads, when the group is new
-    /// or the frame made the plan's textures again.
+    /// The steps declared: a step down into each level, then a step up into each but the last.
+    pub(crate) fn steps(&self) -> usize {
+        2 * self.levels - 1
+    }
+
+    /// True when step `step` draws in this frame.
+    pub(crate) fn draws(&self, step: usize) -> bool {
+        step_draws(step, self.levels, self.active)
+    }
+
+    /// Asks `pipelines` for the pipelines of the steps down and up, once, and returns their ids.
+    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) -> (u32, u32) {
+        *self.pipelines.get_or_insert_with(|| {
+            (
+                pipelines.id(pipeline(FORMAT, false)),
+                pipelines.id(pipeline(FORMAT, true)),
+            )
+        })
+    }
+
+    /// Makes the buffer and the sampler when the GPU lacks them, writes and uploads the settings
+    /// when an input changed, and binds each step to `sources[step]`, the texture it reads, when
+    /// its group is new or the frame made the plan's textures again.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &mut self,
@@ -331,8 +534,8 @@ impl BloomPass {
         arena: &mut UploadArena,
         canvas: (u32, u32),
         scale: RenderScale,
+        frame: ChainFrame,
         bloom: Bloom,
-        divisor: u32,
         sources: &[u32; STEPS],
         textures_made: bool,
     ) -> Result<(), RecordError> {
@@ -364,13 +567,19 @@ impl BloomPass {
             )?;
             self.created = true;
         }
-        self.stage(canvas, scale, bloom, divisor);
-        if self.uploaded.as_ref() != Some(&self.staged) {
+        let inputs = Staged {
+            canvas,
+            scale,
+            frame,
+            bloom,
+        };
+        if self.staged_for != Some(inputs) {
+            self.stage(inputs);
             let (at, bytes) = arena.push(&self.staged)?;
             list.push(Op::WriteBuffer, &[ids.buffer, 0, at, bytes])?;
-            self.uploaded = Some(self.staged);
+            self.staged_for = Some(inputs);
         }
-        for (step, &source) in sources.iter().enumerate() {
+        for (step, &source) in sources.iter().enumerate().take(self.steps()) {
             if textures_made || self.bound[step] != source {
                 list.push(
                     Op::CreateBindGroup,
@@ -401,25 +610,67 @@ impl BloomPass {
         Ok(())
     }
 
-    /// Writes every block of the uniform buffer into the staging copy.
-    fn stage(&mut self, canvas: (u32, u32), scale: RenderScale, bloom: Bloom, divisor: u32) {
-        for step in 0..STEPS {
-            let block = step_block(step, canvas, scale, bloom, divisor, self.rows_from_bottom);
+    /// Writes every block of the uniform buffer into the staging copy, and notes the levels that
+    /// draw and each step's corner.
+    fn stage(&mut self, inputs: Staged) {
+        let Staged {
+            canvas,
+            scale,
+            frame,
+            bloom,
+        } = inputs;
+        let layout = Layout {
+            canvas,
+            scale,
+            size: frame.size,
+            halvings: frame.halvings,
+        };
+        let (offset, available) = frame.levels(canvas);
+        self.active = bloom.drawn_levels(offset, available.min(self.levels));
+        let mixes = bloom.mixes(offset);
+        for step in 0..self.steps() {
+            let block = step_block(
+                step,
+                self.levels,
+                &bloom,
+                &mixes,
+                layout,
+                self.rows_from_bottom,
+            );
             self.staged[step * BLOCK..][..std::mem::size_of::<StepBlock>()]
                 .copy_from_slice(bytes_of(&block));
+            self.corners[step] = layout.level(chain_step(step, self.levels).0).corner;
         }
-        let weights = bloom.level_weights();
-        let mut block = FinalBlock::default();
-        block.weights[..LEVELS].copy_from_slice(&weights);
+        let corner = layout.level(0).corner;
+        let intensity = match bloom.blend {
+            Blend::Mix => bloom.intensity.clamp(0.0, 1.0),
+            Blend::Add | Blend::Screen => bloom.intensity.max(0.0),
+        };
+        let block = FinalBlock {
+            glow: [
+                corner.0 as f32,
+                corner.1 as f32,
+                intensity,
+                bloom.blend.code(),
+            ],
+        };
         self.staged[FINAL_OFFSET as usize..].copy_from_slice(bytes_of(&block));
     }
 
-    /// Records step `step` inside the render pass that the render graph began into its target.
+    /// Records step `step` inside the render pass that the render graph began into its target:
+    /// one triangle over the step's corner.
     pub(crate) fn record(&self, list: &mut DrawList, step: usize) -> Result<(), RecordError> {
-        let pipeline = self
-            .pipeline
-            .expect("bloom asks for its pipeline before it records");
-        list.push(Op::SetPipeline, &[pipeline])?;
+        let (draw, blend) = self
+            .pipelines
+            .expect("bloom asks for its pipelines before it records");
+        let up = chain_step(step, self.levels).2;
+        let (width, height) = self.corners[step];
+        list.push(
+            Op::SetViewport,
+            &[0, 0, width, height, 0f32.to_bits(), 1f32.to_bits()],
+        )?;
+        list.push(Op::SetScissor, &[0, 0, width, height])?;
+        list.push(Op::SetPipeline, &[if up { blend } else { draw }])?;
         list.push(
             Op::SetBindGroup,
             &[0, self.ids.first_group + step as u32, 0],
@@ -434,10 +685,10 @@ impl BloomPass {
     }
 
     /// Forgets the GPU objects, so the next frame makes them again, after the thread that draws
-    /// replaced the GPU. The pipeline keeps its id, which the cache creates again.
+    /// replaced the GPU. The pipelines keep their ids, which the cache creates again.
     pub(crate) fn reset_gpu(&mut self) {
         self.created = false;
-        self.uploaded = None;
+        self.staged_for = None;
         self.bound = [0; STEPS];
     }
 }
@@ -456,189 +707,226 @@ pub(crate) fn bytes_of<T: Copy>(block: &T) -> &[u8] {
 mod tests {
     use super::*;
 
-    /// three.js's UnrealBloomPass's merged taps for a kernel, computed as its constructor does.
-    fn three(kernel_radius: u32) -> (f32, Vec<f32>, Vec<f32>) {
-        let sigma = kernel_radius as f64 / 3.0;
-        let c: Vec<f64> = (0..kernel_radius)
-            .map(|i| {
-                let i = i as f64;
-                0.39894 * (-0.5 * i * i / (sigma * sigma)).exp() / sigma
+    /// The shares of the glow that a chain's mixes give its levels.
+    fn shares(mixes: &[f32; LEVELS], levels: usize) -> Vec<f32> {
+        let mut rest = 1.0;
+        (0..levels)
+            .map(|level| {
+                if level + 1 == levels {
+                    rest
+                } else {
+                    let share = rest * (1.0 - mixes[level]);
+                    rest *= mixes[level];
+                    share
+                }
             })
-            .collect();
-        let (mut offsets, mut weights) = (Vec::new(), Vec::new());
-        let mut i = 1;
-        while i < kernel_radius as usize {
-            let wa = c[i];
-            let wb = if i + 1 < kernel_radius as usize {
-                c[i + 1]
-            } else {
-                0.0
-            };
-            let w = wa + wb;
-            offsets.push(((i as f64 * wa + (i + 1) as f64 * wb) / w) as f32);
-            weights.push(w as f32);
-            i += 2;
-        }
-        (c[0] as f32, offsets, weights)
+            .collect()
     }
 
     #[test]
-    fn every_level_takes_three_js_taps_at_full_samples() {
-        for kernel_size in KERNELS {
-            let (center, pairs, offsets, weights) = kernel(kernel_size, 1);
-            let (three_center, three_offsets, three_weights) = three(kernel_size);
-            assert!((center - three_center).abs() < 1e-6);
-            assert_eq!(pairs as usize, three_offsets.len(), "kernel {kernel_size}");
-            for k in 0..pairs as usize {
-                assert!(
-                    (offsets[k] - three_offsets[k]).abs() < 1e-4,
-                    "kernel {kernel_size}"
-                );
-                assert!(
-                    (weights[k] - three_weights[k]).abs() < 1e-6,
-                    "kernel {kernel_size}"
-                );
-            }
-        }
-        assert_eq!(MAX_PAIRS, 11);
-    }
-
-    #[test]
-    fn fewer_samples_keep_the_kernel_whole() {
-        for kernel_size in KERNELS {
-            let (center, full, _, full_weights) = kernel(kernel_size, 1);
-            let full_sum: f32 = full_weights[..full as usize].iter().sum();
-            for divisor in [2, 4] {
-                let (c, pairs, offsets, weights) = kernel(kernel_size, divisor);
-                assert_eq!(c, center);
-                assert_eq!(pairs, full.div_ceil(divisor), "kernel {kernel_size}");
-                let sum: f32 = weights[..pairs as usize].iter().sum();
-                assert!(
-                    (sum - full_sum).abs() < 1e-5,
-                    "the reads carry every texel's weight"
-                );
-                // The mean distance of the reads, by weight, stays the kernel's, so the glow keeps
-                // its width.
-                let mean = |offsets: &[f32], weights: &[f32]| {
-                    offsets.iter().zip(weights).map(|(o, w)| o * w).sum::<f32>()
-                };
-                let (_, _, full_offsets, _) = kernel(kernel_size, 1);
-                let wide = mean(
-                    &full_offsets[..full as usize],
-                    &full_weights[..full as usize],
-                );
-                let narrow = mean(&offsets[..pairs as usize], &weights[..pairs as usize]);
-                assert!((wide - narrow).abs() < 1e-3);
-            }
-        }
-    }
-
-    #[test]
-    fn the_weights_follow_three_js_composite() {
+    fn the_mixes_give_each_level_its_share_and_fold_the_dropped_levels_into_the_base() {
         let bloom = Bloom {
-            strength: 1.5,
-            radius: 0.4,
-            threshold: 0.85,
+            weights: [1.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0],
+            ..Bloom::default()
         };
-        let weights = bloom.level_weights();
-        let three = [1.0f32, 0.8, 0.6, 0.4, 0.2].map(|f| 3.0 * 1.5 * (f + ((1.2 - f) - f) * 0.4));
-        assert_eq!(weights, three);
-        // The weights add up to nine times the strength at any radius.
-        for radius in [0.0, 0.5, 1.0] {
-            let sum: f32 = Bloom { radius, ..bloom }.level_weights().iter().sum();
-            assert!((sum - 9.0 * 1.5).abs() < 1e-4);
+        assert_eq!(bloom.drawn_levels(0, LEVELS), 8);
+        let full = shares(&bloom.mixes(0), 8);
+        let expected = [0.125, 0.125, 0.25, 0.0, 0.0, 0.0, 0.0, 0.5];
+        for (got, want) in full.iter().zip(expected) {
+            assert!((got - want).abs() < 1e-6, "{full:?}");
         }
+        // A base two levels smaller holds the three narrowest levels' light.
+        assert_eq!(bloom.drawn_levels(2, LEVELS - 2), 6);
+        let folded = shares(&bloom.mixes(2), 6);
+        let expected = [0.5, 0.0, 0.0, 0.0, 0.0, 0.5];
+        for (got, want) in folded.iter().zip(expected) {
+            assert!((got - want).abs() < 1e-6, "{folded:?}");
+        }
+        // The widest levels draw only with a weight.
+        let wide = Bloom {
+            weights: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            ..bloom
+        };
+        assert_eq!(wide.drawn_levels(0, LEVELS), LEVELS);
+        assert_eq!(wide.drawn_levels(3, 4), 4);
+        let default = shares(&Bloom::default().mixes(0), 8);
+        assert!((default.iter().sum::<f32>() - 1.0).abs() < 1e-5);
+        for (got, want) in default.iter().zip(DEFAULT_WEIGHTS) {
+            assert!((got - want).abs() < 1e-3, "{default:?}");
+        }
+        // Weights of 0 put all the light in the base.
+        let none = Bloom {
+            weights: [0.0; LEVELS],
+            ..Bloom::default()
+        };
+        assert_eq!(none.mixes(0)[0], 0.0);
     }
 
     #[test]
-    fn each_step_halves_and_reads_the_one_before_inside_its_drawn_corner() {
-        assert_eq!(step_size(0), Size::HALF);
-        assert_eq!((step_size(1), step_size(2)), (Size::HALF, Size::HALF));
-        assert_eq!(
-            (step_size(9), step_size(10)),
-            (Size::Halved(5), Size::Halved(5))
-        );
-        assert_eq!(source_size(3), Size::HALF);
-        let canvas = (320, 180);
+    fn the_base_keeps_the_glow_size_as_it_shrinks() {
+        assert_eq!(declared_levels(512), 10);
+        assert_eq!(declared_levels(256), 9);
+        assert_eq!(declared_levels(128), 8);
+        assert_eq!(declared_levels(64), 7);
+        let canvas = (1920, 1080);
+        // The last level has 1 texel on the short side, and the default's widest level 4, at every
+        // size.
+        for size in [512, 256, 128, 64] {
+            let levels = declared_levels(size);
+            assert_eq!(level_size(size, levels - 1).extent(canvas).1, 1, "{size}");
+            let (offset, available) = ChainFrame { size, halvings: 0 }.levels(canvas);
+            let drawn = Bloom::default().drawn_levels(offset, available);
+            assert_eq!(level_size(size, drawn - 1).extent(canvas).1, 4, "{size}");
+        }
+        assert_eq!(level_size(512, 0).extent(canvas), (910, 512));
+        // A portrait canvas takes its width as the short side.
+        assert_eq!(level_size(128, 0).extent((540, 932)), (128, 221));
+        // The base is never more than half the short side: 900 rows hold 256 texels, so the
+        // chain drops its narrowest level.
+        assert_eq!(level_size(512, 0).extent((1600, 900)), (455, 256));
+        let frame = ChainFrame {
+            size: 512,
+            halvings: 0,
+        };
+        assert_eq!(frame.levels((1600, 900)), (1, 9));
+        assert_eq!(frame.levels(canvas), (0, 10));
+        let halved = ChainFrame {
+            halvings: 1,
+            ..frame
+        };
+        assert_eq!(halved.levels(canvas), (1, 9));
+        assert_eq!(halved.levels((2, 2)), (9, 1));
+    }
+
+    #[test]
+    fn the_steps_go_down_then_up_and_the_governor_drops_the_last_level() {
+        assert_eq!(chain_step(0, 3), (0, None, false));
+        assert_eq!(chain_step(2, 3), (2, Some(1), false));
+        assert_eq!(chain_step(3, 3), (1, Some(2), true));
+        assert_eq!(chain_step(4, 3), (0, Some(1), true));
+        // With two of three levels, the step down into the last level and the step up from it
+        // stay off.
+        let draws: Vec<bool> = (0..5).map(|step| step_draws(step, 3, 2)).collect();
+        assert_eq!(draws, [true, true, false, false, true]);
+    }
+
+    #[test]
+    fn each_step_reads_its_source_inside_the_drawn_corners() {
         let bloom = Bloom::default();
-        // At the whole canvas, the bright pass reads two scene texels per pixel each way.
-        let bright = step_block(0, canvas, RenderScale::FULL, bloom, 1, false);
-        assert_eq!(bright.scale, [1.0 / 160.0, 1.0 / 90.0, 0.0, 0.0]);
+        let canvas = (1920, 1080);
+        let layout = Layout {
+            canvas,
+            scale: RenderScale::FULL,
+            size: 512,
+            halvings: 0,
+        };
+        let mixes = bloom.mixes(0);
+        let first = step_block(0, 8, &bloom, &mixes, layout, false);
+        assert_eq!(first.mode, MODE_FIRST_DOWN);
+        assert_eq!(first.scale[1], 1.0 / 512.0);
+        assert_eq!(first.bounds[3], 1079.5 / 1080.0);
+        let half = Layout {
+            scale: RenderScale::from_thousandths(500),
+            ..layout
+        };
+        // At half scale the first step reads half as far into the scene color per pixel, and the
+        // later steps read as they did.
+        let first_half = step_block(0, 8, &bloom, &mixes, half, false);
+        assert!((first_half.scale[1] * 2.0 - first.scale[1]).abs() < 1e-9);
         assert_eq!(
-            bright.bounds,
-            [0.5 / 320.0, 0.5 / 180.0, 319.5 / 320.0, 179.5 / 180.0]
+            step_block(3, 8, &bloom, &mixes, layout, true),
+            step_block(3, 8, &bloom, &mixes, half, true)
         );
-        assert_eq!((bright.threshold, bright.pairs), (1.0, 0));
-        // At half scale, level 1's blur down reads only the drawn quarter of its source.
-        let half = RenderScale::from_thousandths(500);
-        let down = step_block(4, canvas, half, bloom, 1, false);
-        assert_eq!(source_size(4), Size::QUARTER);
-        // The source's corner is 40 x 23 of 80 x 45 texels, drawn into 40 x 23 pixels.
-        assert_eq!(down.bounds[2], 39.5 / 80.0);
-        assert_eq!(down.bounds[3], 22.5 / 45.0);
-        assert_eq!(down.scale[2], 0.0);
-        assert_eq!(down.scale[3], down.scale[1]);
-        assert_eq!(down.pairs, 5);
-        assert_eq!(down.origin, [0.0; 4]);
-        // WebGL2 draws the same corners into the top rows: 22 rows lie below the source's corner,
-        // and the target's corner of 23 of 45 rows starts at row 22.
-        let gl = step_block(4, canvas, half, bloom, 1, true);
-        assert_eq!(gl.bounds[1], 22.5 / 45.0);
-        assert_eq!(gl.bounds[3], 44.5 / 45.0);
-        let gl_place = |row: f32| row * gl.scale[1] + gl.origin[1];
-        assert!(
-            (gl_place(22.5) - 22.5 / 45.0).abs() < 1e-6,
-            "row 0 of the corner reads row 0"
-        );
+        let up = step_block(14, 8, &bloom, &mixes, layout, false);
+        assert_eq!((up.mode, up.mix), (MODE_UP, mixes[0]));
+        assert_eq!(up.scale[3], 1.0 / 256.0);
+        // The governor's halving draws level 1 into 128 of its 256 rows, and reads level 0's
+        // corner of 256 of its 512 rows.
+        let governed = Layout {
+            halvings: 1,
+            ..layout
+        };
+        let down = step_block(1, 8, &bloom, &mixes, governed, false);
+        assert_eq!(down.bounds[3], 255.5 / 512.0);
+        assert_eq!(down.scale[1], 256.0 / (128.0 * 512.0));
+        // WebGL2 draws the same corners into the top rows: level 1's corner starts at row 128 of
+        // 256, and its first row reads between level 0's rows 256 and 257 of 512.
+        let gl = step_block(1, 8, &bloom, &mixes, governed, true);
+        let place = |row: f32| row * gl.scale[1] + gl.origin[1];
+        assert!((place(128.5) - 257.0 / 512.0).abs() < 1e-6);
+        assert_eq!(gl.bounds[1], 256.5 / 512.0);
     }
 
     #[test]
-    fn a_new_scale_uploads_new_settings_and_makes_no_object() {
+    fn the_chain_reads_fewer_texels_than_the_canvas_has() {
+        let bloom = Bloom::default();
+        let (reads, blends) = texels_per_pixel(&bloom, (1920, 1080), 512, 0);
+        assert!(reads > 7.0 && reads < 8.0, "{reads}");
+        assert!(blends < 0.4, "{blends}");
+        let phone = texels_per_pixel(&bloom, (540, 932), 128, 0).0;
+        assert!(phone < 3.0, "{phone}");
+        assert!(texels_per_pixel(&bloom, (1920, 1080), 512, 1).0 < reads / 2.0);
+    }
+
+    #[test]
+    fn a_new_scale_or_governor_step_only_uploads_the_settings() {
         let ids = BloomIds {
             buffer: 1,
             sampler: 2,
             first_group: 3,
         };
-        let mut pass = BloomPass::new(ids, null3d_gpu::drawlist::format::RGBA16_FLOAT, false);
+        let mut pass = BloomPass::new(ids, 512, false);
         let mut pipelines = PipelineCache::default();
-        pass.request_pipeline(&mut pipelines);
+        pass.request_pipelines(&mut pipelines);
         let mut list = DrawList::with_capacity(4096);
         let mut arena = UploadArena::default();
         let sources = [7; STEPS];
-        let mut frame = |pass: &mut BloomPass, list: &mut DrawList, scale| {
+        let mut frame = |pass: &mut BloomPass, list: &mut DrawList, scale, halvings| {
             list.clear();
             arena.reset(BloomPass::UPLOAD_BYTES);
+            let chain = ChainFrame {
+                size: 512,
+                halvings,
+            };
             pass.prepare(
                 list,
                 &mut arena,
-                (320, 180),
+                (1920, 1080),
                 scale,
+                chain,
                 Bloom::default(),
-                1,
                 &sources,
                 false,
             )
             .unwrap();
         };
-        frame(&mut pass, &mut list, RenderScale::FULL);
-        let ops: Vec<_> = null3d_gpu::drawlist::decode(list.words())
-            .map(|c| c.unwrap().op)
-            .collect();
+        let ops = |list: &DrawList| -> Vec<Op> {
+            null3d_gpu::drawlist::decode(list.words())
+                .map(|c| c.unwrap().op)
+                .collect()
+        };
+        frame(&mut pass, &mut list, RenderScale::FULL, 0);
+        let first = ops(&list);
         assert_eq!(
-            ops.iter().filter(|&&op| op == Op::CreateBindGroup).count(),
+            first
+                .iter()
+                .filter(|&&op| op == Op::CreateBindGroup)
+                .count(),
             STEPS
         );
-        frame(&mut pass, &mut list, RenderScale::FULL);
+        frame(&mut pass, &mut list, RenderScale::FULL, 0);
         assert!(list.is_empty(), "nothing changed, so nothing records");
-        frame(&mut pass, &mut list, RenderScale::from_thousandths(700));
-        let ops: Vec<_> = null3d_gpu::drawlist::decode(list.words())
-            .map(|c| c.unwrap().op)
-            .collect();
+        frame(&mut pass, &mut list, RenderScale::from_thousandths(700), 0);
+        assert_eq!(ops(&list), [Op::WriteBuffer], "a new scale only uploads");
+        frame(&mut pass, &mut list, RenderScale::from_thousandths(700), 1);
         assert_eq!(
-            ops,
+            ops(&list),
             [Op::WriteBuffer],
-            "a new scale only uploads the settings"
+            "the governor's step only uploads"
         );
+        // Of the 10 levels declared, the default weights draw 8, and the halving 7.
+        assert!(!pass.draws(7) && !pass.draws(12) && pass.draws(13));
+        assert_eq!(pass.corners[0], (455, 256));
     }
 
     #[test]
@@ -648,18 +936,16 @@ mod tests {
             "scale: vec4f,",
             "origin: vec4f,",
             "bounds: vec4f,",
-            "center: f32,",
-            "pairs: u32,",
             "threshold: f32,",
             "knee: f32,",
-            "offsets: array<vec4f, 3>,",
-            "weights: array<vec4f, 3>,",
+            "mode: u32,",
+            "mix: f32,",
         ] {
             assert!(bloom.contains(field), "bloom.wgsl lacks {field}");
         }
-        assert_eq!(std::mem::size_of::<StepBlock>(), 160);
+        assert_eq!(std::mem::size_of::<StepBlock>(), 64);
         let final_pass = include_str!("../../null3d-shaders/wgsl/final.wgsl");
-        assert!(final_pass.contains("    weights: vec4f,\n    last: vec4f,\n"));
-        assert_eq!(std::mem::size_of::<FinalBlock>(), 32);
+        assert!(final_pass.contains("struct Bloom {\n    glow: vec4f,\n}"));
+        assert_eq!(std::mem::size_of::<FinalBlock>(), 16);
     }
 }

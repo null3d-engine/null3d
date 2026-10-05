@@ -1,18 +1,20 @@
 # D-21: The effect chain: bloom's method, effects on the 8-bit path, and where ambient occlusion applies
 
-Status: decided for bloom's method and the 8-bit path, 2026-10-03. Decided for ambient occlusion's placement and method, 2026-10-04. Pending: bloom's cost on the iPad and the S24+ (the `bloom` plan), and ambient occlusion's on the iPad (the `ao` plan). Date: 2026-10-03. Tasks: M2-F1, M2-F2.
+Status: decided for the 8-bit path, 2026-10-03. Decided for ambient occlusion's placement and method, 2026-10-04. Decided again for bloom's method, 2026-10-05: the mip chain, after [D-53](D-53-technique-defaults.md) ruling 1 and prototype P2. Pending: the final chain's GPU time on the Galaxy S25, the Pixel 9 and the Pixel 11 (the `bloom-sizes` plan). Also pending: bloom's and ambient occlusion's cost on the iPad (the `ao` plan). Date: 2026-10-03. Tasks: M2-F1, M2-F2, M2-F7.
 
 ## Question
 
-1. How does bloom spread light: the chain of half-size steps down and back up that the plan drew, or the steps of three.js's `UnrealBloomPass`?
+1. How does bloom spread light: the chain of mip levels that most engines draw, or the steps of three.js's `UnrealBloomPass`? With the chain, which base size does each preset take, and in which format? Which side of the canvas sets the size, and how do ports keep their look?
 2. Bloom needs the scene's HDR color. On the 8-bit path, the scene shaders tone map their own output. What happens there? The path serves WebGPU's compatibility mode with MSAA, and WebGL2 devices whose float targets fail.
 3. Where does ambient occlusion apply (M2-F2)?
 
 ## Rule
 
 - Every effect draws on every tier, or the docs name the tier where it is off.
-- A port that copies `UnrealBloomPass`'s strength, radius and threshold keeps its look: the parity test passes three.js's rule, under 0.1% of the pixels.
-- Bloom adds as little memory traffic as it can, and a new render scale makes no GPU object.
+- Bloom uses the best technique as its default ([D-52](D-52-intent-parity.md) part 2). A port maps `UnrealBloomPass`'s, the `bloom()` node's and pmndrs `BloomEffect`'s settings onto it. A sanity comparison with three.js checks that the glow falls in the same places with about the same light; the images keep null3D's own references.
+- Bloom adds as little memory traffic as it can. A new render scale and the governor's step make no GPU object.
+- On the phones that run a preset, its bloom costs no more GPU time than `UnrealBloomPass`'s steps did. That holds at render scale 1 and at the preset's lowest scale.
+- The glow keeps its size as a share of the screen at any pixel ratio, render scale, base size and orientation.
 - The owner's answer of 3 October: where a GPU's mode has no HDR target, bloom and AO may move it to HDR color with FXAA.
 - Ambient occlusion draws on every tier, with the best image that its cost allows. Its placement costs at most a set share of the GPU time on the presets that turn it on. [D-52](D-52-intent-parity.md) asks a looser sanity comparison of an improved technique. With `GTAOPass`, it checks that the shade falls in the same places and is of the same size.
 
@@ -20,16 +22,128 @@ Status: decided for bloom's method and the 8-bit path, 2026-10-03. Decided for a
 
 ### Bloom's method
 
-| Measure | Down and back up (the plan) | `UnrealBloomPass`'s steps (built) |
+| Measure | Mip chain (built) | `UnrealBloomPass`'s steps (built before) |
 | --- | --- | --- |
-| Passes before the final pass | 15 for a glow as wide as three.js's: 8 levels down and 7 back up. 9 with 5 levels, whose widest glow is about 6 times narrower | 11: the bright pass, then a blur across and a blur down for each of 5 levels |
-| Texture reads per pixel of the canvas, counted over all passes | About 8.3 with 8 levels: 13 per pixel of each step down, 9 per pixel of each step up, and 1 in the final pass | About 10.8: 5.5 in the blurs, 0.25 in the bright pass, and 5 in the final pass, which reads each level once |
-| Widest blur, as the standard deviation in pixels of the canvas | About 40 with 5 levels, estimated from the filters' widths | About 250: three.js's kernels of 6 to 22 taps, each with a third of its taps as sigma, at 1/2 to 1/32 size |
-| Pixels that differ from three.js by its rule, on the Mac in Chrome | Not built: its glow has another shape | 0.000% on WebGPU, compatibility mode and WebGL2, at both test settings |
+| Passes before the final pass | 15 with the default weights: 8 steps down and 7 up. 11 at Low's base of 128, and 9 after the governor's step there | 11: the bright pass, then a blur across and a blur down for each of 5 levels |
+| Texture reads per pixel of the canvas, over all passes | 7.6 at 1920 x 1080 with a base of 512; 3.8 on the iPad's 2388 x 1668 at 512; 2.7 on a phone's 540 x 932 at Low's 128 | About 10.8 at any size: 5.5 in the blurs, 0.25 in the bright pass, and 5 in the final pass |
+| Reads in the final pass | 1 | 5, one per level |
+| Glow's size | A share of the canvas's shorter side, the same at any pixel ratio, render scale, base and orientation | A number of pixels, so it shrinks as the pixel ratio grows and grows at a lower render scale |
+| Glow's measures across sizes (P2, bloom scene, strong) | Mean distance 0.437 of the height at 640 x 360, at 1280 x 720 and at render scale 0.5 | 0.467, 0.413 and 0.466 |
+| Flicker of small bright points | A Karis average on the first step | None |
+| Memory | About 5 MB at a base of 512, whatever the canvas's size; 0.3 MB at 128 on a phone | 0.66 of the scene color's pixels, in its format |
 
-The counts are per pixel of the canvas at render scale 1. A pass at half size draws a quarter of the pixels. The final pass reads all five levels itself, so the chain needs no composite pass, and three.js's blend pass becomes the final pass's addition.
+The counts come from `texels_per_pixel` in `crates/null3d-render/src/bloom.rs`. Every engine that the technique review read draws a mip chain, apart from three.js and Babylon.js ([D-53](D-53-technique-defaults.md)).
 
-The parity test (`bun run parity -- --scene bloom-soft,bloom-strong --tier webgpu,compat,webgl2`, 3 October 2026) compares null3D's `bloom-soft` and `bloom-strong` images with the twin `bench/pages/threejs/bloom.html`. The twin draws the same scene (`bench/scenes/bloom.ts`) with an `EffectComposer`: a `RenderPass`, an `UnrealBloomPass` with the same settings, and an `OutputPass` with ACES. Both sides draw without anti-aliasing, as the composer's targets have no MSAA.
+### The prototype's device timings
+
+Prototype P2 drew the chain beside `UnrealBloomPass`'s steps (branch `proto/p2-bloom`). Its `bloom-p2` plan ran on BrowserStack Automate on 4 October 2026, runs `20261004-192853-bloom-p2` and `20261004-194005-bloom-p2`. Each figure is the GPU time with bloom on less the time with it off, the median of three rounds, on WebGPU. WebGL2 has no GPU timer on these phones. The prototype sized its base on the canvas's height, with 8 levels, so each row has 15 passes.
+
+| Bloom | Galaxy S25 (Adreno) | Pixel 9 (Mali) | Pixel 11 (PowerVR) |
+| --- | --- | --- | --- |
+| `UnrealBloomPass`'s steps, scale 1 | 1.41 ms | 1.11 ms | 3.21 ms |
+| `UnrealBloomPass`'s steps, scale 0.5 | 1.18 ms | 0.92 ms | 2.95 ms |
+| Chain, 512 rows, scale 1 | 1.47 ms | 0.98 ms | 4.19 ms |
+| Chain, 512 rows, scale 0.5 | 1.57 ms | 1.64 ms | 4.00 ms |
+| Chain, 384 rows, scale 1 | 1.38 ms | 0.85 ms | 4.39 ms |
+| Chain, 256 rows, scale 1 | 1.31 ms | 0.79 ms | 4.06 ms |
+
+On the S25 the page drew a window of 360 x 621 CSS pixels at a pixel ratio of 3. On the Pixels it drew 411 x 753 at 2.625. At Low's cap of 1.5 the canvases are 540 x 932 and 617 x 1130, in portrait. So the 512-row base held 236 x 512 texels. That is nearly the scene's own size at scale 1, and more than the scene at scale 0.5. The old steps' work follows the render scale, and the chain's does not, so the 512-row chain cost more at scale 0.5. The S25's display ran at 30 Hz through these runs, so its rounds were slower and noisier.
+
+The iPad has not run the plan yet.
+
+### Why the Pixel 11 costs more
+
+The cost on PowerVR does not follow the texels. The 512, 384 and 256-row chains read texels in a ratio of about 4 : 2.3 : 1. Yet they cost 4.19, 4.39 and 4.06 ms, all with 15 passes. The old steps, with 11 passes and more reads, cost 3.21 ms. Both fit a cost of 0.27 to 0.29 ms per render pass. The reads and the target format are a small part of it. A tile GPU finishes each pass before the next pass, which reads it, can start. Adreno and Mali show no such cost per pass: their chain times fall as the base shrinks.
+
+So the passes are the lever on PowerVR. Each halving of the base removes one level and two passes. Low's base of 128 draws 11 passes, as the old steps did, and the governor's step brings it to 9. The engine cannot tell PowerVR apart (hard rule 14), so the preset and the governor do the work. The `bloom-sizes` plan times bases of 512, 256, 128 and 64, with 15, 13, 11 and 9 passes, to confirm the cost per pass.
+
+### The base for each preset
+
+The rule: the base is about half the render's shorter side at the preset's lowest render scale, on the devices that run the preset. A larger base adds cost and no detail that the scene has.
+
+| Preset | Devices | Shorter side of the canvas | Lowest render scale | Half of it at that scale | Base |
+| --- | --- | --- | --- | --- | --- |
+| Low | Phones, at a pixel ratio of 1.5 | 540 to 620 | 0.5 | 135 to 155 | 128 |
+| Medium | Tablets, at 2 | The iPad's 1668 | 0.6 | 500 | 512 |
+| High | Desktops, at 2 | 1080 to 1440 | 0.75 | 405 to 540 | 512 |
+| Ultra | Desktops | 1080 and up | 1 | 540 and up | 512 |
+
+Low's 128 on the short side is close to the prototype's 256-row chain on the phones: 128 x 221 texels against 118 x 256. That chain cost 1.31 ms on the S25 and 0.79 ms on the Pixel 9, against 1.41 and 1.11 ms for the old steps. Low's chain has 4 fewer passes than that one, and its cost does not follow the render scale. So it should cost no more at scale 0.5 than the old steps' 1.18 and 0.92 ms on those phones. On the Pixel 11 the cost per pass gives about 3.0 to 3.2 ms for 11 passes, against 3.21 ms. The `bloom-sizes` plan checks these estimates.
+
+384 rows, which the plan proposed for Low, keeps neither the glow's size nor a power of two. The glow's widest level would grow by a third. The base never takes more than half the canvas's shorter side, whatever the preset, so a small canvas drops its finest levels too.
+
+### Keeping the glow's size
+
+The glow's size is set by its widest levels, as a share of the screen. A chain whose base is half as large and which has one level fewer ends at the same widest level. Its finest level folds into the base, with the share of the light that the finest levels had. So the reference chain has 10 levels, from 512 texels on the shorter side down to 1. A base of 256 is reference level 1, and so on.
+
+The governor's step uses the same rule. Every level draws into a corner of half its target, so level k takes the size of level k + 1. The passes of the last level do not run. That makes no GPU object. A new `bloomSize` makes the targets again, as a new shadow map size does.
+
+### The shorter side, not the height
+
+Bevy and Filament size the base on the height. On a portrait phone that makes the glow twice as wide, as a share of the width, as on a landscape screen. Turning the phone would change it. three.js's glow spans pixels, the same in both orientations. Sizing on the shorter side keeps the glow the same when the phone turns, and keeps a port's mapping valid in both orientations. On a portrait phone at Low it costs 128 x 221 texels against 74 x 128 on the height for the same detail.
+
+### Ten levels
+
+With 8 levels, the widest spreads light over about a quarter of the shorter side. three.js's widest Gaussian spans about 256 pixels at any canvas size. So on a canvas of 360 pixels the mapped chain could not reach it. The fit's largest gap was 3.4% for the soft test bloom and 8.4% for the strong one. The gap is the largest difference in the share of light within any distance of a bright line. With levels of 2 and 1 texel added, it is 1.0% and 0.4%. A frame draws only the levels up to the last one with a weight. The default gives the two extra levels none, so they cost nothing there.
+
+### The levels' format
+
+The first build kept the levels in the scene color's format, as the old steps did. On the Mac's GPU WebGPU draws the scene in `rg11b10ufloat`, with 6 bits of precision in red and green and 5 in blue. WebGL2 draws it in `rgba16float`. Each level is written twice in a row of dependent steps, and the rounding of those writes adds up.
+
+| Strong test bloom, 640 x 360, WebGL2 against WebGPU | Levels in the scene color's format | Levels in `rgba16float` (built) |
+| --- | --- | --- |
+| Mean difference in red, green and blue, in steps of 255 | +3.8, +4.1, +7.1 | -0.07, +0.24, +0.11 |
+| Pixels that differ by more than 8 steps | 29% | 0.005% |
+| Largest difference | 22 | 19, on a shape's edge |
+
+The old steps' references differed by 0.005% too. So the small format lost light, most in blue, and the 16-bit levels fix it. On the Mac they cost 0.07 to 0.13 ms more: one or two steps of the GPU timer. This likely explains the prototype's WebGL2 difference of up to 7 of 255 as well.
+
+### Mapping three.js's settings
+
+The porting skill's `scripts/map-bloom.mjs` holds the mapping, after the prototype's. It runs each source's steps on one row of texels, the response to a bright line one pixel wide. It uses three.js's sizes, taps, weights and bilinear reads. It runs the chain's steps the same way, one response per level. Then it picks each level's share of the glow, by least squares on the light summed outward from the line. A small penalty on uneven shares smooths them, as long as the fit's gap grows by at most half a point. Levels at the wide end with under 1% of the light drop, to save their passes. The source's total weight becomes the intensity: about 8.8 x `strength` for `UnrealBloomPass`.
+
+| Source, at the canvas's shorter side | Largest gap | Half the light within, chain / source | 90% within, chain / source |
+| --- | --- | --- | --- |
+| `UnrealBloomPass` soft, 360 | 1.4% | 12 / 12 px | 134 / 136 px |
+| `UnrealBloomPass` strong, 360 | 0.7% | 35 / 35 px | 237 / 240 px |
+| `UnrealBloomPass` soft, 1080 | 0.7% | 12 / 12 px | 136 / 136 px |
+| `UnrealBloomPass` strong, 1080 | 0.7% | 35 / 35 px | 238 / 241 px |
+| pmndrs `BloomEffect` defaults, 1080 | 0.6% | 19 / 19 px | 326 / 337 px |
+
+Soft is a strength of 0.5, a radius of 0.2 and a threshold of 1; strong 1, 0.8 and 0.8. The smoothed and the plain fits drew the same images. In the test scene they differ by at most 5 of 255, and both lie equally close to three.js. The skill holds tables by radius at 1080, and the script fits any canvas size. The match holds at one canvas size, because three.js's glow spans pixels.
+
+### The sanity comparison with three.js
+
+`bun run parity -- --scene bloom-soft,bloom-strong --tier webgpu,webgl2`, 5 October 2026, with the mapped settings at 640 x 360:
+
+| Test bloom | WebGPU | WebGL2 |
+| --- | --- | --- |
+| Soft, pixels that differ by three.js's rule | 0.014% | 0.044% |
+| Strong, pixels that differ by three.js's rule | 16.8% | 17.1% |
+
+The strong bloom's differences all lie in the faint haze near the frame's edges. three.js's haze fades toward the corners, and the chain keeps light there, as engines that clamp at the edge do. Near the lights the two match. The prototype saw the same, with 3.7% at 1280 x 720, where less of the haze reaches the edges.
+
+The chain keeps that haze by design. Each step up blends the level below into its own level by a mix, and the mixes come from weights that sum to 1. So the steps up keep the glow's light: what the wide levels spread toward the edges stays in the frame. Fading it as three.js does would need a three.js-look step in the core, which [D-52](D-52-intent-parity.md) part 3 rules out. A port that wants less haze lowers `strength` or `radius` before the mapping, or the chain's `intensity` or its widest `weights`.
+
+The owner saw the strong bloom beside three.js's on 5 October 2026, and accepted the look. So the parity scene `bloom-strong` takes a sanity limit of 20% of the pixels (`BLOOM_STRONG_MAX_DIFFERENT_PERCENT` in `bench/lib/parity.ts`), against about 17% measured. `bloom-soft` keeps three.js's own 0.1%.
+
+### Bloom's cost on the Mac
+
+The bloom page of the effect cost test ran in Chrome on the MacBook Pro M5 Max on 5 October 2026. It drew with WebGPU at 1920 x 1080 CSS pixels, a pixel ratio of 1 and the governor off. Each figure is bloom's GPU time, on less off, the median of three rounds, in two runs. The timer counts in steps of about 0.066 ms, and other helpers used the Mac.
+
+| Base | Scale 1 | Scale 0.5 |
+| --- | --- | --- |
+| 512, the preset's | 0.79, 0.85 ms | 0.79, 0.79 ms |
+| 256 | 0.72, 0.72 ms | 0.59, 0.59 ms |
+| 128 | 0.66, 0.66 ms | 0.52, 0.52 ms |
+| 64 | 0.59, 0.46 ms | 0.52, 0.46 ms |
+| 512, levels in `rg11b10ufloat` | 1.38 (one slow round), 0.72 ms | 0.66, 0.72 ms |
+
+The prototype measured the old steps on the same Mac at about 0.6 to 0.7 ms, from 1.11 ms of GPU time with bloom on. WebGL2 has no GPU timer in Chrome.
+
+### Allocation
+
+`bun run bench:allocation --bloom` turns bloom on in S1 and changes its intensity every frame. So the core writes the chain's settings again in each frame. WebGL2 passes within every budget. On WebGPU the replay allocates 1,036 bytes per frame against 207 without bloom. The browser returns a render pass encoder for each of bloom's 15 passes, about 56 bytes each. The check gives `--bloom` a budget of 64 bytes for each of those passes. Nothing else allocates.
 
 ### The 8-bit path
 
@@ -40,15 +154,11 @@ The parity test (`bun run parity -- --scene bloom-soft,bloom-strong --tier webgp
 | The 99th percentile of frame intervals across the change, live | | 21.0 ms in compatibility mode, against 16.7 ms before it. 16.7 ms on core WebGPU and WebGL2 |
 | GPU objects made by the change | | 27 in compatibility mode: bloom's textures, bind groups, buffer and sampler, the scene targets again and the new pipelines. 25 to 27 on the other tiers |
 | GPU objects made in the half second after the change | | 0 on every tier |
-| Target memory per pixel of the canvas, scene and bloom | 32 bytes: MSAA's 4 samples of 8-bit color and of 32-bit depth | 17.3 bytes in `rgba16float`: 8 of color, 4 of depth and 5.3 of bloom's levels. 10.7 bytes in `rg11b10ufloat` where the device can draw it |
+| Target memory per pixel of the canvas, scene and bloom | 32 bytes: MSAA's 4 samples of 8-bit color and of 32-bit depth | 12 bytes in `rgba16float`: 8 of color and 4 of depth. 8 bytes in `rg11b10ufloat` where the device can draw it. Bloom's levels add about 5 MB at a base of 512, whatever the canvas's size |
 
-The live figures come from `tests/image/bloom-switch.spec.ts` on 3 October 2026, which logs them. The memory figures are computed. Bloom's targets are a half-size pair, a quarter-size pair, and so on, in the scene color's format. Together they cover 0.66 of the canvas's pixels.
+The live figures come from `tests/image/bloom-switch.spec.ts` on 3 October 2026, with `UnrealBloomPass`'s steps, which logs them. The memory figures are computed.
 
 A WebGL2 device whose RGBA16F targets fail has no HDR target in any mode, so bloom cannot draw there. The `bloom-8-bit` image test stands in for such a device with the page's switch that turns HDR off. It draws the scene without bloom, within the 8-bit path's usual edge differences: 0.05% of the pixels on the Mac and on SwiftShader. No device in the engine's tests lacks the targets (T-11).
-
-### Bloom's cost
-
-Pending: the `bloom` plan on the iPad and the S24+ ([device sessions](../devices.md#the-effect-cost-plans)). It measures each GPU path at render scales of 1 and 0.5, with bloom off and on in turns. The task asks for the iPad's GPU time at both scales and the S24+'s frame time.
 
 ### Ambient occlusion
 
@@ -97,7 +207,12 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 
 ## Decision
 
-1. Bloom runs `UnrealBloomPass`'s steps. With three.js's steps, kernels and weights, a port's numbers keep their look. The parity test passes three.js's rule on every GPU path, with 0.000% of the pixels. The plan's chain down and back up reads about a quarter fewer texels for a glow as wide. But it needs 15 passes against 11, and it gives the glow another shape. With 5 levels its glow is about six times narrower. Four of the extra reads per pixel fall in the final pass, on the levels of a quarter size and below. The final pass reads the levels itself, so the chain has no composite pass of its own. The `bloom` plan's figures from the iPad and the S24+ can reopen this choice.
+1. Bloom draws a mip chain, and it is the only bloom in the core. The first step down limits the scene color to 65,472 and keeps what passes the threshold and its soft knee. It takes a 13-tap filter with a normalized Karis average. Later steps take the 13-tap filter alone. Each step up blends a 3 x 3 tent of the level below into its own level by a mix, through premultiplied blending. The final pass reads the base once, and mixes, adds or screens it in.
+   - Public settings: `intensity` (0.15), `threshold` (0), `knee` (0.1), `blend` (`'mix'`, energy-conserving), and `weights`, each of 10 reference levels' share of the glow. The default weights are the shares of Bevy's natural preset over 8 levels. The mixes of the steps up come from the weights, so no extra uniform layout or binding is needed.
+   - The levels have the canvas's shape and a fixed number of texels on its shorter side, at most half of it. The quality setting `bloomSize` sets the base: 128 on Low, 512 on Medium, High and Ultra. The governor's step halves it once, by corners, with no GPU object.
+   - The levels are always `rgba16float`.
+   - The frame writes the settings only when an input changes, and finds the textures by name once per compile of the graph.
+   - It meets the rules. It reads fewer texels than the old steps at every canvas size of the presets, and the final pass reads one texture. A new render scale and the governor's step make no GPU object, and the glow keeps its size. Low's chain should cost no more than the old steps on the phones, by the prototype's figures; the `bloom-sizes` plan confirms it. The mapping reaches `UnrealBloomPass`'s and pmndrs's look within the sanity comparison, so the `three-compat` add-on needs no `UnrealBloomPass` halo.
 2. On the 8-bit path that serves only MSAA, turning bloom on moves the engine to HDR color with FXAA. It stays there for the rest of its life. One place decides both outputs, `effectsOutput` in `page/limits.ts`, so the start and the move agree. Where the device has no HDR target in any mode, bloom stays off, and development builds warn once. The docs name that case.
 3. Ambient occlusion darkens the ambient light in the opaque pass, as the plan drew it. That gives the better image. Occlusion measures how much of the light from around a point reaches it, so it belongs to the ambient light. Direct light and highlights stay bright in the shade, where `GTAOPass` darkens them too. The placement costs the depth prepass, which is close to nothing in the parity scene on the Mac. It draws on the 8-bit path with no HDR color. The method is GTAO at half size, with three.js's kernels and denoise: a horizon search whose authors built it to match ray-traced occlusion. It costs 46% of `GTAOPass`'s GPU time on the same scene. With `GTAOPass`'s defaults, 0.04% of the pixels differ, so the shade falls in the same places at the same strength. The upsample is the opaque pass's depth-weighted read of four texels, with no pass of its own. It has not been timed apart from the rest. The iPad's figures from the `ao` plan can reopen the placement. The proposed rule: the prepass takes at most 10% of the iPad's GPU time where a preset turns ambient occlusion on.
 
@@ -111,6 +226,14 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 
 ## Options rejected
 
+- `UnrealBloomPass`'s steps in the core, or as a mode. Its glow follows the pixel ratio and the render scale, it reads more texels on every preset's canvas, and its final pass reads five textures. The mapping reaches its look, so no mode stays (D-53 ruling 1).
+- Levels in the scene color's format. On WebGPU's `rg11b10ufloat` the chain lost light, most in blue, and drew differently from WebGL2.
+- A base sized on the height, as Bevy and Filament do. Turning a phone would change the glow's size.
+- A base of 384 on Low. It is no power of two, so the glow's widest level would grow by a third. It also cost more than 256 rows on all three phones.
+- Filament's mobile kernels on Low. The Pixel 11's cost is in its passes, not its reads. On Adreno and Mali the chain at Low's size already costs less than the old steps. Fewer passes, through a smaller base, do more.
+- A base that follows the render scale during play. It would make targets at each new scale, or need a second set of corners, for a glow whose cost hardly follows the scale.
+- A three.js `UnrealBloomPass` halo in the `three-compat` add-on. The mapped chain stays within the sanity comparison on the test scenes.
+
 - Bloom on the 8-bit path's display color. The scene shaders clip color at white before bloom could see it, so an emissive light at 12 glows as one at 1. Its levels would also be 8-bit, which bands in the dark tails of a glow.
 - Bloom off in compatibility mode with MSAA, with the docs naming the tier. The owner allowed the move, and the image tests' presets use MSAA there, so no test would draw bloom in that mode.
 - An option of `createEngine` that names the effects a page will use, so the engine starts on HDR color. A page rarely knows its sketch's effects, and the move costs two frames once.
@@ -119,9 +242,9 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 
 ## Notes for later effects
 
-- Below a render scale of 1, WebGPU draws a corner of a target into its first rows. WebGL2 counts rows from the bottom and draws the corner into its last ones. Every effect step that reads another step's target must place the corner on each path. Bloom's blocks carry the corner's origin for that.
-- A step never reads the target that it draws into. The graph gives each step a target of its own. It shares memory only between targets whose lifetimes do not overlap, as a draw that reads its own target faults on some GPUs.
-- The governor's last steps halve bloom's samples, down to a quarter, while bloom is on ([D-11](D-11-frames-in-flight.md)).
+- Below a render scale of 1, WebGPU draws a corner of a target into its first rows. WebGL2 counts rows from the bottom and draws the corner into its last ones. Every effect step that reads another step's target must place the corner on each path. Bloom's blocks carry the corner's origin for that: its first step reads the scene's corner, and after the governor's step every level draws a corner.
+- A draw never samples the target that it draws into. Bloom's step up blends into its level's target through the blend state and samples only the level below. The graph's reads "so far" let each step down read its source before the step up blends into it.
+- The governor's step halves bloom's base once while bloom is on ([D-11](D-11-frames-in-flight.md)).
 
 ## Notes for ambient occlusion
 
@@ -132,27 +255,16 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 
 ## Consequences
 
-- Code: `crates/null3d-render/src/bloom.rs`, the frame graph's bloom passes and `setCanvasOutput`, `wgsl/bloom.wgsl` and the final pass's `BLOOM` build, the `bloomSamples` quality setting and the governor's bloom steps, `effectsOutput` in `page/limits.ts`, and `gpu/device-shaders.ts`.
+- Code: `crates/null3d-render/src/bloom.rs`, `Size::ShortSide` in `graph.rs`, the frame graph's bloom passes and `setCanvasOutput`, `wgsl/bloom.wgsl` and the final pass's `BLOOM` build, the `bloomSize` quality setting and the governor's bloom step, `effectsOutput` in `page/limits.ts`, and `gpu/device-shaders.ts`.
 - Ambient occlusion's code: `crates/null3d-render/src/ao.rs`, the frame graph's ambient occlusion passes, `wgsl/ao.wgsl` and `wgsl/lib/gtao.wgsl`. Also the frame uniform's `occlusion` values, the frame group's binding 11, the `aoScale` quality setting and the governor's step. Also `occlusionTargets` in `page/limits.ts`, and the WebGL2 backend's copy of a multisampled depth.
 - Ambient occlusion's tests: the `ao-*` image tests, the parity scenes `ao-default` and `ao-wide`, `crates/null3d-render/tests/ambient_occlusion.rs`, and the `ao` device plan with its three.js page.
-- Tests: the bloom image tests, `bloom-switch.spec.ts`, the render scale test with bloom, the parity scenes `bloom-soft` and `bloom-strong`, and the `bloom` device plan.
+- Tests: the bloom image tests with null3D's own references, `bloom-switch.spec.ts` and the render scale test with bloom. Also the parity scenes `bloom-soft` and `bloom-strong` as sanity comparisons, and `bench:allocation --bloom`. Also the mapping's tests in `tools/lib/bloom-mapping.test.ts`, and the `bloom` and `bloom-sizes` device plans.
 - Bloom's steps and the final pass's BLOOM builds load on first use ([D-56](D-56-first-use-shader-files.md)). The frames keep the final pass without bloom until those pipelines are built, so turning bloom on skips no draw.
-- Docs: `concepts/post-processing`, `api/post`, `concepts/color-management`, `concepts/backends`, the mapping's composer and bloom entries, and both skills.
+- Docs: `concepts/post-processing`, `api/post`, `api/quality`, `concepts/quality-presets`, `concepts/color-management`, `concepts/backends`, the mapping's composer and bloom entries, and both skills. The porting skill's `references/post-processing.md` holds the bloom tables, and its `scripts/map-bloom.mjs` the mapping.
 
-## The owner's ruling, 2026-10-04: the mip chain becomes the default
+## History
 
-The addendum below reopened decision 1. The owner settled it the same evening, as ruling 1 of [D-53](D-53-technique-defaults.md):
-
-- The default becomes a mip chain, after prototype P2 sets its settings. Its base is 512 rows (384 on Low). A 13-tap downsample with a Karis average on the first step, a 9-tap tent upsample and an energy-conserving mix follow, with a threshold of 0. Low takes Filament's mobile kernels. The governor's step halves the base.
-- Every engine read uses a mip chain, apart from three.js and Babylon.js. It reads about 8.3 texels per pixel against 10.8. It keeps the glow's size and cost the same at any pixel ratio or render scale. Its Karis average stops bright points from flickering.
-- No `UnrealBloomPass` mode stays in the core. The porting skill maps `strength` to the intensity, `radius` to the upsample mix and `threshold` to the threshold divided by exposure. It maps pmndrs `BloomEffect`'s settings and level weights too. `UnrealBloomPass`'s halo goes to the `three-compat` add-on only if P2 shows that the mapping cannot reach it.
-- P2 runs on the iPad and on BrowserStack's Galaxy S25, Pixel 9 and Pixel 11, with a side-by-side on the Mac. It also gives this record the device timings that are still pending.
-- The parity scenes `bloom-soft` and `bloom-strong` become sanity comparisons with null3D's own references, once the default changes.
-- Bloom's input gets a limit, as URP's does (65,472). The Karis average damps single bright pixels but does not stop infinity (R7-01).
-- Decision 2, the 8-bit path, stands.
-
-The work is the proposed task M2-F7.
-
-## Addendum, 2026-10-04: bloom's method is open again
-
-The owner's decision of 4 October 2026 ([D-52](D-52-intent-parity.md)) withdraws this record's second rule. A port no longer keeps three.js's look by default. Each effect uses the best technique as its default, and the porting skill maps a port's settings onto it. So decision 1 is open again. The chain down and back up is cheaper per pixel, as the table above shows, and it flickers less on small bright points. The halo of `UnrealBloomPass` is a candidate for the opt-in `three-compat` add-on module. The combined technique analysis settles the default. Decision 2, the 8-bit path, stands. Decision 3 argues ambient occlusion's placement and method on image quality and cost, so it stands under D-52. Its placement is an improved technique: it keeps direct light bright, where `GTAOPass` darkens the whole image. So its comparison with three.js is the looser sanity one, and its image tests keep their own references.
+- 2026-10-03: decision 1 chose `UnrealBloomPass`'s steps, to keep a port's numbers and its look, with 0.000% of the pixels apart from three.js.
+- 2026-10-04: [D-52](D-52-intent-parity.md) withdrew that rule, and [D-53](D-53-technique-defaults.md) ruling 1 chose the mip chain, after prototype P2 set its settings.
+- 2026-10-05: M2-F7 built the chain as the only bloom, as decision 1 now says.
+- 2026-10-05: the owner accepted the strong bloom's wider edge haze, about 17% of the pixels apart from three.js, with a sanity limit of 20%.

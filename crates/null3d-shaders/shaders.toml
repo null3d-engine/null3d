@@ -194,7 +194,7 @@ shaders = ["texcoords"]
 
 # The final pass: one triangle over the canvas, which scales the scene color up to it and tone
 # maps HDR color. The FXAA builds smooth edges first, for the FXAA anti-aliasing mode. The BLOOM
-# builds add bloom's levels to the scene color before the tone mapping. The WebGL2 variant counts
+# builds blend bloom's base level into the scene color before the tone mapping. The WebGL2 variant counts
 # rows from the bottom. It loads by device, in every module of its target.
 [shaders.final]
 file = "final.wgsl"
@@ -203,9 +203,8 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
 
-# One step of bloom's chain at a fraction of the render size: the bright pass, or one direction
-# of a level's Gaussian blur, as its uniform block says. Every step reads the step before it with
-# a linear filter, into a target of its own.
+# One step of bloom's mip chain: a 13-tap step down or a tent step up, as its uniform block says.
+# Each step reads its source with a linear filter. A step up blends over its own level.
 [shaders.bloom]
 file = "bloom.wgsl"
 by_device = true

@@ -169,7 +169,7 @@ export default defineSketch(({ scene, materials, geometry, post, textures, page 
 	});
 	/** Turns bloom on and draws a line across the characters' feet. */
 	const addExtras = async () => {
-		post.set({ bloom: { strength: 0.4 } });
+		post.set({ bloom: { intensity: 0.4 } });
 		await scene.createLines({
 			positions: Float32Array.of(-2, 0.02, 0.5, 2, 0.02, 0.5),
 			width: 3,
