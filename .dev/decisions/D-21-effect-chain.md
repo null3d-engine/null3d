@@ -121,7 +121,11 @@ Soft is a strength of 0.5, a radius of 0.2 and a threshold of 1; strong 1, 0.8 a
 | Soft, pixels that differ by three.js's rule | 0.014% | 0.044% |
 | Strong, pixels that differ by three.js's rule | 16.8% | 17.1% |
 
-The strong bloom's differences all lie in the faint haze near the frame's edges. three.js's haze fades toward the corners, and the chain keeps light there, as engines that clamp at the edge do. Near the lights the two match. So the strong scene takes a sanity limit of 20%, and the soft one keeps three.js's own 0.1%. The prototype saw the same, with 3.7% at 1280 x 720, where less of the haze reaches the edges.
+The strong bloom's differences all lie in the faint haze near the frame's edges. three.js's haze fades toward the corners, and the chain keeps light there, as engines that clamp at the edge do. Near the lights the two match. The prototype saw the same, with 3.7% at 1280 x 720, where less of the haze reaches the edges.
+
+The chain keeps that haze by design. Each step up blends the level below into its own level by a mix, and the mixes come from weights that sum to 1. So the steps up keep the glow's light: what the wide levels spread toward the edges stays in the frame. Fading it as three.js does would need a three.js-look step in the core, which [D-52](D-52-intent-parity.md) part 3 rules out. A port that wants less haze lowers `strength` or `radius` before the mapping, or the chain's `intensity` or its widest `weights`.
+
+The owner saw the strong bloom beside three.js's on 5 October 2026, and accepted the look. So the parity scene `bloom-strong` takes a sanity limit of 20% of the pixels (`BLOOM_STRONG_MAX_DIFFERENT_PERCENT` in `bench/lib/parity.ts`), against about 17% measured. `bloom-soft` keeps three.js's own 0.1%.
 
 ### Bloom's cost on the Mac
 
@@ -262,3 +266,4 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 - 2026-10-03: decision 1 chose `UnrealBloomPass`'s steps, to keep a port's numbers and its look, with 0.000% of the pixels apart from three.js.
 - 2026-10-04: [D-52](D-52-intent-parity.md) withdrew that rule, and [D-53](D-53-technique-defaults.md) ruling 1 chose the mip chain, after prototype P2 set its settings.
 - 2026-10-05: M2-F7 built the chain as the only bloom, as decision 1 now says.
+- 2026-10-05: the owner accepted the strong bloom's wider edge haze, about 17% of the pixels apart from three.js, with a sanity limit of 20%.
