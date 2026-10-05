@@ -189,6 +189,8 @@ export type Check =
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The effect cost page: an effect off and on in turns, at one render scale. */
 	| { kind: 'effect'; effect: 'bloom' | 'ao'; tier: Tier; scale: number }
+	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
+	| { kind: 'environment'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
@@ -270,7 +272,8 @@ function pageItem(
 
 /**
  * The runner page's item for the engine test page with these switches, measured for 2 seconds: the
- * development page, or with a load, the production build.
+ * development page, or with a load, the production build. The engine check limits the time between
+ * frames, so with that check the page's frame stays on top of the runner page's report.
  */
 function engineItem(
 	id: string,
@@ -278,11 +281,14 @@ function engineItem(
 	check: Check,
 	load?: Load,
 ): PlanItem<Check> {
-	return pageItem(id, 'engine', check, {
-		switches: [...switches, 'seconds=2'],
-		timeoutSeconds: 45,
-		load,
-	});
+	return {
+		...pageItem(id, 'engine', check, {
+			switches: [...switches, 'seconds=2'],
+			timeoutSeconds: 45,
+			load,
+		}),
+		...(check.kind === 'engine' && { timesFrames: true as const }),
+	};
 }
 
 /** Switches of a timed run of a benchmark page, each left out when undefined. */
@@ -829,6 +835,47 @@ export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
 	return [...pages, ...twin];
 }
 
+/** The bases of bloom's chain that the bloom size plan times, in texels on the short side. */
+export const BLOOM_SIZES = [512, 256, 128, 64] as const;
+
+/**
+ * What bloom costs at each base size of its chain, on WebGPU, whose GPU timer the phones have: the
+ * bloom cost page at render scales of 1 and 0.5, with the quality setting `bloomSize` at each size.
+ * Each halving of the base drops a level, so the sizes draw 15, 13, 11 and 9 passes, and the
+ * results split bloom's cost into a cost per pass and a cost per texel. D-21 records them.
+ */
+export function bloomSizesPlan(): PlanItem<Check>[] {
+	return BLOOM_SIZES.flatMap((size) =>
+		EFFECT_SCALES.map((scale) =>
+			pageItem(
+				`bloom-size-${size}-webgpu-${scale * 100}`,
+				'effect-cost',
+				{ kind: 'effect', effect: 'bloom', tier: 'webgpu', scale },
+				{
+					switches: ['gpu=webgpu', `scale=${scale}`, 'effect=bloom', `size=${size}`],
+					timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
+/**
+ * What the environment's light costs on each GPU path: layers of planes of the standard material
+ * fill the window at a render scale of 1, and the page times its frames without and with the built-in
+ * room in turns. D-19 records the results.
+ */
+export function environmentPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`environment-${tier}`,
+			'environment-cost',
+			{ kind: 'environment', tier },
+			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 /** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
 const OCCLUSION_TIMEOUT_SECONDS = 90;
 
@@ -1129,8 +1176,9 @@ export function startupPlan({ runs = STARTUP_RUNS }: PlanSettings = {}): PlanIte
 }
 
 /**
- * The plans whose pages only check results, without timing them, so the runner page may draw its
- * report over their frames. Any other plan keeps each page's frame on top.
+ * The plans whose pages check results, so the runner page may draw its report over their frames.
+ * Any other plan keeps each page's frame on top, and so does an item of these plans that times its
+ * frames.
  */
 export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
 	'checks',
@@ -1163,7 +1211,9 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	skinning: () => skinningPlan('webgl2'),
 	'skinning-webgpu': () => skinningPlan('webgpu'),
 	bloom: () => effectPlan('bloom'),
+	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	environment: environmentPlan,
 	occlusion: occlusionPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
@@ -1532,6 +1582,21 @@ export function judge(
 				),
 			];
 			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
+			// The engine draws no whole numbers into a target on WebGL2, so a device that cannot hand
+			// them back is a fault of the check's readback, which the run records without a failure.
+			if (typeof result.deviceFault === 'string')
+				context?.note?.(
+					`device fault: ${result.deviceFault}. The page could not read the library's results back on this device`,
+				);
+			// Engine shaders keep whole numbers as the library's shader does, so they lose bits too.
+			if (typeof result.shaderFault === 'string')
+				problems.push(
+					`${result.shaderFault}. The target kept every bit, so the GLSL lost them, and engine shaders keep whole numbers the same way`,
+				);
+			if (typeof result.precisionFault === 'string')
+				context?.note?.(
+					`driver fault: ${result.precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
+				);
 			return problems;
 		}
 		case 'engine':
@@ -1636,11 +1701,13 @@ export function judge(
 		}
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
-		case 'effect': {
+		case 'effect':
+		case 'environment': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
+			const feature = check.kind === 'effect' ? check.effect : 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
-				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${check.effect} on`]),
+				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
 			];
 		}
 		case 'occlusion': {

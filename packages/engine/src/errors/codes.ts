@@ -81,7 +81,7 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 260 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 10 seconds before it fails.",
+			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 260 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A mesh of millions of vertices can fill it too, from geometry.fromArrays or a model file. Building such a mesh with normals to compute takes about 100 bytes per vertex for a moment. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 10 seconds before it fails.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
@@ -138,7 +138,7 @@ const DOCS = {
 	E1213: {
 		title: 'Invalid setting',
 		cause:
-			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure.',
+			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have.',
 		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
 		since: '0.1',
 	},
@@ -175,7 +175,7 @@ const DOCS = {
 	E1218: {
 		title: 'Invalid animation call',
 		cause:
-			"An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent. Or setMorphWeight or getMorphWeight named a morph target that the mesh does not have.",
+			"An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent. Or setMorphWeight or getMorphWeight named a morph target that the mesh does not have. A clip of more than 4,194,304 keys, its frames times its tracks, is refused too, as a clip whose keys lie hours apart is.",
 		example: `E1218: play() got "rnu", which names no clip of "Hero" (slot 3). Its clips are idle, run and walk.`,
 		since: '0.2',
 	},
@@ -205,6 +205,21 @@ const DOCS = {
 		cause: "The browser runs WebAssembly without SIMD, which the engine's core needs.",
 		example: 'E1303: this browser runs WebAssembly without SIMD.',
 		since: '0.1',
+	},
+	E1304: {
+		title: 'GPU out of memory',
+		cause:
+			'The GPU had no room for a buffer or texture that the engine made after the start. The objects that use it draw wrong or not at all. The engine reports the first time this happens on each GPU device, and draws on.',
+		example: "E1304: the render worker's GPU ran out of memory: Not enough memory left.",
+		since: '0.2',
+	},
+	E1305: {
+		title: 'GPU rejected work',
+		cause:
+			'The GPU path refused a command that the engine gave it after the start, such as a buffer larger than the device allows. The objects that the command made or drew are missing, and the canvas can stay black. The engine reports the first time this happens on each GPU device, and draws on.',
+		example:
+			"E1305: the render worker's GPU rejected a command: Buffer size (377487360) exceeds the max buffer size limit (268435456).",
+		since: '0.2',
 	},
 	E1306: {
 		title: 'Safari before 18',
@@ -238,7 +253,7 @@ const DOCS = {
 	E1404: {
 		title: 'Engine thread failed',
 		cause:
-			'An engine thread, or the drawing on the page, hit an error it could not handle. After the start the engine may have stopped. During the start, createEngine() stops the engine and rejects with this error.',
+			'An engine thread, or the drawing on the page, hit an error it could not handle, such as a trap in the engine core. After the start, the thread stops its loop: the engine draws no new frames, and engine.onFailure receives this error. During the start, createEngine() stops the engine and rejects with this error.',
 		example: 'E1404: the render worker failed: out of memory.',
 		since: '0.1',
 	},
@@ -252,8 +267,9 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error, or the connection broke off.',
-		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first environment its reader, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+		example:
+			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
 	},
 	E1407: {
@@ -298,7 +314,7 @@ const DOCS = {
 	E1412: {
 		title: 'Asset not decoded',
 		cause:
-			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. Or it was a color grading table that the engine does not read, such as a 1D table or one with a texel missing. The message says what in the table the engine could not read, with its line where it has one.',
+			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. Or it was a color grading table that the engine does not read, such as a 1D table or one with a texel missing. Or it was not an environment map that `bunx @null3d/cli assets env` writes. The message says what in the file the engine could not read, with its line where it has one. A KTX2 file also fails before it transcodes when it passes a limit. It may be wider or taller than textures.maxSize, or hold more than 256 layers. It may hold more mip levels than its size has, or texels of more than 256 MiB. A PNG or JPEG file fails before it decodes when its header gives a side longer than textures.maxSize, or 16,384 for loadImageBitmap.',
 		example:
 			'E1412: assets.loadTexture() could not decode https://example.com/tex/brick.tga as an image: The source image could not be decoded.',
 		since: '0.1',
@@ -329,7 +345,7 @@ const DOCS = {
 	E1416: {
 		title: 'glTF file not read',
 		cause:
-			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds.",
+			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks. A PNG or JPEG image inside the file may claim sides past 4,096, or its images may decode to more than 1 GiB. Or the rewriteUrl option refused an address that the file names.",
 		example:
 			'E1416: assets.loadGltf() could not read https://example.com/ship.glb: accessor 3 reads 4800 bytes from bufferView 1, which holds 2400.',
 		since: '0.2',
@@ -340,6 +356,37 @@ const DOCS = {
 			'A glTF file needs an extension that the engine does not read, as its extensionsRequired list says. Or a call asked a model for something it cannot give, such as instance batches of a model with no meshes.',
 		example:
 			'E1417: assets.loadGltf() cannot load https://example.com/ship.glb: it requires KHR_draco_mesh_compression, which the engine does not read.',
+		since: '0.2',
+	},
+	E1418: {
+		title: 'WebAssembly blocked by the page',
+		cause:
+			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core or the KTX2 transcoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
+		example:
+			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
+		since: '0.2',
+	},
+	E1419: {
+		title: 'Canvas held by another engine',
+		cause:
+			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread failed, so no engine can draw on it again. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
+		example:
+			'E1419: createEngine() got a canvas that another engine draws on, which has not stopped.',
+		since: '0.2',
+	},
+	E1420: {
+		title: 'Engine stopped',
+		cause:
+			'Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing.',
+		example: 'E1420: a call reached the engine after it stopped.',
+		since: '0.2',
+	},
+	E1421: {
+		title: 'Unknown feature to preload',
+		cause:
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, morph, skinning and sprites, and texcoords for the engine's own tests.",
+		example:
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, lines, morph, skinning, sprites, texcoords.",
 		since: '0.2',
 	},
 	E1501: {

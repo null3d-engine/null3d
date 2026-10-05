@@ -146,6 +146,15 @@ describe('input: the ring', () => {
 		expect(edges(input, 'ShiftLeft')).toEqual({ down: true, pressed: true, released: false });
 	});
 
+	it('counts a full ring of unread events as written over, since the page writes the next into it', () => {
+		const { input, next, key, pointer } = setup();
+		key(EVENT_KEY_DOWN, 'ShiftLeft');
+		next();
+		for (let k = 0; k < INPUT_RING_EVENTS; k++) pointer(EVENT_POINTER_MOVE, k, k, 1);
+		next();
+		expect(edges(input, 'ShiftLeft')).toEqual({ down: false, pressed: false, released: true });
+	});
+
 	it('writes each event with the frame on screen, and tells the page when half the ring waits', () => {
 		const { views, ring, input, next, pointer } = setup();
 		Atomics.store(views.slots, Slot.FramePresented, 42);
@@ -275,6 +284,26 @@ describe('input: the pointer', () => {
 		expect(input.pointer).toMatchObject({ wheel: 2, pinch: 2 });
 		next();
 		expect(input.pointer).toMatchObject({ wheel: 0, pinch: 0 });
+	});
+
+	it('keeps scroll that follows a release for the next frame, and counts scroll during a drag', () => {
+		const { ring, input, next, pointer, views } = setup();
+		const wheel = (scroll: number) => ring.write(EVENT_WHEEL, 0, scroll, 0, 0, 0, 0);
+		pointer(EVENT_POINTER_DOWN, 0, 0, 2);
+		pointer(EVENT_POINTER_MOVE, 10, 0, 2);
+		wheel(40);
+		next();
+		expect(input.pointer).toMatchObject({ buttons: 2, wheel: 40 });
+		// The end of the drag, then a move and scroll, before the next frame.
+		wheel(25);
+		pointer(EVENT_POINTER_UP, 10, 0, 0);
+		pointer(EVENT_POINTER_MOVE, 20, 5);
+		wheel(-150);
+		next();
+		expect(input.pointer).toMatchObject({ x: 20, y: 5, buttons: 0, wheel: 25 });
+		expect(Atomics.load(views.slots, Slot.InputRead)).toBe(6);
+		next();
+		expect(input.pointer).toMatchObject({ x: 20, y: 5, buttons: 0, wheel: -150 });
 	});
 
 	it('follows the first finger as the main button, and moves to it without movement', () => {

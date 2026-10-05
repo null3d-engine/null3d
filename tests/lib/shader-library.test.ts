@@ -6,7 +6,13 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLibrary } from '../../tools/lib/shader-library.ts';
-import { allCases, FUNCTIONS } from '../pages/lib/shader-library-cases.ts';
+import {
+	allCases,
+	FUNCTIONS,
+	probeFault,
+	TARGET_PROBE,
+} from '../pages/lib/shader-library-cases.ts';
+import { judge, NONE_MISSING } from './plans.ts';
 
 const root = join(import.meta.dir, '../..');
 const shader = readFileSync(join(root, 'crates/null3d-shaders/wgsl/test_library.wgsl'), 'utf8');
@@ -84,5 +90,59 @@ describe('the shader library test', () => {
 		const first = allCases().map((c) => [...c.inputs.bits]);
 		const second = allCases().map((c) => [...c.inputs.bits]);
 		expect(second).toEqual(first);
+	});
+});
+
+describe("the WebGL2 page's probe of its 32-bit target", () => {
+	it('finds no fault when every value comes back whole', () => {
+		expect(probeFault('a clear', new Uint32Array(TARGET_PROBE))).toBeUndefined();
+	});
+
+	it('names how many low bits survived, as on the Galaxy Tab A9 Plus', () => {
+		const low16 = TARGET_PROBE.map((value) => value & 0xffff);
+		expect(probeFault('a clear of the texture target', low16)).toBe(
+			'a clear of the texture target kept only the low 16 bits of each value: wrote 0x89abcdef, 0x12345678, 0xfedcba98, 0x76543210, read 0x0000cdef, 0x00005678, 0x0000ba98, 0x00003210',
+		);
+		expect(probeFault('a write', [0, 0, 0, 0])).toContain('changed the values');
+	});
+
+	it('records a device fault as a note, and still fails on modules that did not draw', () => {
+		const check = { kind: 'shader-library', tier: 'webgl2' } as const;
+		const notes: string[] = [];
+		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
+		const fault = 'a clear of the texture target kept only the low 16 bits of each value';
+		const result = { ok: true, cases: 428, failures: [], mismatches: [], deviceFault: fault };
+		expect(judge(check, result, NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			`device fault: ${fault}. The page could not read the library's results back on this device`,
+		]);
+		const broken = { ...result, failures: ['math: GLSL: 0:1: error'] };
+		expect(judge(check, broken, NONE_MISSING, context)).toEqual(['math: GLSL: 0:1: error']);
+	});
+
+	it("fails when the library's own shader loses bits on a target that keeps them", () => {
+		const check = { kind: 'shader-library', tier: 'webgl2' } as const;
+		const context = { resultOf: () => undefined, imageDir: '', note: () => {} };
+		const shaderFault = probeFault(
+			"the library test shader's write (its math module) into the texture target",
+			TARGET_PROBE.map((value) => value & 0xffff),
+		);
+		const result = { ok: true, cases: 428, failures: [], mismatches: [], shaderFault };
+		expect(judge(check, result, NONE_MISSING, context)).toEqual([
+			"the library test shader's write (its math module) into the texture target kept only the low 16 bits of each value: wrote 0x89abcdef, 0x12345678, 0xfedcba98, 0x76543210, read 0x0000cdef, 0x00005678, 0x0000ba98, 0x00003210. The target kept every bit, so the GLSL lost them, and engine shaders keep whole numbers the same way",
+		]);
+	});
+
+	it('notes a driver that keeps only 16 bits of whole numbers declared without a precision, without a failure', () => {
+		const check = { kind: 'shader-library', tier: 'webgl2' } as const;
+		const notes: string[] = [];
+		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
+		const precisionFault =
+			"a shader's write of whole numbers declared without a precision kept only the low 16 bits of each value";
+		const result = { ok: true, cases: 428, failures: [], mismatches: [], precisionFault };
+		expect(judge(check, result, NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			`driver fault: ${precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
+		]);
 	});
 });

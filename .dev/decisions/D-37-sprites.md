@@ -45,7 +45,7 @@ Sizes after Brotli from `bun run build:check-size`, against main at 9ef7c7a (#26
 | All sprite code in the start, `createSprites` returns the batch | +623 bytes | +569 bytes | +692 bytes | 101.2 KB |
 | Sprite code on first use, `createSprites` returns a promise | +299 bytes | +340 bytes | +692 bytes | 100.9 KB |
 
-The sprite templates add their WGSL and GLSL to every shader file, as each feature's shaders do (D-13). That growth alone takes the start past 100 KB, so sprites fit only with M2-R5's budget of 140 KB. The sprite code that loads on first use is one file of 641 bytes. The page and the sketch worker build the same file, so both threads load it from one address.
+The sprite templates added their WGSL and GLSL to every shader file, as each feature's shaders did (D-13). That growth alone took the start past 100 KB, so sprites fit only with M2-R5's budget of 140 KB. Since [D-56](D-56-first-use-shader-files.md), the templates load on first use, in files of 2.9 to 4.7 KB after Brotli. The sprite code that loads on first use is one file of 641 bytes. The page and the sketch worker build the same file, so both threads load it from one address.
 
 ## Decision
 

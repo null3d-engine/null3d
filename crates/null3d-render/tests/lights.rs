@@ -11,9 +11,12 @@ use null3d_core::handle::Handle;
 use null3d_core::lights::{LightTable, color, kind, value};
 use null3d_core::scene::{Command, flags};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::debug_view::DebugView;
+use null3d_render::fog::Fog;
 use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
+use null3d_render::output::{Output, ToneMapping};
 use null3d_render::view::ViewId;
 
 /// Adds a light object at `position`, turned `angle` radians about X, in the world's current
@@ -67,6 +70,22 @@ fn uniform<B: FrameBuilder>(world: &World<B>) -> [[f32; 4]; 3] {
     [u.sun_direction, u.sun_color, u.ambient]
 }
 
+/// The fog color of the camera view's uniform block.
+fn fog_color<B: FrameBuilder>(world: &World<B>) -> [f32; 3] {
+    let parity = world.scene.parity();
+    let settings = world.renderer.settings();
+    let frame = settings
+        .view_frame(
+            ViewId::CAMERA,
+            &world.scene,
+            parity,
+            world.canvas,
+            world.render_scale,
+        )
+        .unwrap();
+    frame.uniform.fog.color
+}
+
 fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
     let mut lights = LightTable::new();
     // Straight down, half as bright as the ambient light is white.
@@ -99,6 +118,33 @@ fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(visible.len(), 1);
     assert_eq!(visible[0].light, ahead);
     assert_eq!(visible[0].position, [1.0, 0.0, -20.0]);
+
+    // The exposure scales every light at its source, the fog with them, and a debug view, which
+    // draws without the exposure, takes the lights as they are.
+    world.frame += 1;
+    let settings = world.renderer.settings_mut();
+    settings.set_output(Output {
+        tone_mapping: ToneMapping::Aces,
+        exposure: 0.5,
+    });
+    settings.set_fog(Fog::Exp2 {
+        color: [0.5, 0.5, 1.0],
+        density: 0.1,
+    });
+    record(&mut world, &mut lights);
+    let [_, sun_color, ambient_color] = uniform(&world);
+    assert_eq!(sun_color, [1.0, 1.0, 1.0, 0.0]);
+    assert_eq!(ambient_color, [0.125, 0.25, 0.5, 0.0]);
+    assert_eq!(lights.visible()[0].color, [0.5; 3]);
+    assert_eq!(fog_color(&world), [0.25, 0.25, 0.5]);
+    world.frame += 1;
+    world
+        .renderer
+        .settings_mut()
+        .set_debug_view(DebugView::Normals);
+    record(&mut world, &mut lights);
+    assert_eq!(uniform(&world)[1], [2.0, 2.0, 2.0, 0.0]);
+    world.renderer.settings_mut().set_debug_view(DebugView::Lit);
 
     // A hidden sun lights nothing in the next frame.
     world.frame += 1;

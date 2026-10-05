@@ -148,12 +148,20 @@ pub enum Op {
     /// of a custom material whose last material was destroyed. A backend that holds no such
     /// pipeline does nothing, as when a capture replays a list again.
     DestroyPipeline = 52,
+    /// [texture id, image id]: runs the generator that the backend holds under the image id, which
+    /// fills every mip level of every face of a cube texture on the GPU in one submit, ahead of the
+    /// frame's passes. The thread that draws counts a generator among the images it received once
+    /// its code has loaded and its pipelines are built, so the generator runs at once. The texture
+    /// is a cube of `RGB9E5_UFLOAT` with `COPY_DST` usage. The backend keeps the entry until
+    /// `ReleaseImage`, so a new GPU device can fill the texture again. A list that runs again, as
+    /// a capture's does, fills the texture again with the same texels.
+    GenerateTexture = 54,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 39] = [
+    pub const ALL: [Op; 40] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -192,6 +200,7 @@ impl Op {
         Op::CopyTextureToTexture,
         Op::ReleaseImage,
         Op::DestroyPipeline,
+        Op::GenerateTexture,
         Op::Submit,
     ];
 
@@ -239,6 +248,7 @@ impl Op {
             Op::CopyTextureToTexture => "COPY_TEXTURE_TO_TEXTURE",
             Op::ReleaseImage => "RELEASE_IMAGE",
             Op::DestroyPipeline => "DESTROY_PIPELINE",
+            Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -721,11 +731,6 @@ pub mod permutation {
     /// these bits, and a page loads only its own.
     pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP | HALF;
 
-    /// The bits of features whose builds go into device modules of their own, beside those of
-    /// the device's bits, which a page loads the first time a pipeline asks for one: morph
-    /// targets, which WebGL2 draws with MORPH builds of every template that draws meshes.
-    pub const ON_DEMAND: u32 = MORPH;
-
     /// Every bit.
     pub const ALL: u32 = {
         let mut all = 0;
@@ -1135,8 +1140,9 @@ pub mod sizes {
     pub const INSTANCE_STRIDE: u32 = 64;
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
-    /// materials read, the camera's near and far distances, and ambient occlusion's values.
-    pub const FRAME_UNIFORM_BYTES: u32 = 304;
+    /// materials read, the camera's near and far distances, ambient occlusion's values, and the
+    /// environment's 208 bytes.
+    pub const FRAME_UNIFORM_BYTES: u32 = 512;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1552,8 +1558,6 @@ pub fn typescript_constants() -> String {
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
-        // The bits of features whose builds load on demand, in modules of their own.
-        ("PERMUTATION", &[("ON_DEMAND", permutation::ON_DEMAND)]),
         (
             "VERTEX",
             &[

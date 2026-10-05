@@ -40,7 +40,7 @@ impl RingSlot {
 
     /// True when the slot holds the data of the frame before `frame`.
     pub(super) fn holds_previous(&self, frame: u32) -> bool {
-        self.holds_any() && self.holds == frame.wrapping_sub(1)
+        self.holds_any() && self.holds == null3d_core::frames::previous_frame(frame)
     }
 
     /// The slot `frame` draws from: the next one when the frame writes new data.
