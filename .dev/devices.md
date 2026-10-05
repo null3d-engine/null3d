@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `ao`, `occlusion`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `bloom`, `ao`, `occlusion`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak` and `warm-up-time`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is grey while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-grey when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -219,6 +219,13 @@ To collect the numbers, rest each device first and close its other tabs:
 - It reports the medians of each side's figures. They are the busiest thread's CPU time per frame and all threads' together, and the sketch worker's time with its culling step. Then come the render worker's time, the job workers' time together and the GPU time where the browser has a timer. Last come the frame interval, and the entries that the frame drew and that the culling hid.
 - The culling saves when the render worker's time and the GPU's time fall by more than the job workers' and the sketch worker's time grows.
 - Run it on the phone and the iPad: `bun tests/real-browsers.ts --plan occlusion --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. The page takes `?rounds=` and `?seconds=` to time one load by hand.
+
+## The shimmer plan
+
+- The `shimmer` plan measures how much the highlights of small shiny shapes flicker as the camera moves, for [D-79](decisions/D-79-lighting-defaults.md). Its page is `tests/pages/specular-shimmer.html`, on each GPU path.
+- The page draws 96 small metal spheres and rings and moves the camera a quarter of a pixel per frame for 48 frames. It draws the same frames again at 4 times the width and height, averaged down. Those frames do not flicker, because each pixel holds the light of its whole area.
+- It reports the flicker of both rows, their difference (the shimmer) and the mean error against the averaged row, in steps of 1/255. It times nothing, so the refresh rate does not matter.
+- To compare the specular anti-aliasing kernel with another, build each variant of the lit template and run the plan on each build. Run it on the phones and the iPad: `bun tests/real-browsers.ts --plan shimmer --allow-no-webgpu --android chrome --lan ipad-safari`, or with `bun run devices:cloud` on the cloud phones.
 
 ## The animation plan
 

@@ -193,6 +193,8 @@ export type Check =
 	| { kind: 'environment'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
+	/** The specular shimmer page: highlight flicker against a supersampled row of the same frames. */
+	| { kind: 'shimmer'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -1199,6 +1201,27 @@ export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
 	'tab-memory',
 ]);
 
+/**
+ * How long the shimmer page may take: two rows of camera steps, one of them at sixteen times the
+ * pixels, which a phone's GPU draws slowly.
+ */
+const SHIMMER_TIMEOUT_SECONDS = 300;
+
+/**
+ * How much the highlights of small shiny shapes flicker on each GPU path, against a supersampled
+ * row of the same frames. D-79 records the results.
+ */
+export function shimmerPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`shimmer-${tier}`,
+			'specular-shimmer',
+			{ kind: 'shimmer', tier },
+			{ switches: [`gpu=${tier}`], timeoutSeconds: SHIMMER_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	smoke: smokePlan,
@@ -1215,6 +1238,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	ao: () => effectPlan('ao'),
 	environment: environmentPlan,
 	occlusion: occlusionPlan,
+	shimmer: shimmerPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1709,6 +1733,10 @@ export function judge(
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
 			];
+		}
+		case 'shimmer': {
+			const shimmer = result as ItemResult & { shimmer?: number };
+			return typeof shimmer.shimmer === 'number' ? [] : ['the page measured no shimmer'];
 		}
 		case 'occlusion': {
 			const occlusion = result as ItemResult & {
