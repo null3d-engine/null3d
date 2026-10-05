@@ -1,0 +1,7 @@
+# cargo-nextest runs each test in a process of its own, many at once. The test files that count
+# allocations install a counting allocator and measure the engine's job workers too, so each of
+# their tests runs with the machine to itself, as under cargo test, where no other test file runs
+# beside them. Under the load of other tests, the light grid's allocation test once failed in CI.
+[[profile.default.overrides]]
+filter = 'binary_id(null3d-render::no_alloc) | binary_id(null3d-core::no_alloc) | binary_id(null3d-core::bvh_no_alloc) | binary_id(null3d-core::arena_soak) | binary_id(null3d-core::depth_sort)'
+threads-required = 'num-cpus'

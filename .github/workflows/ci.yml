@@ -20,6 +20,10 @@ env:
   BUN_VERSION: "1.3.14"
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
+  # Only main's runs save caches, and every run restores main's. A pull request's or a merge queue
+  # run's cache serves only that pull request or queue branch, and their saves filled GitHub's cache
+  # limit for the repository, so that GitHub dropped main's caches.
+  SAVE_CACHES: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/faster-checks' }}
 
 jobs:
   docs-and-tools:
@@ -37,12 +41,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/bun-install
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
@@ -91,6 +90,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Clippy rejects a call to the system clock
@@ -113,6 +113,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
@@ -139,6 +140,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}-shader-build
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -183,7 +185,7 @@ jobs:
       - name: Find the size check's base
         id: base
         run: echo "sha=$(bun tools/build-wasm.ts --print-base)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         id: kept
         with:
           path: target/.size-base/${{ steps.base.outputs.sha }}.json
@@ -198,6 +200,7 @@ jobs:
         if: steps.kept.outputs.cache-hit != 'true'
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
       - name: Build the base and keep its sizes
         if: steps.kept.outputs.cache-hit != 'true'
         env:
@@ -243,12 +246,12 @@ jobs:
         run: bun tools/build-wasm.ts --check-size --prebuilt
       # Main's sizes are the base of the pull requests that build on it.
       - name: Keep the sizes of this commit of main
-        if: github.event_name == 'push' && !cancelled() && hashFiles('target/size-report.json') != ''
+        if: env.SAVE_CACHES == 'true' && !cancelled() && hashFiles('target/size-report.json') != ''
         run: |
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$GITHUB_SHA.json"
       - uses: actions/cache/save@v4
-        if: github.event_name == 'push' && !cancelled() && hashFiles('target/size-report.json') != ''
+        if: env.SAVE_CACHES == 'true' && !cancelled() && hashFiles('target/size-report.json') != ''
         with:
           path: target/.size-base/${{ github.sha }}.json
           key: size-base-${{ github.sha }}
@@ -268,6 +271,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -293,12 +297,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/bun-install
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
@@ -384,9 +383,9 @@ jobs:
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
     # pages, each browser in shards of its own. GitHub gives few macOS machines at once, so only
-    # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display. A missing
-    # WebGPU adapter or WebGL2 context is reported as a skip, because these virtual machines may not
-    # give a browser one: Safari gets no WebGPU there. .dev/devices.md says when to add a shard:
+    # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
+    # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
+    # a missing adapter is reported as a skip. .dev/devices.md says when to add a shard:
     # add it to the list, and raise the count in the name and the command.
     # Until 1.0, the browsers run only in the merge queue, once for each pull request before it
     # merges. Elsewhere the jobs are skipped, and ci-passed accepts that.
@@ -394,9 +393,8 @@ jobs:
     needs: build
     if: github.event_name == 'merge_group' || github.ref_name == 'ci/faster-checks'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
-    # A full run in one job takes about 14 minutes, and a runner page that goes quiet costs about a
-    # minute more each time the runner replaces it. The limit stays at a full run's, with that
-    # margin, until the shards' own times are known.
+    # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
+    # each time the runner replaces it. The limit leaves room for that, and for a plan that grows.
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -415,14 +413,8 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/samples
-      - name: The Linux machine's Firefox and virtual display
-        if: runner.os == 'Linux'
-        run: |
-          firefox --version
-          which xvfb-run
-          glxinfo -B 2>/dev/null || true
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 2
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
