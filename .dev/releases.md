@@ -162,17 +162,23 @@ Notes on the figures:
 
 - The desktop target's run overlapped other work on the Mac: SwiftShader image checks, an allocation run, and the iPad's reruns served from the Mac. 10.8% passes by a wide margin, so the overlap cannot change the verdict. null3D's own work, 0.35 ms, is 2.5 times M0's 0.14 ms ([D-06](decisions/D-06-success-targets.md)). three.js's own work rose from about 0.8 ms to 3.25 ms when the scenes moved to the standard material. The gate's clean run confirms the null3D figure.
 - T-28's target is on the S24+ in Chrome on Slow 4G: a cold start within 4.5 s, and a warm one within 1 s ([D-06](decisions/D-06-success-targets.md)). The Mac is inside both, but the gate's figures come from the S24+ and the iPad. On the iPad, the preset check took about 1 s for each preset it measured. Pull request #234 skips the check on repeat visits ([D-17](decisions/D-17-stored-preset-check.md)), so the warm figures change on the gate commit.
-- T-28 on the S24+ at 1533939f, after the early shader download (#296): cold 4.64 to 4.70 s in the five thread modes, over 4.5 s; warm 0.95 to 0.98 s. The page script ran at 1.51 s and the core was ready at 4.48 to 4.56 s, so the core's download came last. The core's request went out only once the page's own scripts had arrived and run. The Vite plugin now adds an early script that starts that request one round trip after the HTML ([Start order](implementation-notes.md#start-order)). On the Mac, Chrome on Slow 4G, WebGL2, medians of 5 loads (`bun run bench:startup -- --runs 5 --gpu webgl2 --modes all --loads cold,warm`), the first frame was done at:
+- T-28 on the S24+ at 1533939f, after the early shader download (#296): cold 4.64 to 4.70 s in the five thread modes, over 4.5 s; warm 0.95 to 0.98 s. [T-28: the core's download](#t-28-the-cores-download) has the fix and its figures.
 
-| Thread mode | Cold, before | Cold, after | Warm, before | Warm, after |
-| --- | --- | --- | --- | --- |
-| Pipelined | 4,429 ms | 4,240 ms | 677 ms | 658 ms |
-| Low latency | 4,417 ms | 4,220 ms | 657 ms | 642 ms |
-| Single-threaded | 4,358 ms | 4,167 ms | 658 ms | 637 ms |
-| Drawing on the main thread | 4,408 ms | 4,207 ms | 666 ms | 664 ms |
-| Sketch on the main thread | 4,389 ms | 4,191 ms | 671 ms | 669 ms |
+### T-28: the core's download
 
-  A cold load makes one request more, for the early script's 0.2 KB, and downloads the core once. The S24+ runs the page's scripts about 0.19 s slower than the Mac, so the change should save about 0.37 s there, for about 4.27 to 4.33 s. `bun run bench:startup -- --android` on the S24+ confirms it.
+At 1533939f the S24+'s page script ran at 1.51 s and the core was ready at 4.48 to 4.56 s, so the core's download came last. Its request went out only once the page's own scripts had arrived and run. The Vite plugin now adds an early script that starts that request as soon as the early script arrives ([Start order](implementation-notes.md#start-order)). A cold load makes one request more, for the early script's 0.2 KB, and downloads the core once.
+
+These are the medians of 5 loads, Chrome on Slow 4G, WebGL2, with the first frame done at the time given. The Mac ran `bun run bench:startup -- --runs 5 --gpu webgl2 --modes all --loads cold,warm` on main at fd681ea5 and on the change. The S24+ ran `bun run bench:startup -- --android` on the change, on 5 October 2026:
+
+| Thread mode | Mac cold, before | Mac cold, after | Mac warm, before | Mac warm, after | S24+ cold | S24+ warm |
+| --- | --- | --- | --- | --- | --- | --- |
+| Pipelined | 4,429 ms | 4,240 ms | 677 ms | 658 ms | 4,529 ms | 937 ms |
+| Low latency | 4,417 ms | 4,220 ms | 657 ms | 642 ms | 4,474 ms | 964 ms |
+| Single-threaded | 4,358 ms | 4,167 ms | 658 ms | 637 ms | 4,501 ms | 956 ms |
+| Drawing on the main thread | 4,408 ms | 4,207 ms | 666 ms | 664 ms | 4,527 ms | 957 ms |
+| Sketch on the main thread | 4,389 ms | 4,191 ms | 671 ms | 669 ms | 4,478 ms | 995 ms |
+
+The S24+ gained about 0.3 s, but main's core had grown from about 249 KB to 267 KB after Brotli since 1533939f, which costs about 0.11 s. Three modes still miss 4.5 s, by 1 to 29 ms. On the phone the core's request now goes out at 1.31 s. From its first byte at about 1.88 s the link stays full until the core ends, so each KB taken off the start saves about 6.5 ms.
 
 ### The allocation fix for S4
 
