@@ -1,6 +1,6 @@
 # D-23: Index-only instance data on core WebGPU
 
-Status: proposed; the build and its image checks done, the Mac and iPad timings pending. Date: 2026-10-05. Task: M2-K1 (T-23).
+Status: proposed; the build, its image checks and the device cloud's timings done, the Mac's timing pending. Date: 2026-10-05. Task: M2-K1 (T-23).
 
 ## Question
 
@@ -50,11 +50,28 @@ These figures compare with main on 2026-10-05, after Brotli. The WebGPU start sh
 
 ### Timing
 
-Pending. The benchmark page kind `null3d-webgpu-index` starts null3D with `?instances=index`, so a run takes turns between it and `null3d-webgpu`. The GPU time is the median of each run's frames, from timestamp queries.
+The benchmark page kind `null3d-webgpu-index` starts null3D with `?instances=index`, so a run takes turns between it and `null3d-webgpu`. The GPU time is the median of each run's frames, from timestamp queries. Each figure below is the median of five runs, and every page passed on both devices: 33 of 33 each.
 
-- The Mac: `bun run bench:run --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`
-- The iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`
+| Device, 2026-10-05 | Scene | Copies (ms) | Indices (ms) | Change | Range of the five runs, copies / indices (ms) |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S25, Chrome 149, device cloud | S1 | 12.71 | 11.01 | 13.4% faster | 12.71 to 12.78 / 10.98 to 11.04 |
+| | S1-static | 7.83 | 7.73 | 1.3% faster | 7.77 to 8.09 / 7.70 to 7.86 |
+| | S4 | 7.57 | 7.60 | 0.4% slower | 7.54 to 7.70 / 7.60 to 7.63 |
+| iPad (10th generation), Safari 27, device cloud | S1 | 15.19 | 15.41 | 1.4% slower | 14.25 to 16.21 / 14.04 to 16.10 |
+| | S1-static | 7.21 | 7.31 | 1.4% slower | 6.71 to 7.57 / 6.74 to 7.69 |
+| | S4 | 16.84 | 16.86 | 0.1% slower | 13.74 to 17.54 / 13.75 to 17.17 |
+
+These runs drew the build before the index builds moved to first-use files and before meshes skinned in the vertex shader kept the copies. Neither change alters what S1, S1-static or S4 draw on the GPU. The S25's display ran at 30 Hz, which the runner marks as unreliable for frame timing. The GPU times come from timestamp queries, so the refresh rate does not set them.
+
+On the S25, S1 gains 13%, but S1-static, where the rule looks, gains only 1.3%. On the iPad every scene is 0.1% to 1.4% slower, and the five runs of each page overlap by more than the change. No device yet meets the rule's 5% in S1-static.
+
+Still to run:
+
+- The Mac, with the Mac's load below 8: `bun run bench:run --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`
+- The owner's iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`
 - S6, when it exists: the same commands with `--scenes s6`.
+
+The device cloud runs above came from `bun tests/real-browsers.ts --plan bench --cloud bsgalaxys25-chrome,bsipad10-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`.
 
 S1 and S1-static are each one instance batch, and instance batches cast no shadows yet. So their runs time the culling and the camera's pass. S4's sun casts shadows in the preset's cascades, so S4 times the shadow passes too.
 
@@ -62,7 +79,7 @@ What to expect: per visible instance and pass, the index path writes 60 bytes le
 
 ## Decision
 
-Pending the timings. Until then the copies stay the only default, and `?instances=index` stays a test switch. If a device meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it. If none does, the switch, its builds and its page kind leave the engine, and hard rule 7 stands with no exception.
+Pending the Mac's timing. Until then the copies stay the only default, and `?instances=index` stays a test switch. If a device meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it. If none does, the switch, its builds and its page kind leave the engine, and hard rule 7 stands with no exception.
 
 ## Consequences
 
