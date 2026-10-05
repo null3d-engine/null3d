@@ -540,17 +540,15 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	animatedInstanceJoints(instance: number): number;
 	/**
-	 * Plays a clip on an instance's layer, fading over `fade` seconds at `speed`, with
-	 * `ANIMATION_PLAY_*` flags.
+	 * Plays a clip on an instance's layer with `ANIMATION_PLAY_*` flags, and the fade, speed, time
+	 * and weight written into the play numbers (`ANIMATION_FIELD_PLAY_ARGS`).
 	 */
-	animatorPlay(
-		instance: number,
-		clip: number,
-		layer: number,
-		fade: number,
-		speed: number,
-		flags: number,
-	): number;
+	animatorPlay(instance: number, clip: number, layer: number, flags: number): number;
+	/**
+	 * Plays a 1D blend on an instance's layer, of `count` clips staged as their ids plus one, then
+	 * their points as floats, with the fade, speed and phase written into the play numbers.
+	 */
+	animatorPlayBlend(instance: number, count: number, layer: number, flags: number): number;
 	/** Stops a clip on an instance, or every clip when `clip` is 0, fading over `fade` seconds. */
 	animatorStop(instance: number, clip: number, fade: number): number;
 	/** Creates a joint mask of a skeleton from the staging words: one weight from 0 to 1 per joint. */
@@ -687,6 +685,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMorphTargets',
 	'animationArrays',
 	'animatorPlay',
+	'animatorPlayBlend',
 	'animatorStop',
 	'createJointMask',
 	'setLayerMask',
