@@ -51,13 +51,13 @@ export default defineSketch(({ post, time }) => {
 
 ## Bloom
 
-Bloom spreads light from the brightest parts of the scene, with the meanings of three.js's `UnrealBloomPass`. It is off by default.
+Bloom spreads light from the bright parts of the scene through a chain of blurred levels. It is off by default.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(({ post }) => {
-  post.set({ bloom: { strength: 0.8, radius: 0.4, threshold: 1 } });
+  post.set({ bloom: { intensity: 0.2, threshold: 1 } });
   return {};
 });
 ```
@@ -65,12 +65,17 @@ export default defineSketch(({ post }) => {
 | Setting | Values | Default |
 | --- | --- | --- |
 | `bloom` | Bloom's settings to turn it on, or `false` to turn it off. | Off |
-| `bloom.strength` | How bright the glow is: a number from 0 up. | 1 |
-| `bloom.radius` | How far the glow spreads: a number from 0 to 1. | 0.5 |
-| `bloom.threshold` | The luminance from which a pixel glows, in linear color before the exposure: a number from 0 up. | 1 |
+| `bloom.intensity` | How strong the glow is: a number from 0 up. With the `'mix'` blend it is the glow's share of each pixel, at most 1. | 0.15 |
+| `bloom.threshold` | The luminance from which a pixel glows, in linear color before the exposure: a number from 0 up. | 0 |
+| `bloom.knee` | The width of the threshold's soft edge, in luminance: a number from 0 up. | 0.1 |
+| `bloom.blend` | How the glow meets the scene's color: `'mix'`, `'add'` or `'screen'`. | `'mix'` |
+| `bloom.weights` | Each level's share of the glow, from the narrowest to the widest: up to 10 numbers from 0 up, not all 0. | Shares for 8 levels |
 
+- `'mix'` moves each pixel's color toward the glow, so the image keeps its total light. `'add'` adds the glow, as three.js's `UnrealBloomPass` does. `'screen'` screens it, as pmndrs's `BloomEffect` does.
+- At a threshold of 0, all light glows a little. At 1, only light brighter than white glows, such as an emissive material with an `emissiveIntensity` above 1.
+- Each level spreads light twice as far as the one before. The eighth spreads it over about a quarter of the canvas's shorter side, and the tenth over all of it. The engine divides the weights by their sum. Levels past the last one with a weight cost nothing.
+- The glow keeps its size as a share of the screen at any pixel ratio, render scale and orientation. The quality setting `bloomSize` sets how many texels the chain's largest level has, which trades the glow's detail for cost.
 - A setting that a call leaves out keeps its value, also while bloom is off. `post.set({ bloom: {} })` turns bloom on with the values it had.
-- At a threshold of 1, only light brighter than white glows, such as an emissive material with an `emissiveIntensity` above 1.
 - In WebGPU's compatibility mode with MSAA, turning bloom on moves the engine to HDR color with FXAA. On a WebGL2 device with no float target, bloom stays off. [The post-processing chain](../concepts/post-processing.md#effects-on-devices-without-hdr-color) explains both.
 - `post.set` allocates nothing, so a sketch can change bloom's settings every frame.
 
@@ -225,17 +230,27 @@ Ambient occlusion's settings, with the meanings of three.js's `GTAOPass`. A sett
 | `samples?: number` | The depth samples that each pixel's search reads: a whole number from 1 to 64, and 16 by default. Below 30 they spread over 3 directions, and from 30 over 5. |
 | `intensity?: number` | From 0 to 1: how much of the occlusion reaches the ambient light. It is 1 by default, as `GTAOPass`'s `blendIntensity`. |
 
+### `BloomBlend`
+
+```ts
+type BloomBlend = 'mix' | 'add' | 'screen';
+```
+
+How bloom's glow meets the scene's color. The `'mix'` blend moves each pixel's color toward the glow by the intensity, which keeps the image's total light. The `'add'` blend adds the glow, as three.js's `UnrealBloomPass` does. The `'screen'` blend screens it, as pmndrs's `BloomEffect` does.
+
 ### `BloomSettings`
 
 Interface `BloomSettings`.
 
-Bloom's settings, with the meanings of three.js's `UnrealBloomPass`. A setting that a call leaves out keeps its value.
+Bloom's settings. Bloom blurs the scene's color through a chain of up to 10 levels, each half the size of the one before. It blends their sum into the image. A setting that a call leaves out keeps its value.
 
 | Member | Description |
 | --- | --- |
-| `strength?: number` | How bright the glow is: 0 or more, and 1 by default. |
-| `radius?: number` | How far the glow spreads, from 0 to 1: higher values move its light from the narrow levels of its blur to the wide ones. It is 0.5 by default. |
-| `threshold?: number` | The luminance from which a pixel glows, in linear color before the exposure: 0 or more, and 1 by default. At 1, only colors brighter than white glow, such as strong emissive light. |
+| `intensity?: number` | How strong the glow is: 0 or more, and 0.15 by default. With the `'mix'` blend it is the glow's share of each pixel, at most 1. With `'add'` and `'screen'` it multiplies the glow. |
+| `threshold?: number` | The luminance from which a pixel glows, in linear color before the exposure: 0 or more, and 0 by default, so all light glows a little. At 1, only colors brighter than white glow, such as strong emissive light. |
+| `knee?: number` | The width of the threshold's soft edge, in luminance: 0 or more, and 0.1 by default. A pixel glows more as its luminance rises from the threshold to the threshold plus this width. |
+| `blend?: BloomBlend` | How the glow meets the scene's color. It is `'mix'` by default. |
+| `weights?: readonly number[]` | Each level's share of the glow, from the narrowest level to the widest: up to 10 numbers of 0 or more, not all 0. The engine divides them by their sum, and a missing level takes 0. Each level spreads light twice as far as the one before: the eighth over about a quarter of the canvas's shorter side, and the tenth over all of it. Levels past the last one with a weight cost nothing. The default gives 8 levels weights, most to the narrow ones, for a soft glow. |
 
 ### `OutlineSettings`
 
@@ -269,7 +284,7 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | --- | --- |
 | `toneMapping?: ToneMapping` | How the engine maps high dynamic range color to the screen. The default is `'aces'`. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. |
 | `exposure?: number` | Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does: 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. |
-| `bloom?: BloomSettings \| false` | Light that spreads from the brightest parts of the scene, as three.js's `UnrealBloomPass` spreads it. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by default. |
+| `bloom?: BloomSettings \| false` | Light that spreads from the bright parts of the scene through a chain of blurred levels. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by default. Its glow keeps its size as a share of the canvas at any pixel ratio and render scale. |
 | `ao?: AoSettings \| false` | Ambient occlusion: darkens the ambient light where nearby surfaces hide a surface from the sky, as three.js's `GTAOPass` finds it. It darkens only the light that comes from all around, where `GTAOPass` darkens the whole image. Settings turn it on, `{}` with the values it had, and `false` turns it off. It is off by default, and draws only where the quality setting `aoScale` is above 0. |
 | `lut?: Lut \| false` | A color grading table from `assets.loadLut`, which maps each pixel's color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default. |
 | `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |

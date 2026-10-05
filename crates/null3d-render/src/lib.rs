@@ -14,6 +14,8 @@
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `debug_view`: the debug views, which draw every mesh with one debug shading in place of its
 //!   material's
+//! - `environment`: the scene's environment map, which standard materials reflect and take
+//!   diffuse light from, and its part of each frame's uniform block
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas, and grades it
 //! - `fog`: the scene's fog, with three.js's formulas, and its part of each frame's uniform block
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
@@ -52,6 +54,7 @@ pub mod cpu_culled;
 pub mod debug_lines;
 pub mod debug_view;
 pub mod dfg;
+pub mod environment;
 mod final_pass;
 pub mod fog;
 pub mod frame;

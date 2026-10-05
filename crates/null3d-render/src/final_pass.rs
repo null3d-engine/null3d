@@ -4,8 +4,8 @@
 //! did the output transform, and the pass runs when the scene has one sample per pixel or the
 //! render scale can drop: it copies the scene color, or runs FXAA on it. Below the whole canvas's
 //! render scale, it scales the scene's corner of the scene color up to the canvas instead. With
-//! bloom (see [`crate::bloom`]), the pass draws with its bloom build, which adds bloom's levels to
-//! the scene color before the output transform. While objects are outlined, the pass paints the
+//! bloom (see [`crate::bloom`]), the pass draws with its bloom build, which blends the base level of
+//! bloom's chain into the scene color before the output transform. While objects are outlined, the pass paints the
 //! outline's line around them after the output transform (see [`crate::outline`]). Last, it grades
 //! the canvas color with a color grading table and the vignette while the sketch sets them (see
 //! [`crate::grading`]). Each frame builder owns one, with GPU object ids from its own ranges, and
@@ -16,7 +16,7 @@ use null3d_gpu::drawlist::{
     permutation, resource_kind, state_flags, template, texture_usage, view,
 };
 
-use crate::bloom::{BloomIds, FINAL_OFFSET, LEVELS};
+use crate::bloom::{BloomIds, FINAL_OFFSET};
 use crate::frame::{RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::outline::Outline;
@@ -66,8 +66,8 @@ impl FinalUniform {
 
 /// The final pass's pipeline: it draws into the canvas, with no depth and no antialiasing. The
 /// shader makes its triangle from the vertex index, so it reads no vertex buffer, and the triangle
-/// covers the canvas whichever way it winds. The FXAA build smooths edges, and the bloom build adds
-/// bloom's levels.
+/// covers the canvas whichever way it winds. The FXAA build smooths edges, and the bloom build
+/// blends in bloom's base level.
 const fn pipeline(fxaa: bool, bloom: bool) -> PipelineKey {
     PipelineKey {
         template: if bloom {
@@ -112,21 +112,21 @@ pub(crate) struct OutlineInputs {
 }
 
 /// What the final pass's bloom build reads: bloom's uniform buffer and sampler, and the texture of
-/// each level.
+/// the chain's base level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct BloomInputs {
     pub(crate) buffer: u32,
     pub(crate) sampler: u32,
-    pub(crate) levels: [u32; LEVELS],
+    pub(crate) base: u32,
 }
 
 impl BloomInputs {
-    /// The inputs of `ids`'s buffer and sampler, with each level's texture.
-    pub(crate) fn new(ids: BloomIds, levels: [u32; LEVELS]) -> Self {
+    /// The inputs of `ids`'s buffer and sampler, with the base level's texture.
+    pub(crate) fn new(ids: BloomIds, base: u32) -> Self {
         Self {
             buffer: ids.buffer,
             sampler: ids.sampler,
-            levels,
+            base,
         }
     }
 }
@@ -276,9 +276,7 @@ impl FinalPass {
                 None => bind_layout::FINAL,
                 Some(bloom) => {
                     entry(2, resource_kind::BUFFER, bloom.buffer, FINAL_OFFSET, 0);
-                    for (level, &texture) in bloom.levels.iter().enumerate() {
-                        entry(3 + level as u32, resource_kind::TEXTURE, texture, 0, 0);
-                    }
+                    entry(3, resource_kind::TEXTURE, bloom.base, 0, 0);
                     entry(8, resource_kind::SAMPLER, bloom.sampler, 0, 0);
                     bind_layout::FINAL_BLOOM
                 }

@@ -198,7 +198,7 @@ export const noFramesText = (visibility: string | undefined) =>
  * How the runner reached a browser: an app on this Mac, the phone over USB, the network, or a
  * session that it opened on a device cloud.
  */
-export type LaunchKind = 'mac' | 'android' | 'lan' | 'cloud';
+export type LaunchKind = 'mac' | 'linux' | 'android' | 'lan' | 'cloud';
 
 /** One runner's outcome in a run, with what the record's row needs besides the device. */
 export interface RowInput {
@@ -311,6 +311,7 @@ function whereText(launch: LaunchKind, origin: string | undefined): string {
 	if (origin?.includes('bs-local.com')) return 'BrowserStack Live';
 	if (origin?.includes('testingbot')) return "TestingBot's device cloud";
 	if (launch === 'mac') return "the owner's Mac";
+	if (launch === 'linux') return 'a Linux machine';
 	if (launch === 'android') return "the owner's phone";
 	return '';
 }

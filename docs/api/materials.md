@@ -55,9 +55,10 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `normalScale` | Two numbers | `[1, 1]` | How strongly the normal map bends normals along u and v |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
 | `lightMapIntensity` | 0 or more | 1 | The factor of the light map's light |
+| `envIntensity` | 0 or more | 1 | The factor of the scene environment's light on the surface, as three.js's `envMapIntensity` |
 | `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
-The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. A metal takes its color from what it reflects. The scene has no environment map yet, so a smooth metal shows little more than its highlights.
+The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
 
 ## Texture maps
 
@@ -426,6 +427,7 @@ The values of a standard material, which `set` changes at any time.
 | `normalScale?: readonly [number, number]` | How strongly the normal map bends normals along u and along v. The default is `[1, 1]`, and negative values flip a direction. |
 | `aoMapIntensity?: number` | How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. |
 | `lightMapIntensity?: number` | The factor of the light map's light: 0 or more. The default is 1. |
+| `envIntensity?: number` | The factor of the scene environment's light on the surface, 0 or more, as three.js's `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The default is 1. |
 | `uvTransform?: UvTransform` | Where the maps sit on the texture coordinates. The default leaves them as they are. |
 
 ### `TextureValues`

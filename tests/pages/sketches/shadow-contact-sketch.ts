@@ -76,7 +76,14 @@ const VIEWS = {
 const YAW = (Number(params.get('yaw') ?? 0) * Math.PI) / 180;
 
 export default defineSketch(({ scene, materials, geometry, quality, time }) => {
-	quality.set({ farCascadeInterval: FAR, governor: false, shadowFilter: FILTER });
+	// Moving casters keep far cascades drawing on every preset, so the driving box's shadow follows
+	// it wherever the preset check places the test's browser.
+	quality.set({
+		farCascadeInterval: FAR,
+		followMovingCasters: true,
+		governor: false,
+		shadowFilter: FILTER,
+	});
 	scene.setBackground('#202830');
 	const view = VIEWS[(params.get('view') ?? 'top') as keyof typeof VIEWS];
 	const [x, y, z] = WATCHED;

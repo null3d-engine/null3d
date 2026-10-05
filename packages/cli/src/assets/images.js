@@ -179,8 +179,14 @@ export function nearestPowerOfTwo(length) {
 }
 
 /**
+ * Texels on each side of a block of the compressed formats that KTX2 textures become. A side that
+ * is not a whole number of blocks makes the engine load the texture uncompressed.
+ */
+const BLOCK = 4;
+
+/**
  * The size that a texture takes: each side at its nearest power of two, then both halved together
- * until the longer side fits `maxSide`, so the shape stays.
+ * until the longer side fits `maxSide`, so the shape stays. Each side is at least one block.
  *
  * @param {number} width
  * @param {number} height
@@ -194,7 +200,7 @@ export function textureSize(width, height, maxSide) {
 		w = Math.max(1, w / 2);
 		h = Math.max(1, h / 2);
 	}
-	return [w, h];
+	return [Math.max(BLOCK, w), Math.max(BLOCK, h)];
 }
 
 /**

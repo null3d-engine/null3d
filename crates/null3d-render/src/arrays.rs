@@ -10,6 +10,9 @@
 //! Normals and tangents are computed on the job workers in two parallel steps: one value per
 //! triangle, then for each vertex the sum of the values of its triangles, in triangle order. Both
 //! the order and the arithmetic are three.js's, so the results match three.js's bit for bit.
+//!
+//! Every buffer whose size follows the mesh is reserved fallibly, so a mesh too large for the
+//! engine's memory fails with [`ArraysError::OutOfMemory`] instead of stopping the engine.
 
 use std::borrow::Cow;
 
@@ -121,11 +124,15 @@ impl<'a> Values<'a> {
     }
 
     /// The values as shaders read them, as floats: the array itself when it holds floats.
-    fn floats(&self) -> Cow<'a, [f32]> {
-        match self.data {
+    fn floats(&self) -> Result<Cow<'a, [f32]>, ArraysError> {
+        Ok(match self.data {
             Data::F32(values) => Cow::Borrowed(values),
-            _ => Cow::Owned((0..self.len()).map(|i| self.get(i)).collect()),
-        }
+            _ => {
+                let mut out = reserved(self.len())?;
+                out.extend((0..self.len()).map(|i| self.get(i)));
+                Cow::Owned(out)
+            }
+        })
     }
 
     /// Appends `count` values from value `first` on to `out`, as little-endian bytes.
@@ -222,6 +229,25 @@ pub enum ArraysError {
     IndexOutOfRange { at: u32 },
     /// Element `at` of the array is not a finite number.
     NotFinite { array: ArrayName, at: u32 },
+    /// The engine's memory could not grow by `bytes` for the mesh's buffers.
+    OutOfMemory { bytes: u64 },
+}
+
+/// An empty vector with room for `len` values, or the bytes it needed when memory cannot grow.
+fn reserved<T>(len: usize) -> Result<Vec<T>, ArraysError> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(len)
+        .map_err(|_| ArraysError::OutOfMemory {
+            bytes: (len as u64).saturating_mul(size_of::<T>() as u64),
+        })?;
+    Ok(v)
+}
+
+/// A vector of `len` copies of `value`, or the bytes it needed when memory cannot grow.
+fn filled<T: Clone>(len: usize, value: T) -> Result<Vec<T>, ArraysError> {
+    let mut v = reserved(len)?;
+    v.resize(len, value);
+    Ok(v)
 }
 
 /// Each array of a mesh with the vertex shader location of its attribute and its values per
@@ -253,19 +279,24 @@ pub fn from_arrays(arrays: &MeshArrays<'_>, jobs: &JobSystem) -> Result<Geometry
     let indices = match arrays.indices {
         Some(indices) => indices,
         None => {
-            sequence = (0..vertices as u32).collect();
+            let mut all = reserved(vertices)?;
+            all.extend(0..vertices as u32);
+            sequence = all;
             &sequence
         }
     };
-    let adjacency = (arrays.compute_normals || arrays.compute_tangents)
-        .then(|| Adjacency::new(indices, vertices));
+    let adjacency = if arrays.compute_normals || arrays.compute_tangents {
+        Some(Adjacency::new(indices, vertices)?)
+    } else {
+        None
+    };
     let computed_normals;
     let normals = match (arrays.normals, &adjacency) {
         (Some(normals), _) => normals,
         (None, Some(adjacency)) => {
             let indexed = arrays.indices.is_some();
-            let positions = arrays.positions.floats();
-            computed_normals = vertex_normals(&positions, indices, adjacency, indexed, jobs);
+            let positions = arrays.positions.floats()?;
+            computed_normals = vertex_normals(&positions, indices, adjacency, indexed, jobs)?;
             Values::f32(&computed_normals)
         }
         (None, None) => return Err(ArraysError::Missing(ArrayName::Normals)),
@@ -275,9 +306,9 @@ pub fn from_arrays(arrays: &MeshArrays<'_>, jobs: &JobSystem) -> Result<Geometry
         (Some(tangents), _, _) => Some(tangents),
         (None, Some(uvs), Some(adjacency)) if arrays.compute_tangents => {
             let (positions, normals, uvs) =
-                (arrays.positions.floats(), normals.floats(), uvs.floats());
+                (arrays.positions.floats()?, normals.floats()?, uvs.floats()?);
             computed_tangents =
-                vertex_tangents(&positions, &normals, &uvs, indices, adjacency, jobs);
+                vertex_tangents(&positions, &normals, &uvs, indices, adjacency, jobs)?;
             Some(Values::f32(&computed_tangents))
         }
         _ => None,
@@ -291,7 +322,8 @@ pub fn from_arrays(arrays: &MeshArrays<'_>, jobs: &JobSystem) -> Result<Geometry
         }
     }
     let stride = vertex::stride(format) as usize;
-    let mut interleaved = Vec::with_capacity(vertices * stride);
+    // The vertices take exactly this room, so the writes below never grow it.
+    let mut interleaved = reserved(vertices * stride)?;
     for v in 0..vertices {
         for (location, (_, values, given)) in attributes.iter().enumerate() {
             let Some(values) = values else { continue };
@@ -303,10 +335,12 @@ pub fn from_arrays(arrays: &MeshArrays<'_>, jobs: &JobSystem) -> Result<Geometry
             interleaved.resize(start + ATTRIBUTES[location].size(values.ty()) as usize, 0);
         }
     }
+    let mut copy = reserved(indices.len())?;
+    copy.extend_from_slice(indices);
     Ok(Geometry {
         format,
         vertices: interleaved,
-        indices: indices.to_vec(),
+        indices: copy,
     })
 }
 
@@ -383,16 +417,17 @@ struct Adjacency {
 }
 
 impl Adjacency {
-    fn new(indices: &[u32], vertices: usize) -> Self {
-        let mut starts = vec![0u32; vertices + 1];
+    fn new(indices: &[u32], vertices: usize) -> Result<Self, ArraysError> {
+        let mut starts = filled(vertices + 1, 0u32)?;
         for &i in indices {
             starts[i as usize + 1] += 1;
         }
         for v in 0..vertices {
             starts[v + 1] += starts[v];
         }
-        let mut next = starts.clone();
-        let mut triangles = vec![0u32; indices.len()];
+        let mut next = reserved(starts.len())?;
+        next.extend_from_slice(&starts);
+        let mut triangles = filled(indices.len(), 0u32)?;
         for (t, triangle) in indices.as_chunks::<3>().0.iter().enumerate() {
             for &i in triangle {
                 let at = &mut next[i as usize];
@@ -400,7 +435,7 @@ impl Adjacency {
                 *at += 1;
             }
         }
-        Self { starts, triangles }
+        Ok(Self { starts, triangles })
     }
 
     fn of(&self, v: usize) -> &[u32] {
@@ -482,9 +517,9 @@ fn vertex_normals(
     adjacency: &Adjacency,
     indexed: bool,
     jobs: &JobSystem,
-) -> Vec<f32> {
+) -> Result<Vec<f32>, ArraysError> {
     let triangles = indices.len() / 3;
-    let mut faces = vec![[0f64; 3]; triangles];
+    let mut faces = filled(triangles, [0f64; 3])?;
     for_each_item(jobs, triangles, 1, &mut faces, |t, face| {
         let [a, b, c] = [indices[t * 3], indices[t * 3 + 1], indices[t * 3 + 2]];
         let (pa, pb, pc) = (
@@ -495,7 +530,7 @@ fn vertex_normals(
         face[0] = cross(sub(pc, pb), sub(pa, pb));
     });
     let vertices = positions.len() / 3;
-    let mut normals = vec![0f32; vertices * 3];
+    let mut normals = filled(vertices * 3, 0f32)?;
     for_each_item(jobs, vertices, 3, &mut normals, |v, normal| {
         let mut sum = [0f32; 3];
         for &t in adjacency.of(v) {
@@ -513,7 +548,7 @@ fn vertex_normals(
             normal[k] = unit[k] as f32;
         }
     });
-    normals
+    Ok(normals)
 }
 
 /// Vertex tangents as three.js's `computeTangents` makes them, after Lengyel: each triangle's
@@ -528,9 +563,9 @@ fn vertex_tangents(
     indices: &[u32],
     adjacency: &Adjacency,
     jobs: &JobSystem,
-) -> Vec<f32> {
+) -> Result<Vec<f32>, ArraysError> {
     let triangles = indices.len() / 3;
-    let mut faces: Vec<Option<[f64; 6]>> = vec![None; triangles];
+    let mut faces: Vec<Option<[f64; 6]>> = filled(triangles, None)?;
     for_each_item(jobs, triangles, 1, &mut faces, |t, face| {
         let [a, b, c] = [indices[t * 3], indices[t * 3 + 1], indices[t * 3 + 2]];
         let va = read3(positions, a);
@@ -552,7 +587,7 @@ fn vertex_tangents(
         });
     });
     let vertices = positions.len() / 3;
-    let mut tangents = vec![0f32; vertices * 4];
+    let mut tangents = filled(vertices * 4, 0f32)?;
     for_each_item(jobs, vertices, 4, &mut tangents, |v, tangent| {
         let used = adjacency.of(v);
         if used.is_empty() {
@@ -575,7 +610,7 @@ fn vertex_tangents(
         };
         tangent.copy_from_slice(&[t[0] as f32, t[1] as f32, t[2] as f32, w]);
     });
-    tangents
+    Ok(tangents)
 }
 
 #[cfg(test)]
