@@ -60,9 +60,12 @@ export function deviceFamilies(
 /**
  * The formats of the ETC1S file and of the UASTC file with alpha on a device with `families`:
  * ETC1S data goes to ETC2, BC7 or ASTC first, in that order, and UASTC data to ASTC, BC7 or ETC2.
+ * On WebGL2, whose features are extension names, BC7 comes first for both, since desktop drivers
+ * may emulate ETC2 and ASTC.
  */
 function expectedFormats(
 	families: readonly CompressionFamily[],
+	webgl2: boolean,
 ): Record<'etc1s' | 'uastc', string> {
 	const format: Record<CompressionFamily, [etc1s: string, uastc: string]> = {
 		astc: ['astc-4x4-unorm', 'astc-4x4-unorm'],
@@ -70,8 +73,9 @@ function expectedFormats(
 		etc2: ['etc2-rgb8unorm', 'etc2-rgba8unorm'],
 	};
 	const first = (order: CompressionFamily[]) => order.find((family) => families.includes(family));
-	const etc1s = first(['etc2', 'bc', 'astc']);
-	const uastc = first(['astc', 'bc', 'etc2']);
+	const bcFirst = webgl2 && families.includes('bc');
+	const etc1s = bcFirst ? 'bc' : first(['etc2', 'bc', 'astc']);
+	const uastc = bcFirst ? 'bc' : first(['astc', 'bc', 'etc2']);
 	return {
 		etc1s: etc1s ? format[etc1s][0] : 'rgba8unorm',
 		uastc: uastc ? format[uastc][1] : 'rgba8unorm',
@@ -105,7 +109,8 @@ export function ktx2Problems(
 	const { textures, memoryBytes, codes } = result.recorded;
 	if (textures.length !== TEXTURES.length)
 		return [`the page made ${textures.length} textures, not ${TEXTURES.length}`];
-	const formats = expectedFormats(deviceFamilies(result.features, allowed));
+	const webgl2 = result.features.some((name) => /^(WEBGL|EXT)_/.test(name));
+	const formats = expectedFormats(deviceFamilies(result.features, allowed), webgl2);
 	const problems: string[] = [];
 	const compare = (what: string, got: readonly unknown[], expected: readonly unknown[]) => {
 		if (listed(got) !== listed(expected))

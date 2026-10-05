@@ -1,6 +1,7 @@
 // Turns a failure the engine core reported into an EngineError. The core reports a numeric code
 // from the engine's error table and two detail numbers; this names the call and the object.
 
+import { ANIMATION_MAX_CLIP_KEYS, ANIMATION_PROBLEM_KEYS } from '../generated/core';
 import { EngineError, isErrorCode } from './engine-error';
 import type { ErrorCode } from './fixes';
 
@@ -97,6 +98,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 				`${name} failed: the engine could not get ${Math.ceil(a / MB)} MB more memory.`,
 			);
 		case 1218:
+			if (a === ANIMATION_PROBLEM_KEYS)
+				return error(
+					'E1218',
+					`${name} on ${what} failed: the clip would hold ${b.toLocaleString('en-US')} keys (its frames times its tracks), more than the ${ANIMATION_MAX_CLIP_KEYS.toLocaleString('en-US')} that one clip may hold.`,
+				);
 			return error(
 				'E1218',
 				`${name} on ${what} failed: the engine refused the animation data or call (problem ${a}, at ${b}).`,

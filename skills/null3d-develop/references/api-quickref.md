@@ -110,7 +110,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createGroup({ name, position, rotation, scale, parent, dynamic, layers })` | Group | Empty node for hierarchy |
 | `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true` |
 | `scene.createInstances(mesh, count, { material, dynamic, colors, layers, origin })` | InstanceBatch; rows are relative to `origin` (0.2) | Section 5 |
-| `scene.instantiate(prefab, { name, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows })` (0.2) | PrefabInstance | A group holding one copy of a loaded glTF model, made with one batch of changes; `instance.find(name)` gives the copy's object of a node |
+| `scene.instantiate(prefab, { name, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows })` (0.2) | PrefabInstance | A group holding one copy of a loaded glTF model, made with one batch of changes; `instance.find(name)` gives the copy's object of a node; `layers` reaches every object of the copy; `instance.destroy()` removes the whole copy |
 | `scene.clone(obj)` (0.2) | same type | Copies the object and every object below it, lights and cameras included, under the same parent |
 | `scene.find(name)` | Object3D or undefined | The first live object with the name; use at setup, not per frame |
 | `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | PerspectiveCamera | fov is vertical, in degrees. Cameras are dynamic by default |
@@ -357,6 +357,7 @@ const data = await assets.loadJson('/level.json');             // also loadBinar
 const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY, premultipliedAlpha });
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
+const upload = await assets.loadGltf(userFile, { rewriteUrl: (a) => (a.origin === location.origin ? a : null) }); // (0.2) check the addresses a user's model names
 ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
@@ -447,7 +448,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 post.set({
   toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
   exposure: 1,
-  bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },  // (0.2) UnrealBloomPass's meanings; false turns it off
+  bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) GTAOPass's meanings; darkens only ambient light; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
