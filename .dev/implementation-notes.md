@@ -326,6 +326,14 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - `WorldRay::toward` makes a ray's unit direction in 64-bit floats. When the squared parts would round the length to 0 or to infinity, it scales the direction by its largest part first. A direction of the usual sizes gives the same bits as before, so hits stay those of three.js.
 - The static tree's sync looks again at the objects stamped in the frame of the last sync. A late update can move a static object right after a query in the same frame. The next frame copies that object's row without a new stamp, so a sync that looked only at newer stamps kept its old box. Only a box or cell that changed refits the tree.
 
+## Input
+
+- The sketch reads the input ring once per frame, in `packages/engine/src/sketch/input.ts`. It reads up to two kinds of event that follow a release of the pointer in the same frame: a press, and wheel scroll. Those events and every one after them wait for the next frame.
+- A press waits so that a frame's drag belongs to one press.
+- Wheel scroll waits because the controls ignore the wheel during a drag, as three.js's controls do. A frame that held a drag's release and the scroll after it gave the controls both at once. They ended the drag and dropped the scroll, though three.js's controls, which see each event, dolly. The camera then stayed about 8% farther from the target than three.js's.
+- On CI's software GPU the frames are slow, and Playwright's release, move and scroll often reached the same frame. On 5 October 2026 the orbit controls test failed in a merge queue run, with the cameras 0.093 apart after the wheel. [Tests on slow machines](image-tests.md#tests-on-slow-machines) gives the runs before and after the fix.
+- Scroll during a drag still counts in the frame that holds it, and the controls still ignore it there.
+
 ## Threads and shared memory
 
 - Firefox before 145 has no `Atomics.waitAsync`. Before the wake messages, the sketch thread's first wait threw there, so the engine started but drew no frame. There the sketch thread's waits end at wake messages (`shared/wake.ts`). The page sends them to the sketch worker, and the thread that draws sends them back through the port that brings it texture images. Any wake ends every wait, so each wait checks its slot again. Job workers block with `Atomics.wait` until the job system exists. `?wake=message` takes this path in any browser, and the browser tests also remove `Atomics.waitAsync` from every thread.
