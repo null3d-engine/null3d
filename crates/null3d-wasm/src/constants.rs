@@ -105,6 +105,8 @@ pub mod map_slot {
     pub const OCCLUSION: u32 = MapSlot::Occlusion as u32;
     pub const EMISSIVE: u32 = MapSlot::Emissive as u32;
     pub const LIGHT: u32 = MapSlot::Light as u32;
+    pub const SPECULAR_INTENSITY: u32 = MapSlot::SpecularIntensity as u32;
+    pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -698,6 +700,8 @@ pub fn typescript() -> String {
                 ("OCCLUSION", map_slot::OCCLUSION),
                 ("EMISSIVE", map_slot::EMISSIVE),
                 ("LIGHT", map_slot::LIGHT),
+                ("SPECULAR_INTENSITY", map_slot::SPECULAR_INTENSITY),
+                ("SPECULAR_COLOR", map_slot::SPECULAR_COLOR),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -717,6 +721,9 @@ pub fn typescript() -> String {
                 ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+                ("REFLECTANCE", param::REFLECTANCE as u32),
+                ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
+                ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
             ],
         ),
         (
