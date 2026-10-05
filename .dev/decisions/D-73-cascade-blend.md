@@ -71,6 +71,15 @@ S4 at Low draws 56 draw calls in most frames and 63 in one frame of 4, as before
 
 S4 at Low on the cloud Galaxy S25 in Chrome, governor off, 5 October 2026 (run `20261005-122500-bench`): 22 of 22 pages passed. On WebGPU, the median of 5 runs' GPU time per frame was 7.67 ms with the band and 7.60 ms without it, 0.9% more. That lies within the spread of the runs without the band, 7.34 to 7.73 ms, so the band passes. Chrome on this phone gives WebGL2 no GPU timer. There, the CPU time was 0.88 ms per frame both ways, with 56 draw calls both ways. The phone's screen ran at 24 to 30 Hz, so only the GPU times compare, not the frame times.
 
+S4 on the MacBook Pro in Chrome at 144 Hz, band on against off, median of 5 runs each. The Mac's load was 2.6 to 6.5 (runs `20261005-172243-bench` at Low and `20261005-173437-bench` at High):
+
+| Preset | WebGPU CPU, on / off | WebGPU GPU, on / off | WebGL2 CPU, on / off |
+| --- | --- | --- | --- |
+| Low | 0.10 / 0.09 ms | 1.24 / 1.25 ms | 0.21 / 0.17 ms |
+| High | 0.07 / 0.09 ms | 1.53 / 1.54 ms | 0.26 / 0.25 ms |
+
+The band costs at most 0.01 ms of GPU time, and 0.01 to 0.04 ms of CPU time on WebGL2.
+
 ## Decision
 
 - Each cascade but the last blends into the next over a band at its far end, 10% of its length by default. The blend is linear in the receiver's distance from the camera. The last cascade has no band; the fade over the last tenth of the shadow distance ends it.
