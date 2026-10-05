@@ -403,10 +403,10 @@ export interface CoreGlue extends CoreErrors {
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
 	setOutput(toneMapping: number): number;
-	/** Turns bloom on with the post-processing values' strength, radius and threshold, or off. */
+	/** Turns bloom on with the post-processing values' intensity, threshold, blend and weights, or off. */
 	setBloom(on: boolean): number;
-	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
-	setBloomSamples(divisor: number): number;
+	/** The texels on the short side of bloom's base, and the governor's halvings of it, from the next frame on. */
+	setBloomChain(size: number, halvings: number): number;
 	/** Turns ambient occlusion on with the post-processing values' settings, or off. */
 	setAo(on: boolean): number;
 	/**
@@ -642,7 +642,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'postValues',
 	'setOutput',
 	'setBloom',
-	'setBloomSamples',
+	'setBloomChain',
 	'setAo',
 	'setAoScale',
 	'setSoftwareOcclusion',
