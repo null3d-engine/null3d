@@ -4,7 +4,8 @@
 // joints by their weights, and writes the vertex into the skinned vertex buffer, where the shadow
 // and main passes draw it as a plain mesh.
 //
-// A dispatch covers the parts of one mesh page, whose vertices all have the page's vertex format.
+// A dispatch covers parts of one mesh page, whose vertices all have the page's vertex format, that
+// skin into one skinned vertex buffer.
 // The table names the format and each part, which the CPU lists each frame:
 //
 // - entry 0: the part count, then padding;
@@ -34,8 +35,11 @@
 // target's number, then the normal's and the tangent's deltas, in half floats. The weights sit in
 // a texture of their own, four to a texel.
 //
-// Each workgroup finds its part with a binary search of the parts' first workgroups. The joint
-// texture holds each joint's three matrix rows in three texels, JOINTS_PER_ROW joints per row.
+// A dispatch whose workgroups pass one axis's limit spreads them over rows, and a workgroup's
+// number is its place in its row plus the workgroups of the rows before it. Each workgroup finds
+// its part with a binary search of the parts' first workgroups; those past the last part's
+// vertices do nothing. The joint texture holds each joint's three matrix rows in three texels,
+// JOINTS_PER_ROW joints per row.
 
 /// Threads per workgroup.
 const WORKGROUP_SIZE: u32 = 64u;
@@ -156,23 +160,25 @@ fn store(at: u32, value: vec3f) {
 
 @compute @workgroup_size(64)
 fn main(
-    @builtin(workgroup_id) group: vec3u,
+    @builtin(workgroup_id) id: vec3u,
+    @builtin(num_workgroups) count: vec3u,
     @builtin(local_invocation_index) lane: u32,
 ) {
+    let group = id.x + id.y * count.x;
     let parts = table[0].x;
     // The last part whose first workgroup is at most this one.
     var low = 0u;
     var high = parts;
     while high - low > 1u {
         let middle = (low + high) / 2u;
-        if table[HEADER + 2u * middle].x <= group.x {
+        if table[HEADER + 2u * middle].x <= group {
             low = middle;
         } else {
             high = middle;
         }
     }
     let part = table[HEADER + 2u * low];
-    let v = (group.x - part.x) * WORKGROUP_SIZE + lane;
+    let v = (group - part.x) * WORKGROUP_SIZE + lane;
     if parts == 0u || v >= part.y {
         return;
     }

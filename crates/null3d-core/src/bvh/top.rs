@@ -10,7 +10,7 @@
 //! Leaves hold one item each, so every item's box takes one lane of the four-box test, and a
 //! query reaches only the items whose boxes it meets. The query then calls the caller's test for
 //! each such item with the ray in the item's cell frame: the caller moves it into the object's
-//! space and tests the mesh tree or the bone capsules.
+//! space and tests the mesh tree.
 //!
 //! [`TopTree::build_sah`] suits items that rarely change, and [`TopTree::refit`] follows their
 //! moves. [`TopTree::build_morton`] suits items that move every frame: it runs on the job
@@ -33,6 +33,10 @@ use crate::shared::SharedMut;
 
 /// Items per chunk when [`TopTree::update_parallel`] splits its work.
 pub const UPDATE_CHUNK: u32 = 1024;
+
+/// The direction lengths whose squared parts keep full precision in 64-bit floats, well inside
+/// the range where squares neither underflow nor overflow.
+const UNSCALED_LENGTHS: std::ops::RangeInclusive<f64> = 1e-150..=1e150;
 
 /// A ray whose origin is in 64-bit floats, so it is precise anywhere in a large world. Distances
 /// are in multiples of the direction.
@@ -57,6 +61,31 @@ impl WorldRay {
             t_min: 0.0,
             t_max: f32::INFINITY,
         }
+    }
+
+    /// A ray from `origin` along `direction` made a unit vector, from distance 0 with no far
+    /// limit, so distances are in meters. `None` when the direction has length 0 or a part that
+    /// is not finite, or the origin has a part that is not finite.
+    ///
+    /// The direction's length comes from its squared parts in 64-bit floats. A length that those
+    /// squares would round to 0 or to infinity, such as that of `[1e-200, 0, 0]`, is computed from
+    /// the direction scaled by its largest part instead.
+    pub fn toward(origin: [f64; 3], direction: [f64; 3]) -> Option<WorldRay> {
+        if !origin.iter().chain(&direction).all(|v| v.is_finite()) {
+            return None;
+        }
+        let length = |d: &[f64; 3]| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        let mut d = direction;
+        let mut l = length(&d);
+        if !(UNSCALED_LENGTHS.contains(&l)) {
+            let largest = d.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            if largest == 0.0 {
+                return None;
+            }
+            d = d.map(|v| v / largest);
+            l = length(&d);
+        }
+        Some(WorldRay::new(origin, d.map(|v| (v / l) as f32)))
     }
 
     /// The same ray with its far limit at `t_max`.
