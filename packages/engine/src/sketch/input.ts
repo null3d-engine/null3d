@@ -325,7 +325,7 @@ export class InputReader implements Input, PointerInput {
 		}
 		const { slots, slotFloats } = this.control;
 		const written = Atomics.load(slots, Slot.InputWrite);
-		if (((written - this.next) | 0) > INPUT_RING_EVENTS) {
+		if (((written - this.next) | 0) >= INPUT_RING_EVENTS) {
 			// The page wrote over events that the sketch never read, one of which may have been a
 			// release. Releasing everything keeps a key from staying down.
 			this.releaseAll();

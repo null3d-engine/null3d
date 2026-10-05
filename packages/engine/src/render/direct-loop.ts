@@ -8,7 +8,7 @@
 // and the preset check, at the same pace as play. In a worker, each callback also sets a timer that
 // wakes the thread shortly before the next is due.
 
-import { controlViews, Slot } from '../shared/control';
+import { controlViews, frameAfter, Slot } from '../shared/control';
 import type { SketchRunner } from '../sketch/runner';
 import { guardFrame, type LoopFault, Presenter, type RenderLoop } from './loop';
 import type { Renderer } from './renderer';
@@ -36,7 +36,7 @@ export function runDirectLoop(
 		presenter.applyResize();
 		if (pending === 0) {
 			const published = Atomics.load(slots, Slot.FramesPublished);
-			if (published > Atomics.load(slots, Slot.FramesTaken)) {
+			if (frameAfter(published, Atomics.load(slots, Slot.FramesTaken))) {
 				if (presenter.due(timestamp)) pending = published;
 			} else if (
 				runner.started &&

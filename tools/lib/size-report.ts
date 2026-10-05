@@ -64,8 +64,9 @@ export interface EnginePart {
 }
 
 /**
- * The parts of the engine's JavaScript. The renderer loads on demand on the page and in the sketch
- * worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
+ * The parts of the engine's JavaScript. The early script that the Vite plugin adds to each page
+ * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
+ * page and in the sketch worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
  * The glTF loader loads there too with the sketch's first glTF file, and starts the glTF worker,
@@ -83,6 +84,7 @@ export interface EnginePart {
  * and the texture generators that make their maps on the GPU load in the thread that draws.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
+	{ name: 'early-core.js', module: 'page/early-core.ts' },
 	{ name: 'page.js', module: 'page/engine.ts' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	{
@@ -266,12 +268,20 @@ export const DOWNLOADS: readonly Download[] = [
 	{
 		mode: 'pipelined',
 		shaders: 'shaders-',
-		parts: ['page.js', 'probe-worker.js', 'sketch-worker.js', 'render-worker.js', 'job-worker.js'],
+		parts: [
+			'early-core.js',
+			'page.js',
+			'probe-worker.js',
+			'sketch-worker.js',
+			'render-worker.js',
+			'job-worker.js',
+		],
 	},
 	{
 		mode: 'low latency',
 		shaders: 'shaders-',
 		parts: [
+			'early-core.js',
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
@@ -282,17 +292,31 @@ export const DOWNLOADS: readonly Download[] = [
 	{
 		mode: 'drawing on the main thread',
 		shaders: 'shaders-',
-		parts: ['page.js', 'page-renderer.js', 'probe-worker.js', 'sketch-worker.js', 'job-worker.js'],
+		parts: [
+			'early-core.js',
+			'page.js',
+			'page-renderer.js',
+			'probe-worker.js',
+			'sketch-worker.js',
+			'job-worker.js',
+		],
 	},
 	{
 		mode: 'single-threaded',
 		shaders: 'shaders-',
-		parts: ['page.js', 'page-sketch-runner.js', 'page-renderer.js', 'probe-worker.js'],
+		parts: [
+			'early-core.js',
+			'page.js',
+			'page-sketch-runner.js',
+			'page-renderer.js',
+			'probe-worker.js',
+		],
 	},
 	{
 		mode: 'sketch on the main thread',
 		shaders: 'shaders-',
 		parts: [
+			'early-core.js',
 			'page.js',
 			'page-sketch-runner.js',
 			'probe-worker.js',

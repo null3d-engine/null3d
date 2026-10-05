@@ -39,6 +39,11 @@ const BrowserWorker = Worker;
 /** Workers the page started and has not stopped, and the workers it stopped. */
 const workerCounts = { live: 0, stopped: 0 };
 
+/** The workers the page started and has not stopped. */
+export function liveWorkers(): number {
+	return workerCounts.live;
+}
+
 /**
  * Starts a second copy of a worker whose script or one of its imports did not load, and notes
  * whether that copy loads, which tells a passing fault of the network from a lasting one. The copy

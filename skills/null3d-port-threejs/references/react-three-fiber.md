@@ -46,7 +46,7 @@ const kept = new Map<string, Kept>();
 function keptEngine(sketch: URL): Kept {
   let entry = kept.get(sketch.href);
   if (!entry) {
-    // A canvas can be handed to a worker only once, so the kept engine owns its canvas.
+    // The kept engine owns its canvas, which moves between hosts with the engine.
     const canvas = document.createElement('canvas');
     canvas.style.cssText = 'width:100%;height:100%;display:block';
     entry = { canvas, engine: createEngine({ canvas, sketch }) };
@@ -94,6 +94,7 @@ export function FourView({ sketch, onMessage, onReady }: Props) {
 
 - Create `sketch` once at module level (`const sketchUrl = new URL('./sketch.ts', import.meta.url)`), so re-renders do not restart the engine.
 - React's StrictMode mounts effects twice in development. The second mount finds the kept engine and attaches it, so development starts one engine, as production does.
+- (0.2) A plain component that renders `<canvas ref>`, creates the engine in its effect and calls `destroy()` in the cleanup also works under StrictMode: the second start waits for the first engine to stop, and draws on the same canvas. It starts the engine twice in development. Docs: `api/engine`.
 - Each mount adds its own message handler and removes it on unmount, so an old component never hears the sketch.
 - A kept engine holds its memory and GPU buffers. For a view the app shows once, destroy the engine on unmount instead of keeping it.
 
