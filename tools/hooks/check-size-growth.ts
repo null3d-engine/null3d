@@ -1,9 +1,10 @@
 // Commit-msg guard for the `Size-Growth:` trailer (AGENTS.md, "Commit gates"). The size check fails
-// a file that grew more than 2% after Brotli against main's build, unless a commit since that build
+// a file that grew past its limit after Brotli against main's build, unless a commit since that build
 // has a trailer that names the file as the size report prints it and gives the reason. This hook
 // rejects a trailer that names no such file or gives no reason, since it would explain nothing.
 // The size check reads the trailers through explainedFiles.
 import { readFileSync } from 'node:fs';
+import { MAX_GROWTH, MIN_GROWTH_BYTES } from '../lib/size-check';
 import { isFirstUseShaderPart, REPORTED_FILES } from '../lib/size-report';
 import { effectiveMessage, findAckValues, isBareAck, isExemptCommit } from './commit-ack';
 
@@ -75,9 +76,9 @@ export function sizeGrowthProblems(
 
 /** How to write the trailer, printed under a rejection. */
 export const SIZE_GROWTH_GUIDANCE = [
-	'A Size-Growth: trailer explains a file that grew more than 2% after Brotli against main',
-	'(AGENTS.md, "Commit gates"). Name each file as the size report prints it, such as js/page.js or',
-	'threaded/null3d_bg.wasm, then say why it grew. For example:\n',
+	`A Size-Growth: trailer explains a file that grew after Brotli against main by more than ${MAX_GROWTH * 100}%`,
+	`and by ${MIN_GROWTH_BYTES} bytes or more (AGENTS.md, "Commit gates"). Name each file as the size report`,
+	'prints it, such as js/page.js or threaded/null3d_bg.wasm, then say why it grew. For example:\n',
 	'  Size-Growth: js/render-worker.js +3.1%, the render graph and its culling per view',
 	'  Size-Growth: threaded/null3d_bg.wasm and single/null3d_bg.wasm +6%, meshes from arrays',
 ];

@@ -51,6 +51,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass` or `maxLabels`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
+| [E1306](../errors/E1306.md) | The browser runs the WebKit engine of a Safari before 18: Safari 17 or older, or any browser on iOS or iPadOS 17 or older. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
 | [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
@@ -354,6 +355,7 @@ type ErrorCode =
 	| 'E1303'
 	| 'E1304'
 	| 'E1305'
+	| 'E1306'
 	| 'E1401'
 	| 'E1402'
 	| 'E1403'

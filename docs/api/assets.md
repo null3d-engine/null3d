@@ -65,7 +65,7 @@ The prefab turns each part of the file into the engine's own:
 | --- | --- |
 | A node | A `Group`, or a `Mesh` for a node with a mesh of one material. A node with lights or a mesh of several materials becomes a group with one object for each |
 | A mesh | One mesh for each material, with its vertex arrays in the types that the file holds them in, `KHR_mesh_quantization` types included. Points and lines are left out; development builds warn about them |
-| A material | `materials.standard`, or `materials.unlit` with `KHR_materials_unlit`. `KHR_materials_emissive_strength` sets `emissiveIntensity` |
+| A material | `materials.standard`, or `materials.unlit` with `KHR_materials_unlit`. `KHR_materials_emissive_strength` sets `emissiveIntensity`. `KHR_materials_specular` sets `specularIntensity`, `specularColor` and their maps, and `KHR_materials_ior` sets `ior`, as three.js's `GLTFLoader` sets them on a `MeshPhysicalMaterial`. An `ior` of 0 becomes 1000, as in three.js |
 | A texture | A texture with the file's sampler and texture coordinates. `KHR_texture_basisu` textures load through the KTX2 transcoder |
 | `KHR_texture_transform` | The material's `uvTransform`: the base color map's transform, or the first map's |
 | `KHR_lights_punctual` | Directional, point and spot lights, in the units of glTF and three.js |
