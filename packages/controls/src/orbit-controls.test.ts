@@ -415,6 +415,21 @@ describe('orbit controls against three.js: the mouse', () => {
 		twin.stepAndCompare();
 	});
 
+	it('dolly with the wheel after a drag, when the release and the scroll fall between two frames', () => {
+		const twin = new Twin('orbit', [0, 4, 9], { target: [0, 0.5, 0] });
+		twin.pointer('down', 200, 60, RIGHT);
+		twin.pointer('move', 170, 76, { buttons: 2 });
+		twin.stepAndCompare();
+		const distance = twin.controls.getDistance();
+		twin.pointer('up', 170, 76, { button: 2, buttons: 0 });
+		twin.pointer('move', 160, 90, { buttons: 0 });
+		twin.wheel(-150);
+		// The scroll waits for the frame after the release.
+		twin.step();
+		twin.stepAndCompare();
+		expect(twin.controls.getDistance()).toBeLessThan(distance * 0.95);
+	});
+
 	it('end a drag and start the next with its own button, when both fall between two frames', () => {
 		const twin = new Twin('orbit', [0, 4, 9], { target: [0, 0.5, 0] });
 		twin.pointer('down', 100, 90, LEFT);

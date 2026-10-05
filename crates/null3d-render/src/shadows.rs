@@ -109,8 +109,8 @@ pub struct ShadowSettings {
     pub filter: u32,
 }
 
-/// The shadow settings that the quality settings give every light: the filter's size, and how
-/// often far cascades draw.
+/// The shadow settings that the quality settings give every light: the filter's size, how often
+/// far cascades draw, and whether moving casters make them draw in every frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ShadowQuality {
     /// The texels on each side of the square of comparisons that blend into each receiver's
@@ -118,6 +118,10 @@ pub struct ShadowQuality {
     pub filter: u32,
     /// Far cascades draw once in this many frames, from 1 to [`MAX_INTERVAL`].
     pub far_interval: u32,
+    /// True when a far cascade draws in every frame while a moving caster touches it, so moving
+    /// shadows follow their casters. False keeps every far cascade to its turns, and a moving
+    /// caster's shadow there stays where the layer last drew it until the next turn.
+    pub follow_movers: bool,
 }
 
 impl Default for ShadowQuality {
@@ -125,6 +129,7 @@ impl Default for ShadowQuality {
         Self {
             filter: 3,
             far_interval: 1,
+            follow_movers: true,
         }
     }
 }

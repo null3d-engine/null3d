@@ -37,7 +37,7 @@ mod system;
 pub use actions::{Action, event_kind, flag};
 pub use clip::Clip;
 pub use pose::Pose;
-pub use resample::{Channel, DEFAULT_RATE, Interpolation, MAX_FRAMES, SourceTrack, resample};
+pub use resample::{Channel, DEFAULT_RATE, Interpolation, MAX_CLIP_KEYS, SourceTrack, resample};
 pub use skeleton::{MAX_JOINTS, NO_PARENT, REST_FLOATS, Skeleton};
 pub use system::{
     Animations, EVENT_CAPACITY, EVENT_WORDS, INSTANCE_CHUNK, MAX_BLEND, MAX_LAYERS, Play,
@@ -83,10 +83,10 @@ pub enum AnimationError {
         /// What is wrong with it.
         problem: TrackProblem,
     },
-    /// A clip would hold more than [`MAX_FRAMES`] frames.
-    Frames {
-        /// The frames it would hold.
-        frames: u32,
+    /// A clip would hold more than [`MAX_CLIP_KEYS`] keys: its frames times its tracks.
+    Keys {
+        /// The keys it would hold, at most `u32::MAX`.
+        keys: u32,
     },
     /// No skeleton has this id.
     UnknownSkeleton {

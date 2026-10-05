@@ -72,13 +72,11 @@ export const SETTING_DOCS: {
 	shadowMapSize: { label: 'Shadow map size in texels' },
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
+	followMovingCasters: { label: 'Far cascades follow moving casters', print: yesNo },
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
-	bloomSamples: {
-		label: 'Bloom samples',
-		print: (value) => `${Number(value) * 100}% of three.js's`,
-	},
+	bloomSize: { label: "Bloom's largest level in texels on the short side" },
 	aoScale: {
 		label: 'Ambient occlusion',
 		print: (value) =>

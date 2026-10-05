@@ -16,7 +16,7 @@ function post(
 ): {
 	post: Post;
 	calls: [number, number][];
-	blooms: [boolean, number, number, number][];
+	blooms: [boolean, ...number[]][];
 	aos: [boolean, ...number[]][];
 	luts: number[][];
 	vignettes: [boolean, number, number][];
@@ -24,15 +24,16 @@ function post(
 	reads: () => number;
 } {
 	const calls: [number, number][] = [];
-	const blooms: [boolean, number, number, number][] = [];
+	const blooms: [boolean, ...number[]][] = [];
 	const aos: [boolean, ...number[]][] = [];
 	const luts: number[][] = [];
 	const vignettes: [boolean, number, number][] = [];
 	const outlines: number[][] = [];
 	const block = Float32Array.of(
-		...[1, 1, 0.5, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+		...[1, 0.15, 0, 0.1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
 		...[0.25, 1, 1, 1, 1, 16, 1],
 		...[1, 1, 1, 1, 1, 1, 0, 2],
+		...[0, 0.28, 0.1872, 0.1359, 0.1012, 0.0754, 0.0562, 0.0419, 0.1223, 0, 0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -50,11 +51,16 @@ function post(
 				return 0;
 			},
 			setBloom(on: boolean) {
+				const weights = [...block.subarray(C.POST_VALUE_BLOOM_WEIGHTS, C.POST_VALUE_COUNT)];
 				blooms.push([
 					on,
-					at(C.POST_VALUE_BLOOM_STRENGTH),
-					at(C.POST_VALUE_BLOOM_RADIUS),
-					at(C.POST_VALUE_BLOOM_THRESHOLD),
+					...[
+						C.POST_VALUE_BLOOM_INTENSITY,
+						C.POST_VALUE_BLOOM_THRESHOLD,
+						C.POST_VALUE_BLOOM_KNEE,
+					].map((place) => Math.round(at(place) * 1e4) / 1e4),
+					at(C.POST_VALUE_BLOOM_BLEND),
+					...weights.map((v) => Math.round(v * 1e4) / 1e4),
 				]);
 				return 0;
 			},
@@ -149,16 +155,18 @@ describe('post.set', () => {
 		output.set({ exposure: 1.5 });
 		expect(blooms).toEqual([]);
 		output.set({ bloom: {} });
-		output.set({ bloom: { strength: 1.5, radius: 0.375 } });
+		output.set({ bloom: { intensity: 1.5, blend: 'add', weights: [1, 0, 3] } });
 		output.set({ bloom: false });
 		expect(output.bloomOn).toBe(false);
-		output.set({ bloom: { threshold: 0.875 } });
+		output.set({ bloom: { threshold: 0.875, knee: 0.01, blend: 'screen' } });
 		expect(output.bloomOn).toBe(true);
+		const defaults = [0.28, 0.1872, 0.1359, 0.1012, 0.0754, 0.0562, 0.0419, 0.1223, 0, 0];
+		const given = [1, 0, 3, 0, 0, 0, 0, 0, 0, 0];
 		expect(blooms).toEqual([
-			[true, 1, 0.5, 1],
-			[true, 1.5, 0.375, 1],
-			[false, 1.5, 0.375, 1],
-			[true, 1.5, 0.375, 0.875],
+			[true, 0.15, 0, 0.1, 0, ...defaults],
+			[true, 1.5, 0, 0.1, 1, ...given],
+			[false, 1.5, 0, 0.1, 1, ...given],
+			[true, 1.5, 0.875, 0.01, 2, ...given],
 		]);
 	});
 
@@ -169,7 +177,7 @@ describe('post.set', () => {
 		console.warn = (message: unknown) => warnings.push(message);
 		try {
 			output.set({ bloom: {} });
-			output.set({ bloom: { strength: 2 } });
+			output.set({ bloom: { intensity: 0.5 } });
 		} finally {
 			console.warn = warn;
 		}
@@ -256,10 +264,17 @@ describe('post.set', () => {
 			{ exposure: -1 },
 			{ exposure: 1e39 },
 			{ bloom: true },
-			{ bloom: { intensity: 1 } },
-			{ bloom: { strength: -1 } },
-			{ bloom: { radius: 1.5 } },
+			{ bloom: { strength: 1 } },
+			{ bloom: { intensity: -1 } },
+			{ bloom: { knee: -0.1 } },
 			{ bloom: { threshold: -0.1 } },
+			{ bloom: { blend: 'multiply' } },
+			{ bloom: { blend: 'toString' } },
+			{ bloom: { weights: [] } },
+			{ bloom: { weights: [0, 0] } },
+			{ bloom: { weights: [1, -1] } },
+			{ bloom: { weights: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] } },
+			{ bloom: { weights: 1 } },
 			{ lut: true },
 			{ lut: { size: 33 } },
 			{ lutIntensity: 1.5 },
@@ -288,7 +303,8 @@ describe('post.set', () => {
 		const { post: output } = post();
 		for (const exposure of [Number.NaN, Number.POSITIVE_INFINITY])
 			expect(() => output.set({ exposure })).toThrow('E1203');
-		expect(() => output.set({ bloom: { strength: Number.NaN } })).toThrow('E1203');
+		expect(() => output.set({ bloom: { intensity: Number.NaN } })).toThrow('E1203');
+		expect(() => output.set({ bloom: { weights: [1, Number.NaN] } })).toThrow('E1203');
 		expect(() => output.set({ lutIntensity: Number.NaN })).toThrow('E1203');
 		expect(() => output.set({ vignette: { offset: Number.POSITIVE_INFINITY } })).toThrow('E1203');
 		expect(() => output.set({ ao: { radius: Number.NaN } })).toThrow('E1203');

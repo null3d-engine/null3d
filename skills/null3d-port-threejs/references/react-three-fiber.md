@@ -142,7 +142,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | `<Suspense fallback>`, drei `<Loader>`, `useProgress` | `assets.onProgress` plus a `'loading'` message; the page shows the loader |
 | drei `useAnimations(animations, ref)` | `obj.animator()` (0.2) |
 | drei `<OrbitControls makeDefault />` | `createOrbitControls(ctx, camera, options)` |
-| drei `<Environment preset="studio" />` | `scene.setEnvironment(assets.builtinEnvironment('studio'))` (0.2); other presets: `bunx @null3d/cli assets env` from an HDR file (0.2) |
+| drei `<Environment preset="studio" />` | Download the preset's HDR file, make it a map with `bunx @null3d/cli assets env studio.hdr studio.ktx2`, then `scene.setEnvironment(await assets.loadEnvironment('/studio.ktx2'))` (0.2). For neutral light with no file of your own: `scene.setEnvironment(await assets.builtinEnvironment('room'))` (0.2), three.js's `RoomEnvironment` |
 | drei `<Environment files="x.hdr" background />` | `bunx @null3d/cli assets env x.hdr x.ktx2`, then `setEnvironment` and `setBackground` (0.2) |
 | drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane (0.2); softer, blurred contact shadows are not built in |
 | drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React (0.2) |
