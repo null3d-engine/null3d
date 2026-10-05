@@ -78,6 +78,8 @@ What the technique review adds:
 - The room is made over several frames at first use. A GPU loss in that time must restart it through R2-01's recovery.
 - Add-ons run inside the engine's job workers, so their failures reach the page through the paths that R3-01 and R3-02 add.
 
+The owner ruled on R3-03 on 5 October 2026 ([D-67](decisions/D-67-rulings-2026-10-05.md) ruling 3). After `destroy()`, the engine keeps one drawing worker for each canvas still in the document. A new engine can then draw on a canvas whose control moved to a worker. Refusing such a canvas was rejected. M2-R15 builds it.
+
 Rank: unchanged; R2-04 joins.
 
 ### D. Queries
@@ -124,7 +126,7 @@ The low findings go with the group whose files they touch. The issues below go w
 - R6-01: a multi-object reserve can grow WebAssembly memory without refreshing views. The single-threaded build then loses writes and throws.
 - R5-03: a frame that fails part way is still drawn, with half-applied state. Textures can lose their mips for good.
 - R2-02, R2-04: a WebGL2 context loss during the shader download is never restored. WebGPU never listens for GPU errors, so out-of-memory leaves a black canvas.
-- R1: a failed glTF load leaks textures, materials and the skeleton. Models can never be freed. Each destroyed sprite batch leaks a material, against a cap of 1,024.
+- R1: a failed glTF load leaks textures, materials and the skeleton. Models can never be freed (R1-07). Each destroyed sprite batch leaks a material, against a cap of 1,024. The owner ruled on 5 October 2026 that `mesh.destroy()` and `prefab.destroy()` come before 1.0, as task M2-R21, which completes R1-07 after `material.destroy()` ([D-67](decisions/D-67-rulings-2026-10-05.md) ruling 4).
 - R4-04 to R4-07: an additive play stops base clips on its layer. Step tracks hold the wrong key at a clip's end. The stored-tree reader accepts a damaged slot. Raycasts test characters in their rest pose, though the docs say otherwise.
 - R5-05 to R5-09: texture memory briefly doubles past the iPad's crash point. Narrow views get lit holes in shadows. Spot and point shadows go stale after a layer change, or on a still animated character. One light's shadow toggle rebuilds the whole pass plan.
 - R3-05, R3-06: a page-thread sketch's leftovers reach the next engine after `destroy()`; the preset check counts hidden-tab time and stores a lower preset for a week.
