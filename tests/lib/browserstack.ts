@@ -109,15 +109,26 @@ export function capabilities(device: CloudDevice, names: SessionNames): Record<s
 	};
 }
 
-/**
- * Whether a session's browser shows its own warning for the dev server's certificate, which only
- * BrowserStack's acceptSsl command passes: Safari, and every browser on iOS.
- */
-export const needsAcceptSsl = (device: CloudDevice) =>
-	device.os === 'ios' || device.browser === 'safari';
-
 /** The command that passes the certificate warning in Safari and on iOS, run after each load. */
 export const ACCEPT_SSL_SCRIPT = 'browserstack_executor: {"action": "acceptSsl"}';
+
+/**
+ * The script that passes the certificate warning of Edge on Android, which ignores the capability
+ * and which BrowserStack's acceptSsl command does not support: it opens the warning page's details
+ * and follows its link on to the page. On any other page it does nothing.
+ */
+export const PROCEED_SCRIPT =
+	"var details = document.getElementById('details-button'); if (details) details.click(); var link = document.getElementById('proceed-link'); if (link) link.click();";
+
+/**
+ * The script that passes the warning that a session's browser shows for the dev server's
+ * certificate, run after each load; undefined where the `acceptInsecureCerts` capability passes it.
+ */
+export function certificateScript(device: CloudDevice): string | undefined {
+	if (device.os === 'ios' || device.browser === 'safari') return ACCEPT_SSL_SCRIPT;
+	if (device.os === 'android' && device.browser === 'edge') return PROCEED_SCRIPT;
+	return undefined;
+}
 
 /** The account's Automate plan, as `plan.json` gives it. */
 export interface AutomatePlan {
@@ -307,8 +318,7 @@ export function browserStackSessions(
 		driver,
 		{
 			capabilities: (device, session) => capabilities(device, { ...names, session }),
-			needsAcceptSsl,
-			acceptSslScript: ACCEPT_SSL_SCRIPT,
+			certificateScript,
 			link: async (id) => (await api.session(id)).browser_url,
 			mark: api.mark,
 		},

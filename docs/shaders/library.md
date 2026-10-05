@@ -370,6 +370,22 @@ fn srgb_to_linear(c: vec3f) -> vec3f
 
 Decodes an sRGB color to linear color. It undoes `linear_to_srgb`. Use it for colors given in sRGB, such as hex colors and colors picked from the screen.
 
+### `HDR_LIMIT`
+
+```wgsl
+const HDR_LIMIT: f32 = 65472.0;
+```
+
+The brightest linear color that the engine stores in a 16-bit float target: one step below the largest 16-bit float, 65,504. Some GPUs store a larger value as infinity, and the tone mapping curves turn infinity into black.
+
+### `limit_hdr`
+
+```wgsl
+fn limit_hdr(c: vec3f) -> vec3f
+```
+
+A linear color with each channel no brighter than HDR_LIMIT, so that a 16-bit float target holds it. Infinity becomes HDR_LIMIT too.
+
 ### `luminance`
 
 ```wgsl

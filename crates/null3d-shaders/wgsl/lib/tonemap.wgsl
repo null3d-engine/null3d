@@ -4,6 +4,7 @@
 #else
 #import null3d::color::{linear_to_srgb, tone_map_aces, tone_map_agx, tone_map_neutral}
 #endif
+#import null3d::color::{limit_hdr}
 #import null3d::noise
 
 // The output transform: exposure, tone mapping, sRGB encoding and dithering. The final pass applies
@@ -62,10 +63,11 @@ fn encode(c: vec3f, pixel: vec2f) -> vec3f {
 /// The color that a scene shader writes for linear color `c` at framebuffer position `pixel`: `c`
 /// itself into the HDR scene color, which the final pass tone maps, or on the 8-bit path (the
 /// TONE_MAP builds), `c` after the output transform that `settings` sets, encoded for the canvas.
+/// The HDR scene color takes `c` no brighter than the 16-bit float target holds.
 fn finish(c: vec3f, pixel: vec2f, settings: Output) -> vec4f {
 #ifdef TONE_MAP
     return vec4f(encode(tone_map(c, settings), pixel), 1.0);
 #else
-    return vec4f(c, 1.0);
+    return vec4f(limit_hdr(c), 1.0);
 #endif
 }

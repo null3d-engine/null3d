@@ -269,8 +269,11 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 96u: { return pair(null3d::vertex::mesh_uv(f[0].xy)); }
         case 97u: { return pair(null3d::vertex::mesh_second_uv(f[0].xy)); }
 #endif
+#ifdef COLOR
+        case 98u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
+#endif
 #ifdef LIGHTING
-        case 98u: {
+        case 99u: {
             let m = null3d::lighting::with_specular(material(f), f[2].x, f[2].yzw, f[3].x);
             return floats(
                 vec4f(m.base_color, m.specular_grazing),
