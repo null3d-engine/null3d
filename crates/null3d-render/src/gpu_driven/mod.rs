@@ -281,7 +281,7 @@ mod ids {
     pub const TARGETS: u32 = BLANK_OUTLINE + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The comparison sampler of the shadow map.
+    /// The comparison sampler of the shadow atlas.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
@@ -289,8 +289,10 @@ mod ids {
     pub const LUT_SAMPLER: u32 = 3;
     /// The sampler of the environment's cube texture.
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
+    /// The sampler that reads four texels of the shadow map at once.
+    pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 5;
+    pub const SAMPLERS: u32 = 6;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -588,7 +590,13 @@ impl GpuDrivenRenderer {
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
         let shadow = self.settings.shadow_frame(input);
-        let camera = self.settings.camera_position(input.scene, parity);
+        let camera = self.settings.view_frame(
+            ViewId::CAMERA,
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
+        );
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
         self.tiles
@@ -603,11 +611,19 @@ impl GpuDrivenRenderer {
             .ao()
             .zip(self.settings.camera_projection(input.canvas));
         self.graph.set_ao(ao, self.settings.ao_scale());
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skinning
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         let upload_everything = input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
-            || self.graph.depth_prepass() != self.layout_prepass;
+            || self.graph.depth_prepass() != self.layout_prepass
+            || skinned_appear;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
@@ -619,6 +635,7 @@ impl GpuDrivenRenderer {
                 self.settings.meshes(),
                 self.config.storage_binding_bytes,
             )?;
+            self.skinning.open_before_first_frame(input.pipelines_built);
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -644,10 +661,7 @@ impl GpuDrivenRenderer {
                     |_, _| (0, 0),
                     0,
                     shadows,
-                    |slot, key| {
-                        let object = skinning.object(slot as u32)?;
-                        Some(skinning.skinned_key(&object, key))
-                    },
+                    |slot, key| skinning.sorted_pipeline(slot as u32, key),
                 )
                 .map_err(out_of_memory)?;
             // The casters' layout holds buckets only while the light casts shadows.
@@ -667,6 +681,7 @@ impl GpuDrivenRenderer {
             } else {
                 self.casters.clear();
             }
+            self.skinning.asked();
             self.layouts_shadowed = shadows;
             // The outlined layout holds buckets only while outlines are on.
             if outlines {
@@ -717,18 +732,19 @@ impl GpuDrivenRenderer {
             self.graph.scene_targets(),
         );
         self.graph
-            .set_bloom(self.settings.bloom(), self.settings.bloom_divisor());
+            .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
-        self.graph.request_pipelines(&mut self.pipelines);
+        self.graph
+            .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        created_pipelines |= self.skinning.create_pipeline(list)?;
-        created_pipelines |= self.pipelines.create_new(list)? > 0;
+        created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
+        created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }
@@ -1130,7 +1146,12 @@ impl GpuDrivenRenderer {
     /// and three.js's table of specular terms, whose sizes never change, and of the shadows'
     /// uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
+        shadows::create_objects(
+            list,
+            ids::SHADOWS,
+            ids::SHADOW_SAMPLER,
+            Some(ids::SHADOW_TEXEL_SAMPLER),
+        )?;
         ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         let materials = self.config.max_materials.max(1);
         list.push(

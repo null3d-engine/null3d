@@ -29,6 +29,7 @@ import {
 	LIGHT_VALUE_PENUMBRA,
 	LIGHT_VALUE_RANGE,
 } from '../generated/core';
+import { DEV } from '../shared/dev';
 import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, loadAnimationRig } from './animation';
 import { affineOf, multiplyAffine } from './gltf-math';
@@ -89,7 +90,10 @@ export interface GltfContext {
 		call: string,
 	): Promise<ImageBitmap>;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
-	error(code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417', message: string): EngineError;
+	error(
+		code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1418',
+		message: string,
+	): EngineError;
 }
 
 /** A request that waits for the worker. */
@@ -165,7 +169,9 @@ function parse(
 					reject(
 						code === 'E1406' || code === 'E1417'
 							? context.error(code, `${call}() cannot load ${address}: ${message}.`)
-							: context.error('E1416', `${call}() could not read ${address}: ${message}.`),
+							: code === 'E1412'
+								? context.error(code, `${call}() could not decode ${address}: ${message}.`)
+								: context.error('E1416', `${call}() could not read ${address}: ${message}.`),
 					);
 				} else if ('needs' in answer)
 					Promise.all(
@@ -205,8 +211,35 @@ export async function loadGltf(
 	call: string,
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
+	// The thread that draws downloads the skinning and morph shader files while the textures
+	// decode, so a skinned or morphed model waits less for its pipelines. A skinned mesh's morph
+	// targets draw with skinning's builds.
+	if (data.nodes.some((n) => n.skinned)) context.materials.shaders.need('skinning');
+	if (data.nodes.some((n) => !n.skinned && n.mesh >= 0 && hasMorphTargets(data.meshes[n.mesh])))
+		context.materials.shaders.need('morph');
 	const textures = await makeTextures(context, data, bitmaps, address, call);
 	const materials = new FileMaterials(context, data, textures);
+	try {
+		materials.makeBase();
+		return await buildPrefab(context, data, textures, materials, address, call);
+	} catch (error) {
+		// A load that fails frees the textures and materials it made. Meshes and skeletons have no
+		// destroy call yet, so they stay.
+		materials.destroy();
+		for (const texture of textures) texture?.destroy();
+		throw error;
+	}
+}
+
+/** The prefab of a parsed file, once its textures and materials exist. */
+async function buildPrefab(
+	context: GltfContext,
+	data: GltfData,
+	textures: readonly (Texture | undefined)[],
+	materials: FileMaterials,
+	address: URL,
+	call: string,
+): Promise<Prefab> {
 	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.
 	const meshes: (MeshGeometry[] | undefined)[] = [];
 	const meshOf = (k: number) => {
@@ -287,7 +320,7 @@ export async function loadGltf(
 		if (light) node({ name: n.name, parent: at, transform: IDENTITY, light });
 	}
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
-	if (DEV_NOTES && data.notes.length > 0)
+	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
 	return new Prefab(
 		context.core,
@@ -302,16 +335,12 @@ export async function loadGltf(
 	);
 }
 
-declare const __NULL3D_DEV__: boolean | undefined;
-
-/**
- * True in development builds, which warn about what a file holds that the engine leaves out. The
- * loader reads the constant itself, as errors/checks.ts does, to import no engine module.
- */
-const DEV_NOTES: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
-
 const IDENTITY = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
 const IDENTITY_PART = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+
+/** True when a primitive of `mesh` has morph targets. */
+const hasMorphTargets = (mesh: MeshData | undefined) =>
+	mesh?.primitives.some((p) => Boolean(p.morph)) ?? false;
 
 /**
  * The morph weights of a node's primitive as a template node keeps them: the node's default
@@ -345,8 +374,12 @@ async function makeRig(
 	}
 }
 
-/** One texture for each texture use: from a bitmap the worker decoded, an image file, or KTX2 data. */
-async function makeTextures(
+/**
+ * One texture for each texture use: from a bitmap the worker decoded, an image file, or KTX2 data.
+ * When one fails, it destroys the others it made, closes the bitmaps it did not use, and throws the
+ * first failure. Exported for its tests.
+ */
+export async function makeTextures(
 	context: GltfContext,
 	data: GltfData,
 	bitmaps: (ImageBitmap | undefined)[],
@@ -354,7 +387,7 @@ async function makeTextures(
 	call: string,
 ): Promise<(Texture | undefined)[]> {
 	const files = new Map<string, Promise<Blob>>();
-	return Promise.all(
+	const results = await Promise.allSettled(
 		data.textures.map(async (use, k) => {
 			const options = {
 				colorSpace: use.colorSpace,
@@ -387,6 +420,13 @@ async function makeTextures(
 			return ktx2Texture(context, bytes.slice().buffer, source, use, call);
 		}),
 	);
+	const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+	if (!failed) return results.map((r) => (r as PromiseFulfilledResult<Texture | undefined>).value);
+	results.forEach((result, k) => {
+		if (result.status === 'fulfilled') result.value?.destroy();
+		else bitmaps[k]?.close();
+	});
+	throw failed.reason;
 }
 
 /** A texture from KTX2 data, through the KTX2 loader, which this imports the first time. */
@@ -456,12 +496,14 @@ function makeMeshes(
 		try {
 			made = context.geometry.fromArrays(arrays);
 		} catch (error) {
+			// A mesh too large for engine memory keeps its own code, which says how to make room.
+			if ((error as { code?: unknown }).code === 'E1109') throw error;
 			throw context.error(
 				'E1416',
 				`${call}() could not read ${address}: primitive ${k} of mesh "${mesh.name}" makes no mesh: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
-		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV_NOTES)
+		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV)
 			console.warn(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
 			);
@@ -498,19 +540,29 @@ function storeBlocker(core: CoreMemory, mesh: number, blocker: BlockerData, call
  */
 class FileMaterials {
 	private readonly made = new Map<string, Material>();
-	private readonly base: Material[];
+
+	private base: Material[] = [];
 
 	constructor(
 		private readonly context: GltfContext,
 		private readonly data: GltfData,
 		private readonly textures: readonly (Texture | undefined)[],
-	) {
-		this.base = data.materials.map((_, k) => this.variant(k, false, false, true));
+	) {}
+
+	/** Makes a material for each of the file's materials, in its order. */
+	makeBase(): void {
+		this.base = this.data.materials.map((_, k) => this.variant(k, false, false, true));
 	}
 
 	/** The materials in the file's order. */
 	list(): Material[] {
 		return this.base;
+	}
+
+	/** Destroys every material made so far, for a load that fails. */
+	destroy(): void {
+		for (const material of this.made.values()) material.destroy();
+		this.made.clear();
 	}
 
 	/** The material that draws a primitive. */

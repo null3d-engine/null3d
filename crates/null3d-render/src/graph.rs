@@ -164,9 +164,17 @@ pub enum Size {
     /// The render size: the canvas at the render scale.
     Full,
     /// The render size halved this many times each way, rounding up at each halving, from 1 up:
-    /// [`Size::HALF`] and [`Size::QUARTER`] are 1 and 2. A chain of effect passes, such as
-    /// bloom's, takes one more halving at each step.
+    /// [`Size::HALF`] and [`Size::QUARTER`] are 1 and 2.
     Halved(u8),
+    /// The canvas's shape with `texels` on its short side, halved `halvings` times each way,
+    /// rounding up, as the levels of bloom's chain are. The short side takes at most half the
+    /// canvas's: `texels` halves until it fits. The render scale leaves the size whole.
+    ShortSide {
+        /// Texels on the short side before the halvings.
+        texels: u16,
+        /// Halvings each way.
+        halvings: u8,
+    },
     /// The whole canvas at any render scale, as the final pass draws it.
     Canvas,
     /// A fixed size in pixels, such as a shadow map's.
@@ -193,7 +201,28 @@ impl Size {
             Self::Full | Self::Canvas => canvas,
             Self::Halved(times) => Self::halve(canvas, times),
             Self::Fixed { width, height } => (width.max(1), height.max(1)),
+            Self::ShortSide { texels, halvings } => {
+                let short = canvas.0.min(canvas.1);
+                let texels = u64::from(Self::short_side(texels, canvas));
+                let side = |pixels: u32| {
+                    let scaled =
+                        (u64::from(pixels) * texels + u64::from(short) / 2) / u64::from(short);
+                    (scaled as u32).max(1)
+                };
+                Self::halve((side(canvas.0), side(canvas.1)), halvings)
+            }
         }
+    }
+
+    /// The texels on the short side of a [`Size::ShortSide`] of `texels` before its halvings:
+    /// `texels` halved until it is at most half the canvas's short side, and at least 1.
+    pub fn short_side(texels: u16, canvas: (u32, u32)) -> u32 {
+        let short = canvas.0.max(1).min(canvas.1.max(1));
+        let mut texels = u32::from(texels.max(1));
+        while texels > 1 && texels * 2 > short {
+            texels /= 2;
+        }
+        texels
     }
 
     /// The part of such a texture that a pass draws into at render scale `scale`: a top-left
@@ -204,7 +233,7 @@ impl Size {
         match self {
             Self::Full => render,
             Self::Halved(times) => Self::halve(render, times),
-            Self::Canvas | Self::Fixed { .. } => self.extent(canvas),
+            Self::Canvas | Self::Fixed { .. } | Self::ShortSide { .. } => self.extent(canvas),
         }
     }
 
@@ -224,6 +253,12 @@ impl Size {
             Self::Halved(times) => format!("1/{} size", 1u64 << times.min(63)),
             Self::Canvas => "canvas size".into(),
             Self::Fixed { width, height } => format!("{width} x {height}"),
+            Self::ShortSide { texels, halvings } => {
+                format!(
+                    "{} texels on the short side",
+                    u32::from(texels) >> halvings.min(15)
+                )
+            }
         }
     }
 }

@@ -152,8 +152,8 @@ Effects:
 
 | Need | Use | Docs |
 | --- | --- | --- |
-| Tone mapping and exposure | `post.set({ toneMapping, exposure })` | `api/post` |
-| Bloom | `post.set({ bloom: { strength, radius, threshold } })` (0.2) | `api/post`, `concepts/post-processing` |
+| Tone mapping and exposure | `post.set({ toneMapping, exposure })`; `ev100` (0.2) for lights in real units | `api/post` |
+| Bloom | `post.set({ bloom: { intensity, threshold, knee, blend, weights } })` (0.2); quality setting `bloomSize` | `api/post`, `concepts/post-processing` |
 | Color grading from a `.cube` or `.3dl` file, and a vignette | `post.set({ lut: await assets.loadLut(url), vignette: { offset, darkness } })` (0.2) | `api/post`, `api/assets` |
 | Outlines around chosen meshes | `post.set({ outline: { color, width } })` and `mesh.setOutlined(true)` (0.2) | `api/post`, `api/objects` |
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
@@ -186,6 +186,7 @@ rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface read
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Add the null3D Vite plugin to `vite.config.ts`, or set the COOP and COEP headers on the host (`getting-started/hosting`) |
+| The production build's worker files are tens of MB each, or Vite warns that workers do not build as ES modules | The build runs without the null3D Vite plugin, or another setting replaced its worker format | Add the plugin to `vite.config.ts`, and leave `worker.format` unset (`getting-started/install`) |
 | An object does not move, or a development build logs E1110 | A static object changed without a setter | Use the setter, or create it with `dynamic: true` |
 | Colors too dark or washed out | Wrong texture color space | `colorSpace: 'srgb'` for color maps, `'linear'` for data maps (`concepts/color-management`) |
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |

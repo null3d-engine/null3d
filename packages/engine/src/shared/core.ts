@@ -91,8 +91,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
-	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
-	cullFrame(frame: number, width: number, height: number): number;
+	/**
+	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
+	 * is the newest frame that the thread that draws drew with every pipeline built, as for
+	 * `recordFrame`.
+	 */
+	cullFrame(frame: number, width: number, height: number, built: number): number;
 	/**
 	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
 	 * with every pipeline built.
@@ -403,10 +407,10 @@ export interface CoreGlue extends CoreErrors {
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
 	setOutput(toneMapping: number): number;
-	/** Turns bloom on with the post-processing values' strength, radius and threshold, or off. */
+	/** Turns bloom on with the post-processing values' intensity, threshold, blend and weights, or off. */
 	setBloom(on: boolean): number;
-	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
-	setBloomSamples(divisor: number): number;
+	/** The texels on the short side of bloom's base, and the governor's halvings of it, from the next frame on. */
+	setBloomChain(size: number, halvings: number): number;
 	/** Turns ambient occlusion on with the post-processing values' settings, or off. */
 	setAo(on: boolean): number;
 	/**
@@ -445,10 +449,11 @@ export interface CoreGlue extends CoreErrors {
 	/** The device pixels per CSS pixel of the canvas, which size sprites given in screen pixels. */
 	setPixelRatio(ratio: number): number;
 	/**
-	 * The shadow filter's texels on each side, 3 or 5, and the frames between two draws of a far
-	 * shadow cascade, from 1 to 8, from the next frame on.
+	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
+	 * shadow cascade, from 1 to 8, and whether a far cascade draws in every frame while a moving
+	 * caster touches it, from the next frame on.
 	 */
-	setShadowQuality(filter: number, farInterval: number): number;
+	setShadowQuality(filter: number, farInterval: number, followMovers: boolean): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
@@ -642,7 +647,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'postValues',
 	'setOutput',
 	'setBloom',
-	'setBloomSamples',
+	'setBloomChain',
 	'setAo',
 	'setAoScale',
 	'setSoftwareOcclusion',
@@ -686,35 +691,28 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 /** Stack size for each engine thread. */
 export const THREAD_STACK_BYTES = 1024 * 1024;
 
-export interface MemoryLimits {
-	initial: number;
-	maximum: number | null;
-	shared: boolean;
-}
-
 export interface CoreFiles {
 	/** The generated JavaScript that binds the core. */
 	glue: URL;
 	/** The compiled core. */
 	wasm: URL;
-	/** The shared memory's page limits; only the threaded build has them. */
-	memory?: URL;
 }
 
 /**
  * Each build's files. Every path is written out in full, so a bundler finds the files, ships them
- * with the app and rewrites the addresses to the shipped copies.
+ * with the app and rewrites the addresses to the shipped copies. `no-inline` keeps Vite from
+ * turning a file into a data: address when a project raises its inline limit: a Content-Security-
+ * Policy that allows only the page's origin blocks the import or the download of one.
  */
 export function coreUrls(build: Build): CoreFiles {
 	return build === 'threaded'
 		? {
-				glue: new URL('../../dist/wasm/threaded/null3d.js', import.meta.url),
-				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url),
-				memory: new URL('../../dist/wasm/threaded/null3d_memory.json', import.meta.url),
+				glue: new URL('../../dist/wasm/threaded/null3d.js?no-inline', import.meta.url),
+				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm?no-inline', import.meta.url),
 			}
 		: {
-				glue: new URL('../../dist/wasm/single/null3d.js', import.meta.url),
-				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url),
+				glue: new URL('../../dist/wasm/single/null3d.js?no-inline', import.meta.url),
+				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm?no-inline', import.meta.url),
 			};
 }
 

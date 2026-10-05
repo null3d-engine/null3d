@@ -172,10 +172,11 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | built |
 | Shadow filter (`shadowFilter`) | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
+| Far cascades follow moving casters (`followMovingCasters`) | no | yes | yes | yes | during play | built |
 | Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | built |
-| Bloom samples (`bloomSamples`) | 100% of three.js's | 100% of three.js's | 100% of three.js's | 100% of three.js's | during play | built |
+| Bloom's largest level in texels on the short side (`bloomSize`) | 128 | 512 | 512 | 512 | during play | built |
 | Ambient occlusion (`aoScale`) | off | off | half resolution | half resolution | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
@@ -273,7 +274,7 @@ Dynamic resolution is the first part of the frame-budget governor. The scale can
 
 1. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
 2. The shadow filter blends 3 x 3 texels instead of 5 x 5.
-3. Bloom's blurs read half as many texels, down to a quarter of three.js's. These steps happen only while bloom is on.
+3. Bloom's chain halves its base, once, while the base has more than 64 texels on the canvas's shorter side. Each level draws into a corner of half its target, so the chain loses its finest level. The glow keeps its size, with a softer core, and no target is made. This step happens only while bloom is on.
 4. Ambient occlusion draws at a quarter of the render size instead of half. This step happens only while ambient occlusion draws at half the size.
 
 Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.

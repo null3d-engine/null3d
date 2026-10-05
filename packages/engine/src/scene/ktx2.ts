@@ -7,10 +7,10 @@
 // outside the sketch's frames, and hands back every mip level. The texels go into engine memory,
 // and upload a band of rows of blocks per frame as data does.
 //
-// The loader imports no engine module but constants and types. The bundler would move a module
-// that this file shares with its thread's first file into a file of its own, which every page
-// would then download at its start. So the caller hands it the engine's error class, and it
-// compiles the transcoder's module with its own few lines.
+// The loader imports no engine module but constants, types and the WebAssembly download, which no
+// thread's first file shares with it. The bundler would move a module that this file shares with
+// its thread's first file into a file of its own, which every page would then download at its
+// start. So the caller hands it the engine's error class.
 //
 // The transcoder is the official build of Basis Universal v2.50 (github.com/BinomialLLC/
 // basis_universal, tag v2_50, webgl/transcoder/build), under the Apache License 2.0, kept
@@ -22,7 +22,9 @@ import {
 	CAPABILITY_TEXTURE_BC,
 	CAPABILITY_TEXTURE_ETC2,
 } from '../generated/core';
+import { compileWasm } from '../shared/wasm';
 import type { LoadTextureOptions } from './assets';
+import { FILE_LIMITS } from './file-limits';
 import type {
 	CompressedTextureFormat,
 	Texture,
@@ -172,12 +174,18 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
  * detail in ASTC, then BC7, then ETC2. ETC1S data is ETC1, so it becomes ETC2 first, at half the
  * memory without alpha, then BC7 and ASTC. A device without these, or a texture whose size is not
  * a whole number of blocks, gets RGBA8.
+ *
+ * On WebGL2, a device with BC takes BC7 first for both codecs. Desktop GPUs have BC, and some
+ * desktop drivers (Mesa on Linux) offer ETC2 and ASTC on GPUs that lack them, then decode such
+ * textures in software on the page's thread. WebGPU offers each family only where the GPU has it.
  */
 export function ktx2Target(
 	capabilities: number,
 	{ codec, alpha, width, height }: Pick<Ktx2Header, 'codec' | 'alpha' | 'width' | 'height'>,
+	webgl2 = false,
 ): Ktx2Target {
 	if (width % BLOCK !== 0 || height % BLOCK !== 0) return RGBA8;
+	if (webgl2 && capabilities & CAPABILITY_TEXTURE_BC) return BC7;
 	const etc2 = alpha ? ETC2_RGBA : ETC2_RGB;
 	const order: readonly [number, Ktx2Target][] =
 		codec === 'uastc'
@@ -193,6 +201,31 @@ export function ktx2Target(
 				];
 	for (const [flag, target] of order) if (capabilities & flag) return target;
 	return RGBA8;
+}
+
+/**
+ * Why the engine refuses a file with `header` before it transcodes it, or undefined. Its sides may
+ * reach the device's `maxSize`, its layers the shared limit, and its mip levels a chain down to
+ * one texel. Its texels in the `format` it becomes may reach the limit of one texture.
+ */
+export function ktx2TooLarge(
+	header: Pick<Ktx2Header, 'width' | 'height' | 'layers' | 'levels'>,
+	format: TextureFormat | CompressedTextureFormat,
+	maxSize: number,
+	limits = FILE_LIMITS,
+): string | undefined {
+	const { width, height, layers, levels } = header;
+	if (width > maxSize || height > maxSize)
+		return `it is ${width} x ${height} texels, larger than the ${maxSize} a side that this device's textures hold`;
+	if (layers > limits.textureLayers)
+		return `it holds ${layers} layers, more than the ${limits.textureLayers} that a texture may hold`;
+	const chain = Math.floor(Math.log2(Math.max(width, height))) + 1;
+	if (levels > chain)
+		return `it holds ${levels} mip levels, more than the ${chain} that a texture of its size has`;
+	const bytes = transcodedBytes(format, width, height, levels, layers);
+	if (bytes > limits.itemBytes)
+		return `its texels take ${Math.ceil(bytes / 2 ** 20)} MiB as ${format}, more than the ${limits.itemBytes / 2 ** 20} MiB that one texture may hold`;
+	return undefined;
 }
 
 /** The bytes that the transcoder writes for `levels` mip levels of `layers` layers in `format`. */
@@ -215,26 +248,23 @@ export function transcodedBytes(
 	return bytes * layers;
 }
 
-/** Makes one of the engine's coded errors: the caller's `EngineError`. */
-export type Ktx2Error = (code: 'E1406' | 'E1412', message: string) => EngineError;
+declare const __NULL3D_DEV__: boolean | undefined;
 
-/** Downloads and compiles the transcoder's module, or fails with E1406. */
+/**
+ * True in development builds, which warn when a file loads uncompressed. The loader reads the
+ * constant itself, as the glTF loader does, to import no engine module.
+ */
+const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
+
+/** Makes one of the engine's coded errors: the caller's `EngineError`. */
+export type Ktx2Error = (code: 'E1406' | 'E1412' | 'E1418', message: string) => EngineError;
+
+/**
+ * Downloads and compiles the transcoder's module. Fails with E1406 when it does not download, and
+ * with E1418 when the page's Content-Security-Policy blocks WebAssembly.
+ */
 async function compileTranscoder(error: Ktx2Error): Promise<WebAssembly.Module> {
-	try {
-		return await WebAssembly.compileStreaming(fetch(WASM));
-	} catch {
-		// Servers that send the wrong content type for .wasm files break streaming compilation.
-		let response: Response | undefined;
-		const failed = (reason: string) =>
-			error('E1406', `the KTX2 transcoder's ${WASM.pathname} did not download: ${reason}.`);
-		try {
-			response = await fetch(WASM);
-			if (response.ok) return await WebAssembly.compile(await response.arrayBuffer());
-		} catch (thrown) {
-			throw failed(thrown instanceof Error ? thrown.message : String(thrown));
-		}
-		throw failed(`HTTP ${response.status}`);
-	}
+	return (await compileWasm(WASM, 'the KTX2 transcoder', error)).module;
 }
 
 /** A request that waits for the transcoder. */
@@ -368,7 +398,15 @@ export async function loadKtx2(
 	}
 	const { width, height, layers } = header;
 	const levels = options.mipmaps === false ? 1 : header.levels;
-	const target = ktx2Target(textures.capabilities, header);
+	const target = ktx2Target(textures.capabilities, header, textures.webgl2);
+	const tooLarge = ktx2TooLarge({ ...header, levels }, target.format, textures.maxSize);
+	if (tooLarge)
+		throw error('E1412', `${call}() could not load ${address} as a KTX2 texture: ${tooLarge}.`);
+	const compressed = CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_BC | CAPABILITY_TEXTURE_ETC2;
+	if (DEV && target === RGBA8 && textures.capabilities & compressed)
+		console.warn(
+			`${call}() loads ${address} as uncompressed RGBA8, which takes ${Math.ceil(transcodedBytes(RGBA8.format, width, height, levels, layers) / 1024)} KB: its size, ${width} x ${height}, is not a whole number of 4 x 4 blocks. Save it at a size whose sides are multiples of 4, as the asset tool does.`,
+		);
 	const texels = await transcoderOfThisThread(error).transcode(
 		file,
 		target,

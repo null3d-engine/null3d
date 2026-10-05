@@ -304,7 +304,7 @@ The owner approved the budgets of points 1 and 2 in writing on 2026-10-04. Point
 
 ### Consequences
 
-- `tools/lib/size-report.ts` holds the budgets (`START_BUDGET_BYTES` and `LATER_BUDGET_BYTES`) and the parts that load later (`LATER_PARTS`). `budgetProblems` judges both budgets. The size report prints the parts that load later in a section of their own.
+- `tools/lib/size-report.ts` holds the budgets (`START_BUDGET` and `LATER_BUDGET`) and the parts that load later (`LATER_PARTS`). Each budget has a size for every column of the report, as [the section below](#m2-gzip-and-uncompressed-budgets) gives them. `budgetProblems` judges both budgets in every column. The size report prints the parts that load later in a section of their own.
 - AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the new figures. A further raise of either budget needs the owner's approval in writing, recorded here.
 
 ## Additions of 4 October 2026
@@ -316,6 +316,8 @@ Status: decided by the owner on 2026-10-04. Tasks: M2-C5, M2-E2, M2-A6, M2-R11.
 The morph builds (M2-C5) and the room's generator (M2-E2, [D-19](D-19-environment-maps.md)) put their shaders in files of their own, which load when the feature first runs. A shader file is mostly WGSL or GLSL text, and the start's shader file alone is about 24 KB after Brotli. So the 16 KB limit for first-use JavaScript does not fit it.
 
 The owner's decision: each shader file that loads on first use may take about 24 KB after Brotli, the size of the start's shader file. The size report lists these files apart from the start, with their share of that limit. The first two use little of it: the room's shaders are 4.2 KB of WGSL or 4.4 KB of GLSL.
+
+On 5 October 2026 the owner raised the limit to 32 KB after Brotli. The sun's shadow filter came to compare each shadow map texel with the receiver's plane at that texel. That added 4 to 6% to the WebGL2 morph files, which were about 23.2 to 23.3 KB on main. Two of them then passed 24 KB: `shaders-glsl-tone-map-morph-half.js` at 24,702 B and `shaders-glsl-draw-index-tone-map-morph-half.js` at 24,758 B. A loop in place of the filter's written-out blocks on WebGL2 saved at most 57 B. The growth is the cost of correct shadows, and the exposure and the specular maps would soon pass a tighter limit too. The other limits stay. The start keeps 140 KB after Brotli, 448 KB after gzip and 3,328 KB raw. Each first-use file keeps 320 KB after gzip and 1,536 KB raw.
 
 This is also the way to trim the start. Each feature's shaders move into a file of their own (M2-R11, with its own record D-56, [D-53](D-53-technique-defaults.md) ruling 23).
 
@@ -346,12 +348,84 @@ A WebGPU page with gzip 9 downloads 378 KB at its start. Each shader file holds 
 
 The owner's decision (ruling 23 of D-53):
 
-- The size report adds a gzip column and an uncompressed column beside Brotli, for the start and for each file that loads later. The budgets stay in bytes after Brotli.
+- The size report adds a gzip column and an uncompressed column beside Brotli, for the start and for each file that loads later. Later the same day the owner also approved budgets in those columns ([the next section](#m2-gzip-and-uncompressed-budgets)).
 - The size is fixed at its cause, not by a budget. The cure is per-feature shader files, and one copy of each unique shader stage per file, with variants as indexes into it.
 
 ### Consequences
 
-- M2-C5 adds the shader files' limit, with the WebGL2 morph builds as the first such files ([D-51](D-51-morph-targets.md)). `ON_DEMAND_SHADER_PARTS` in `tools/lib/size-report.ts` names the files, and `ON_DEMAND_SHADER_BUDGET_BYTES` holds the limit of 24 KB. `budgetProblems` judges each file against it. The size report prints them in a section of their own, which no start counts. AGENTS.md and [Benchmarks](../benchmarks.md#download-size) give the figure.
+- M2-C5 adds the shader files' limit, with the WebGL2 morph builds as the first such files ([D-51](D-51-morph-targets.md)). M2-R11 makes the morph builds one of its first-use features, `[first_use.morph]` in the shader manifest ([D-56](D-56-first-use-shader-files.md)). `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the limit in each column, and `budgetProblems` judges each first-use shader file against it. The size report prints them in a section of their own, which no start counts. AGENTS.md and [Benchmarks](../benchmarks.md#download-size) give the figure.
 - `tools/lib/size-report.ts` gains the exceptions' rows and the two columns.
 - M2-A6 builds Draco on the on-demand loader of [D-54](D-54-addon-modules.md), and its pull request gives the decoder's measured size.
 - M2-R11 measures the start in each column before and after, and writes the figures here and in [D-13](D-13-shader-variants.md).
+
+## M2: gzip and uncompressed budgets
+
+Status: accepted. The owner approved every budget below in writing on 2026-10-04. Task: M2-R14, from review R8 (R8-02).
+
+### Question
+
+The budgets above count each file after Brotli at quality 11. As [the section above](#hosts-that-compress-with-gzip) shows, a page on a gzip host downloads about four times what the Brotli budget shows. A host that sends files as they are sends about 30 times as much. The [D-13 addendum](D-13-shader-variants.md#addendum-2026-10-04-measured-again-after-the-duplicate-sources-went) gives today's figures. Nothing stopped them from growing. What budgets hold the start and the files that load later on such hosts?
+
+### Rule
+
+- Each budget has a size for each way a host can send a file: as it is, after gzip and after Brotli. A file over its budget in any column fails the build.
+- gzip is measured at level 9. A host that compresses its files once, when it deploys them, sends them so. Hosts that compress on the fly at a lower level send more: the start's shader file is about a third larger with gzip 6.
+- The start's gzip and uncompressed budgets hold today's largest start with about a tenth to spare. Per-feature shader files (M2-R11) move code out of the start, so these figures are expected to fall. Brotli's budgets stay as the section above decided them.
+
+### Data
+
+On 2026-10-04, main at dc178379 with this task's branch, from `bun run build`. Sizes are KB (1,024 bytes).
+
+What a page downloads at its start, in each thread mode:
+
+| Thread mode | Raw | gzip 9 | Brotli 11 |
+| --- | --- | --- | --- |
+| pipelined | 3,040.6 | 402.7 | 106.9 |
+| low latency | 3,034.5 | 400.5 | 105.1 |
+| drawing on the main thread | 3,033.7 | 400.5 | 105.1 |
+| single-threaded | 3,018.3 | 395.1 | 100.4 |
+| sketch on the main thread | 3,027.0 | 398.1 | 102.9 |
+
+The shader file is 2,654.4 KB raw and 299.0 KB with gzip 9 of the pipelined start. The rest of the start is 386.2 KB raw and 103.7 KB with gzip 9.
+
+The largest JavaScript file that loads later is `gltf-worker.js`: 27.5 KB raw, 10.4 KB with gzip 9 and 9.4 KB with Brotli 11. The next are `gltf-meshopt.js` (25.7, 7.0 and 6.2 KB) and the glTF loader's files (16.4, 6.7 and 6.0 KB).
+
+### Decision
+
+| Budget | Raw | gzip 9 | Brotli 11 | Largest today |
+| --- | --- | --- | --- | --- |
+| The start, in the thread mode that downloads the most | 3,328 KB | 448 KB | 140 KB | 3,040.6 / 402.7 / 106.9 KB (pipelined) |
+| Each JavaScript file that loads later | 64 KB | 24 KB | 16 KB | 27.5 / 10.4 / 9.4 KB (`gltf-worker.js`) |
+| Each shader file that loads on a feature's first use (M2-R11) | 1,536 KB | 320 KB (224 KB until 5 October, [below](#addendum-5-october-2026-first-use-shader-files-after-gzip)) | 32 KB (24 KB until 5 October, [above](#first-use-shader-files)) | 1,324.5 / 199.4 / 16.1 KB (skinning's GLSL file for the draw index, the 8-bit output and half precision) |
+
+The start's gzip and uncompressed budgets are about 10% above today's largest start. Per-feature shader files bring both down. The budgets of the files that load later are 1.5 times their Brotli budget with gzip and 4 times it uncompressed. The largest such file uses 43% of each.
+
+Shader text compresses far better than code, so the JavaScript files' proportions do not fit the shader files. An earlier proposal of 80 KB with gzip and 576 KB uncompressed was too small for skinning's file. Record D-56 gives the reasons and M2-R11's figures.
+
+The owner approved the three rows in writing on 2026-10-04. A raise of any budget in any column needs the owner's approval in writing, recorded here.
+
+The same day, the owner made Vite with the null3D plugin the one supported build ([D-54](D-54-addon-modules.md#bundlers)). The budgets hold for that build. Without the plugin, Vite builds each engine worker as one classic script with every shader file in it. Each worker is then about 34 MB, which no budget can hold (review R8, R8-07). The plugin builds workers as ES modules and warns when another setting replaces that.
+
+### Consequences
+
+- `tools/lib/size-report.ts` measures each file in three columns (`COLUMNS`, `measure`). Each budget is a `Budget` with a size for each column. `budgetProblems` gives one problem for each column over its budget. The size report prints every column with its share of the budget.
+- The hosting guide tells developers to serve the engine's files with Brotli, and gives the gzip and uncompressed sizes of the start.
+- AGENTS.md, the README and [Benchmarks](../benchmarks.md#download-size) give the budgets in all three columns.
+- `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds the limits of each shader file of a feature that loads on first use. The size report lists those files in a section of their own.
+
+### Addendum, 5 October 2026: first-use shader files after gzip
+
+Status: decided by the owner on 2026-10-05.
+
+Environment lighting (M2-E2, #283) adds image-based light to the lit templates, so every SKIN and MORPH build grew. With it merged into M2-R11, eight skinning and morph files passed the 224 KB gzip limit. Every file stayed within the Brotli and uncompressed limits:
+
+| Largest first-use shader files | Uncompressed | gzip 9 | Brotli 11 |
+| --- | --- | --- | --- |
+| Skinning, WebGPU, 8-bit output and half precision | 1,182.3 KB | 270.0 KB | 18.7 KB |
+| Skinning, WebGL2 with the draw index, 8-bit output and half precision | 1,444.4 KB | 255.5 KB | 19.7 KB |
+| Morph, WebGL2 with the draw index, 8-bit output and half precision | 1,209.2 KB | 233.7 KB | 17.7 KB |
+| The limits until this addendum | 1,536 KB | 224 KB | 24 KB |
+
+The owner's decision: the gzip limit of each first-use shader file rises from 224 KB to 320 KB. The uncompressed limit stays 1,536 KB. The same day the owner raised the Brotli limit from 24 KB to 32 KB for the shadow filter's growth ([above](#first-use-shader-files)). The reason: browsers download over HTTPS with Brotli wherever the host offers it, and the Brotli limit holds. Only a host without Brotli sends gzip, and a file of a feature loads only on that feature's first use. 320 KB leaves about a sixth above the largest file today.
+
+`FIRST_USE_SHADER_BUDGET.gzip` in `tools/lib/size-report.ts` holds the new limit. AGENTS.md, the README, [Benchmarks](../benchmarks.md#download-size), D-51 and D-56 give it.

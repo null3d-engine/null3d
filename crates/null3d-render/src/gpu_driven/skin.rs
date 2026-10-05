@@ -61,8 +61,11 @@ use crate::frame::{
 };
 use crate::meshes::MeshStorage;
 use crate::morph::{MORPH_LOCATION, MorphTexture, morph_of};
-use crate::pipelines::DrawKey;
-use crate::skinning::{JointTexture, skin_of, skinned_format, skinned_in_vertex_shader};
+use crate::pipelines::{DrawKey, PipelineCache};
+use crate::skinning::{
+    JointTexture, SkinnedGate, skin_of, skinned_format, skinned_in_vertex_shader,
+};
+use crate::sorted::SkinnedPipeline;
 use crate::view::ViewFrame;
 
 /// The templates with SKIN builds, which skin in the vertex shader.
@@ -191,6 +194,10 @@ pub(super) struct Skinning {
     groups_stale: bool,
     /// Which of [`PIPELINES`] the GPU has.
     pipelines_made: [bool; 2],
+    /// The frame whose list created the pass's newest pipeline.
+    pipeline_frame: u32,
+    /// Whether the passes draw the skinned objects yet.
+    gate: SkinnedGate,
     joints: JointTexture,
     morph: MorphTexture,
     /// The objects that the skinning pass skins or morphs.
@@ -222,6 +229,8 @@ impl Skinning {
             table_made: 0,
             groups_stale: true,
             pipelines_made: [false; 2],
+            pipeline_frame: 0,
+            gate: SkinnedGate::default(),
             joints: JointTexture::new(ids::JOINTS),
             morph: MorphTexture::new(ids::MORPHS, ids::MORPH_WEIGHTS),
             computed: 0,
@@ -349,6 +358,51 @@ impl Skinning {
         self.object(slot).is_some_and(|object| !object.computed)
     }
 
+    /// True when the layouts leave out the object at scene slot `slot`: a skinned or morphed
+    /// object, while the pipelines that skin, morph and draw such objects are not built yet.
+    pub(super) fn hides(&self, slot: u32) -> bool {
+        !self.gate.drawn() && self.object(slot).is_some()
+    }
+
+    /// True when the GPU has each pipeline that the layout's segments skin with.
+    fn has_pipelines(&self) -> bool {
+        self.segments
+            .iter()
+            .all(|s| self.pipelines_made[s.pipeline()])
+    }
+
+    /// Lets the passes draw the skinned objects once the pass's pipelines are built, where the
+    /// skinning pass runs, and every pipeline in `waiting` is built, by `pipelines_built` (see
+    /// [`SkinnedGate`]). Returns true when they start to draw, so the layouts take them in.
+    pub(super) fn open_when_built(
+        &mut self,
+        pipelines: &PipelineCache,
+        waiting: impl Iterator<Item = u32>,
+        pipelines_built: u32,
+    ) -> bool {
+        let skinned = self.active();
+        let pass_built =
+            !self.dispatches() || (self.has_pipelines() && self.pipeline_frame <= pipelines_built);
+        self.gate.open_when_built(skinned, pipelines_built, || {
+            pass_built && pipelines.all_built(waiting, pipelines_built)
+        })
+    }
+
+    /// Lets the passes draw the skinned objects at once while the thread that draws has drawn no
+    /// frame yet, since the first frame waits for every pipeline.
+    pub(super) fn open_before_first_frame(&mut self, pipelines_built: u32) {
+        let skinned = self.active();
+        self.gate
+            .open_when_built(skinned, pipelines_built, || false);
+    }
+
+    /// Records that the layouts left the skinned objects out and asked for their pipelines.
+    pub(super) fn asked(&mut self) {
+        if self.active() {
+            self.gate.asked();
+        }
+    }
+
     /// The key of the pipeline that draws skinned or morphed object `object`, whose pair's
     /// pipeline has `key`: the pair's for the plain vertices of the mesh's skinned format, which
     /// the skinning pass writes, or the SKIN build of the pair's where the vertex shader skins.
@@ -365,6 +419,18 @@ impl Skinning {
             skinned_in_vertex_shader(key)
         } else {
             key
+        }
+    }
+
+    /// How the object at scene slot `slot`, whose pair's pipeline has `key`, draws in the
+    /// transparent pass by its skinning and morph targets.
+    pub(super) fn sorted_pipeline(&self, slot: u32, key: DrawKey) -> SkinnedPipeline {
+        match self.object(slot) {
+            None => SkinnedPipeline::NotSkinned,
+            Some(object) if self.gate.drawn() => {
+                SkinnedPipeline::Drawn(self.skinned_key(&object, key))
+            }
+            Some(object) => SkinnedPipeline::Waiting(self.skinned_key(&object, key)),
         }
     }
 
@@ -528,8 +594,13 @@ impl Skinning {
     }
 
     /// Records the creation of the pass's pipelines that the layout's segments need and the GPU
-    /// lacks. Returns true when it recorded one. Pipelines come first in a frame's list.
-    pub(super) fn create_pipeline(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+    /// lacks, in the list of `frame`. Returns true when it recorded one. Pipelines come first in a
+    /// frame's list.
+    pub(super) fn create_pipeline(
+        &mut self,
+        list: &mut DrawList,
+        frame: u32,
+    ) -> Result<bool, RecordError> {
         if !self.dispatches() {
             return Ok(false);
         }
@@ -541,6 +612,9 @@ impl Skinning {
             list.push(Op::CreateComputePipeline, &[id, template::SKIN, bits])?;
             self.pipelines_made[k] = true;
             created = true;
+        }
+        if created {
+            self.pipeline_frame = frame;
         }
         Ok(created)
     }
@@ -770,6 +844,7 @@ impl Skinning {
         self.table_made = 0;
         self.groups_stale = true;
         self.pipelines_made = [false; 2];
+        self.gate.forget_gpu();
         self.joints.forget_gpu();
         self.morph.forget_gpu();
     }

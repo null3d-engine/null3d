@@ -66,7 +66,8 @@ export type ContactCase =
 	| 'far-ground'
 	| 'far-slabs'
 	| 'far-slabs-sun-35'
-	| 'far-slabs-sun-20';
+	| 'far-slabs-sun-20'
+	| 'far-slabs-low';
 
 /** A view of the contact scene, and the most that each of its figures may reach. */
 export interface ContactLimits {
@@ -88,17 +89,20 @@ export interface ContactLimits {
  * limit sits between the figures with the casters' offset and without it, which fails each of
  * them. The rims' limits and the casting ground's share in shadow sit between the figures with the
  * offset and with a full texel for every back face, uncapped, which shadows the boxes' own tops and
- * the casting ground's top. The slab views' acne limits sit between the figures of filter reads
- * that compare with the receiver's plane and of reads that compare with its depth at its point.
+ * the casting ground's top. The acne limits of the slab views and the casting ground sit between
+ * the figures of a filter that compares each texel with the receiver's plane at the texel and of
+ * one that compares each read of four texels with one depth. The `far-slabs-low` view has the
+ * coarse texels and the 3 x 3 filter of S4's last cascade on the Low preset.
  */
 export const CONTACT_LIMITS: Readonly<Record<ContactCase, ContactLimits>> = {
 	near: { query: 'view=near', gapPixels: 0.06, rimPixels: 0.16 },
 	far: { query: 'view=far', gapPixels: 0.13, rimPixels: 0.4 },
 	turn: { query: 'view=turn', gapPixels: 0.11, rimPixels: 0.3 },
-	'far-ground': { query: 'view=far&groundCasts', shadowedPercent: 9.6 },
-	'far-slabs': { query: 'view=far&slabs&filter=5', acnePercent: 6 },
-	'far-slabs-sun-35': { query: 'view=far&slabs&filter=5&sun=35', acnePercent: 10 },
-	'far-slabs-sun-20': { query: 'view=far&slabs&filter=5&sun=20', acnePercent: 11 },
+	'far-ground': { query: 'view=far&groundCasts', shadowedPercent: 9.6, acnePercent: 1.5 },
+	'far-slabs': { query: 'view=far&slabs&filter=5', acnePercent: 1.5 },
+	'far-slabs-sun-35': { query: 'view=far&slabs&filter=5&sun=35', acnePercent: 1.5 },
+	'far-slabs-sun-20': { query: 'view=far&slabs&filter=5&sun=20', acnePercent: 1.5 },
+	'far-slabs-low': { query: 'view=far&slabs&mapSize=256', acnePercent: 1.5 },
 };
 
 /** A figure over its limit, as a problem, or nothing. */

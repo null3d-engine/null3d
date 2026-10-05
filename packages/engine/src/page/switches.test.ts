@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseSwitches } from './switches';
+import { jobWorkerCount, parseSwitches } from './switches';
 
 describe('parseSwitches', () => {
 	it('leaves every choice to the engine when the address has no switch', () => {
@@ -94,6 +94,23 @@ describe('parseSwitches', () => {
 
 	it('ignores a job worker count above the most the engine core runs', () => {
 		expect(parseSwitches('?jobs=256').jobs).toBeUndefined();
+	});
+
+	it('ignores a memory maximum outside the range that the memory option takes', () => {
+		for (const mib of [16, 255, 4097, 65_536])
+			expect([mib, parseSwitches(`?memory=${mib}`).memoryMiB]).toEqual([mib, undefined]);
+		expect(parseSwitches('?memory=4096').memoryMiB).toBe(4_096);
+	});
+
+	it('starts no more job workers than the device has logical cores', () => {
+		expect(jobWorkerCount(255, 8)).toBe(8);
+		expect(jobWorkerCount(4, 8)).toBe(4);
+		expect(jobWorkerCount(4, 0)).toBe(1);
+	});
+
+	it('leaves two cores free of job workers without the switch, and starts at least one', () => {
+		expect(jobWorkerCount(undefined, 18)).toBe(16);
+		expect(jobWorkerCount(undefined, 2)).toBe(1);
 	});
 
 	it('turns HDR color off only for ?hdr=off', () => {

@@ -1,7 +1,8 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
 // occlusion, which darkens the ambient light of the camera's opaque objects, outlines, and the
-// color grading table and the vignette, which the final pass applies after the tone mapping.
+// color grading table and the vignette, which the final pass applies after the tone mapping. The
+// core takes one exposure: the sketch's exposure times the camera exposure of its EV100.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -11,6 +12,7 @@ import { hexValue, invalidColor } from '../math/hex';
 import { type ColorInput, isComponent } from './color';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
+import { ShaderPreloads } from './shader-preloads';
 
 /**
  * How the engine maps the scene's high dynamic range color to the screen, with three.js's
@@ -34,6 +36,7 @@ const CODES: Readonly<Record<ToneMapping, number>> = {
 const SETTINGS = [
 	'toneMapping',
 	'exposure',
+	'ev100',
 	'bloom',
 	'ao',
 	'lut',
@@ -41,7 +44,11 @@ const SETTINGS = [
 	'vignette',
 	'outline',
 ] as const;
-const BLOOM_SETTINGS = ['strength', 'radius', 'threshold'] as const;
+const BLOOM_SETTINGS = ['intensity', 'threshold', 'knee', 'blend', 'weights'] as const;
+/** Each way of blending bloom's glow, by its code in the core. */
+const BLENDS = { mix: 0, add: 1, screen: 2 } as const;
+/** The levels of bloom's chain, which take a weight each. */
+const BLOOM_LEVELS = 10;
 const AO_SETTINGS = [
 	'radius',
 	'thickness',
@@ -57,25 +64,63 @@ const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
 const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
 
+/** The lowest and highest EV100 that `post.set` takes. */
+const EV100_MIN = -20;
+const EV100_MAX = 30;
+
 /**
- * Bloom's settings, with the meanings of three.js's `UnrealBloomPass`. A setting that a call leaves
- * out keeps its value.
+ * The exposure of a camera set to `ev100`: 1 / (1.2 × 2^EV100), the formula of Filament, Bevy,
+ * Godot and Unity's HDRP, from the saturation-based sensitivity of ISO 12232. The brightest
+ * luminance that the camera shows without clipping is 1.2 × 2^EV100 nits, which becomes 1.
+ */
+export function exposureOfEv100(ev100: number): number {
+	return 1 / (1.2 * 2 ** ev100);
+}
+
+/**
+ * How bloom's glow meets the scene's color. The `'mix'` blend moves each pixel's color toward the
+ * glow by the intensity, which keeps the image's total light. The `'add'` blend adds the glow, as
+ * three.js's `UnrealBloomPass` does. The `'screen'` blend screens it, as pmndrs's `BloomEffect`
+ * does.
+ *
+ * @category api/post
+ */
+export type BloomBlend = 'mix' | 'add' | 'screen';
+
+/**
+ * Bloom's settings. Bloom blurs the scene's color through a chain of up to 10 levels, each half
+ * the size of the one before. It blends their sum into the image. A setting that a call leaves out keeps its
+ * value.
  *
  * @category api/post
  */
 export interface BloomSettings {
-	/** How bright the glow is: 0 or more, and 1 by default. */
-	strength?: number;
 	/**
-	 * How far the glow spreads, from 0 to 1: higher values move its light from the narrow levels
-	 * of its blur to the wide ones. It is 0.5 by default.
+	 * How strong the glow is: 0 or more, and 0.15 by default. With the `'mix'` blend it is the
+	 * glow's share of each pixel, at most 1. With `'add'` and `'screen'` it multiplies the glow.
 	 */
-	radius?: number;
+	intensity?: number;
 	/**
-	 * The luminance from which a pixel glows, in linear color before the exposure: 0 or more, and 1
-	 * by default. At 1, only colors brighter than white glow, such as strong emissive light.
+	 * The luminance from which a pixel glows, in linear color before the exposure: 0 or more, and 0
+	 * by default, so all light glows a little. At 1, only colors brighter than white glow, such as
+	 * strong emissive light.
 	 */
 	threshold?: number;
+	/**
+	 * The width of the threshold's soft edge, in luminance: 0 or more, and 0.1 by default. A pixel
+	 * glows more as its luminance rises from the threshold to the threshold plus this width.
+	 */
+	knee?: number;
+	/** How the glow meets the scene's color. It is `'mix'` by default. */
+	blend?: BloomBlend;
+	/**
+	 * Each level's share of the glow, from the narrowest level to the widest: up to 10 numbers of 0
+	 * or more, not all 0. The engine divides them by their sum, and a missing level takes 0. Each
+	 * level spreads light twice as far as the one before: the eighth over about a quarter of the
+	 * canvas's shorter side, and the tenth over all of it. Levels past the last one with a weight
+	 * cost nothing. The default gives 8 levels weights, most to the narrow ones, for a soft glow.
+	 */
+	weights?: readonly number[];
 }
 
 /**
@@ -177,13 +222,22 @@ export interface PostSettings {
 	toneMapping?: ToneMapping;
 	/**
 	 * Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does:
-	 * 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default.
+	 * 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. With
+	 * `ev100`, it scales the camera's exposure, as exposure compensation does.
 	 */
 	exposure?: number;
 	/**
-	 * Light that spreads from the brightest parts of the scene, as three.js's `UnrealBloomPass`
-	 * spreads it. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It
-	 * is off by default.
+	 * The camera's exposure value at ISO 100, for lights in real units: 15 suits a sunny day lit by
+	 * a sun of 100,000 lux, 12 an overcast day, and 7 a lit room. It scales the scene's color by
+	 * 1 / (1.2 × 2^ev100), as Filament and Bevy do, so each step up is one stop darker. It is a
+	 * number from -20 to 30, and `false`, the default, turns it off, which leaves three.js's
+	 * units.
+	 */
+	ev100?: number | false;
+	/**
+	 * Light that spreads from the bright parts of the scene through a chain of blurred levels.
+	 * Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by
+	 * default. Its glow keeps its size as a share of the canvas at any pixel ratio and render scale.
 	 */
 	bloom?: BloomSettings | false;
 	/**
@@ -246,6 +300,9 @@ function writeColor(values: Float32Array, place: number, color: ColorInput, call
  */
 export class Post {
 	private toneMapping = C.TONE_MAPPING_ACES;
+	/** The sketch's exposure, before the camera exposure of `ev100` scales it. */
+	private exposure = 1;
+	private ev100: number | false = false;
 	private bloom = false;
 	private warnedNoBloom = false;
 	private ao = false;
@@ -271,6 +328,8 @@ export class Post {
 		private readonly core: CoreMemory,
 		private readonly hdrEffects = true,
 		private readonly occlusionTargets = true,
+		/** Asks for bloom's and ambient occlusion's shader files when they turn on. */
+		private readonly shaders = new ShaderPreloads(),
 	) {}
 
 	/**
@@ -282,13 +341,21 @@ export class Post {
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, bloom, ao, lut, lutIntensity, vignette, outline } = settings;
+		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+			settings;
 		const { core } = this;
 		const { glue } = core;
 		const values = this.block();
+		const sketchExposure = exposure ?? this.exposure;
+		const cameraEv100 = ev100 ?? this.ev100;
+		const exposed =
+			cameraEv100 === false ? sketchExposure : sketchExposure * exposureOfEv100(cameraEv100);
+		if (DEV) checkNumber('the exposure times the camera exposure of ev100', exposed);
+		this.exposure = sketchExposure;
+		this.ev100 = cameraEv100;
+		values[C.POST_VALUE_EXPOSURE] = exposed;
 		if (toneMapping !== undefined && Object.hasOwn(CODES, toneMapping))
 			this.toneMapping = CODES[toneMapping];
-		if (exposure !== undefined) values[C.POST_VALUE_EXPOSURE] = exposure;
 		core.check(glue.setOutput(this.toneMapping), 'post.set', undefined, true);
 		if (lut !== undefined || lutIntensity !== undefined) {
 			if (lut !== undefined) this.lut = lut;
@@ -329,9 +396,15 @@ export class Post {
 		if (bloom === undefined) return;
 		this.bloom = bloom !== false;
 		if (bloom !== false) {
-			if (bloom.strength !== undefined) values[C.POST_VALUE_BLOOM_STRENGTH] = bloom.strength;
-			if (bloom.radius !== undefined) values[C.POST_VALUE_BLOOM_RADIUS] = bloom.radius;
-			if (bloom.threshold !== undefined) values[C.POST_VALUE_BLOOM_THRESHOLD] = bloom.threshold;
+			const { intensity, threshold, knee, blend, weights } = bloom;
+			if (intensity !== undefined) values[C.POST_VALUE_BLOOM_INTENSITY] = intensity;
+			if (threshold !== undefined) values[C.POST_VALUE_BLOOM_THRESHOLD] = threshold;
+			if (knee !== undefined) values[C.POST_VALUE_BLOOM_KNEE] = knee;
+			if (blend !== undefined && Object.hasOwn(BLENDS, blend))
+				values[C.POST_VALUE_BLOOM_BLEND] = BLENDS[blend];
+			if (weights !== undefined)
+				for (let level = 0; level < BLOOM_LEVELS; level++)
+					values[C.POST_VALUE_BLOOM_WEIGHTS + level] = weights[level] ?? 0;
 		}
 		if (DEV && this.bloom && !this.hdrEffects && !this.warnedNoBloom) {
 			this.warnedNoBloom = true;
@@ -339,6 +412,7 @@ export class Post {
 				'null3D: bloom stays off on this device: it needs HDR color, and the device has no HDR target. See the post-processing concepts page.',
 			);
 		}
+		if (this.bloom && this.hdrEffects) this.shaders.need('bloom');
 		core.check(glue.setBloom(this.bloom), 'post.set', undefined, true);
 	}
 
@@ -357,6 +431,7 @@ export class Post {
 			if (ao.intensity !== undefined) values[C.POST_VALUE_AO_INTENSITY] = ao.intensity;
 		}
 		const on = this.ao && this.occlusionTargets;
+		if (on) this.shaders.need('ao');
 		if (DEV && this.ao && !this.occlusionTargets && !this.warnedNoAo) {
 			this.warnedNoAo = true;
 			console.warn(
@@ -413,9 +488,10 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, bloom, ao, lut, lutIntensity, vignette and outline.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette and outline.`,
 			);
-	const { toneMapping, exposure, bloom, ao, lut, lutIntensity, vignette, outline } = settings;
+	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+		settings;
 	checkGroup(
 		'ao',
 		ao,
@@ -457,11 +533,42 @@ function checkSettings(settings: PostSettings): void {
 			`post.set() got the tone mapping ${JSON.stringify(toneMapping)}, which is not ${TONE_MAPPINGS}.`,
 		);
 	checkNumber('exposure', exposure);
-	checkGroup('bloom', bloom, BLOOM_SETTINGS, 'strength, radius and threshold');
+	checkEv100(ev100);
+	checkGroup('bloom', bloom, BLOOM_SETTINGS, 'intensity, threshold, knee, blend and weights');
 	if (!bloom) return;
-	checkNumber('bloom.strength', bloom.strength);
-	checkNumber('bloom.radius', bloom.radius, 1);
+	checkNumber('bloom.intensity', bloom.intensity);
 	checkNumber('bloom.threshold', bloom.threshold);
+	checkNumber('bloom.knee', bloom.knee);
+	if (bloom.blend !== undefined && !Object.hasOwn(BLENDS, bloom.blend))
+		throw new EngineError(
+			'E1213',
+			`post.set() got the bloom blend ${JSON.stringify(bloom.blend)}, which is not 'mix', 'add' or 'screen'.`,
+		);
+	const { weights } = bloom;
+	if (weights === undefined) return;
+	if (!Array.isArray(weights) || weights.length < 1 || weights.length > BLOOM_LEVELS)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${String(weights)} for bloom.weights, which takes a list of 1 to ${BLOOM_LEVELS} numbers.`,
+		);
+	for (const weight of weights) checkNumber('a bloom weight', weight);
+	if (!weights.some((weight) => weight > 0))
+		throw new EngineError(
+			'E1213',
+			'post.set() got bloom weights that are all 0. Give at least one level a weight above 0.',
+		);
+}
+
+/** Throws E1203 for an EV100 that is not a number or `false`, and E1213 for one out of its range. */
+function checkEv100(ev100: number | false | undefined): void {
+	if (ev100 === undefined || ev100 === false) return;
+	if (typeof ev100 !== 'number' || !Number.isFinite(ev100))
+		throw new EngineError('E1203', `post.set() got ${String(ev100)} for ev100.`);
+	if (ev100 < EV100_MIN || ev100 > EV100_MAX)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${ev100} for ev100, outside ${EV100_MIN} to ${EV100_MAX}.`,
+		);
 }
 
 /**
