@@ -180,6 +180,18 @@ These are the medians of 5 loads, Chrome on Slow 4G, WebGL2, with the first fram
 
 The S24+ gained about 0.3 s, but main's core had grown from about 249 KB to 267 KB after Brotli since 1533939f, which costs about 0.11 s. Three modes still miss 4.5 s, by 1 to 29 ms. On the phone the core's request now goes out at 1.31 s. From its first byte at about 1.88 s the link stays full until the core ends, so each KB taken off the start saves about 6.5 ms.
 
+With #306 (M2-R14 and M2-R11) merged in as well, the start downloads about 6 KB less, and every mode passes on the S24+ (same command, 5 October 2026). The margin is 11 to 61 ms:
+
+| Thread mode | S24+ cold | S24+ warm |
+| --- | --- | --- |
+| Pipelined | 4,489 ms | 939 ms |
+| Low latency | 4,464 ms | 976 ms |
+| Single-threaded | 4,439 ms | 951 ms |
+| Drawing on the main thread | 4,476 ms | 944 ms |
+| Sketch on the main thread | 4,454 ms | 954 ms |
+
+About 2 KB more at the start would push the pipelined mode over its target again.
+
 ### The allocation fix for S4
 
 The allocation budgets were set on S1, and S4 is the first scene with shadow passes in the check. A heap profile of each place, and the browser's log of the code it compiles and throws away, found three causes. Two were in the engine and one in the benchmark sketch. [Implementation notes](implementation-notes.md#hot-paths-without-allocation) holds the habit that each one taught.
