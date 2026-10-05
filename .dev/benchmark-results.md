@@ -238,7 +238,7 @@ The archive also keeps runs that compare no engine with three.js. Their records 
 - Scale searches (`-scale`): the counts that each three.js renderer held, step by step.
 - Governor, soak and startup runs: the device runner's report of each runner, and each page's result without images and long lists.
 - Gate runs (`-gate`): each step's figure and verdict, and the benchmark runs that the timing steps made.
-- Runs of null3D's pages alone, such as the WebGL call timing pages and the depth prepass pages.
+- Runs of null3D's pages alone, such as the WebGL call timing pages and the depth prepass pages. The runs of S4 with the band between shadow cascades on and off are of this kind ([D-73](decisions/D-73-cascade-blend.md)): `20261005-094430-bench` to `20261005-095758-bench`.
 
 ## Add a run
 
