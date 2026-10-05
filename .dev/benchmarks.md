@@ -228,6 +228,13 @@ A run folder holds every page's full result, with frames and images, and stays o
 - Phones and tablets first find S5's own scale: `bun tests/real-browsers.ts --plan scale --scenes s5 --allow-no-webgpu --android chrome` ([Device sessions](devices.md#android-phone)). Then run the bench plan at that count: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s5 --pages null3d-webgl2,threejs-webgl,scene-code --n <count>`.
 - On the iPad: `bun tests/real-browsers.ts --plan scale --scenes s5 --lan ipad-safari`, then `--plan bench --lan ipad-safari --scenes s5 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code --n <count>`.
 
+### Skinning in S5
+
+- The page kinds `null3d-webgpu-skin-full`, `-skin-skip`, `-skin-narrow` and `-skin-vertex` start null3D on WebGPU with the matching `?skinning=` switch. They turn the skinning pass's two savings off one at a time, or skin in the vertex shader of each pass ([D-20](decisions/D-20-webgpu-skinning.md)).
+- Every knight walks in every frame, so the pass's skip of still poses saves nothing in S5 as it stands. `?still=<share>` makes that share of the knights stand still in their first pose, spread evenly through the crowd. Only null3D's page reads it, so it is not part of the comparison with three.js.
+- WebGPU keeps 20 bytes of skinned vertices per Knight vertex: positions as floats, 8-bit normals and 16-bit texture coordinates. S5's 500 knights of 4,957 vertices take 49.6 MB, against 69.4 MB with 32-bit normals.
+- On the Mac: `bun run bench:run --scenes s5 --pages null3d-webgpu,null3d-webgpu-skin-full,null3d-webgpu-skin-skip,null3d-webgpu-skin-narrow,null3d-webgpu-skin-vertex --switches "governor=off&preset=high"`, then again with `still=0.5` in the switches.
+
 ## Shadows
 
 - `?shadows=<n>` on S2's pages turns on the sun's shadows, and every node casts and receives them. null3D draws them in n cascades, from 1 to 4, and three.js in one map. Both maps have 2,048 texels on each side (`SHADOWS` in `bench/scenes/spec.ts`), and three.js's map covers a box around the whole forest.

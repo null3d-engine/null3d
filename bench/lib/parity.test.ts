@@ -429,6 +429,10 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-skin-vertex',
+			'null3d-webgpu-skin-full',
+			'null3d-webgpu-skin-skip',
+			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -489,6 +493,10 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-skin-vertex',
+			'null3d-webgpu-skin-full',
+			'null3d-webgpu-skin-skip',
+			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -507,6 +515,10 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
 			'webgl2',
 			'webgl2',
 		]);

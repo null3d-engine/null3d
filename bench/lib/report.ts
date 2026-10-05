@@ -368,6 +368,10 @@ const NULL3D_PAGES = [
 	['null3d-webgl2-half', 'WebGL2 at half precision', 'threejs-webgl'],
 	['null3d-webgpu-prepass', 'WebGPU with the depth prepass', 'threejs-webgpu'],
 	['null3d-webgl2-prepass', 'WebGL2 with the depth prepass', 'threejs-webgl'],
+	['null3d-webgpu-skin-vertex', 'WebGPU skinning in the vertex shader', 'threejs-webgpu'],
+	['null3d-webgpu-skin-full', 'WebGPU skinning without its savings', 'threejs-webgpu'],
+	['null3d-webgpu-skin-skip', 'WebGPU skinning with the pose skip only', 'threejs-webgpu'],
+	['null3d-webgpu-skin-narrow', 'WebGPU skinning with 8-bit normals only', 'threejs-webgpu'],
 ] as const;
 
 const percent = (share: number) => `${(share * 100).toFixed(0)}%`;

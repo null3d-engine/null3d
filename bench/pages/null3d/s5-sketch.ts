@@ -9,7 +9,9 @@
 //
 // With `?demo`, the page is the playable demo: the stats overlay shows the frame's phases, the GPU
 // path and the preset; dragging turns the camera around the crowd, the wheel or a pinch zooms, and
-// Space pauses and resumes the crowd.
+// Space pauses and resumes the crowd. With `?still=<share>`, that share of the knights, spread
+// evenly through the crowd, stand still in their first pose, as characters that wait do. WebGPU
+// skins a still pose no more, so the switch measures what that saves; the three.js twin has none.
 import { createOrbitControls } from '@null3d/controls';
 import { type Animator, defineSketch, type Object3D } from '@null3d/engine';
 import {
@@ -45,6 +47,12 @@ export default defineSketch(async (context) => {
 	});
 
 	const data = createS5(readCount(import.meta.url) || S5_DEFAULT_COUNT);
+	const stillShare = Math.min(
+		1,
+		Math.max(0, Number(new URL(import.meta.url).searchParams.get('still') ?? 0)),
+	);
+	// Knight i stands still when the running count of still knights steps up at i.
+	const still = (i: number) => Math.floor((i + 1) * stillShare) > Math.floor(i * stillShare);
 	const knight = await assets.loadGltf(S5_MODEL_URL);
 	const characters: Object3D[] = [];
 	const animators: Animator[] = [];
@@ -61,7 +69,7 @@ export default defineSketch(async (context) => {
 		animator.play(S5_CHARACTER.walk);
 		animator.play(S5_CHARACTER.run, { layer: 1 });
 		animator.setLayerWeight(1, data.weight[i] as number);
-		animator.setTimeScale(data.rate[i] as number);
+		animator.setTimeScale(still(i) ? 0 : (data.rate[i] as number));
 		characters.push(character);
 		animators.push(animator);
 	}
@@ -71,9 +79,12 @@ export default defineSketch(async (context) => {
 	const clock = new Float64Array(1);
 	const positions = new Float64Array(data.count * 3);
 	const rotations = new Float64Array(data.count * 4);
+	// Still knights keep the place of the first move.
+	let placed = false;
 	const moveCharacters = (): void => {
 		s5CharactersAt(data, clock, positions, rotations);
 		for (let i = 0; i < data.count; i++) {
+			if (placed && still(i)) continue;
 			const character = characters[i] as Object3D;
 			character.setPosition(
 				positions[i * 3] as number,
@@ -87,6 +98,7 @@ export default defineSketch(async (context) => {
 				rotations[i * 4 + 3] as number,
 			);
 		}
+		placed = true;
 	};
 
 	if (demo) return playable();
@@ -125,7 +137,9 @@ export default defineSketch(async (context) => {
 				if (input.wasPressed('Space')) {
 					paused = !paused;
 					for (let i = 0; i < animators.length; i++)
-						(animators[i] as Animator).setTimeScale(paused ? 0 : (data.rate[i] as number));
+						(animators[i] as Animator).setTimeScale(
+							paused || still(i) ? 0 : (data.rate[i] as number),
+						);
 				}
 				if (!paused) {
 					clock[0] = (clock[0] as number) + time.dt;
