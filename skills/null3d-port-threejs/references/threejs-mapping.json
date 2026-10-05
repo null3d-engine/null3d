@@ -77,7 +77,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none', exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
+      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -538,8 +538,8 @@
       "three": "PointLight(color, intensity, distance, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createPointLight({ position, color, intensity, range, decay, castShadows, shadow })",
-      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges.",
+      "target": "scene.createPointLight({ position, color, intensity, range, decay, castShadows, shadow, intensityUnit })",
+      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. intensity stays in candela. light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by 4π as power does; setIntensity then takes lumens.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
     },
@@ -549,8 +549,8 @@
       "three": "SpotLight(color, intensity, distance, angle, penumbra, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow })",
-      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
+      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow, intensityUnit })",
+      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },

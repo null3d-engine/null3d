@@ -554,13 +554,13 @@ fn flat_either_interpolation_passes_validation_and_reaches_both_outputs() {
         program
             .vertex
             .source
-            .contains("flat out uint _vs2fs_location1;")
+            .contains("flat out highp uint _vs2fs_location1;")
     );
     assert!(
         program
             .fragment
             .source
-            .contains("flat in uint _vs2fs_location1;")
+            .contains("flat in highp uint _vs2fs_location1;")
     );
 }
 
@@ -641,6 +641,70 @@ fn a_draw_index_variant_writes_the_multi_draw_extension_and_gl_draw_id() {
     );
     let plain_wgsl = &variants["plain"].wgsl.as_ref().unwrap().source;
     assert!(!plain_wgsl.contains("draw_index"), "{plain_wgsl}");
+}
+
+/// A shader whose SKIN builds change only the vertex shader, with a helper function and a
+/// constant that only the vertex shader of those builds reads.
+const VERTEX_ONLY_BIT: &str = r"#import null3d::math
+
+struct VertexOut {
+    @builtin(position) position: vec4f,
+    @location(0) shade: f32,
+}
+
+#ifdef SKIN
+const BEND: f32 = 0.25;
+
+fn bent(position: vec3f) -> vec3f {
+    var moved = position;
+    for (var k = 0u; k < 2u; k++) {
+        moved.y += BEND * moved.x;
+    }
+    return moved;
+}
+#endif
+
+fn lit(shade: f32) -> f32 {
+    var total = 0.0;
+    for (var k = 0u; k < 2u; k++) {
+        total += shade * null3d::math::square(0.5);
+    }
+    return total;
+}
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VertexOut {
+#ifdef SKIN
+    let placed = bent(position);
+#else
+    let placed = position;
+#endif
+    return VertexOut(vec4f(placed, 1.0), placed.z);
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4f {
+    return vec4f(lit(in.shade));
+}
+";
+
+#[test]
+fn a_bit_that_changes_only_the_vertex_shader_leaves_the_fragment_shader_as_it_is() {
+    let variants = [("v", "{ permutations = [\"SKIN\"], targets = [\"glsl\"] }")];
+    let output = build(&project(VERTEX_ONLY_BIT, &variants, &[])).unwrap();
+    let program =
+        |build: &str| output.shaders["shader"][build].glsl.as_ref().unwrap()["main"].clone();
+    let (plain, skinned) = (program("v"), program("v_skin"));
+    assert_eq!(plain.fragment.source, skinned.fragment.source);
+    assert_ne!(plain.vertex.source, skinned.vertex.source);
+    assert!(
+        skinned.vertex.source.contains("BEND"),
+        "{}",
+        skinned.vertex.source
+    );
+    for text in [&plain.fragment.source, &plain.vertex.source] {
+        assert!(!text.contains("BEND") && !text.contains("bent"), "{text}");
+    }
 }
 
 #[test]
@@ -1085,17 +1149,18 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
 
 #[test]
 fn the_precision_check_finds_each_break() {
-    let good = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nuniform highp sampler2D t;\nprecision mediump float;\nvec3 f(vec3 c) {\n    vec3 a[2];\n    a[0] = c;\n    return a[0];\n}\nprecision highp float;\n";
+    let good = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nuniform highp sampler2D t;\nlayout(location = 0) out highp uvec4 color;\nprecision mediump float;\nvec3 f(vec3 c, highp int k) {\n    vec3 a[2];\n    a[0] = c * float(uint(k));\n    return a[0];\n}\nprecision highp float;\n";
     assert_eq!(precision_breaks(good, true), Vec::<String>::new());
-    let bad = "#version 300 es\n\nuniform sampler2D t;\nprecision highp float;\nvoid main() {\n    vec3 a[2] = vec3[2](b, c);\n    vec3[2] d = a;\n}\nprecision mediump float;\n";
+    let bad = "#version 300 es\n\nuniform sampler2D t;\nprecision highp float;\nvoid main() {\n    vec3 a[2] = vec3[2](b, c);\n    vec3[2] d = a;\n    uvec4 u = uvec4(0u);\n}\nprecision mediump float;\n";
     let found = precision_breaks(bad, true);
-    assert_eq!(found.len(), 6, "{found:#?}");
+    assert_eq!(found.len(), 7, "{found:#?}");
     assert!(found[0].contains("`precision highp float;` is missing"));
     assert!(found[1].contains("`precision highp int;` is missing"));
     assert!(found[2].starts_with("line 3: a sampler uniform"));
     assert!(found[3].starts_with("line 6: an array type with its size"));
     assert!(found[4].starts_with("line 7: an array type with its size"));
-    assert!(found[5].contains("ends at `mediump`"));
+    assert!(found[5].starts_with("line 8: a whole number declared without a precision"));
+    assert!(found[6].contains("ends at `mediump`"));
 }
 
 #[test]

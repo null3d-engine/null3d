@@ -1,7 +1,7 @@
 // Fresh copies of the device's shaders. Each shader's text gets a comment that no earlier start
 // used, so the browser cannot reuse a program or module that it compiled from the same text before,
 // in this page or in its shader cache on disk. Warm-up tests then time the compiles of a first visit.
-import type { DeviceShaders, GlslStage, ShaderVariant } from '../generated/shaders';
+import type { FirstUseShaders, GlslStage, ShaderVariant } from '../generated/shaders';
 
 /** A comment text that differs on every call. */
 export const freshSalt = () =>
@@ -33,7 +33,10 @@ function saltVariant(variant: ShaderVariant, salt: string): ShaderVariant {
 }
 
 /** A copy of the shaders in which every WGSL module and GLSL shader carries the comment `salt`. */
-export function saltShaders(shaders: DeviceShaders, salt: string): DeviceShaders {
+export function saltShaders<Shaders extends FirstUseShaders>(
+	shaders: Shaders,
+	salt: string,
+): Shaders {
 	return Object.fromEntries(
 		Object.entries(shaders).map(([name, variants]) => [
 			name,
@@ -44,5 +47,5 @@ export function saltShaders(shaders: DeviceShaders, salt: string): DeviceShaders
 				]),
 			),
 		]),
-	) as unknown as DeviceShaders;
+	) as unknown as Shaders;
 }

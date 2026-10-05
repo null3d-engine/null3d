@@ -17,8 +17,8 @@ export interface SizeChange {
 
 /** Each file of either build: this build's files in its order, then the files that only the base has. */
 export function compareSizes(
-	base: Readonly<Record<string, SizeEntry>>,
-	head: Readonly<Record<string, SizeEntry>>,
+	base: Readonly<Record<string, Pick<SizeEntry, 'brotli'>>>,
+	head: Readonly<Record<string, Pick<SizeEntry, 'brotli'>>>,
 ): SizeChange[] {
 	const files = [...Object.keys(head), ...Object.keys(base).filter((file) => !(file in head))];
 	return files.map((file) => ({ file, base: base[file]?.brotli, head: head[file]?.brotli }));

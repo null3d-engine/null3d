@@ -3,8 +3,9 @@
 // A vertex brings its position relative to the camera, which the core computes from the sketch's
 // 64-bit position, so lines far from the origin draw as precisely as near it. Its color is sRGB,
 // four bytes that the vertex fetch reads as values from 0 to 1. The vertex shader turns it linear,
-// and the fragment shader writes it as the mesh shaders write their colors: linear into the HDR
-// scene color, or tone mapped and encoded on the 8-bit path (the TONE_MAP builds).
+// and the fragment shader writes it times the exposure, as the mesh shaders write their colors:
+// linear into the HDR scene color, or tone mapped and encoded on the 8-bit path (the TONE_MAP
+// builds).
 #import null3d::color
 #import null3d::globals::Frame
 #import null3d::tonemap
@@ -31,5 +32,5 @@ fn vs(v: VertexIn) -> VertexOut {
 
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
-    return null3d::tonemap::finish(in.linear, in.clip.xy, frame.output);
+    return null3d::tonemap::finish(in.linear * frame.output.exposure, in.clip.xy, frame.output);
 }

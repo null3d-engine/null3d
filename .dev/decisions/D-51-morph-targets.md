@@ -73,16 +73,24 @@ The loader reads each index at its own size. The code review of 4 October 2026 (
 
 ### The shader download
 
-The MORPH bit doubles the WebGL2 mesh builds. In each start shader file they would have taken it past the file's size. So the MORPH builds go into eight shader files of their own, one for each value of the bits that a device fixes. A page loads the one it needs when its first pipeline with the MORPH bit asks for it. Until it arrives, that pipeline waits, as a custom material's pipeline waits for its shader.
+The MORPH bit doubles the WebGL2 mesh builds. In each start shader file they would have taken it past the file's size. So the MORPH builds load on first use ([D-56](D-56-first-use-shader-files.md)). The MORPH builds without SKIN go into eight morph files, one for each value of the bits that a device fixes. The builds with both bits go into the skinning file of the same bits, as a build belongs to the feature of its lowest bit that a table names. A page loads the file it needs when its first pipeline with the MORPH bit asks for it. Until it arrives, that pipeline waits, as a custom material's pipeline waits for its shader. A glTF file with morph targets on meshes without skins asks for the morph file as soon as it is parsed. WebGPU has no MORPH builds, so there a morphed mesh, and `preload: ['morph']`, load the skinning file.
 
-Sizes after Brotli at quality 11, from `bun run build` on 4 October 2026:
+Sizes from `bun run build` on 4 October 2026, before the files that load on first use, after Brotli at quality 11:
 
 | Files | Before compression | After Brotli |
 | --- | --- | --- |
 | The 12 start shader files | 1.7 to 3.4 MB | 23.2 to 24.4 KB |
 | The 8 morph shader files | 2.8 to 3.3 MB | 18.6 to 20.5 KB |
 
-The engine's other files that load later have a budget of 16 KB each. The morph shader files cannot fit it, as each holds every MORPH build of one device's bits. The owner decided on 4 October 2026 that shader files that load on first use have a limit of their own. It is the size of the start shader file, about 24 KB after Brotli. `ON_DEMAND_SHADER_BUDGET_BYTES` in `tools/lib/size-report.ts` holds it, and the size check enforces it.
+The engine's other files that load later have a budget of 16 KB each. The morph shader files cannot fit it, as each holds every MORPH build of one device's bits. The owner decided on 4 October 2026 that shader files that load on first use have a limit of their own: 24 KB after Brotli and 1,536 KB uncompressed, as one start shader file. On 5 October 2026 the owner raised it to 32 KB after Brotli and 320 KB after gzip ([D-14](D-14-js-budget.md#first-use-shader-files)). `FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts` holds it, and the size check enforces it. The morph builds are the `[first_use.morph]` feature of the shader manifest.
+
+With the builds of both bits in the skinning files, each WebGL2 skinning file held 70 builds, 34 of them with MORPH. The largest took 2,865 KB uncompressed and 428 KB after gzip, over the limits. The MORPH bit changes only the vertex shader, but each stage's text held the other stage's functions too. Each WebGL2 stage is now written from its own entry point, so the builds with and without MORPH share their fragment shaders. D-56 gives the counts and the ways weighed. Sizes after the merge of main at 62add54f, in units of 1,024 bytes:
+
+| Files | Brotli | gzip | Uncompressed |
+| --- | --- | --- | --- |
+| The 8 WebGL2 skinning files, with the builds of both bits | 16.5 to 18.2 KB | 142.9 to 179.0 KB | 1,137 to 1,271 KB |
+| The 8 morph files | 14.4 to 16.3 KB | 115.9 to 171.4 KB | 910 to 1,042 KB |
+| The 8 WebGL2 start shader files | 17.4 to 18.1 KB | 118.7 to 160.6 KB | 902 to 1,034 KB |
 
 Chrome on the MacBook Pro (M5 Max) parses and runs a morph shader file about as fast as a start shader file. The page imported each file seven times from memory, so no download counts. Medians, 4 October 2026:
 
@@ -117,7 +125,7 @@ The Rust tests cover both frame builders. On WebGPU they check the skinning pass
 - Sparse deltas in half floats in one texture, and the weights in 32-bit floats in a texture of their own, for both GPU paths.
 - WebGPU morphs in the skinning pass; WebGL2 in each pass's vertex shader under the MORPH bit, with the preset's cap.
 - Clips animate weights through joints that move no vertex.
-- The MORPH builds load on demand, in shader files whose limit is the start shader file's size.
+- The MORPH builds load on first use: those without SKIN in the morph files, and those with SKIN in the skinning files. Each file keeps to the start shader file's limits.
 - Custom materials draw morphed meshes at rest on WebGL2.
 - Color morph targets are a gap. three.js morphs vertex colors through `morphAttributes.color`, and glTF allows `COLOR_0` in a target. The engine reads targets of positions, normals and tangents. Development builds note a file's other targets, and the mesh draws them at rest. Colors would add a texel to each entry, and a color input to each template's MORPH build. No sample model or port needs them yet.
 
