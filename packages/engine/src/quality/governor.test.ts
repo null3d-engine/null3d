@@ -5,7 +5,6 @@ import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
 import {
 	BUDGET_US,
-	bloomDivisor,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
 	FRAME_US,
@@ -21,6 +20,7 @@ import {
 	RAISE_AFTER_MS,
 	SCALE_STEP,
 	SETTLE_MS,
+	SMALLEST_BLOOM_SIZE,
 	thousandths,
 	WINDOW_END,
 	WINDOW_MS,
@@ -42,12 +42,15 @@ const holds = (fps: number) => fps * 100 >= HELD_PERCENT * TARGET_CAP_HZ;
 
 type Frames = { frame: number; delay: number };
 
-/** A governor over synthetic windows of frames, and its clock. */
-function controlled(low = 500, high = FULL_SCALE, scale = high) {
+/**
+ * A governor over synthetic windows of frames, and its clock, which starts at `start` ms of the
+ * page's clock.
+ */
+function controlled(low = 500, high = FULL_SCALE, scale = high, start = 0) {
 	const controller = new Governor();
 	controller.setRange(low, high);
 	controller.scale = scale;
-	let now = 0;
+	let now = start;
 	/** Judges one window of `frames`, and returns true when the governor took a step. */
 	const judge = (frames: Frames): boolean => {
 		const before = controller.scale;
@@ -161,6 +164,14 @@ describe('the render scale steps', () => {
 	it('counts a GPU delay of two frames or more as over the budget at the full frame rate', () => {
 		const { run } = controlled();
 		expect(run(QUEUED, DROP_AFTER_MS).at(-1)).toBe(FULL_SCALE - SCALE_STEP);
+	});
+
+	it('raises one step after the same wait on a page open for more than 2^31 ms', () => {
+		// About 24.9 days, past the largest whole number of ms that 32 bits hold.
+		const { run } = controlled(500, FULL_SCALE, 700, 2 ** 31 - 1000);
+		const scales = run(EASY, RAISE_AFTER_MS + 2000);
+		expect(steps(scales, 700)).toEqual([RAISE_AFTER_MS]);
+		expect(scales.at(-1)).toBe(750);
 	});
 
 	it('raises one step only after several seconds with room to spare', () => {
@@ -346,40 +357,40 @@ describe('the shadow steps', () => {
 });
 
 describe('the bloom steps', () => {
-	it("halve bloom's samples after the shadow steps, only while bloom is on", () => {
+	it("halves bloom's base after the shadow steps, only while bloom is on", () => {
 		const { controller, untilStep } = controlled(900);
 		controller.setShadows(5, 2);
 		controller.setCasters(1, false);
-		controller.setBloom(true, 1);
+		controller.setBloom(true, 512);
 		const seen: string[] = [];
-		for (let k = 0; k < 5; k++) {
+		for (let k = 0; k < 4; k++) {
 			untilStep(SLOW);
-			seen.push(`${controller.scale} ${controller.filter} ${controller.bloomDivisor}`);
+			seen.push(`${controller.scale} ${controller.filter} ${controller.bloomHalvings}`);
 		}
-		// The scale drops twice, then the filter lightens, then bloom reads half and a quarter.
-		expect(seen).toEqual(['950 5 1', '900 5 1', '900 3 1', '900 3 2', '900 3 4']);
-		expect(controller.steps).toBe(3);
-		expect(controller.maxSteps).toBe(3);
-		// Bloom turned off takes its steps back at once, and changes what draws.
+		// The scale drops twice, then the filter lightens, then bloom's base halves once.
+		expect(seen).toEqual(['950 5 0', '900 5 0', '900 3 0', '900 3 1']);
+		expect(controller.steps).toBe(2);
+		expect(controller.maxSteps).toBe(2);
+		// Bloom turned off takes its step back at once, and changes what draws.
 		const before = controller.stepChanges;
-		controller.setBloom(false, 1);
-		expect([controller.steps, controller.bloomDivisor]).toEqual([1, 1]);
+		controller.setBloom(false, 512);
+		expect([controller.steps, controller.bloomHalvings]).toEqual([1, 0]);
 		expect(controller.stepChanges).toBe(before + 1);
 	});
 
 	it("halve ambient occlusion's scale last, while it draws at half the render size", () => {
 		const { controller, untilStep } = controlled(950);
-		controller.setBloom(true, 2);
+		controller.setBloom(true, 128);
 		controller.setAo(true, 500);
 		expect(controller.aoScale).toBe(500);
 		const seen: string[] = [];
 		for (let k = 0; k < 3; k++) {
 			untilStep(SLOW);
-			seen.push(`${controller.scale} ${controller.bloomDivisor} ${controller.aoScale}`);
+			seen.push(`${controller.scale} ${controller.bloomHalvings} ${controller.aoScale}`);
 		}
-		// The scale drops to its lowest, then bloom reads a quarter, then ambient occlusion draws at
+		// The scale drops to its lowest, then bloom's base halves, then ambient occlusion draws at
 		// a quarter.
-		expect(seen).toEqual(['950 2 500', '950 4 500', '950 4 250']);
+		expect(seen).toEqual(['950 0 500', '950 1 500', '950 1 250']);
 		expect(controller.maxSteps).toBe(2);
 		// Turned off, it takes its step back at once.
 		controller.setAo(false, 500);
@@ -391,14 +402,12 @@ describe('the bloom steps', () => {
 		expect(LOWEST_AO_SCALE).toBe(250);
 	});
 
-	it('take no step from a setting that reads a quarter already', () => {
+	it('take no step from the smallest base', () => {
 		const { controller, ladder } = controlled(950);
-		controller.setBloom(true, 4);
+		controller.setBloom(true, SMALLEST_BLOOM_SIZE);
 		expect(ladder(SLOW)).toEqual(['950 1 3']);
 		expect(controller.maxSteps).toBe(0);
-		expect(bloomDivisor(1)).toBe(1);
-		expect(bloomDivisor(0.5)).toBe(2);
-		expect(bloomDivisor(0.25)).toBe(4);
+		expect(SMALLEST_BLOOM_SIZE).toBe(64);
 	});
 });
 

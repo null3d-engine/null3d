@@ -106,7 +106,7 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 | Index buffers | 16 bits when the vertices allow | |
 | Compression | `EXT_meshopt_compression` by default, lossless; `--compression none` leaves it out | The engine decodes meshopt in its loader's worker and downloads the decoder only for such files ([D-34](D-34-meshopt-decoding.md)). glTF-Transform writes the EXT form only, which the engine reads as it reads the KHR form |
 | Levels of detail | A half, a quarter and an eighth of the triangles, under an error of a tenth of the mesh, in `MSFT_lod` | The extension that exists for levels; three.js and the engine ignore it until they read levels |
-| Texture sizes | Each side at its nearest power of two, then halved together to fit 2048 | Full mip chains, and fewer sizes for the engine's texture arrays |
+| Texture sizes | Each side at its nearest power of two, then halved together to fit 2048, and at least 4 | Full mip chains, fewer sizes for the engine's texture arrays, and whole 4 x 4 blocks, which the compressed formats need ([D-59](D-59-file-limits.md)) |
 | ETC1S | Quality 128, effort 2 | The basisu command's defaults |
 | UASTC | The default level, no rate-distortion pass, Zstandard | Normal maps keep their detail |
 

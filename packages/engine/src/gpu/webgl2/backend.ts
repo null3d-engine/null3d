@@ -20,9 +20,9 @@
 // turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
-import type { DeviceShaders } from '../../generated/shaders';
+import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
-import { ImageTable } from '../../shared/images';
+import { type GeneratorName, ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -33,6 +33,7 @@ import {
 	vertexStride,
 } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
+import type { CubeGenerator } from './environment';
 import {
 	buildPermutation,
 	createProgram,
@@ -41,7 +42,9 @@ import {
 	mipmapTemplate,
 	type Pipeline,
 	type Program,
+	type ProgramHost,
 	prepareProgram,
+	programHost,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -68,6 +71,11 @@ const CULL_BACK = 0x0405;
 const UNPACK_RING = 3;
 /** Each write's place in a pixel unpack buffer is aligned to this, the largest texel's size. */
 const UNPACK_ALIGNMENT = 16;
+/**
+ * Features whose builds vary in every material bit, tens of programs for each device. A scene's
+ * materials draw with a few of them, so a preload compiles none, and `scene.warmUp()` builds those.
+ */
+const WARM_UP_FEATURES: ReadonlySet<string> = new Set(['skinning', 'morph']);
 
 /** Where drawing into the canvas goes during a capture: an offscreen stand-in of the same size. */
 export interface CanvasTarget {
@@ -360,6 +368,8 @@ export class WebGL2Backend {
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
+	/** How the texture generators draw with programs of their own. */
+	private readonly programHost: ProgramHost;
 	/**
 	 * The texture that each mip level, and each copied layer of an array, draws into before it
 	 * copies into its place, by format.
@@ -497,11 +507,19 @@ export class WebGL2Backend {
 		(this.minFilters[G.FILTER_LINEAR] as number[])[G.FILTER_LINEAR] = gl.LINEAR_MIPMAP_LINEAR;
 		this.indexType = gl.UNSIGNED_SHORT;
 		this.depth = setDepthMode(gl, depthMode);
+		this.programHost = programHost(gl, this.depth, this.parallel);
+		const host = this.programHost;
+		this.images.warmGeneratorsWith((code) =>
+			Promise.all(
+				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(host)),
+			),
+		);
 		this.depthFunc = this.nearerPasses();
 		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
 		this.clearDepth = this.depth.standard ? 0 : 1;
 		// Texel rows in engine memory are tightly packed, whatever their width.
 		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+		this.prebuildSparePrograms();
 	}
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
@@ -572,6 +590,27 @@ export class WebGL2Backend {
 		}
 		const build = buildPermutation(defined, permutation);
 		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
+	}
+
+	/**
+	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
+	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
+	 * background where the browser can, and the first frame waits for them. Skinning's and morph
+	 * targets' builds vary in every material bit, and a scene's materials draw with a few of them, so
+	 * `scene.warmUp()` builds those, as for any material.
+	 */
+	precompile(feature: string, module: FirstUseShaders): void {
+		if (WARM_UP_FEATURES.has(feature)) return;
+		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
+		for (const [name, builds] of Object.entries(module)) {
+			const variants = held?.[name];
+			if (!variants) continue;
+			this.templates.forEach((template, id) => {
+				if (template?.shader !== variants) return;
+				for (const build of Object.values(builds as ShaderVariants))
+					if (build.glsl?.[template.pipeline]) this.programOf(id, build.permutation, true);
+			});
+		}
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */
@@ -714,6 +753,9 @@ export class WebGL2Backend {
 				case G.OP_DESTROY_PIPELINE:
 					this.destroyPipeline(words[a] as number);
 					break;
+				case G.OP_GENERATE_TEXTURE:
+					this.generateTexture(words, a);
+					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
 					break;
@@ -842,14 +884,39 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** The program that draws mip levels, or the one that copies a layer, in use. */
-	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+	/**
+	 * The program that draws mip levels, or the one that copies a layer, which starts compiling the
+	 * first time.
+	 */
+	private spareProgramOf(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
 		let program = this.programs.get(key);
 		if (!program) {
 			const template = key === MIP_PROGRAM ? this.mipTemplate : this.copyTemplate;
 			program = createProgram(this.gl, template, 0);
 			this.programs.set(key, program);
 		}
+		return program;
+	}
+
+	/**
+	 * Starts compiling the programs that draw mip levels and copy layers, so that the driver can
+	 * compile them before the first texture upload needs them. Nothing waits for their link here.
+	 * A program that fails to start is made again at first use, which reports the failure.
+	 */
+	private prebuildSparePrograms(): void {
+		for (const key of [MIP_PROGRAM, COPY_PROGRAM] as const) {
+			try {
+				this.spareProgramOf(key);
+			} catch {}
+		}
+	}
+
+	/**
+	 * The program that draws mip levels, or the one that copies a layer, in use. Its first use
+	 * waits for its link when the driver has not finished it.
+	 */
+	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+		const program = this.spareProgramOf(key);
 		this.useProgram(program);
 		return program;
 	}
@@ -1384,6 +1451,40 @@ export class WebGL2Backend {
 			this.copyFromSpare(texture, level, 0, 0, layer, 0, 0, width, height);
 		}
 		this.endSpareDraws(texture);
+	}
+
+	/**
+	 * Runs a slice of the work of a generator that the table holds, which fills a cube texture on
+	 * the GPU. The generator draws full-screen triangles with no depth test, culling, scissor or
+	 * blending, and writes every channel. It changes bindings that the state cache holds, so the
+	 * cache forgets them, and the next draws bind what they need again.
+	 */
+	private generateTexture(words: Uint32Array, a: number): void {
+		const texture = this.textureOf(words[a] as number);
+		const generator = words[a + 1] as number;
+		const [name, generators] =
+			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
+		this.setScissorTest(false);
+		this.setDepthTest(false);
+		this.setCullFace(0);
+		this.setColorMask(true);
+		if (this.blend) this.setBlend(0);
+		this.useVertexArray(null);
+		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
+		generators[name].run(
+			this.programHost,
+			texture.texture as WebGLTexture,
+			texture.width,
+			texture.mips,
+			words[a + 2] as number,
+			words[a + 3] as number,
+		);
+		this.program = null;
+		this.activeUnit = -1;
+		this.unitTextures.length = 0;
+		this.blockBuffers.length = 0;
+		this.viewport.fill(-1);
+		this.samplersChanged = true;
 	}
 
 	/**

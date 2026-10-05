@@ -24,6 +24,7 @@ import {
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
+	MATERIAL_PARAM_ENV_INTENSITY,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
@@ -54,6 +55,7 @@ import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
+import { ShaderPreloads } from './shader-preloads';
 import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -64,6 +66,7 @@ import type { TextureValues, UniformType, UniformValue, UniformValues } from './
  * @category api/geometry
  */
 export class MeshGeometry {
+	/** @internal */
 	constructor(
 		/** @internal */ readonly id: number,
 		/** The distance from the mesh's origin to its farthest vertex, at rest. */
@@ -675,6 +678,12 @@ export interface StandardValues extends MaterialOptions {
 	aoMapIntensity?: number;
 	/** The factor of the light map's light: 0 or more. The default is 1. */
 	lightMapIntensity?: number;
+	/**
+	 * The factor of the scene environment's light on the surface, 0 or more, as three.js's
+	 * `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The
+	 * default is 1.
+	 */
+	envIntensity?: number;
 	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
 	uvTransform?: UvTransform;
 }
@@ -896,7 +905,8 @@ type Ranged =
 	| 'roughness'
 	| 'emissiveIntensity'
 	| 'aoMapIntensity'
-	| 'lightMapIntensity';
+	| 'lightMapIntensity'
+	| 'envIntensity';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -917,6 +927,7 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 		Number.POSITIVE_INFINITY,
 		'lightMapIntensity',
 	],
+	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
 ];
 
 /** The core's slot of each map option. */
@@ -1178,6 +1189,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The engine core's id, or 0 once the material is destroyed. */
 	private liveId: number;
 
+	/** @internal */
 	constructor(
 		id: number,
 		/** @internal */ readonly core: CoreMemory,
@@ -1273,10 +1285,13 @@ export class Materials {
 	private readonly templates = new WeakMap<CompiledWgsl, number>();
 	private nextTemplate = SHADING_CUSTOM_FIRST;
 
+	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,
 		/** Sends each custom material's shader to the thread that draws, once. */
 		private readonly sendShader: ShaderSender = () => {},
+		/** @internal Asks the thread that draws for the shader files of features early. */
+		readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
 
 	/**

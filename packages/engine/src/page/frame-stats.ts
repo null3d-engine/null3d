@@ -67,8 +67,8 @@ export interface FrameSummary {
 	/**
 	 * GPU time per frame, where the device has timestamp queries: from the frame's first command to
 	 * the end of its last pass. Where the browser cannot time the commands before the first pass,
-	 * the time starts at the first pass. The engine times one frame in eight, which keeps the cost
-	 * of measuring small.
+	 * the time starts at the first pass. The engine times one frame in eleven, which keeps the cost
+	 * of measuring small and takes in every turn of the far shadow cascades.
 	 */
 	gpuMs: Percentiles | null;
 	/**

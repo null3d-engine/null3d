@@ -1598,6 +1598,17 @@ describe('the startup plan', () => {
 });
 
 describe('parseArgs', () => {
+	it('runs no Brave in bun run devices, while a run can still name it', async () => {
+		const scripts = (await Bun.file(join(import.meta.dir, '../../package.json')).json()).scripts;
+		const devices = String(scripts.devices).split(' && ').at(-1)!.split(' ').slice(2);
+		expect(devices.join(' ')).not.toContain('brave');
+		expect(parseArgs(devices)).toMatchObject({ android: ['chrome'], lan: ['ipad-safari'] });
+		expect(parseArgs(['--android', 'brave', '--lan', 'ipad-brave'])).toMatchObject({
+			android: ['brave'],
+			lan: ['ipad-brave'],
+		});
+	});
+
 	it('reads the plan, the flags, the device lists and the macOS apps', () => {
 		expect(
 			parseArgs([
@@ -1611,7 +1622,7 @@ describe('parseArgs', () => {
 		).toEqual({
 			plan: 'checks',
 			missing: { webgpu: true, webgl2: false },
-			mac: ['Safari'],
+			apps: ['Safari'],
 			android: ['chrome', 'brave'],
 			lan: ['ipad-safari'],
 			cloud: [],

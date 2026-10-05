@@ -133,7 +133,7 @@ Materials:
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
-Lighting and shadows: surfaces show one directional light, the ambient lights, and point and spot lights through clustered lighting. Hemisphere lights light surfaces from 0.2; until then, use an ambient light for fill. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas, and a point light six, on High and Ultra only. A tile draws again only when its light or a caster in its range moves. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
+Lighting and shadows: surfaces show one directional light, the ambient lights, and point and spot lights through clustered lighting. Hemisphere lights light surfaces from 0.2; until then, use an ambient light for fill. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas, and a point light six, on High and Ultra only. A tile draws again only when its light or a caster in its range moves. Shadow quality follows the preset. An environment gives standard materials reflections and soft diffuse light (0.2): `scene.setEnvironment(await assets.builtinEnvironment('room'))` for neutral studio light, or a file that `bunx @null3d/cli assets env` makes from an HDR image. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
 
 Interaction:
 
@@ -152,8 +152,8 @@ Effects:
 
 | Need | Use | Docs |
 | --- | --- | --- |
-| Tone mapping and exposure | `post.set({ toneMapping, exposure })` | `api/post` |
-| Bloom | `post.set({ bloom: { strength, radius, threshold } })` (0.2) | `api/post`, `concepts/post-processing` |
+| Tone mapping and exposure | `post.set({ toneMapping, exposure })`; `ev100` (0.2) for lights in real units | `api/post` |
+| Bloom | `post.set({ bloom: { intensity, threshold, knee, blend, weights } })` (0.2); quality setting `bloomSize` | `api/post`, `concepts/post-processing` |
 | Color grading from a `.cube` or `.3dl` file, and a vignette | `post.set({ lut: await assets.loadLut(url), vignette: { offset, darkness } })` (0.2) | `api/post`, `api/assets` |
 | Outlines around chosen meshes | `post.set({ outline: { color, width } })` and `mesh.setOutlined(true)` (0.2) | `api/post`, `api/objects` |
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
@@ -186,6 +186,7 @@ rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface read
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Add the null3D Vite plugin to `vite.config.ts`, or set the COOP and COEP headers on the host (`getting-started/hosting`) |
+| The production build's worker files are tens of MB each, or Vite warns that workers do not build as ES modules | The build runs without the null3D Vite plugin, or another setting replaced its worker format | Add the plugin to `vite.config.ts`, and leave `worker.format` unset (`getting-started/install`) |
 | An object does not move, or a development build logs E1110 | A static object changed without a setter | Use the setter, or create it with `dynamic: true` |
 | Colors too dark or washed out | Wrong texture color space | `colorSpace: 'srgb'` for color maps, `'linear'` for data maps (`concepts/color-management`) |
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |

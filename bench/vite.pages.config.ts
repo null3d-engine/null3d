@@ -27,7 +27,7 @@ export default defineConfig({
 	// Relative addresses, so the build works under any address prefix, such as a load route's.
 	base: './',
 	// The crowd scene imports its model from the sample content, which the null3D plugin optimizes.
-	plugins: [null3d(), samplesServer(root)],
+	plugins: [null3d({ urlSwitches: true }), samplesServer(root)],
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	logLevel: 'warn',

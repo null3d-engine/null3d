@@ -6,6 +6,7 @@
 mod common;
 
 use common::{World, count};
+use null3d_core::animation::{Channel, Interpolation, Play, SourceTrack, resample};
 use null3d_core::lights::{LightTable, kind};
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{NO_TARGET, Op, format, view};
@@ -14,7 +15,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::GpuDrivenRenderer;
 use null3d_render::light_grid::LightGrid;
-use null3d_render::shadow_tiles::{ShadowTiles, TileSettings};
+use null3d_render::shadow_tiles::{MAX_REDRAWS, ShadowTiles, TileSettings};
 use null3d_render::view::ViewId;
 
 /// Two tiles of 256 texels, without point light shadows.
@@ -278,8 +279,8 @@ const POINT_TILES: TileSettings = TileSettings {
     point_shadows: true,
 };
 
-/// Checks that a point light draws six tiles, then none while the scene stands still, and six again
-/// when a caster in its range moves, on either builder.
+/// Checks that a point light draws six tiles, then none while the scene stands still, and the tile of
+/// the one face that a caster below it touches when the caster moves, on either builder.
 fn a_point_light_draws_six_tiles_when_its_casters_move<B: Tiles>(renderer: B) {
     let mut world = world(renderer, POINT_TILES);
     let lit_box = world.objects[0];
@@ -294,7 +295,7 @@ fn a_point_light_draws_six_tiles_when_its_casters_move<B: Tiles>(renderer: B) {
     assert_eq!(depth_passes(&still), 0);
     world.scene.set_position(lit_box, [-3.0, 0.2, 0.0]).unwrap();
     let moved = step(&mut world, &mut mock, false);
-    assert_eq!(depth_passes(&moved), 6);
+    assert_eq!(depth_passes(&moved), 1);
     // Its record names its first tile, and the tiles' block says that it has six.
     let row = world.lights[0].light;
     assert_eq!(world.renderer.grid().lights()[0].shadow, 1.0);
@@ -375,4 +376,254 @@ fn a_point_light_beyond_the_budget_casts_none_and_a_spot_light_takes_a_tile() {
     // Six tiles do not fit five, so only the spot light casts.
     assert_eq!(world.renderer.tiles().shape().unwrap().layers, 5);
     assert_eq!(world.renderer.tiles().drawn(), 1);
+}
+
+/// The tiles among the first `count` that the frame planned last draws.
+fn drawn_tiles<B: Tiles>(world: &World<B>, count: usize) -> Vec<usize> {
+    let tiles = world.renderer.tiles();
+    (0..count).filter(|&t| tiles.frame(t).is_some()).collect()
+}
+
+/// Checks that a caster that moves near a point light redraws only the faces of the cube that it
+/// touches, before or after its move, on either builder.
+fn a_moved_caster_redraws_only_the_faces_it_touches<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, POINT_TILES);
+    let [lit_box, _, ball, _] = world.objects[..] else {
+        panic!("four objects")
+    };
+    world.add_point([-3.0, 3.0, 0.0], 5.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    assert_eq!(world.renderer.tiles().drawn(), 6);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // The box stands straight below the light, inside the -y face alone.
+    world.scene.set_position(lit_box, [-3.0, 0.2, 0.0]).unwrap();
+    let moved = step(&mut world, &mut mock, false);
+    assert_eq!(drawn_tiles(&world, 6), [3], "the -y face");
+    assert_eq!(depth_passes(&moved), 1);
+
+    // The ball moves from +x and below the light to straight beside it: the +x and -y faces.
+    world.scene.set_position(ball, [1.0, 2.5, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(drawn_tiles(&world, 6), [0, 3]);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+#[test]
+fn webgpu_a_moved_caster_redraws_only_the_faces_it_touches() {
+    a_moved_caster_redraws_only_the_faces_it_touches(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_a_moved_caster_redraws_only_the_faces_it_touches() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        a_moved_caster_redraws_only_the_faces_it_touches(CpuCulledRenderer::new(config));
+    }
+}
+
+#[test]
+fn faces_outside_the_camera_s_view_wait_until_they_come_into_it() {
+    let mut world = world(GpuDrivenRenderer::new(Default::default()), POINT_TILES);
+    // The camera at z = 20 looks down -z. The light stands 5 m behind it, and its range reaches
+    // 5 m into the view, through its -z face alone.
+    world.add_point([0.0, 0.0, 25.0], 10.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    assert_eq!(drawn_tiles(&world, 6), [5], "the -z face");
+    assert_eq!(world.lights.len(), 1);
+    assert_eq!(world.renderer.grid().lights()[0].shadow, 1.0);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // The camera turns to face the light: the five faces that waited draw now, and the one that
+    // drew does not draw again.
+    world.aim([0.0, 0.0, 20.0], std::f32::consts::PI, 0.0);
+    step(&mut world, &mut mock, false);
+    assert_eq!(drawn_tiles(&world, 6), [0, 1, 2, 3, 4]);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+/// Checks that a caster whose layers stop sharing a bit with its light's draws the light's tile
+/// again, as its shadow goes, and again when they share one once more, on either builder.
+fn a_caster_s_layer_change_draws_its_light_s_tile<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let lit_box = world.objects[0];
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+    for layers in [0b10, 0b11] {
+        world
+            .scene
+            .apply_commands(&[Command::set_layers(lit_box, layers)], world.frame + 1)
+            .unwrap();
+        let structure = world.scene.take_structure_changed();
+        step(&mut world, &mut mock, structure);
+        assert_eq!(world.renderer.tiles().drawn(), 1, "layers {layers:#b}");
+        step(&mut world, &mut mock, false);
+        assert_eq!(world.renderer.tiles().drawn(), 0);
+    }
+}
+
+#[test]
+fn webgpu_a_caster_s_layer_change_draws_its_light_s_tile() {
+    a_caster_s_layer_change_draws_its_light_s_tile(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_a_caster_s_layer_change_draws_its_light_s_tile() {
+    a_caster_s_layer_change_draws_its_light_s_tile(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    ));
+}
+
+/// Checks that a skinned caster that stands still while its clip moves an inner joint draws its
+/// light's tile in each frame whose pose changed, though its bounding sphere stays the same, and
+/// in no other, on either builder.
+fn a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let column = world.add_skinned([-3.0, -1.0, 0.0]);
+    // The middle joint steps up a quarter of a meter for half a second, and its child steps down
+    // as far, so the top ring stays where it is and the column's sphere does not change.
+    let animations = world.animations.as_mut().unwrap();
+    let up = [0.0, 1.0, 0.0, 0.0, 1.25, 0.0, 0.0, 1.0, 0.0];
+    let down = [0.0, 1.0, 0.0, 0.0, 0.75, 0.0, 0.0, 1.0, 0.0];
+    let tracks = [(1, &up), (2, &down)].map(|(joint, values)| SourceTrack {
+        joint,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Step,
+        times: &[0.0, 0.5, 1.0],
+        values,
+    });
+    let clip = resample(animations.skeleton(0).unwrap(), &tracks, 30.0).unwrap();
+    let clip = animations.add_clip(0, clip).unwrap();
+    let play = Play {
+        layer: 0,
+        fade: 0.0,
+        speed: 1.0,
+        looping: true,
+        additive: false,
+    };
+    animations.play(0, clip, play).unwrap();
+    world.add_spot([-3.0, 4.0, 0.0], 8.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    let sphere = |world: &World<B>| {
+        let slot = world.scene.resolve(column).unwrap() as usize;
+        world.scene.world(world.scene.parity()).sphere(slot)
+    };
+    step(&mut world, &mut mock, false);
+    let first = sphere(&world);
+    // Two loops of the clip at 60 frames per second: the pose changes four times.
+    let mut changes = Vec::new();
+    for frame in 3..=122 {
+        step(&mut world, &mut mock, false);
+        assert_eq!(sphere(&world), first, "frame {frame}");
+        if world.renderer.tiles().drawn() > 0 {
+            changes.push(frame);
+        }
+    }
+    assert_eq!(changes.len(), 4, "{changes:?}");
+}
+
+#[test]
+fn webgpu_a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes() {
+    a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes(GpuDrivenRenderer::new(
+        Default::default(),
+    ));
+}
+
+#[test]
+fn webgl2_a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes() {
+    a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    ));
+}
+
+#[test]
+fn turning_one_light_s_shadows_off_and_on_keeps_the_atlas_and_the_graph() {
+    let three = TileSettings {
+        tiles: 3,
+        ..TWO_TILES
+    };
+    let mut world = world(GpuDrivenRenderer::new(Default::default()), three);
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let toggled = world.add_spot([1.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().shape().unwrap().layers, 2);
+    let compiles = world.renderer.render_graph().compiles();
+    let atlas_made = |commands: &[(Op, Vec<u32>)]| {
+        commands.iter().any(|(op, o)| {
+            *op == Op::CreateTexture && o[4] == format::DEPTH32_FLOAT && o[8] == view::D2_ARRAY
+        })
+    };
+    for casts in [0, flags::CAST_SHADOWS, 0, flags::CAST_SHADOWS] {
+        world
+            .scene
+            .apply_commands(
+                &[Command::set_flags(toggled, flags::CAST_SHADOWS, casts)],
+                world.frame + 1,
+            )
+            .unwrap();
+        let structure = world.scene.take_structure_changed();
+        let commands = step(&mut world, &mut mock, structure);
+        assert!(!atlas_made(&commands), "casts {casts}");
+        assert_eq!(world.renderer.tiles().shape().unwrap().layers, 2);
+        assert_eq!(world.renderer.render_graph().compiles(), compiles);
+        let lights = world.shadow_lights.len();
+        assert_eq!(lights, if casts == 0 { 1 } else { 2 });
+    }
+}
+
+/// Twenty-four tiles of 128 texels, with point light shadows.
+const FOUR_CUBES: TileSettings = TileSettings {
+    tiles: 24,
+    size: 128,
+    point_shadows: true,
+};
+
+#[test]
+fn a_burst_of_redraws_spreads_over_frames_under_the_cap() {
+    let mut world = world(GpuDrivenRenderer::new(Default::default()), FOUR_CUBES);
+    for x in [-4.5, -1.5, 1.5, 4.5] {
+        world.add_point([x, 1.5, 0.0], 6.0);
+    }
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    // Tiles that hold no depth of their light yet draw at once, whatever the cap.
+    step(&mut world, &mut mock, true);
+    assert_eq!(world.renderer.tiles().shape().unwrap().layers, 24);
+    assert_eq!(world.renderer.tiles().drawn(), 24);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // A structure change marks every tile: they draw again over two frames, the cap's worth in
+    // the first, and every light keeps its shadows meanwhile.
+    let cap = MAX_REDRAWS;
+    step(&mut world, &mut mock, true);
+    assert_eq!(world.renderer.tiles().drawn(), cap);
+    assert_eq!(world.renderer.tiles().waiting(), 24 - cap);
+    let grid = world.renderer.grid().lights();
+    assert!(grid.iter().all(|l| l.shadow > 0.0), "{grid:?}");
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 24 - cap);
+    assert_eq!(world.renderer.tiles().waiting(), 0);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
 }

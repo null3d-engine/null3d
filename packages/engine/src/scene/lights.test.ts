@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Quaternion, DirectionalLight as ThreeDirectional, Vector3 } from 'three';
+import {
+	Quaternion,
+	DirectionalLight as ThreeDirectional,
+	PointLight as ThreePoint,
+	SpotLight as ThreeSpot,
+	Vector3,
+} from 'three';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
@@ -170,6 +176,70 @@ describe('creating lights', () => {
 		expectClose(tableRow(sky).colors[C.LIGHT_COLOR_MAIN] as number[], linear(0xdfe8ff));
 		expectClose(tableRow(sky).colors[C.LIGHT_COLOR_GROUND] as number[], linear(0x404040));
 		expect(tableRow(sky).values[C.LIGHT_VALUE_INTENSITY]).toBe(0.6);
+	});
+
+	test("lights in lumens take three.js's candela for the same power, at create and in setIntensity", () => {
+		const { scene, tableRow } = fakeCore();
+		const intensity = (light: Light) => tableRow(light).values[C.LIGHT_VALUE_INTENSITY];
+		const bulb = scene.createPointLight({ range: 5, intensity: 800, intensityUnit: 'lumen' });
+		const threeBulb = new ThreePoint();
+		threeBulb.power = 800;
+		expect(intensity(bulb)).toBeCloseTo(threeBulb.intensity, 12);
+		bulb.setIntensity(1600);
+		threeBulb.power = 1600;
+		expect(intensity(bulb)).toBeCloseTo(threeBulb.intensity, 12);
+		// A spot light's lumens do not depend on its cone, as in three.js and Filament's SPOT.
+		for (const angle of [0.2, 1]) {
+			const spot = scene.createSpotLight({
+				range: 5,
+				angle,
+				intensity: 800,
+				intensityUnit: 'lumen',
+			});
+			const threeSpot = new ThreeSpot(0xffffff, 1, 5, angle);
+			threeSpot.power = 800;
+			expect(intensity(spot)).toBeCloseTo(threeSpot.intensity, 12);
+			expect(intensity(spot)).toBeCloseTo(800 / Math.PI, 12);
+		}
+		// Without an intensity, a light in lumens gives 1 lumen.
+		const dim = scene.createPointLight({ range: 5, intensityUnit: 'lumen' });
+		expect(intensity(dim)).toBeCloseTo(1 / (4 * Math.PI), 12);
+		// Without a unit, the intensity is three.js's candela.
+		const plain = scene.createPointLight({ range: 5, intensity: 800 });
+		expect(intensity(plain)).toBe(800);
+		plain.setIntensity(30);
+		expect(intensity(plain)).toBe(30);
+	});
+
+	test("lights in lux keep the intensity, as three.js's units are lux already", () => {
+		const { scene, tableRow } = fakeCore();
+		const intensity = (light: Light) => tableRow(light).values[C.LIGHT_VALUE_INTENSITY];
+		const sun = scene.createDirectionalLight({ intensity: 100_000, intensityUnit: 'lux' });
+		expect(intensity(sun)).toBe(new ThreeDirectional(0xffffff, 100_000).intensity);
+		sun.setIntensity(50_000);
+		expect(intensity(sun)).toBe(50_000);
+		const sky = scene.createHemisphereLight({ intensity: 2_000, intensityUnit: 'lux' });
+		expect(intensity(sky)).toBe(2_000);
+		const fill = scene.createAmbientLight({ intensity: 300, intensityUnit: 'lux' });
+		expect(intensity(fill)).toBe(300);
+		// Lux without an intensity leaves the core's default.
+		expect(intensity(scene.createAmbientLight({ intensityUnit: 'lux' }))).toBeUndefined();
+	});
+
+	test('a unit that the kind of light does not take throws E1213', () => {
+		const { scene } = fakeCore();
+		const units = [
+			() => scene.createPointLight({ range: 5, intensityUnit: 'lux' as 'lumen' }),
+			() => scene.createSpotLight({ range: 5, intensityUnit: 'candela' as 'lumen' }),
+			() => scene.createDirectionalLight({ intensityUnit: 'lumen' as 'lux' }),
+			() => scene.createAmbientLight({ intensityUnit: 'lumen' as 'lux' }),
+			() => scene.createHemisphereLight({ intensityUnit: 'lumen' as 'lux' }),
+		];
+		for (const create of units) {
+			const error = thrown(create);
+			expect(error.code).toBe('E1213');
+			expect(error.message).toContain('intensity unit');
+		}
 	});
 
 	test("a directional light's shadow options land in the light table, and setShadow changes only those it names", () => {
@@ -356,11 +426,18 @@ describe('light calls', () => {
 		const { scene, commands, tableRow } = fakeCore();
 		const lamp = scene.createPointLight({ name: 'Lamp', range: 3 });
 		const row = tableRow(lamp);
+		const { handle } = lamp;
 		lamp.destroy();
 		expect(row.live).toBe(false);
 		// The light no longer names its old row, which the next light created takes.
 		expect(lamp.id).toBe(0);
-		expect(commands().at(-1)).toEqual([C.COMMAND_DESTROY, lamp.handle, 0, 0]);
+		expect(commands().at(-1)).toEqual([C.COMMAND_DESTROY, handle, 0, 0]);
+		// Its handle now holds the generation that no live object has, so a later call on it can
+		// never reach the object that takes its slot.
+		expect(lamp.handle).toBe(handle | (C.HANDLE_DEAD_GENERATION << C.HANDLE_SLOT_BITS));
+		expect(lamp.handle & ((1 << C.HANDLE_SLOT_BITS) - 1)).toBe(
+			handle & ((1 << C.HANDLE_SLOT_BITS) - 1),
+		);
 		expect(scene.find('Lamp')).toBeUndefined();
 	});
 });
