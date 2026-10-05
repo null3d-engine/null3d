@@ -311,10 +311,22 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createVolumeTexture(width: number, height: number, depth: number, format: number): number;
 	/**
+	 * A cube texture with faces of `size` texels a side and `levels` mip levels, in a `FORMAT_*`
+	 * code of shared-exponent floats or half floats, with no texels yet. Its texels bring every
+	 * level, each level's six faces in turn. Returns its handle.
+	 */
+	createCubeTexture(size: number, levels: number, format: number): number;
+	/**
 	 * Gives a texture an image, uploaded with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and
 	 * returns the image's id for the thread that draws. An image of another size resizes it.
 	 */
 	setTextureImage(texture: number, width: number, height: number, flags: number): number;
+	/**
+	 * Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU in
+	 * `slices` parts of its work, one a frame, and returns the generator's id among the images'
+	 * ids, for the thread that draws.
+	 */
+	generateTexture(texture: number, slices: number): number;
 	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
@@ -391,10 +403,10 @@ export interface CoreGlue extends CoreErrors {
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
 	setOutput(toneMapping: number): number;
-	/** Turns bloom on with the post-processing values' strength, radius and threshold, or off. */
+	/** Turns bloom on with the post-processing values' intensity, threshold, blend and weights, or off. */
 	setBloom(on: boolean): number;
-	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
-	setBloomSamples(divisor: number): number;
+	/** The texels on the short side of bloom's base, and the governor's halvings of it, from the next frame on. */
+	setBloomChain(size: number, halvings: number): number;
 	/** Turns ambient occlusion on with the post-processing values' settings, or off. */
 	setAo(on: boolean): number;
 	/**
@@ -413,6 +425,16 @@ export interface CoreGlue extends CoreErrors {
 	setVignette(on: boolean): number;
 	/** Turns outlines on with the post-processing values' line colors and width, or off. */
 	setOutline(on: boolean): number;
+	/**
+	 * The address of the block of the environment's values (`ENVIRONMENT_VALUE_*`), 32-bit floats
+	 * that TypeScript writes before it calls `setEnvironment`.
+	 */
+	environmentValues(): number;
+	/**
+	 * Lights the scene with the environment whose prefiltered light is a cube texture, or with none
+	 * for 0, from the next frame on, with the environment's values.
+	 */
+	setEnvironment(texture: number): number;
 	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
@@ -599,7 +621,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyMaterial',
 	'createTexture',
 	'createVolumeTexture',
+	'createCubeTexture',
 	'setTextureImage',
+	'generateTexture',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
@@ -619,12 +643,14 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'postValues',
 	'setOutput',
 	'setBloom',
-	'setBloomSamples',
+	'setBloomChain',
 	'setAo',
 	'setAoScale',
 	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',
+	'environmentValues',
+	'setEnvironment',
 	'setOutline',
 	'setCanvasOutput',
 	'setRenderScaling',
