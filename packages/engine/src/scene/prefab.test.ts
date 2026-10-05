@@ -634,9 +634,11 @@ describe('whole copies', () => {
 		const [batch] = copy.batches;
 		const kept = scene.createGroup({ name: 'kept', parent: copy.find('link 1') });
 		take();
+		// Destroy marks each handle dead, so the commands name the handles from before.
+		const handles = copy.objects.map((o) => o.handle);
 		copy.destroy();
 		const destroyed = take().filter((r) => r[0] === C.COMMAND_DESTROY);
-		expect(destroyed.map((r) => r[1])).toEqual(copy.objects.map((o) => o.handle));
+		expect(destroyed.map((r) => r[1])).toEqual(handles);
 		expect(copy.objects.every((o) => o.destroyedFrame >= 0)).toBe(true);
 		expect(destroyedBatches).toEqual([batch?.id as number]);
 		// An object that the sketch put under the copy later becomes a root.
