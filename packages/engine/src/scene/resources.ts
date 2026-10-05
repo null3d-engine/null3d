@@ -51,7 +51,8 @@ import {
 	SHAPE_TORUS,
 } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
-import type { ShaderSender } from '../shared/images';
+import type { CustomShader, ShaderSender } from '../shared/images';
+import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
@@ -890,6 +891,17 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly { readonly name: string }[];
+	/** On the dev server, the key of the WGSL's hot updates. */
+	readonly hot?: string;
+}
+
+/** What the thread that draws builds a custom material's pipelines from. */
+function customShader(compiled: CompiledMaterial): CustomShader {
+	return {
+		variants: compiled.variants,
+		locations: compiled.locations,
+		textures: compiled.textures.length,
+	};
 }
 
 /** Every value of either material, which `set` writes. */
@@ -1281,6 +1293,10 @@ export class Materials {
 	/** The render pipeline template of each custom material's compiled WGSL. */
 	private readonly templates = new WeakMap<CompiledWgsl, number>();
 	private nextTemplate = SHADING_CUSTOM_FIRST;
+	/** In development builds, the template of the WGSL under each hot update key. */
+	private readonly hotTemplates = new Map<string, number>();
+	/** In development builds, the newest WGSL under each hot update key that an update brought. */
+	private readonly hotShaders = new Map<string, CompiledMaterial>();
 
 	constructor(
 		private readonly core: CoreMemory,
@@ -1415,19 +1431,39 @@ export class Materials {
 		return wgsl as CompiledMaterial;
 	}
 
-	/** The template of a custom material's WGSL, which goes to the thread that draws once. */
+	/**
+	 * The template of a custom material's WGSL, which goes to the thread that draws once. On the
+	 * dev server, WGSL under one hot update key shares one template, which takes the newest WGSL.
+	 */
 	private templateOf(compiled: CompiledMaterial): number {
 		let template = this.templates.get(compiled);
+		if (template !== undefined) return template;
+		const key = DEV ? compiled.hot : undefined;
+		template = key === undefined ? undefined : this.hotTemplates.get(key);
 		if (template === undefined) {
 			template = this.nextTemplate++;
-			this.templates.set(compiled, template);
-			this.sendShader(template, {
-				variants: compiled.variants,
-				locations: compiled.locations,
-				textures: compiled.textures.length,
-			});
+			const newest = key === undefined ? undefined : this.hotShaders.get(key);
+			this.sendShader(template, customShader(newest ?? compiled));
+			if (key !== undefined) this.hotTemplates.set(key, template);
 		}
+		this.templates.set(compiled, template);
 		return template;
+	}
+
+	/**
+	 * @internal Swaps the shader of every custom material made from WGSL under the keys of hot
+	 * updates. The plugin sends an update only when the new WGSL keeps the material's uniforms,
+	 * textures and vertex inputs, so the materials keep their values.
+	 */
+	updateShaders(updates: readonly WgslUpdate[]): void {
+		if (!DEV) return;
+		for (const { key, shader } of updates) {
+			if (shader.kind !== 'material') continue;
+			const compiled = shader as CompiledMaterial;
+			this.hotShaders.set(key, compiled);
+			const template = this.hotTemplates.get(key);
+			if (template !== undefined) this.sendShader(template, customShader(compiled));
+		}
 	}
 }
 

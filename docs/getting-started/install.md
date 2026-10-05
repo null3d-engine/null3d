@@ -47,7 +47,7 @@ The plugin does four jobs that a three.js project does not need:
 
 - Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
 - Compiles your sketch file for the sketch worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core.
-- Compiles the WGSL in your code, in `.wgsl` files and in strings tagged `/* wgsl */`, for WebGPU and WebGL2. A shader error stops Vite with its file, line and column. Beside each `.wgsl` file, the plugin writes a TypeScript declaration that holds the types of the file's uniforms. [Custom shaders](../guides/custom-shaders.md) explains both forms.
+- Compiles the WGSL in your code, in `.wgsl` files and in strings tagged `/* wgsl */`, for WebGPU and WebGL2. A shader error stops Vite with its file, line and column. Beside each `.wgsl` file, the plugin writes a TypeScript declaration that holds the types of the file's uniforms. It compiles on worker threads, so the dev server goes on serving while a shader compiles. On the dev server, a shader that you change reaches the running page without a reload. [Custom shaders](../guides/custom-shaders.md) explains both forms and hot reload.
 - Keeps the engine's development checks in the dev server and removes them from production builds.
 
 null3D has a plugin for Vite only.

@@ -114,13 +114,13 @@ describe('writeWgslDeclaration', () => {
 });
 
 describe.skipIf(!ENABLED)('the declarations in the repository', () => {
-	it('match what the plugin writes for their WGSL files', () => {
+	it('match what the plugin writes for their WGSL files', async () => {
 		for (const path of [
 			'tests/fixtures/typed-uniforms/waves.wgsl',
 			'tests/pages/sketches/shaders/tint.wgsl',
 		]) {
 			const file = join(ROOT, path);
-			const compiled = compileWgslFile(path, file, readFileSync(file, 'utf8'));
+			const compiled = await compileWgslFile(path, file, readFileSync(file, 'utf8'));
 			if ('error' in compiled) throw new Error(compiled.error.message);
 			expect(readFileSync(declarationPath(file), 'utf8')).toBe(
 				wgslDeclaration(file, compiled.shader),

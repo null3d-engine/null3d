@@ -12,7 +12,8 @@
 //
 // Custom materials' shaders take the same way, each under its render pipeline template. A backend
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
-// not arrived yet builds once it has.
+// not arrived yet builds once it has. On the dev server, a hot update sends a template's shader
+// again: the table lists the template as replaced, and the backend builds its pipelines again.
 
 import { messageOf } from '../errors/message';
 import type { ShaderVariants } from '../generated/shaders';
@@ -38,6 +39,14 @@ export class ImageTable {
 	private readonly images = new Map<number, ImageBitmap>();
 	/** Custom materials' shaders, by render pipeline template. */
 	readonly shaders = new Map<number, CustomShader>();
+	/** The templates whose shader a hot update replaced, which the backend has not built again yet. */
+	readonly replaced: number[] = [];
+
+	/** Keeps a custom material's shader under its template, and lists a template it replaces. */
+	setShader(template: number, shader: CustomShader): void {
+		if (this.shaders.has(template)) this.replaced.push(template);
+		this.shaders.set(template, shader);
+	}
 	/** Each texture generator's name, by its id among the images' ids. */
 	private readonly generators = new Map<number, GeneratorName>();
 	/** The generators' code for the GPU path of the thread that draws, once it has loaded. */
@@ -149,6 +158,7 @@ export class ImageTable {
 		this.images.clear();
 		this.generators.clear();
 		this.shaders.clear();
+		this.replaced.length = 0;
 	}
 }
 
@@ -193,7 +203,7 @@ export function shadersThrough(port: MessagePort): ShaderSender {
 
 /** Puts shaders straight into the table of this thread, which draws as well. */
 export function shadersToTable(table: ImageTable): ShaderSender {
-	return (template, shader) => table.shaders.set(template, shader);
+	return (template, shader) => table.setShader(template, shader);
 }
 
 /**
@@ -256,7 +266,7 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 	const arrive = arrivals(table, slots, port);
 	port.onmessage = (event: MessageEvent<DrawingMessage>) => {
 		const data = event.data;
-		if ('shader' in data) table.shaders.set(data.template, data.shader);
+		if ('shader' in data) table.setShader(data.template, data.shader);
 		else arrive(data.id, 'generator' in data ? data.generator : data.image);
 	};
 }

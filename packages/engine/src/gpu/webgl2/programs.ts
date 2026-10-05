@@ -44,6 +44,7 @@ import {
 	type GlslStage,
 	type ShaderVariants,
 } from '../../generated/shaders';
+import type { CustomShader } from '../../shared/images';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
@@ -162,6 +163,14 @@ export interface Pipeline {
 	readonly mode: number;
 	/** The layout of its template's own vertex buffer, for a template that draws no mesh. */
 	readonly vertices: GPUVertexBufferLayout | undefined;
+}
+
+/**
+ * The template of a custom material's shader. Its prepass draws with its own vertex shader, as
+ * every mesh's does.
+ */
+export function customTemplate(shader: CustomShader): GlslTemplate {
+	return { shader: shader.variants, pipeline: 'main', meshPrepass: true };
 }
 
 /** The engine's render pipeline templates, by template id, from the shaders the device loaded. */

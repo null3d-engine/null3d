@@ -6,7 +6,7 @@ mod precision;
 use std::path::Path;
 
 use null3d_shaders::{
-    BuildError, Compiler, Inputs, MaterialOutput, MaterialSource, MaterialTemplate, Problem,
+    BuildError, Compiler, Inputs, MaterialOutput, MaterialSource, MaterialTemplate, Problem, Share,
 };
 
 /// The display path of a custom material's WGSL in the tests.
@@ -24,6 +24,11 @@ fn surface(input: SurfaceInput) -> Surface {
 
 /// Builds a custom material into the repository's template.
 fn compile(source: &str) -> Result<MaterialOutput, BuildError> {
+    compile_share(source, None)
+}
+
+/// Builds the builds of a share of a custom material, or all of them without one.
+fn compile_share(source: &str, share: Option<Share>) -> Result<MaterialOutput, BuildError> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let inputs = Inputs::read(&root).expect("the repository's shaders");
     let template = MaterialTemplate::load(&inputs).expect("the template of custom materials");
@@ -33,6 +38,7 @@ fn compile(source: &str) -> Result<MaterialOutput, BuildError> {
         &MaterialSource {
             path: PATH.to_owned(),
             source: source.to_owned(),
+            share,
         },
     )
 }
@@ -649,4 +655,34 @@ fn a_glsl_refusal_of_the_materials_own_form_is_not_blamed_on_the_template() {
             problem.message
         );
     }
+}
+
+#[test]
+fn shares_of_a_material_hold_every_build_once_and_the_vertex_inputs_each() {
+    for source in [STRIPES, FULL] {
+        let whole = compile(source).expect("the material builds");
+        let count = 3;
+        let mut joined = std::collections::BTreeMap::new();
+        for index in 0..count {
+            let share =
+                compile_share(source, Some(Share { index, count })).expect("the share builds");
+            assert!(share.variants.len() < whole.variants.len());
+            assert_eq!(share.locations, whole.locations);
+            assert_eq!(share.attributes, whole.attributes);
+            assert_eq!(share.uniforms, whole.uniforms);
+            for (name, variant) in share.variants {
+                let first = joined.insert(name.clone(), variant.clone());
+                // Only the WebGPU builds without bits, which give the vertex inputs, repeat.
+                assert!(first.is_none() || variant.permutation == 0, "{name}");
+            }
+        }
+        assert_eq!(joined, whole.variants);
+    }
+}
+
+#[test]
+fn a_share_past_its_count_is_refused() {
+    let error = compile_share(STRIPES, Some(Share { index: 2, count: 2 }))
+        .expect_err("share 2 of 2 does not exist");
+    assert!(error.problems[0].message.contains("share 2 of 2"));
 }

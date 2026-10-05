@@ -581,6 +581,18 @@ export class Pipelines {
 		});
 	}
 
+	/**
+	 * Gives a custom material's template the shader of a hot update, and forgets the shader modules
+	 * of its old shader. The pipelines that `render` describes from then on use the new shader.
+	 */
+	replaceCustom(id: number, shader: CustomShader): void {
+		const old = this.templates[id];
+		for (const variant of Object.values(old?.shader ?? {}))
+			if (variant.wgsl) this.modules.delete(variant.wgsl);
+		this.templates[id] = undefined;
+		this.defineCustom(id, shader);
+	}
+
 	/** True when a template has this id. */
 	has(id: number): boolean {
 		return this.templates[id] !== undefined;

@@ -23,6 +23,7 @@ import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { type GeneratorName, ImageTable } from '../../shared/images';
+import { DEV } from '../dev';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -37,6 +38,7 @@ import type { CubeGenerator } from './environment';
 import {
 	buildPermutation,
 	createProgram,
+	customTemplate,
 	engineTemplates,
 	type GlslTemplate,
 	mipmapTemplate,
@@ -340,6 +342,11 @@ export class WebGL2Backend {
 	 */
 	private readonly parked = new Map<number, Uint32Array>();
 	/**
+	 * In development builds, the programs that a hot update of a custom material's shader compiles,
+	 * each under the key of the program it replaces once it has compiled.
+	 */
+	private readonly swapping = new Map<string, Program>();
+	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
 	 */
@@ -557,6 +564,7 @@ export class WebGL2Backend {
 	 * material's shader. Pipelines whose shaders arrived are created first.
 	 */
 	get building(): boolean {
+		if (DEV && (this.images.replaced.length > 0 || this.swapping.size > 0)) this.swapReplaced();
 		if (this.parked.size > 0) this.unpark();
 		const compiling = this.compiling;
 		for (let k = compiling.length - 1; k >= 0; k--) {
@@ -565,7 +573,53 @@ export class WebGL2Backend {
 				compiling.pop();
 			}
 		}
-		return compiling.length > 0 || this.parked.size > 0;
+		return compiling.length > 0 || this.parked.size > 0 || this.swapping.size > 0;
+	}
+
+	/**
+	 * Compiles each program of a custom material whose shader a hot update replaced again, in the
+	 * background where the context can, and swaps each in once it has linked. The old program
+	 * draws until then, so no frame loses the material's objects. A program that fails to link
+	 * keeps the old one and logs why.
+	 */
+	private swapReplaced(): void {
+		if (!DEV) return;
+		const gl = this.gl;
+		for (const template of this.images.replaced.splice(0)) {
+			const shader = this.images.shaders.get(template);
+			// A template that no pipeline has used takes the new shader at its first use.
+			if (!shader || !this.templates[template]) continue;
+			const defined = customTemplate(shader);
+			this.templates[template] = defined;
+			for (const key of this.programs.keys()) {
+				const [owner, permutation] = key.split(' ').map(Number);
+				if (owner !== template) continue;
+				const earlier = this.swapping.get(key);
+				if (earlier) this.deleteProgram(earlier);
+				const program = createProgram(gl, defined, permutation as number);
+				program.background = true;
+				this.swapping.set(key, program);
+				this.counts.pipelines++;
+			}
+		}
+		for (const [key, program] of this.swapping) {
+			if (!this.compiled(program)) continue;
+			this.swapping.delete(key);
+			const old = this.programs.get(key);
+			if (!old || !gl.getProgramParameter(program.program, gl.LINK_STATUS)) {
+				if (old)
+					console.error(
+						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${gl.getProgramInfoLog(program.program)}`,
+					);
+				this.deleteProgram(program);
+				continue;
+			}
+			this.programs.set(key, program);
+			this.pipelines.forEach((pipeline, id) => {
+				if (pipeline?.program === old) this.pipelines[id] = { ...pipeline, program };
+			});
+			this.deleteProgram(old);
+		}
 	}
 
 	/**
@@ -578,8 +632,7 @@ export class WebGL2Backend {
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
 			if (!shader) return false;
-			// A custom material's prepass draws with its own vertex shader, as every mesh's does.
-			defined = { shader: shader.variants, pipeline: 'main', meshPrepass: true };
+			defined = customTemplate(shader);
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);
@@ -882,10 +935,6 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * The program of a template and permutation, which starts compiling the first time, in the
-	 * background when `background` is set and the context can.
-	 */
-	/**
 	 * Forgets a render pipeline, and deletes its program once no other pipeline uses it. A pipeline
 	 * that is gone already, as when a capture replays a list again, changes nothing.
 	 */
@@ -894,6 +943,11 @@ export class WebGL2Backend {
 		const program = this.pipelines[id]?.program;
 		this.pipelines[id] = undefined;
 		if (!program || this.pipelines.some((p) => p?.program === program)) return;
+		this.deleteProgram(program);
+	}
+
+	/** Deletes a program and its shaders, and forgets it. */
+	private deleteProgram(program: Program): void {
 		for (const [key, held] of this.programs) if (held === program) this.programs.delete(key);
 		const compiling = this.compiling.indexOf(program);
 		if (compiling >= 0) this.compiling.splice(compiling, 1);
@@ -901,6 +955,10 @@ export class WebGL2Backend {
 		this.gl.deleteProgram(program.program);
 	}
 
+	/**
+	 * The program of a template and permutation, which starts compiling the first time, in the
+	 * background when `background` is set and the context can.
+	 */
 	private programOf(template: number, permutation: number, background: boolean): Program {
 		const key = `${template} ${permutation}`;
 		let program = this.programs.get(key);
