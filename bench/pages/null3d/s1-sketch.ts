@@ -14,6 +14,9 @@
 // steps, whose settings the core then writes again in each frame. The `outline` switch
 // adds outlined boxes, turns outlines on with a hidden line, and changes the line's width every
 // frame, for the allocation sample of the outline's mask pass, the final pass's line and post.set.
+// The `tileShadows` switch adds two point lights and two spot lights that cast shadows, with
+// casters that circle them, so tiles of the shadow atlas draw again every frame, for the
+// allocation sample of the tiles' marks and their cap.
 // The `environment` switch lights the swarm with the built-in room, and turns it and changes its
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light.
@@ -41,6 +44,7 @@ export default defineSketch(async (context) => {
 	const grading = switches.has('grading');
 	const outlined = switches.has('outline');
 	if (outlined) createOutlined(context);
+	const moveCasters = switches.has('tileShadows') ? createTileShadows(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { offset: 1, darkness: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -66,6 +70,7 @@ export default defineSketch(async (context) => {
 		moveCamera(t);
 		animate(t);
 		morph(t);
+		moveCasters?.(t);
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
@@ -113,6 +118,58 @@ function createOutlined({ scene, geometry, materials, post }: SketchContext): vo
 		scene.createMesh({ mesh, material, position, name: `outlined${k}` }).setOutlined(true);
 	}
 	post.set({ outline: { color: '#ffaa00', hiddenColor: '#3070ff', width: 2 } });
+}
+
+/** Where the `tileShadows` switch's lights stand: two point lights, then two spot lights. */
+const SHADOWED_LIGHTS: readonly (readonly [number, number, number])[] = [
+	[-10, 3, 0],
+	[10, 3, 0],
+	[0, 6, -10],
+	[0, 6, 10],
+];
+
+/** The casters that circle each of the `tileShadows` switch's lights. */
+const CASTERS_PER_LIGHT = 3;
+
+/**
+ * Adds the `tileShadows` switch's lights, a ground that receives their shadows, and casters that
+ * circle the lights. Returns the step that moves the casters to their places at time `t`.
+ */
+function createTileShadows({ scene, geometry, materials }: SketchContext): (t: number) => void {
+	const material = materials.standard({ color: '#9aa0a8' });
+	scene.createMesh({
+		mesh: geometry.box({ width: 60, height: 0.2, depth: 60 }),
+		material,
+		position: [0, -0.1, 0],
+		receiveShadows: true,
+	});
+	for (const [k, [x, y, z]] of SHADOWED_LIGHTS.entries()) {
+		const position: [number, number, number] = [x, y, z];
+		if (k < 2) scene.createPointLight({ position, range: 10, intensity: 30, castShadows: true });
+		else
+			scene.createSpotLight({
+				position,
+				target: [x, 0, z],
+				range: 12,
+				angle: 0.7,
+				intensity: 60,
+				castShadows: true,
+			});
+	}
+	const mesh = geometry.box({ width: 0.8, height: 0.8, depth: 0.8 });
+	const casters = Array.from({ length: SHADOWED_LIGHTS.length * CASTERS_PER_LIGHT }, () =>
+		scene.createMesh({ mesh, material, castShadows: true, receiveShadows: true, dynamic: true }),
+	);
+	// Index reads, not destructuring: an iterator would allocate in every frame.
+	return (t) => {
+		for (let k = 0; k < casters.length; k++) {
+			const light = SHADOWED_LIGHTS[k % SHADOWED_LIGHTS.length] as readonly number[];
+			const angle = t + (k * Math.PI * 2) / casters.length;
+			const x = (light[0] as number) + 2.5 * Math.cos(angle);
+			const z = (light[2] as number) + 2.5 * Math.sin(angle);
+			casters[k]?.setPosition(x, 1, z);
+		}
+	};
 }
 
 /**
