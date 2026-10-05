@@ -29,6 +29,7 @@ import {
 	LIGHT_VALUE_PENUMBRA,
 	LIGHT_VALUE_RANGE,
 } from '../generated/core';
+import { onEngineStop } from '../shared/helper-workers';
 import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, loadAnimationRig } from './animation';
 import { affineOf, multiplyAffine } from './gltf-math';
@@ -89,7 +90,10 @@ export interface GltfContext {
 		call: string,
 	): Promise<ImageBitmap>;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
-	error(code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417', message: string): EngineError;
+	error(
+		code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1420',
+		message: string,
+	): EngineError;
 }
 
 /** A request that waits for the worker. */
@@ -120,12 +124,16 @@ class Parser {
 		};
 		this.worker.onerror = (event) => {
 			event.preventDefault();
-			this.worker.terminate();
-			this.stopped();
-			for (const { reject } of this.waiting.values())
-				reject(event.message || 'its script did not load');
-			this.waiting.clear();
+			this.stop(event.message || 'its script did not load');
 		};
+	}
+
+	/** Stops the worker, and fails every waiting request with `reason`. */
+	stop(reason: string): void {
+		this.worker.terminate();
+		this.stopped();
+		for (const { reject } of this.waiting.values()) reject(reason);
+		this.waiting.clear();
 	}
 
 	/** A new request's id, whose answers go to `resolve` until the last one. */
@@ -153,9 +161,14 @@ function parse(
 	address: URL,
 	call: string,
 ): Promise<{ data: GltfData; bitmaps: (ImageBitmap | undefined)[] }> {
-	parser ??= new Parser(() => {
-		parser = undefined;
-	});
+	if (!parser) {
+		const made: Parser = new Parser(() => {
+			forget();
+			if (parser === made) parser = undefined;
+		});
+		const forget = onEngineStop(() => made.stop('the engine stopped'));
+		parser = made;
+	}
 	const worker = parser;
 	return new Promise((resolve, reject) => {
 		const id = worker.start(

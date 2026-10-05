@@ -13,14 +13,16 @@ import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/web
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
-import { controlViews, Slot } from '../shared/control';
+import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
-import { contextLoss, deviceLoss } from './loss';
+import { contextLoss, deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
 import type { FrameInput, RenderCanvas, Renderer, Tier } from './renderer';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
 const BUILD_POLL_MS = 4;
+/** The longest that a capture waits for pipelines to build. */
+export const BUILD_WAIT_LIMIT_MS = 30_000;
 
 /** What the scene renderers ask of a GPU backend. */
 interface SceneBackend {
@@ -71,9 +73,15 @@ export class FrameReplay {
 	private viewsOf: ArrayBufferLike = new ArrayBuffer(0);
 	private end = 0;
 	private readonly slots: Int32Array;
-	/** The frame whose pipelines started to build last, and where the rest of its list starts. */
+	/** The newest frame whose pipelines started to build. */
 	private prepared = 0;
-	private rest = 0;
+	/**
+	 * Where the rest of each list starts, after the pipelines it creates, by the parity of the
+	 * frame that the list holds.
+	 */
+	private readonly rests = new Int32Array(2);
+	/** True once the renderer is destroyed: a capture that waits then stops waiting. */
+	private abandoned = false;
 	/** True once a frame has drawn with every pipeline built, since the last hold began. */
 	private complete = false;
 	/** The first frame of the last hold that a prepared frame reached. */
@@ -91,7 +99,7 @@ export class FrameReplay {
 	prepare(frame: number): boolean {
 		this.restOf(frame);
 		const hold = Atomics.load(this.slots, Slot.PipelineHold);
-		if (hold > this.held && frame >= hold) {
+		if (frameAfter(hold, this.held) && frameReached(frame, hold)) {
 			this.held = hold;
 			this.complete = false;
 		}
@@ -109,20 +117,35 @@ export class FrameReplay {
 	 * Resolves with the frame that this thread took last, once every pipeline is built, including
 	 * those of that frame's list. Frames go on while it waits, and the sketch thread records into a
 	 * taken frame's list again once the next frame is taken, so the caller replays the frame at
-	 * once, before this thread can take another.
+	 * once, before this thread can take another. It fails when the renderer is destroyed during the
+	 * wait, as after a GPU loss, or when the builds take longer than the wait's limit.
 	 */
 	async builtTaken(): Promise<number> {
+		const deadline = performance.now() + BUILD_WAIT_LIMIT_MS;
 		for (;;) {
+			if (this.abandoned)
+				throw new Error('the GPU was lost or the engine stopped during the capture');
 			const frame = Atomics.load(this.slots, Slot.FramesTaken);
 			this.restOf(frame);
 			if (!this.backend.building) return frame;
+			if (performance.now() >= deadline)
+				throw new Error(
+					`the frame's pipelines were still building after ${BUILD_WAIT_LIMIT_MS / 1000} s`,
+				);
 			await new Promise((resolve) => setTimeout(resolve, BUILD_POLL_MS));
 		}
 	}
 
+	/** Ends every wait for builds, for a renderer that is destroyed. */
+	abandon(): void {
+		this.abandoned = true;
+	}
+
 	/**
-	 * Finds the list of `frame`, starts to build the pipelines it creates the first time, and
-	 * returns where the rest of the list starts.
+	 * Finds the list of `frame`, and returns where the rest of the list starts. Frames only grow,
+	 * so the pipelines of a list start to build only for a frame newer than any prepared before.
+	 * An older frame, such as one that a capture replays while the loop has prepared the next,
+	 * reuses the place that its list's preparation found.
 	 */
 	private restOf(frame: number): number {
 		const buffer = this.memory.buffer;
@@ -134,11 +157,11 @@ export class FrameReplay {
 		const parity = frame & 1;
 		const start = Atomics.load(this.slots, Slot.DrawListAddress0 + parity) / 4;
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
-		if (frame !== this.prepared) {
-			this.rest = this.backend.prepare(this.words, start, this.end);
+		if (frameAfter(frame, this.prepared)) {
+			this.rests[parity] = this.backend.prepare(this.words, start, this.end);
 			this.prepared = frame;
 		}
-		return this.rest;
+		return this.rests[parity] as number;
 	}
 }
 
@@ -150,8 +173,12 @@ export class WebGPUSceneRenderer implements Renderer {
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	readonly lost: Promise<string>;
+	readonly errors: GpuErrorWatch;
 
-	/** A transparent canvas composites with premultiplied alpha; any other ignores alpha. */
+	/**
+	 * A transparent canvas composites with premultiplied alpha; any other ignores alpha.
+	 * `gpuError` hears the first WebGPU error of each kind that no error scope caught.
+	 */
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
@@ -162,8 +189,10 @@ export class WebGPUSceneRenderer implements Renderer {
 		images: ImageTable | undefined,
 		shaders: DeviceShaderSet,
 		readonly transparent: boolean,
+		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
+		this.errors = new GpuErrorWatch(device, gpuError);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -250,6 +279,8 @@ export class WebGPUSceneRenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.frames.abandon();
+		this.errors.stop();
 		this.backend.timer?.destroy();
 		this.backend.destroy();
 		this.context.unconfigure();
@@ -307,21 +338,46 @@ export class WebGL2SceneRenderer implements Renderer {
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
 	resize(): void {}
 
-	prepare(frame: number): boolean {
-		return this.frames.prepare(frame);
+	/**
+	 * Ends a frame's work quietly when the browser took the context away during it. WebGL counts
+	 * the context as lost at once, so the GL calls after the loss fail, but the loss event comes
+	 * later, in a task of its own, and starts the recovery. Any other error goes on.
+	 */
+	private lostDuring(error: unknown): void {
+		if (!this.gl.isContextLost()) throw error;
 	}
 
+	prepare(frame: number): boolean {
+		try {
+			return this.frames.prepare(frame);
+		} catch (error) {
+			this.lostDuring(error);
+			return false;
+		}
+	}
+
+	/** True while a pipeline is building, and while the context is lost, which builds nothing. */
 	get building(): boolean {
-		return this.backend.building;
+		try {
+			return this.backend.building;
+		} catch (error) {
+			this.lostDuring(error);
+			return true;
+		}
 	}
 
 	/**
 	 * Draws a frame, and records what the backend did since the last draw: the frame's work, and
-	 * the pipelines that started to build for it.
+	 * the pipelines that started to build for it. A frame during which the context is lost draws
+	 * nothing more, and the loss's recovery follows.
 	 */
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
-		this.frames.replay(input.frame);
+		try {
+			this.frames.replay(input.frame);
+		} catch (error) {
+			this.lostDuring(error);
+		}
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 		recordCounts(record, this.backend);
@@ -345,6 +401,9 @@ export class WebGL2SceneRenderer implements Renderer {
 		this.backend.canvasTarget = { framebuffer, width, height };
 		try {
 			this.frames.replay(frame);
+		} catch (error) {
+			this.lostDuring(error);
+			throw new Error('the browser took the WebGL2 context away during the capture');
 		} finally {
 			this.backend.canvasTarget = undefined;
 			this.backend.resetCounts();
@@ -370,6 +429,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.frames.abandon();
 		this.release.abort();
 		this.backend.destroy();
 		releaseContext(this.gl);
