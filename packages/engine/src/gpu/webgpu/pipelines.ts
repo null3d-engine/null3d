@@ -129,6 +129,12 @@ export interface RenderTemplate {
 	 * nothing.
 	 */
 	readonly ownPrepass?: boolean;
+	/**
+	 * True for a template whose fragment shader runs in pipelines that draw depth only, as the
+	 * masked casters' does: it discards the fragments that their alpha cuts. Other templates draw
+	 * depth only with no fragment stage.
+	 */
+	readonly depthFragment?: boolean;
 }
 
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
@@ -511,6 +517,7 @@ export class Pipelines {
 				meshLocations,
 				vertexBuffers: INSTANCE_BUFFERS,
 				ownPrepass: id === TEMPLATE_SPRITE || id === TEMPLATE_SPRITE_MAP,
+				depthFragment: id === TEMPLATE_SHADOW_CUTOUT || id === TEMPLATE_SHADOW_CUTOUT_MAP,
 			});
 		}
 		this.defineTemplate(TEMPLATE_FINAL, {
@@ -705,7 +712,9 @@ export class Pipelines {
 							},
 						],
 					}
-				: undefined,
+				: t.depthFragment
+					? { module, entryPoint: entryPoints?.fragment, targets: [] }
+					: undefined,
 			primitive: {
 				topology: stateFlags & STATE_LINE_LIST ? 'line-list' : 'triangle-list',
 				cullMode:

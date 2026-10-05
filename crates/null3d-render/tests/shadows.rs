@@ -7,7 +7,8 @@ mod common;
 
 use std::collections::{HashMap, HashSet};
 
-use common::{World, count};
+use common::{World, count, grid, map_desc};
+use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
@@ -17,9 +18,10 @@ use null3d_gpu::drawlist::{
     texture_usage, view,
 };
 use null3d_gpu::mock::MockBackend;
+use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
-use null3d_render::materials::{Shading, feature};
+use null3d_render::materials::{MapSlot, Shading, feature};
 use null3d_render::pipelines::{DepthBias, DrawKey};
 use null3d_render::shadows::ShadowQuality;
 use null3d_render::view::ViewId;
@@ -527,6 +529,69 @@ fn masked_casters_cut_their_holes_and_custom_ones_cast_their_whole_shape() {
         (key.template, key.permutation, group),
         (template::SHADOW_DEPTH, offset, 0)
     );
+}
+
+/// A masked material with a base color map casts with the cutout template that reads the map's
+/// alpha, from the map's bind group, on both frame builders.
+fn check_mapped_caster<B: FrameBuilder>(mut world: World<B>, name: &str) {
+    world.renderer.settings_mut().set_sun_shadow(Some(SUN));
+    let settings = world.renderer.settings_mut();
+    let texture = settings.textures_mut().create(map_desc(16)).unwrap();
+    settings
+        .textures_mut()
+        .set_image(texture, 16, 16, 0)
+        .unwrap();
+    let mesh = settings.meshes_mut().add(&grid(2, 2)).unwrap() + 1;
+    let table = settings.materials_mut();
+    let material = table
+        .create(Shading::Unlit, feature::ALPHA_MASK, [1.0; 4])
+        .unwrap();
+    table
+        .set_map(material, MapSlot::BaseColor, texture, false)
+        .unwrap();
+    let object = world.scene.reserve().unwrap();
+    world.scene.set_local_radius(object, 1.0).unwrap();
+    let cast = flags::VISIBLE | flags::CAST_SHADOWS;
+    let commands = [
+        Command::create(object, Handle::NONE, mesh, cast),
+        Command::set_material(object, material + 1),
+    ];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let mapped: Vec<u32> = operands(&world.commands(), Op::CreateRenderPipeline)
+        .iter()
+        .filter(|p| p[1] == template::SHADOW_CUTOUT_MAP)
+        .map(|p| p[2] & !permutation::DRAW_INDEX)
+        .collect();
+    assert_eq!(
+        mapped,
+        [permutation::ALPHA_MASK | permutation::CASTER_OFFSET],
+        "{name}"
+    );
+    // The shadow passes draw with it, with the map's group bound.
+    let commands = world.commands();
+    let templates: HashMap<u32, u32> = operands(&commands, Op::CreateRenderPipeline)
+        .iter()
+        .map(|p| (p[0], p[1]))
+        .collect();
+    let drawn: HashSet<u32> = operands(&commands, Op::SetPipeline)
+        .iter()
+        .map(|p| templates[&p[0]])
+        .collect();
+    assert!(
+        drawn.contains(&template::SHADOW_CUTOUT_MAP),
+        "{name}: {drawn:?}"
+    );
+}
+
+#[test]
+fn a_masked_caster_with_a_map_reads_its_alpha_on_both_paths() {
+    check_mapped_caster(World::new(), "WebGPU");
+    let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    check_mapped_caster(webgl2, "WebGL2");
 }
 
 #[test]

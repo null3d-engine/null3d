@@ -39,9 +39,32 @@ So `rg11b10ufloat` cannot turn alpha into coverage. PlayCanvas reads the specifi
 | Compatibility mode, WebGPU, WebGL2 | FXAA or none | Any | | None: one sample, a plain alpha test |
 | WebGL2 | MSAA | `RGBA16F` or the canvas's 8-bit format | Yes | The pipeline (`SAMPLE_ALPHA_TO_COVERAGE`) |
 
-### Parity and cost
+### Parity with three.js
 
-Filled in from the runs below.
+`bun run parity` in Chrome on the Mac's GPU, 6 October 2026. Each figure is the share of pixels that differ from three.js's frame, and the last column the share by which three.js's two renderers differ.
+
+| Scene | WebGPU | Compatibility mode | WebGL2 | three.js's renderers |
+| --- | --- | --- | --- | --- |
+| `alpha-coverage` | 0.056% | 0.000% | 0.153% | 0.155% |
+| `alpha-hash` | 1.068% | 1.069% | 0.004% | 1.117% |
+| `transparency-solids` | 0.000% | 0.030% | 0.000% | 0.019% |
+| `alpha-mask-shadows` (limit 0.5%) | 0.122% | 0.129% | 0.115% | 0.053% |
+| `gltf-alpha-modes` | 0.009% | 0.021% | 0.010% | 0.025% |
+| `alpha-mask` | 0.000% | 0.000% | 0.000% | 0.051% |
+
+- WebGPU's alpha to coverage writes its own sample mask on `rg11b10ufloat`, and still differs from three.js by less than three.js's two renderers differ.
+- The alpha hash matches WebGLRenderer to 0.004% on WebGL2. On WebGPU it differs by as much as three.js's WebGPURenderer differs from its WebGLRenderer. The hash multiplies `sin` by 10,000, so the two shading languages' `sin` give other patterns. The parity check passes it on three.js's own baseline.
+- The double-sided solids, the tube with `forceSinglePass` among them, match three.js's frame.
+- three.js's shadows ignore vertex alpha: its depth material copies the map and `alphaTest` alone. null3D cuts the vertex alpha too, which glTF's `COLOR_0` alpha means. So the parity scene casts only from the cards that their map cuts (`?ringShadows=off`), and the other shadow tests keep null3D's own references.
+- `gltf-alpha-modes` changed its references, as its `MASK` materials now take alpha to coverage. Its twin turns `alphaToCoverage` on for materials with an alpha test. No other existing reference changed, on either reference set. The runs covered the image tests of alpha, transparency, glTF, sprites, points, custom materials, blending, skinning, shadows, demos, standard materials and outlines.
+
+### A fault found on the way
+
+WebGPU builds a pipeline that draws depth only with no fragment stage, which the depth template never needed. The cutout templates need theirs to discard, so their templates keep it (`depthFragment`). Before that, every masked caster on WebGPU cast its whole shape, with no error.
+
+### Cost
+
+The S2 timing of the second draw waits for a quiet window: `?sides=two` against `?sides=one` (Benchmarks, "Double-sided see-through objects"). The iPad and the cloud Galaxy S25 time it on the GPU, with the alpha hash's `discard` on the iPad.
 
 ## Options
 

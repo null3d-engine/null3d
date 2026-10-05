@@ -2,7 +2,8 @@
 // three.js: cards cut by vertex alpha at three cutoffs, lit and unlit, and a batch of tilted cards,
 // all drawn with MSAA. ?mode=coverage keeps alpha to coverage on, as masks have it by default, and
 // ?mode=hash draws the cards with the alpha hash. ?shadows makes the sun cast shadows, so the cards
-// cut the holes of their masks into their shadows on the floor and the wall.
+// cut the holes of their masks into their shadows on the floor and the wall, and adds two cards cut
+// by their map.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -25,8 +26,14 @@ import {
 const asked = new URL(import.meta.url).searchParams.get('mode') ?? 'mask';
 if (!(MASK_MODES as readonly string[]).includes(asked)) throw new Error(`unknown mode ${asked}`);
 const MODE = asked as MaskMode;
+const switches = new URL(import.meta.url).searchParams;
 /** True when the sun casts shadows. */
-const SHADOWS = new URL(import.meta.url).searchParams.has('shadows');
+const SHADOWS = switches.has('shadows');
+/**
+ * True when the ring cards cast too. three.js's shadows ignore vertex alpha, so its twin's ring
+ * cards cast none, and the parity test turns them off here with ?ringShadows=off.
+ */
+const RING_SHADOWS = SHADOWS && switches.get('ringShadows') !== 'off';
 
 /** The alpha options of a card's material at `cutoff`, in the sketch's mode. */
 function alphaOptions(cutoff: number) {
@@ -70,7 +77,7 @@ export default defineSketch(({ scene, materials, geometry, post, textures }) => 
 			mesh: card,
 			material: lit ? materials.standard(options) : materials.unlit(options),
 			position: center,
-			castShadows: SHADOWS,
+			castShadows: RING_SHADOWS,
 			receiveShadows: false,
 		});
 		mesh.setRotationEuler(rotation[0], rotation[1], rotation[2]);
@@ -83,6 +90,7 @@ export default defineSketch(({ scene, materials, geometry, post, textures }) => 
 				height: STRIPE_SIZE,
 				data: stripeTexels(),
 				mipmaps: true,
+				colorSpace: 'srgb',
 			})
 		: undefined;
 	for (const { lit, cutoff, position: center, rotation } of SHADOWS ? MASK_MAP_CARDS : []) {

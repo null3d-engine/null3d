@@ -1,8 +1,8 @@
 // The three.js twin of the masked materials' scene (bench/scenes/alpha-mask.ts), which null3D's
 // image tests draw. Each masked material is a three.js material with `alphaTest` and vertex colors
 // with alpha. `?mode=coverage` adds `alphaToCoverage`, and `?mode=hash` draws with `alphaHash`
-// instead of `alphaTest`. `?shadows` makes the sun cast shadows into one map over the scene, with
-// double-sided cards, whose alpha test cuts their shadows. It draws the scene once into an offscreen target of the image's size, and
+// instead of `alphaTest`. `?shadows` makes the sun cast shadows into one map over the scene, from
+// two double-sided cards that their map's alpha cuts. It draws the scene once into an offscreen target of the image's size, and
 // publishes the pixels as the hold pages do. `?renderer=webgl` draws with WebGLRenderer, and
 // `?renderer=webgpu` with WebGPURenderer.
 import { run, toBase64 } from '../../../tests/pages/lib/result';
@@ -80,7 +80,8 @@ run('hold', async () => {
 		const mesh = new three.Mesh(card, material);
 		mesh.position.set(...position);
 		mesh.rotation.set(...rotation);
-		mesh.castShadow = shadows;
+		// three.js's shadows ignore vertex alpha, so the ring cards cast none; the null3D sketch
+		// leaves theirs out with ?ringShadows=off.
 		scene.add(mesh);
 	}
 

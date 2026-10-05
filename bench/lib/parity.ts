@@ -283,9 +283,11 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'alpha-coverage', twin: `${TWINS}/alpha-mask.html?mode=coverage` },
 	{ test: 'alpha-hash', twin: `${TWINS}/alpha-mask.html?mode=hash` },
+	// three.js's shadows ignore vertex alpha, so only the cards that their map cuts cast here.
 	{
 		test: 'alpha-mask-shadows',
 		twin: `${TWINS}/alpha-mask.html?shadows`,
+		sketchSwitches: 'ringShadows=off',
 		limit: SHADOW_MAX_DIFFERENT_PERCENT,
 	},
 	// alpha-coverage-shadows has no twin: three.js cuts the shadow of alpha to coverage at 0.5, and
