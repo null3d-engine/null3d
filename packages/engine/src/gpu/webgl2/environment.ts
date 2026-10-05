@@ -61,11 +61,26 @@ export interface CubeGenerator {
 interface Kept {
 	programs: Record<Pipeline, WebGLProgram>;
 	samplers: Samplers;
+	/**
+	 * The texture units that the programs read: the cube source's, which every program that reads
+	 * a cube shares (the trace reads none), and the panorama's, which can be the same unit.
+	 */
+	units: Units;
 }
 
 interface Samplers {
 	cube: WebGLSampler;
 	panorama: WebGLSampler;
+}
+
+interface Units {
+	cube: number;
+	panorama: number;
+}
+
+/** The texture units from which the programs read the cube source and the panorama. */
+function unitsOf(host: ProgramHost, programs: Record<Pipeline, WebGLProgram>): Units {
+	return { cube: host.unit(programs.blur, 0, 1), panorama: host.unit(programs.panorama, 0, 3) };
 }
 
 /** The generator of environment maps, from the environment shader's GLSL build. */
@@ -98,7 +113,7 @@ export function environmentGenerator(shader: ShaderVariant<Pipeline>): CubeGener
 		const programs = {} as Record<Pipeline, WebGLProgram>;
 		for (const pipeline of pipelines)
 			programs[pipeline] = host.program({ shader: variants, pipeline });
-		made = { programs, samplers: makeSamplers(gl) };
+		made = { programs, samplers: makeSamplers(gl), units: unitsOf(host, programs) };
 		kept.set(gl, made);
 		return made;
 	};
@@ -111,7 +126,8 @@ export function environmentGenerator(shader: ShaderVariant<Pipeline>): CubeGener
 				programs[pipeline] = await host.programLater({ shader: variants, pipeline });
 			});
 			ready = Promise.all(built).then(() => {
-				if (!kept.has(gl)) kept.set(gl, { programs, samplers: makeSamplers(gl) });
+				if (!kept.has(gl))
+					kept.set(gl, { programs, samplers: makeSamplers(gl), units: unitsOf(host, programs) });
 			});
 			preparing.set(gl, ready);
 		}
@@ -119,15 +135,13 @@ export function environmentGenerator(shader: ShaderVariant<Pipeline>): CubeGener
 	};
 	const run: CubeGenerator['run'] = (host, target, size, levels, source, read) => {
 		const { gl } = host;
-		const { programs, samplers } = keep(host);
+		const { programs, samplers, units } = keep(host);
 		const alignment = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT) as number;
 		const stride = Math.ceil(STEP_BYTES / alignment) * alignment;
 		const [steps, values] = environmentSteps(source, size, levels, stride);
-		// The cube source's texture unit and the step values' uniform block binding, as the shader
-		// binds them. Every cube texture binds on that unit. The panorama binds on its own unit
-		// first, and the generator changes no other.
-		const unit = host.slot(0, 1);
-		const panoramaUnit = host.slot(0, 3);
+		// The step values' uniform block binding, as the shader binds it. Each step binds its source
+		// and the source's sampler on its program's unit before it draws, since the panorama's unit
+		// can be the cubes' unit. The generator changes no other unit.
 		const binding = host.slot(0, 0);
 		const made: WebGLTexture[] = [];
 		const texture = (kind: number, storage: (kind: number) => void) => {
@@ -140,16 +154,16 @@ export function environmentGenerator(shader: ShaderVariant<Pipeline>): CubeGener
 		};
 		const cube = (count: number) =>
 			texture(gl.TEXTURE_CUBE_MAP, (t) => gl.texStorage2D(t, count, gl.RGB9_E5, size, size));
+		let panorama: WebGLTexture | null = null;
 		if (source !== 'room') {
 			const { width, height, texels } = source;
-			gl.activeTexture(gl.TEXTURE0 + panoramaUnit);
-			texture(gl.TEXTURE_2D, (t) => {
+			gl.activeTexture(gl.TEXTURE0 + units.panorama);
+			panorama = texture(gl.TEXTURE_2D, (t) => {
 				gl.texStorage2D(t, 1, gl.RGB9_E5, width, height);
 				gl.texSubImage2D(t, 0, 0, 0, width, height, gl.RGB, gl.UNSIGNED_INT_5_9_9_9_REV, texels);
 			});
-			gl.bindSampler(panoramaUnit, samplers.panorama);
 		}
-		gl.activeTexture(gl.TEXTURE0 + unit);
+		gl.activeTexture(gl.TEXTURE0 + units.cube);
 		const textures: Partial<Record<StepTexture, WebGLTexture>> = {
 			chain: cube(chainLevels(size)),
 			target,
@@ -167,15 +181,25 @@ export function environmentGenerator(shader: ShaderVariant<Pipeline>): CubeGener
 		gl.bindBuffer(gl.UNIFORM_BUFFER, uniforms);
 		gl.bufferData(gl.UNIFORM_BUFFER, values, gl.STATIC_DRAW);
 		gl.bindVertexArray(null);
-		gl.bindSampler(unit, samplers.cube);
 		steps.forEach((step, k) => {
 			gl.useProgram(programs[step.pipeline]);
 			gl.bindBufferRange(gl.UNIFORM_BUFFER, binding, uniforms, k * stride, STEP_BYTES);
-			if (step.source !== 'panorama')
+			if (step.source === 'panorama') {
+				gl.activeTexture(gl.TEXTURE0 + units.panorama);
+				gl.bindTexture(gl.TEXTURE_2D, panorama);
+				gl.bindSampler(units.panorama, samplers.panorama);
+			} else {
+				gl.bindSampler(units.cube, samplers.cube);
 				gl.bindTexture(gl.TEXTURE_CUBE_MAP, sources[step.source] as WebGLTexture);
+			}
 			const width = 6 * step.size;
 			gl.viewport(0, 0, width, step.size);
 			gl.drawArrays(gl.TRIANGLES, 0, 3);
+			if (step.source === 'panorama') {
+				gl.bindTexture(gl.TEXTURE_2D, null);
+				gl.bindSampler(units.panorama, null);
+				gl.activeTexture(gl.TEXTURE0 + units.cube);
+			}
 			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, texels);
 			gl.readPixels(0, 0, width, step.size, gl.RGBA, gl.UNSIGNED_BYTE, 0);
 			if (read && step.into.includes('target')) read(step.level, step.size);
@@ -196,12 +220,7 @@ export function environmentGenerator(shader: ShaderVariant<Pipeline>): CubeGener
 			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
 		});
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
-		gl.bindSampler(unit, null);
-		if (source !== 'room') {
-			gl.activeTexture(gl.TEXTURE0 + panoramaUnit);
-			gl.bindTexture(gl.TEXTURE_2D, null);
-			gl.bindSampler(panoramaUnit, null);
-		}
+		gl.bindSampler(units.cube, null);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		gl.deleteFramebuffer(framebuffer);
 		gl.deleteBuffer(texels);

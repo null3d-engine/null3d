@@ -59,7 +59,7 @@ await engine.firstFrame; // the first frame is on the screen
 
 `createEngine` picks the GPU path, starts the engine's threads and runs the sketch's setup. It resolves once the setup has run. `engine.firstFrame` resolves once the GPU has finished the first frame, which is the moment to remove a loading screen.
 
-`createEngine` rejects with an `EngineError` when the browser cannot run the engine, for example without WebAssembly SIMD ([E1303](../errors/E1303.md)) or without a usable GPU path ([E1301](../errors/E1301.md)). Catch it, and show the page without the scene.
+`createEngine` rejects with an `EngineError` when the browser cannot run the engine. Examples are Safari before 18 ([E1306](../errors/E1306.md)), a browser without WebAssembly SIMD ([E1303](../errors/E1303.md)), and one without a usable GPU path ([E1301](../errors/E1301.md)). Catch it, and show the page without the scene.
 
 ## The sketch module
 

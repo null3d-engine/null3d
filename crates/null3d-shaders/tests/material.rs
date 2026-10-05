@@ -467,7 +467,7 @@ fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     for line in [
         "@group(1) @binding(0)\nvar detail: texture_2d_array<f32>;",
-        "@group(1) @binding(7)\nvar heightsSampler: sampler;",
+        "@group(1) @binding(9)\nvar heightsSampler: sampler;",
         "load_custom_texture_layers(",
     ] {
         assert!(wgsl.contains(line), "{line}\n{wgsl}");

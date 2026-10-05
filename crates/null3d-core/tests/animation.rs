@@ -10,9 +10,9 @@ mod three;
 
 use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
-    AnimationError, Animations, Blend, Channel, Clip, DEFAULT_RATE, EVENT_WORDS, Interpolation,
-    MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, POSE_FIELDS, Play, Skeleton,
-    SourceTrack, TrackProblem, event_kind, flag, resample,
+    AnimationError, Animations, BakedKeys, Blend, Channel, Clip, DEFAULT_RATE, EVENT_WORDS,
+    Interpolation, MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, POSE_FIELDS,
+    Play, Skeleton, SourceTrack, TrackProblem, bake, event_kind, flag, resample,
 };
 use null3d_core::error::{CoreError, Resource};
 use null3d_core::jobs::JobSystem;
@@ -169,6 +169,169 @@ fn clips_keep_a_source_grid_up_to_the_rate_and_resample_others() {
     let mut pose = vec![0.0; clip.pose_len()];
     clip.sample(0.5, &mut pose);
     assert_eq!(clip.base().joint(0).0, [1.0, 2.0, 3.0]);
+}
+
+#[test]
+fn tracks_that_move_under_a_millionth_count_as_constant() {
+    let skeleton = skeleton();
+    let times: Vec<f32> = (0..=30).map(|k| k as f32 / 30.0).collect();
+    // Is a track that moves its first component by `change` on every other key stored once?
+    let constant = |channel: Channel, key: &dyn Fn(f64) -> Vec<f32>, change: f64| {
+        let values: Vec<f32> = (0..times.len())
+            .flat_map(|k| key(if k % 2 == 1 { change } else { 0.0 }))
+            .collect();
+        let track = SourceTrack {
+            joint: 1,
+            channel,
+            interpolation: Interpolation::Linear,
+            times: &times,
+            values: &values,
+        };
+        let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
+        let baked = bake(&[track], skeleton.joints(), DEFAULT_RATE).unwrap();
+        let one_key = baked.tracks[0] == BakedKeys::Floats(key(0.0));
+        assert_eq!(clip.animated_tracks() == 0, one_key, "{channel:?} {change}");
+        one_key
+    };
+    // Within 1, the tolerance is a millionth.
+    let small = |d: f64| vec![(0.25 + d) as f32, -0.5, 0.75];
+    assert!(constant(Channel::Translation, &small, 0.9e-6));
+    assert!(!constant(Channel::Translation, &small, 1.1e-6));
+    // Past 1, it is a millionth of the track's largest value.
+    let large = |d: f64| vec![(150.0 + d) as f32, 3.0, 400.0];
+    assert!(constant(Channel::Scale, &large, 0.9 * 400e-6));
+    assert!(!constant(Channel::Scale, &large, 1.1 * 400e-6));
+    // A rotation compares as a quaternion, whichever sign a key has. The first component sits
+    // near the middle of two 16-bit steps, so both moves change its 16-bit integer.
+    let x: f64 = 10_000.49 / 32767.0;
+    let turn = |d: f64| {
+        let (x, sign) = (x + d.abs(), if d < 0.0 { -1.0 } else { 1.0 });
+        let q = [x, 0.0, 0.0, (1.0 - x * x).sqrt()];
+        q.iter().map(|v| (v * sign) as f32).collect()
+    };
+    assert!(constant(Channel::Rotation, &turn, 0.9e-6));
+    assert!(constant(Channel::Rotation, &turn, -0.9e-6));
+    assert!(!constant(Channel::Rotation, &turn, 1.1e-6));
+    assert!(!constant(Channel::Rotation, &turn, -1.1e-6));
+    // The one key is the first: that value goes into the clip's base pose.
+    let values: Vec<f32> = (0..times.len())
+        .flat_map(|k| small(if k % 2 == 1 { 0.9e-6 } else { 0.0 }))
+        .collect();
+    let track = SourceTrack {
+        joint: 1,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Step,
+        times: &times,
+        values: &values,
+    };
+    let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
+    assert_eq!(clip.base().joint(1).0, [0.25, -0.5, 0.75]);
+}
+
+/// A baked track as a file of the asset tool holds it: keys at the frames, or one key at the end,
+/// with rotations as 16-bit integers that a reader turns into floats.
+fn baked_track(keys: &BakedKeys) -> Vec<f32> {
+    match keys {
+        BakedKeys::Rotations(keys) => keys.iter().map(|&k| f32::from(k) / 32767.0).collect(),
+        BakedKeys::Floats(values) => values.clone(),
+    }
+}
+
+#[test]
+fn baked_clips_load_with_copies_into_the_same_clips() {
+    let skeleton = skeleton();
+    for (c, source) in three::CLIPS.iter().enumerate() {
+        let tracks = tracks(source);
+        let resampled = resample(&skeleton, &tracks, DEFAULT_RATE).unwrap();
+        let baked = bake(&tracks, skeleton.joints(), DEFAULT_RATE).unwrap();
+        assert_eq!(baked.times.len() as u32, resampled.frames(), "clip {c}");
+        let end = [*baked.times.last().unwrap()];
+        let values: Vec<Vec<f32>> = baked.tracks.iter().map(baked_track).collect();
+        let stored: Vec<SourceTrack<'_>> = tracks
+            .iter()
+            .zip(&values)
+            .map(|(track, values)| {
+                let constant = values.len() == track.channel.components();
+                SourceTrack {
+                    // Cubic spline tracks are stored as linear keys on the curve.
+                    interpolation: match track.interpolation {
+                        Interpolation::Step => Interpolation::Step,
+                        _ => Interpolation::Linear,
+                    },
+                    times: if constant { &end } else { &baked.times },
+                    values,
+                    ..*track
+                }
+            })
+            .collect();
+        let copied = resample(&skeleton, &stored, DEFAULT_RATE).unwrap();
+        assert_eq!(copied.resampled_tracks(), 0, "clip {c}");
+        assert_eq!(
+            (copied.frames(), copied.rate(), copied.duration()),
+            (resampled.frames(), resampled.rate(), resampled.duration()),
+            "clip {c}"
+        );
+        assert_eq!(
+            copied.animated_tracks(),
+            resampled.animated_tracks(),
+            "clip {c}"
+        );
+        // The copies hold the resampled clip's keys exactly, so every pose is the same.
+        let (mut a, mut b) = (
+            vec![0.0; resampled.pose_len()],
+            vec![0.0; copied.pose_len()],
+        );
+        for step in 0..=200 {
+            let time = resampled.duration() * step as f32 / 200.0;
+            resampled.sample(time, &mut a);
+            copied.sample(time, &mut b);
+            assert_eq!(a, b, "clip {c} at {time}");
+        }
+    }
+}
+
+#[test]
+fn tracks_on_the_frames_are_copied_and_others_resampled() {
+    let skeleton = skeleton();
+    let grid: Vec<f32> = (0..=30).map(|k| k as f32 / 30.0).collect();
+    let moving: Vec<f32> = grid.iter().flat_map(|t| [*t, 0.0, 0.0]).collect();
+    let uneven = [0.0, 0.4, 1.0];
+    let few = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0];
+    let on_frames = SourceTrack {
+        joint: 0,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Linear,
+        times: &grid,
+        values: &moving,
+    };
+    let one_key = SourceTrack {
+        joint: 1,
+        times: &[1.0],
+        values: &[1.0, 2.0, 3.0],
+        ..on_frames
+    };
+    let off_frames = SourceTrack {
+        joint: 2,
+        times: &uneven,
+        values: &few,
+        ..on_frames
+    };
+    let clip = resample(&skeleton, &[on_frames, one_key], DEFAULT_RATE).unwrap();
+    assert_eq!((clip.frames(), clip.resampled_tracks()), (31, 0));
+    let clip = resample(&skeleton, &[on_frames, one_key, off_frames], DEFAULT_RATE).unwrap();
+    assert_eq!((clip.frames(), clip.resampled_tracks()), (31, 1));
+    // A cubic spline track on the frames still follows its curve between them.
+    let cubic: Vec<f32> = grid
+        .iter()
+        .flat_map(|t| [0.0; 3].into_iter().chain([*t, 0.0, 0.0]).chain([0.0; 3]))
+        .collect();
+    let curve = SourceTrack {
+        interpolation: Interpolation::CubicSpline,
+        values: &cubic,
+        ..on_frames
+    };
+    let clip = resample(&skeleton, &[curve], DEFAULT_RATE).unwrap();
+    assert_eq!(clip.resampled_tracks(), 1);
 }
 
 #[test]
@@ -514,12 +677,12 @@ fn a_clip_whose_frames_times_tracks_pass_the_limit_is_refused_before_it_allocate
         .collect();
     let refused = resample(&skeleton, &tracks, DEFAULT_RATE);
     let frames = 34_000 * 30 + 1;
-    assert_eq!(
-        refused.err(),
-        Some(AnimationError::Keys {
-            keys: frames * joints
-        })
-    );
+    let too_many = Some(AnimationError::Keys {
+        keys: frames * joints,
+    });
+    assert_eq!(refused.err(), too_many);
+    // The asset tool's bake puts tracks on the same frames, so it refuses the same clip.
+    assert_eq!(bake(&tracks, joints, DEFAULT_RATE).err(), too_many);
     // The same keys over 4 tracks fit, with frames to spare.
     let short = [0.0f32, 1_000.0];
     let few: Vec<SourceTrack<'_>> = tracks[..4]

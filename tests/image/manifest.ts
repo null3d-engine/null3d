@@ -30,6 +30,7 @@ import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
+import { POINT_IMAGE } from '../../bench/scenes/points.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -1248,6 +1249,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/sprites-sketch.ts',
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
+	},
+	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
+	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
+	// PointsMaterial.
+	{
+		name: 'points',
+		sketch: 'tests/pages/sketches/points-sketch.ts',
+		hold: 0,
+		size: [POINT_IMAGE.width, POINT_IMAGE.height],
 	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes

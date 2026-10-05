@@ -8,21 +8,17 @@ import { ImageTable, receiveImages } from '../shared/images';
 import type { Tier } from '../shared/tier';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
-import { emptySceneInput, HoldLoop, type LoopFault, runRenderLoop } from './loop';
+import { emptySceneInput, type FramePacing, HoldLoop, type LoopFault, runRenderLoop } from './loop';
 import { Drawing } from './recovery';
 import { createRenderer, type RenderCanvas, type Renderer, type RendererOptions } from './renderer';
 
 export { preloadDeviceShaders } from './renderer';
 
-export interface DrawingSetup extends RendererOptions {
+export interface DrawingSetup extends RendererOptions, FramePacing {
 	/** The canvas that this thread owns. */
 	canvas: RenderCanvas;
 	metrics: ArrayBufferLike;
 	control: ArrayBufferLike;
-	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
-	fps?: number;
-	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
-	queue?: number;
 	/**
 	 * The sketch that this thread runs, which it steps before each draw. Without one, the thread
 	 * draws the frames that the sketch worker publishes.
@@ -58,7 +54,7 @@ export interface DrawingSetup extends RendererOptions {
  * runs, and every renderer reads them.
  */
 export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Renderer>> {
-	const { canvas, control, metrics, fps, queue, sketch, hold = false, fault, presented } = setup;
+	const { canvas, control, metrics, sketch, hold = false, fault, presented } = setup;
 	const { slots } = controlViews(control);
 	const imageTable = setup.imageTable ?? new ImageTable();
 	imageTable.loadGeneratorsWith(generatorLoader(setup.tier));
@@ -69,8 +65,8 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 		hold
 			? new HoldLoop(slots, renderer, metrics, presented)
 			: sketch
-				? runDirectLoop(sketch, renderer, control, metrics, fps, queue, fault, presented)
-				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort, fault, presented);
+				? runDirectLoop(sketch, renderer, control, metrics, setup, fault, presented)
+				: runRenderLoop(renderer, control, metrics, setup, setup.imagePort, fault, presented);
 	const renderer = await create();
 	// Firefox can fail to read an image that reached this thread while it made its first renderer,
 	// so the sketch thread sends its images only once the renderer exists.
