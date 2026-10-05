@@ -4,7 +4,7 @@ import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { Assets } from './assets';
 import { Environment } from './environment';
-import type { Texture, TextureOptions, Textures } from './textures';
+import type { Texture, TextureOptions, TextureReloader, Textures } from './textures';
 
 const PAGE = 'https://game.example/levels/one.html';
 
@@ -36,16 +36,25 @@ function serve(answers: Record<string, Answer>): void {
 	}) as typeof createImageBitmap;
 }
 
-/** Textures that record what `fromImage` got. */
+/** Textures that record what `fromImage` and `setImage` got, and each texture's load again. */
 function fakeTextures() {
 	const made: [ImageBitmap, TextureOptions, number][] = [];
+	const reloads: TextureReloader[] = [];
+	const set: [Texture, ImageBitmap, number][] = [];
 	const textures = {
+		maxSize: 4096,
 		fromImage(image: ImageBitmap, options: TextureOptions, premultiplied: number) {
 			made.push([image, options, premultiplied]);
 			return { width: image.width } as Texture;
 		},
+		reloadsFrom(_texture: Texture, reload: TextureReloader) {
+			reloads.push(reload);
+		},
+		setImage(texture: Texture, image: ImageBitmap, premultiplied: number) {
+			set.push([texture, image, premultiplied]);
+		},
 	} as unknown as Textures;
-	return { textures, made };
+	return { textures, made, reloads, set };
 }
 
 beforeEach(() => {
@@ -285,5 +294,49 @@ describe('environments', () => {
 		).toBe(
 			`E1213: assets.builtinEnvironment() got "studio", which names no built-in environment. Use 'room'.`,
 		);
+	});
+});
+
+describe('loads of a texture again', () => {
+	beforeEach(() => {
+		fetched = [];
+		decoded = [];
+	});
+	afterEach(() => {
+		globalThis.fetch = realFetch;
+		globalThis.createImageBitmap = realDecode;
+	});
+
+	test('decode the file again at the size of the levels that stay, as the first load decoded it', async () => {
+		serve({ 'https://game.example/levels/brick.png': 'png' });
+		const { textures, reloads, set } = fakeTextures();
+		const assets = new Assets(textures, PAGE);
+		await assets.loadTexture('brick.png', { premultipliedAlpha: true });
+		expect(reloads.length).toBe(1);
+		const target = { width: 2, height: 1 } as Texture;
+		await reloads[0]?.(1, target);
+		expect(fetched).toEqual([
+			'https://game.example/levels/brick.png',
+			'https://game.example/levels/brick.png',
+		]);
+		expect(decoded.at(-1)).toMatchObject({
+			imageOrientation: 'flipY',
+			premultiplyAlpha: 'premultiply',
+			resizeWidth: 2,
+			resizeHeight: 1,
+			resizeQuality: 'high',
+		});
+		expect(set.map(([texture, , premultiplied]) => [texture, premultiplied])).toEqual([
+			[target, 1],
+		]);
+	});
+
+	test('fail with E1411 when the file no longer downloads', async () => {
+		const answers: Record<string, Answer> = { 'https://game.example/levels/brick.png': 'png' };
+		serve(answers);
+		const { textures, reloads } = fakeTextures();
+		await new Assets(textures, PAGE).loadTexture('brick.png');
+		answers['https://game.example/levels/brick.png'] = 404;
+		await expect(reloads[0]?.(1, { width: 2, height: 1 } as Texture)).rejects.toThrow('E1411');
 	});
 });

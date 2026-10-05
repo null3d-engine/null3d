@@ -1,6 +1,6 @@
 # D-12: Memory budgets per preset
 
-Status: decided for the texture budgets, 2026-10-03. The iPad's WebAssembly row is pending. Task: M1-L3. Test: T-25.
+Status: decided for the texture budgets, 2026-10-03, and applied by [D-69](D-69-texture-budget.md) on 2026-10-05. The iPad's WebAssembly row is pending. Task: M1-L3. Test: T-25.
 
 ## Question
 
@@ -78,4 +78,4 @@ M1-G6 tuned the shadow settings of each preset (D-11), and their shadow maps sha
 
 The shadow atlas of spot and point lights holds `shadowTiles` tiles of `shadowTileSize` texels, 4 bytes each. It adds at most 4 MiB on Low, 8 MiB on Medium, 64 MiB on High and 96 MiB on Ultra. The last column counts it.
 
-The WebAssembly column checks only on the S24+, as the iPad's step has no result yet. The texture budget stays a planned setting: the engine counts each texture's GPU memory, but no preset applies a budget to it yet. M1-G6 keeps every value above, and the cap of 1008 MiB on phones and tablets stays for the task that builds the budget.
+The WebAssembly column checks only on the S24+, as the iPad's step has no result yet. M1-G6 keeps every value above. Since M2-A4, each preset applies its texture budget, and phones and tablets cap it at 1008 MiB: [D-69](D-69-texture-budget.md) gives how.

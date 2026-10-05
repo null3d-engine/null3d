@@ -182,6 +182,20 @@ pub mod texture_stat {
     pub const UPLOAD_BUDGET: u32 = 7;
     /// The largest anisotropy that samplers use.
     pub const MAX_ANISOTROPY: u32 = 8;
+    /// The GPU bytes that the textures may take, or 0 for no budget.
+    pub const MEMORY_BUDGET: u32 = 9;
+    /// The largest mip levels of one texture that the memory budget dropped.
+    pub const DROPPED_LEVELS: u32 = 10;
+    /// The mip levels that the memory budget dropped from every texture.
+    pub const DROPPED_TOTAL: u32 = 11;
+    /// The textures that the memory budget dropped levels from.
+    pub const DROPPED_TEXTURES: u32 = 12;
+    /// A number that changes with each drop, each load again asked for and each swap.
+    pub const BUDGET_EPOCH: u32 = 13;
+    /// The dropped levels that one texture's load again asks for.
+    pub const RELOAD_LEVEL: u32 = 14;
+    /// The hidden texture that takes the texels of one texture's load again.
+    pub const RELOAD_TEXTURE: u32 = 15;
 }
 
 /// The parts of the number that `shadowCasters` returns.
@@ -209,6 +223,8 @@ pub mod texture_option {
     /// Any value makes the next recorded frame upload every image that arrived, whatever its
     /// budget, as a held frame must.
     pub const UPLOAD_ALL: u32 = 2;
+    /// The GPU memory that the textures may take, in KiB, or 0 for no budget.
+    pub const MEMORY_BUDGET_KIB: u32 = 3;
 }
 
 /// The arrays that `createMeshFromArrays` finds in the staging words, and what it does with them.
@@ -737,6 +753,13 @@ pub fn typescript() -> String {
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
                 ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
+                ("MEMORY_BUDGET", texture_stat::MEMORY_BUDGET),
+                ("DROPPED_LEVELS", texture_stat::DROPPED_LEVELS),
+                ("DROPPED_TOTAL", texture_stat::DROPPED_TOTAL),
+                ("DROPPED_TEXTURES", texture_stat::DROPPED_TEXTURES),
+                ("BUDGET_EPOCH", texture_stat::BUDGET_EPOCH),
+                ("RELOAD_LEVEL", texture_stat::RELOAD_LEVEL),
+                ("RELOAD_TEXTURE", texture_stat::RELOAD_TEXTURE),
             ],
         ),
         (
@@ -786,6 +809,7 @@ pub fn typescript() -> String {
                 ("UPLOAD_BUDGET", texture_option::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
+                ("MEMORY_BUDGET_KIB", texture_option::MEMORY_BUDGET_KIB),
                 ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
                 ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],

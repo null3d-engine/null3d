@@ -474,6 +474,17 @@ describe('materials, textures and lights', () => {
 		});
 	});
 
+	test('an image inside the file notes where its bytes lie there, to read them again', () => {
+		const glb = texturedBuilder().glb();
+		const data = parse(glb);
+		const source = data.images[0]?.source;
+		expect(source?.url).toBe(URL_OF);
+		expect(source?.length).toBe(4);
+		const at = source?.offset ?? 0;
+		expect(glb.subarray(at, at + 4)).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+		expect(data.images[1]?.source).toBeUndefined();
+	});
+
 	test('KHR_texture_basisu names the KTX2 image of a texture', () => {
 		const b = shipBuilder().uses('KHR_texture_basisu', true);
 		const ktx2 = readFileSync(

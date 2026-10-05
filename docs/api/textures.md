@@ -143,7 +143,7 @@ A texture's `width`, `height` and `depth` give its size, and `bytes` its GPU mem
 
 Textures of one size, one format and one number of mip levels share a 2D texture array on the GPU. Each texture takes one layer of the array. Materials whose maps are in one array share one bind group when they sample their maps the same way. The GPU then switches textures less often between draws.
 
-An array holds at most 256 layers, the most that an iPad allows. It starts with room for a few textures, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. When a size has more than 256 textures, a second array holds the rest. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array.
+An array holds at most 256 layers, the most that an iPad allows, and at most 128 MiB. It starts with room for a few textures, at most 8 MiB of them, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. For one frame the GPU holds both, so the cap of 128 MiB keeps that extra memory small. When a size has more textures than an array holds, another array holds the rest. When under a quarter of an array's layers hold textures, the array shrinks, and its textures move to its lowest layers. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array.
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
 
@@ -175,7 +175,9 @@ Color maps, such as the base color of a surface, store sRGB colors. The GPU turn
 
 ## GPU memory
 
-A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers, so a half-full array costs as much as a full one.
+A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers. The count in `textures.memoryBytes` holds them too. It also holds an array's old GPU texture after the array grows or shrinks, until the next frame frees it.
+
+The quality preset's texture memory budget, `textureMemoryMiB`, caps the GPU memory of every texture. Past it, the engine drops the largest mip levels of textures from files, and loads them again when room returns. Each texture's `droppedLevels` gives the levels that it lost, from 0 to 3. Its `width` and `height` keep its own size, and its `bytes` give the memory that it takes now. [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order of the drops.
 
 ## Both GPU paths
 
@@ -183,7 +185,7 @@ WebGPU and WebGL2 store, upload and sample textures the same way, and make the s
 
 ## When the browser takes the GPU away
 
-The engine keeps no copy of an image or of data once its upload is done, which saves memory. When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture whose texels it released draws without its map until the texture gets an update. A texture from a KTX2 file takes no update, so load the file again for a new texture.
+The engine keeps no copy of an image or of data once its upload is done, which saves memory. When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. Any other texture whose texels the engine released draws without its map until the texture gets an update.
 
 ## API reference
 
@@ -215,7 +217,8 @@ A texture: an image or data on the GPU, which materials sample. Its texels uploa
 | `readonly uvSet: 0 \| 1` | The set of texture coordinates that materials read the texture at. |
 | `readonly width: number` | Texels in each row. An update with an image of another size changes it. |
 | `readonly height: number` | Rows in each layer. An update with an image of another size changes it. |
-| `readonly bytes: number` | The GPU bytes of the texture: its layers, with every mip level. |
+| `readonly bytes: number` | The GPU bytes of the texture: its layers, with every mip level that the GPU holds. A texture whose largest levels the memory budget dropped takes less. |
+| `readonly droppedLevels: number` | The largest mip levels that the GPU does not hold, which the texture memory budget dropped: 0 to 3. `width` and `height` stay the texture's own size. |
 | `update(source: ImageBitmap \| TextureDataArray): void` | Gives the texture new texels, which upload in their turn. An image may have another size, and the texture then takes that size; the image moves to the thread that draws, so this thread can use it no more. Data must fit the texture's size and format. Until the new texels are on the GPU, materials draw with their colors alone. A texture from a KTX2 file takes no updates, and throws E1208: load the file again. |
 | `destroy(): void` | Frees the texture's GPU memory. Materials that map it draw with their colors alone. Calls on the texture after this throw E1101. |
 

@@ -203,6 +203,7 @@ export type {
 	TextureDataArray,
 	TextureFilter,
 	TextureFormat,
+	TextureMemory,
 	TextureOptions,
 	Textures,
 	TextureWrap,

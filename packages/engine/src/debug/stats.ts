@@ -5,6 +5,7 @@
 // a fraction stored in an object property is a new heap object in some browsers.
 
 import type { QualityPreset } from '../quality/presets';
+import type { TextureMemory } from '../scene/textures';
 import {
 	Counter,
 	PHASE_NAMES,
@@ -73,6 +74,15 @@ export interface FrameStats {
 	 * scene draws at, from 0 to 1. Dynamic resolution moves it during play.
 	 */
 	readonly renderScale: number;
+	/**
+	 * The GPU bytes that every texture takes at the window's end, with the free layers of their
+	 * texture arrays. The stats overlay on the page shows 0.
+	 */
+	readonly textureBytes: number;
+	/** The GPU bytes that textures may take: the quality setting `textureMemoryMiB` in bytes. */
+	readonly textureBudgetBytes: number;
+	/** The largest mip levels that the texture memory budget dropped, over every texture. */
+	readonly droppedLevels: number;
 }
 
 /** Presented time that a window of frame figures covers, at least. */
@@ -85,6 +95,11 @@ export interface StatsSources {
 	preset(): QualityPreset;
 	/** The render scale of the newest frame, in thousandths. */
 	renderScaleThousandths(): number;
+	/**
+	 * The textures' GPU memory, their budget and their dropped levels, on the thread that runs the
+	 * sketch. The page's stats overlay has none, and its figures read 0.
+	 */
+	textureMemory?: TextureMemory;
 }
 
 // Float64 slots of the published figures, in the order of `FIGURES`, then each thread's busy time
@@ -98,6 +113,9 @@ const FIGURES = [
 	'drawCalls',
 	'uploadBytes',
 	'renderScale',
+	'textureBytes',
+	'textureBudgetBytes',
+	'droppedLevels',
 ] as const;
 const FRAMES = 0;
 const SECONDS = 1;
@@ -107,6 +125,9 @@ const CPU_MS = 4;
 const DRAW_CALLS = 5;
 const UPLOAD_BYTES = 6;
 const RENDER_SCALE = 7;
+const TEXTURE_BYTES = 8;
+const TEXTURE_BUDGET_BYTES = 9;
+const DROPPED_LEVELS = 10;
 const THREADS = FIGURES.length;
 /** Slots of each thread: its busy time, then each phase's time. */
 const THREAD_VALUES = 1 + PHASE_NAMES.length;
@@ -211,6 +232,12 @@ export class FrameStatsWindow {
 		values[DRAW_CALLS] = mean(render, SUM_COUNTERS + Counter.DrawCalls);
 		values[UPLOAD_BYTES] = mean(render, SUM_COUNTERS + Counter.UploadBytes);
 		values[RENDER_SCALE] = this.sources.renderScaleThousandths() / 1000;
+		const textures = this.sources.textureMemory;
+		if (textures) {
+			values[TEXTURE_BYTES] = textures.bytes;
+			values[TEXTURE_BUDGET_BYTES] = textures.budgetBytes;
+			values[DROPPED_LEVELS] = textures.droppedLevels;
+		}
 		let busiest = 0;
 		for (let k = 0; k < this.roles.length; k++) {
 			const at = THREADS + k * THREAD_VALUES;

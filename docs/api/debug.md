@@ -312,6 +312,9 @@ Figures of the running engine, as `debug.frameStats()` returns them and the stat
 | `readonly tier: Tier` | The GPU path the engine draws with. |
 | `readonly preset: QualityPreset` | The quality preset that the engine runs. |
 | `readonly renderScale: number` | The render scale of the newest frame: the share of the canvas's width and height that the scene draws at, from 0 to 1. Dynamic resolution moves it during play. |
+| `readonly textureBytes: number` | The GPU bytes that every texture takes at the window's end, with the free layers of their texture arrays. The stats overlay on the page shows 0. |
+| `readonly textureBudgetBytes: number` | The GPU bytes that textures may take: the quality setting `textureMemoryMiB` in bytes. |
+| `readonly droppedLevels: number` | The largest mip levels that the texture memory budget dropped, over every texture. |
 
 ### `FrameStatsThread`
 

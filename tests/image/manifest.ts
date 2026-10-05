@@ -606,6 +606,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
 	},
+	// Two 512 x 512 textures and a small one past a texture memory budget of 1 MiB in a live engine.
+	// The large ones drop their largest mip level, so each quarter draws one flat color where the
+	// full texture holds a checker. Then the levels load again from the file once room returns, and
+	// a compressed texture from a KTX2 file drops a level by loading the file again.
+	{
+		name: 'texture-budget',
+		page: 'tests/pages/texture-budget.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: {
+			withinBudget: true,
+			largestDropped: true,
+			smallKept: true,
+			restored: true,
+			mostDropped: true,
+			compressedDropped: true,
+		},
+	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late

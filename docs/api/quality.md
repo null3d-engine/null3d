@@ -58,6 +58,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `minRenderScale` | A number from 0.25 to 1, at most `maxRenderScale`: the lowest render scale that dynamic resolution may draw at. 1 keeps the whole canvas. | During play. |
 | `maxRenderScale` | A number from 0.25 to 1: the highest render scale, where the engine starts. | During play. |
 | `maxAnisotropy` | A whole number from 1 to 16. A texture whose `anisotropy` option is higher samples at this value. | During play. Textures sample with the new cap from the next frame. |
+| `textureMemoryMiB` | A whole number of MiB from 64 to 16,384: the GPU memory that textures may take. Phones and tablets cap a preset's value at 1,008. | During play. Past it, the engine drops the largest mip levels of textures from files. |
 | `uploadBytesPerFrame` | A whole number of texel bytes from 65,536 (64 KiB) to 67,108,864 (64 MiB). | During play, from the next frame. |
 | `shadowFilter` | 3 or 5: the texels on each side of the square that blends each shadow's edge. 5 gives softer edges and costs more for each pixel that receives shadows. | During play. |
 | `farCascadeInterval` | A whole number from 1 to 8: each far shadow cascade draws once in this many frames. The nearest cascade draws in every frame. | During play. |
@@ -133,9 +134,22 @@ export default defineSketch(({ quality }) => {
 
 A step of the render scale does not call the handlers: read `quality.renderScale` for it. Turn the governor off where every frame must draw the same way, such as a benchmark or a recorded video: `quality.set({ governor: false })`.
 
+## Texture memory
+
+The `quality.textureMemory` object reports the GPU memory of textures against their budget, the `textureMemoryMiB` setting. Its `bytes` are the GPU bytes that every texture takes, with the free layers of texture arrays. Its `budgetBytes` give the budget in bytes. Its `droppedLevels` count the mip levels that the engine dropped from every texture to stay under the budget. Its `droppedTextures` count the textures that hold fewer levels than their own. Each texture's `droppedLevels` gives its own count. [Quality presets](../concepts/quality-presets.md#texture-memory) explains which levels drop and how they come back.
+
+```ts
+quality.onChange(({ textureMemory }) => {
+	if (textureMemory.droppedLevels > 0)
+		console.log(`textures: ${textureMemory.bytes} of ${textureMemory.budgetBytes} bytes`);
+});
+```
+
+Some textures never drop levels: those that the sketch made from images or data, and those under 64 KiB. A scene whose textures stay over the budget holds too many of them. Destroy the textures that the scene no longer shows, or load large ones from KTX2 files.
+
 ## Quality events
 
-`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
+`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor, and after the texture memory budget drops levels or asks for them again. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
 
 ## Related pages
 
@@ -196,6 +210,7 @@ The quality preset and settings, as a sketch reads and changes them through `ctx
 | `readonly settings: Readonly<QualitySettings>` | The settings in use: the preset's values, with the values of the page's options and the changes that `set` made. |
 | `readonly renderScale: number` | The render scale that the engine draws the scene at: the part of the canvas's width and height, from `minRenderScale` to `maxRenderScale`. The engine lowers it when frames take too long and raises it again when they have time to spare. A change of the range applies to the frame being drawn. |
 | `readonly governor: QualityGovernor` | What the frame-budget governor has lowered below `settings`. When frames take too long, the governor lowers the render scale, then the shadow settings, then bloom's size, one step at a time. The `onChange` handlers run after each of those steps, but not after a step of the render scale. Hold mode has no governor, so it draws with the settings as set. |
+| `readonly textureMemory: TextureMemory` | The GPU memory that textures take, against `settings.textureMemoryMiB`, and the mip levels that the engine dropped to stay under it. The `onChange` handlers run after the engine drops levels or asks for them again. |
 | `set(settings: Partial<QualitySettings>): Promise<void>` | Changes settings from the next frame on, and resolves at once. It takes the settings that change during play, each with a value that the setting takes, and throws E1213 for any other setting or value, or for a `minRenderScale` above `maxRenderScale`. A setting that it does not get keeps its value. |
 | `setPreset(preset: QualityPreset): Promise<void>` | Switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting that changes during play takes the new preset's value, including the settings that `set` changed, apart from those that the page's options give. The settings fixed when the engine starts, such as `antialias`, keep their values. The GPU path caps the preset, as it caps the page's choice. The promise resolves once the engine has drawn a frame at the new preset with all of its pipelines built. Until then the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws E1213. |
 | `onChange(handler: (quality: Quality) => void): () => void` | Calls `handler` at the start of the first frame after the settings change. Returns a function that removes the handler. |
@@ -234,6 +249,7 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `minRenderScale: number` | The lowest render scale: the smallest part of the canvas's width and height that the scene draws at when frames take too long. The engine draws the scene at a render scale between this and `maxRenderScale`, and scales the image up to the canvas. It takes a number from 0.25 to 1, at most `maxRenderScale`, and changes during play. 1 keeps the whole canvas. |
 | `maxRenderScale: number` | The highest render scale, where the engine starts. It takes a number from 0.25 to 1, and changes during play. With `minRenderScale` at the same value, the scene always draws at that scale. |
 | `maxAnisotropy: number` | The highest anisotropy that textures sample with. A texture whose own `anisotropy` option is higher samples at this value. It takes a whole number from 1 to 16, and changes during play. |
+| `textureMemoryMiB: number` | The GPU memory in MiB that textures may take: 256, 512, 1,024 or 2,048 from Low to Ultra, and at most 1,008 on phones and tablets unless the page's `textureMemoryMiB` option gives a value. When the textures take more, the engine drops the largest mip levels of the textures that it can load again from their files, and loads those levels again once room returns. It takes a whole number from 64 to 16,384, and changes during play. |
 | `uploadBytesPerFrame: number` | The texel bytes that one frame may upload, so that loading many textures does not make one frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play. |
 | `shadowFilter: 3 \| 5` | The texels on each side of the square of shadow map texels that blend into each point's shadow: 3 or 5. A larger square gives softer shadow edges and costs more per pixel that receives shadows. It changes during play. |
 | `farCascadeInterval: number` | How often each far shadow cascade draws: once in this many frames, a whole number from 1 to 8. The nearest cascade draws in every frame, and the far ones take turns. A far cascade that a dynamic object touches draws in every frame, so moving shadows follow their casters. A higher value costs less where far cascades hold still casters alone. It changes during play. |
@@ -250,5 +266,18 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | `depthPrepass: boolean` | True when the engine draws the depth of the opaque objects before it shades them, so it shades each pixel once, for its nearest surface. The setting is fixed when the engine starts: the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it. |
 | `morphTargets: number` | The most morph target weights of each object that a WebGL2 device draws, a whole number from 1 to 256. Each object keeps the weights farthest from 0, and draws the others as 0. WebGPU draws every weight. The `morphTargets` option of `createEngine` sets it, and `set` does not take it. |
 | `softwareOcclusion: boolean` | True when software occlusion culling runs on WebGL2: each frame, the job workers draw the objects that `setOccluder(true)` marks into a small depth buffer, and the engine skips every object that lies wholly behind them. It costs the job workers time for each blocker, and saves drawing what they hide. It changes during play. WebGPU ignores it. |
+
+### `TextureMemory`
+
+Interface `TextureMemory`.
+
+The GPU memory that textures take, against the quality setting `textureMemoryMiB`, and the mip levels that the engine dropped to stay under it, as `quality.textureMemory` reports them.
+
+| Member | Description |
+| --- | --- |
+| `readonly bytes: number` | The GPU bytes that every texture takes now, with the free layers of their texture arrays. |
+| `readonly budgetBytes: number` | The GPU bytes that textures may take: `textureMemoryMiB` in bytes. |
+| `readonly droppedLevels: number` | The largest mip levels that the engine dropped, over every texture. |
+| `readonly droppedTextures: number` | The textures that hold fewer mip levels than their own. |
 
 <!-- null3d:api:end -->

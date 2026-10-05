@@ -109,7 +109,7 @@ A primitive that names an accessor another primitive also names shares that acce
 
 Each frame sends at most the preset's texture upload budget to the GPU: 2 MiB on Low, up to 16 MiB on Ultra. A larger texture goes up over several frames, and the engine then makes its mip levels on the GPU. A mesh goes up whole in the frame after the call that makes it. [Quality presets](quality-presets.md) lists the budget of each preset, and `quality.set({ uploadBytesPerFrame })` changes it.
 
-Each texture reports its GPU memory in `memoryBytes`. The engine counts this memory, but it does not hold textures to a budget yet.
+Each texture reports its GPU memory in `bytes`, and `textures.memoryBytes` counts every texture. The quality preset's texture memory budget holds textures under `textureMemoryMiB`. Past it, the engine drops the largest mip levels of textures from files, and loads them again from the file once room returns: [Quality presets](quality-presets.md#texture-memory).
 
 ## From three.js
 

@@ -4,6 +4,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import { DEFAULT_MAXIMUM_MIB, MAX_MAXIMUM_MIB, MIN_MAXIMUM_MIB } from '../page/loader';
 import { PLANNED_SETTINGS, SETTING_DOCS, settingRows } from './preset-docs';
 import {
+	capTextureMemory,
 	checkSettings,
 	describeValues,
 	LIVE_SETTINGS,
@@ -112,6 +113,7 @@ describe('the preset table', () => {
 			'softwareOcclusion',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
+			'textureMemoryMiB',
 			'memoryMaximumMiB',
 		]);
 	});
@@ -133,6 +135,7 @@ describe('the preset table', () => {
 			'minRenderScale',
 			'maxRenderScale',
 			'maxAnisotropy',
+			'textureMemoryMiB',
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
@@ -155,6 +158,7 @@ describe('the preset table', () => {
 			'minRenderScale',
 			'maxRenderScale',
 			'maxAnisotropy',
+			'textureMemoryMiB',
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
@@ -183,6 +187,18 @@ describe('the preset table', () => {
 	});
 });
 
+describe('capTextureMemory', () => {
+	it("caps the preset's texture memory on phones and tablets, unless the page gives its own", () => {
+		expect(capTextureMemory(presetSettings('ultra'), {}, 1008).textureMemoryMiB).toBe(1008);
+		expect(capTextureMemory(presetSettings('medium'), {}, 1008).textureMemoryMiB).toBe(512);
+		const own = { textureMemoryMiB: 4096 };
+		expect(capTextureMemory(presetSettings('ultra', own), own, 1008).textureMemoryMiB).toBe(4096);
+		expect(
+			capTextureMemory(presetSettings('ultra'), {}, Number.POSITIVE_INFINITY).textureMemoryMiB,
+		).toBe(2048);
+	});
+});
+
 describe('presetSettings', () => {
 	it("gives a sketch each preset's values", () => {
 		const full = {
@@ -201,6 +217,7 @@ describe('presetSettings', () => {
 			farCascadeInterval: 4,
 			followMovingCasters: false,
 			maxAnisotropy: 2,
+			textureMemoryMiB: 256,
 			uploadBytesPerFrame: 2 * MIB,
 			antialias: 'fxaa',
 			shadowCascades: 2,
@@ -221,6 +238,7 @@ describe('presetSettings', () => {
 			farCascadeInterval: 3,
 			followMovingCasters: true,
 			maxAnisotropy: 4,
+			textureMemoryMiB: 512,
 			uploadBytesPerFrame: 4 * MIB,
 			antialias: 'msaa',
 			shadowCascades: 3,
@@ -241,6 +259,7 @@ describe('presetSettings', () => {
 			farCascadeInterval: 2,
 			followMovingCasters: true,
 			maxAnisotropy: 8,
+			textureMemoryMiB: 1024,
 			uploadBytesPerFrame: 8 * MIB,
 			antialias: 'msaa',
 			shadowCascades: 3,
@@ -261,6 +280,7 @@ describe('presetSettings', () => {
 			farCascadeInterval: 2,
 			followMovingCasters: true,
 			maxAnisotropy: 16,
+			textureMemoryMiB: 2048,
 			uploadBytesPerFrame: 16 * MIB,
 			antialias: 'msaa',
 			shadowCascades: 4,
@@ -328,7 +348,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, bloomSize, aoScale, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, bloomSize, aoScale, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

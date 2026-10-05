@@ -31,6 +31,7 @@ import {
 } from '../generated/core';
 import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, loadAnimationRig } from './animation';
+import type { FileSource } from './assets';
 import { affineOf, multiplyAffine } from './gltf-math';
 import type {
 	BlockerData,
@@ -88,6 +89,16 @@ export interface GltfContext {
 		colorSpace: 'srgb' | 'linear',
 		call: string,
 	): Promise<ImageBitmap>;
+	/**
+	 * Lets the texture memory budget drop a texture's largest mip levels, which the engine then
+	 * loads again from the file at `source`, as `assets.loadTexture` does.
+	 */
+	reloadsFrom(
+		texture: Texture,
+		source: FileSource,
+		colorSpace: 'srgb' | 'linear',
+		call: string,
+	): void;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
 	error(code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417', message: string): EngineError;
 }
@@ -381,37 +392,51 @@ export async function makeTextures(
 	call: string,
 ): Promise<(Texture | undefined)[]> {
 	const files = new Map<string, Promise<Blob>>();
+	/** The texture of one use, from its bitmap, its image file or its KTX2 data. */
+	const makeTexture = async (
+		use: TextureUse,
+		bitmap?: ImageBitmap,
+	): Promise<Texture | undefined> => {
+		const options = {
+			colorSpace: use.colorSpace,
+			wrap: use.wrap,
+			filter: use.filter,
+			mipmaps: use.mipmaps,
+			uvSet: use.uvSet,
+		} as const;
+		if (bitmap) return context.textures.fromImage(bitmap, options, 0, call);
+		const image = data.images[use.image];
+		let bytes = image?.bytes;
+		let source = address;
+		if (!bytes && image?.url) {
+			source = new URL(image.url);
+			let file = files.get(image.url);
+			if (!file) {
+				file = context.download(source, call);
+				files.set(image.url, file);
+			}
+			const blob = await file;
+			const head = new Uint8Array(await blob.slice(0, KTX2_IDENTIFIER.length).arrayBuffer());
+			if (!isKtx2(head)) {
+				const decoded = await context.decode(blob, source, use.colorSpace, call);
+				return context.textures.fromImage(decoded, options, 0, call);
+			}
+			bytes = new Uint8Array(await blob.arrayBuffer());
+		}
+		if (!bytes) return undefined;
+		return ktx2Texture(context, bytes.slice().buffer, source, use, call);
+	};
 	const results = await Promise.allSettled(
 		data.textures.map(async (use, k) => {
-			const options = {
-				colorSpace: use.colorSpace,
-				wrap: use.wrap,
-				filter: use.filter,
-				mipmaps: use.mipmaps,
-				uvSet: use.uvSet,
-			} as const;
-			const bitmap = bitmaps[k];
-			if (bitmap) return context.textures.fromImage(bitmap, options, 0, call);
+			const texture = await makeTexture(use, bitmaps[k]);
+			// The texture memory budget may drop the levels of a texture whose file the engine can
+			// read again: an image file, or an image inside a buffer of a file.
 			const image = data.images[use.image];
-			let bytes = image?.bytes;
-			let source = address;
-			if (!bytes && image?.url) {
-				source = new URL(image.url);
-				let file = files.get(image.url);
-				if (!file) {
-					file = context.download(source, call);
-					files.set(image.url, file);
-				}
-				const blob = await file;
-				const head = new Uint8Array(await blob.slice(0, KTX2_IDENTIFIER.length).arrayBuffer());
-				if (!isKtx2(head)) {
-					const decoded = await context.decode(blob, source, use.colorSpace, call);
-					return context.textures.fromImage(decoded, options, 0, call);
-				}
-				bytes = new Uint8Array(await blob.arrayBuffer());
-			}
-			if (!bytes) return undefined;
-			return ktx2Texture(context, bytes.slice().buffer, source, use, call);
+			const file: FileSource | undefined = image?.url
+				? { url: new URL(image.url) }
+				: image?.source && { ...image.source, url: new URL(image.source.url) };
+			if (texture && file) context.reloadsFrom(texture, file, use.colorSpace, call);
+			return texture;
 		}),
 	);
 	const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');

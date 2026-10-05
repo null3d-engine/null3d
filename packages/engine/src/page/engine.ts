@@ -12,11 +12,14 @@ import type { PresetCheck } from '../quality/check';
 import {
 	choosePreset,
 	crashTier,
+	deviceKind,
 	memoryPreset,
 	type PresetRequest,
+	textureMemoryCap,
 	withinTier,
 } from '../quality/chooser';
 import {
+	capTextureMemory,
 	checkedSettings,
 	checkSettings,
 	presetOption,
@@ -180,6 +183,14 @@ export interface EngineOptions {
 	 * Another value fails with E1213.
 	 */
 	softwareOcclusion?: boolean;
+	/**
+	 * The GPU memory in MiB that textures may take, a whole number from 64 to 16,384. Past it, the
+	 * engine drops the largest mip levels of textures from files, and loads them again once room
+	 * returns. Without it, the quality preset sets it: 256, 512, 1,024 or 2,048 from Low to Ultra,
+	 * and at most 1,008 on phones and tablets. A sketch can change it during play with
+	 * `quality.set`. Another value fails with E1213.
+	 */
+	textureMemoryMiB?: number;
 	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
@@ -819,6 +830,7 @@ async function startEngine(
 		depthPrepass: switches.prepass ?? options.depthPrepass,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
+		textureMemoryMiB: options.textureMemoryMiB,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
@@ -1016,10 +1028,16 @@ async function startEngine(
 	}
 	const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 	const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
+	const textureCapMiB = textureMemoryCap(deviceKind(presetRequest.hints));
 	const quality: QualityStart = {
 		preset,
-		settings: checkedSettings(chosen, preset, pageSettings),
+		settings: capTextureMemory(
+			checkedSettings(chosen, preset, pageSettings),
+			pageSettings,
+			textureCapMiB,
+		),
 		options: pageSettings,
+		textureCapMiB,
 		highest: withinTier('ultra', tier),
 		check: checks && !storedCheck ? { fps: switches.fps } : undefined,
 	};

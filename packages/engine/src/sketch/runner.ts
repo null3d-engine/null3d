@@ -183,6 +183,8 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
+	/** The sketch's textures, whose memory budget each frame looks at. */
+	private readonly textures: Textures;
 	/**
 	 * The frame-budget governor, which moves the render scale and the shadow settings during play.
 	 * In hold mode it takes no step, and the settings apply as set.
@@ -282,6 +284,7 @@ export class SketchRunner {
 			device.capabilities,
 			() => this.quality.own('uploadBytesPerFrame'),
 			device.webgl2,
+			() => this.quality.own('textureMemoryMiB'),
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -326,7 +329,9 @@ export class SketchRunner {
 					return governor.aoScale / FULL_SCALE;
 				},
 			},
+			textures.memory,
 		);
+		this.textures = textures;
 		this.applyFrameSettings(this.quality.settings);
 		this.readViewport();
 		const host: DebugHost = {
@@ -337,6 +342,7 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
+				textureMemory: textures.memory,
 			},
 		};
 		const materials = new Materials(this.core, sketch.sendShader);
@@ -857,6 +863,9 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
+		// The texture memory budget dropped levels or asks for some again: the loads again start
+		// now, and the quality change handlers hear of it in the next frame.
+		if (this.textures.pollBudget()) this.quality.governed();
 		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {

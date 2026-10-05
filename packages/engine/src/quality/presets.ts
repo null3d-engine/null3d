@@ -82,6 +82,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 16, whole: true },
 	},
+	// The GPU memory that textures may take. Past it, the engine drops the largest mip levels of
+	// the textures that it can load again, and loads them again once room returns (D-69). Low and
+	// Medium stay under half the GPU texture memory at which a tablet's tab died (D-12), and
+	// phones and tablets cap the heavier presets at that half (chooser.ts).
+	textureMemoryMiB: {
+		presets: [256, 512, 1024, 2048],
+		changes: 'live',
+		values: { min: 64, max: 16384, whole: true },
+	},
 	// The texel bytes that one frame may upload, so a scene that loads many textures spreads them
 	// over frames.
 	uploadBytesPerFrame: {
@@ -258,6 +267,14 @@ export interface QualitySettings {
 	 */
 	maxAnisotropy: number;
 	/**
+	 * The GPU memory in MiB that textures may take: 256, 512, 1,024 or 2,048 from Low to Ultra, and
+	 * at most 1,008 on phones and tablets unless the page's `textureMemoryMiB` option gives a value.
+	 * When the textures take more, the engine drops the largest mip levels of the textures that it
+	 * can load again from their files, and loads those levels again once room returns. It takes a
+	 * whole number from 64 to 16,384, and changes during play.
+	 */
+	textureMemoryMiB: number;
+	/**
 	 * The texel bytes that one frame may upload, so that loading many textures does not make one
 	 * frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole
 	 * number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play.
@@ -420,6 +437,20 @@ export function presetSettings(
 	for (const name of SKETCH_SETTINGS)
 		settings[name] = (options as Record<string, unknown>)[name] ?? presetValue(name, preset);
 	return settings as unknown as QualitySettings;
+}
+
+/**
+ * `settings` with their texture memory at most `capMiB`, the cap of the device's kind, unless
+ * `options` give the texture memory: a page's own value stays as it is.
+ */
+export function capTextureMemory(
+	settings: QualitySettings,
+	options: Partial<QualitySettings>,
+	capMiB: number,
+): QualitySettings {
+	if (options.textureMemoryMiB === undefined)
+		settings.textureMemoryMiB = Math.min(settings.textureMemoryMiB, capMiB);
+	return settings;
 }
 
 /** The settings in `settings` that a sketch reads but cannot change during play. */

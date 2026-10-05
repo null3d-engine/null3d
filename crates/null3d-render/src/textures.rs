@@ -73,10 +73,19 @@ use null3d_gpu::drawlist::{
 
 use crate::frame::{RecordError, address as memory_address, words_as_bytes};
 
+pub mod budget;
+
 /// The most layers in one texture array: WebGPU's default limit, which the iPad keeps.
 pub const MAX_LAYERS: u32 = 256;
-/// The layers of an array when it is first made.
+/// The most layers of an array that textures share when it is first made.
 pub const FIRST_LAYERS: u32 = 4;
+/// The GPU bytes that an array of small textures takes when it is first made, at most: an array of
+/// larger textures starts with fewer layers, down to one.
+pub const FIRST_ARRAY_BYTES: u64 = 8 * 1024 * 1024;
+/// The most GPU bytes of an array that textures share, or one layer where a layer takes more. A key
+/// with more textures starts another array, so growing an array copies at most this much, and the
+/// old and new GPU textures together hold at most half again as much for a frame.
+pub const ARRAY_BYTES_CAP: u64 = 128 * 1024 * 1024;
 /// The most textures that live at once.
 pub const MAX_TEXTURES: u32 = 4095;
 /// The group of a texture that has no bind group of the store's: a 3D or a cube texture.
@@ -224,12 +233,63 @@ struct TextureSlot {
     sampler: u32,
     /// True for a whole chain of mip levels, at any size the texture takes.
     mipmaps: bool,
-    /// The mip levels that the texels bring, at most the whole chain of the texture's size.
+    /// The mip levels that the texels on the GPU bring, at most the whole chain of the size the
+    /// texture holds there.
     levels: u32,
     state: State,
+    /// The texture's own width and height, which the GPU holds without its dropped levels.
+    full: [u32; 2],
+    /// The largest mip levels that the GPU does not hold, which the memory budget dropped.
+    dropped: u32,
+    /// True when the page can load the texture's texels again, at any level, as it can a file's.
+    /// Only such a texture drops levels, so every level it drops can come back.
+    reloadable: bool,
+    /// True while the texture waits to move to a smaller array in the next recorded frame.
+    moving: bool,
+    /// The dropped levels that a load of the texels again asks for, while one waits for the page.
+    reload: Option<u32>,
+    /// The hidden texture that takes the texels of a load again, and which the texture swaps with
+    /// once they are on the GPU, or `Handle::NONE`.
+    incoming: Handle,
+    /// For a hidden texture, the texture whose texels it loads again; otherwise `Handle::NONE`.
+    owner: Handle,
+    /// The last frame that a view saw an object that maps the texture, from the budget's estimate.
+    seen: u32,
+    /// The largest levels that no view needs, from the budget's estimate: up to
+    /// [`budget::MAX_DROPPED_LEVELS`].
+    unneeded: u32,
+    /// The most pixels that an object which maps the texture covers, in the estimate under way.
+    pixels: f32,
 }
 
 impl TextureSlot {
+    /// A texture of `width` x `height` texels with none of its texels yet.
+    fn new(sampler: u32, mipmaps: bool, levels: u32, width: u32, height: u32) -> Self {
+        Self {
+            array: 0,
+            layer: 0,
+            group: 0,
+            sampler,
+            mipmaps,
+            levels,
+            state: State::Empty,
+            full: [width, height],
+            dropped: 0,
+            reloadable: false,
+            moving: false,
+            reload: None,
+            incoming: Handle::NONE,
+            owner: Handle::NONE,
+            seen: 0,
+            unneeded: 0,
+            pixels: 0.0,
+        }
+    }
+
+    /// The mip levels that texels which bring their own levels hold at the texture's own size.
+    fn full_levels(&self) -> u32 {
+        self.levels + self.dropped
+    }
     /// The mip levels of the texture at `width` x `height`: a whole chain that the GPU makes, or
     /// the levels that the texels bring, at most the chain of that size.
     fn mips(&self, width: u32, height: u32) -> u32 {
@@ -349,9 +409,62 @@ struct TextureArray {
     capacity: u32,
     /// Which of its two texture ids the GPU texture has.
     generation: u32,
+    /// Layers still marked used whose textures move to a smaller array in the next recorded frame,
+    /// which copies them out and frees them.
+    leaving: u32,
+    /// True when the next recorded frame makes the GPU texture exactly as large as its textures
+    /// need, with no free layers, because the textures pass their memory budget.
+    compact: bool,
+    /// The last frame that made the GPU texture larger.
+    grown_in: u32,
+    /// The last frame whose list copied a moving texture out of the GPU texture.
+    left_in: u32,
 }
 
 impl TextureArray {
+    fn new(key: ArrayKey) -> Self {
+        Self {
+            key,
+            used: [0; (MAX_LAYERS / 64) as usize],
+            live: 0,
+            capacity: 0,
+            generation: 0,
+            leaving: 0,
+            compact: false,
+            grown_in: 0,
+            left_in: 0,
+        }
+    }
+
+    /// Marks the first `layers` layers used, as a shrink leaves them.
+    fn mark_run(&mut self, layers: u32) {
+        for layer in 0..layers {
+            self.used[(layer / 64) as usize] |= 1 << (layer % 64);
+        }
+        self.live = layers;
+    }
+
+    /// The most layers the array takes: [`ARRAY_BYTES_CAP`]'s worth, at least one, for an array
+    /// that textures share.
+    fn layer_cap(&self) -> u32 {
+        if !self.key.shared() {
+            return MAX_LAYERS;
+        }
+        let fit = ARRAY_BYTES_CAP / self.key.layer_bytes().max(1);
+        fit.clamp(1, u64::from(MAX_LAYERS)) as u32
+    }
+
+    /// The layers of the array's first GPU texture: [`FIRST_ARRAY_BYTES`]' worth, from one to
+    /// [`FIRST_LAYERS`].
+    fn first_layers(&self) -> u32 {
+        let fit = FIRST_ARRAY_BYTES / self.key.layer_bytes().max(1);
+        (fit.clamp(1, u64::from(FIRST_LAYERS)) as u32).min(self.layer_cap())
+    }
+
+    /// The layers that hold a texture once the textures that leave have gone.
+    fn staying(&self) -> u32 {
+        self.live - self.leaving
+    }
     /// Marks the texture's layers from `layer` used or free.
     fn mark(&mut self, layer: u32, used: bool) {
         for layer in layer..layer + self.key.depth {
@@ -377,7 +490,13 @@ impl TextureArray {
             .iter()
             .enumerate()
             .find(|(_, bits)| **bits != u64::MAX)?;
-        Some(word as u32 * 64 + (!bits).trailing_zeros())
+        let layer = word as u32 * 64 + (!bits).trailing_zeros();
+        (layer < self.layer_cap()).then_some(layer)
+    }
+
+    /// True when layer `layer` holds a texture.
+    fn is_used(&self, layer: u32) -> bool {
+        self.used[(layer / 64) as usize] & (1 << (layer % 64)) != 0
     }
 
     /// One past the highest layer in use.
@@ -392,15 +511,49 @@ impl TextureArray {
             })
     }
 
-    /// The layers that the GPU texture needs: a power of two for arrays that textures share, and
-    /// exactly its texture's layers for an array of one texture.
+    /// The layers that a growing GPU texture needs: a power of two for arrays that textures share,
+    /// from the first layers up to the array's cap, and exactly the layers in use for an array of
+    /// one texture, or while the textures pass their budget.
     fn layers_needed(&self) -> u32 {
         let needed = self.layers_in_use();
-        if self.key.shared() {
-            needed.next_power_of_two().clamp(FIRST_LAYERS, MAX_LAYERS)
+        if self.key.shared() && !self.compact {
+            needed
+                .next_power_of_two()
+                .max(self.first_layers())
+                .min(self.layer_cap())
         } else {
             needed
         }
+    }
+
+    /// The layers of the GPU texture once the next recorded frame has sized it, from the layers
+    /// that stay: none without a texture, more when the layers in use pass the GPU texture's, and
+    /// fewer when it holds four times as many as stay, or any free layer at all while the textures
+    /// pass their budget. A shrink moves the textures to the lowest layers.
+    fn target_capacity(&self) -> u32 {
+        let staying = self.staying();
+        if staying == 0 {
+            return 0;
+        }
+        if self.layers_in_use() > self.capacity {
+            return self.layers_needed();
+        }
+        if !self.key.shared() {
+            return self.capacity;
+        }
+        if self.compact {
+            return staying;
+        }
+        let first = self.first_layers();
+        if self.capacity > first && staying < self.capacity / 4 {
+            return staying.next_power_of_two().max(first);
+        }
+        self.capacity
+    }
+
+    /// The GPU bytes of `layers` layers.
+    fn bytes(&self, layers: u32) -> u64 {
+        u64::from(layers) * self.key.layer_bytes()
     }
 }
 
@@ -442,6 +595,18 @@ struct GroupSlot {
     created: bool,
 }
 
+/// A texture that moves to the array of its size one mip level smaller, which takes every level
+/// of its layers but the largest.
+#[derive(Clone, Copy, Debug)]
+struct Move {
+    texture: Handle,
+    /// The array and first layer that the texture leaves, which stay marked used until the copy.
+    from: (u32, u32),
+    /// The array and first layer that the texture takes.
+    to: (u32, u32),
+    layers: u32,
+}
+
 /// Every texture, the arrays that hold them, their samplers and bind groups, and their uploads.
 pub struct TextureStore {
     ids: TextureIds,
@@ -459,8 +624,13 @@ pub struct TextureStore {
     queue: Vec<Handle>,
     /// Texels to release once no list that reads them can run again.
     releases: Vec<Release>,
-    /// Array textures that an array outgrew, which the next frame's list destroys.
-    retired: Vec<u32>,
+    /// Array textures that an array outgrew or shrank from, which the next frame's list destroys,
+    /// with their GPU bytes, which count until then.
+    retired: Vec<(u32, u64)>,
+    /// Textures that move to a smaller array, whose copies the next recorded frame makes.
+    moves: Vec<Move>,
+    /// The memory budget, and its estimate of what each texture needs.
+    memory: budget::Budget,
     /// Each finished upload of the frame being recorded: its array's texture id, and its layer.
     finished: Vec<(u32, u32)>,
     /// The last image id handed out; ids count from 1.
@@ -499,6 +669,8 @@ impl TextureStore {
             queue: Vec::new(),
             releases: Vec::new(),
             retired: Vec::new(),
+            moves: Vec::new(),
+            memory: budget::Budget::default(),
             finished: Vec::new(),
             last_image: 0,
             arrived: 0,
@@ -646,15 +818,9 @@ impl TextureStore {
         }
         let handle = self.handles.reserve().map_err(|_| TextureError::Full)?;
         let sampler = self.sampler_for(sampling);
-        let mut slot = TextureSlot {
-            array: 0,
-            layer: 0,
-            group: 0,
-            sampler,
-            mipmaps: desc.mipmaps,
-            levels: desc.levels,
-            state: State::Empty,
-        };
+        let mut slot =
+            TextureSlot::new(sampler, desc.mipmaps, desc.levels, desc.width, desc.height);
+        slot.seen = self.recorded;
         let key = ArrayKey {
             width: desc.width,
             height: desc.height,
@@ -696,13 +862,7 @@ impl TextureStore {
                 return (index as u32, layer);
             }
         }
-        self.arrays.push(TextureArray {
-            key,
-            used: [0; (MAX_LAYERS / 64) as usize],
-            live: 0,
-            capacity: 0,
-            generation: 0,
-        });
+        self.arrays.push(TextureArray::new(key));
         (self.arrays.len() as u32 - 1, 0)
     }
 
@@ -780,7 +940,7 @@ impl TextureStore {
         if key.depth > 1 || !layers || !format::makes_mipmaps(key.format) || slot.levels > 1 {
             return Err(TextureError::Unsupported);
         }
-        let moved = self.resize(texture, width, height)?;
+        let moved = self.take_texels(texture, width, height)?;
         self.last_image += 1;
         let id = self.last_image;
         self.queue_source(texture, Source::Image { id, flags })?;
@@ -815,9 +975,12 @@ impl TextureStore {
         width: u32,
         height: u32,
     ) -> Result<(&mut [u32], bool), TextureError> {
-        let slot = *self.slot(texture)?;
+        let mut slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
         self.check_size(key.format, width, height)?;
+        if slot.owner == Handle::NONE && !slot.mipmaps {
+            slot.levels = slot.full_levels();
+        }
         let levels = if slot.mipmaps {
             1
         } else {
@@ -829,7 +992,7 @@ impl TextureStore {
         data.try_reserve_exact(words)
             .map_err(|_| out_of_memory(bytes))?;
         data.resize(words, 0);
-        let moved = self.resize(texture, width, height)?;
+        let moved = self.take_texels(texture, width, height)?;
         let slot = match self.data.iter().position(|d| d.capacity() == 0) {
             Some(slot) => slot,
             None => {
@@ -842,12 +1005,43 @@ impl TextureStore {
         Ok((&mut self.data[slot], moved))
     }
 
+    /// Readies a texture for new texels of `width` x `height`, and returns true when it moved to an
+    /// array of that size. The page's texels give a texture its own size again, with every level:
+    /// it can no longer load them again, so a load again under way stops. The texels of a load
+    /// again go to the hidden texture, which keeps the size of the levels it loads.
+    fn take_texels(
+        &mut self,
+        texture: Handle,
+        width: u32,
+        height: u32,
+    ) -> Result<bool, TextureError> {
+        let slot = *self.slot(texture)?;
+        if slot.owner != Handle::NONE {
+            let key = self.arrays[slot.array as usize].key;
+            return if (width, height) == (key.width, key.height) {
+                Ok(false)
+            } else {
+                Err(TextureError::Unsupported)
+            };
+        }
+        self.cancel_reload(texture);
+        let slot = self.slot_mut(texture)?;
+        if !slot.mipmaps {
+            slot.levels = slot.full_levels();
+        }
+        slot.reloadable = false;
+        self.forget_dropped(texture);
+        let slot = self.slot_mut(texture)?;
+        slot.full = [width, height];
+        self.resize(texture, width, height)
+    }
+
     /// Moves a texture to an array of `width` x `height` when its size is another, and returns
     /// true when it moved. Its bind group then changes, and its old layer is free.
     fn resize(&mut self, texture: Handle, width: u32, height: u32) -> Result<bool, TextureError> {
         let mut slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
-        if (width, height) == (key.width, key.height) {
+        if (width, height) == (key.width, key.height) && slot.mips(width, height) == key.mips {
             return Ok(false);
         }
         self.check_size(key.format, width, height)?;
@@ -888,6 +1082,11 @@ impl TextureStore {
     /// and texels that are still waiting are released.
     pub fn destroy(&mut self, texture: Handle, frame: u32) -> Result<(), TextureError> {
         let slot = *self.slot(texture)?;
+        self.cancel_reload(texture);
+        self.forget_dropped(texture);
+        if let Ok(owner) = self.slot_mut(slot.owner) {
+            owner.incoming = Handle::NONE;
+        }
         self.handles
             .release(texture, frame)
             .map_err(TextureError::Core)?;
@@ -981,18 +1180,21 @@ impl TextureStore {
             .then(|| (self.array_id(slot.array), key.mips))
     }
 
-    /// The GPU bytes of a texture: its layers, with every mip level.
+    /// The GPU bytes of a texture: its layers, with every mip level that the GPU holds.
     pub fn bytes(&self, texture: Handle) -> Result<u64, TextureError> {
         let key = self.arrays[self.slot(texture)?.array as usize].key;
         Ok(key.layer_bytes() * u64::from(key.depth))
     }
 
-    /// The GPU bytes that every array holds, its free layers included.
+    /// The GPU bytes that every array holds, its free layers included, with the GPU textures that
+    /// arrays left, until the next frame's list destroys them.
     pub fn memory_bytes(&self) -> u64 {
-        self.arrays
+        let arrays: u64 = self
+            .arrays
             .iter()
-            .map(|array| u64::from(array.capacity) * array.key.layer_bytes())
-            .sum()
+            .map(|array| array.bytes(array.capacity))
+            .sum();
+        arrays + self.retired.iter().map(|&(_, bytes)| bytes).sum::<u64>()
     }
 
     /// Sets the bytes that one frame may upload.
@@ -1056,17 +1258,19 @@ impl TextureStore {
         std::mem::take(&mut self.layers_changed)
     }
 
-    /// Records the frame's texture work: arrays made or grown, releases, uploads within the
-    /// budget, mip levels, samplers and bind groups. Returns true when it made a bind group
-    /// again, which render bundles that bind it must see.
+    /// Records the frame's texture work: arrays made, grown or shrunk, textures that move to a
+    /// smaller array, releases, uploads within the budget, mip levels, samplers and bind groups.
+    /// Returns true when it made a bind group again, which render bundles that bind it must see.
     pub fn record(&mut self, list: &mut DrawList, frame: u32) -> Result<bool, RecordError> {
         self.recorded = frame;
-        for &id in &self.retired {
+        for &(id, _) in &self.retired {
             list.push(Op::DestroyTexture, &[id])?;
         }
         self.retired.clear();
-        let copied = self.size_arrays(list)?;
-        if copied {
+        let grown = self.grow_arrays(list, frame)?;
+        let moved = self.record_moves(list, frame)?;
+        let shrunk = self.shrink_arrays(list, frame)?;
+        if grown || moved || shrunk {
             // The copies land before the uploads that follow, which WebGPU would otherwise run
             // first, and which may fill layers that the copies write.
             list.push(Op::Submit, &[])?;
@@ -1080,86 +1284,201 @@ impl TextureStore {
         self.create_groups(list)
     }
 
+    /// Makes a GPU texture of `capacity` layers for an array, under its other texture id when it
+    /// has one already, which then retires with its bytes. Returns the old id and the new one.
+    fn remake_array(
+        &mut self,
+        index: u32,
+        capacity: u32,
+        list: &mut DrawList,
+    ) -> Result<(u32, u32), RecordError> {
+        let array = &self.arrays[index as usize];
+        let (key, old_capacity) = (array.key, array.capacity);
+        let old_id = self.array_id(index);
+        let new_id = if old_capacity > 0 {
+            self.retired.push((old_id, array.bytes(old_capacity)));
+            self.arrays[index as usize].generation ^= 1;
+            self.array_id(index)
+        } else {
+            old_id
+        };
+        // Images upload into and mip levels draw into a texture that textures share, and a
+        // texture that changes size copies its layers. A compressed texture, a 3D texture and a
+        // cube texture take writes only.
+        let usage = if format::is_compressed(key.format) || key.kind != Kind::Layers {
+            texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
+        } else {
+            texture_usage::TEXTURE_BINDING
+                | texture_usage::COPY_DST
+                | texture_usage::COPY_SRC
+                | texture_usage::RENDER_ATTACHMENT
+        };
+        list.push(
+            Op::CreateTexture,
+            &[
+                new_id,
+                key.width,
+                key.height,
+                capacity,
+                key.format,
+                usage,
+                1,
+                key.mips,
+                key.view(),
+            ],
+        )?;
+        self.arrays[index as usize].capacity = capacity;
+        self.forget_groups_of(index);
+        Ok((old_id, new_id))
+    }
+
+    /// Copies `layers` layers of every mip level of an array of `key` from `from` (texture id,
+    /// first level, first layer) into `to`.
+    fn copy_layers(
+        list: &mut DrawList,
+        key: ArrayKey,
+        from: (u32, u32, u32),
+        to: (u32, u32, u32),
+        layers: u32,
+    ) -> Result<(), RecordError> {
+        for level in 0..key.mips {
+            list.push(
+                Op::CopyTextureToTexture,
+                &[
+                    from.0,
+                    from.1 + level,
+                    0,
+                    0,
+                    from.2,
+                    to.0,
+                    to.1 + level,
+                    0,
+                    0,
+                    to.2,
+                    format::level_size(key.width, level),
+                    format::level_size(key.height, level),
+                    layers,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Makes each array's GPU texture big enough for its layers in use, copying what a smaller
-    /// one held, and releases the texture of an array that holds none. Returns true when it
-    /// copied.
-    fn size_arrays(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+    /// one held. Returns true when it copied.
+    fn grow_arrays(&mut self, list: &mut DrawList, frame: u32) -> Result<bool, RecordError> {
+        let mut copied = false;
+        for index in 0..self.arrays.len() as u32 {
+            let array = &self.arrays[index as usize];
+            let (key, old_capacity) = (array.key, array.capacity);
+            if array.live == 0 || array.layers_in_use() <= old_capacity {
+                continue;
+            }
+            let capacity = array.layers_needed();
+            let (old_id, new_id) = self.remake_array(index, capacity, list)?;
+            self.arrays[index as usize].grown_in = frame;
+            if old_capacity > 0 {
+                Self::copy_layers(list, key, (old_id, 0, 0), (new_id, 0, 0), old_capacity)?;
+                copied = true;
+            }
+        }
+        Ok(copied)
+    }
+
+    /// Copies each moving texture's levels but its largest into its new layers, and frees the
+    /// layers it left. Returns true when it copied.
+    fn record_moves(&mut self, list: &mut DrawList, frame: u32) -> Result<bool, RecordError> {
+        let mut copied = false;
+        for k in 0..self.moves.len() {
+            let Move {
+                texture,
+                from,
+                to,
+                layers,
+            } = self.moves[k];
+            if let Ok(slot) = self.slot(texture)
+                && (slot.array, slot.layer) == to
+                && matches!(slot.state, State::Uploaded { .. })
+            {
+                let key = self.arrays[to.0 as usize].key;
+                let source = (self.array_id(from.0), 1, from.1);
+                let target = (self.array_id(to.0), 0, to.1);
+                Self::copy_layers(list, key, source, target, layers)?;
+                copied = true;
+            }
+            if let Ok(slot) = self.slot_mut(texture) {
+                slot.moving = false;
+            }
+            let array = &mut self.arrays[from.0 as usize];
+            array.mark(from.1, false);
+            array.leaving -= layers;
+            array.left_in = frame;
+        }
+        self.moves.clear();
+        Ok(copied)
+    }
+
+    /// Releases the GPU texture of each array that holds no texture, and makes each array whose
+    /// GPU texture holds more free layers than it keeps smaller, its textures in its lowest
+    /// layers. Returns true when it copied.
+    fn shrink_arrays(&mut self, list: &mut DrawList, frame: u32) -> Result<bool, RecordError> {
         let mut copied = false;
         for index in 0..self.arrays.len() as u32 {
             let array = &self.arrays[index as usize];
             let (key, old_capacity) = (array.key, array.capacity);
             if array.live == 0 {
                 if old_capacity > 0 {
-                    list.push(Op::DestroyTexture, &[self.array_id(index)])?;
+                    // A list never destroys what it reads itself, as a capture replays it: the
+                    // texture that this frame's moves copy from goes with the next frame's list.
+                    let id = self.array_id(index);
+                    if array.left_in == frame {
+                        self.retired.push((id, array.bytes(old_capacity)));
+                    } else {
+                        list.push(Op::DestroyTexture, &[id])?;
+                    }
                     self.arrays[index as usize].capacity = 0;
                     self.forget_groups_of(index);
                 }
+                self.arrays[index as usize].compact = false;
                 continue;
             }
-            if array.layers_in_use() <= old_capacity {
+            let capacity = array.target_capacity();
+            // An array that grew in this frame shrinks in the next, so its retired texture is
+            // gone before its id comes back.
+            if capacity >= old_capacity || array.grown_in == frame {
                 continue;
             }
-            let capacity = array.layers_needed();
-            let old_id = self.array_id(index);
-            let new_id = if old_capacity > 0 {
-                self.arrays[index as usize].generation ^= 1;
-                self.array_id(index)
-            } else {
-                old_id
-            };
-            // Images upload into and mip levels draw into a texture that textures share, and a
-            // larger one copies its layers. A compressed texture, a 3D texture and a cube texture
-            // take writes only.
-            let usage = if format::is_compressed(key.format) || key.kind != Kind::Layers {
-                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
-            } else {
-                texture_usage::TEXTURE_BINDING
-                    | texture_usage::COPY_DST
-                    | texture_usage::COPY_SRC
-                    | texture_usage::RENDER_ATTACHMENT
-            };
-            list.push(
-                Op::CreateTexture,
-                &[
-                    new_id,
-                    key.width,
-                    key.height,
-                    capacity,
-                    key.format,
-                    usage,
-                    1,
-                    key.mips,
-                    key.view(),
-                ],
-            )?;
-            if old_capacity > 0 {
-                for level in 0..key.mips {
-                    let width = format::level_size(key.width, level);
-                    let height = format::level_size(key.height, level);
-                    list.push(
-                        Op::CopyTextureToTexture,
-                        &[
-                            old_id,
-                            level,
-                            0,
-                            0,
-                            0,
-                            new_id,
-                            level,
-                            0,
-                            0,
-                            0,
-                            width,
-                            height,
-                            old_capacity,
-                        ],
-                    )?;
+            let used = array.used;
+            let in_use = array.layers_in_use();
+            let (old_id, new_id) = self.remake_array(index, capacity, list)?;
+            let mut next = 0;
+            let mut layer = 0;
+            while layer < in_use {
+                let start = layer;
+                while layer < in_use && self.arrays[index as usize].is_used(layer) {
+                    layer += 1;
                 }
-                self.retired.push(old_id);
-                copied = true;
+                if layer > start {
+                    let run = layer - start;
+                    Self::copy_layers(list, key, (old_id, 0, start), (new_id, 0, next), run)?;
+                    next += run;
+                } else {
+                    layer += 1;
+                }
             }
-            self.arrays[index as usize].capacity = capacity;
-            self.forget_groups_of(index);
+            for slot in self.handles.live().iter_ones() {
+                let texture = &mut self.textures[slot as usize];
+                if texture.array == index {
+                    texture.layer = rank(&used, texture.layer);
+                }
+            }
+            let array = &mut self.arrays[index as usize];
+            array.used = [0; (MAX_LAYERS / 64) as usize];
+            let live = array.live;
+            array.mark_run(live);
+            array.compact = false;
+            self.layers_changed = true;
+            copied = true;
         }
         Ok(copied)
     }
@@ -1481,7 +1800,15 @@ impl TextureStore {
             };
         }
         self.layers_changed = true;
+        self.reset_budget();
     }
+}
+
+/// The used layers below `layer` in a bit set of layers.
+fn rank(used: &[u64; (MAX_LAYERS / 64) as usize], layer: u32) -> u32 {
+    let word = (layer / 64) as usize;
+    let below: u32 = used[..word].iter().map(|bits| bits.count_ones()).sum();
+    below + (used[word] & ((1u64 << (layer % 64)) - 1)).count_ones()
 }
 
 fn out_of_memory(bytes: u64) -> TextureError {
@@ -1497,13 +1824,13 @@ mod tests {
     use null3d_gpu::drawlist::{Command, decode, upload_flags};
     use null3d_gpu::mock::MockBackend;
 
-    const IDS: TextureIds = TextureIds {
+    pub(super) const IDS: TextureIds = TextureIds {
         first_texture: 100,
         first_sampler: 1,
         first_group: 50,
     };
 
-    fn desc(width: u32, height: u32) -> TextureDesc {
+    pub(super) fn desc(width: u32, height: u32) -> TextureDesc {
         TextureDesc {
             width,
             height,
@@ -1515,30 +1842,30 @@ mod tests {
         }
     }
 
-    fn layer_bytes(width: u32, height: u32) -> u64 {
+    pub(super) fn layer_bytes(width: u32, height: u32) -> u64 {
         let mips = format::full_chain(width, height);
         format::layer_bytes(format::RGBA8_UNORM_SRGB, width, height, mips)
     }
 
     /// The store with a mock backend that replays each frame's list twice, as a capture does, and
     /// the images that the thread that draws holds.
-    struct Harness {
-        store: TextureStore,
+    pub(super) struct Harness {
+        pub(super) store: TextureStore,
         gpu: MockBackend,
         list: DrawList,
-        frame: u32,
+        pub(super) frame: u32,
         /// Each image's size, in id order.
-        images: Vec<(u32, u32)>,
+        pub(super) images: Vec<(u32, u32)>,
         arrived: u32,
     }
 
     impl Harness {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             Self::with_capabilities(Capabilities::empty())
         }
 
         /// A harness whose mock GPU offers `caps`, such as a compressed format's family.
-        fn with_capabilities(caps: Capabilities) -> Self {
+        pub(super) fn with_capabilities(caps: Capabilities) -> Self {
             Self {
                 store: TextureStore::new(IDS, 4096),
                 gpu: MockBackend::with_capabilities(caps),
@@ -1549,12 +1876,12 @@ mod tests {
             }
         }
 
-        fn texture(&mut self, width: u32, height: u32) -> Handle {
+        pub(super) fn texture(&mut self, width: u32, height: u32) -> Handle {
             self.store.create(desc(width, height)).unwrap()
         }
 
         /// Gives a texture an image of its size, which is on its way to the thread that draws.
-        fn image(&mut self, texture: Handle, width: u32, height: u32) -> u32 {
+        pub(super) fn image(&mut self, texture: Handle, width: u32, height: u32) -> u32 {
             let (image, _) = self.store.set_image(texture, width, height, 0).unwrap();
             assert_eq!(image as usize, self.images.len() + 1, "image ids count up");
             self.images.push((width, height));
@@ -1562,7 +1889,7 @@ mod tests {
         }
 
         /// The thread that draws receives the images up to `count`.
-        fn arrive(&mut self, count: u32) {
+        pub(super) fn arrive(&mut self, count: u32) {
             for id in self.arrived + 1..=count {
                 let (width, height) = self.images[id as usize - 1];
                 self.gpu.provide_image(id, width, height);
@@ -1572,10 +1899,11 @@ mod tests {
 
         /// Records one frame and replays it twice, and returns its commands and whether it made
         /// bind groups again.
-        fn frame(&mut self) -> (Vec<(Op, Vec<u32>)>, bool) {
+        pub(super) fn frame(&mut self) -> (Vec<(Op, Vec<u32>)>, bool) {
             self.frame += 1;
             self.list.clear();
             self.store.sync(self.arrived, self.frame - 1);
+            self.store.fit_memory();
             let groups = self.store.record(&mut self.list, self.frame).unwrap();
             self.list.push(Op::Submit, &[]).unwrap();
             for _ in 0..2 {
@@ -1589,7 +1917,7 @@ mod tests {
         }
     }
 
-    fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
+    pub(super) fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
         commands
             .iter()
             .filter(|(o, _)| *o == op)
@@ -1844,9 +2172,14 @@ mod tests {
         assert_eq!(ops(&commands, Op::UploadImage)[0][0], 101);
         assert_eq!(ops(&commands, Op::CreateBindGroup)[0][5], 101);
         assert_eq!(h.store.ready_layer(fifth), Some(4));
-        assert_eq!(h.store.memory_bytes(), 8 * layer_bytes(16, 8));
+        assert_eq!(
+            h.store.memory_bytes(),
+            (8 + 4) * layer_bytes(16, 8),
+            "the old texture counts until it is destroyed"
+        );
         let (commands, _) = h.frame();
         assert_eq!(ops(&commands, Op::DestroyTexture), [vec![100]]);
+        assert_eq!(h.store.memory_bytes(), 8 * layer_bytes(16, 8));
         // Growing again takes the first id back.
         for _ in 0..4 {
             let texture = h.texture(16, 8);
@@ -1857,6 +2190,78 @@ mod tests {
         let created = ops(&commands, Op::CreateTexture);
         assert_eq!((created[0][0], created[0][3]), (100, 16));
         assert_eq!(ops(&commands, Op::CopyTextureToTexture)[0][12], 8);
+    }
+
+    #[test]
+    fn a_large_texture_starts_an_array_of_one_layer_and_arrays_stop_at_their_byte_cap() {
+        let mut h = Harness::new();
+        let first = h.texture(1024, 1024);
+        h.image(first, 1024, 1024);
+        h.arrive(1);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::CreateTexture)[0][3], 1, "no free layer");
+        assert_eq!(h.store.memory_bytes(), layer_bytes(1024, 1024));
+        // 24 layers of 5,592,404 bytes fit under the cap of 128 MiB.
+        let textures: Vec<Handle> = (0..24).map(|_| h.texture(1024, 1024)).collect();
+        let slot = |h: &Harness, t: Handle| *h.store.slot(t).unwrap();
+        assert_eq!(slot(&h, textures[22]).array, slot(&h, first).array);
+        assert_eq!(
+            (slot(&h, textures[23]).array, slot(&h, textures[23]).layer),
+            (1, 0)
+        );
+    }
+
+    #[test]
+    fn an_array_shrinks_once_under_a_quarter_of_its_layers_stay_and_packs_its_textures_low() {
+        let mut h = Harness::new();
+        let textures: Vec<Handle> = (0..16)
+            .map(|k| {
+                let texture = h.texture(16, 8);
+                h.image(texture, 16, 8);
+                h.arrive(k + 1);
+                texture
+            })
+            .collect();
+        h.frame();
+        assert_eq!(h.store.memory_bytes(), 16 * layer_bytes(16, 8));
+        // Four of sixteen layers stay: no shrink yet.
+        for (k, &texture) in textures.iter().enumerate() {
+            if ![3, 9, 14, 15].contains(&k) {
+                h.store.destroy(texture, h.frame).unwrap();
+            }
+        }
+        let (commands, _) = h.frame();
+        assert!(ops(&commands, Op::CreateTexture).is_empty());
+        h.store.destroy(textures[14], h.frame).unwrap();
+        let (commands, groups) = h.frame();
+        assert!(groups, "the group binds the smaller texture");
+        let created = ops(&commands, Op::CreateTexture);
+        assert_eq!((created[0][0], created[0][3]), (101, 4));
+        let copies = ops(&commands, Op::CopyTextureToTexture);
+        let runs: Vec<(u32, u32, u32)> = copies
+            .iter()
+            .filter(|c| c[1] == 0)
+            .map(|c| (c[4], c[9], c[12]))
+            .collect();
+        assert_eq!(
+            runs,
+            [(3, 0, 1), (9, 1, 1), (15, 2, 1)],
+            "each run of layers, low"
+        );
+        let layer = |t: Handle| h.store.ready_layer(t).unwrap();
+        assert_eq!(
+            [layer(textures[3]), layer(textures[9]), layer(textures[15])],
+            [0, 1, 2]
+        );
+        assert!(h.store.take_layers_changed());
+        assert_eq!(
+            h.store.memory_bytes(),
+            (4 + 16) * layer_bytes(16, 8),
+            "the old texture counts until the next list destroys it"
+        );
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::DestroyTexture), [vec![100]]);
+        assert_eq!(h.store.memory_bytes(), 4 * layer_bytes(16, 8));
     }
 
     #[test]
@@ -2048,7 +2453,7 @@ mod tests {
     }
 
     /// Gives a texture data of its size, each word its index, and returns the data's address.
-    fn fill(store: &mut TextureStore, texture: Handle, width: u32, height: u32) -> u32 {
+    pub(super) fn fill(store: &mut TextureStore, texture: Handle, width: u32, height: u32) -> u32 {
         let (words, _) = store.set_data(texture, width, height).unwrap();
         for (k, word) in words.iter_mut().enumerate() {
             *word = k as u32;
@@ -2101,7 +2506,7 @@ mod tests {
     }
 
     /// A texture in ASTC with the mip levels that its data brings, as a KTX2 file's.
-    fn astc_desc(width: u32, height: u32, levels: u32) -> TextureDesc {
+    pub(super) fn astc_desc(width: u32, height: u32, levels: u32) -> TextureDesc {
         TextureDesc {
             format: format::ASTC_4X4_UNORM_SRGB,
             mipmaps: false,

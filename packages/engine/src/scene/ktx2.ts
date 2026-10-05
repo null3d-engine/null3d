@@ -26,6 +26,7 @@ import type { LoadTextureOptions } from './assets';
 import { FILE_LIMITS } from './file-limits';
 import type {
 	CompressedTextureFormat,
+	FileTexels,
 	Texture,
 	TextureColorSpace,
 	TextureFormat,
@@ -397,6 +398,47 @@ export async function loadKtx2(
 	call: string,
 	error: Ktx2Error,
 ): Promise<Texture> {
+	const texels = await transcodeKtx2(textures, file, address, options, call, error);
+	return textures.fromTexels(texels, options, call);
+}
+
+/**
+ * The texels of a KTX2 file without its largest `level` mip levels, for a texture's load again of
+ * the file: each remaining level's layers in turn, as `transcodeKtx2` gives them.
+ */
+export async function reloadKtx2(
+	textures: Textures,
+	file: ArrayBuffer,
+	address: URL,
+	options: LoadTextureOptions,
+	level: number,
+	call: string,
+	error: Ktx2Error,
+): Promise<Uint8Array> {
+	const { format, width, height, depth, levels, texels } = await transcodeKtx2(
+		textures,
+		file,
+		address,
+		options,
+		call,
+		error,
+	);
+	const start = transcodedBytes(format, width, height, level, depth);
+	return texels.subarray(start, transcodedBytes(format, width, height, levels, depth));
+}
+
+/**
+ * Transcodes a KTX2 file, which moves to the transcoder's worker, into the format of `ktx2Target`,
+ * with the file's mip levels unless `mipmaps` is false. Throws as `loadKtx2` does.
+ */
+async function transcodeKtx2(
+	textures: Textures,
+	file: ArrayBuffer,
+	address: URL,
+	options: LoadTextureOptions,
+	call: string,
+	error: Ktx2Error,
+): Promise<FileTexels> {
 	let header: Ktx2Header;
 	try {
 		header = readKtx2Header(new Uint8Array(file));
@@ -431,17 +473,13 @@ export async function loadKtx2(
 			'E1412',
 			`${call}() could not decode ${address} as a KTX2 texture: the transcoder wrote ${texels.byteLength} bytes, not ${expected}.`,
 		);
-	return textures.fromTexels(
-		{
-			width,
-			height,
-			depth: layers,
-			levels,
-			format: target.format,
-			colorSpace: header.colorSpace,
-			texels: new Uint8Array(texels),
-		},
-		options,
-		call,
-	);
+	return {
+		width,
+		height,
+		depth: layers,
+		levels,
+		format: target.format,
+		colorSpace: header.colorSpace,
+		texels: new Uint8Array(texels),
+	};
 }

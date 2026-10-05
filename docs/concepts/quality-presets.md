@@ -186,7 +186,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |
 | Point and spot lights per frame (`maxLights`) | 256 | 256 | 512 | 1024 | at the start | planned |
 | Lights per cluster (`maxLightsPerCluster`) | 32 | 64 | 64 | 128 | at the start | planned |
-| Texture memory budget (`textureMemoryMiB`) | 256 MiB | 512 MiB | 1024 MiB | 2048 MiB | at the start | planned |
+| Texture memory budget (`textureMemoryMiB`) | 256 MiB | 512 MiB | 1024 MiB | 2048 MiB | during play | built |
 | Engine memory maximum (`memoryMaximumMiB`) | 1024 MiB | 1024 MiB | 1024 MiB | 1024 MiB | before loading | built |
 
 <!-- null3d:preset-settings:end -->
@@ -194,6 +194,28 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
 
 The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
+
+### Texture memory
+
+The texture memory budget caps the GPU memory of the scene's textures. A phone or a tablet closes a tab that uses too much memory, with no warning, so the budget keeps textures well below that point. Each preset's budget stays under half the lowest point that the engine's tab memory test measured on the devices that the preset serves. Phones and tablets take at most 1,008 MiB on any preset: half the 2,016 MiB at which an iPad Pro's tab closed. The page's `textureMemoryMiB` option replaces the preset's budget and the cap, and `quality.set({ textureMemoryMiB })` changes it during play.
+
+```mermaid
+flowchart LR
+    over["Textures pass the budget by 5%"] --> pack["Free layers of texture arrays go first"]
+    pack --> drop["Drop the largest mip level of the next texture in order"]
+    drop -- "still over the budget, less 5%" --> drop
+    room["Textures 5% under the budget"] --> back["Load a dropped level again from its file"]
+```
+
+When the textures pass the budget, the engine drops the largest mip level of one texture at a time. It stops once they fit 5% under the budget. The texture keeps its size, and the GPU samples its next level where it needed the largest. It drops levels from textures in this order:
+
+1. A texture that holds more detail than any object on screen needs. The engine estimates the need from each object's size on screen.
+2. The texture that the camera has not seen for the longest time.
+3. The largest texture.
+
+A texture loses at most 3 levels, so a texture of 1024 x 1024 texels keeps at least 128 x 128. A texture under 64 KiB keeps all its levels, because dropping them would save little. Only a texture that the engine can load again from its file drops levels: a texture from `assets.loadTexture` or from a glTF model. A texture that the sketch makes from an image or from data keeps its levels and counts toward the budget.
+
+When room returns, 5% under the budget, the engine loads the dropped levels again from the texture's file. The browser's cache usually holds the file. The texture draws with the levels it has until the new ones are on the GPU. The band of 5% on either side keeps the engine from dropping and loading the same levels in turn. The sketch reads the memory and the dropped levels in `quality.textureMemory`: [Quality API](../api/quality.md#texture-memory).
 
 Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 

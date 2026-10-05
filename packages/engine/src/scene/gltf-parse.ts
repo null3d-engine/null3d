@@ -330,6 +330,12 @@ export interface ImageData {
 	/** The absolute address of an image that the file names, or undefined. */
 	url?: string;
 	bytes?: Uint8Array;
+	/**
+	 * Where the bytes of an image inside a buffer lie: the address of the file that holds the
+	 * buffer, this one or another that it names, and the bytes it takes there. The engine reads them
+	 * again to load the texture's mip levels again. Undefined for an image in a data URI.
+	 */
+	source?: { url: string; offset: number; length: number };
 	/** The image's media type, when the file gives it. */
 	mimeType?: string;
 }
@@ -475,6 +481,12 @@ export function parseGltf(
 			broken(`buffer ${k} holds ${bytes.length} bytes, and its byteLength says ${byteLength}`);
 		return bytes.subarray(0, byteLength);
 	});
+	// The file that holds each buffer, whose bytes a load of a texture again reads.
+	const holders = list(json.buffers, 'buffers').map((value) => {
+		const { uri } = value as Entry;
+		if (uri === undefined) return url;
+		return typeof uri === 'string' && !uri.startsWith('data:') ? resolve(uri, url) : undefined;
+	});
 	const views = list(json.bufferViews, 'bufferViews').map((value, k): View => {
 		const view = entry(value, `bufferView ${k}`);
 		const what = `bufferView ${k}`;
@@ -492,7 +504,7 @@ export function parseGltf(
 			broken(
 				`${what} reads bytes ${offset} to ${offset + length} of buffer ${buffer}, which holds ${bytes.length}`,
 			);
-		return { bytes: bytes.subarray(offset, offset + length), stride };
+		return { bytes: bytes.subarray(offset, offset + length), stride, holder: holders[buffer] };
 	});
 
 	/** The bytes of buffer view `v`. A view of meshopt data decodes the first time it is read. */
@@ -768,7 +780,12 @@ export function parseGltf(
 		const v = index(image.bufferView, views.length, `image ${k}'s bufferView`);
 		const bytes = viewOf(v).bytes;
 		budget.take(bytes.length, `image ${k}`);
-		return { bytes: bytes.slice(), mimeType };
+		// Each file's bytes start their own array, so a view's place in it is its place in the file.
+		const holder = (views[v] as View).holder;
+		const source = holder
+			? { url: holder, offset: bytes.byteOffset, length: bytes.length }
+			: undefined;
+		return { bytes: bytes.slice(), mimeType, source };
 	});
 	checkImages(images, textureUses);
 
@@ -827,6 +844,8 @@ function checkImages(images: readonly ImageData[], uses: readonly TextureUse[]):
 interface View {
 	bytes?: Uint8Array;
 	stride: number;
+	/** The address of the file whose bytes the view reads, unless they came from a data URI. */
+	holder?: string;
 	meshopt?: CompressedView;
 }
 

@@ -238,6 +238,7 @@ describe('SketchQuality.lower', () => {
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
+			textureMemoryMiB: low.textureMemoryMiB,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
 			antialias: MEDIUM.antialias,
 			shadowCascades: MEDIUM.shadowCascades,
@@ -248,17 +249,33 @@ describe('SketchQuality.lower', () => {
 			depthPrepass: MEDIUM.depthPrepass,
 			morphTargets: MEDIUM.morphTargets,
 		});
-		// The preset changed, and of the settings only the lowest render scale, the shadow filter, the
-		// far cascades' interval, whether they follow moving casters, bloom's size and software
-		// occlusion culling did.
+		// The preset changed, and of the settings only the lowest render scale, the texture memory
+		// budget, the shadow filter, the far cascades' interval, whether they follow moving casters,
+		// bloom's size and software occlusion culling did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
+			'textureMemoryMiB',
 			'shadowFilter',
 			'farCascadeInterval',
 			'followMovingCasters',
 			'bloomSize',
 			'softwareOcclusion',
 		]);
+	});
+});
+
+describe('the texture memory cap of phones and tablets', () => {
+	it("caps each preset's texture memory, but not the page's own value", async () => {
+		const capped = medium({ textureCapMiB: 1008 });
+		await capped.quality.setPreset('ultra');
+		expect(capped.quality.settings.textureMemoryMiB).toBe(1008);
+		await capped.quality.setPreset('low');
+		expect(capped.quality.settings.textureMemoryMiB).toBe(256);
+		await capped.quality.lower();
+		expect(capped.quality.settings.textureMemoryMiB).toBe(256);
+		const own = medium({ textureCapMiB: 1008, options: { textureMemoryMiB: 1500 } });
+		await own.quality.setPreset('ultra');
+		expect(own.quality.settings.textureMemoryMiB).toBe(1500);
 	});
 });
 

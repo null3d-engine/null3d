@@ -9,7 +9,10 @@ import {
 	TEXTURE_FORMAT_SHARED_EXPONENT,
 	TEXTURE_FORMAT_SRGB,
 	TEXTURE_PREMULTIPLIED_ALPHA,
+	TEXTURE_STAT_BUDGET_EPOCH,
 	TEXTURE_STAT_MAX_SIZE,
+	TEXTURE_STAT_RELOAD_LEVEL,
+	TEXTURE_STAT_RELOAD_TEXTURE,
 	TEXTURE_STAT_TEXTURE_BYTES,
 	TEXTURE_WRAP_CLAMP,
 	TEXTURE_WRAP_MIRROR,
@@ -293,5 +296,88 @@ describe('texture.update and destroy', () => {
 		const { textures, images } = fakeCore();
 		textures.fromImage(image(), {}, 1, 'assets.loadTexture');
 		expect(images[0]).toEqual([7, 32, 16, TEXTURE_PREMULTIPLIED_ALPHA]);
+	});
+});
+
+describe('loads of textures again for the texture memory budget', () => {
+	/** A core whose texture budget asks the page to load `asked` textures again. */
+	function budgetCore(asked: number[]) {
+		let next = 10;
+		let epoch = 0;
+		const reloadable: number[] = [];
+		const failed: number[] = [];
+		const glue = {
+			createTexture: () => next++,
+			setTextureImage: () => 1,
+			setTextureReloadable: (texture: number) => {
+				reloadable.push(texture);
+				return 0;
+			},
+			takeTextureReload: () => asked.shift() ?? 0,
+			failTextureReload: (texture: number) => failed.push(texture),
+			textureStat: (field: number, texture: number) =>
+				field === TEXTURE_STAT_BUDGET_EPOCH
+					? epoch
+					: field === TEXTURE_STAT_RELOAD_LEVEL
+						? 1
+						: field === TEXTURE_STAT_RELOAD_TEXTURE
+							? texture + 100
+							: field === TEXTURE_STAT_MAX_SIZE
+								? 4096
+								: 0,
+			lastErrorCode: () => 0,
+			lastErrorDetail: () => 0,
+		} as unknown as CoreGlue;
+		const core = new CoreMemory(glue, new WebAssembly.Memory({ initial: 1 }));
+		const textures = new Textures(core, () => {}, { frame: 3 }, 0);
+		return { textures, reloadable, failed, bump: () => epoch++ };
+	}
+
+	test('start two at a time when the budget changes, each into a hidden texture of its size', async () => {
+		const asked: number[] = [];
+		const { textures, reloadable, bump } = budgetCore(asked);
+		const calls: [number, number, number, number][] = [];
+		const finish: (() => void)[] = [];
+		for (let k = 0; k < 3; k++) {
+			const texture = textures.fromImage(image(64, 32), {}, 0, 'assets.loadTexture');
+			textures.reloadsFrom(texture, (level, target) => {
+				calls.push([texture.handle, level, target.handle, target.width]);
+				return new Promise<void>((resolve) => finish.push(resolve));
+			});
+		}
+		expect(reloadable).toEqual([10, 11, 12]);
+		expect(textures.pollBudget()).toBe(false);
+		asked.push(10, 11, 12);
+		bump();
+		expect(textures.pollBudget()).toBe(true);
+		expect(calls).toEqual([
+			[10, 1, 110, 32],
+			[11, 1, 111, 32],
+		]);
+		expect(textures.pollBudget()).toBe(false);
+		finish[0]?.();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(calls.map(([texture]) => texture)).toEqual([10, 11, 12]);
+	});
+
+	test('give up on a texture whose file does not load again, and on one the sketch refilled', async () => {
+		const asked: number[] = [];
+		const { textures, failed, bump } = budgetCore(asked);
+		const broken = textures.fromImage(image(), {}, 0, 'assets.loadTexture');
+		textures.reloadsFrom(broken, () => Promise.reject(new Error('HTTP 404')));
+		const refilled = textures.fromImage(image(), {}, 0, 'assets.loadTexture');
+		textures.reloadsFrom(refilled, () => Promise.resolve());
+		refilled.update(image());
+		asked.push(broken.handle, refilled.handle);
+		bump();
+		const warn = console.warn;
+		console.warn = () => {};
+		try {
+			textures.pollBudget();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		} finally {
+			console.warn = warn;
+		}
+		expect(failed.sort()).toEqual([broken.handle, refilled.handle].sort());
 	});
 });
