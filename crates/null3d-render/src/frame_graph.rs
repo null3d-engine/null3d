@@ -1844,7 +1844,6 @@ mod tests {
             sampler: 12,
             first_group: 30,
             blank_depth: 902,
-            slots: 3,
         },
     };
 
@@ -2480,9 +2479,7 @@ mod tests {
             .unwrap();
         let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
             .iter()
-            .filter(|group| {
-                group[0] >= 30 && group[0] < 30 + (effects::MAX_SLOTS * MAX_EFFECTS) as u32
-            })
+            .filter(|group| group[0] >= 30 && group[0] < 30 + MAX_EFFECTS as u32)
             .map(|group| group[1])
             .collect();
         assert_eq!(

@@ -246,10 +246,10 @@ mod ids {
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
-    /// The bind group of each custom effect in each ring slot, after ambient occlusion's.
+    /// The bind group of each custom effect, after ambient occlusion's.
     pub const EFFECT_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
     /// The bind groups of materials' maps, after the effects'.
-    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + RING * MAX_EFFECTS as u32;
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -428,7 +428,6 @@ impl CpuCulledRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
-                            slots: data::RING,
                         },
                     },
                 );
