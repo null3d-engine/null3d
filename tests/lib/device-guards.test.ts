@@ -3,13 +3,16 @@ import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	type EndedEarly,
-	MemoryGuard,
 	memoryResetText,
+	noFramesTodo,
 	refreshProblem,
 	refreshText,
 	summaryLine,
 	TIMED_PLANS,
+	TurnGuard,
 } from '../real-browsers.ts';
+import { cloudDevice } from './browserstack-devices.ts';
+import { NO_FRAMES } from './device-record.ts';
 import type { Check } from './plans.ts';
 import { RUNS_DIR } from './report-collector.ts';
 import {
@@ -73,7 +76,7 @@ describe('the out-of-memory guard', () => {
 	});
 });
 
-describe('MemoryGuard', () => {
+describe('TurnGuard', () => {
 	const ids = ['a', 'b', 'room', 'c', 'd', 'e', 'f'];
 	/** A run of these items, where `room` pushes the memory limit on purpose. */
 	async function withPlan(test: (plan: Plan<Check>) => Promise<void> | void): Promise<void> {
@@ -100,7 +103,7 @@ describe('MemoryGuard', () => {
 	it('ends the turn of a browser that keeps refusing memory, and records what to run again', () =>
 		withPlan((plan) => {
 			const stopped: string[] = [];
-			const guard = new MemoryGuard(plan, new Map([['ipad-safari', { kind: 'lan' }]]), (runner) =>
+			const guard = new TurnGuard(plan, new Map([['ipad-safari', { kind: 'lan' }]]), (runner) =>
 				stopped.push(runner),
 			);
 			// One page short of a result, and a refused page that only looks for the limit.
@@ -125,7 +128,7 @@ describe('MemoryGuard', () => {
 
 	it('ends the turn on refused pages that passed pages followed before the guard looked', () =>
 		withPlan((plan) => {
-			const guard = new MemoryGuard(plan, new Map(), () => {});
+			const guard = new TurnGuard(plan, new Map(), () => {});
 			store(plan, 'ipad-safari', { a: E1109, b: E1109, room: PASSED, c: E1109, d: PASSED });
 			store(plan, 'ipad-safari', { e: PASSED, f: PASSED });
 			expect(guard.endTurn('ipad-safari')).toBe(true);
@@ -134,7 +137,7 @@ describe('MemoryGuard', () => {
 
 	it('keeps a browser going after one refused page, and watches each runner apart', () =>
 		withPlan((plan) => {
-			const guard = new MemoryGuard(plan, new Map(), () => {});
+			const guard = new TurnGuard(plan, new Map(), () => {});
 			store(plan, 'ipad-safari', { a: E1109, b: PASSED, room: PASSED, c: OTHER_FAILURE });
 			store(plan, 'ipad-brave', { a: E1109, b: E1109 });
 			expect(guard.endTurn('ipad-safari')).toBe(false);
@@ -163,7 +166,7 @@ describe('MemoryGuard', () => {
 				...plan.items,
 				...plan.items.map((item) => ({ ...item, id: `${item.id}-round-2` })),
 			];
-			const guard = new MemoryGuard(plan, new Map(), () => {});
+			const guard = new TurnGuard(plan, new Map(), () => {});
 			for (const id of ids) writeRunnerFile(plan.run, 'ipad-safari', id, PASSED);
 			store(plan, 'ipad-safari', {
 				'a-round-2': E1109,
@@ -175,6 +178,37 @@ describe('MemoryGuard', () => {
 			expect(guard.endTurn('ipad-safari')).toBe(true);
 			expect(guard.ended.get('ipad-safari')?.only).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
 		}));
+
+	it('ends the turn of a runner page that got no animation frames, at once, and says what to do', () =>
+		withPlan(async (plan) => {
+			const runner = 'bsgalaxys25-samsung';
+			const launch = { kind: 'cloud' as const, device: cloudDevice(runner)! };
+			const stopped: string[] = [];
+			const guard = new TurnGuard(plan, new Map([[runner, launch]]), (name) => stopped.push(name));
+			writeRunnerFile(plan.run, runner, 'device', { refreshRateHz: null, visibility: 'hidden' });
+			expect(guard.endTurn(runner)).toBe(false);
+			writeRunnerFile(plan.run, runner, NO_FRAMES, { visibility: 'hidden', step: 'device' });
+			const started = Date.now();
+			expect(await waitForRunners(plan, [runner], { endTurn: guard.endTurn })).toEqual([]);
+			expect(Date.now() - started).toBeLessThan(5_000);
+			expect(stopped).toEqual([runner]);
+			const ended = {
+				reason: 'the browser reports the page hidden, so it gets no animation frames',
+				pages: ['device'],
+				todo: `The session could not bring the page to the front. Run it again with bun run devices:cloud --only ${runner} for a new session, or test this browser in BrowserStack Live, where a person holds the device`,
+				only: [],
+			};
+			expect(guard.ended.get(runner)).toMatchObject(ended);
+			expect(readResult(plan.run, runner, 'ended-early')).toMatchObject(ended);
+			expect(guard.endTurn(runner)).toBe(true);
+			expect(stopped).toEqual([runner]);
+		}));
+
+	it('tells the person at a device on the network to bring its runner page to the front', () => {
+		expect(noFramesTodo('ipad-safari', { kind: 'lan' })).toBe(
+			'Bring the runner page to the front in Safari on the iPad, keep the screen on, then run again',
+		);
+	});
 
 	it('stops waiting for a runner whose turn the guard ended, and goes on with the others', () =>
 		withPlan(async (plan) => {

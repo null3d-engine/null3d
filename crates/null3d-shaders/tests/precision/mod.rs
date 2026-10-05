@@ -7,7 +7,8 @@
 /// most sampler types have no default. Mali finds no precision for an array whose type names its
 /// size, in a sized constructor such as `vec3[9](...)` or a declaration such as `vec3[9] x`,
 /// although the shader sets one for `float`. The default `highp` holds again after each run of
-/// `mediump` functions.
+/// `mediump` functions. Each declaration of a whole number names its precision, as some Adreno
+/// drivers keep only 16 bits of one that does not, despite the default.
 pub fn precision_breaks(source: &str, fragment: bool) -> Vec<String> {
     let mut breaks = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
@@ -52,6 +53,11 @@ pub fn precision_breaks(source: &str, fragment: bool) -> Vec<String> {
         if sized_array_type(text) {
             breaks.push(format!("line {at}: an array type with its size: {text}"));
         }
+        if integer_without_precision(text) {
+            breaks.push(format!(
+                "line {at}: a whole number declared without a precision: {text}"
+            ));
+        }
     }
     if mediump {
         breaks.push("the shader ends at `mediump`, without `precision highp float;`".to_owned());
@@ -78,4 +84,36 @@ fn sized_array_type(text: &str) -> bool {
             .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_');
         after.starts_with('(') || declares
     })
+}
+
+/// True when a line of GLSL declares a whole number, as a type followed by a name, with no
+/// precision before the type.
+fn integer_without_precision(text: &str) -> bool {
+    const TYPES: [&str; 8] = [
+        "int", "uint", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4",
+    ];
+    let mut previous = "";
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        if !(bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
+            at += 1;
+            continue;
+        }
+        let start = at;
+        while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
+            at += 1;
+        }
+        let word = &text[start..at];
+        let named = text[at..]
+            .trim_start()
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_');
+        if TYPES.contains(&word) && named && !["highp", "mediump", "lowp"].contains(&previous) {
+            return true;
+        }
+        previous = word;
+    }
+    false
 }
