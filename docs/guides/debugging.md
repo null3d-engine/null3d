@@ -15,7 +15,7 @@ flowchart TD
     start["createEngine"] -- "the start fails" --> rejects["createEngine rejects<br/>with an EngineError"]
     start --> running["The engine runs"]
     running -- "a sketch callback throws" --> logged["The console shows the error once,<br/>and the engine carries on"]
-    running -- "the GPU is lost for good,<br/>or an engine thread fails" --> failure["engine.onFailure<br/>receives the error"]
+    running -- "the GPU is lost for good, an engine thread fails,<br/>or the GPU runs out of memory" --> failure["engine.onFailure<br/>receives the error"]
     hold["Hold mode"] -- "the first error" --> held["window.__null3dHold<br/>with ok: false"]
 ```
 
@@ -41,7 +41,9 @@ The error also holds the code in `error.code` and the page's address in `error.d
 | The setup function throws | `createEngine` rejects with [E1405](../errors/E1405.md), which quotes your error |
 | During the start, an engine thread fails or the GPU is lost for good | `createEngine` stops the engine and rejects with [E1404](../errors/E1404.md) or [E1302](../errors/E1302.md) |
 | A callback such as `onUpdate` throws | The console shows each distinct error once, with its stack. The engine carries on, and calls the callback again when it next runs |
-| After the start, the GPU is lost and cannot come back, or an engine thread fails | `engine.onFailure` receives [E1302](../errors/E1302.md) or [E1404](../errors/E1404.md). Without a handler, the console shows it |
+| After the start, the GPU is lost and cannot come back, or an engine thread fails | `engine.onFailure` receives [E1302](../errors/E1302.md) or [E1404](../errors/E1404.md). Without a handler, the console shows it. The canvas keeps the last frame: destroy the engine and start a new one |
+| After the start, the WebGPU device runs out of memory or rejects the engine's work | `engine.onFailure` receives [E1304](../errors/E1304.md) or [E1305](../errors/E1305.md), once per GPU device. The engine draws on without the objects that failed |
+| Sketch code runs after `destroy()`, from a timer, a promise or an event listener | The call throws [E1420](../errors/E1420.md). Remove such code in the sketch's `onDestroy` |
 | Hold mode | The hold stops at the first error, and the result says why. [Testing your sketch](testing.md#when-a-hold-fails) lists the cases |
 
 Catch the error of `createEngine`, and show the page without the scene:
@@ -142,6 +144,7 @@ To test a page's handling of a lost GPU, call `engine.simulateGpuLoss()`. The en
 | `engine.mode.build` is `single` | The page is not cross-origin isolated | Send the two headers that [Hosting and cross-origin isolation](../getting-started/hosting.md) lists |
 | Rows written to an instance batch do not move | The batch is static, and the rows are not marked | Call `markDirty`, or create the batch with `dynamic: true` ([Instances and batching](../concepts/instances.md)) |
 | Writes to instance rows stop working in the single-threaded build | The sketch kept the batch's arrays from the setup, and the engine's memory grew | Read `batch.positions` and the other arrays each time you use them |
+| `createEngine` fails with E1419 | Another engine still draws on the canvas | Call `destroy()` on the old engine. React's StrictMode starts, destroys and starts an effect's engine: the second start waits for the destroy |
 | A new texture shows only its material's color for a few frames | Texels go to the GPU over several frames | Keep the first view's textures small, or wait a few frames before you remove the loading screen ([Loading screens and warm-up](loading-screens.md)) |
 
 ## Related pages

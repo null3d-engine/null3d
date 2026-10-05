@@ -4,7 +4,9 @@
 //!
 //! Slot 0 is never handed out, so handle 0 means "none". A slot keeps its index for the life of
 //! its object, and destroying the object bumps the slot's generation, so an old handle to a reused
-//! slot fails with [`CoreError::StaleHandle`].
+//! slot fails with [`CoreError::StaleHandle`]. The highest generation, [`DEAD_GENERATION`], is
+//! never handed out: a destroyed object's wrapper keeps a handle with it, which stays stale however
+//! often its slot is reused.
 
 use crate::bitset::Bitset;
 use crate::error::{CoreError, Resource};
@@ -16,9 +18,13 @@ pub const GENERATION_BITS: u32 = 10;
 /// The largest slot count an allocator can have: every 20-bit index except 0.
 pub const MAX_SLOTS: u32 = (1 << SLOT_BITS) - 1;
 /// Freed slots wait in a first-in, first-out queue and are reused only once this many are
-/// waiting (or when no fresh slot is left). A slot's 10-bit generation then wraps only after about
-/// a million destroys, which keeps old handles from matching new objects.
+/// waiting, or when no fresh slot is left. While fresh slots remain, a slot's generation wraps only
+/// after about a million destroys. Once a scene has used every slot, a slot comes back after as few
+/// destroys as wait in the queue, so its generation can come round within minutes: only
+/// [`DEAD_GENERATION`] keeps an old handle from matching a new object then.
 pub const REUSE_DELAY: u32 = 1024;
+/// The generation that no live object has, which marks the handle of a destroyed one.
+pub const DEAD_GENERATION: u32 = GENERATION_MASK;
 
 const SLOT_MASK: u32 = (1 << SLOT_BITS) - 1;
 const GENERATION_MASK: u32 = (1 << GENERATION_BITS) - 1;
@@ -152,7 +158,12 @@ impl SlotAllocator {
         let s = slot as usize;
         self.live.clear(slot);
         self.live_count -= 1;
-        self.generations[s] = ((u32::from(self.generations[s]) + 1) & GENERATION_MASK) as u16;
+        let next = (u32::from(self.generations[s]) + 1) & GENERATION_MASK;
+        self.generations[s] = if next == DEAD_GENERATION {
+            0
+        } else {
+            next as u16
+        };
         self.destroyed_frames[s] = frame;
         let tail = (self.free_head + self.free_len) % self.capacity;
         self.free[tail as usize] = slot;
@@ -276,14 +287,32 @@ mod tests {
     }
 
     #[test]
-    fn the_generation_wraps_after_ten_bits() {
+    fn the_generation_wraps_after_ten_bits_and_skips_the_dead_one() {
         let mut slots = SlotAllocator::with_capacity(1);
         let mut h = slots.reserve().unwrap();
-        for _ in 0..1024 {
+        for _ in 0..DEAD_GENERATION {
+            assert_ne!(h.generation(), DEAD_GENERATION);
             slots.release(h, 0).unwrap();
             h = slots.reserve().unwrap();
         }
         assert_eq!((h.slot(), h.generation()), (1, 0));
+    }
+
+    #[test]
+    fn a_dead_handle_never_resolves_however_often_its_slot_is_reused() {
+        // A full scene: the slot comes back at once after each destroy.
+        let mut slots = SlotAllocator::with_capacity(1);
+        let first = slots.reserve().unwrap();
+        let dead = Handle::from_raw(first.raw() | (DEAD_GENERATION << SLOT_BITS));
+        let mut h = first;
+        for _ in 0..5000 {
+            slots.release(h, 0).unwrap();
+            h = slots.reserve().unwrap();
+            assert!(matches!(
+                slots.resolve(dead),
+                Err(CoreError::StaleHandle { .. })
+            ));
+        }
     }
 
     #[test]

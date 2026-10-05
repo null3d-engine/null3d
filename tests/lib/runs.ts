@@ -28,6 +28,14 @@ export interface PlanItem<Check = unknown> {
 	 * its progress name, and a dead tab then counts as its result, not as a stopped runner page.
 	 */
 	endsTab?: true;
+	/**
+	 * The page's check times its frames, so the runner page keeps the page's frame on top in a plan
+	 * that draws its report over pages. Under an opaque report, a canvas that a worker draws changes
+	 * nothing on the screen. The browser then sends the screen a few frames a second, and Android
+	 * may lower the display to its lowest content rate, 24 Hz on the Galaxy S24+. Every frame
+	 * callback of the browser then comes at that rate.
+	 */
+	timesFrames?: true;
 	/** The GPU path that the page needs, which the runner page skips it for on a device that lacks it. */
 	gpu?: GpuPath;
 	/** What the command-line tool checks in the result. */
@@ -41,7 +49,8 @@ export interface Plan<Check = unknown> {
 	/**
 	 * The runner page draws its report over each page's frame, which stays full size underneath, so
 	 * the screen does not flash between pages. Only plans that check results set it: over a timed
-	 * page, the report would add to what the browser composites.
+	 * page, the report would add to what the browser composites. An item that `timesFrames` still
+	 * shows its frame.
 	 */
 	reportOnTop?: true;
 	/**

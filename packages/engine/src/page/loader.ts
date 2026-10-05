@@ -38,6 +38,26 @@ export interface LoadedCore {
 
 const coreError: WasmError = (code, message) => new EngineError(code, message);
 
+/** The slot where the page's early script leaves the core's response (page/early-core.ts). */
+export const EARLY_CORE_SLOT = Symbol.for('null3d.early-core');
+
+interface EarlyCore {
+	url: string;
+	response: Promise<Response>;
+}
+
+/**
+ * The core's response that the page's early script started, when it is for `url`. The loader takes
+ * it once, so a later start downloads afresh, as its response is already read.
+ */
+export function takeEarlyCore(url: URL): Promise<Response> | undefined {
+	const slots = globalThis as Record<symbol, EarlyCore | undefined>;
+	const early = slots[EARLY_CORE_SLOT];
+	if (early?.url !== url.href) return undefined;
+	delete slots[EARLY_CORE_SLOT];
+	return early.response;
+}
+
 /**
  * The shared memory's maximum in MiB: the `?memory=` switch's, which wins, then the page's
  * `memory.maximumMiB` option's, then `fallback`, the quality preset's. An option that is not a
@@ -113,11 +133,13 @@ export async function loadCore(
 	maximumMiB = DEFAULT_MAXIMUM_MIB,
 ): Promise<LoadedCore> {
 	const threaded = build === 'threaded';
+	const url = coreUrls(build).wasm;
 	const { module, head: limits } = await compileWasm(
-		coreUrls(build).wasm,
+		url,
 		`the ${build} engine core`,
 		coreError,
 		threaded ? readMemoryLimits : undefined,
+		takeEarlyCore(url),
 	);
 	if (!threaded) return { build, module };
 	if (!limits)

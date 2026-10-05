@@ -52,6 +52,8 @@ export class DeviceShaderSet {
 	private listener: ((feature: string, module: FirstUseShaders) => void) | undefined;
 	/** The key of each module whose builds the set holds, or that failed to load. */
 	private readonly settled = new Set<string>();
+	/** Why each module that failed to load failed, by its key. */
+	private readonly failures = new Map<string, unknown>();
 	/** The name of each shader whose variants the backends hold, by those variants. */
 	private readonly names = new Map<ShaderVariants, string>();
 
@@ -72,8 +74,9 @@ export class DeviceShaderSet {
 
 	/**
 	 * True when `variants` hold a build for `permutation` with output for `target`, or when the
-	 * module that would hold it has settled, so the backend can build the pipeline or report its
-	 * error. Otherwise it starts to load that module, once, and returns false until it has.
+	 * module that would hold it has loaded, so the backend can build the pipeline or report its
+	 * error. Otherwise it starts to load that module, once, and returns false until it has. It
+	 * throws when that module failed to load, with the reason.
 	 */
 	ready(variants: ShaderVariants, permutation: number, target: 'wgsl' | 'glsl'): boolean {
 		if (variantFor(variants, permutation, target)) return true;
@@ -81,6 +84,13 @@ export class DeviceShaderSet {
 		const name = this.names.get(variants);
 		const feature = name === undefined ? undefined : firstUseFeature(name, permutation);
 		const key = this.loadModule(feature, bits);
+		if (this.failures.has(key)) {
+			const reason = this.failures.get(key);
+			throw new Error(
+				`the engine could not download the shaders that a pipeline needs: ${reason instanceof Error ? reason.message : String(reason)}. Check the network, and that the page's build is deployed whole`,
+				{ cause: reason },
+			);
+		}
 		return this.settled.has(key);
 	}
 
@@ -136,7 +146,8 @@ export class DeviceShaderSet {
 					this.settled.add(key);
 					return more;
 				},
-				() => {
+				(error: unknown) => {
+					this.failures.set(key, error);
 					this.settled.add(key);
 					return undefined;
 				},
