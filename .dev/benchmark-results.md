@@ -284,6 +284,43 @@ The whole map in one step took this GPU time:
 
 The largest WebGL2 steps of 101 to 256 ms are single stalls. The same runs found two faults. The 11-11-10 format misses D-19's tolerance on every path. WebGL2 cannot write half floats straight into the cube (GL error 0x502).
 
+The second run of the prototype, at commit c0c104e4 on 5 October 2026, timed the design that M2-E9 takes. The engine makes the whole map in one step at load (`load=1`), right after the warm-up draws. Sources: runs 20261005-024553-prefilter (Galaxy S25, Pixel 9, Pixel 10) and 20261005-025041-prefilter (Pixel 11). WebGL2 gives wall time from the call to the finish. The pipelines build first, in the background.
+
+| Device and browser | Map at load, WebGPU | Map at load, WebGL2 | Pipelines, WebGPU | Pipelines, WebGL2 |
+| --- | --- | --- | --- | --- |
+| Galaxy S25 (Adreno 830), Chrome 149 | 66.7 ms | 76.6 ms | 92.7 ms | 109.3 ms |
+| Pixel 9 (Mali-G715), Chrome 149 | 99.7 ms | 107.3 ms | 128.7 ms | 173.6 ms |
+| Pixel 10 (PowerVR D-Series), Chrome 149 | 87.2 ms | 57.7 ms | 128.2 ms | 225.5 ms |
+| Pixel 11 (PowerVR C-Series), Chrome 149 | 47.8 ms | 72.5 ms | 111.5 ms | 100.3 ms |
+
+The same day, held sessions timed the engine's generator on the branch `feat/m2-e9-room-at-load` (commit 0d49786c). On the Galaxy S25 its first map at load took 92.7 ms on WebGPU, 89.7 ms in compatibility mode and 94.3 ms with WebGL2. On the Pixel 9 it took 126.2, 120.6 and 127.1 ms. Its map matched the asset tool's on every path.
+
+### Two commits on one cloud device
+
+Each comparison ran in one held Automate session, which moved between two dev servers, one per commit, in turns A, B, A, B. Each turn measured 30 s of S4 at Low with the governor off.
+
+The gate fix's GPU time on the cloud iPad (iPad 10th, Safari 27.0, WebGPU, screen at 60 Hz), 5 October 2026:
+
+| Turn | Commit | Run | GPU ms | Draw calls | fps |
+| --- | --- | --- | --- | --- | --- |
+| A | 1533939f (main) | 20261005-031515-bench | 13.02 | 63 | 22.1 |
+| B | 84e2bd47 (`fix/gate-ab-regression`) | 20261005-031849-bench | 12.58 | 56 | 22.7 |
+| A | 1533939f (main) | 20261005-032203-bench | 13.40 | 63 | 22.2 |
+| B | 84e2bd47 (`fix/gate-ab-regression`) | 20261005-032547-bench | 12.14 | 56 | 22.8 |
+
+The cloud iPad draws S4 at about 22 fps on WebGPU and 33 fps with WebGL2. Its screen runs at 60 Hz, and its video recording makes no difference. The page's GPU work takes 12 to 15 ms a frame, but each frame waits 44 to 60 ms for the GPU. So its frame rates do not compare with the owner's iPad. Its GPU times do compare between commits in one session.
+
+The shadow fix's cost with WebGL2 on the Galaxy S25 (Chrome 149, screen at 24 to 30 Hz, no GPU timer), 5 October 2026:
+
+| Turn | Commit | Run | fps, seconds at 30 fps | Frame interval p95 | CPU ms per frame, median / p95 |
+| --- | --- | --- | --- | --- | --- |
+| A | fd681ea5 (main) | 20261005-034131-bench | 30.0, 30 of 30 | 33.33 ms | 0.77 / 1.84 |
+| B | c1a764dc (`fix/shadow-contact-gap`) | 20261005-034457-bench | 30.0, 30 of 30 | 33.34 ms | 0.81 / 1.79 |
+| A | fd681ea5 (main) | 20261005-034842-bench | 30.0, 30 of 30 | 33.34 ms | 0.83 / 1.86 |
+| B | c1a764dc (`fix/shadow-contact-gap`) | 20261005-035202-bench | 30.0, 30 of 30 | 33.33 ms | 0.77 / 1.79 |
+
+Both commits held the screen's rate, so the fix's extra shadow reads fit in the frame there. The screen's low rate hides a GPU cost below about 33 ms.
+
 ## The other runs in the archive
 
 The archive also keeps runs that compare no engine with three.js. Their records hold the figures that the guides and decision records cite.
