@@ -59,7 +59,9 @@ export const ERROR_FIXES = {
 	E1302:
 		'Listen with engine.onFailure. Destroy the engine, put a new canvas element in place of the old one, and start the engine again on it. If losses keep coming, lower the quality preset.',
 	E1303:
-		'Update the browser. Chrome 91, Firefox 89, Safari 16.4 and later versions run the engine.',
+		'Update the browser. Chrome and Edge 91, Firefox 89, Safari 18 and later versions run the engine.',
+	E1306:
+		'Update Safari to version 18 or later. On iPhone and iPad, update iOS or iPadOS to 18 or later, which updates the engine of every browser there.',
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:

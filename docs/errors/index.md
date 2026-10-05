@@ -38,6 +38,7 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1301](E1301.md) | No usable GPU path | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. |
 | [E1302](E1302.md) | GPU lost | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. |
 | [E1303](E1303.md) | WebAssembly SIMD missing | The browser runs WebAssembly without SIMD, which the engine's core needs. |
+| [E1306](E1306.md) | Safari before 18 | The browser runs the WebKit engine of a Safari before 18, which null3D does not support. Every browser on iPhone and iPad runs WebKit, so Chrome, Edge and Firefox there count too. |
 | [E1401](E1401.md) | Not a sketch module | The module passed to createEngine as the sketch does not export a sketch as its default export. |
 | [E1402](E1402.md) | Engine core out of date | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads. |
 | [E1403](E1403.md) | Engine core not ready | An engine call ran before the engine core started in this worker, or the core started twice. |
