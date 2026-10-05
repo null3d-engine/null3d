@@ -239,7 +239,7 @@ The sky lights nothing. For light that matches it, add a directional light along
 ### Background cost
 
 - Each background is one draw of at most 12 triangles. The sky reads no texture.
-- A background costs only the pixels that no object covers. An opaque material with `depthWrite: false` or `depthTest: false` makes the background draw first, and then every pixel of the view pays for it. Drawn first, the sky added 6.7 ms of GPU time per frame on a Galaxy S25 (Adreno GPU), and 0.3 ms on a Pixel 9 (Mali GPU).
+- A background costs only the pixels that no object covers. An opaque material with `depthWrite: false` or `depthTest: false` makes the background draw first, and then every pixel of the view pays for it. Drawn first, the sky added 6.7 ms of GPU time per frame on a Galaxy S25 (Adreno GPU). On a Pixel 9 (Mali GPU) it added 0.3 ms.
 - An environment or a cube map reads one texel of its cube map per pixel. The sky computes its light in each pixel, and does more work above the horizon while it draws clouds. `cloudCoverage: 0` skips the clouds.
 - The shaders download with the first background of their kind: `'background'` for a texture, an environment or a cube map, and `'sky'` for the sky. A page with neither downloads none of them.
 - The settings are a small block of values that the GPU reads, and the engine writes them again only when they change. Setting or moving a background builds no pipeline. The first background of each kind builds one.
