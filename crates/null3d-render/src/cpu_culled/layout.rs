@@ -152,6 +152,8 @@ pub(super) struct Layout {
     pub(super) drawn_slots: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged.
     key_counts: Vec<(BucketKey, u32)>,
+    /// The pipelines of the skinned objects that the layout leaves out until they are built.
+    waiting: Vec<u32>,
     /// Bytes of one ring slot of draw records: the opaque draws' records, then room for the
     /// records of the transparent pass's draws, from [`Layout::sorted_records_at`] on.
     pub(super) draws_slot_bytes: u32,
@@ -181,7 +183,14 @@ impl Layout {
         self.draws.clear();
         self.scene_buckets.clear();
         self.batches.clear();
+        self.waiting.clear();
         self.room = CullRoom::default();
+    }
+
+    /// The pipelines of the skinned objects that the layout leaves out, which must be built before
+    /// they draw.
+    pub(super) fn waiting(&self) -> &[u32] {
+        &self.waiting
     }
 
     pub(super) fn batch(&self, target: u32) -> Option<&BatchSlot> {
@@ -194,7 +203,8 @@ impl Layout {
     /// fails. With `multi_draw`, one block of draw records serves each multi-draw call; else each
     /// draw has an aligned record of its own. With `shadows`, the scene's receivers draw with
     /// pipelines that read the shadow maps, and the casters' layout holds the casters. The objects
-    /// that `skins` skins draw with pipelines that skin in the vertex shader. With a `prepass`, the
+    /// that `skins` skins draw with pipelines that skin in the vertex shader; those that it hides get
+    /// no bucket, and the layout asks only for their pipelines. With a `prepass`, the
     /// scene's draws that the depth prepass draws get its pipelines too. The caller marks the
     /// layout built once the room it needs is made.
     #[allow(clippy::too_many_arguments)]
@@ -288,7 +298,7 @@ impl Layout {
                 RESIDENT
             }
         };
-        let scene_key = |slot: usize| {
+        let any_key = |slot: usize| {
             let object = scene.flags()[slot];
             let left_out = match drawn {
                 Drawn::Scene => false,
@@ -306,6 +316,13 @@ impl Layout {
                 Some(slot),
             )
         };
+        let scene_key = |slot: usize| {
+            if skins.hides(slot) {
+                None
+            } else {
+                any_key(slot)
+            }
+        };
         // Instance batches cast no shadows yet, take no outlines, and no animated instance skins
         // them.
         let batch_key = |batch: &InstanceBatch| match drawn {
@@ -319,6 +336,24 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+
+        self.waiting.clear();
+        for slot in 0..self.scene_rows as usize {
+            if !skins.hides(slot) {
+                continue;
+            }
+            if let Some((pipeline, ..)) = any_key(slot) {
+                let (first, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                // The outlined layout's buckets draw with both pipelines of the outline mask.
+                let second = (drawn == Drawn::Outlined)
+                    .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
+                self.waiting.extend(
+                    [first, prepass, second.unwrap_or(0)]
+                        .into_iter()
+                        .filter(|&id| id != 0),
+                );
+            }
+        }
 
         self.buckets.clear();
         self.draws.clear();

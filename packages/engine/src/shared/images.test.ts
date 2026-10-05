@@ -4,10 +4,10 @@ import {
 	type CustomShader,
 	ImageTable,
 	imagesArrived,
+	RECEIVING,
 	receiveImages,
 	sendThrough,
 	sendToTable,
-	shadersThrough,
 	shadersToTable,
 } from './images';
 import { setWakeByMessage, WAKE } from './wake';
@@ -42,6 +42,26 @@ describe('the image table', () => {
 	});
 });
 
+/**
+ * One end of a channel as the tests need it: the messages posted through it, and the handler that
+ * the code under test sets.
+ */
+function fakePort(): MessagePort & { posted: [unknown, Transferable[]][] } {
+	const port = {
+		posted: [] as [unknown, Transferable[]][],
+		onmessage: null as ((event: MessageEvent) => void) | null,
+		postMessage(message: unknown, transfer: Transferable[] = []) {
+			port.posted.push([message, transfer]);
+		},
+	};
+	return port as unknown as MessagePort & { posted: [unknown, Transferable[]][] };
+}
+
+/** Delivers a message to the handler of a fake port. */
+function deliver(port: MessagePort, data: unknown): void {
+	port.onmessage?.({ data } as MessageEvent);
+}
+
 describe('images on their way to the thread that draws', () => {
 	test('reach a table on this thread at once, each counted as it arrives', async () => {
 		const { slots } = controlViews(createControlBuffer(true));
@@ -55,46 +75,68 @@ describe('images on their way to the thread that draws', () => {
 		await imagesArrived(slots, 2);
 	});
 
-	test('cross a port in order, and a wait ends once every image sent arrived', async () => {
+	test('wait until the thread that draws receives, then cross the port in order', async () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		const table = new ImageTable();
-		const posted: [unknown, Transferable[]][] = [];
-		const port = {
-			onmessage: null as ((event: MessageEvent) => void) | null,
-			postMessage(message: unknown, transfer: Transferable[]) {
-				posted.push([message, transfer]);
-			},
-		} as unknown as MessagePort;
-		const send = sendThrough(port);
-		const [first, second] = [image(), image()];
-		send(1, first);
-		send(2, second);
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const { sendImage } = sendThrough(sketchEnd);
+		const [first, second, third] = [image(), image(), image()];
+		sendImage(1, first);
+		sendImage(2, second);
+		// Nothing crosses before the thread that draws has made its renderer: Firefox can fail to
+		// read an image that reaches that thread before then.
+		const receiving = receiveImages(drawingEnd, table, slots);
+		expect(drawingEnd.posted).toEqual([]);
+		receiving();
+		expect(sketchEnd.posted).toEqual([]);
+		expect(drawingEnd.posted).toEqual([[RECEIVING, []]]);
+		deliver(sketchEnd, RECEIVING);
 		// Each image moves with its message instead of being copied.
-		expect(posted.map(([message, transfer]) => [message, transfer[0]])).toEqual([
+		expect(sketchEnd.posted.map(([message, transfer]) => [message, transfer[0]])).toEqual([
 			[{ id: 1, image: first }, first],
 			[{ id: 2, image: second }, second],
 		]);
-		receiveImages(port, table, slots);
 		const arrived = imagesArrived(slots, 2);
-		for (const [message] of posted) port.onmessage?.({ data: message } as MessageEvent);
+		for (const [message] of sketchEnd.posted) deliver(drawingEnd, message);
 		await arrived;
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(2);
 		expect([table.get(1), table.get(2)]).toEqual([first, second]);
+		// Once the other end receives, an image crosses at once.
+		sendImage(3, third);
+		expect(sketchEnd.posted.at(-1)?.[0]).toEqual({ id: 3, image: third });
+	});
+
+	test('features to preload cross at once, while images wait for the thread that draws', () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const { sendImage, sendPreload } = sendThrough(sketchEnd);
+		sendImage(1, image());
+		sendPreload(['skinning']);
+		expect(sketchEnd.posted).toEqual([[{ preload: ['skinning'] }, []]]);
+		receiveImages(drawingEnd, table, slots);
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
+		expect([...table.preloads]).toEqual(['skinning']);
+	});
+
+	test('a message that the browser cannot read stops the thread that draws with an error', () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const drawingEnd = fakePort();
+		receiveImages(drawingEnd, new ImageTable(), slots);
+		expect(() => drawingEnd.onmessageerror?.({} as MessageEvent)).toThrow(
+			'a texture image or shader that the sketch sent could not be read',
+		);
 	});
 
 	test('each arrival sends a wake back through its port, where the threads wake with messages', () => {
 		setWakeByMessage(true);
 		try {
 			const { slots } = controlViews(createControlBuffer(true));
-			const posted: unknown[] = [];
-			const port = {
-				onmessage: null as ((event: MessageEvent) => void) | null,
-				postMessage: (message: unknown) => posted.push(message),
-			} as unknown as MessagePort;
+			const port = fakePort();
 			receiveImages(port, new ImageTable(), slots);
-			port.onmessage?.({ data: { id: 1, image: image() } } as MessageEvent);
+			deliver(port, { id: 1, image: image() });
 			expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(1);
-			expect(posted).toEqual([WAKE]);
+			expect(port.posted.map(([message]) => message)).toEqual([WAKE]);
 		} finally {
 			setWakeByMessage(false);
 		}
@@ -130,16 +172,13 @@ describe('texture generators on their way to the thread that draws', () => {
 	test('cross a port by name, and count when their code did not load, which running one reports', async () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		const table = new ImageTable();
-		const posted: unknown[] = [];
-		const port = {
-			onmessage: null as ((event: MessageEvent) => void) | null,
-			postMessage: (message: unknown) => posted.push(message),
-		} as unknown as MessagePort;
-		sendThrough(port)(1, 'room');
-		expect(posted).toEqual([{ id: 1, generator: 'room' }]);
-		receiveImages(port, table, slots);
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		sendThrough(sketchEnd).sendImage(1, 'room');
+		deliver(sketchEnd, RECEIVING);
+		expect(sketchEnd.posted).toEqual([[{ id: 1, generator: 'room' }, []]]);
+		receiveImages(drawingEnd, table, slots);
 		table.loadGeneratorsWith(() => Promise.reject(new Error('offline')));
-		port.onmessage?.({ data: posted[0] } as MessageEvent);
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
 		await imagesArrived(slots, 1);
 		expect(() => table.generator(1)).toThrow(
 			'the code of the room generator did not download: offline',
@@ -153,17 +192,12 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 	test('cross the port of the images by template, and no image counts them', () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		const table = new ImageTable();
-		const posted: unknown[] = [];
-		const port = {
-			onmessage: null as ((event: MessageEvent) => void) | null,
-			postMessage(message: unknown) {
-				posted.push(message);
-			},
-		} as unknown as MessagePort;
-		shadersThrough(port)(64, shader);
-		expect(posted).toEqual([{ template: 64, shader }]);
-		receiveImages(port, table, slots);
-		port.onmessage?.({ data: posted[0] } as MessageEvent);
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		sendThrough(sketchEnd).sendShader(64, shader);
+		deliver(sketchEnd, RECEIVING);
+		expect(sketchEnd.posted).toEqual([[{ template: 64, shader }, []]]);
+		receiveImages(drawingEnd, table, slots);
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
 		expect(table.shaders.get(64)).toBe(shader);
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(0);
 	});
@@ -174,5 +208,20 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 		expect(table.shaders.get(65)).toBe(shader);
 		table.clear();
 		expect(table.shaders.size).toBe(0);
+	});
+});
+
+describe('features whose shader files the sketch asks for early', () => {
+	test("reach the renderer's listener once each, and a cleared table lets go of the listener", () => {
+		const table = new ImageTable();
+		const heard: string[] = [];
+		table.onPreload = (feature) => heard.push(feature);
+		table.preload(['skinning', 'bloom']);
+		table.preload(['skinning']);
+		expect(heard).toEqual(['skinning', 'bloom']);
+		// A stopped drawing clears its table. The page's end of the image port keeps the table, so
+		// a listener that stayed would keep the stopped renderer and the engine's memory.
+		table.clear();
+		expect(table.onPreload).toBeUndefined();
 	});
 });

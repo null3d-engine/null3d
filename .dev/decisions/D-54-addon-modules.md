@@ -1,15 +1,16 @@
 # D-54: Add-on modules, the on-demand loader and CDN delivery
 
-Status: decided by the owner on 2026-10-04. The add-on rule came at 18:00, CDN delivery at 19:00, and the one loader with the line between core and add-ons at 19:20. Draco's support decided the same day. Nothing of it is built yet. Date: 2026-10-04. Task: M2-N1.
+Status: decided by the owner on 2026-10-04. The add-on rule came at 18:00, CDN delivery at 19:00, and the one loader with the line between core and add-ons at 19:20. Draco's support and the bundler decided the same day. Nothing of it is built yet. Date: 2026-10-04. Task: M2-N1.
 
 ## Question
 
-[D-52](D-52-intent-parity.md) says that heavy or niche features ship as add-on modules. Each takes one install and one import. It works with the Vite plugin, plain bundlers and CDNs, under a strict Content Security Policy. Four questions remain:
+[D-52](D-52-intent-parity.md) says that heavy or niche features ship as add-on modules. Each takes one install and one import. It works with the Vite plugin and from CDNs, under a strict Content Security Policy. Five questions remain:
 
 1. Which features are add-ons, and which stay in the core but load on first use?
 2. How does an add-on's WebAssembly reach the threads that run it? Does an add-on start workers of its own?
 3. How do the engine and its add-ons start workers when a page loads them from a CDN?
 4. Does the engine read Draco-compressed glTF files, and how does the decoder load?
+5. Which bundlers does null3D support?
 
 ## Rule
 
@@ -27,7 +28,7 @@ The library code review of 4 October 2026 checked each condition of the add-on r
 | Shaders that load on first use | Only the morph builds on M2-C5's branch, and the room's generator on #283 | The review's per-feature shader files |
 | A strict policy | A threaded page does not start under one. Vite inlines the core's 46-byte limits file as a `data:` URL, which `connect-src 'self'` blocks, and the error (E1406) blames the host | R8-01 |
 | A clear error without `'wasm-unsafe-eval'` | A raw `CompileError` with no code | R8-05 |
-| Plain bundlers | Without the Vite plugin, each worker builds as a 34 MB file | R8-07 |
+| Vite without the plugin | Each worker builds as a 34 MB file | R8-07 |
 | CDNs | The engine starts each worker with `new Worker(new URL(..., import.meta.url))`. A dedicated worker's script must have the page's origin, so a page that loads the engine from a CDN cannot start its workers. The hosting guide wrongly allows workers from another origin | R8-06 |
 | Licence notices | No notice reaches a game's build: Basis with its NOTICE, Zstandard, meshopt, the three.js lighting table | R8-03 |
 | WebAssembly of its own | The Basis transcoder (365 KB after Brotli, loaded with the first KTX2 file) and meshopt's decoder ([D-34](D-34-meshopt-decoding.md), 6.2 KB, loaded with the first file that holds meshopt data) show the pattern | |
@@ -63,11 +64,17 @@ Draco:
 
 ### CDN delivery
 
-- The main path is bundled: the engine and its add-ons from npm, built with the Vite plugin or any bundler.
+- The main path is bundled: the engine and its add-ons from npm, built with Vite and the null3D plugin.
 - CDN use works through one shared mechanism in the engine. Each worker starts from a small `blob:` bootstrap that the page makes, which imports the worker's code from the CDN. The core's own workers start the same way, so there is one way to start workers.
 - The docs state the policy that this needs (`worker-src blob:`, the CDN in `script-src` and `connect-src`, and `'wasm-unsafe-eval'`) and the headers (cross-origin isolation, and CORS or `Cross-Origin-Resource-Policy` on the CDN's files).
 - The engine gives a clear error, with a code and a fix, when the policy or a header is missing.
 - No self-hosted worker copies: a page never has to copy worker files to its own origin.
+
+### Bundlers
+
+- null3D requires Vite with the null3D plugin. Other bundlers are not supported, and no test builds with them. The install guide says so, and the plugin warns when a setting builds workers in a format other than ES modules.
+- The engine still loads its workers, its WebAssembly and its other files the standard way, `new URL('<file>', import.meta.url)`, with no feature that only Vite has. Every modern bundler understands that pattern, so other bundlers stay possible. Today the engine's addresses carry Vite's `?no-inline` query. The loader's task (M2-R18) replaces it.
+- Reason: one supported toolchain is one to test and to document. The standard loading pattern keeps other bundlers open without that cost. The review's webpack and Rspack test builds (R8-07) are dropped, and no Next.js test project is built.
 
 ### Draco
 
@@ -86,7 +93,7 @@ Draco:
 
 ## Consequences
 
-- A new task builds the loader and the `blob:` bootstrap. It moves the core's workers, the Basis transcoder and meshopt's decoder onto them. A test starts a fresh project under a strict policy and behind a CDN. Fix group F of the code review (R8-01, R8-05, R8-06, R8-07) goes first, and the per-feature shader files (M2-R11, D-56) are its prerequisite.
+- A new task builds the loader and the `blob:` bootstrap. It moves the core's workers, the Basis transcoder and meshopt's decoder onto them. A test starts a fresh project under a strict policy and behind a CDN. Fix group F of the code review (R8-01, R8-05, R8-06, R8-07) goes first, and the per-feature shader files (M2-R11, D-56) are its prerequisite. The same task removes the engine's Vite-only address queries.
 - M2-A6 builds Draco on the loader, with the per-file limits of fix group A.
 - One notices file per build, which each add-on extends: Draco and Rapier are Apache-2.0 (R8-03).
 - `docs/getting-started/hosting.md` gives the policy and the headers, and drops the claim that workers may come from another origin.

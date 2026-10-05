@@ -3,8 +3,9 @@
 //! stage, and the reflection maps those names back to WGSL bindings.
 
 use naga::back::glsl::{self as backend, Options, PipelineOptions, Version, WriterFlags};
+use naga::compact::{KeepUnused, compact};
 use naga::proc::BoundsCheckPolicies;
-use naga::valid::ModuleInfo;
+use naga::valid::{Capabilities, ModuleInfo, ValidationFlags, Validator};
 use naga::{
     AddressSpace, ArraySize, Binding as IoBinding, BuiltIn, EntryPoint, Expression, Function,
     Handle, Module, ShaderStage, Type, TypeInner, VectorSize,
@@ -24,23 +25,56 @@ pub(crate) const DEPTH_MAPPING_UNIFORM: &str = "null3d_depth_mapping";
 /// that `mediump` names run at that precision.
 pub(crate) fn write_program(
     module: &Module,
-    info: &ModuleInfo,
+    capabilities: Capabilities,
     name: &str,
     pipeline: &Pipeline,
     mediump: &[String],
 ) -> Result<GlslProgram, String> {
-    copied_uniform_array(module, info).map_or(Ok(()), |function| {
-        Err(format!(
-            "pipeline `{name}`: the function `{function}` copies a value that holds an array out of a uniform block. Adreno 830's WebGL2 driver leaves such a copy's arrays empty. Read the elements from the block where the function needs them, or hold the vectors in named fields."
-        ))
-    })?;
     let [vertex, fragment] = pipeline.stages().map(|(stage, stage_name, entry_point)| {
-        write_stage(module, info, name, stage, stage_name, entry_point, mediump)
+        let (stage_module, info) = stage_module(module, capabilities, stage, entry_point)?;
+        if let Some(function) = copied_uniform_array(&stage_module, &info) {
+            return Err(format!(
+                "pipeline `{name}`: the function `{function}` copies a value that holds an array out of a uniform block. Adreno 830's WebGL2 driver leaves such a copy's arrays empty. Read the elements from the block where the function needs them, or hold the vectors in named fields."
+            ));
+        }
+        write_stage(
+            &stage_module,
+            &info,
+            name,
+            stage,
+            stage_name,
+            entry_point,
+            mediump,
+        )
     });
     Ok(GlslProgram {
         vertex: vertex?,
         fragment: fragment?,
     })
+}
+
+/// The module with only the entry point of one stage, and only what that entry point uses. Each
+/// stage's text then depends only on its own code: a bit that changes only the vertex shader
+/// leaves the fragment shader's text as it is, so the builds that differ in that bit share it.
+fn stage_module(
+    module: &Module,
+    capabilities: Capabilities,
+    stage: ShaderStage,
+    entry_point: &str,
+) -> Result<(Module, ModuleInfo), String> {
+    let mut stage_module = module.clone();
+    stage_module
+        .entry_points
+        .retain(|ep| ep.stage == stage && ep.name == entry_point);
+    compact(&mut stage_module, KeepUnused::No);
+    let info = Validator::new(ValidationFlags::all(), capabilities)
+        .validate(&stage_module)
+        .map_err(|e| {
+            format!(
+                "the module of the entry point `{entry_point}` alone failed validation, which is a bug in the shader build: {e}"
+            )
+        })?;
+    Ok((stage_module, info))
 }
 
 fn write_stage(
@@ -86,6 +120,7 @@ fn write_stage(
 
     source = crate::half::mediump_items(&source, mediump);
     source = lower_arrays(&source);
+    source = drop_unused_constants(&source);
 
     let entry = module
         .entry_points
@@ -330,6 +365,59 @@ pub(crate) fn enable_multi_draw(source: &str) -> String {
         .replace("uint(gl_DrawID)", "gl_DrawID")
         .replace("gl_DrawID", "uint(gl_DrawID)");
     after_version(&converted, MULTI_DRAW_EXTENSION)
+}
+
+/// Drops each constant that the text declares at its top level and names nowhere else. naga writes
+/// every named constant of the module, also those that only another stage reads, and a blank line
+/// after them, which goes too when no constant is left above it.
+pub(crate) fn drop_unused_constants(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut dropped = false;
+    let mut kept_constant = false;
+    for line in source.split_inclusive('\n') {
+        let constant = constant_name(line);
+        let unused = constant.is_some_and(|name| {
+            source
+                .match_indices(name)
+                .filter(|&(at, _)| is_whole_word(source, at, name.len()))
+                .nth(1)
+                .is_none()
+        });
+        if unused {
+            dropped = true;
+            continue;
+        }
+        if dropped && !kept_constant && line.trim().is_empty() {
+            dropped = false;
+            continue;
+        }
+        dropped = false;
+        kept_constant = constant.is_some();
+        out.push_str(line);
+    }
+    out
+}
+
+/// The name that a top-level `const <type> <name> = <value>;` line declares.
+fn constant_name(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("const ")?;
+    let (_, rest) = rest.split_once(' ')?;
+    let (name, _) = rest.split_once(" = ")?;
+    is_identifier(name).then_some(name)
+}
+
+/// Whether the text at `at`, `len` bytes long, is a whole identifier.
+fn is_whole_word(source: &str, at: usize, len: usize) -> bool {
+    let word_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let before = source[..at]
+        .chars()
+        .next_back()
+        .is_none_or(|c| !word_char(c));
+    let after = source[at + len..]
+        .chars()
+        .next()
+        .is_none_or(|c| !word_char(c));
+    before && after
 }
 
 /// The name of the parameter through which a function that returns an array gives its result.
@@ -583,6 +671,20 @@ mod tests {
         let source = "vec3[2] pick(vec2 u) {\n    if (u.x > 0.5) {\n        return vec3[2](u.xxx, u.yyy);\n    }\n    return _e4;\n}\n\nfloat[2] none() {\n    return w;\n}\n\nvoid main() {\n    vec3 _e20[2] = pick(uv);\n    float _e21[2] = none();\n    return;\n}\n";
         let expected = "void pick(vec2 u, out vec3 _n3d_result[2]) {\n    if (u.x > 0.5) {\n        vec3 _n3d_array1[2];\n        _n3d_array1[0] = u.xxx;\n        _n3d_array1[1] = u.yyy;\n        _n3d_result = _n3d_array1;\n        return;\n    }\n    _n3d_result = _e4;\n    return;\n}\n\nvoid none(out float _n3d_result[2]) {\n    _n3d_result = w;\n    return;\n}\n\nvoid main() {\n    vec3 _e20[2];\n    pick(uv, _e20);\n    float _e21[2];\n    none(_e21);\n    return;\n}\n";
         assert_eq!(lower_arrays(source), expected);
+    }
+
+    #[test]
+    fn constants_that_no_other_line_names_are_dropped() {
+        let source = "const float A = 1.0;\nconst float AB = A * 2.0;\nconst uint UNUSED = 3u;\nconst float B_1 = 2.0;\nfloat f() { return AB + B_1; }\n";
+        assert_eq!(
+            drop_unused_constants(source),
+            "const float A = 1.0;\nconst float AB = A * 2.0;\nconst float B_1 = 2.0;\nfloat f() { return AB + B_1; }\n"
+        );
+        let only_unused = "struct S {\n    float x;\n};\nconst uint UNUSED = 3u;\n\nin float v;\n\nvoid main() {}\n";
+        assert_eq!(
+            drop_unused_constants(only_unused),
+            "struct S {\n    float x;\n};\nin float v;\n\nvoid main() {}\n"
+        );
     }
 
     #[test]

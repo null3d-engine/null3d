@@ -28,6 +28,9 @@ use null3d_render::view::ViewId;
 /// and the column.
 fn skinned(position: [f32; 3]) -> (World, Handle) {
     let mut world = World::new();
+    // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
+    // objects at once.
+    world.pipelines_built = 0;
     let column = world.add_skinned(position);
     (world, column)
 }
@@ -185,6 +188,7 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
         ..RendererConfig::default()
     };
     let mut world = World::with_config(config);
+    world.pipelines_built = 0;
     world.add_skinned([0.0, 0.0, 0.0]);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
@@ -223,6 +227,9 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
             vertex_skinning,
             ..RendererConfig::default()
         });
+        // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
+        // objects at once.
+        world.pipelines_built = 0;
         let object = world.add_skinned([0.0, 0.0, 0.0]);
         world
             .renderer
@@ -271,12 +278,47 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
     }
 }
 
+#[test]
+fn an_outlined_skinned_object_added_during_play_asks_for_both_mask_pipelines_while_it_waits() {
+    for vertex_skinning in [false, true] {
+        let mut world = World::with_config(RendererConfig {
+            vertex_skinning,
+            ..RendererConfig::default()
+        });
+        let object = world.add_skinned([0.0, 0.0, 0.0]);
+        world
+            .renderer
+            .settings_mut()
+            .set_outline(Some(Outline::default()));
+        world
+            .scene
+            .apply_commands(
+                &[Command::set_flags(object, flags::OUTLINED, flags::OUTLINED)],
+                world.frame,
+            )
+            .unwrap();
+        let mut mock = MockBackend::default();
+        // Frames have drawn, so the skinned object waits for its pipelines, the outline mask's
+        // two among them, which the layouts ask for in the same frame.
+        let first = world.step(&mut mock, true);
+        let masks = operands(&first, Op::CreateRenderPipeline)
+            .into_iter()
+            .filter(|p| p[1] == template::OUTLINE_MASK)
+            .count();
+        assert_eq!(masks, 2, "both mask pipelines");
+    }
+}
+
 /// The WebGL2 frame builder, with `WEBGL_multi_draw` or without.
 fn webgl2(multi_draw: bool) -> World<CpuCulledRenderer> {
-    World::build(CpuCulledRenderer::new(CpuCulledConfig {
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig {
         multi_draw,
         ..CpuCulledConfig::default()
-    }))
+    }));
+    // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
+    // objects at once.
+    world.pipelines_built = 0;
+    world
 }
 
 /// The views' instance groups that a frame made.
@@ -468,6 +510,7 @@ const CROWD: usize = 5_000;
 /// A crowd of `CROWD` skinned copies of one mesh in rows, with the sun's shadows in two cascades,
 /// on the frame builder of `world`. Returns the commands of its first frame.
 fn crowd<B: FrameBuilder>(mut world: World<B>) -> Vec<(Op, Vec<u32>)> {
+    world.pipelines_built = 0;
     world.make_room_for_crowd(CROWD as u32);
     let first = world.add_skinned([0.0, 0.0, 0.0]);
     for k in 1..CROWD {
@@ -494,4 +537,37 @@ fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgl2() {
     let renderer = CpuCulledRenderer::new(CpuCulledConfig::default());
     let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
     assert!(count(&first, Op::MultiDrawIndexed) + count(&first, Op::DrawIndexed) > 0);
+}
+
+#[test]
+fn a_skinned_object_added_during_play_draws_once_its_pipelines_are_built() {
+    // A frame has drawn, so a pipeline counts as built from the frame after the one that created it.
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.step(&mut mock, true);
+    world.add_skinned([0.0, 0.0, 0.0]);
+    let asked = world.step(&mut mock, true);
+    assert_eq!(
+        count(&asked, Op::CreateComputePipeline),
+        1,
+        "the skinning pass's pipeline"
+    );
+    let pool = operands(&asked, Op::CreateBuffer)
+        .into_iter()
+        .find(|b| b[2] == buffer_usage::STORAGE | buffer_usage::VERTEX)
+        .expect("the skinned vertex buffer");
+    let draws_pool = |commands: &[(Op, Vec<u32>)]| {
+        operands(commands, Op::SetVertexBuffer)
+            .iter()
+            .any(|v| v[0] == 0 && v[1] == pool[0])
+    };
+    assert!(
+        !draws_pool(&asked),
+        "no pass draws the skinned vertices before they are written"
+    );
+    let drawn = world.step(&mut mock, false);
+    assert!(
+        draws_pool(&drawn),
+        "every pass takes the object in once its pipelines are built"
+    );
 }
