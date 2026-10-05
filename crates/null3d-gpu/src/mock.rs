@@ -753,9 +753,6 @@ impl MockBackend {
         if !self.generators.contains(&o[1]) {
             return Err(missing(op, "generator", o[1]));
         }
-        if o[2] >= o[3] {
-            return Err(MockError::OutOfRange { op, id: o[0] });
-        }
         self.use_resource(Resource::Texture(o[0]));
         Ok(())
     }
@@ -2601,8 +2598,7 @@ mod tests {
         let generate = |texture: u32, generator: u32| {
             run_textures(&move |l: &mut DrawList| {
                 made(l);
-                l.push(Op::GenerateTexture, &[texture, generator, 1, 4])
-                    .unwrap();
+                l.push(Op::GenerateTexture, &[texture, generator]).unwrap();
             })
         };
         assert_eq!(generate(PACKED, GENERATOR), Ok(()));
@@ -2610,14 +2606,6 @@ mod tests {
             matches!(generate(CUBE, GENERATOR), Err(MockError::Invalid { .. })),
             "generators fill rgb9e5ufloat cubes only"
         );
-        assert!(matches!(
-            run_textures(&|l: &mut DrawList| {
-                made(l);
-                l.push(Op::GenerateTexture, &[PACKED, GENERATOR, 4, 4])
-                    .unwrap();
-            }),
-            Err(MockError::OutOfRange { .. })
-        ));
         assert!(matches!(
             generate(PACKED, IMAGE),
             Err(MockError::Missing {
