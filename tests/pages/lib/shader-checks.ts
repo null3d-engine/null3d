@@ -115,11 +115,20 @@ function checkProgram(
 }
 
 /**
- * Compiles and links GLSL programs, each with its name. Programs that read the draw index are
- * skipped, with a note, when the browser lacks `WEBGL_multi_draw`. Every compile and link starts
- * before the first status read, so a driver that compiles in the background works on many programs
- * at once. Where the browser has `KHR_parallel_shader_compile`, the page waits for them without
- * blocking, so the runner page around it keeps its own clock.
+ * The programs that the page compiles at once. The driver holds each one's compiled code until the
+ * page deletes it, and all of the engine's programs at once ran a low-memory tablet out of memory:
+ * its browser reloaded the runner page, which opened the same page again, over and over.
+ */
+const BATCH = 32;
+
+/**
+ * Compiles and links GLSL programs, each with its name, a batch at a time. Programs that read the
+ * draw index are skipped, with a note, when the browser lacks `WEBGL_multi_draw`. Every compile and
+ * link of a batch starts before its first status read, so a driver that compiles in the background
+ * works on many programs at once. Where the browser has `KHR_parallel_shader_compile`, the page
+ * waits for them without blocking, so the runner page around it keeps its own clock. Each batch is
+ * checked and deleted before the next starts, and the page yields between batches, so that status
+ * reads get answers without that extension too.
  */
 export async function checkGlslPrograms(
 	programs: readonly (readonly [string, GlslProgram])[],
@@ -131,29 +140,31 @@ export async function checkGlslPrograms(
 	const multiDraw = gl.getExtension('WEBGL_multi_draw') !== null;
 	const parallel = gl.getExtension('KHR_parallel_shader_compile');
 	const skipped: string[] = [];
-	const pending: PendingProgram[] = [];
 	const removed: RemovedUniform[] = [];
-	for (const [name, program] of programs) {
-		if (!multiDraw && program.vertex.source.includes('GL_ANGLE_multi_draw')) {
-			skipped.push(`${name}: no WEBGL_multi_draw`);
-			continue;
+	const compiled = programs.filter(([name, program]) => {
+		if (multiDraw || !program.vertex.source.includes('GL_ANGLE_multi_draw')) return true;
+		skipped.push(`${name}: no WEBGL_multi_draw`);
+		return false;
+	});
+	for (let first = 0; first < compiled.length; first += BATCH) {
+		const pending = compiled
+			.slice(first, first + BATCH)
+			.map(([name, program]) => startProgram(gl, name, program));
+		if (parallel) await finished(gl, parallel, pending);
+		for (const p of pending) {
+			checkProgram(gl, p, failures, removed);
+			gl.deleteProgram(p.linked);
+			gl.deleteShader(p.vertex);
+			gl.deleteShader(p.fragment);
 		}
-		pending.push(startProgram(gl, name, program));
+		progress(`GLSL: ${first + pending.length} of ${compiled.length} programs checked`);
+		await new Promise((resolve) => setTimeout(resolve, 0));
 	}
-	progress(`GLSL: ${pending.length} programs started`);
-	if (parallel) await finished(gl, parallel, pending);
-	for (const p of pending) {
-		checkProgram(gl, p, failures, removed);
-		gl.deleteProgram(p.linked);
-		gl.deleteShader(p.vertex);
-		gl.deleteShader(p.fragment);
-	}
-	progress(`GLSL: ${pending.length} programs checked`);
 	// Read only by the test harness, to refuse a software GPU in real-GPU runs.
 	const info = gl.getExtension('WEBGL_debug_renderer_info');
 	const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
 	return {
-		programs: pending.length,
+		programs: compiled.length,
 		multiDraw,
 		parallel: parallel !== null,
 		skipped,
