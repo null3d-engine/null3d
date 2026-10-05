@@ -55,7 +55,7 @@ The canvas:
 Long runs:
 
 - Frame numbers go round the 32-bit count of the control slots, after about 4 billion frames: 2 years at 60 frames a second, 207 days at 240. Before, the core aborted at the wrap, and every comparison of frames in the threads failed past 2^31. Now a frame number skips 0 ("no frame yet") and -1 ("none"). Frames compare by their distance around the circle (`shared/control.ts`, `null3d_core::frames`). Skipping the two values keeps each frame's parity alternating, which the two draw lists and the two world buffers need.
-- The quality governor kept the page's clock in 32-bit integers. So it stopped raising quality after 24.8 days. Its times are now 64-bit floats.
+- The quality governor kept the page's clock in 32-bit integers. So it stopped raising quality after 24.8 days. Its clock now counts from an origin that the frame loop moves forward every 6 days or so. Its times stay small whole numbers in 32-bit integers. The first fix kept the times in 64-bit floats, which made the governor allocate in each judgement ([Render scale](../implementation-notes.md#render-scale)).
 - A slot's 10-bit generation comes round after 1,023 reuses. Once a scene has used every slot, a freed slot comes back at once, so a stale handle could match a new object within minutes. The highest generation is now never given out, and a destroyed object's wrapper takes a handle with it. A later call on the wrapper then fails as stale however often the slot is reused. Options rejected: a longer wait before a slot comes back, which would cost capacity in a full scene. Wider generations, which would change the handle's layout on both sides.
 
 ## Open question for the owner

@@ -1261,11 +1261,11 @@
     {
       "id": "mixer",
       "category": "Animation",
-      "three": "AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt)",
+      "three": "AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / time / setEffectiveWeight / timeScale / mixer.update(dt)",
       "status": "changed",
       "since": "0.2",
-      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
-      "notes": "No update call: the engine advances and blends every animator on its job workers. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask.",
+      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.play('walk', { time: 0.4, weight: 0.7 }); anim.setWeight('walk', 0.5); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
+      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. startAt has no counterpart: call play at that time.",
       "docs": "api/animation",
       "detect": "\\bAnimationMixer\\b|\\.clipAction\\s*\\(|\\.crossFade(To|From)\\s*\\(|\\.fade(In|Out)\\s*\\(|setEffectiveWeight|\\bmixer\\.update\\s*\\("
     },
