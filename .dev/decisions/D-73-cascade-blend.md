@@ -72,7 +72,7 @@ S4 at Low draws 56 draw calls in most frames and 63 in one frame of 4, as before
 ## Decision
 
 - Each cascade but the last blends into the next over a band at its far end, 10% of its length by default. The blend is linear in the receiver's distance from the camera. The last cascade has no band; the fade over the last tenth of the shadow distance ends it.
-- The band is the live quality setting `shadowCascadeBlend`, from 0 to 0.5, 0.1 on every preset. Prototype S4 measures 0% against 10% on the cloud S25 and Pixel 9 at Low and the iPad at Medium. Low can take 0 if it costs too much there.
+- The band is the live quality setting `shadowCascadeBlend`, from 0 to 0.5, 0.1 on every preset. Prototype S4 measures 0% against 10% on the cloud S25 and Pixel 9 at Low and the iPad at Medium. The `-blend-off` bench pages put both in turns in one session on each device, so heat and the device's other work slow both alike. Low can take 0 if it costs too much there.
 - The second read sits behind a branch, so only the band's pixels pay for it. A band pixel reads the next cascade only where the next box holds it, with the filter's reach.
 - Each cascade's sphere holds every point of the view whose distance from the camera falls between the band before it and its own end. This also fixes R5-06.
 - The filter's square stays fixed in texels in every cascade. Godot widens it in near cascades to match the far ones' softness, which costs reads in every pixel. The band spreads the softness step over its rows instead.
