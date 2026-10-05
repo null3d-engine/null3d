@@ -13,7 +13,7 @@ const GLOW = 100_000;
 const SUN = 30;
 
 export default defineSketch(({ scene, materials, geometry, post }) => {
-	if (BLOOM) post.set({ bloom: { strength: 0.002, radius: 0.2, threshold: 1 } });
+	if (BLOOM) post.set({ bloom: { intensity: 0.02, threshold: 1, blend: 'add' } });
 	scene.setBackground('#000000');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,
