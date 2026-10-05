@@ -38,7 +38,7 @@ Each range covers WebGPU, compatibility mode and WebGL2. `bun run --cwd tests te
 | Mac, Safari 26.6.2 | WebGPU | under 0.0001 px (own 0.2007) | 3.4993 px at 1,000 km, 7.7509 px at 6,378 km | 2026-10-05 |
 | Mac, Safari 26.6.2 | WebGL2 | under 0.0001 px (own 0.1996) | 3.4998 px at 1,000 km, 7.7503 px at 6,378 km | 2026-10-05 |
 | iPad, Safari | | | | |
-| Galaxy S24+, Chrome | | | | |
+| Galaxy S24+, Chrome 154 (Xclipse 940, ANGLE on Vulkan) | WebGL2; the phone has no WebGPU adapter | under 0.0001 px (own 0.2001) | 3.5002 px at 1,000 km, 7.7508 px at 6,378 km | 2026-10-05 |
 
 ## Decision
 
