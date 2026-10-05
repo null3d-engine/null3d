@@ -254,8 +254,7 @@ describe('environments', () => {
 				cubes.push([size, levels, format, texels.length]);
 				return { bytes: 0 } as unknown as Texture;
 			},
-			fromGenerator(name: string, size: number, levels: number, slices: number) {
-				expect(slices).toBeGreaterThan(1);
+			async fromGenerator(name: string, size: number, levels: number) {
 				cubes.push([size, levels, 'rgb9e5ufloat', name]);
 				return { bytes: 0 } as unknown as Texture;
 			},

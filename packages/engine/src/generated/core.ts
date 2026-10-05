@@ -102,6 +102,7 @@ export const RING_FIELD_READ_INDEX = 3;
 
 export const HANDLE_SLOT_BITS = 20;
 export const HANDLE_GENERATION_BITS = 10;
+export const HANDLE_DEAD_GENERATION = 1023;
 
 export const CORE_NO_PARENT = 4294967295;
 export const CORE_NO_MESH = 0;
@@ -315,6 +316,9 @@ export const ANIMATION_FIELD_TIME_SCALES = 4;
 export const ANIMATION_FIELD_LAYER_WEIGHTS = 5;
 export const ANIMATION_FIELD_EVENTS = 6;
 export const ANIMATION_FIELD_EVENT_TOTALS = 7;
+export const ANIMATION_FIELD_SLOT_SOURCES = 8;
+export const ANIMATION_FIELD_BLEND_VALUES = 9;
+export const ANIMATION_FIELD_PLAY_ARGS = 10;
 
 export const ANIMATION_MAX_BLEND = 8;
 export const ANIMATION_MAX_LAYERS = 4;
@@ -323,6 +327,17 @@ export const ANIMATION_EVENT_CAPACITY = 1024;
 export const ANIMATION_EVENT_WORDS = 4;
 export const ANIMATION_PLAY_LOOP = 1;
 export const ANIMATION_PLAY_ADDITIVE = 2;
+export const ANIMATION_PLAY_TIME = 4;
+export const ANIMATION_PLAY_WEIGHT = 8;
+export const ANIMATION_PLAY_JOIN = 16;
+export const ANIMATION_PLAY_VALUE = 32;
+export const ANIMATION_NO_SOURCE = 4294967295;
+export const ANIMATION_ARG_FADE = 0;
+export const ANIMATION_ARG_SPEED = 1;
+export const ANIMATION_ARG_TIME = 2;
+export const ANIMATION_ARG_WEIGHT = 3;
+export const ANIMATION_ARG_VALUE = 4;
+export const ANIMATION_ARGS = 5;
 export const ANIMATION_EVENT_CLIP = 0;
 export const ANIMATION_EVENT_LOOP = 1;
 export const ANIMATION_EVENT_FINISHED = 2;

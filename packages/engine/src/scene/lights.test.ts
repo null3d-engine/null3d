@@ -426,11 +426,18 @@ describe('light calls', () => {
 		const { scene, commands, tableRow } = fakeCore();
 		const lamp = scene.createPointLight({ name: 'Lamp', range: 3 });
 		const row = tableRow(lamp);
+		const { handle } = lamp;
 		lamp.destroy();
 		expect(row.live).toBe(false);
 		// The light no longer names its old row, which the next light created takes.
 		expect(lamp.id).toBe(0);
-		expect(commands().at(-1)).toEqual([C.COMMAND_DESTROY, lamp.handle, 0, 0]);
+		expect(commands().at(-1)).toEqual([C.COMMAND_DESTROY, handle, 0, 0]);
+		// Its handle now holds the generation that no live object has, so a later call on it can
+		// never reach the object that takes its slot.
+		expect(lamp.handle).toBe(handle | (C.HANDLE_DEAD_GENERATION << C.HANDLE_SLOT_BITS));
+		expect(lamp.handle & ((1 << C.HANDLE_SLOT_BITS) - 1)).toBe(
+			handle & ((1 << C.HANDLE_SLOT_BITS) - 1),
+		);
 		expect(scene.find('Lamp')).toBeUndefined();
 	});
 });

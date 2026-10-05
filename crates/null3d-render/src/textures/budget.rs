@@ -52,6 +52,7 @@
 
 use null3d_core::cells::{CellCoords, CellPosition};
 use null3d_core::culling::Frustum;
+use null3d_core::frames::next_frame;
 use null3d_core::instances::BatchTable;
 use null3d_core::scene::SceneStorage;
 use null3d_core::world::WorldArrays;
@@ -72,6 +73,17 @@ pub const STEPS_PER_FRAME: u32 = 8;
 pub const SPHERES_PER_FRAME: u32 = 4096;
 /// The pixels of an object that the camera stands inside, which needs every level.
 const INSIDE: f32 = f32::MAX;
+
+/// How many frames before `frame` a texture was last seen, measured around the circle of frame
+/// numbers, so the count stays right where it goes round. A texture never seen counts as unseen
+/// the longest.
+fn frames_unseen(frame: u32, seen: u32) -> u32 {
+    if seen == 0 {
+        u32::MAX
+    } else {
+        frame.wrapping_sub(seen)
+    }
+}
 
 /// A texture's place in the order of drops, which ranks the greatest first: more detail than any
 /// view needs, then the frames unseen, the GPU bytes, the levels left to drop, and the lower slot.
@@ -432,7 +444,7 @@ impl TextureStore {
             let key = self.arrays[texture.array as usize].key;
             let rank = (
                 texture.dropped < texture.unneeded,
-                frame.saturating_sub(texture.seen),
+                frames_unseen(frame, texture.seen),
                 key.layer_bytes() * u64::from(key.depth),
                 MAX_DROPPED_LEVELS - texture.dropped,
                 u32::MAX - slot,
@@ -447,7 +459,7 @@ impl TextureStore {
 
     /// The texture whose level comes back next: the one whose views need the most levels it
     /// lacks, then the one seen last, then the cheapest. Returns it with the bytes it adds.
-    fn restore_candidate(&self) -> Option<(Handle, u64)> {
+    fn restore_candidate(&self, frame: u32) -> Option<(Handle, u64)> {
         let mut best: Option<((u32, u32, u64), Handle, u64)> = None;
         for slot in self.handles.live().iter_ones() {
             let texture = &self.textures[slot as usize];
@@ -465,7 +477,7 @@ impl TextureStore {
                 .saturating_sub(self.bytes_at(texture, texture.dropped));
             let rank = (
                 texture.dropped - texture.unneeded,
-                texture.seen,
+                u32::MAX - frames_unseen(frame, texture.seen),
                 u64::MAX - cost,
             );
             if best.as_ref().is_none_or(|(top, ..)| rank > *top) {
@@ -553,7 +565,7 @@ impl TextureStore {
         if limit == 0 {
             return changed;
         }
-        let frame = self.recorded + 1;
+        let frame = next_frame(self.recorded);
         let band = limit * BAND_PERCENT / 100;
         let (top, bottom) = (limit + band, limit - band);
         for array in &mut self.arrays {
@@ -574,7 +586,7 @@ impl TextureStore {
         } else if projected < bottom && self.memory.dropped_levels > 0 {
             let mut steps = 0;
             while steps < STEPS_PER_FRAME {
-                let Some((texture, cost)) = self.restore_candidate() else {
+                let Some((texture, cost)) = self.restore_candidate(frame) else {
                     break;
                 };
                 if projected + cost > bottom {
@@ -754,6 +766,7 @@ mod tests {
     use super::super::tests::{Harness, astc_desc, fill, layer_bytes, ops};
     use super::*;
     use crate::camera::Perspective;
+    use null3d_core::frames::FIRST_FRAME;
     use null3d_gpu::caps::Capabilities;
 
     /// `count` textures of `size` x `size` from images that the page can load again, on the GPU.
@@ -877,6 +890,23 @@ mod tests {
         assert_eq!(next(&h), unseen, "then the texture unseen the longest");
         set(&mut h, unseen, frame, 0);
         assert_eq!(next(&h), big, "then the largest");
+    }
+
+    #[test]
+    fn the_texture_unseen_the_longest_drops_first_across_the_wrap_of_the_frame_count() {
+        let mut h = Harness::new();
+        let [before, after] = loaded(&mut h, 2, 256)[..] else {
+            unreachable!()
+        };
+        let frame = next_frame(next_frame(FIRST_FRAME));
+        for (texture, seen) in [(before, u32::MAX - 2), (after, FIRST_FRAME)] {
+            h.store.slot_mut(texture).unwrap().seen = seen;
+        }
+        assert_eq!(
+            h.store.drop_candidate(frame).unwrap().0,
+            before,
+            "the texture last seen before the count went round"
+        );
     }
 
     #[test]

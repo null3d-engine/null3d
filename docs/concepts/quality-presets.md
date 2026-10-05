@@ -213,7 +213,7 @@ When the textures pass the budget, the engine drops the largest mip level of one
 2. The texture that the camera has not seen for the longest time.
 3. The largest texture.
 
-A texture loses at most 3 levels, so a texture of 1024 x 1024 texels keeps at least 128 x 128. A texture under 64 KiB keeps all its levels, because dropping them would save little. Only a texture that the engine can load again from its file drops levels: a texture from `assets.loadTexture` or from a glTF model. A texture that the sketch makes from an image or from data keeps its levels and counts toward the budget.
+A texture loses at most 3 levels, so a texture of 1024 x 1024 texels keeps at least 128 x 128. A texture under 64 KiB keeps all its levels, because dropping them would save little. Only a texture that the engine can load again from its file drops levels: a texture from `assets.loadTexture` or from a glTF model. A texture that the sketch makes from an image or from data keeps its levels and counts toward the budget. So do environment maps, the built-in room's among them.
 
 When room returns, 5% under the budget, the engine loads the dropped levels again from the texture's file. The browser's cache usually holds the file. The texture draws with the levels it has until the new ones are on the GPU. The band of 5% on either side keeps the engine from dropping and loading the same levels in turn. The sketch reads the memory and the dropped levels in `quality.textureMemory`: [Quality API](../api/quality.md#texture-memory).
 

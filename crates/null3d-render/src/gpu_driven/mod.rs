@@ -299,8 +299,9 @@ mod ids {
     pub const LIGHT_COUNT: u32 = 2;
     pub const LIGHT_PLACE: u32 = 3;
     pub const LIGHT_WRITE: u32 = 4;
-    /// The skinning pass's pipeline.
+    /// The skinning pass's pipelines: for vertex formats without a tangent, and with one.
     pub const SKIN: u32 = 5;
+    pub const SKIN_TANGENT: u32 = 6;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
     pub const fn frame_group(view: ViewId) -> u32 {
@@ -610,11 +611,19 @@ impl GpuDrivenRenderer {
             .ao()
             .zip(self.settings.camera_projection(input.canvas));
         self.graph.set_ao(ao, self.settings.ao_scale());
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skinning
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         let upload_everything = input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
-            || self.graph.depth_prepass() != self.layout_prepass;
+            || self.graph.depth_prepass() != self.layout_prepass
+            || skinned_appear;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             self.settings
@@ -626,6 +635,7 @@ impl GpuDrivenRenderer {
                 self.settings.meshes(),
                 self.config.storage_binding_bytes,
             )?;
+            self.skinning.open_before_first_frame(input.pipelines_built);
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
@@ -651,10 +661,7 @@ impl GpuDrivenRenderer {
                     |_, _| (0, 0),
                     0,
                     shadows,
-                    |slot, key| {
-                        let object = skinning.object(slot as u32)?;
-                        Some(skinning.skinned_key(&object, key))
-                    },
+                    |slot, key| skinning.sorted_pipeline(slot as u32, key),
                 )
                 .map_err(out_of_memory)?;
             // The casters' layout holds buckets only while the light casts shadows.
@@ -674,6 +681,7 @@ impl GpuDrivenRenderer {
             } else {
                 self.casters.clear();
             }
+            self.skinning.asked();
             self.layouts_shadowed = shadows;
             // The outlined layout holds buckets only while outlines are on.
             if outlines {
@@ -728,14 +736,15 @@ impl GpuDrivenRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
-        self.graph.request_pipelines(&mut self.pipelines);
+        self.graph
+            .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        created_pipelines |= self.skinning.create_pipeline(list)?;
-        created_pipelines |= self.pipelines.create_new(list)? > 0;
+        created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
+        created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }

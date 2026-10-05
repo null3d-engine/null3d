@@ -42,9 +42,10 @@ const DATA_ADDRESS = 1024;
 
 /**
  * A core that records its texture calls, the images that went to the thread that draws, and the
- * data calls, with a largest texture of 64 texels.
+ * data calls, with a largest texture of 64 texels. `arrived` stands for the wait until the thread
+ * that draws holds an image or generator.
  */
-function fakeCore() {
+function fakeCore(arrived?: (id: number) => Promise<void>) {
 	const created: number[][] = [];
 	const images: number[][] = [];
 	const data: number[][] = [];
@@ -87,7 +88,8 @@ function fakeCore() {
 	} as unknown as CoreGlue;
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue, memory);
-	const textures = new Textures(core, (id, bitmap) => sent.push([id, bitmap]), { frame: 3 }, 0);
+	const send = (id: number, bitmap: ImageBitmap | string) => sent.push([id, bitmap]);
+	const textures = new Textures(core, send, { frame: 3 }, 0, undefined, arrived);
 	return { textures, created, images, data, destroyed, sent, memory };
 }
 
@@ -179,12 +181,28 @@ describe('textures.fromImageBitmap', () => {
 });
 
 describe('textures.fromGenerator', () => {
-	test('makes a shared-exponent cube and sends the generator under the id that the core gave it', () => {
-		const { textures, created, images, sent } = fakeCore();
-		const texture = textures.fromGenerator('room', 256, 6, 32, 'assets.builtinEnvironment');
+	test('makes a shared-exponent cube, sends the generator under its id, and waits for it to arrive', async () => {
+		let arrive = () => {};
+		const waited: number[] = [];
+		const { textures, created, images, sent } = fakeCore((id) => {
+			waited.push(id);
+			return new Promise((resolve) => {
+				arrive = resolve;
+			});
+		});
+		let made = false;
+		const making = textures.fromGenerator('room', 256, 6, 'assets.builtinEnvironment');
+		void making.then(() => {
+			made = true;
+		});
 		expect(created).toEqual([[256, 6, TEXTURE_FORMAT_SHARED_EXPONENT]]);
-		expect(images).toEqual([[9, 32]]);
+		expect(images).toEqual([[9]]);
 		expect(sent).toEqual([[1, 'room']]);
+		expect(waited).toEqual([1]);
+		await Promise.resolve();
+		expect(made).toBe(false);
+		arrive();
+		const texture = await making;
 		expect([texture.width, texture.depth, texture.format]).toEqual([256, 6, 'rgb9e5ufloat']);
 	});
 });
@@ -330,7 +348,7 @@ describe('loads of textures again for the texture memory budget', () => {
 		} as unknown as CoreGlue;
 		const core = new CoreMemory(glue, new WebAssembly.Memory({ initial: 1 }));
 		const textures = new Textures(core, () => {}, { frame: 3 }, 0);
-		return { textures, reloadable, failed, bump: () => epoch++ };
+		return { textures, reloadable, failed, core, bump: () => epoch++ };
 	}
 
 	test('start two at a time when the budget changes, each into a hidden texture of its size', async () => {
@@ -379,5 +397,25 @@ describe('loads of textures again for the texture memory budget', () => {
 			console.warn = warn;
 		}
 		expect(failed.sort()).toEqual([broken.handle, refilled.handle].sort());
+	});
+
+	test('reach no core once the engine stops while a load again runs', async () => {
+		const asked: number[] = [];
+		const { textures, failed, bump, core } = budgetCore(asked);
+		const finish: ((error: Error) => void)[] = [];
+		const pending: number[] = [];
+		for (let k = 0; k < 3; k++) {
+			const texture = textures.fromImage(image(), {}, 0, 'assets.loadTexture');
+			textures.reloadsFrom(texture, () => new Promise<void>((_, reject) => finish.push(reject)));
+			pending.push(texture.handle);
+		}
+		asked.push(...pending);
+		bump();
+		textures.pollBudget();
+		core.stop();
+		for (const reject of finish) reject(new Error('the engine stopped'));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(failed).toEqual([]);
+		expect(asked).toEqual(pending.slice(2));
 	});
 });

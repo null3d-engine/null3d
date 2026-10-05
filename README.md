@@ -192,15 +192,15 @@ On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays t
 | The engine's own CPU time per frame on its busiest thread, 100,000 moving instances, desktop Chrome on WebGPU | At most 50% of three.js's |
 | CPU time per frame at phone scale, on WebGPU and WebGL2 phones and tablets | At most 100% of three.js |
 | Core download size | At most 600 KB after Brotli compression |
-| The engine's JavaScript that a page downloads at its start | At most 140 KB after Brotli compression |
-| Each file of the engine's JavaScript that loads on a feature's first use | At most 16 KB after Brotli compression |
-| Each shader file that loads on a feature's first use, such as the morph target shaders of WebGL2 | At most 32 KB after Brotli compression |
+| The engine's JavaScript that a page downloads at its start | At most 140 KB after Brotli compression, 448 KB after gzip |
+| Each file of the engine's JavaScript that loads on a feature's first use | At most 16 KB after Brotli compression, 24 KB after gzip |
+| Each shader file that loads on a feature's first use, such as the morph target shaders of WebGL2 | At most 32 KB after Brotli compression, 320 KB after gzip |
 
 An engine's own time leaves out the sketch code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
 
 ## Where it runs
 
-null3D picks its GPU path at startup from feature tests. It never checks browser or GPU names, because some browsers hide them.
+null3D picks its GPU path at startup from feature tests. It never picks the path by browser or GPU names, because some browsers hide them.
 
 | Device and browser | GPU path |
 | --- | --- |
@@ -209,11 +209,11 @@ null3D picks its GPU path at startup from feature tests. It never checks browser
 | Firefox 141+ on Windows, and 147+ on Apple silicon Macs | WebGPU |
 | Chrome 121+ on Android 12+ with ARM, Qualcomm or Intel GPUs | WebGPU |
 | Chrome 146+ on devices with only OpenGL ES 3.1 or Direct3D 11 | WebGPU compatibility mode |
-| iPhones on iOS 16.4 to 18 | WebGL2 |
+| iPhones and iPads on iOS and iPadOS 18 | WebGL2 |
 | Android phones without WebGPU, such as those with Samsung Xclipse GPUs | WebGL2 |
 | Firefox on Android and Linux | WebGL2 |
 
-The minimum versions are Safari 16.4, Chrome and Edge 91, and Firefox 89. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3D runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
+The minimum versions are Safari 18 on macOS, iOS and iPadOS, Chrome and Edge 91, and Firefox 89. In an older browser, `createEngine` fails with a clear error ([E1306](docs/errors/E1306.md) for Safari, [E1303](docs/errors/E1303.md) for the others), so the page can show its own message. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3D runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
 
 ## Porting from three.js
 
