@@ -847,10 +847,10 @@ The factor of exponential fog: the share of light that an even haze of `density`
 ### `fog_height_ratio`
 
 ```wgsl
-fn fog_height_ratio(x: f32) -> f32
+fn fog_height_ratio(climb: f32) -> f32
 ```
 
-The mean density along a ray from the camera, as a share of the density at the camera's height. Its input is the falloff times the ray's rise, where the falloff is how fast the density falls with height. The share is (1 - exp(-x)) / x. Near 0 the share takes the first terms of its series: 1 - x/2 + x²/6.
+The mean density along a ray from the camera, as a share of the density at the camera's height. Its input, the climb, is the falloff times the ray's rise, where the falloff is how fast the density falls with height. The share is (1 - exp(-climb)) / climb. Near 0 the share takes the first terms of its series: 1 - climb/2 + climb²/6.
 
 ### `fog_factor`
 

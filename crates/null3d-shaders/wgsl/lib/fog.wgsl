@@ -62,13 +62,13 @@ fn fog_exponential(distance: f32, density: f32) -> f32 {
     return 1.0 - exp(-density * distance);
 }
 
-/// The mean density along a ray from the camera, as a share of the density at the camera's
-/// height. Its input is the falloff times the ray's rise, where the falloff is how fast the
-/// density falls with height. The share is (1 - exp(-x)) / x. Near 0 the share takes the first
-/// terms of its series: 1 - x/2 + x²/6.
-fn fog_height_ratio(x: f32) -> f32 {
-    let exact = (1.0 - exp(min(-x, HEIGHT_EXPONENT_LIMIT))) / x;
-    return select(exact, 1.0 + x * (x / 6.0 - 0.5), abs(x) < HEIGHT_SERIES_LIMIT);
+/// The mean density along a ray from the camera, as a share of the density at the camera's height.
+/// Its input, the climb, is the falloff times the ray's rise, where the falloff is how fast the
+/// density falls with height. The share is (1 - exp(-climb)) / climb. Near 0 the share takes the
+/// first terms of its series: 1 - climb/2 + climb²/6.
+fn fog_height_ratio(climb: f32) -> f32 {
+    let exact = (1.0 - exp(min(-climb, HEIGHT_EXPONENT_LIMIT))) / climb;
+    return select(exact, 1.0 + climb * (climb / 6.0 - 0.5), abs(climb) < HEIGHT_SERIES_LIMIT);
 }
 
 /// The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where
