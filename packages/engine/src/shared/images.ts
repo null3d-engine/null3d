@@ -18,7 +18,7 @@
 import { messageOf } from '../errors/message';
 import type { ShaderVariants } from '../generated/shaders';
 import { Slot } from './control';
-import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeFrom } from './wake';
+import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
 
 /**
  * A custom material's shader, as the thread that draws builds its pipelines: its variants, whose
@@ -184,21 +184,38 @@ function countArrival(slots: Int32Array, to?: WakeTarget): void {
 }
 
 /**
- * Sends images through a port to the thread that draws, which receives them with `receiveImages`.
+ * The message that the thread that draws sends back through the port of the images once its first
+ * renderer exists.
+ */
+export const RECEIVING = { type: 'receiving' } as const;
+
+/**
+ * Sends images, generators' names and shaders through a port to the thread that draws, which
+ * receives them with `receiveImages`. The senders hold every message until that thread says that
+ * it receives, then send them in order. Firefox can fail to read an image that reaches that thread
+ * while it makes its first renderer: the thread gets a messageerror event in place of the image.
  * That thread's wake messages come back through the port and end this thread's waits.
  */
-export function sendThrough(port: MessagePort): ImageSender {
-	wakeFrom(port);
-	return (id, image) => {
-		if (typeof image === 'string')
-			port.postMessage({ id, generator: image } satisfies DrawingMessage);
-		else port.postMessage({ id, image } satisfies DrawingMessage, [image]);
+export function sendThrough(port: MessagePort): DrawingSenders {
+	let held: [DrawingMessage, Transferable[]][] | undefined = [];
+	const post = (message: DrawingMessage, transfer: Transferable[] = []) => {
+		if (held) held.push([message, transfer]);
+		else port.postMessage(message, transfer);
 	};
-}
-
-/** Sends shaders through a port to another thread, which receives them with `receiveImages`. */
-export function shadersThrough(port: MessagePort): ShaderSender {
-	return (template, shader) => port.postMessage({ template, shader } satisfies DrawingMessage);
+	port.onmessage = (event: MessageEvent<unknown>) => {
+		if (held && (event.data as { type?: string } | null)?.type === RECEIVING.type) {
+			for (const [message, transfer] of held) port.postMessage(message, transfer);
+			held = undefined;
+		}
+		wakeWaiters();
+	};
+	return {
+		sendImage(id, image) {
+			if (typeof image === 'string') post({ id, generator: image });
+			else post({ id, image }, [image]);
+		},
+		sendShader: (template, shader) => post({ template, shader }),
+	};
 }
 
 /** Puts shaders straight into the table of this thread, which draws as well. */
@@ -253,22 +270,28 @@ export function drawingSenders(
 	port: MessagePort | undefined,
 ): DrawingSenders {
 	return port
-		? { sendImage: sendThrough(port), sendShader: shadersThrough(port) }
+		? sendThrough(port)
 		: { sendImage: sendToTable(table, slots), sendShader: shadersToTable(table) };
 }
 
 /**
  * Keeps the images, generators and shaders that arrive through a port in the table, and counts each
- * image and generator. The sketch thread at the port's other end hears of each through the same
- * port, where it waits for wake messages.
+ * image and generator. The sketch thread at the port's other end sends nothing until the returned
+ * function tells it that this thread receives. That thread hears of each arrival through the same
+ * port, where it waits for wake messages. A message that the browser cannot read stops this thread
+ * with an error, because the sketch's wait for that image would never end.
  */
-export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32Array): void {
+export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32Array): () => void {
 	const arrive = arrivals(table, slots, port);
+	port.onmessageerror = () => {
+		throw new Error('a texture image or shader that the sketch sent could not be read');
+	};
 	port.onmessage = (event: MessageEvent<DrawingMessage>) => {
 		const data = event.data;
 		if ('shader' in data) table.setShader(data.template, data.shader);
 		else arrive(data.id, 'generator' in data ? data.generator : data.image);
 	};
+	return () => port.postMessage(RECEIVING);
 }
 
 /** Resolves once the thread that draws holds every image up to id `sent`. */
