@@ -9,13 +9,17 @@
 
 import { FrameRecorder, Role } from '../shared/metrics';
 
-/** Frames whose completion can be awaited at once; a frame that finds none free goes untracked. */
+/**
+ * Frames whose completion can be awaited at once. While every slot holds a frame, the tracker counts
+ * them all as unfinished, so the thread that draws takes no frame that it could not track.
+ */
 const SLOTS = 8;
 /**
- * The GPU works on the oldest unfinished frame from its submit or from the latest completion,
- * whichever came later. That frame, and every frame behind it, counts as in flight for at least
- * this long from then, in ms. A completion that the browser never reports then slows the drawing
- * without stopping it.
+ * The GPU works on the oldest unfinished frame from the latest of three times: its submit, the
+ * latest completion, and the moment the tracker gave up the frame ahead of it. After this long
+ * from then, in ms, the tracker gives the frame up as one whose completion the browser will never
+ * report, and it stops counting it as in flight. So a lost completion slows the drawing without
+ * stopping it, and the frames behind a slow frame are given up one at a time, not all at once.
  */
 const STALLED_MS = 1000;
 /**
@@ -26,12 +30,21 @@ const STALLED_MS = 1000;
 const STALLED_FRAME_TIMES = 4;
 /** The completions whose GPU frame times set that limit. */
 const RECENT_FRAME_TIMES = 8;
+/**
+ * Each frame given up since the latest completion doubles the limit for the next, this many times
+ * at most. A GPU that takes seconds over a frame, as a software GPU does while it builds a frame's
+ * pipelines, then gets few frames queued behind that one, while a completion that the browser
+ * never reports still slows the drawing without stopping it.
+ */
+const MAX_DOUBLINGS = 3;
 
 // The completion times that `InFlight` keeps, by index, in ms.
 /** The latest completion, or -1 before the first. */
 const LAST_DONE = 0;
 /** The slowest of the recent GPU frame times, or 0 before the first completion. */
 const SLOWEST = 1;
+/** The moment the tracker last gave a frame up, or -1 before the first. */
+const GIVEN_UP = 2;
 
 /** Submit times and frame numbers of the tracked frames in flight, in submit order, and their records. */
 class InFlight {
@@ -40,7 +53,7 @@ class InFlight {
 	/** For each tracked frame, the count of frames submitted up to it. */
 	private readonly submits = new Float64Array(SLOTS);
 	/** Completion times, in a typed array, as a fraction in a property would allocate. */
-	private readonly times = new Float64Array([-1, 0]);
+	private readonly times = new Float64Array([-1, 0, -1]);
 	/**
 	 * The GPU's recent frame times: for each completion, the time from when the GPU took the oldest
 	 * frame that it finished to the completion. A ring, which `frameTimes` counts into.
@@ -49,6 +62,12 @@ class InFlight {
 	private frameTimes = 0;
 	private head = 0;
 	private tail = 0;
+	/** The tracked frames before this count were given up; it never falls behind `tail`. */
+	private givenUp = 0;
+	/** Frames given up since the latest completion. */
+	private sinceDone = 0;
+	/** Frames freed from their slots that `takeForgotten` has not counted yet. */
+	private forgotten = 0;
 	private lastSubmits = 0;
 	private submitCount = 0;
 
@@ -66,17 +85,49 @@ class InFlight {
 		return true;
 	}
 
-	/** Tracked frames that the GPU has not finished, apart from any stalled for too long. */
+	/**
+	 * Tracked frames that the GPU has not finished, apart from those given up. When every slot holds
+	 * a frame and the oldest was given up, it frees that slot, and `takeForgotten` then counts it, so
+	 * the tracker's owner drops what it keeps for that frame. A full tracker whose oldest frame is
+	 * not given up counts every slot, so no frame goes untracked.
+	 */
 	unfinished(): number {
-		if (this.head === this.tail) return 0;
+		if (this.givenUp < this.tail) this.givenUp = this.tail;
+		if (this.givenUp < this.head) this.giveUpStalled();
+		if (this.head - this.tail >= SLOTS && this.tail < this.givenUp) {
+			this.tail++;
+			this.forgotten++;
+		}
+		return this.head - this.givenUp;
+	}
+
+	/** The frames freed from their slots since the last call, oldest first. */
+	takeForgotten(): number {
+		const forgotten = this.forgotten;
+		this.forgotten = 0;
+		return forgotten;
+	}
+
+	/**
+	 * Gives up each frame, oldest first, that the GPU has had for the stall limit, counted from the
+	 * latest of its submit, the latest completion and the moment the frame ahead was given up. Each
+	 * frame given up since the latest completion doubles the limit, up to a cap.
+	 */
+	private giveUpStalled(): void {
 		const { times } = this;
 		const slowest = STALLED_FRAME_TIMES * (times[SLOWEST] as number);
-		const stalledBefore = performance.now() - (slowest > STALLED_MS ? slowest : STALLED_MS);
-		if ((times[LAST_DONE] as number) >= stalledBefore) return this.head - this.tail;
-		let oldest = this.tail;
-		while (oldest < this.head && (this.submitted[oldest % SLOTS] as number) < stalledBefore)
-			oldest++;
-		return this.head - oldest;
+		const doublings = this.sinceDone < MAX_DOUBLINGS ? this.sinceDone : MAX_DOUBLINGS;
+		const limit = (slowest > STALLED_MS ? slowest : STALLED_MS) * (1 << doublings);
+		const now = performance.now();
+		const submitted = this.submitted[this.givenUp % SLOTS] as number;
+		const lastDone = times[LAST_DONE] as number;
+		const lastGivenUp = times[GIVEN_UP] as number;
+		let from = submitted > lastDone ? submitted : lastDone;
+		if (lastGivenUp > from) from = lastGivenUp;
+		if (now - from < limit) return;
+		times[GIVEN_UP] = from + limit;
+		this.givenUp++;
+		this.sinceDone++;
 	}
 
 	/**
@@ -107,6 +158,7 @@ class InFlight {
 		}
 		times[LAST_DONE] = now;
 		this.lastSubmits = submits;
+		this.sinceDone = 0;
 	}
 
 	/**
@@ -125,7 +177,15 @@ class InFlight {
 /** WebGPU: the queue resolves one promise per frame, in submit order. */
 export class QueueCompletion {
 	private readonly frames: InFlight;
-	private readonly onDone = () => this.frames.finish(1);
+	/**
+	 * Frames that the tracker forgot whose promises have not settled. They are the oldest, and the
+	 * queue settles promises in submit order, so the next promises to settle are theirs.
+	 */
+	private forgotten = 0;
+	private readonly onDone = () => {
+		if (this.forgotten > 0) this.forgotten--;
+		else this.frames.finish(1);
+	};
 
 	constructor(
 		private readonly queue: GPUQueue,
@@ -139,9 +199,11 @@ export class QueueCompletion {
 		if (this.frames.push(frame)) this.queue.onSubmittedWorkDone().then(this.onDone, this.onDone);
 	}
 
-	/** Frames submitted that the GPU has not finished. */
+	/** Frames submitted that the GPU has not finished, apart from those given up. */
 	unfinished(): number {
-		return this.frames.unfinished();
+		const unfinished = this.frames.unfinished();
+		this.forgotten += this.frames.takeForgotten();
+		return unfinished;
 	}
 }
 
@@ -168,7 +230,8 @@ export class FenceCompletion {
 
 	/**
 	 * Records the frames whose fences have signaled, oldest first, and returns the frames still
-	 * unfinished. The frames it finds finished together share the time since the last completion.
+	 * unfinished, apart from those given up. The frames it finds finished together share the time
+	 * since the last completion. A forgotten frame's fence is deleted unchecked.
 	 */
 	unfinished(): number {
 		const { gl } = this;
@@ -184,7 +247,14 @@ export class FenceCompletion {
 			done++;
 		}
 		this.frames.finish(done);
-		return this.frames.unfinished();
+		const unfinished = this.frames.unfinished();
+		for (let forgotten = this.frames.takeForgotten(); forgotten > 0; forgotten--) {
+			const slot = this.tail++ % SLOTS;
+			const fence = this.fences[slot] ?? null;
+			if (fence) gl.deleteSync(fence);
+			this.fences[slot] = null;
+		}
+		return unfinished;
 	}
 }
 
