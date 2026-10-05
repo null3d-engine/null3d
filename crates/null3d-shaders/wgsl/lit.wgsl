@@ -19,7 +19,8 @@ enable draw_index;
 // of WebGL2 add its morph targets' deltas before that.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
-// emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
+// emissive, light, specular intensity and specular color maps, each a layer of a texture array with
+// a sampler of its own. A map reads
 // the first texture coordinates, or the second where the material's flags say so, through the
 // material's texture coordinate transform. A map whose image is not on the GPU yet has no layer,
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
@@ -40,6 +41,7 @@ enable draw_index;
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
 // build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, multiscatter_compensation, pbr_material}
+#import null3d::lighting::{with_specular}
 #ifdef HALF
 #import null3d::half::{direct_light, indirect_diffuse}
 #else
@@ -85,6 +87,11 @@ var<private> material: Uniforms;
 /// next slots take the bits above it.
 const SECOND_UV: u32 = 256u;
 
+/// The specular maps' factors at the pixel: the specular color map's color, and the specular
+/// intensity map's alpha. `with_maps` sets them, and `shade` multiplies the material's specular
+/// values by them. They live outside the surface record, which holds no specular values.
+var<private> specular_texel: vec4f;
+
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures: each slot's texture array, then each slot's sampler.
 #ifdef WEBGL2
@@ -94,12 +101,16 @@ const SECOND_UV: u32 = 256u;
 @group(3) @binding(3) var occlusion_map: texture_2d_array<f32>;
 @group(3) @binding(4) var emissive_map: texture_2d_array<f32>;
 @group(3) @binding(5) var light_map: texture_2d_array<f32>;
-@group(3) @binding(6) var base_color_sampler: sampler;
-@group(3) @binding(7) var metal_rough_sampler: sampler;
-@group(3) @binding(8) var normal_sampler: sampler;
-@group(3) @binding(9) var occlusion_sampler: sampler;
-@group(3) @binding(10) var emissive_sampler: sampler;
-@group(3) @binding(11) var light_sampler: sampler;
+@group(3) @binding(6) var specular_intensity_map: texture_2d_array<f32>;
+@group(3) @binding(7) var specular_color_map: texture_2d_array<f32>;
+@group(3) @binding(8) var base_color_sampler: sampler;
+@group(3) @binding(9) var metal_rough_sampler: sampler;
+@group(3) @binding(10) var normal_sampler: sampler;
+@group(3) @binding(11) var occlusion_sampler: sampler;
+@group(3) @binding(12) var emissive_sampler: sampler;
+@group(3) @binding(13) var light_sampler: sampler;
+@group(3) @binding(14) var specular_intensity_sampler: sampler;
+@group(3) @binding(15) var specular_color_sampler: sampler;
 #else
 @group(1) @binding(0) var base_color_map: texture_2d_array<f32>;
 @group(1) @binding(1) var metal_rough_map: texture_2d_array<f32>;
@@ -107,12 +118,16 @@ const SECOND_UV: u32 = 256u;
 @group(1) @binding(3) var occlusion_map: texture_2d_array<f32>;
 @group(1) @binding(4) var emissive_map: texture_2d_array<f32>;
 @group(1) @binding(5) var light_map: texture_2d_array<f32>;
-@group(1) @binding(6) var base_color_sampler: sampler;
-@group(1) @binding(7) var metal_rough_sampler: sampler;
-@group(1) @binding(8) var normal_sampler: sampler;
-@group(1) @binding(9) var occlusion_sampler: sampler;
-@group(1) @binding(10) var emissive_sampler: sampler;
-@group(1) @binding(11) var light_sampler: sampler;
+@group(1) @binding(6) var specular_intensity_map: texture_2d_array<f32>;
+@group(1) @binding(7) var specular_color_map: texture_2d_array<f32>;
+@group(1) @binding(8) var base_color_sampler: sampler;
+@group(1) @binding(9) var metal_rough_sampler: sampler;
+@group(1) @binding(10) var normal_sampler: sampler;
+@group(1) @binding(11) var occlusion_sampler: sampler;
+@group(1) @binding(12) var emissive_sampler: sampler;
+@group(1) @binding(13) var light_sampler: sampler;
+@group(1) @binding(14) var specular_intensity_sampler: sampler;
+@group(1) @binding(15) var specular_color_sampler: sampler;
 #endif
 
 /// Pixel rows count upward on WebGL2 and downward on WebGPU, so derivatives along y take this
@@ -319,6 +334,33 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = textureSampleGrad(light_map, light_sampler, at.uv, layer, at.dx, at.dy);
         s.irradiance = texel.rgb * m.strengths.y;
     }
+    specular_texel = vec4f(1.0);
+    if map_ready(m.more_maps.z) {
+        let at = map_uv(flags, 6u, first, second);
+        let layer = map_layer(m.more_maps.z);
+        let texel = textureSampleGrad(
+            specular_intensity_map,
+            specular_intensity_sampler,
+            at.uv,
+            layer,
+            at.dx,
+            at.dy,
+        );
+        specular_texel.a = texel.a;
+    }
+    if map_ready(m.more_maps.w) {
+        let at = map_uv(flags, 7u, first, second);
+        let layer = map_layer(m.more_maps.w);
+        let texel = textureSampleGrad(
+            specular_color_map,
+            specular_color_sampler,
+            at.uv,
+            layer,
+            at.dx,
+            at.dy,
+        );
+        specular_texel = vec4f(texel.rgb, specular_texel.a);
+    }
     if map_ready(m.maps.z) {
         let at = map_uv(flags, 2u, first, second);
         let layer = map_layer(m.maps.z);
@@ -510,7 +552,13 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     // it.
     let change = max(abs(dpdx(input.normal)), abs(dpdy(input.normal)));
     let geometry_roughness = max(max(change.x, change.y), change.z);
-    let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
+    // The material's dielectric specular values, times its specular maps in the MAPS builds.
+    var specular = material_row.specular;
+#ifdef MAPS
+    specular *= specular_texel;
+#endif
+    let plain = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
+    let pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
     // The frame's lights are exposed already. The surface's own light and its baked light take the

@@ -24,6 +24,7 @@ import {
 	PERMUTATION_VERTEX_COLOR,
 	PERMUTATION_VERTEX_TANGENT,
 	SIZE_INSTANCE_STRIDE,
+	SIZE_MAP_SLOTS,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
 	STATE_BLEND_MULTIPLY,
@@ -132,7 +133,7 @@ export interface RenderTemplate {
 const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
 
 /** The map slots of a standard material, one texture array and sampler each. */
-const MAP_SLOTS = [0, 1, 2, 3, 4, 5];
+const MAP_SLOTS = Array.from({ length: SIZE_MAP_SLOTS }, (_, slot) => slot);
 
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';

@@ -15,9 +15,9 @@ import {
 	type ModelName,
 	type ModelScene,
 	modelCamera,
+	modelUrl,
 	SUN,
 } from '../../../bench/scenes/gltf-models';
-import { modelAddress } from '../lib/gltf-files';
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -32,7 +32,7 @@ export default defineSketch(async ({ scene, assets, post, page }) => {
 		scene.createDirectionalLight(SUN);
 		scene.createAmbientLight(AMBIENT);
 	}
-	const prefab = await assets.loadGltf(modelAddress(model));
+	const prefab = await assets.loadGltf(modelUrl(model));
 	const pause = Number(params.get('pause') ?? 0);
 	if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
 	if (params.has('mark')) page.post('instantiate', null);

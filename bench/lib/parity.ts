@@ -288,6 +288,14 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
+	// Points against three.js's Points and PointsMaterial, whose WebGPURenderer draws them one pixel
+	// wide, so WebGLRenderer's frame is the reference on every tier. WebGPU's samples within a pixel
+	// lie mirrored top to bottom against WebGL's. So where a point's top or bottom edge crosses a row
+	// of pixels, WebGPU covers other samples: 0.079% of the pixels differ on SwiftShader, and 0.056%
+	// on the Mac's GPU. Compatibility mode's 8-bit path also averages edge samples after it encodes
+	// them, at the edges of bright points on the wall: 0.119% differ on SwiftShader, and 0.110% on
+	// the Mac's GPU. D-37 gives the detail.
+	{ test: 'points', twin: `${TWINS}/points.html`, webglOnly: true, limit: 0.2 },
 	{ test: 'lines', twin: `${TWINS}/lines.html` },
 	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
