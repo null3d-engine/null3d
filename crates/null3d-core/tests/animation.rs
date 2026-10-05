@@ -11,7 +11,7 @@ mod three;
 use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
     AnimationError, Animations, Blend, Channel, Clip, DEFAULT_RATE, EVENT_WORDS, Interpolation,
-    MATRIX_FLOATS, MAX_BLEND, MAX_FRAMES, MAX_LAYERS, NO_PARENT, POSE_FIELDS, Play, Skeleton,
+    MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, POSE_FIELDS, Play, Skeleton,
     SourceTrack, TrackProblem, event_kind, flag, resample,
 };
 use null3d_core::error::{CoreError, Resource};
@@ -474,15 +474,62 @@ fn resampling_refuses_bad_tracks() {
         }]),
         Some((0, TrackProblem::Values))
     );
-    // A clip of days at 30 keys a second would hold more frames than any real clip.
+    // A clip of days at 30 keys a second would hold more keys than any real clip.
     let long = SourceTrack {
         times: &[0.0, 1.0e6],
         ..good
     };
     assert!(matches!(
         resample(&skeleton, &[long], DEFAULT_RATE),
-        Err(AnimationError::Frames { frames }) if frames >= MAX_FRAMES
+        Err(AnimationError::Keys { keys }) if u64::from(keys) > MAX_CLIP_KEYS
     ));
+}
+
+/// A clip of 32 rotation tracks, each with two keys 34,000 seconds apart, as a 1 KB glTF clip
+/// holds them. Its frames alone stay under the most one track may have, but frames times tracks
+/// do not, so the clip is refused at once instead of resampling for seconds into hundreds of MB.
+#[test]
+fn a_clip_whose_frames_times_tracks_pass_the_limit_is_refused_before_it_allocates() {
+    let joints: u32 = 32;
+    let parents: Vec<u32> = (0..joints)
+        .map(|j| j.checked_sub(1).unwrap_or(NO_PARENT))
+        .collect();
+    let skeleton = Skeleton::new(
+        &parents,
+        &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(joints as usize),
+        &null3d_core::math::IDENTITY.repeat(joints as usize),
+    )
+    .unwrap();
+    let times = [0.0f32, 34_000.0];
+    let s = std::f32::consts::FRAC_1_SQRT_2;
+    let values = [0.0f32, 0.0, 0.0, 1.0, 0.0, s, 0.0, s];
+    let tracks: Vec<SourceTrack<'_>> = (0..joints)
+        .map(|joint| SourceTrack {
+            joint,
+            channel: Channel::Rotation,
+            interpolation: Interpolation::Linear,
+            times: &times,
+            values: &values,
+        })
+        .collect();
+    let refused = resample(&skeleton, &tracks, DEFAULT_RATE);
+    let frames = 34_000 * 30 + 1;
+    assert_eq!(
+        refused.err(),
+        Some(AnimationError::Keys {
+            keys: frames * joints
+        })
+    );
+    // The same keys over 4 tracks fit, with frames to spare.
+    let short = [0.0f32, 1_000.0];
+    let few: Vec<SourceTrack<'_>> = tracks[..4]
+        .iter()
+        .map(|t| SourceTrack {
+            times: &short,
+            ..*t
+        })
+        .collect();
+    assert!(resample(&skeleton, &few, DEFAULT_RATE).is_ok());
 }
 
 // --- The animator: plays, fades, layers, masks, additive clips and events ---
@@ -504,6 +551,55 @@ fn fixture_table(jobs: &JobSystem) -> (Animations, u32) {
     }
     let instance = animations.add_instance(id).unwrap();
     (animations, instance)
+}
+
+/// A clip whose keys lie a subnormal time apart keeps one frame, so its rate stays finite and its
+/// poses hold numbers.
+#[test]
+fn a_clip_shorter_than_a_microsecond_keeps_one_frame() {
+    let skeleton = Skeleton::new(
+        &[NO_PARENT],
+        &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        &null3d_core::math::IDENTITY,
+    )
+    .unwrap();
+    let s = std::f32::consts::FRAC_1_SQRT_2;
+    let track = SourceTrack {
+        joint: 0,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Linear,
+        times: &[0.0, 1e-40],
+        values: &[1.0, 2.0, 3.0, s, s, s],
+    };
+    let clip = resample(&skeleton, &[track], DEFAULT_RATE).unwrap();
+    assert_eq!((clip.frames(), clip.rate()), (1, 0.0));
+    let mut pose = vec![0.0f32; clip.pose_len()];
+    clip.sample(0.0, &mut pose);
+    assert!(pose.iter().all(|v| v.is_finite()));
+    let additive = clip.additive().unwrap();
+    let mut pose = vec![0.0f32; additive.pose_len()];
+    additive.sample(0.0, &mut pose);
+    assert!(pose.iter().all(|v| v.is_finite()));
+}
+
+/// A played slot whose clip id a direct write changed to one that names no clip is skipped, and
+/// the frame step goes on.
+#[test]
+fn a_played_slot_whose_clip_id_names_no_clip_is_skipped() {
+    let jobs = JobSystem::new(0);
+    let (mut animations, instance) = fixture_table(&jobs);
+    animations.play(instance, GRID24, Play::default()).unwrap();
+    animations.update(&jobs, 0.1);
+    let slot = instance as usize * MAX_BLEND;
+    animations.slots_mut().clip[slot] = 999;
+    animations.update(&jobs, 0.1);
+    animations.update(&jobs, 0.1);
+    assert!(
+        animations
+            .instance_matrices(instance)
+            .iter()
+            .all(|v| v.is_finite())
+    );
 }
 
 /// A mask of the fixture's skeleton: 1 for the joints that `keep` names, 0 for the others.

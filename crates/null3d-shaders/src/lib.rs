@@ -11,7 +11,8 @@
 //!   shaders import as `null3d::<file name>`.
 //! - [`OUTPUT_PATH`] is the main generated module. The device modules sit beside it in
 //!   [`OUTPUT_DIR`], one for each target and each value of the permutation bits that a device
-//!   fixes, with the builds of the shaders that load by device.
+//!   fixes, with the builds of the shaders that load by device. So do the modules of the shaders
+//!   that load on a feature's first use, one for each target of each.
 
 mod composition;
 mod features;
@@ -159,6 +160,9 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
         output.pipelines.insert(shader_name.clone(), pipelines);
         if shader.by_device {
             output.by_device.insert(shader_name.clone());
+        }
+        if shader.first_use {
+            output.first_use.insert(shader_name.clone());
         }
     }
     errors.or(output)

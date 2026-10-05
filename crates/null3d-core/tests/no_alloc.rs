@@ -7,10 +7,13 @@
 
 mod common;
 
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers, character, mul4, perspective, reversed_perspective, translation};
+use common::{
+    Rng, Workers, character, mul4, perspective, reversed_perspective, translation, wait_until,
+};
 use null3d_core::animation::{Animations, Blend, MAX_BLEND, MAX_LAYERS, Play};
 use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
@@ -599,6 +602,49 @@ fn threads_that_an_earlier_test_tracked_never_count_in_a_later_one() {
         }
         assert_eq!(CountingAllocator::disarm(), 0, "round {round}");
     }
+}
+
+/// Set once the test counts again after the scope of its tracked thread has returned.
+static COUNTING_AGAIN: AtomicBool = AtomicBool::new(false);
+/// Set once the tracked thread has freed its memory as it exits.
+static FREED_ON_EXIT: AtomicBool = AtomicBool::new(false);
+
+/// Memory that a thread frees as it exits, once the test counts again.
+struct FreeOnExit(Cell<Option<Box<u64>>>);
+
+impl Drop for FreeOnExit {
+    fn drop(&mut self) {
+        wait_until("the test to count again", || {
+            COUNTING_AGAIN.load(Ordering::Acquire)
+        });
+        drop(self.0.take());
+        FREED_ON_EXIT.store(true, Ordering::Release);
+    }
+}
+
+thread_local! {
+    static FREE_ON_EXIT: FreeOnExit = const { FreeOnExit(Cell::new(None)) };
+}
+
+#[test]
+fn a_thread_that_tracks_its_work_never_counts_as_it_exits() {
+    // A scoped thread can free memory after its scope has returned, while the same test counts
+    // again, as job workers that a test starts and stops for each case do. Here the thread frees
+    // a value it keeps until it exits, and frees it only once counting has started again.
+    let _only = CountingAllocator::exclusive();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            CountingAllocator::track_while(|| {
+                FREE_ON_EXIT.with(|value| value.0.set(Some(Box::new(1))));
+            });
+        });
+    });
+    CountingAllocator::arm();
+    COUNTING_AGAIN.store(true, Ordering::Release);
+    wait_until("the thread to free memory as it exits", || {
+        FREED_ON_EXIT.load(Ordering::Acquire)
+    });
+    assert_eq!(CountingAllocator::disarm(), 0);
 }
 
 #[test]

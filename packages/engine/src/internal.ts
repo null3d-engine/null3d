@@ -7,9 +7,11 @@ export type {
 	ShaderVariants,
 } from './generated/shaders';
 export { everyShader, loadGlslShaders, loadWgslShaders, SHADERS } from './generated/shaders';
+export { webgl2RoomGenerator, webgpuRoomGenerator } from './gpu/environment';
 export { readbackWebGL2, readbackWebGPU } from './gpu/readback';
 export { WebGL2Backend } from './gpu/webgl2/backend';
-export { declaresUniform, type GlslTemplate } from './gpu/webgl2/programs';
+export { DEPTH_SETUPS } from './gpu/webgl2/depth';
+export { declaresUniform, type GlslTemplate, programHost } from './gpu/webgl2/programs';
 export { WebGPUBackend } from './gpu/webgpu/backend';
 export type { RenderTemplate } from './gpu/webgpu/pipelines';
 export {

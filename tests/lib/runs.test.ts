@@ -1611,7 +1611,7 @@ describe('parseArgs', () => {
 		).toEqual({
 			plan: 'checks',
 			missing: { webgpu: true, webgl2: false },
-			mac: ['Safari'],
+			apps: ['Safari'],
 			android: ['chrome', 'brave'],
 			lan: ['ipad-safari'],
 			cloud: [],

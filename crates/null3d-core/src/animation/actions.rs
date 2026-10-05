@@ -662,6 +662,12 @@ impl Animations {
             if !action.playing() {
                 continue;
             }
+            // A slot whose clip id names no clip, as a direct write of the slot arrays can leave
+            // it, is skipped, as sampling skips it.
+            let clip = self.slots().clip[slots.instance as usize * MAX_BLEND + k];
+            if self.clip_sources.get(clip as usize).is_none() {
+                continue;
+            }
             if action.flags & (flag::FINISHED | flag::BLEND) == 0 {
                 let moved = step * action.speed;
                 if moved != 0.0 && moved.is_finite() {

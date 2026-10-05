@@ -44,7 +44,6 @@
 		"dist/wasm/*/*.wasm",
 		"dist/wasm/*/*.json",
 		"vendor",
-		"environments",
 		"docs",
 		"LICENSE-MIT",
 		"LICENSE-APACHE"
