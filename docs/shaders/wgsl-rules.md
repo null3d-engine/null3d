@@ -50,6 +50,8 @@ The build allows only what every WebGPU device supports. Each WGSL extension nee
 
 For WebGL2, the build rejects code that GLSL ES 3.00 cannot express, such as a storage buffer. The message names the pipeline and the shader stage.
 
+The build also rejects a copy of an array out of a uniform buffer. Such a copy is an array, or a struct that holds one, read whole into a `let` or passed to a function. Some phone GPUs leave such a copy's arrays empty on WebGL2. Read one element at a time, such as `params.weights[i]`, or hold the vectors in named fields. The message names the function.
+
 ## Flat interpolation
 
 Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of a triangle can give the value. `@interpolate(flat)` means `flat, first`: the first vertex of each triangle gives the value. WebGL2 and WebGPU's compatibility mode cannot provide that, so the build rejects `@interpolate(flat)` and `@interpolate(flat, first)`.
