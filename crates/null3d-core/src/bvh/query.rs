@@ -562,13 +562,14 @@ impl SceneQueries {
     }
 
     /// The closest hit of each of `count` rays, which `ray` gives by index, on the items on
-    /// `layers`, on the job workers. The result of ray `i` is entry `i`.
+    /// `layers`, on the job workers. The result of ray `i` is entry `i`, and a miss where `ray`
+    /// gives `None`.
     pub fn raycast_batch<M: QueryMeshes>(
         &mut self,
         view: &QueryScene<'_, M>,
         jobs: &JobSystem,
         count: u32,
-        ray: &(dyn Fn(u32) -> WorldRay + Sync),
+        ray: &(dyn Fn(u32) -> Option<WorldRay> + Sync),
         layers: u32,
     ) -> Result<&[Option<QueryHit>], CoreError> {
         let mut out = std::mem::take(&mut self.batch);
@@ -585,7 +586,7 @@ impl SceneQueries {
             let queries = &*self;
             jobs.parallel_for(count, RAY_CHUNK, &|range, _| {
                 for i in range {
-                    let hit = queries.raycast(view, &ray(i), layers);
+                    let hit = ray(i).and_then(|ray| queries.raycast(view, &ray, layers));
                     // SAFETY: each chunk writes only the results of its own rays.
                     unsafe { shared.write(i as usize, hit) };
                 }

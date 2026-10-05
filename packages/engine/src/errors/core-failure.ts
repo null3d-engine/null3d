@@ -30,15 +30,25 @@ const RESOURCES: Record<number, readonly [store: string, unit: string]> = {
 	8: ['morph weight table', 'morph weights'],
 };
 
-/** What the renderer ran out of, by the first detail of E1501. */
-const RENDER_LIMITS: Record<number, string> = {
-	1: 'the draw list is full',
+/** What the renderer ran out of, by the first detail of E1501, given its second detail. */
+const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
+	1: (megabytes) => `the frame's commands pass the ${megabytes} MB that its draw list can hold`,
 	4: 'the material table is full',
 	7: 'the mesh does not fit the mesh buffers',
 	8: "the frame's uploads do not fit the room the renderer set aside for them",
 	10: 'the texture table is full',
 	11: "the texture's format, sampler settings or image size is not one the engine draws",
+	12: (megabytes) =>
+		`the skinned vertices of the characters in the scene pass the ${megabytes} MB that GPU skinning holds on this device`,
+	13: (pages) =>
+		`the skinned meshes fill more than ${pages} mesh pages, the most that GPU skinning reads`,
 };
+
+/** What the renderer ran out of, for the details `limit` and `value` of E1501. */
+function renderLimit(limit: number, value: number): string {
+	const text = RENDER_LIMITS[limit] ?? 'a render limit was reached';
+	return typeof text === 'string' ? text : text(value.toLocaleString('en-US'));
+}
 const TOO_MANY_SOURCES = 3;
 const TEXTURE_TOO_LARGE = 9;
 const UNKNOWN_MATERIAL = 5;
@@ -109,7 +119,7 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 					'E1103',
 					`${name} got a ${a === UNKNOWN_MESH ? 'mesh' : 'material'} that is not from this engine.`,
 				);
-			return error('E1501', `${name} failed: ${RENDER_LIMITS[a] ?? 'a render limit was reached'}.`);
+			return error('E1501', `${name} failed: ${renderLimit(a, b)}.`);
 		default: {
 			const id = `E${code}`;
 			return error(

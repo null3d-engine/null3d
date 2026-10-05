@@ -362,7 +362,7 @@ fn queries_give_brute_force_answers_as_the_scene_changes() {
                     &view,
                     jobs,
                     rays.len() as u32,
-                    &|i| rays[i as usize],
+                    &|i| Some(rays[i as usize]),
                     layers,
                 )
                 .unwrap();
@@ -463,6 +463,94 @@ fn queries_follow_late_updates_and_batch_updates() {
     assert_eq!(distance(&mut queries, &scene, &batches, right), Some(29.0));
     batches.destroy(batch, 3, scene.cell_table_mut()).unwrap();
     assert_eq!(distance(&mut queries, &scene, &batches, right), None);
+}
+
+/// A static object that a late update moves right after a query keeps its new place in the
+/// queries of later frames, as a door that a sketch opens in `onLateUpdate` after a raycast.
+#[test]
+fn a_late_move_after_a_query_counts_in_later_frames() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(5);
+    let meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let door = scene.reserve().unwrap();
+    scene.set_position(door, [0.0, 0.0, -10.0]).unwrap();
+    scene.set_local_radius(door, 2.0).unwrap();
+    scene
+        .apply_commands(&[Command::create(door, Handle::NONE, 3, flags::VISIBLE)], 1)
+        .unwrap();
+    scene.update_transforms(jobs);
+    let mut distance = |scene: &SceneStorage, height: f64| {
+        let view = QueryScene {
+            scene,
+            batches: &batches,
+            meshes: &meshes,
+        };
+        queries.sync(&view, jobs).unwrap();
+        let forward = WorldRay::new([0.0, height, 0.0], [0.0, 0.0, -1.0]);
+        queries
+            .raycast(&view, &forward, u32::MAX)
+            .map(|h| h.distance)
+    };
+    // In frame 1's late update: a query, then the move up, out of the box the trees held.
+    assert_eq!(distance(&scene, 0.0), Some(9.0));
+    scene.set_position(door, [0.0, 50.0, -10.0]).unwrap();
+    scene.update_late_transforms();
+    // The next frames move nothing, and their queries find the door where it went.
+    for frame in 2..5 {
+        scene.begin_frame(frame);
+        scene.update_transforms(jobs);
+        assert_eq!(distance(&scene, 50.0), Some(9.0), "frame {frame}");
+        assert_eq!(distance(&scene, 0.0), None, "frame {frame}");
+    }
+    // A query after the late update of the same frame finds it too.
+    scene.set_position(door, [0.0, -50.0, -10.0]).unwrap();
+    scene.update_late_transforms();
+    assert_eq!(distance(&scene, -50.0), Some(9.0));
+    assert_eq!(distance(&scene, 50.0), None);
+}
+
+/// A batch's rays that are not rays, such as one with a direction of length 0, miss, and the
+/// others find their hits.
+#[test]
+fn missing_rays_of_a_batch_miss() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(6);
+    let meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let h = scene.reserve().unwrap();
+    scene.set_position(h, [0.0, 0.0, -10.0]).unwrap();
+    scene.set_local_radius(h, 2.0).unwrap();
+    scene
+        .apply_commands(&[Command::create(h, Handle::NONE, 3, flags::VISIBLE)], 1)
+        .unwrap();
+    scene.update_transforms(jobs);
+    let view = QueryScene {
+        scene: &scene,
+        batches: &batches,
+        meshes: &meshes,
+    };
+    queries.sync(&view, jobs).unwrap();
+    let directions = [
+        [0.0, 0.0, -1.0],
+        [0.0; 3],
+        [0.0, 0.0, -1e-200],
+        [f64::NAN; 3],
+    ];
+    let ray = |i: u32| WorldRay::toward([0.0; 3], directions[i as usize]);
+    let found: Vec<_> = queries
+        .raycast_batch(&view, jobs, 4, &ray, u32::MAX)
+        .unwrap()
+        .iter()
+        .map(|hit| hit.map(|h| h.distance))
+        .collect();
+    assert_eq!(found, [Some(9.0), None, Some(9.0), None]);
 }
 
 /// Before the first frame's transform update nothing has a place, so queries find nothing.

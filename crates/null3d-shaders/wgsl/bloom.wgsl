@@ -1,7 +1,8 @@
 // One step of bloom's chain: one triangle over the step's target, which samples the step before it
 // with a linear filter. The bright pass keeps the scene color's pixels whose luminance passes the
 // threshold, at half size. Each level then blurs the level before it with a Gaussian, first across
-// and then down, at half the size of that level. The weights and the steps follow three.js's
+// and then down. The first level blurs the bright pass at the bright pass's own size, and each
+// later level at half the size of the level before it. The weights and the steps follow three.js's
 // UnrealBloomPass: pairs of taps merge into one filtered read each.
 //
 // Each target holds its drawn corner, as the render scale leaves it, so a read clamps inside the
@@ -39,6 +40,8 @@ struct Step {
 @group(0) @binding(1) var source: texture_2d<f32>;
 @group(0) @binding(2) var source_sampler: sampler;
 
+#import null3d::color::{limit_hdr}
+
 const LUMINANCE = vec3f(0.2126729, 0.7151522, 0.0721750);
 
 @vertex
@@ -49,9 +52,12 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
     return vec4f(x, y, 0.5, 1.0);
 }
 
-/// The source's filtered color at `uv`, clamped inside its drawn corner.
+/// The source's filtered color at `uv`, clamped inside its drawn corner. It is no brighter than a
+/// 16-bit float holds, as Unity's URP limits bloom's input: additive blending can add the scene
+/// color past it, and some GPUs store the sum as infinity, which would spread through the blur.
 fn tap(uv: vec2f) -> vec3f {
-    return textureSampleLevel(source, source_sampler, clamp(uv, settings.bounds.xy, settings.bounds.zw), 0.0).rgb;
+    let at = clamp(uv, settings.bounds.xy, settings.bounds.zw);
+    return limit_hdr(textureSampleLevel(source, source_sampler, at, 0.0).rgb);
 }
 
 @fragment
