@@ -12,7 +12,9 @@
 // loader makes of meshes that a clip moves, a column whose vertices blend two joints, as a skinned
 // character does, and tangents of three types, which the pass's tangent build skins. Two cases are
 // not the renderer's own: one dispatch for each part, and a joint texture written whole. They tell
-// a fault of the table from one of the joint texture.
+// a fault of the table from one of the joint texture. Each case runs in both skinned layouts: with
+// the normal and the tangent in 8 bits per component, as the engine writes them, and as 32-bit
+// floats, which the pass's pipeline constant asks for (`-float` after the case's name).
 import { PERMUTATION_VERTEX_TANGENT } from '../../packages/engine/src/generated/gpu';
 import { loadWgslFeature } from '../../packages/engine/src/generated/shaders';
 import { variantFor } from '../../packages/engine/src/gpu/variants';
@@ -38,6 +40,10 @@ const TYPE = { f32: 0, unorm8: 1, snorm8: 2, snorm16: 4, uint8: 5, uint16: 7 } a
 /** Joints that the cases name, and the largest difference a float may show. */
 const JOINTS = 6;
 const TOLERANCE = 1e-4;
+/** The largest difference an 8-bit direction may show: one step of its integers. */
+const NARROW_TOLERANCE = 1 / 127;
+/** The id of the pass's pipeline constant that writes directions in 8 bits (skin.wgsl). */
+const NARROW_DIRECTIONS_ID = 1100;
 /** Wrong vertices that a case reports in full. */
 const SHOWN = 4;
 
@@ -187,9 +193,24 @@ function sourceWords(c: Case): { stride: number; joints: number; weights: number
 	return { stride: joints + jointWords + weightWords, joints, weights: joints + jointWords };
 }
 
-/** Words of a skinned vertex: its position and normal, then its tangent if any, as floats. */
-function skinnedWords(c: Case): number {
+/**
+ * Words of a skinned vertex: its position, then its normal and its tangent if any, one word each
+ * where `narrow`, as floats otherwise.
+ */
+function skinnedWords(c: Case, narrow: boolean): number {
+	if (narrow) return c.tangent ? 5 : 4;
 	return c.tangent ? 10 : 6;
+}
+
+/** `v` at unit length, or as it is when it has none. */
+function unit(v: number[]): number[] {
+	const length = Math.hypot(...v);
+	return length > 0 ? v.map((x) => x / length) : v;
+}
+
+/** The four 8-bit normalized integers of a word, as a vertex fetch reads them. */
+function snorm8(word: number): number[] {
+	return [0, 1, 2, 3].map((k) => Math.max(-1, ((((word >>> (8 * k)) & 0xff) << 24) >> 24) / 127));
 }
 
 /** A cube vertex's tangent: along its face, with a handedness that differs by face. */
@@ -274,7 +295,7 @@ interface Part {
 	out: number;
 }
 
-function partsOf(c: Case): Part[] {
+function partsOf(c: Case, narrow: boolean): Part[] {
 	const parts: Part[] = [];
 	let first = 0;
 	let out = 0;
@@ -282,18 +303,23 @@ function partsOf(c: Case): Part[] {
 		const vertices = mesh.positions.length / 3;
 		parts.push({ firstVertex: first, vertices, out });
 		first += vertices;
-		out += vertices * skinnedWords(c);
+		out += vertices * skinnedWords(c, narrow);
 	}
 	return parts;
 }
 
 /** The table's words for segments of `parts`, each segment on its own binding boundary. */
-function tableOf(c: Case, segments: Part[][]): { words: Uint32Array; offsets: number[] } {
+function tableOf(
+	c: Case,
+	segments: Part[][],
+	narrow: boolean,
+): { words: Uint32Array; offsets: number[] } {
 	const { stride, joints, weights } = sourceWords(c);
+	const skinnedTangent = narrow ? 4 : 6;
 	const format = [
-		[stride, skinnedWords(c), 0 | (TYPE.f32 << 8), 3 | (TYPE.f32 << 8)],
+		[stride, skinnedWords(c, narrow), 0 | (TYPE.f32 << 8), 3 | (TYPE.f32 << 8)],
 		[
-			c.tangent ? 6 | (TYPE[c.tangent] << 8) | (6 << 16) : NONE,
+			c.tangent ? 6 | (TYPE[c.tangent] << 8) | (skinnedTangent << 16) : NONE,
 			joints | (TYPE[c.joints] << 8),
 			weights | (TYPE[c.weights] << 8),
 			NONE,
@@ -368,13 +394,14 @@ async function readBuffer(
 function compare(
 	expected: number[][][],
 	got: (part: number, vertex: number) => number[],
+	tolerance: (k: number) => number = () => TOLERANCE,
 ): { wrong: number; first: SkinPassWrong[] } {
 	let wrong = 0;
 	const first: SkinPassWrong[] = [];
 	for (const [part, vertices] of expected.entries())
 		for (const [vertex, want] of vertices.entries()) {
 			const have = got(part, vertex);
-			if (want.every((value, k) => Math.abs(value - (have[k] as number)) <= TOLERANCE)) continue;
+			if (want.every((value, k) => Math.abs(value - (have[k] as number)) <= tolerance(k))) continue;
 			wrong++;
 			if (first.length < SHOWN)
 				first.push({
@@ -392,6 +419,7 @@ async function runCase(
 	pipelines: { plain: GPUComputePipeline; tangent: GPUComputePipeline },
 	layout: GPUBindGroupLayout,
 	c: Case,
+	narrow: boolean,
 ): Promise<SkinPassCase & { jointsRead: boolean }> {
 	const page = pageBytes(c);
 	const source = device.createBuffer({
@@ -399,15 +427,15 @@ async function runCase(
 		usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
 	});
 	device.queue.writeBuffer(source, 0, page);
-	const parts = partsOf(c);
+	const parts = partsOf(c, narrow);
 	const segments = c.apart ? parts.map((part) => [part]) : [parts];
-	const { words, offsets } = tableOf(c, segments);
+	const { words, offsets } = tableOf(c, segments, narrow);
 	const table = device.createBuffer({
 		size: grownSize(words.byteLength),
 		usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 	});
 	device.queue.writeBuffer(table, 0, words);
-	const stride = skinnedWords(c);
+	const stride = skinnedWords(c, narrow);
 	const skinnedBytes = parts.reduce((n, p) => n + p.vertices, 0) * stride * 4;
 	const skinned = device.createBuffer({
 		size: grownSize(skinnedBytes),
@@ -459,22 +487,37 @@ async function runCase(
 	device.queue.submit([encoder.finish()]);
 
 	const expected = c.meshes.map((mesh) =>
-		Array.from({ length: mesh.positions.length / 3 }, (_, i) => skinnedOnCpu(c, mesh, i)),
+		Array.from({ length: mesh.positions.length / 3 }, (_, i) => {
+			const v = skinnedOnCpu(c, mesh, i);
+			if (!narrow) return v;
+			// The 8-bit layout holds unit directions; its normal's fourth integer is 0.
+			const tangent = c.tangent ? [...unit(v.slice(6, 9)), v[9] as number] : [];
+			return [...v.slice(0, 3), ...unit(v.slice(3, 6)), 0, ...tangent];
+		}),
 	);
-	const out = new Float32Array(await readBuffer(device, skinned, skinnedBytes));
-	const pass1 = compare(expected, (part, vertex) => {
-		const at = (parts[part] as Part).out + vertex * stride;
-		return Array.from(out.subarray(at, at + stride));
-	});
+	const read = await readBuffer(device, skinned, skinnedBytes);
+	const floats = new Float32Array(read);
+	const integers = new Uint32Array(read);
+	const pass1 = compare(
+		expected,
+		(part, vertex) => {
+			const at = (parts[part] as Part).out + vertex * stride;
+			if (!narrow) return Array.from(floats.subarray(at, at + stride));
+			const directions = Array.from(integers.subarray(at + 3, at + stride), snorm8).flat();
+			return [...floats.subarray(at, at + 3), ...directions];
+		},
+		(k) => (narrow && k >= 3 ? NARROW_TOLERANCE : TOLERANCE),
+	);
 	const positions = expected.map((vertices) => vertices.map((v) => v.slice(0, 3)));
-	const pass2 = compare(positions, await drawRegions(device, skinned, stride, parts, false));
-	const pass3 = compare(positions, await drawRegions(device, skinned, stride, parts, true));
+	const drawn = (bundled: boolean) => drawRegions(device, skinned, stride, narrow, parts, bundled);
+	const pass2 = compare(positions, await drawn(false));
+	const pass3 = compare(positions, await drawn(true));
 	const jointsRead = await readJoints(device, joints);
 	for (const buffer of [source, table, skinned]) buffer.destroy();
 	joints.destroy();
 	empty.destroy();
 	return {
-		name: c.name,
+		name: narrow ? c.name : `${c.name}-float`,
 		engine: c.engine,
 		ok: pass1.wrong === 0 && pass2.wrong === 0 && pass3.wrong === 0,
 		wrong: pass1.wrong,
@@ -501,6 +544,7 @@ async function drawRegions(
 	device: GPUDevice,
 	skinned: GPUBuffer,
 	stride: number,
+	narrow: boolean,
 	parts: Part[],
 	bundled: boolean,
 ): Promise<(part: number, vertex: number) => number[]> {
@@ -518,7 +562,7 @@ async function drawRegions(
 					arrayStride: stride * 4,
 					attributes: [
 						{ shaderLocation: 0, offset: 0, format: 'float32x3' },
-						{ shaderLocation: 1, offset: 12, format: 'float32x3' },
+						{ shaderLocation: 1, offset: 12, format: narrow ? 'snorm8x4' : 'float32x3' },
 					],
 				},
 				{
@@ -660,22 +704,30 @@ run('skin-pass', async () => {
 		],
 	});
 	// The pass's two builds, as the renderer picks them: for formats without a tangent, and with one.
-	const build = (bits: number) => {
+	// With `narrow` off, the pipeline constant writes directions as floats.
+	const build = (bits: number, narrow: boolean) => {
 		const skin = variantFor(skinBuilds, bits, 'wgsl')?.wgsl;
 		if (!skin) throw new Error(`the shader module has no skinning build of bits ${bits}`);
+		const constants = narrow ? undefined : { [NARROW_DIRECTIONS_ID]: 0 };
+		const module = device.createShaderModule({ code: skin.source });
 		return device.createComputePipeline({
 			layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-			compute: { module: device.createShaderModule({ code: skin.source }), entryPoint: 'main' },
+			compute: { module, entryPoint: 'main', constants },
 		});
 	};
-	const pipelines = { plain: build(0), tangent: build(PERMUTATION_VERTEX_TANGENT) };
 	const cases: SkinPassCase[] = [];
 	let jointsRead = true;
-	for (const c of CASES) {
-		progress(`case ${c.name}`);
-		const { jointsRead: read, ...result } = await runCase(device, pipelines, layout, c);
-		jointsRead &&= read;
-		cases.push(result);
+	for (const narrow of [true, false]) {
+		const pipelines = {
+			plain: build(0, narrow),
+			tangent: build(PERMUTATION_VERTEX_TANGENT, narrow),
+		};
+		for (const c of CASES) {
+			progress(`case ${c.name}${narrow ? '' : ' with float directions'}`);
+			const { jointsRead: read, ...result } = await runCase(device, pipelines, layout, c, narrow);
+			jointsRead &&= read;
+			cases.push(result);
+		}
 	}
 	const result: SkinPassResult = {
 		tier: tier === 'webgpu' ? 'webgpu' : 'webgpu-compat',
