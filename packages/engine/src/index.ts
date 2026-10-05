@@ -74,6 +74,7 @@ export type {
 } from './scene/animation';
 export type {
 	Assets,
+	LoadGltfOptions,
 	LoadImageOptions,
 	LoadTextureOptions,
 	ProgressHandler,
@@ -102,6 +103,7 @@ export type {
 } from './scene/pointer-events';
 export type {
 	AoSettings,
+	BloomBlend,
 	BloomSettings,
 	OutlineSettings,
 	Post,

@@ -957,10 +957,7 @@ fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool) -> u64 {
     std::thread::scope(|scope| {
         for i in 0..3 {
             let jobs = &jobs;
-            scope.spawn(move || {
-                CountingAllocator::track_this_thread();
-                jobs.worker_loop(i);
-            });
+            scope.spawn(move || CountingAllocator::track_while(|| jobs.worker_loop(i)));
         }
         let mut frames = |first: u32, last: u32| {
             for frame in first..last {

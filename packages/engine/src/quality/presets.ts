@@ -104,14 +104,17 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
-	// The share of three.js's taps that each of bloom's blurs reads: 1 reads them all, and 0.5 or
-	// 0.25 spread the same kernel over half or a quarter as many filtered reads, which costs less
-	// and keeps the glow's size. The shaders read it from a uniform, so it changes during play with
-	// no new pipeline. Every preset keeps three.js's taps until device runs measure bloom's cost.
-	bloomSamples: {
-		presets: [1, 1, 1, 1],
+	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
+	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
+	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
+	// more than the scene's pixels need: 128 costs less than the method before it on the Galaxy S25
+	// and the Pixel 9, and has four fewer passes than 512, which matters on the Pixel 11's PowerVR GPU
+	// (D-21). A change makes the chain's targets again; the governor's step halves the base with no
+	// new GPU object.
+	bloomSize: {
+		presets: [128, 512, 512, 512],
 		changes: 'live',
-		values: [0.25, 0.5, 1],
+		values: [64, 128, 256, 512],
 	},
 	// The size of ambient occlusion's targets, as a share of the render size each way: half on High
 	// and Ultra, and 0 on Low and Medium, where ambient occlusion draws nothing even when the sketch
@@ -266,11 +269,12 @@ export interface QualitySettings {
 	 */
 	farCascadeInterval: number;
 	/**
-	 * The share of three.js's `UnrealBloomPass` taps that each of bloom's blurs reads: 1, 0.5 or
-	 * 0.25. A lower share spreads the same blur over fewer reads, which costs less and keeps the
-	 * glow's size, with coarser steps in it. It changes during play.
+	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
+	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes
+	 * more than half the canvas's short side. It changes during play, which makes bloom's targets
+	 * again.
 	 */
-	bloomSamples: 0.25 | 0.5 | 1;
+	bloomSize: 64 | 128 | 256 | 512;
 	/**
 	 * The size of ambient occlusion's targets, as a share of the render size each way: 0.5, 0.25,
 	 * or 0, which draws no ambient occlusion even when `post.set` turns it on. A smaller share costs
@@ -281,7 +285,7 @@ export interface QualitySettings {
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then
-	 * bloom's samples while bloom is on, then ambient occlusion's scale while it draws. It raises them again, in the reverse order, once frames
+	 * bloom's size while bloom is on, then ambient occlusion's scale while it draws. It raises them again, in the reverse order, once frames
 	 * have time to spare. `quality.governor` reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.

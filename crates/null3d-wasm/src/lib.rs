@@ -39,7 +39,7 @@ use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
-use null3d_render::bloom::Bloom;
+use null3d_render::bloom::{self, Blend, Bloom};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
@@ -171,15 +171,25 @@ struct Engine {
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
 }
 
-/// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
-/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1,
+/// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
+/// threshold and soft edge, a table at its full intensity over colors from 0 to 1,
 /// `VignetteShader`'s offset and darkness, `GTAOPass`'s radius, thickness, distance exponent,
-/// distance falloff, scale, samples and blend intensity, and a white outline of 2 CSS pixels with
-/// no line around hidden parts.
-const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
-    16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0,
-];
+/// distance falloff, scale, samples and blend intensity, a white outline of 2 CSS pixels with no
+/// line around hidden parts, then bloom's mixing blend and its levels' default shares.
+const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
+    let mut values = [
+        1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
+        16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+    ];
+    let mut level = 0;
+    while level < bloom::LEVELS {
+        values[constants::post_value::BLOOM_WEIGHTS as usize + level] =
+            bloom::DEFAULT_WEIGHTS[level];
+        level += 1;
+    }
+    values
+};
 
 impl Engine {
     /// The post-processing value at `place` (`constants::post_value`).
@@ -278,8 +288,16 @@ fn record_failure(error: RecordError) -> u32 {
     render_failure(detail, value)
 }
 
+/// The failure of an allocation of `bytes` that the engine's memory could not hold: E1109.
+fn out_of_memory(bytes: u64) -> u32 {
+    core_failure(CoreError::OutOfMemory {
+        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+    })
+}
+
 fn arrays_failure(error: ArraysError) -> u32 {
     let (problem, value) = match error {
+        ArraysError::OutOfMemory { bytes } => return out_of_memory(bytes),
         ArraysError::NoVertices => (arrays_problem::NO_VERTICES, 0),
         ArraysError::Length(array) => (arrays_problem::LENGTH, array as u32),
         ArraysError::Type(array) => (arrays_problem::TYPE, array as u32),
@@ -1100,7 +1118,10 @@ fn add_mesh(e: &mut Engine, geometry: &Geometry) -> Result<u32, u32> {
         .settings_mut()
         .meshes_mut()
         .add(geometry)
-        .map_err(|_| render_failure(render_detail::BAD_MESH, 0))?;
+        .map_err(|error| match error {
+            MeshError::OutOfMemory { bytes } => out_of_memory(bytes),
+            _ => render_failure(render_detail::BAD_MESH, 0),
+        })?;
     Ok(id + 1)
 }
 
@@ -2039,16 +2060,19 @@ pub fn set_output(tone_mapping: u32) -> u32 {
     })
 }
 
-/// Turns bloom on with its strength, radius and threshold from the post-processing values, or off,
-/// from the next frame on. The TypeScript API checks the values.
+/// Turns bloom on with its intensity, threshold, soft edge, blend and level weights from the
+/// post-processing values, or off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setBloom)]
 pub fn set_bloom(on: bool) -> u32 {
     with_engine(|e| {
-        let [strength, radius, threshold] = e.post_values3(constants::post_value::BLOOM_STRENGTH);
-        let bloom = on.then_some(Bloom {
-            strength,
-            radius,
+        use constants::post_value as place;
+        let [intensity, threshold, knee] = e.post_values3(place::BLOOM_INTENSITY);
+        let bloom = on.then(|| Bloom {
+            intensity,
             threshold,
+            knee,
+            blend: Blend::from_code(e.post_value(place::BLOOM_BLEND) as u32).unwrap_or_default(),
+            weights: std::array::from_fn(|level| e.post_value(place::BLOOM_WEIGHTS + level as u32)),
         });
         e.renderer.settings_mut().set_bloom(bloom);
         0
@@ -2191,11 +2215,12 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
     })
 }
 
-/// How many times fewer taps than three.js's bloom's blurs read, from the next frame on.
-#[wasm_bindgen(js_name = setBloomSamples)]
-pub fn set_bloom_samples(divisor: u32) -> u32 {
+/// The texels on the short side of bloom's base, and the governor's halvings of it, from the
+/// next frame on.
+#[wasm_bindgen(js_name = setBloomChain)]
+pub fn set_bloom_chain(size: u32, halvings: u32) -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_bloom_divisor(divisor);
+        e.renderer.settings_mut().set_bloom_chain(size, halvings);
         0
     })
 }
@@ -2268,7 +2293,7 @@ fn animation_failure(error: AnimationError) -> u32 {
         AnimationError::Parent { joint, .. } => (animation_problem::PARENT, joint),
         AnimationError::Length { array, .. } => (animation_problem::LENGTH, array),
         AnimationError::NotFinite { at } => (animation_problem::NOT_FINITE, at),
-        AnimationError::Frames { frames } => (animation_problem::FRAMES, frames),
+        AnimationError::Keys { keys } => (animation_problem::KEYS, keys),
         AnimationError::UnknownSkeleton { skeleton } => {
             (animation_problem::UNKNOWN_SKELETON, skeleton)
         }
