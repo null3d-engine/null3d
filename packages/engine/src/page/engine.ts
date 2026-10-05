@@ -24,7 +24,7 @@ import {
 	type QualityPreset,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
-import { type DrawModule, loadDrawModule } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadShaders } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -43,6 +43,7 @@ import type {
 	CoreHandoff,
 	RendererRequest,
 	RendererSetup,
+	ShaderPreload,
 	SketchWorkerInit,
 	WorkerReply,
 } from '../workers/protocol';
@@ -1099,8 +1100,8 @@ async function startEngine(
 			`createEngine() got a canvas whose ${movedTo} worker drew for an engine before, and this engine draws ${renderThread === 'main' ? 'on the page' : 'in its sketch worker'}. Start it with the same options as that engine, or on a new canvas element`,
 		);
 	// A page that draws loads the renderer while the core downloads too. When the probe finds that a
-	// worker cannot draw here, the page loads it later, once it knows.
-	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
+	// worker cannot draw here, the page loads it as soon as the probe ends.
+	let drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	/** The worker that keeps the canvas from an engine before, which draws for this one. */
 	const keptWorker = movedTo ? takeParkedWorker(options.canvas, canvasHold) : undefined;
 	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
@@ -1244,6 +1245,7 @@ async function startEngine(
 			choice = pickTier(false);
 			threads?.render?.terminate();
 			if (threads) threads.render = undefined;
+			drawModule ??= loadDrawModule();
 		}
 		if (!choice)
 			throw new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`);
@@ -1301,10 +1303,6 @@ async function startEngine(
 			glTiming: switches.glTiming,
 		};
 
-		const core = await abortable(coreLoad, signal);
-		coreMemory = core.memory;
-		onProgress('core');
-		let wasmMemory = core.memory;
 		const device = coreDevice(tier, report, {
 			...switches,
 			antialias: quality.settings.antialias,
@@ -1312,6 +1310,17 @@ async function startEngine(
 			depthPrepass: quality.settings.depthPrepass,
 			largeWorld: options.largeWorld === true,
 		});
+		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
+		// first, so the thread that draws starts its download now, while the core downloads.
+		const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
+		if (renderThread === 'render-worker') threads?.render?.worker.postMessage(shaderPreload);
+		else if (renderThread === 'sketch-worker') threads?.sketch?.worker.postMessage(shaderPreload);
+		else if (drawModule) preloadShaders(drawModule, tier, device.shaderBits);
+
+		const core = await abortable(coreLoad, signal);
+		coreMemory = core.memory;
+		onProgress('core');
+		let wasmMemory = core.memory;
 		const capabilities: EngineCapabilities = {
 			tier,
 			threaded,

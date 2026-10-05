@@ -103,7 +103,7 @@ export const ERROR_FIXES = {
 	E1420:
 		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
 	E1501:
-		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
+		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502: RENDER_GRAPH_FIX,
 	E1503: RENDER_GRAPH_FIX,
 	E1504: RENDER_GRAPH_FIX,

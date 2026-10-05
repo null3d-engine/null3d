@@ -31,6 +31,7 @@
 //! it with `textureLoad`, which WebGL2's vertex shaders can do too.
 
 use null3d_core::animation::Animations;
+use null3d_core::error::CoreError;
 use null3d_core::math::max_axis_scale;
 use null3d_core::morph::{MAX_TARGETS, MorphWeights};
 use null3d_core::scene::SceneStorage;
@@ -47,6 +48,22 @@ use crate::pipelines::DrawKey;
 pub const JOINTS_PER_ROW: u32 = 512;
 /// Texels per joint: one per row of its 3 × 4 matrix.
 pub const TEXELS_PER_JOINT: u32 = 3;
+/// The most rows of the joint texture: the narrowest texture height that WebGL2 allows.
+pub const MAX_JOINT_ROWS: u32 = 2048;
+/// The most joints that an animation table holds, as many as the joint texture's rows reach.
+pub const MAX_TABLE_JOINTS: u32 = JOINTS_PER_ROW * MAX_JOINT_ROWS;
+
+/// Fails for an animation table of more than [`MAX_TABLE_JOINTS`] joints, whose joint texture
+/// would be taller than some WebGL2 devices allow.
+pub fn check_table_joints(joints: u32) -> Result<(), CoreError> {
+    if joints > MAX_TABLE_JOINTS {
+        return Err(CoreError::OutOfRange {
+            value: joints,
+            limit: MAX_TABLE_JOINTS,
+        });
+    }
+    Ok(())
+}
 /// Bytes of one row of the joint texture: a row of joints' matrices, as the matrix buffer holds
 /// them.
 const ROW_BYTES: u32 = JOINTS_PER_ROW * MATRIX_FLOATS as u32 * 4;
@@ -340,6 +357,26 @@ mod tests {
         }
         let narrowest = crate::cpu_culled::CpuCulledConfig::default().max_texture_size;
         assert!(JOINTS_PER_ROW * TEXELS_PER_JOINT <= narrowest);
+        assert!(MAX_JOINT_ROWS <= narrowest);
+    }
+
+    #[test]
+    fn an_animation_table_whose_joint_texture_passes_webgl2s_narrowest_is_refused() {
+        assert_eq!(check_table_joints(MAX_TABLE_JOINTS), Ok(()));
+        assert_eq!(
+            check_table_joints(MAX_TABLE_JOINTS + 1),
+            Err(CoreError::OutOfRange {
+                value: MAX_TABLE_JOINTS + 1,
+                limit: MAX_TABLE_JOINTS,
+            })
+        );
+        // The table that holds the most joints still makes a texture that fits.
+        let jobs = JobSystem::new(0);
+        let animations = Animations::new(&jobs, 1, MAX_TABLE_JOINTS).unwrap();
+        let mut texture = JointTexture::new(1);
+        let mut list = DrawList::with_capacity(16);
+        texture.create(&mut list, Some(&animations)).unwrap();
+        assert_eq!(texture.rows, MAX_JOINT_ROWS);
     }
 
     /// A chain of `joints` joints up the y axis, one unit apart, with no turn at rest.
