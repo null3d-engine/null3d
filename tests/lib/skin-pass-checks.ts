@@ -24,6 +24,9 @@ export interface SkinPassCase {
 	/** Vertices that a draw from the skinned vertex buffer read wrong, and the first of them. */
 	drawnWrong: number;
 	drawnFirst: SkinPassWrong[];
+	/** The same for the draw recorded in a render bundle, as the scene passes record their draws. */
+	bundledWrong: number;
+	bundledFirst: SkinPassWrong[];
 }
 
 export interface SkinPassResult {
@@ -35,7 +38,15 @@ export interface SkinPassResult {
 }
 
 /** What went wrong in one case, in a line. */
-function caseFault({ name, wrong, first, drawnWrong, drawnFirst }: SkinPassCase): string {
+function caseFault({
+	name,
+	wrong,
+	first,
+	drawnWrong,
+	drawnFirst,
+	bundledWrong,
+	bundledFirst,
+}: SkinPassCase): string {
 	const show = (list: SkinPassWrong[]) =>
 		list
 			.slice(0, 2)
@@ -47,6 +58,9 @@ function caseFault({ name, wrong, first, drawnWrong, drawnFirst }: SkinPassCase)
 	const parts = [
 		...(wrong > 0 ? [`the pass wrote ${wrong} vertices wrong (${show(first)})`] : []),
 		...(drawnWrong > 0 ? [`a draw read ${drawnWrong} vertices wrong (${show(drawnFirst)})`] : []),
+		...(bundledWrong > 0
+			? [`a bundled draw read ${bundledWrong} vertices wrong (${show(bundledFirst)})`]
+			: []),
 	];
 	return `${name}: ${parts.join('; ')}`;
 }

@@ -279,14 +279,20 @@ function tableOf(c: Case, segments: Part[][]): { words: Uint32Array; offsets: nu
 /** The draw that reads skinned positions back: each vertex into its own pixel of a float target. */
 const DRAW_WGSL = `
 override WIDTH: f32 = 1.0;
+override HEIGHT: f32 = 1.0;
 struct Out {
     @builtin(position) clip: vec4f,
     @location(0) value: vec4f,
 }
 @vertex
-fn vs(@location(0) position: vec3f, @builtin(vertex_index) vertex: u32) -> Out {
+fn vs(
+    @location(0) position: vec3f,
+    @location(2) row: f32,
+    @builtin(vertex_index) vertex: u32,
+) -> Out {
     let x = (f32(vertex) + 0.5) / WIDTH * 2.0 - 1.0;
-    return Out(vec4f(x, 0.0, 0.0, 1.0), vec4f(position, 1.0));
+    let y = 1.0 - (row + 0.5) / HEIGHT * 2.0;
+    return Out(vec4f(x, y, 0.0, 1.0), vec4f(position, 1.0));
 }
 @fragment
 fn fs(in: Out) -> @location(0) vec4f {
@@ -413,11 +419,9 @@ async function runCase(
 		const at = (parts[part] as Part).out + vertex * SKINNED_WORDS;
 		return Array.from(out.subarray(at, at + SKINNED_WORDS));
 	});
-	const drawn = await drawRegions(device, skinned, parts);
-	const pass2 = compare(
-		expected.map((vertices) => vertices.map((v) => v.slice(0, 3))),
-		(part, vertex) => drawn(part, vertex),
-	);
+	const positions = expected.map((vertices) => vertices.map((v) => v.slice(0, 3)));
+	const pass2 = compare(positions, await drawRegions(device, skinned, parts, false));
+	const pass3 = compare(positions, await drawRegions(device, skinned, parts, true));
 	const jointsRead = await readJoints(device, joints);
 	for (const buffer of [source, table, skinned]) buffer.destroy();
 	joints.destroy();
@@ -425,25 +429,32 @@ async function runCase(
 	return {
 		name: c.name,
 		engine: c.engine,
-		ok: pass1.wrong === 0 && pass2.wrong === 0,
+		ok: pass1.wrong === 0 && pass2.wrong === 0 && pass3.wrong === 0,
 		wrong: pass1.wrong,
 		first: pass1.first,
 		drawnWrong: pass2.wrong,
 		drawnFirst: pass2.first,
+		bundledWrong: pass3.wrong,
+		bundledFirst: pass3.first,
 		jointsRead,
 	};
 }
 
+/** Bytes of a part's row number in the buffer of rows, an instance attribute as the engine's are. */
+const ROW_STRIDE = 16;
+
 /**
  * Draws each part's vertices from its region of the skinned vertex buffer, as the scene passes
  * draw a skinned part: the buffer bound at the region's first byte, the part's indices from its
- * place in a shared index buffer, and an indexed indirect draw. Returns each vertex's position as
- * the draw read it.
+ * place in a shared index buffer, an instance attribute bound at the part's own offset, and an
+ * indexed indirect draw, in a render bundle with `bundled` as the scene passes record them. Returns
+ * each vertex's position as the draw read it.
  */
 async function drawRegions(
 	device: GPUDevice,
 	skinned: GPUBuffer,
 	parts: Part[],
+	bundled: boolean,
 ): Promise<(part: number, vertex: number) => number[]> {
 	const width = Math.max(...parts.map((p) => p.vertices));
 	const height = parts.length;
@@ -453,7 +464,7 @@ async function drawRegions(
 		vertex: {
 			module,
 			entryPoint: 'vs',
-			constants: { WIDTH: width },
+			constants: { WIDTH: width, HEIGHT: height },
 			buffers: [
 				{
 					arrayStride: SKINNED_WORDS * 4,
@@ -461,6 +472,11 @@ async function drawRegions(
 						{ shaderLocation: 0, offset: 0, format: 'float32x3' },
 						{ shaderLocation: 1, offset: 12, format: 'float32x3' },
 					],
+				},
+				{
+					arrayStride: ROW_STRIDE,
+					stepMode: 'instance',
+					attributes: [{ shaderLocation: 2, offset: 0, format: 'float32' }],
 				},
 			],
 		},
@@ -471,27 +487,39 @@ async function drawRegions(
 	const total = parts.reduce((n, p) => n + p.vertices, 0);
 	const indices = new Uint16Array(total + (total % 2));
 	const draws = new Uint32Array(parts.length * 5);
+	const rowNumbers = new Float32Array((parts.length * ROW_STRIDE) / 4);
 	let first = 0;
 	parts.forEach((part, k) => {
 		for (let i = 0; i < part.vertices; i++) indices[first + i] = i;
 		draws.set([part.vertices, 1, first, 0, 0], k * 5);
+		rowNumbers[(k * ROW_STRIDE) / 4] = k;
 		first += part.vertices;
 	});
-	const indexBuffer = device.createBuffer({
-		size: indices.byteLength,
-		usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-	});
-	device.queue.writeBuffer(indexBuffer, 0, indices);
-	const indirect = device.createBuffer({
-		size: draws.byteLength,
-		usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
-	});
-	device.queue.writeBuffer(indirect, 0, draws);
+	const buffer = (data: ArrayBufferView<ArrayBuffer>, usage: number) => {
+		const out = device.createBuffer({
+			size: data.byteLength,
+			usage: usage | GPUBufferUsage.COPY_DST,
+		});
+		device.queue.writeBuffer(out, 0, data);
+		return out;
+	};
+	const indexBuffer = buffer(indices, GPUBufferUsage.INDEX);
+	const indirect = buffer(draws, GPUBufferUsage.INDIRECT);
+	const rows = buffer(rowNumbers, GPUBufferUsage.VERTEX);
 	const target = device.createTexture({
 		size: [width, height],
 		format: 'rgba32float',
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 	});
+	const record = (pass: GPURenderPassEncoder | GPURenderBundleEncoder) => {
+		pass.setPipeline(pipeline);
+		pass.setIndexBuffer(indexBuffer, 'uint16');
+		parts.forEach((part, k) => {
+			pass.setVertexBuffer(1, rows, k * ROW_STRIDE, ROW_STRIDE);
+			pass.setVertexBuffer(0, skinned, part.out * 4);
+			pass.drawIndexedIndirect(indirect, k * 20);
+		});
+	};
 	const encoder = device.createCommandEncoder();
 	const pass = encoder.beginRenderPass({
 		colorAttachments: [
@@ -503,13 +531,11 @@ async function drawRegions(
 			},
 		],
 	});
-	pass.setPipeline(pipeline);
-	pass.setIndexBuffer(indexBuffer, 'uint16');
-	parts.forEach((part, k) => {
-		pass.setViewport(0, k, width, 1, 0, 1);
-		pass.setVertexBuffer(0, skinned, part.out * 4);
-		pass.drawIndexedIndirect(indirect, k * 20);
-	});
+	if (bundled) {
+		const bundle = device.createRenderBundleEncoder({ colorFormats: ['rgba32float'] });
+		record(bundle);
+		pass.executeBundles([bundle.finish()]);
+	} else record(pass);
 	pass.end();
 	const rowBytes = Math.ceil((width * 16) / 256) * 256;
 	const read = device.createBuffer({
@@ -524,7 +550,7 @@ async function drawRegions(
 	await read.mapAsync(GPUMapMode.READ);
 	const texels = new Float32Array(read.getMappedRange().slice(0));
 	read.destroy();
-	for (const buffer of [indexBuffer, indirect]) buffer.destroy();
+	for (const b of [indexBuffer, indirect, rows]) b.destroy();
 	target.destroy();
 	return (part, vertex) => {
 		const at = (part * rowBytes) / 4 + vertex * 4;
