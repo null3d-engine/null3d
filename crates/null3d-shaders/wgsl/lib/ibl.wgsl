@@ -19,22 +19,22 @@ fn has_environment(env: EnvironmentLight) -> bool {
 
 /// A direction in the world, as the map holds it: turned back by the environment's rotation.
 fn map_direction(env: EnvironmentLight, d: vec3f) -> vec3f {
-    return vec3f(dot(env.rotation[0].xyz, d), dot(env.rotation[1].xyz, d), dot(env.rotation[2].xyz, d));
+    return vec3f(dot(env.rotation_x.xyz, d), dot(env.rotation_y.xyz, d), dot(env.rotation_z.xyz, d));
 }
 
 /// The irradiance from the environment at a surface whose unit normal is `normal`, from its nine
 /// coefficients, times the environment's intensity.
 fn environment_irradiance(env: EnvironmentLight, normal: vec3f) -> vec3f {
     let sh = array<vec3f, 9>(
-        env.sh[0].xyz,
-        env.sh[1].xyz,
-        env.sh[2].xyz,
-        env.sh[3].xyz,
-        env.sh[4].xyz,
-        env.sh[5].xyz,
-        env.sh[6].xyz,
-        env.sh[7].xyz,
-        env.sh[8].xyz,
+        env.sh_a.xyz,
+        env.sh_b.xyz,
+        env.sh_c.xyz,
+        env.sh_d.xyz,
+        env.sh_e.xyz,
+        env.sh_f.xyz,
+        env.sh_g.xyz,
+        env.sh_h.xyz,
+        env.sh_i.xyz,
     );
     return sh_irradiance(map_direction(env, normal), sh) * env.params.y;
 }

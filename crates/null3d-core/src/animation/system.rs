@@ -39,6 +39,9 @@ pub const EVENT_WORDS: usize = 4;
 /// The skeleton of an instance id that holds no instance: one that was removed.
 const REMOVED: u32 = u32::MAX;
 
+/// The source clip of a sample slot that no play fills ([`SampleSlots::source`]).
+pub const NO_SOURCE: u32 = u32::MAX;
+
 /// The sample slots of every instance: slot `k` of instance `i` sits at `i * MAX_BLEND + k`. Each
 /// frame, every slot with a weight above 0 samples its clip at its time, and the instance's pose
 /// is the blend of those samples. A slot whose clip belongs to another skeleton, or whose weight
@@ -52,8 +55,13 @@ pub struct SampleSlots {
     /// The time in seconds at which each slot samples its clip; times outside the clip take its
     /// first or last key.
     pub time: Box<[f32]>,
-    /// The weight of each slot; 0 leaves the slot out.
+    /// The weight of each slot; 0 leaves the slot out. A play's weight multiplies its fade, and
+    /// a blend's share of the clip multiplies both.
     pub weight: Box<[f32]>,
+    /// The clip that a play put in each slot, as the play named it (for an additive play, the
+    /// clip it was made from), or [`NO_SOURCE`] for a slot that no play fills. TypeScript reads
+    /// it to find the slots of a clip whose weight it sets.
+    pub source: Box<[u32]>,
 }
 
 /// How [`Animations::play`] plays a clip.
@@ -71,6 +79,15 @@ pub struct Play {
     /// True to add the clip's change from its first frame to the pose of the layers, as an
     /// additive clip does, instead of blending it in.
     pub additive: bool,
+    /// The time in seconds at which the clip starts, or `None` for its first frame. A repeating
+    /// clip wraps the time into its length, and a clip that plays once holds it within its
+    /// length.
+    pub time: Option<f32>,
+    /// The clip's own weight, 0 or more, which its fade multiplies; `None` gives a clip that
+    /// starts a weight of 1, and leaves the weight of a clip that plays.
+    pub weight: Option<f32>,
+    /// True to play the clip beside the other clips of its layer; false to fade them out.
+    pub join: bool,
 }
 
 impl Default for Play {
@@ -81,6 +98,42 @@ impl Default for Play {
             speed: 1.0,
             looping: true,
             additive: false,
+            time: None,
+            weight: None,
+            join: false,
+        }
+    }
+}
+
+/// How [`Animations::play_blend`] plays a 1D blend.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Blend {
+    /// The layer, below [`MAX_LAYERS`].
+    pub layer: u32,
+    /// Seconds over which the blend fades in and the layer's other clips fade out.
+    pub fade: f32,
+    /// The rate of the blend's phase: 1 moves it one cycle per weight-averaged length of its
+    /// clips. A negative rate plays it backward.
+    pub speed: f32,
+    /// True to repeat the clips; false to play them once and hold their last frames.
+    pub looping: bool,
+    /// The share of their cycle at which the clips start, or `None` to keep the phase of the
+    /// layer's clips.
+    pub phase: Option<f32>,
+    /// The layer's blend value ([`Animations::blend_values_mut`]) from this play on, or `None` to
+    /// keep the value it has.
+    pub value: Option<f32>,
+}
+
+impl Default for Blend {
+    fn default() -> Self {
+        Blend {
+            layer: 0,
+            fade: 0.0,
+            speed: 1.0,
+            looping: true,
+            phase: None,
+            value: None,
         }
     }
 }
@@ -176,7 +229,9 @@ pub struct Animations {
     free_instances: Vec<u32>,
     /// Joints handed out from the start of the matrix buffer so far.
     joints: u32,
-    /// Runs of joints that removed instances gave back: first joint and length.
+    /// Runs of joints that removed instances gave back, below the joints handed out: first joint
+    /// and length. Runs that touch merge, so each run has a live instance's joints after it, and
+    /// the list holds at most one run per instance.
     free_joints: Vec<(u32, u32)>,
     pub(super) slots: SampleSlots,
     /// How each slot that a play filled advances.
@@ -188,6 +243,9 @@ pub struct Animations {
     layer_weights: Box<[f32]>,
     /// The joint mask of each layer of each instance: a mask id plus one, or 0 for every joint.
     layer_masks: Box<[u32]>,
+    /// The blend value of each layer of each instance, [`MAX_LAYERS`] per instance, which picks
+    /// the mix of the layer's 1D blend; TypeScript writes them.
+    pub(super) blend_values: Box<[f32]>,
     /// Two buffers of [`MATRIX_FLOATS`] floats per joint of every instance. Each frame step writes
     /// the buffer that the step before did not, so a frame's draw list can upload the matrices of
     /// its step while the next frame's step runs.
@@ -236,11 +294,13 @@ impl Animations {
                 clip: boxed(slots, 0)?,
                 time: boxed(slots, 0.0)?,
                 weight: boxed(slots, 0.0)?,
+                source: boxed(slots, NO_SOURCE)?,
             },
             actions: boxed(slots, Action::default())?,
             time_scales: boxed(n, 1.0)?,
             layer_weights: boxed(n * MAX_LAYERS, 1.0)?,
             layer_masks: boxed(n * MAX_LAYERS, 0)?,
+            blend_values: boxed(n * MAX_LAYERS, 0.0)?,
             matrices: [
                 boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
                 boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
@@ -495,25 +555,52 @@ impl Animations {
         self.first_joints[instance] = first;
         let slots = instance * MAX_BLEND..(instance + 1) * MAX_BLEND;
         self.slots.weight[slots.clone()].fill(0.0);
+        self.slots.source[slots.clone()].fill(NO_SOURCE);
         self.actions[slots].fill(Action::default());
         self.time_scales[instance] = 1.0;
         let layers = instance * MAX_LAYERS..(instance + 1) * MAX_LAYERS;
         self.layer_weights[layers.clone()].fill(1.0);
-        self.layer_masks[layers].fill(0);
+        self.layer_masks[layers.clone()].fill(0);
+        self.blend_values[layers].fill(0.0);
         Ok(instance as u32)
     }
 
-    /// Removes instance `instance`. Its id and joints go to the next instances that fit them.
+    /// Removes instance `instance`. Its id goes to the next instance, and its joints to the next
+    /// instances that fit them: they join the free runs next to them, and joints at the end of
+    /// those handed out are handed back.
     pub fn remove_instance(&mut self, instance: u32) -> Result<(), AnimationError> {
         let skeleton = self.live_skeleton(instance)?;
         let i = instance as usize;
         let joints = self.skeletons[skeleton as usize].joints();
-        // Both lists hold at most one entry per instance id, which their capacity covers.
-        self.free_joints.push((self.first_joints[i], joints));
+        self.free_run(self.first_joints[i], joints);
+        // The list holds at most one entry per instance id, which its capacity covers.
         self.free_instances.push(instance);
         self.instance_skeletons[i] = REMOVED;
-        self.slots.weight[i * MAX_BLEND..(i + 1) * MAX_BLEND].fill(0.0);
+        let slots = i * MAX_BLEND..(i + 1) * MAX_BLEND;
+        self.slots.weight[slots.clone()].fill(0.0);
+        self.slots.source[slots].fill(NO_SOURCE);
         Ok(())
+    }
+
+    /// Gives back `len` joints from joint `first`: merges them with the free runs that touch
+    /// them, and hands back a run that ends where the joints handed out end. A run that merges
+    /// replaces its neighbours, so the list never grows past one run per live instance, and
+    /// never allocates.
+    fn free_run(&mut self, first: u32, len: u32) {
+        let (mut first, mut len) = (first, len);
+        if let Some(k) = self.free_joints.iter().position(|&(f, l)| f + l == first) {
+            let (f, l) = self.free_joints.swap_remove(k);
+            first = f;
+            len += l;
+        }
+        if let Some(k) = self.free_joints.iter().position(|&(f, _)| f == first + len) {
+            len += self.free_joints.swap_remove(k).1;
+        }
+        if first + len == self.joints {
+            self.joints = first;
+        } else {
+            self.free_joints.push((first, len));
+        }
     }
 
     /// The number of instance ids handed out, removed ones included.
@@ -553,6 +640,17 @@ impl Animations {
     /// The weight of each layer of each instance, [`MAX_LAYERS`] per instance; 1 by default.
     pub fn layer_weights_mut(&mut self) -> &mut [f32] {
         &mut self.layer_weights
+    }
+
+    /// The blend value of each layer of each instance, [`MAX_LAYERS`] per instance; 0 by
+    /// default.
+    pub fn blend_values_mut(&mut self) -> &mut [f32] {
+        &mut self.blend_values
+    }
+
+    /// The blend value of each layer of each instance.
+    pub fn blend_values(&self) -> &[f32] {
+        &self.blend_values
     }
 
     /// Sets slot `slot` of instance `instance` to sample `clip` at `time` seconds with `weight`.
@@ -651,6 +749,7 @@ impl Animations {
             let out = SharedMut::new(&mut self.matrices[self.written]);
             let times = SharedMut::new(&mut self.slots.time);
             let weights = SharedMut::new(&mut self.slots.weight);
+            let sources = SharedMut::new(&mut self.slots.source);
             let actions = SharedMut::new(&mut self.actions);
             let sink = EventSink {
                 records: SharedMut::new(&mut self.events),
@@ -677,11 +776,12 @@ impl Animations {
                         // SAFETY: instances own disjoint runs of the matrix buffer, from their
                         // first joint for as many joints as their skeleton has, and their own
                         // slots; each instance is in one chunk.
-                        let (matrices, time, weight, action) = unsafe {
+                        let (matrices, time, weight, source, action) = unsafe {
                             (
                                 out.slice(first, len),
                                 times.slice(at, MAX_BLEND),
                                 weights.slice(at, MAX_BLEND),
+                                sources.slice(at, MAX_BLEND),
                                 actions.slice(at, MAX_BLEND),
                             )
                         };
@@ -689,7 +789,9 @@ impl Animations {
                             instance: i as u32,
                             time,
                             weight,
+                            source,
                             action,
+                            shares: [1.0; MAX_BLEND],
                             sink: &sink,
                             order: 0,
                         };
@@ -708,7 +810,8 @@ impl Animations {
     }
 
     /// Blends instance `i`'s clips into the pose in its scratch memory, from its slots' times and
-    /// weights. Each slot's weight is its own weight times its fade.
+    /// weights. Each slot's weight is its own weight times its fade, times its share of its
+    /// layer's blend.
     fn pose_instance(
         &self,
         i: usize,
@@ -726,7 +829,7 @@ impl Animations {
         let mut layers_used = 0u32;
         for k in 0..MAX_BLEND {
             let action = &slots.action[k];
-            let w = weight[k] * action.factor();
+            let w = weight[k] * action.factor() * slots.shares[k];
             let clip = self.slots.clip[i * MAX_BLEND + k];
             // Comparisons with NaN are false, so NaN weights are skipped too.
             let usable = w > 0.0

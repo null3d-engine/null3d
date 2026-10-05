@@ -128,6 +128,7 @@ import {
 	type PlanItem,
 	slug,
 } from './runs.ts';
+import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import {
@@ -169,6 +170,8 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
+	| { kind: 'skin-pass'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -405,6 +408,14 @@ export function checksPlan(): PlanItem<Check>[] {
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`skin-pass-${path}`,
+				'skin-pass',
+				{ kind: 'skin-pass', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
 		// The device's own check each run, never one that an earlier run stored.
 		pageItem('quality', 'quality', { kind: 'quality' }, { switches: ['check=fresh'] }),
 		...TIERS.map((tier) =>
@@ -1585,6 +1596,12 @@ export function restartProblems(
 	return problems;
 }
 
+/** The first line of a Metal compile log that names an error at a place in the source, or its first line. */
+function metalFaultLine(log: string): string {
+	const lines = log.split('\n');
+	return (lines.find((line) => /:\d+:\d+: error:/.test(line)) ?? lines[0] ?? '').trim();
+}
+
 /**
  * What is wrong with a page's result; empty when nothing is. A page that the runner page skipped,
  * and a check whose GPU path the browser lacks, are skips when `missing` allows it: some devices
@@ -1625,6 +1642,11 @@ export function judge(
 			if (removed.length > 0)
 				context?.note?.(
 					`the GPU's driver removed ${removed.length} shader inputs that their programs never read: ${[...new Set(removed.map(({ name }) => name))].join(', ')}`,
+				);
+			const relinked = (result.relinked ?? []) as { shader: string; log: string }[];
+			if (relinked.length > 0)
+				context?.note?.(
+					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
@@ -1686,6 +1708,11 @@ export function judge(
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));
 			return mipLevelsProblems(mips);
+		}
+		case 'skin-pass': {
+			const skin = result as unknown as SkinPassResult;
+			context?.note?.(skinPassNote(skin));
+			return skinPassProblems(skin);
 		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
