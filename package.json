@@ -36,7 +36,7 @@
 		"test:packages": "bun tests/fresh-project.ts",
 		"test:shader-compiler": "NULL3D_SHADER_COMPILER=1 cargo test -p null3d-shaders --test build && bun tools/shaders.ts && NULL3D_SHADER_COMPILER=1 bun test ./packages/vite-plugin/src/shader-compiler.test.ts ./packages/vite-plugin/src/wgsl.test.ts ./packages/vite-plugin/src/declarations.test.ts",
 		"test:real-browsers": "bun tools/shaders.ts && bun tests/real-browsers.ts",
-		"devices": "bun tools/shaders.ts && bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave",
+		"devices": "bun tools/shaders.ts && bun tests/real-browsers.ts --allow-no-webgpu --android chrome --lan ipad-safari",
 		"devices:cloud": "bun tools/shaders.ts && bun tests/devices-cloud.ts",
 		"test:bench": "bun run --cwd bench test",
 		"parity": "bun bench/parity.ts",

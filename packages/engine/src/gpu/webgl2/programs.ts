@@ -117,9 +117,10 @@ export function buildPermutation(template: GlslTemplate, permutation: number): n
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
 export interface Program {
-	readonly program: WebGLProgram;
+	/** The GL program, which a second link at the first use may replace (see `prepareProgram`). */
+	program: WebGLProgram;
 	readonly source: GlslProgram;
-	readonly shaders: readonly WebGLShader[];
+	shaders: readonly WebGLShader[];
 	/** The location of naga's first-instance uniform, when the vertex shader has one. */
 	firstInstance: WebGLUniformLocation | null;
 	firstInstanceValue: number;
@@ -218,12 +219,32 @@ export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'
 	return { shader: shaders.mipmap, pipeline };
 }
 
-function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
+function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
 	const shader = gl.createShader(type);
 	if (!shader) throw new Error('WebGL2 could not create a shader');
-	gl.shaderSource(shader, stage.source);
+	gl.shaderSource(shader, source);
 	gl.compileShader(shader);
 	return shader;
+}
+
+/**
+ * Starts compiling a program's two shaders, each source with `tail` added, and linking them into a
+ * new GL program.
+ */
+function link(
+	gl: WebGL2RenderingContext,
+	source: GlslProgram,
+	tail: string,
+): { program: WebGLProgram; shaders: WebGLShader[] } {
+	const program = gl.createProgram();
+	if (!program) throw new Error('WebGL2 could not create a program');
+	const shaders = [
+		compile(gl, gl.VERTEX_SHADER, source.vertex.source + tail),
+		compile(gl, gl.FRAGMENT_SHADER, source.fragment.source + tail),
+	];
+	for (const shader of shaders) gl.attachShader(program, shader);
+	gl.linkProgram(program);
+	return { program, shaders };
 }
 
 /**
@@ -242,14 +263,7 @@ export function createProgram(
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
 	if (!source)
 		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
-	const program = gl.createProgram();
-	if (!program) throw new Error('WebGL2 could not create a program');
-	const shaders = [
-		compile(gl, gl.VERTEX_SHADER, source.vertex),
-		compile(gl, gl.FRAGMENT_SHADER, source.fragment),
-	];
-	for (const shader of shaders) gl.attachShader(program, shader);
-	gl.linkProgram(program);
+	const { program, shaders } = link(gl, source, '');
 	return {
 		program,
 		source,
@@ -275,18 +289,46 @@ export function declaresUniform(source: string, name: string): boolean {
 }
 
 /**
+ * The part of a link log that tells of Safari's random Metal fault: its translator now and then
+ * writes Metal that does not compile from GLSL that links at the next try (see "Browser faults" in
+ * the maintainer notes).
+ */
+export const METAL_FAULT = 'MSL compilation error';
+
+/**
+ * The comment that the second link adds to the end of each source. A browser that keeps translated
+ * shaders by their source then translates them afresh.
+ */
+export const RELINK_TAIL = '\n// null3d: second link\n';
+
+/** The error of a program whose link failed, with the logs of its program and shaders. */
+function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Error {
+	const logs = p.shaders
+		.map((shader) => gl.getShaderInfoLog(shader))
+		.filter((log) => log)
+		.join('\n');
+	return new Error(
+		`a WebGL2 program failed to link${attempt}: ${gl.getProgramInfoLog(p.program)}\n${logs}`,
+	);
+}
+
+/**
  * Checks the program's link result, binds its uniform blocks and textures to the slots of their
  * WGSL groups and bindings, and sets its vertex shader's depth mapping for the backend's depth mode,
  * once, at its first use. A block or texture that the driver removed, because the program never
- * reads it, needs no binding and is skipped. The program is in use afterwards.
+ * reads it, needs no binding and is skipped. The program is in use afterwards. A link that failed
+ * with Safari's random Metal fault is done once more, into a new program, and waited for.
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
-		const logs = p.shaders
-			.map((shader) => gl.getShaderInfoLog(shader))
-			.filter((log) => log)
-			.join('\n');
-		throw new Error(`a WebGL2 program failed to link: ${gl.getProgramInfoLog(p.program)}\n${logs}`);
+		if (!gl.getProgramInfoLog(p.program)?.includes(METAL_FAULT)) throw linkError(gl, p, '');
+		for (const shader of p.shaders) gl.deleteShader(shader);
+		gl.deleteProgram(p.program);
+		const relinked = link(gl, p.source, RELINK_TAIL);
+		p.program = relinked.program;
+		p.shaders = relinked.shaders;
+		if (!gl.getProgramParameter(p.program, gl.LINK_STATUS))
+			throw linkError(gl, p, ' twice, the second time after a fault in its Metal');
 	}
 	for (const shader of p.shaders) {
 		gl.detachShader(p.program, shader);

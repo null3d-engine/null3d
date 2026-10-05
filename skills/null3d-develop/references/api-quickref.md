@@ -65,9 +65,9 @@ engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded
 engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first
-engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
+engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
-await engine.destroy();                 // workers stop; wait before this page starts another engine
+await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
@@ -95,6 +95,7 @@ export default defineSketch(async (ctx) => {
     onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz), before onUpdate
     onUpdate(dt) {},         // once per frame, before transforms; dt is 0 after a pause, at most 0.25 s
     onLateUpdate(dt) {},     // after transforms, before culling: camera follow; its moves show this frame
+    onDestroy() {},          // (0.2) once, as the engine stops: remove timers and listeners; later calls throw E1420
   };
 }, { fixedRate: 60, maxFixedSteps: 8 });  // optional; these are the defaults (E1214 out of range)
 ```
@@ -364,7 +365,7 @@ ship.bounds;               // (0.2) { center, radius, min, max } of the whole mo
 ship.materials;            // (0.2) the file's materials; set() changes every copy
 ship.clips;                // (0.2) clip names, which a copy's animator plays
 const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
-const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment, made on the GPU; no file
+const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment, made on the GPU; no file. Ask while loading: the next frame makes it whole (50-110 ms on phones)
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2) square faces in three.js's order, for scene.setBackground
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
 ship.destroy();   // (0.2) frees GPU data once no instance uses it

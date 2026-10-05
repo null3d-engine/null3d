@@ -651,7 +651,11 @@ export class Object3D implements Described {
 	/** @internal */
 	constructor(
 		/** @internal */ readonly scene: Scene,
-		/** @internal */ readonly handle: number,
+		/**
+		 * @internal The object's handle. Once the object is destroyed, it holds a generation that the
+		 * core never gives a live object, so a later call never reaches another object in its slot.
+		 */
+		public handle: number,
 		/** The name from the create options, or an empty string. */
 		readonly name: string,
 	) {
@@ -883,7 +887,7 @@ export class Object3D implements Described {
 	/** @internal The live parent, or null for a root. */
 	get liveParent(): Object3D | null {
 		const parent = this.parentObject;
-		return parent && parent.destroyedFrame < 0 ? parent : null;
+		return parent && parent.destroyedFrame === -1 ? parent : null;
 	}
 
 	/**
@@ -953,12 +957,14 @@ export class Object3D implements Described {
 		}
 		this.animation?.release();
 		this.scene.forgetListeners(this);
-		// The core checks the handle's generation, so a second destroy frees no other object.
+		// The core checks the handle's generation, so a second destroy frees no other object, even
+		// once the slot's generations have come round.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
 		this.parentObject?.childObjects?.delete(this);
 		this.scene.forget(this);
+		this.handle |= C.HANDLE_DEAD_GENERATION << C.HANDLE_SLOT_BITS;
 	}
 
 	/**
@@ -1019,7 +1025,7 @@ export class PrefabInstance extends Group {
 	 */
 	find(name: string): Object3D | undefined {
 		for (const object of this.objects)
-			if (object !== this && object.name === name && object.destroyedFrame < 0) return object;
+			if (object !== this && object.name === name && object.destroyedFrame === -1) return object;
 		return undefined;
 	}
 
@@ -2178,7 +2184,7 @@ export class Scene {
 	 */
 	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
 		const camera = this.activeCamera;
-		const live = camera !== undefined && camera.destroyedFrame < 0 ? camera : undefined;
+		const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
 		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
 		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
 	}
@@ -2708,7 +2714,7 @@ export class Scene {
 		}
 		let write = this.reserveCommands(records, call);
 		const { core } = this;
-		const at = core.check(core.glue.reserveObjects(count), call);
+		const at = core.checkGrowth(core.glue.reserveObjects(count), call);
 		const handles = core.u32(at, count).slice();
 		const v = this.views;
 		const objects: Object3D[] = [];
@@ -3193,7 +3199,8 @@ export class Scene {
 	 * `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from
 	 * `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth
 	 * and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene
-	 * draws without the environment until its map is on the GPU. It allocates nothing, so a sketch
+	 * draws without a file's environment until its map is on the GPU. The built-in room's map is
+	 * whole in the first frame that uses it. It allocates nothing, so a sketch
 	 * can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for
 	 * a negative intensity, E1213 for a value that is not an environment, and E1101 for an
 	 * environment that was destroyed.

@@ -44,6 +44,11 @@ export interface CoreGlue extends CoreErrors {
 		largeWorld: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
+	/**
+	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
+	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
+	 */
+	jobWorkerFailed(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
@@ -333,11 +338,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setCubeImages(texture: number, flags: number): number;
 	/**
-	 * Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU in
-	 * `slices` parts of its work, one a frame, and returns the generator's id among the images'
-	 * ids, for the thread that draws.
+	 * Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU, all
+	 * in the first frame after the generator arrives, and returns the generator's id among the
+	 * images' ids, for the thread that draws.
 	 */
-	generateTexture(texture: number, slices: number): number;
+	generateTexture(texture: number): number;
 	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
@@ -585,6 +590,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'lastErrorDetail',
 	'initEngine',
 	'jobWorkerLoop',
+	'jobWorkerFailed',
 	'takeJobBusyMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',

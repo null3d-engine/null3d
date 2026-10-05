@@ -1,16 +1,25 @@
 import { describe, expect, it } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
-import { FrameReplay } from './scene-renderer';
+import { BUILD_WAIT_LIMIT_MS, FrameReplay } from './scene-renderer';
 
-/** A backend whose pipelines build while `building` is true, and which lists the frames it drew. */
+/**
+ * A backend whose pipelines build while `building` is true. It lists where each list it prepared
+ * starts, and where each replay started. Each list creates pipelines in its first word.
+ */
 function fakeBackend() {
 	return {
 		building: false,
 		replayed: 0,
+		prepared: [] as number[],
+		replayedFrom: [] as number[],
 		counts: { uploadBytes: 0, drawCalls: 0, pipelines: 0, skippedDraws: 0, objects: 0 },
-		prepare: (_words: Uint32Array, start: number) => start,
-		replay() {
+		prepare(_words: Uint32Array, start: number) {
+			this.prepared.push(start);
+			return start + 1;
+		},
+		replay(_words: Uint32Array, _floats: Float32Array, from: number) {
 			this.replayed++;
+			this.replayedFrom.push(from);
 		},
 		resetCounts() {},
 	};
@@ -75,5 +84,51 @@ describe('FrameReplay', () => {
 		Atomics.store(slots, Slot.FramesTaken, 4);
 		backend.building = false;
 		expect(await taken).toBe(4);
+	});
+
+	it('starts the builds of each list once, though a capture replays a frame the loop has passed', async () => {
+		const { slots, backend, replay } = setup();
+		// The lists of even and odd frames start at word 100 and word 200.
+		Atomics.store(slots, Slot.DrawListAddress0, 400);
+		Atomics.store(slots, Slot.DrawListAddress1, 800);
+		Atomics.store(slots, Slot.DrawListWords0, 10);
+		Atomics.store(slots, Slot.DrawListWords1, 10);
+		expect(replay.prepare(4)).toBe(true);
+		replay.replay(4);
+		Atomics.store(slots, Slot.FramesTaken, 4);
+		// The loop prepares frame 5 before its turn comes, and a capture of frame 4 comes first.
+		expect(replay.prepare(5)).toBe(true);
+		const frame = await replay.builtTaken();
+		expect(frame).toBe(4);
+		replay.replay(frame);
+		expect(replay.prepare(5)).toBe(true);
+		replay.replay(5);
+		expect(backend.prepared).toEqual([100, 200]);
+		expect(backend.replayedFrom).toEqual([101, 101, 201]);
+	});
+
+	it('stops a capture that waits for builds when the renderer is destroyed', async () => {
+		const { slots, backend, replay } = setup();
+		Atomics.store(slots, Slot.FramesTaken, 1);
+		backend.building = true;
+		const taken = replay.builtTaken();
+		replay.abandon();
+		await expect(taken).rejects.toThrow('the GPU was lost or the engine stopped');
+	});
+
+	it('stops a capture whose builds take longer than the limit', async () => {
+		const { slots, backend, replay } = setup();
+		Atomics.store(slots, Slot.FramesTaken, 1);
+		backend.building = true;
+		const clock = performance.now;
+		let now = 0;
+		performance.now = () => now;
+		try {
+			const taken = replay.builtTaken();
+			now = BUILD_WAIT_LIMIT_MS;
+			await expect(taken).rejects.toThrow('still building after 30 s');
+		} finally {
+			performance.now = clock;
+		}
 	});
 });

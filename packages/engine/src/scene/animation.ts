@@ -453,10 +453,10 @@ export class Animator implements Described {
 	copyTo(object: Object3D, copies: ReadonlyMap<Object3D, Object3D>): Animator {
 		const animator = animateObject(object, this.rig);
 		for (const mesh of this.skinned)
-			if (mesh.destroyedFrame < 0)
+			if (mesh.destroyedFrame === -1)
 				skinObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
 		for (const mesh of this.morphed)
-			if (mesh.destroyedFrame < 0)
+			if (mesh.destroyedFrame === -1)
 				morphObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
 		return animator;
 	}

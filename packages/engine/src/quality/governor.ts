@@ -122,7 +122,8 @@ export const GPU_DELAY_US = 2;
 /** The frame budget: the interval of the target frame rate, in µs. */
 export const BUDGET_US = 3;
 
-// The governor's times, by index in its state, in whole ms. -1 marks one that has not happened.
+// The governor's times, by index in its state, in whole ms of the page's clock. -1 marks one that
+// has not happened. Times stay in 64-bit floats, so a page that runs for weeks never wraps them.
 const ROOM_SINCE = 0;
 const JUDGE_FROM = 1;
 /** The windows since the room started. */
@@ -173,12 +174,12 @@ export class Governor {
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
 	on = true;
 	/** The figures of the window to judge, by the `WINDOW_END` to `BUDGET_US` indices. */
-	readonly window = new Int32Array(BUDGET_US + 1);
-	private readonly state = new Int32Array(STATE_SIZE);
+	readonly window = new Float64Array(BUDGET_US + 1);
+	private readonly state = new Float64Array(STATE_SIZE);
 	/** The frame times of the last `DROP_WINDOWS` windows, then their GPU delays, in µs. */
 	private readonly recent = new Int32Array(2 * DROP_WINDOWS);
 	/** By level: the time of the step up into it that is still on trial, in whole ms, or -1. */
-	private readonly raisedAt = new Int32Array(LEVELS);
+	private readonly raisedAt = new Float64Array(LEVELS);
 	/** By level: how long the frames keep room before a step up into it, in ms. */
 	private readonly raiseAfter = new Int32Array(LEVELS);
 	/** The settings that the shadow steps start from. */
@@ -273,12 +274,13 @@ export class Governor {
 	/**
 	 * Forgets the frames before `from`, a time in whole ms: no step before it, and no window over or
 	 * under the budget yet. The frame loop calls it at the first frame, as the grace starts, after a
-	 * pause, and while the scene loads.
+	 * pause, and while the scene loads. It never moves the first judgement earlier: a stall within
+	 * the grace or the wait after a step leaves the rest of it.
 	 */
 	restart(from: number): void {
 		const { state } = this;
 		state[ROOM_SINCE] = -1;
-		state[JUDGE_FROM] = from;
+		state[JUDGE_FROM] = Math.max(from, state[JUDGE_FROM] as number);
 		state[RECENT_WINDOWS] = 0;
 	}
 

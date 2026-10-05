@@ -10,7 +10,9 @@
 // default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
 // three.js's default. ?textured draws the characters with a custom material that samples a texture
 // of stripes along their height, at texture coordinates from their positions, so custom materials'
-// textures must follow each way to skin. ?still holds every character in the clip's first pose.
+// textures must follow each way to skin. ?still holds every character in the clip's first pose,
+// and the render scale at the whole canvas with the governor off, so frames of play compare pixel
+// for pixel whenever they come: on a slow GPU the governor lowers the scale once its grace ends.
 // ?late adds the characters during play, on the page's 'characters' message, and posts 'added'
 // once their pipelines are built: the first skinned mesh downloads the skinning shader file. With
 // ?extras the same message also turns bloom on and makes a line batch, two more features whose
@@ -84,7 +86,8 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry, post, textures, page }) => {
+export default defineSketch(({ scene, materials, geometry, post, textures, page, quality }) => {
+	if (STILL) quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	if (OUTLINE) post.set({ outline: OUTLINE_SETTINGS.plain });
 	scene.setBackground(BACKGROUND);
