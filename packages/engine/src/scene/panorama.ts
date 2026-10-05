@@ -111,16 +111,15 @@ class Reader {
 let reader: Reader | undefined;
 
 /**
- * Reads a Radiance or OpenEXR file, which moves to the panorama worker, into a panorama and its
- * diffuse light. Throws E1412 for a file that the readers refuse, E1406 when the worker does not
- * load, and E1420 when the engine stops first, each made by `error`.
+ * Starts this thread's reader and its worker, if it has none, so that the worker's script loads
+ * while an HDR file downloads.
  */
-export function readPanoramaFile(
-	file: ArrayBuffer,
-	address: URL,
-	call: string,
-	error: PanoramaError,
-): Promise<PanoramaFile> {
+export function startPanoramaReader(error: PanoramaError): void {
+	readerOfThisThread(error);
+}
+
+/** This thread's reader, which starts now if it has none. */
+function readerOfThisThread(error: PanoramaError): Reader {
 	if (!reader) {
 		const made: Reader = new Reader(error, () => {
 			forget();
@@ -131,5 +130,19 @@ export function readPanoramaFile(
 		);
 		reader = made;
 	}
-	return reader.read(file, MAX_SIDE, address, call);
+	return reader;
+}
+
+/**
+ * Reads a Radiance or OpenEXR file, which moves to the panorama worker, into a panorama and its
+ * diffuse light. Throws E1412 for a file that the readers refuse, E1406 when the worker does not
+ * load, and E1420 when the engine stops first, each made by `error`.
+ */
+export function readPanoramaFile(
+	file: ArrayBuffer,
+	address: URL,
+	call: string,
+	error: PanoramaError,
+): Promise<PanoramaFile> {
+	return readerOfThisThread(error).read(file, MAX_SIDE, address, call);
 }

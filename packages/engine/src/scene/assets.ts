@@ -237,7 +237,9 @@ export class Assets {
 	 */
 	async loadEnvironment(url: string | URL): Promise<Environment> {
 		const call = 'assets.loadEnvironment';
-		return this.environment(this.resolve(url), call);
+		const address = this.resolve(url);
+		if (HDR_FILE.test(address.pathname)) this.prepareHdr();
+		return this.environment(address, call);
 	}
 
 	/**
@@ -279,7 +281,10 @@ export class Assets {
 			environmentReader(call, String(address)),
 		]);
 		const bytes = await file.arrayBuffer();
-		if (reader.isPanoramaFile(new Uint8Array(bytes))) return this.panorama(bytes, address, call);
+		if (reader.isPanoramaFile(new Uint8Array(bytes))) {
+			this.prepareHdr();
+			return this.panorama(bytes, address, call);
+		}
 		let map: import('./environment-file').EnvironmentFile;
 		try {
 			map = reader.readEnvironmentFile(bytes);
@@ -295,13 +300,26 @@ export class Assets {
 	}
 
 	/**
+	 * Starts what an HDR file needs while it downloads: the generators' code and shaders on the
+	 * thread that draws, and the reader with its worker here. A failure waits for the load that
+	 * needs them, which reports it.
+	 */
+	private prepareHdr(): void {
+		this.makers?.materials.shaders.needGenerators();
+		panoramaLoader().then(
+			(loader) => loader.startPanoramaReader((code, message) => new EngineError(code, message)),
+			() => undefined,
+		);
+	}
+
+	/**
 	 * Reads a Radiance or OpenEXR file in the panorama worker, and makes its cube texture on the
 	 * GPU with the environment generator.
 	 */
 	private async panorama(bytes: ArrayBuffer, address: URL, call: string): Promise<Environment> {
 		let loader: typeof import('./panorama');
 		try {
-			loader = await import('./panorama');
+			loader = await panoramaLoader();
 		} catch (error) {
 			throw new EngineError(
 				'E1406',
@@ -520,6 +538,20 @@ function rewritten(at: URL, file: URL, options: LoadGltfOptions, call: string): 
 			`${call}() could not read ${file}: it names ${at}, which the rewriteUrl option refused.`,
 		);
 	return new URL(answer, at);
+}
+
+/** The ends of the addresses of Radiance and OpenEXR files. */
+const HDR_FILE = /\.(hdr|exr)$/i;
+
+/** The HDR file loader, once its import started. A failed import lets the next load try again. */
+let panoramaImport: Promise<typeof import('./panorama')> | undefined;
+
+function panoramaLoader(): Promise<typeof import('./panorama')> {
+	panoramaImport ??= import('./panorama').catch((error: unknown) => {
+		panoramaImport = undefined;
+		throw error;
+	});
+	return panoramaImport;
 }
 
 type EnvironmentReader = typeof import('./environment-file');

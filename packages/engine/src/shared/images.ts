@@ -16,7 +16,8 @@
 //
 // So do the names of features whose shader files the sketch will need, such as skinning when a
 // glTF file with skins loads. The thread that draws starts to download each feature's file then,
-// before the objects that need it are drawn.
+// before the objects that need it are drawn. A reserved name asks for the generators' code and
+// shaders the same way, while an HDR file still downloads.
 
 import { messageOf } from '../errors/message';
 import type { ShaderVariants } from '../generated/shaders';
@@ -46,6 +47,12 @@ function isGenerator(image: ImageBitmap | GeneratorSource): image is GeneratorSo
 	return typeof image === 'string' || 'texels' in image;
 }
 
+/**
+ * The name that asks the thread that draws for the generators' code and shaders ahead of the first
+ * generator, among the features to preload.
+ */
+export const GENERATORS_PRELOAD = 'environment-generator';
+
 /** The images, texture generators and custom materials' shaders that the thread that draws holds. */
 export class ImageTable {
 	private readonly images = new Map<number, ImageBitmap>();
@@ -56,9 +63,16 @@ export class ImageTable {
 	/** Hears each feature that the sketch asks for, while a renderer runs. */
 	onPreload: ((feature: string) => void) | undefined;
 
-	/** Keeps the features that the sketch asked for, and tells the renderer of each new one. */
+	/**
+	 * Keeps the features that the sketch asked for, and tells the renderer of each new one. The
+	 * generators' name starts to load their code and build their pipelines instead.
+	 */
 	preload(features: readonly string[]): void {
 		for (const feature of features) {
+			if (feature === GENERATORS_PRELOAD) {
+				void this.generatorsReady();
+				continue;
+			}
 			if (this.preloads.has(feature)) continue;
 			this.preloads.add(feature);
 			this.onPreload?.(feature);
@@ -114,11 +128,10 @@ export class ImageTable {
 	}
 
 	/**
-	 * Keeps a generator under its id once the generators' code has loaded and the backend has built
-	 * their pipelines, or once either failed, which the command that runs the generator then
-	 * reports.
+	 * Loads the generators' code once, then has the backend build their pipelines, and resolves when
+	 * both are done or either failed. A failure waits for the command that runs a generator.
 	 */
-	async addGenerator(id: number, source: GeneratorSource): Promise<void> {
+	private async generatorsReady(): Promise<void> {
 		this.loading ??= this.loader
 			.then((load) => load())
 			.then(
@@ -131,6 +144,15 @@ export class ImageTable {
 			);
 		await this.loading;
 		await this.warmGenerators();
+	}
+
+	/**
+	 * Keeps a generator under its id once the generators' code has loaded and the backend has built
+	 * their pipelines, or once either failed, which the command that runs the generator then
+	 * reports.
+	 */
+	async addGenerator(id: number, source: GeneratorSource): Promise<void> {
+		await this.generatorsReady();
 		this.generators.set(id, source);
 	}
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from './control';
 import {
 	type CustomShader,
+	GENERATORS_PRELOAD,
 	ImageTable,
 	imagesArrived,
 	RECEIVING,
@@ -241,5 +242,26 @@ describe('features whose shader files the sketch asks for early', () => {
 		// a listener that stayed would keep the stopped renderer and the engine's memory.
 		table.clear();
 		expect(table.onPreload).toBeUndefined();
+	});
+
+	test("start the generators' code and pipelines under their reserved name, before any generator", async () => {
+		const table = new ImageTable();
+		const heard: string[] = [];
+		table.onPreload = (feature) => heard.push(feature);
+		let loads = 0;
+		const warmed: unknown[] = [];
+		const code = { run: () => {} };
+		table.loadGeneratorsWith(async () => {
+			loads++;
+			return code;
+		});
+		table.warmGeneratorsWith(async (loaded) => warmed.push(loaded));
+		table.preload([GENERATORS_PRELOAD]);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect([loads, warmed]).toEqual([1, [code]]);
+		expect([heard, [...table.preloads]]).toEqual([[], []]);
+		await table.addGenerator(1, 'room');
+		expect(loads).toBe(1);
+		expect(table.generator(1)).toEqual(['room', code]);
 	});
 });
