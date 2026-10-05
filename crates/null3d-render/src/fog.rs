@@ -42,8 +42,9 @@ impl Fog {
     }
 
     /// The fog's part of the uniform block of a camera that looks along the unit direction
-    /// `forward`, which fog depth follows.
-    pub fn uniform(&self, forward: [f32; 3]) -> FogUniform {
+    /// `forward`, which fog depth follows, in a frame whose exposure is `exposure`. The shaders mix
+    /// exposed color, so the fog color takes the exposure too.
+    pub fn uniform(&self, forward: [f32; 3], exposure: f32) -> FogUniform {
         let mut uniform = FogUniform {
             forward,
             ..FogUniform::default()
@@ -51,12 +52,12 @@ impl Fog {
         match *self {
             Fog::None => {}
             Fog::Linear { color, near, far } => {
-                uniform.color = color;
+                uniform.color = color.map(|c| c * exposure);
                 uniform.kind = kind::LINEAR;
                 (uniform.near, uniform.far) = (near, far);
             }
             Fog::Exp2 { color, density } => {
-                uniform.color = color;
+                uniform.color = color.map(|c| c * exposure);
                 uniform.kind = kind::EXP2;
                 uniform.density = density;
             }
@@ -124,7 +125,7 @@ mod tests {
             near: 10.0,
             far: 50.0,
         }
-        .uniform(AHEAD);
+        .uniform(AHEAD, 1.0);
         assert_eq!(
             (linear.color, linear.kind, linear.forward),
             (GREY, kind::LINEAR, AHEAD)
@@ -135,10 +136,15 @@ mod tests {
             color: GREY,
             density: 0.02,
         }
-        .uniform(AHEAD);
+        .uniform(AHEAD, 0.5);
         assert_eq!((exp2.kind, exp2.density), (kind::EXP2, 0.02));
+        assert_eq!(
+            exp2.color,
+            GREY.map(|c| c * 0.5),
+            "the exposure scales the color"
+        );
 
-        let none = Fog::None.uniform(AHEAD);
+        let none = Fog::None.uniform(AHEAD, 2.0);
         assert_eq!(none.kind, kind::NONE);
         assert_eq!(none.color, [0.0; 3]);
     }

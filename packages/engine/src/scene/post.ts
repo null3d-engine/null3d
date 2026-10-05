@@ -1,7 +1,8 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
 // occlusion, which darkens the ambient light of the camera's opaque objects, outlines, and the
-// color grading table and the vignette, which the final pass applies after the tone mapping.
+// color grading table and the vignette, which the final pass applies after the tone mapping. The
+// core takes one exposure: the sketch's exposure times the camera exposure of its EV100.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -34,6 +35,7 @@ const CODES: Readonly<Record<ToneMapping, number>> = {
 const SETTINGS = [
 	'toneMapping',
 	'exposure',
+	'ev100',
 	'bloom',
 	'ao',
 	'lut',
@@ -60,6 +62,19 @@ const MAX_AO_SAMPLES = 64;
 const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
 const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
+
+/** The lowest and highest EV100 that `post.set` takes. */
+const EV100_MIN = -20;
+const EV100_MAX = 30;
+
+/**
+ * The exposure of a camera set to `ev100`: 1 / (1.2 × 2^EV100), the formula of Filament, Bevy,
+ * Godot and Unity's HDRP, from the saturation-based sensitivity of ISO 12232. The brightest
+ * luminance that the camera shows without clipping is 1.2 × 2^EV100 nits, which becomes 1.
+ */
+export function exposureOfEv100(ev100: number): number {
+	return 1 / (1.2 * 2 ** ev100);
+}
 
 /**
  * How bloom's glow meets the scene's color. The `'mix'` blend moves each pixel's color toward the
@@ -206,9 +221,18 @@ export interface PostSettings {
 	toneMapping?: ToneMapping;
 	/**
 	 * Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does:
-	 * 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default.
+	 * 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. With
+	 * `ev100`, it scales the camera's exposure, as exposure compensation does.
 	 */
 	exposure?: number;
+	/**
+	 * The camera's exposure value at ISO 100, for lights in real units: 15 suits a sunny day lit by
+	 * a sun of 100,000 lux, 12 an overcast day, and 7 a lit room. It scales the scene's color by
+	 * 1 / (1.2 × 2^ev100), as Filament and Bevy do, so each step up is one stop darker. It is a
+	 * number from -20 to 30, and `false`, the default, turns it off, which leaves three.js's
+	 * units.
+	 */
+	ev100?: number | false;
 	/**
 	 * Light that spreads from the bright parts of the scene through a chain of blurred levels.
 	 * Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by
@@ -275,6 +299,9 @@ function writeColor(values: Float32Array, place: number, color: ColorInput, call
  */
 export class Post {
 	private toneMapping = C.TONE_MAPPING_ACES;
+	/** The sketch's exposure, before the camera exposure of `ev100` scales it. */
+	private exposure = 1;
+	private ev100: number | false = false;
 	private bloom = false;
 	private warnedNoBloom = false;
 	private ao = false;
@@ -311,13 +338,21 @@ export class Post {
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, bloom, ao, lut, lutIntensity, vignette, outline } = settings;
+		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+			settings;
 		const { core } = this;
 		const { glue } = core;
 		const values = this.block();
+		const sketchExposure = exposure ?? this.exposure;
+		const cameraEv100 = ev100 ?? this.ev100;
+		const exposed =
+			cameraEv100 === false ? sketchExposure : sketchExposure * exposureOfEv100(cameraEv100);
+		if (DEV) checkNumber('the exposure times the camera exposure of ev100', exposed);
+		this.exposure = sketchExposure;
+		this.ev100 = cameraEv100;
+		values[C.POST_VALUE_EXPOSURE] = exposed;
 		if (toneMapping !== undefined && Object.hasOwn(CODES, toneMapping))
 			this.toneMapping = CODES[toneMapping];
-		if (exposure !== undefined) values[C.POST_VALUE_EXPOSURE] = exposure;
 		core.check(glue.setOutput(this.toneMapping), 'post.set', undefined, true);
 		if (lut !== undefined || lutIntensity !== undefined) {
 			if (lut !== undefined) this.lut = lut;
@@ -448,9 +483,10 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, bloom, ao, lut, lutIntensity, vignette and outline.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette and outline.`,
 			);
-	const { toneMapping, exposure, bloom, ao, lut, lutIntensity, vignette, outline } = settings;
+	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+		settings;
 	checkGroup(
 		'ao',
 		ao,
@@ -492,6 +528,7 @@ function checkSettings(settings: PostSettings): void {
 			`post.set() got the tone mapping ${JSON.stringify(toneMapping)}, which is not ${TONE_MAPPINGS}.`,
 		);
 	checkNumber('exposure', exposure);
+	checkEv100(ev100);
 	checkGroup('bloom', bloom, BLOOM_SETTINGS, 'intensity, threshold, knee, blend and weights');
 	if (!bloom) return;
 	checkNumber('bloom.intensity', bloom.intensity);
@@ -514,6 +551,18 @@ function checkSettings(settings: PostSettings): void {
 		throw new EngineError(
 			'E1213',
 			'post.set() got bloom weights that are all 0. Give at least one level a weight above 0.',
+		);
+}
+
+/** Throws E1203 for an EV100 that is not a number or `false`, and E1213 for one out of its range. */
+function checkEv100(ev100: number | false | undefined): void {
+	if (ev100 === undefined || ev100 === false) return;
+	if (typeof ev100 !== 'number' || !Number.isFinite(ev100))
+		throw new EngineError('E1203', `post.set() got ${String(ev100)} for ev100.`);
+	if (ev100 < EV100_MIN || ev100 > EV100_MAX)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${ev100} for ev100, outside ${EV100_MIN} to ${EV100_MAX}.`,
 		);
 }
 
