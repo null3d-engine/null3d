@@ -46,16 +46,19 @@ function fixSelfSizedCanvas(canvas: HTMLCanvasElement): void {
 
 /**
  * Watches the canvas's size and the page's visibility, and writes them into the control block.
- * `maxSize` is the largest width and height of a drawing buffer that the GPU path draws into.
+ * `maxSize` is the largest width and height of a drawing buffer that the GPU path draws into. With
+ * `fixSize`, it first fixes the CSS size of a canvas that no CSS sizes; only a canvas that no engine
+ * has used needs it.
  */
 export function watchCanvas(
 	canvas: HTMLCanvasElement,
 	control: ArrayBufferLike,
 	maxPixelRatio: number,
 	maxSize: number,
+	fixSize = true,
 ): CanvasWatch {
 	const { slots, slotFloats } = controlViews(control);
-	fixSelfSizedCanvas(canvas);
+	if (fixSize) fixSelfSizedCanvas(canvas);
 	let cap = maxPixelRatio;
 	/** The sizes of the last write, which a new cap writes again. */
 	let last: { cssWidth: number; cssHeight: number; devicePixels?: DevicePixels } | undefined;

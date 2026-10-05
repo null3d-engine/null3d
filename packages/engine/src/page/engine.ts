@@ -50,7 +50,7 @@ import type {
 	WorkerReply,
 } from '../workers/protocol';
 import { abortable } from './abortable';
-import { watchCanvas } from './canvas-watch';
+import { type CanvasWatch, watchCanvas } from './canvas-watch';
 import {
 	type CapabilityReport,
 	type PowerPreference,
@@ -73,6 +73,15 @@ import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
+import {
+	type CanvasHold,
+	canvasHold,
+	type DrawingRole,
+	Holder,
+	parkWorker,
+	takeParkedWorker,
+	takeWhenFree,
+} from './ownership';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
@@ -95,7 +104,9 @@ import {
 export interface EngineOptions {
 	/**
 	 * The canvas to draw into, sized by CSS. On a canvas that no CSS sizes, the engine sets the CSS
-	 * width and height that it shows when the engine starts.
+	 * width and height that it shows when the engine starts. One engine draws on a canvas at a time:
+	 * a start on the canvas of an engine that is stopping, or still starting and then destroyed,
+	 * waits for that engine to stop. A canvas whose engine runs on fails with E1419.
 	 */
 	canvas: HTMLCanvasElement;
 	/** The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. */
@@ -399,9 +410,11 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports
-	 * each failure once. Without a handler, it logs the failure to the console. Returns a function
-	 * that removes the handler.
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). After E1404 the
+	 * engine draws no new frames: destroy it and start a new one. On WebGPU, the GPU can also run out
+	 * of memory (E1304) or reject the engine's work (E1305), and the engine draws on without the
+	 * objects that failed. The engine reports each failure once. Without a handler, it logs the
+	 * failure to the console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
@@ -445,12 +458,14 @@ export interface Engine {
 	 */
 	simulateGpuLoss(): void;
 	/**
-	 * Stops the engine and its workers. The engine cannot start again. The thread that draws first
-	 * destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes
-	 * back at once. It also leaves the canvas blank, at its size, because Safari keeps the GPU
-	 * memory of a canvas's last frame until the canvas shows another. The promise resolves once
-	 * every worker has stopped, when the browser can free the engine's memory. Wait for it before
-	 * you start another engine on the same page: an iPad has room for only a few engines' memory.
+	 * Stops the engine and its workers. The engine cannot start again. The sketch's `onDestroy` runs
+	 * first, and later calls from the sketch's code fail with E1420. The thread that draws destroys
+	 * the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes back at
+	 * once. It also leaves the canvas blank, at its size, because Safari keeps the GPU memory of a
+	 * canvas's last frame until the canvas shows another. The promise resolves once every worker has
+	 * stopped, when the browser can free the engine's memory. Wait for it before you start another
+	 * engine on the same page: an iPad has room for only a few engines' memory. A new engine can
+	 * start on the same canvas, with the same thread options; `createEngine` waits for this stop.
 	 */
 	destroy(): Promise<void>;
 }
@@ -513,8 +528,8 @@ export function startError(role: string, message: string): EngineError {
 
 type RunnerModule = typeof import('../sketch/runner');
 
-/** True while an engine runs its sketch on this page, where the page's copy of the core serves it. */
-let pageRunsSketch = false;
+/** The engine that runs its sketch on this page, where the page's copy of the core serves it. */
+let pageSketch: Holder | undefined;
 
 /**
  * Starts loading the sketch runner and the scene API, which the page needs only when it runs the
@@ -547,12 +562,29 @@ interface WorkerEvents {
 	labelSlot: LabelSlotSender;
 }
 
-/** A worker whose replies are routed: events to the page's handlers, answers to the oldest request. */
-class EngineWorker {
+/**
+ * The error of a GPU that ran out of memory (E1304) or rejected a command (E1305), on `thread`, such
+ * as "the render worker".
+ */
+export function gpuFailure(thread: string, outOfMemory: boolean, message: string): EngineError {
+	return outOfMemory
+		? new EngineError('E1304', `${thread}'s GPU ran out of memory: ${message}.`)
+		: new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
+}
+
+/**
+ * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
+ * A failure that a started worker reports, or that ends it, reaches the page as E1404.
+ */
+export class EngineWorker {
 	private readonly waiting: Pending[] = [];
 	private readyPromise: Promise<WorkerReply>;
 	private readonly stoppedPromise: Promise<void>;
 	private started = false;
+	/** True once the worker answered a stop, and false while it has not or once it failed. */
+	private stoppedCleanly = false;
+	/** Settles the wait for the worker's answer to a stop of its drawing. */
+	private answerStop: (() => void) | undefined;
 
 	constructor(
 		readonly worker: Worker,
@@ -572,32 +604,63 @@ class EngineWorker {
 		this.stoppedPromise = new Promise((resolve) => {
 			markStopped = resolve;
 		});
+		/**
+		 * A failure that ends the worker's loop: it fails the request that waits, such as the start's,
+		 * and once the worker has started, it reaches the page's failure handler.
+		 */
+		const failed = (message: string) => {
+			this.stoppedCleanly = false;
+			this.waiting.shift()?.reject(startError(role, message));
+			if (this.started)
+				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
+		};
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
-			if (reply.type === 'sketch-message') {
-				events.sketchMessage(reply.name, reply.data);
-				return;
+			switch (reply.type) {
+				case 'sketch-message':
+					events.sketchMessage(reply.name, reply.data);
+					return;
+				case 'quality':
+					events.quality(reply.update);
+					return;
+				case 'stats':
+					events.stats(reply.show);
+					return;
+				case 'label':
+					events.labelSlot(reply.id, reply.slot, reply.generation);
+					return;
+				case 'lost':
+					events.failure(
+						new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
+					);
+					return;
+				case 'gpu-error':
+					events.failure(
+						gpuFailure(`the ${reply.role} worker`, reply.outOfMemory, reply.message),
+						false,
+					);
+					return;
+				case 'fault':
+					// A job worker that failed has left the job system, so a stop need not wait for it.
+					if (reply.role === 'job') markStopped();
+					failed(reply.message);
+					return;
+				case 'progress':
+					return;
+				case 'stopped':
+					this.stoppedCleanly = true;
+					markStopped();
+					this.answerStop?.();
+					return;
 			}
-			if (reply.type === 'quality') {
-				events.quality(reply.update);
-				return;
+			if (reply.type === 'error') {
+				markStopped();
+				// A worker that started and then failed has no request waiting for the error.
+				if (this.started && this.waiting.length === 0) {
+					failed(reply.message);
+					return;
+				}
 			}
-			if (reply.type === 'stats') {
-				events.stats(reply.show);
-				return;
-			}
-			if (reply.type === 'label') {
-				events.labelSlot(reply.id, reply.slot, reply.generation);
-				return;
-			}
-			if (reply.type === 'lost') {
-				events.failure(
-					new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
-				);
-				return;
-			}
-			if (reply.type === 'stopped' || reply.type === 'error') markStopped();
-			if (reply.type === 'stopped' || reply.type === 'progress') return;
 			const pending = this.waiting.shift();
 			if (!pending) return;
 			if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
@@ -608,10 +671,27 @@ class EngineWorker {
 			// A browser sends an error event without a message when the worker's script, or a file
 			// that the script imports, did not load.
 			const message = event.message || 'its script or a file it imports did not load';
-			this.waiting.shift()?.reject(startError(role, message));
-			if (this.started)
-				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
+			failed(message);
+			this.answerStop?.();
 		};
+	}
+
+	/**
+	 * Asks the worker to stop: to run the sketch's onDestroy, and to free its GPU objects and device
+	 * where it draws. Settles once it answers or fails.
+	 */
+	stopDrawing(): Promise<void> {
+		this.stoppedCleanly = false;
+		const answered = new Promise<void>((resolve) => {
+			this.answerStop = resolve;
+		});
+		this.worker.postMessage({ type: 'stop-drawing' } satisfies RendererRequest);
+		return answered;
+	}
+
+	/** True when the worker answered the page's stop, so it is in a state to start again. */
+	get cleanStop(): boolean {
+		return this.stoppedCleanly;
 	}
 
 	ready(): Promise<WorkerReply> {
@@ -647,16 +727,20 @@ class EngineWorker {
  * draws destroys its GPU objects first, because a browser frees what a stopped worker held only
  * when it collects the worker's objects, and Safari does that late.
  */
-async function stopWorkers(workers: readonly EngineWorker[], waitFor: readonly EngineWorker[]) {
+async function stopWorkers(
+	workers: readonly EngineWorker[],
+	waitFor: readonly Promise<void>[],
+	keep?: EngineWorker,
+) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	await Promise.race([
-		Promise.all(waitFor.map((worker) => worker.stopped())),
+		Promise.all(waitFor),
 		new Promise((resolve) => {
 			timer = setTimeout(resolve, STOP_TIMEOUT_MS);
 		}),
 	]);
 	clearTimeout(timer);
-	for (const w of workers) w.terminate();
+	for (const w of workers) if (w !== keep) w.terminate();
 }
 
 /** The engine's workers, which the page starts before the core has compiled. */
@@ -679,7 +763,8 @@ function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
  * when it draws, and the job workers. The page starts them before the core has compiled, so their
  * scripts and the core's loader download while the core does. Each worker waits for its start
  * message, which carries the core. A job worker that fails to start is reported as a failure of the
- * running engine, and never holds up the start.
+ * running engine, and never holds up the start. `reused` is the drawing worker that kept the canvas
+ * when an engine before stopped, which serves in its role again.
  */
 function startWorkers(
 	sketchWorker: boolean,
@@ -687,6 +772,7 @@ function startWorkers(
 	jobWorkers: number,
 	slots: Int32Array,
 	events: WorkerEvents,
+	reused?: { worker: Worker; role: DrawingRole },
 ): EngineWorkers {
 	/** Each worker as it starts, so that a refusal can stop the ones before it. */
 	const made: Worker[] = [];
@@ -697,24 +783,28 @@ function startWorkers(
 	try {
 		const sketch = sketchWorker
 			? new EngineWorker(
-					kept(
-						new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-							type: 'module',
-							name: 'null3d-sketch',
-						}),
-					),
+					reused?.role === 'sketch'
+						? reused.worker
+						: kept(
+								new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+									type: 'module',
+									name: 'null3d-sketch',
+								}),
+							),
 					'sketch',
 					events,
 				)
 			: undefined;
 		const render = renderWorker
 			? new EngineWorker(
-					kept(
-						new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-							type: 'module',
-							name: 'null3d-render',
-						}),
-					),
+					reused?.role === 'render'
+						? reused.worker
+						: kept(
+								new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
+									type: 'module',
+									name: 'null3d-render',
+								}),
+							),
 					'render',
 					events,
 				)
@@ -780,25 +870,54 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
-	/** True once this start holds the page's copy of the core, which serves one engine at a time. */
-	let claimed = false;
+	const canvas = canvasHold(options.canvas);
+	// This engine's hold on the canvas, and on the page's copy of the core when its sketch runs on
+	// the page. Each serves one engine at a time.
+	const holder = new Holder();
+	const release = () => {
+		if (pageSketch === holder) pageSketch = undefined;
+		if (canvas.holder === holder) canvas.holder = undefined;
+		holder.endStop();
+	};
 	try {
 		checkPreload(options.preload);
 		const hold = holdSeconds(options.hold, switches.hold);
 		if (holding) publishHold(undefined);
-		if (place.sketchThread === 'main') {
-			if (pageRunsSketch)
-				throw new EngineError(
-					'E1415',
-					'createEngine() found another engine that runs its sketch on this page, which has not stopped.',
-				);
-			pageRunsSketch = claimed = true;
-		}
-		return await startEngine(options, switches, hold, place);
+		if (place.sketchThread === 'main')
+			await takeWhenFree(
+				() => pageSketch,
+				() => {
+					pageSketch = holder;
+				},
+				() =>
+					new EngineError(
+						'E1415',
+						'createEngine() found another engine that runs its sketch on this page, which has not stopped.',
+					),
+			);
+		await takeWhenFree(
+			() => canvas.holder,
+			() => {
+				canvas.holder = holder;
+			},
+			() =>
+				new EngineError(
+					'E1419',
+					'createEngine() got a canvas that another engine draws on, which has not stopped.',
+				),
+		);
+		if (canvas.dead)
+			throw new EngineError(
+				'E1419',
+				`createEngine() got a canvas that no engine can draw on again: ${canvas.dead}.`,
+			);
+		return await startEngine(options, switches, hold, place, canvas, holder, release);
 	} catch (error) {
-		if (claimed) pageRunsSketch = false;
+		release();
 		if (holding) publishHold(holdFailure(error));
 		throw error;
+	} finally {
+		holder.startSettled();
 	}
 }
 
@@ -842,9 +961,21 @@ async function startEngine(
 	switches: Switches,
 	hold: number | undefined,
 	{ threaded, sketchThread }: Placement,
+	canvasHold: CanvasHold,
+	holder: Holder,
+	release: () => void,
 ): Promise<Engine> {
 	const startedAt = performance.now();
-	const { signal, onProgress } = options;
+	const { signal } = options;
+	// A page's progress handler that throws is the page's error: the console shows it, and the
+	// start goes on.
+	const onProgress = (stage: StartupStage) => {
+		try {
+			options.onProgress?.(stage);
+		} catch (error) {
+			console.error(error);
+		}
+	};
 	signal?.throwIfAborted();
 	const pageUrl = globalThis.location?.href;
 	const sketchUrl = new URL(options.sketch, pageUrl).href;
@@ -939,6 +1070,11 @@ async function startEngine(
 		if (failureHandlers.size === 0) console.error(error);
 		for (const handler of failureHandlers) handler(error);
 	};
+	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
+	// handlers below read them only after that.
+	let tier!: Tier;
+	let mode!: EngineMode;
+	let engineThreads!: [string, number[]][];
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
 		failure: onFailure,
@@ -946,7 +1082,7 @@ async function startEngine(
 		// engine's mode reports the preset and the preset check, which the page stores for later
 		// starts.
 		quality: (update) => {
-			canvasWatch.setMaxPixelRatio(update.settings.maxPixelRatio);
+			canvasWatch?.setMaxPixelRatio(update.settings.maxPixelRatio);
 			mode.preset = update.preset;
 			if (!update.check) return;
 			mode.presetCheck = update.check;
@@ -988,13 +1124,44 @@ async function startEngine(
 					? 'main'
 					: 'sketch-worker'
 				: 'render-worker';
+	// A canvas that an engine before drew on keeps the thread that drew: the page, whose context it
+	// has, or the worker that it moved to, which the page can never take it back from.
+	if (canvasHold.pageContext && renderThread !== 'main') {
+		latency = 'pipelined';
+		renderThread = 'main';
+	}
+	const movedTo = canvasHold.movedTo;
+	if (movedTo === 'render' && renderThread === 'sketch-worker') {
+		latency = 'pipelined';
+		renderThread = 'render-worker';
+	}
+	const drawingRole =
+		renderThread === 'render-worker'
+			? 'render'
+			: renderThread === 'sketch-worker'
+				? 'sketch'
+				: undefined;
+	if (movedTo && movedTo !== drawingRole)
+		throw new EngineError(
+			'E1419',
+			`createEngine() got a canvas whose ${movedTo} worker drew for an engine before, and this engine draws ${renderThread === 'main' ? 'on the page' : 'in its sketch worker'}. Start it with the same options as that engine, or on a new canvas element`,
+		);
 	// A page that draws loads the renderer while the core downloads too. When the probe finds that a
 	// worker cannot draw here, the page loads it as soon as the probe ends.
 	let drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
+	/** The worker that keeps the canvas from an engine before, which draws for this one. */
+	const keptWorker = movedTo ? takeParkedWorker(options.canvas, canvasHold) : undefined;
 	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
 	// into the browser's cache, and still runs the module only after it has started the core.
 	const threads = threaded
-		? startWorkers(!sketchOnPage, renderThread === 'render-worker', jobWorkers, slots, events)
+		? startWorkers(
+				!sketchOnPage,
+				renderThread === 'render-worker',
+				jobWorkers,
+				slots,
+				events,
+				keptWorker && movedTo && { worker: keptWorker, role: movedTo },
+			)
 		: undefined;
 	if (threads?.sketch) {
 		prefetch(sketchUrl);
@@ -1002,205 +1169,20 @@ async function startEngine(
 		if (renderThread === 'sketch-worker')
 			threads.sketch.worker.postMessage({ type: 'load-renderer' });
 	}
-	/**
-	 * Stops the workers when the start fails before they get the core. None waits in the job system
-	 * yet, so they stop at once.
-	 */
-	const failEarly = (error: unknown) => {
-		// The engine no longer runs, so the job workers' start failures that the stop causes stay quiet.
-		Atomics.store(slots, Slot.Running, 0);
-		for (const worker of allWorkers(threads)) worker.terminate();
-		return error;
-	};
-	const report = await abortable(
-		probeCapabilities(powerPreference, presetRequest.hints),
-		signal,
-	).catch((e: unknown) => {
-		throw failEarly(e);
-	});
-	const probeMs = performance.now() - startedAt;
-	const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
-	// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.
-	const safeGpu = requested === 'auto' ? crashTier(history.crashed, history.lastTier) : undefined;
-	const pickTier = (inWorker: boolean) =>
-		(safeGpu && chooseTier(report, safeGpu, inWorker)) || chooseTier(report, requested, inWorker);
 
-	let choice = pickTier(renderThread !== 'main');
-	if (!choice && renderThread !== 'main') {
-		// Worker rendering is unavailable here, so the page draws while the sketch worker computes
-		// the frames, in pipelined mode. Low latency needs the sketch worker to draw.
-		if (DEV && latency === 'low')
-			console.warn(
-				'null3D: low latency needs a worker that draws, and this browser cannot draw in a worker. The engine runs in pipelined mode, and the page draws.',
-			);
-		latency = 'pipelined';
-		renderThread = 'main';
-		choice = pickTier(false);
-		threads?.render?.terminate();
-		if (threads) threads.render = undefined;
-		drawModule ??= loadDrawModule();
-	}
-	if (!choice)
-		throw failEarly(
-			new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`),
-		);
-	const { tier, forceCompat } = choice;
-	// Where the page draws, it moves the label elements right after each frame it draws.
-	const labels = new PageLabels(views, renderThread === 'main');
-	pageLabels = labels;
-	const chosen = choosePreset(presetRequest, tier);
-	// The engine checks a preset that it chose itself, when a lighter one exists. A preset that the
-	// page, a switch or hold mode fixes stays as it is. A start after a crash measures again, and
-	// so does one that ?check=fresh asks to. Otherwise the result of an earlier check of the sketch
-	// on this device and browser gives the preset at once, while it applies.
-	const checks =
-		optionPreset === 'auto' &&
-		switches.preset === undefined &&
-		hold === undefined &&
-		chosen !== 'low';
-	if (checks && history.crashed === 0) {
-		const { width, height } = options.canvas.getBoundingClientRect();
-		const conditions = checkConditions(report, tier, chosen, switches.fps);
-		checkStore = new CheckStore(sketchUrl, conditions, width * height);
-	}
-	const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
-	const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
-	const quality: QualityStart = {
-		preset,
-		settings: checkedSettings(chosen, preset, pageSettings),
-		options: pageSettings,
-		highest: withinTier('ultra', tier),
-		check: checks && !storedCheck ? { fps: switches.fps } : undefined,
-	};
-	const mode: EngineMode = {
-		build,
-		latency: latency === 'pipelined' && sketchOnPage && renderThread === 'main' ? 'low' : latency,
-		sketchThread,
-		renderThread,
-		jobWorkers,
-		hold: hold ?? null,
-		preset,
-		presetCheck: storedCheck ?? null,
-		crashedStarts: history.crashed,
-		memoryMaximumMiB: threaded ? maximumMiB : null,
-	};
-	/** Each engine thread's name and the roles it runs, for the frame figures. */
-	const engineThreads = [...threadRoles(mode)];
-	// What the thread that draws needs besides its canvas, whichever thread that is.
-	const rendererSetup: Omit<RendererSetup, 'canvas'> = {
-		tier,
-		forceCompat,
-		powerPreference,
-		fps: switches.fps,
-		queue: switches.queue,
-		hold: hold !== undefined,
-		glTiming: switches.glTiming,
-		preload: options.preload,
-	};
-
-	const device = coreDevice(tier, report, {
-		...switches,
-		antialias: quality.settings.antialias,
-		transparent: options.transparent === true,
-		depthPrepass: quality.settings.depthPrepass,
-		largeWorld: options.largeWorld === true,
-	});
-	// The GPU path and the device's fixed bits choose the shader file that the renderer loads first,
-	// so the thread that draws starts its download now, while the core downloads.
-	const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
-	if (renderThread === 'render-worker') threads?.render?.worker.postMessage(shaderPreload);
-	else if (renderThread === 'sketch-worker') threads?.sketch?.worker.postMessage(shaderPreload);
-	else if (drawModule) preloadShaders(drawModule, tier, device.shaderBits);
-
-	const core = await abortable(coreLoad, signal).catch((e: unknown) => {
-		throw failEarly(e);
-	});
-	onProgress?.('core');
-	let wasmMemory = core.memory;
-	const capabilities: EngineCapabilities = {
-		tier,
-		threaded,
-		features:
-			tier === 'webgl2'
-				? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
-				: report.webgpu.features,
-		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
-		hdr: device.sceneColor !== FORMAT_CANVAS,
-		halfPrecision: (device.shaderBits & PERMUTATION_HALF) !== 0,
-		maxInstances: maxInstances(device),
-		maxCanvasSize: maxCanvasSize(tier, report),
-		depth: device.depth,
-	};
-	// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
-	const wakeByMessage = switches.wakeByMessage || !report.atomicsWaitAsync;
-	setWakeByMessage(wakeByMessage);
-	const handoff: CoreHandoff = {
-		build,
-		module: core.module,
-		memory: core.memory,
-		control,
-		metrics,
-		device,
-		errorFixes: ERROR_FIXES,
-		wakeByMessage,
-	};
-	const canvasWatch = watchCanvas(
-		options.canvas,
-		control,
-		quality.settings.maxPixelRatio,
-		capabilities.maxCanvasSize,
-	);
-	canvasWatch.listen(true);
-	// Hold mode keeps input out, so a held frame never depends on it.
-	const takesInput = hold === undefined;
-	const input = captureInput(options.canvas, control);
-	input.listen(takesInput);
-	const stopPreferences = watchPreferences(slots);
-	// A worker that draws holds its frames to the display's rate, which only the page can measure.
-	const stopDisplay =
-		renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
-
-	let userPaused = false;
-	let detached = false;
-	const applyPause = () => {
-		const paused = userPaused || detached;
-		input.listen(takesInput && !paused);
-		// Counted before the flag clears, so the sketch's first step after the pause sees it.
-		if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
-		Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
-		notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
-	};
-	const pageLoss = (reason: string) =>
-		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
-	let draw: DrawModule | undefined;
-	/**
-	 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
-	 * loads for it. With a sketch, the page steps it before each draw. Texture images come into the
-	 * page's table from that sketch, or through a port from the sketch worker.
-	 */
-	const drawOnPage = async (
-		memory: WebAssembly.Memory | undefined,
-		images: Pick<DrawingSetup, 'imageTable' | 'imagePort'>,
-		sketch?: SketchRunner,
-	) => {
-		draw = await (drawModule ?? loadDrawModule());
-		return draw.startDrawing({
-			canvas: options.canvas,
-			...rendererSetup,
-			metrics,
-			device,
-			scene: memory && { memory, control },
-			control,
-			sketch,
-			...images,
-			presented: () => labels.update(),
-			fail: pageLoss,
-			fault: (error) =>
-				onFailure(new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`)),
-		});
-	};
-
+	// What the start sets up, which a stop takes down again, from any point of the start.
+	let coreMemory: WebAssembly.Memory | undefined;
+	let canvasWatch: CanvasWatch | undefined;
+	let input: ReturnType<typeof captureInput> | undefined;
+	let stopPreferences: (() => void) | undefined;
+	let stopDisplay: (() => void) | undefined;
 	let rendererHost: EngineWorker | undefined;
+	/** The job workers that got the core, which a stop waits for. */
+	let jobsWithCore: readonly EngineWorker[] = [];
+	/** The sketch worker and the render worker once they got the core, which a stop asks to stop. */
+	const withCore = new Set<EngineWorker>();
+	/** The worker that holds the canvas, or will once the start moves it there. */
+	let canvasWorker = movedTo === 'render' ? threads?.render : movedTo ? threads?.sketch : undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
 	let localRunner: SketchRunner | undefined;
 	/**
@@ -1210,27 +1192,34 @@ async function startEngine(
 	 */
 	let localCore: CoreGlue | undefined;
 	let stopping: Promise<void> | undefined;
+	/** The marker of a start that may crash the tab, which the start sets once it knows the tier. */
+	let markerSet = false;
 	/**
 	 * Ends the job workers' loops at once. A page that leaves without stopping the engine, such as a
 	 * page in a frame that goes away, does it too, because the browser then stops the workers
 	 * wherever they are.
 	 */
 	const stopJobs = () => {
-		if (core.memory) stopJobWorkers(core.memory, slots);
+		if (coreMemory) stopJobWorkers(coreMemory, slots);
 	};
 	const stopJobsAsPageLeaves = () => {
 		stopJobs();
 		waitForJobWorkersToLeave(slots);
 	};
-	if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
 	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
-	 * Then it drops the page's engine and lets go of the page's threaded core. A second call returns
-	 * the first call's promise.
+	 * It works from any point of the start. Then it drops the page's engine, lets go of the page's
+	 * threaded core, and leaves the canvas to the next engine: a worker that holds it stays, without
+	 * the core and the GPU device, unless it failed. A second call returns the first call's promise.
 	 */
 	const stop = () => {
 		stopping ??= (async () => {
+			holder.beginStop();
 			Atomics.store(slots, Slot.Running, 0);
+			// A thread that checked the slots just before the stop and is about to wait on one finds
+			// its value changed, so it never sleeps through the stop.
+			Atomics.store(slots, Slot.JobsReady, 1);
+			Atomics.store(slots, Slot.Paused, 2);
 			stopJobs();
 			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
 			statsSwitch.show(false);
@@ -1244,46 +1233,271 @@ async function startEngine(
 				notifySlot(slots, slot, threads?.sketch?.worker);
 			await localDrawing?.stop();
 			localRunner?.dispose();
-			input.listen(false);
-			canvasWatch.listen(false);
-			stopPreferences();
+			input?.listen(false);
+			canvasWatch?.listen(false);
+			stopPreferences?.();
 			stopDisplay?.();
 			// A start that fails or stops has not crashed the tab.
-			marker?.end();
-			rendererHost?.worker.postMessage({ type: 'stop-drawing' } satisfies RendererRequest);
-			const waitFor = threads?.jobs ?? [];
-			await stopWorkers(allWorkers(threads), rendererHost ? [...waitFor, rendererHost] : waitFor);
+			if (markerSet) marker?.end();
+			const waitFor = jobsWithCore.map((job) => job.stopped());
+			// The sketch worker runs the sketch's onDestroy, and the worker that draws destroys its GPU
+			// objects and its device, before each answers.
+			for (const worker of withCore)
+				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
+			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
 			// list that the page's engine holds, so the engine stays until that worker has stopped.
 			localCore?.destroyEngine();
 			// The job workers have left the job system, so the page's threaded core has no more work,
 			// and the browser can free the engine's memory once the page lets go of the core.
 			localCore?.releaseInstance?.();
-			if (sketchOnPage) pageRunsSketch = false;
+			release();
 		})();
 		return stopping;
 	};
-
 	/**
-	 * Hands the core to the job workers. A stop waits until each job worker reports that it left the
-	 * job system, which one without the core never does.
+	 * Leaves the canvas to the next engine. A worker that holds it and answered the stop, or never
+	 * got this engine's core, stays with it; one that failed ends, and the canvas with it.
 	 */
-	const startJobs = (jobs: readonly EngineWorker[]) => {
-		for (const [index, job] of jobs.entries())
-			job.worker.postMessage({ type: 'init', ...handoff, index });
+	const leaveCanvas = () => {
+		if (!canvasWorker || !canvasHold.movedTo) return;
+		if (withCore.has(canvasWorker) && !canvasWorker.cleanStop) {
+			canvasWorker.terminate();
+			canvasHold.dead = `its ${canvasHold.movedTo} worker did not stop cleanly`;
+			return;
+		}
+		canvasWorker.worker.postMessage({ type: 'park' } satisfies RendererRequest);
+		parkWorker(options.canvas, canvasHold, canvasWorker.worker, canvasHold.movedTo);
 	};
-	/** Hands the canvas and the core to the render worker, with the port that images come through. */
-	const startRenderWorker = (render: EngineWorker, imagePort: MessagePort) => {
-		const canvas = options.canvas.transferControlToOffscreen();
-		render.worker.postMessage({ type: 'init', ...handoff, canvas, ...rendererSetup, imagePort }, [
-			canvas,
-			imagePort,
-		]);
-		rendererHost = render;
-	};
-
-	marker?.begin(history, tier);
 	try {
+		const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
+		const probeMs = performance.now() - startedAt;
+		const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
+		// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.
+		const safeGpu = requested === 'auto' ? crashTier(history.crashed, history.lastTier) : undefined;
+		const pickTier = (inWorker: boolean) =>
+			(safeGpu && chooseTier(report, safeGpu, inWorker)) || chooseTier(report, requested, inWorker);
+
+		let choice = pickTier(renderThread !== 'main');
+		if (!choice && renderThread !== 'main' && !movedTo) {
+			// Worker rendering is unavailable here, so the page draws while the sketch worker computes
+			// the frames, in pipelined mode. Low latency needs the sketch worker to draw.
+			if (DEV && latency === 'low')
+				console.warn(
+					'null3D: low latency needs a worker that draws, and this browser cannot draw in a worker. The engine runs in pipelined mode, and the page draws.',
+				);
+			latency = 'pipelined';
+			renderThread = 'main';
+			choice = pickTier(false);
+			threads?.render?.terminate();
+			if (threads) threads.render = undefined;
+			drawModule ??= loadDrawModule();
+		}
+		if (!choice)
+			throw new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`);
+		tier = choice.tier;
+		const { forceCompat } = choice;
+		// Where the page draws, it moves the label elements right after each frame it draws.
+		const labels = new PageLabels(views, renderThread === 'main');
+		pageLabels = labels;
+		const chosen = choosePreset(presetRequest, tier);
+		// The engine checks a preset that it chose itself, when a lighter one exists. A preset that the
+		// page, a switch or hold mode fixes stays as it is. A start after a crash measures again, and
+		// so does one that ?check=fresh asks to. Otherwise the result of an earlier check of the sketch
+		// on this device and browser gives the preset at once, while it applies.
+		const checks =
+			optionPreset === 'auto' &&
+			switches.preset === undefined &&
+			hold === undefined &&
+			chosen !== 'low';
+		if (checks && history.crashed === 0) {
+			const { width, height } = options.canvas.getBoundingClientRect();
+			const conditions = checkConditions(report, tier, chosen, switches.fps);
+			checkStore = new CheckStore(sketchUrl, conditions, width * height);
+		}
+		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
+		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
+		const quality: QualityStart = {
+			preset,
+			settings: checkedSettings(chosen, preset, pageSettings),
+			options: pageSettings,
+			highest: withinTier('ultra', tier),
+			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
+		};
+		mode = {
+			build,
+			latency: latency === 'pipelined' && sketchOnPage && renderThread === 'main' ? 'low' : latency,
+			sketchThread,
+			renderThread,
+			jobWorkers,
+			hold: hold ?? null,
+			preset,
+			presetCheck: storedCheck ?? null,
+			crashedStarts: history.crashed,
+			memoryMaximumMiB: threaded ? maximumMiB : null,
+		};
+		/** Each engine thread's name and the roles it runs, for the frame figures. */
+		engineThreads = [...threadRoles(mode)];
+		// What the thread that draws needs besides its canvas, whichever thread that is.
+		const rendererSetup: Omit<RendererSetup, 'canvas'> = {
+			tier,
+			forceCompat,
+			powerPreference,
+			fps: switches.fps,
+			queue: switches.queue,
+			hold: hold !== undefined,
+			glTiming: switches.glTiming,
+			preload: options.preload,
+		};
+
+		const device = coreDevice(tier, report, {
+			...switches,
+			antialias: quality.settings.antialias,
+			transparent: options.transparent === true,
+			depthPrepass: quality.settings.depthPrepass,
+			largeWorld: options.largeWorld === true,
+		});
+		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
+		// first, so the thread that draws starts its download now, while the core downloads.
+		const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
+		if (renderThread === 'render-worker') threads?.render?.worker.postMessage(shaderPreload);
+		else if (renderThread === 'sketch-worker') threads?.sketch?.worker.postMessage(shaderPreload);
+		else if (drawModule) preloadShaders(drawModule, tier, device.shaderBits);
+
+		const core = await abortable(coreLoad, signal);
+		coreMemory = core.memory;
+		onProgress('core');
+		let wasmMemory = core.memory;
+		const capabilities: EngineCapabilities = {
+			tier,
+			threaded,
+			features:
+				tier === 'webgl2'
+					? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
+					: report.webgpu.features,
+			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+			hdr: device.sceneColor !== FORMAT_CANVAS,
+			halfPrecision: (device.shaderBits & PERMUTATION_HALF) !== 0,
+			maxInstances: maxInstances(device),
+			maxCanvasSize: maxCanvasSize(tier, report),
+			depth: device.depth,
+		};
+		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
+		const wakeByMessage = switches.wakeByMessage || !report.atomicsWaitAsync;
+		setWakeByMessage(wakeByMessage);
+		const handoff: CoreHandoff = {
+			build,
+			module: core.module,
+			memory: core.memory,
+			control,
+			metrics,
+			device,
+			errorFixes: ERROR_FIXES,
+			wakeByMessage,
+		};
+		// Only a canvas that no engine used before may need its CSS size fixed: the fix resizes the
+		// canvas, which a canvas in a worker refuses.
+		const watch = watchCanvas(
+			options.canvas,
+			control,
+			quality.settings.maxPixelRatio,
+			capabilities.maxCanvasSize,
+			!canvasHold.sized,
+		);
+		canvasHold.sized = true;
+		canvasWatch = watch;
+		watch.listen(true);
+		// Hold mode keeps input out, so a held frame never depends on it.
+		const takesInput = hold === undefined;
+		const pageInput = captureInput(options.canvas, control);
+		input = pageInput;
+		pageInput.listen(takesInput);
+		stopPreferences = watchPreferences(slots);
+		// A worker that draws holds its frames to the display's rate, which only the page can measure.
+		stopDisplay = renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
+
+		let userPaused = false;
+		let detached = false;
+		const applyPause = () => {
+			const paused = userPaused || detached;
+			pageInput.listen(takesInput && !paused);
+			// Counted before the flag clears, so the sketch's first step after the pause sees it.
+			if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
+			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
+			notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
+		};
+		const pageLoss = (reason: string) =>
+			onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
+		let draw: DrawModule | undefined;
+		/**
+		 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
+		 * loads for it. With a sketch, the page steps it before each draw. Texture images come into the
+		 * page's table from that sketch, or through a port from the sketch worker.
+		 */
+		const drawOnPage = async (
+			memory: WebAssembly.Memory | undefined,
+			images: Pick<DrawingSetup, 'imageTable' | 'imagePort'>,
+			sketch?: SketchRunner,
+		) => {
+			draw = await (drawModule ?? loadDrawModule());
+			// The page's context stays with the canvas: an engine after this one draws on the page too.
+			canvasHold.pageContext = true;
+			return draw.startDrawing({
+				canvas: options.canvas,
+				...rendererSetup,
+				metrics,
+				device,
+				scene: memory && { memory, control },
+				control,
+				sketch,
+				...images,
+				presented: () => labels.update(),
+				fail: pageLoss,
+				fault: (error) =>
+					onFailure(
+						new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`),
+					),
+				gpuError: (outOfMemory, message) =>
+					onFailure(gpuFailure('the page', outOfMemory, message), false),
+			});
+		};
+
+		if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+
+		/**
+		 * Hands the core to the job workers. A stop waits until each job worker reports that it left the
+		 * job system, which one without the core never does.
+		 */
+		const startJobs = (jobs: readonly EngineWorker[]) => {
+			for (const [index, job] of jobs.entries())
+				job.worker.postMessage({ type: 'init', ...handoff, index });
+			jobsWithCore = jobs;
+		};
+		/**
+		 * Moves the canvas to the worker that draws, unless that worker kept it from an engine before.
+		 * Returns the canvas to hand over, if any.
+		 */
+		const moveCanvas = (worker: EngineWorker, role: DrawingRole): OffscreenCanvas | undefined => {
+			canvasWorker = worker;
+			if (canvasHold.movedTo) return undefined;
+			const canvas = options.canvas.transferControlToOffscreen();
+			canvasHold.movedTo = role;
+			return canvas;
+		};
+		/** Hands the canvas and the core to the render worker, with the port that images come through. */
+		const startRenderWorker = (render: EngineWorker, imagePort: MessagePort) => {
+			const canvas = moveCanvas(render, 'render');
+			render.worker.postMessage(
+				{ type: 'init', ...handoff, canvas, ...rendererSetup, imagePort },
+				canvas ? [canvas, imagePort] : [imagePort],
+			);
+			rendererHost = render;
+			withCore.add(render);
+		};
+
+		marker?.begin(history, tier);
+		markerSet = true;
 		if (sketchOnPage) {
 			// The page starts its core before the workers get theirs. The first core in a new shared
 			// memory fills it with the core's data, and a core that starts while another fills it
@@ -1348,11 +1562,27 @@ async function startEngine(
 					drawOnPage(memory, { imageTable }, localRunner),
 					start.signal,
 				);
-			const setup = sketchLoad.then((sketch) => localRunner?.setup(sketch));
+			// A setup that fails without an engine code fails the start with E1405, as a sketch worker's
+			// does: a setup function that throws, or a trap in the core during a warm-up.
+			const setup = sketchLoad
+				.then((sketch) => localRunner?.setup(sketch))
+				.catch((error: unknown) => {
+					throw error instanceof EngineError
+						? error
+						: new EngineError(
+								'E1405',
+								`the sketch on the page did not start: ${messageOf(error)}.`,
+							);
+				});
 			await abortable(setup, start.signal);
 			if (render) {
 				await abortable(render.ready(), start.signal);
-				if (hold === undefined) void runPipelined(localRunner, control);
+				if (hold === undefined)
+					void runPipelined(localRunner, control, (error) =>
+						onFailure(
+							new EngineError('E1404', `the sketch on the page failed: ${messageOf(error)}.`),
+						),
+					);
 			}
 		} else if (threads?.sketch) {
 			const { sketch, render, jobs } = threads;
@@ -1370,9 +1600,13 @@ async function startEngine(
 				fps: switches.fps,
 				threads: engineThreads,
 			};
+			withCore.add(sketch);
 			if (renderThread === 'sketch-worker') {
-				const canvas = options.canvas.transferControlToOffscreen();
-				sketch.worker.postMessage({ ...init, renderer: { canvas, ...rendererSetup } }, [canvas]);
+				const canvas = moveCanvas(sketch, 'sketch');
+				sketch.worker.postMessage(
+					{ ...init, renderer: { canvas, ...rendererSetup } },
+					canvas ? [canvas] : [],
+				);
 				rendererHost = sketch;
 			} else {
 				// Texture images go from the sketch worker straight to the thread that draws.
@@ -1390,172 +1624,173 @@ async function startEngine(
 			await abortable(Promise.all(essential.map((w) => w.ready())), start.signal);
 		}
 		start.signal.throwIfAborted();
-	} catch (e) {
-		await stop();
-		throw e;
-	} finally {
 		starting = false;
 		signal?.removeEventListener('abort', cancelStart);
-	}
 
-	const engineStartMs = performance.now() - startedAt;
-	onProgress?.('sketch');
-	// The thread that draws writes the time the GPU finished the first frame; the page checks for
-	// it once per animation frame until it appears.
-	const header = new MetricsReader(metrics);
-	const firstFrame = new Promise<void>((resolve) => {
-		const check = () => {
-			if (Atomics.load(slots, Slot.Running) === 0) return;
-			if (header.firstFrameDoneTime > 0) {
-				onProgress?.('first-frame');
-				resolve();
-				return;
-			}
-			requestAnimationFrame(check);
-		};
-		requestAnimationFrame(check);
-	});
-	marker?.endAfter(firstFrame);
-	/** Hold mode's frame, read back once. */
-	let held: CapturedFrame | undefined;
-	/** The error of a thread that draws when it could not capture a frame. */
-	const captureFailure = (reply: WorkerReply | undefined) =>
-		new Error(
-			`the frame could not be captured${reply?.type === 'capture-failed' ? `: ${reply.message}` : ''}`,
-		);
-	/** Draws a frame offscreen on the thread that draws, and reads it back. */
-	const capture = async (): Promise<CapturedFrame> => {
-		if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
-		const reply = await rendererHost?.request({ type: 'capture' });
-		if (reply?.type === 'captured')
-			return { width: reply.width, height: reply.height, pixels: reply.pixels };
-		throw captureFailure(reply);
-	};
-	/** Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. */
-	const captureImage = async (): Promise<Blob> => {
-		if (localDrawing && draw) return draw.captureImage(localDrawing, slots);
-		const reply = await rendererHost?.request({ type: 'capture', image: true });
-		if (reply?.type === 'captured-image') return reply.image;
-		throw captureFailure(reply);
-	};
-	const stopped = () => Atomics.load(slots, Slot.Running) === 0;
-
-	const engine: Engine = {
-		capabilities,
-		report,
-		mode,
-		firstFrame,
-		labels,
-		postToSketch(name, data, transfer = []) {
-			if (localRunner) localRunner.receive(name, data);
-			else threads?.sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
-		},
-		onSketchMessage(handler) {
-			messageHandlers.add(handler);
-			const early = earlyMessages;
-			earlyMessages = undefined;
-			if (early) for (const [name, data] of early) handler(name, data);
-			return () => messageHandlers.delete(handler);
-		},
-		onFailure(handler) {
-			failureHandlers.add(handler);
-			return () => failureHandlers.delete(handler);
-		},
-		setPaused(paused) {
-			userPaused = paused;
-			applyPause();
-		},
-		detach() {
-			if (detached) return;
-			detached = true;
-			canvasWatch.listen(false);
-			applyPause();
-			options.canvas.remove();
-		},
-		attach(container) {
-			container.append(options.canvas);
-			if (!detached) return;
-			detached = false;
-			canvasWatch.listen(true);
-			applyPause();
-		},
-		async measure(seconds) {
-			const reader = new MetricsReader(metrics);
-			const heap = new HeapSampler();
-			const mainThread = new MainThreadWatch();
-			reader.begin();
-			heap.start();
-			const started = performance.now();
-			const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
-			await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
-			clearInterval(drain);
-			reader.end();
-			const firstFrame = reader.firstFrameTime;
-			return {
-				seconds: (performance.now() - started) / 1000,
-				...summarizeFrames(reader.records, threadRoles(mode)),
-				memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
-				load: {
-					engineStartMs,
-					probeMs,
-					coreMs,
-					firstFrameMs: firstFrame > 0 ? firstFrame - performance.timeOrigin : null,
-					firstFrameDoneMs:
-						reader.firstFrameDoneTime > 0
-							? reader.firstFrameDoneTime - performance.timeOrigin
-							: null,
-					warmUpMs: reader.warmUpMs,
-					firstDrawMs: reader.firstDrawMs,
-					firstFramePipelines: reader.firstFramePipelines,
-				},
-				gpuLosses: Atomics.load(slots, Slot.GpuEpoch),
-				downloadBytes: { wasm: wasmDownloadBytes() },
-				lostRecords: reader.lost,
-				completionSignal: tier === 'webgl2' ? 'fence' : 'queue',
-				refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
-				mainThread: mainThread.stop(),
-				perSecond: secondRates(reader.records),
+		const engineStartMs = performance.now() - startedAt;
+		onProgress('sketch');
+		// The thread that draws writes the time the GPU finished the first frame; the page checks for
+		// it once per animation frame until it appears.
+		const header = new MetricsReader(metrics);
+		const firstFrame = new Promise<void>((resolve) => {
+			const check = () => {
+				if (Atomics.load(slots, Slot.Running) === 0) return;
+				if (header.firstFrameDoneTime > 0) {
+					onProgress('first-frame');
+					resolve();
+					return;
+				}
+				requestAnimationFrame(check);
 			};
-		},
-		async capture() {
-			try {
-				if (!stopped()) await nextFrame(slots, hold !== undefined);
-				if (stopped()) throw new Error('the engine has stopped');
-				return await captureImage();
-			} catch (error) {
-				throw new EngineError('E1414', `engine.capture() failed: ${messageOf(error)}.`);
-			}
-		},
-		async captureFrame() {
-			return held ? { ...held, pixels: held.pixels.slice() } : capture();
-		},
-		simulateGpuLoss() {
-			if (localDrawing) localDrawing.simulateLoss();
-			else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
-		},
-		destroy() {
-			return stop();
-		},
-	};
-	if (hold === undefined) {
-		if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
+			requestAnimationFrame(check);
+		});
+		marker?.endAfter(firstFrame);
+		/** Hold mode's frame, read back once. */
+		let held: CapturedFrame | undefined;
+		/** The error of a thread that draws when it could not capture a frame. */
+		const captureFailure = (reply: WorkerReply | undefined) =>
+			new Error(
+				`the frame could not be captured${reply?.type === 'capture-failed' ? `: ${reply.message}` : ''}`,
+			);
+		/** Draws a frame offscreen on the thread that draws, and reads it back. */
+		const capture = async (): Promise<CapturedFrame> => {
+			if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
+			const reply = await rendererHost?.request({ type: 'capture' });
+			if (reply?.type === 'captured')
+				return { width: reply.width, height: reply.height, pixels: reply.pixels };
+			throw captureFailure(reply);
+		};
+		/** Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. */
+		const captureImage = async (): Promise<Blob> => {
+			if (localDrawing && draw) return draw.captureImage(localDrawing, slots);
+			const reply = await rendererHost?.request({ type: 'capture', image: true });
+			if (reply?.type === 'captured-image') return reply.image;
+			throw captureFailure(reply);
+		};
+		const stopped = () => Atomics.load(slots, Slot.Running) === 0;
+
+		const engine: Engine = {
+			capabilities,
+			report,
+			mode,
+			firstFrame,
+			labels,
+			postToSketch(name, data, transfer = []) {
+				if (localRunner) localRunner.receive(name, data);
+				else threads?.sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
+			},
+			onSketchMessage(handler) {
+				messageHandlers.add(handler);
+				const early = earlyMessages;
+				earlyMessages = undefined;
+				if (early) for (const [name, data] of early) handler(name, data);
+				return () => messageHandlers.delete(handler);
+			},
+			onFailure(handler) {
+				failureHandlers.add(handler);
+				return () => failureHandlers.delete(handler);
+			},
+			setPaused(paused) {
+				userPaused = paused;
+				applyPause();
+			},
+			detach() {
+				if (detached) return;
+				detached = true;
+				watch.listen(false);
+				applyPause();
+				options.canvas.remove();
+			},
+			attach(container) {
+				container.append(options.canvas);
+				if (!detached) return;
+				detached = false;
+				watch.listen(true);
+				applyPause();
+			},
+			async measure(seconds) {
+				const reader = new MetricsReader(metrics);
+				const heap = new HeapSampler();
+				const mainThread = new MainThreadWatch();
+				reader.begin();
+				heap.start();
+				const started = performance.now();
+				const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
+				await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+				clearInterval(drain);
+				reader.end();
+				const firstFrame = reader.firstFrameTime;
+				return {
+					seconds: (performance.now() - started) / 1000,
+					...summarizeFrames(reader.records, threadRoles(mode)),
+					memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
+					load: {
+						engineStartMs,
+						probeMs,
+						coreMs,
+						firstFrameMs: firstFrame > 0 ? firstFrame - performance.timeOrigin : null,
+						firstFrameDoneMs:
+							reader.firstFrameDoneTime > 0
+								? reader.firstFrameDoneTime - performance.timeOrigin
+								: null,
+						warmUpMs: reader.warmUpMs,
+						firstDrawMs: reader.firstDrawMs,
+						firstFramePipelines: reader.firstFramePipelines,
+					},
+					gpuLosses: Atomics.load(slots, Slot.GpuEpoch),
+					downloadBytes: { wasm: wasmDownloadBytes() },
+					lostRecords: reader.lost,
+					completionSignal: tier === 'webgl2' ? 'fence' : 'queue',
+					refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
+					mainThread: mainThread.stop(),
+					perSecond: secondRates(reader.records),
+				};
+			},
+			async capture() {
+				try {
+					if (!stopped()) await nextFrame(slots, hold !== undefined);
+					if (stopped()) throw new Error('the engine has stopped');
+					return await captureImage();
+				} catch (error) {
+					throw new EngineError('E1414', `engine.capture() failed: ${messageOf(error)}.`);
+				}
+			},
+			async captureFrame() {
+				return held ? { ...held, pixels: held.pixels.slice() } : capture();
+			},
+			simulateGpuLoss() {
+				if (localDrawing) localDrawing.simulateLoss();
+				else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
+			},
+			destroy() {
+				return stop();
+			},
+		};
+		if (hold === undefined) {
+			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
+			return engine;
+		}
+		try {
+			held = await abortable(holdFrame(capture, failureHandlers), signal);
+		} catch (error) {
+			await stop();
+			throw error;
+		}
+		publishHold({
+			ok: true,
+			time: hold,
+			frame: Atomics.load(slots, Slot.FramesTaken),
+			tier,
+			...held,
+			stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
+		});
 		return engine;
-	}
-	try {
-		held = await abortable(holdFrame(capture, failureHandlers), signal);
-	} catch (error) {
+	} catch (e) {
+		starting = false;
+		signal?.removeEventListener('abort', cancelStart);
 		await stop();
-		throw error;
+		throw e;
 	}
-	publishHold({
-		ok: true,
-		time: hold,
-		frame: Atomics.load(slots, Slot.FramesTaken),
-		tier,
-		...held,
-		stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
-	});
-	return engine;
 }
 
 /**
