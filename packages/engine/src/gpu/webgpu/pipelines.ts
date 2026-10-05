@@ -423,14 +423,12 @@ export class Pipelines {
 			{ binding: 11, visibility: fragment, texture: {} },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
-		// Bloom's levels, which the final pass's bloom build reads with a linear filter, after its
-		// weights.
+		// The base level of bloom's chain, which the final pass's bloom build reads with a linear
+		// filter, after its settings.
 		this.defineLayout(LAYOUT_FINAL_BLOOM, 'final bloom', [
 			...finalEntries,
 			{ binding: 2, visibility: fragment, buffer: { type: 'uniform' } },
-			...[3, 4, 5, 6, 7].map(
-				(binding): GPUBindGroupLayoutEntry => ({ binding, visibility: fragment, texture: {} }),
-			),
+			{ binding: 3, visibility: fragment, texture: {} },
 			{ binding: 8, visibility: fragment, sampler: {} },
 		]);
 		// A step of bloom: its settings, the texture it reads, and the linear sampler.
