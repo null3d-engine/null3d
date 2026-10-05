@@ -1277,55 +1277,67 @@ pub mod template {
 /// Why recording failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DrawListError {
-    /// The fixed buffer has no room for the command.
-    Full,
+    /// The command would take the list past its limit.
+    Full {
+        /// The most words the list holds.
+        limit: usize,
+    },
+    /// Memory could not grow for the command.
+    OutOfMemory {
+        /// The words the list needed.
+        words: usize,
+    },
 }
 
-/// A draw list recorded into a buffer allocated once, at creation.
+/// The most words a list holds unless it is given a lower limit: the words that 32-bit addresses
+/// of engine memory reach.
+pub const MAX_WORDS: usize = (u32::MAX / 4) as usize;
+
+/// A draw list in engine memory. When a command needs more room than the list has, the list grows
+/// to at least twice its size, so frames of one size allocate only in the first of them. Growing
+/// moves the words, so the thread that replays the list reads its address with each frame.
 #[derive(Debug)]
 pub struct DrawList {
     words: Vec<u32>,
-    len: usize,
+    limit: usize,
 }
 
 impl DrawList {
+    /// An empty list with room for `words` words, which grows up to [`MAX_WORDS`].
     pub fn with_capacity(words: usize) -> Self {
-        Self {
-            words: vec![0; words],
-            len: 0,
-        }
+        Self::with_limit(words, MAX_WORDS)
     }
 
-    /// Grows the list so it holds at least `words` words, keeping what it holds. Growing moves the
-    /// words, so the thread that replays the list must read its address again.
-    pub fn reserve_words(&mut self, words: usize) {
-        if self.words.len() < words {
-            self.words.resize(words, 0);
+    /// An empty list with room for `words` words, which grows up to `limit` words.
+    pub fn with_limit(words: usize, limit: usize) -> Self {
+        Self {
+            words: Vec::with_capacity(words.min(limit)),
+            limit,
         }
     }
 
     /// Forgets every recorded command, keeping the buffer.
     pub fn clear(&mut self) {
-        self.len = 0;
+        self.words.clear();
     }
 
     /// Forgets the commands recorded after the first `len` words, a length that [`DrawList::len`]
     /// returned between two commands.
     pub fn truncate(&mut self, len: usize) {
-        self.len = self.len.min(len);
+        self.words.truncate(len);
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.words.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.words.is_empty()
     }
 
     /// The recorded words.
     pub fn words(&self) -> &[u32] {
-        &self.words[..self.len]
+        &self.words
     }
 
     /// Address of the first word, for the replay loop's view on engine memory.
@@ -1333,25 +1345,35 @@ impl DrawList {
         self.words.as_ptr()
     }
 
-    /// Appends one command with its operands.
+    /// Makes room for `more` words after the recorded ones, growing the list to at least twice its
+    /// size when it has too little.
+    fn make_room(&mut self, more: usize) -> Result<(), DrawListError> {
+        let needed = self.words.len() + more;
+        if needed <= self.words.capacity() {
+            return Ok(());
+        }
+        if needed > self.limit {
+            return Err(DrawListError::Full { limit: self.limit });
+        }
+        let grown = needed.max(self.words.capacity() * 2).min(self.limit);
+        self.words
+            .try_reserve_exact(grown - self.words.len())
+            .map_err(|_| DrawListError::OutOfMemory { words: needed })
+    }
+
     /// Appends whole commands that another list recorded.
     pub fn append(&mut self, words: &[u32]) -> Result<(), DrawListError> {
-        if self.len + words.len() > self.words.len() {
-            return Err(DrawListError::Full);
-        }
-        self.words[self.len..self.len + words.len()].copy_from_slice(words);
-        self.len += words.len();
+        self.make_room(words.len())?;
+        self.words.extend_from_slice(words);
         Ok(())
     }
 
+    /// Appends one command with its operands.
     pub fn push(&mut self, op: Op, operands: &[u32]) -> Result<(), DrawListError> {
         let length = operands.len() + 1;
-        if self.len + length > self.words.len() {
-            return Err(DrawListError::Full);
-        }
-        self.words[self.len] = op as u32 | ((length as u32) << 8);
-        self.words[self.len + 1..self.len + length].copy_from_slice(operands);
-        self.len += length;
+        self.make_room(length)?;
+        self.words.push(op as u32 | ((length as u32) << 8));
+        self.words.extend_from_slice(operands);
         Ok(())
     }
 }
@@ -1968,12 +1990,25 @@ mod tests {
     }
 
     #[test]
-    fn a_full_list_refuses_commands_and_keeps_what_it_has() {
-        let mut list = DrawList::with_capacity(4);
+    fn a_list_grows_as_commands_need_and_keeps_what_it_has() {
+        let mut list = DrawList::with_capacity(1);
+        for k in 0..100 {
+            list.push(Op::Dispatch, &[k, 1, 1]).unwrap();
+        }
+        assert_eq!(list.len(), 400);
+        let dispatched: Vec<u32> = decode(list.words())
+            .map(|c| c.unwrap().operands[0])
+            .collect();
+        assert_eq!(dispatched, (0..100).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_list_at_its_limit_refuses_commands_and_keeps_what_it_has() {
+        let mut list = DrawList::with_limit(1, 4);
         list.push(Op::SetPipeline, &[1]).unwrap();
         assert_eq!(
             list.push(Op::Dispatch, &[1, 1, 1]),
-            Err(DrawListError::Full)
+            Err(DrawListError::Full { limit: 4 })
         );
         assert_eq!(list.len(), 2);
         list.clear();
