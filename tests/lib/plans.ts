@@ -1523,6 +1523,12 @@ export function restartProblems(
 	return problems;
 }
 
+/** The first line of a Metal compile log that names an error at a place in the source, or its first line. */
+function metalFaultLine(log: string): string {
+	const lines = log.split('\n');
+	return (lines.find((line) => /:\d+:\d+: error:/.test(line)) ?? lines[0] ?? '').trim();
+}
+
 /**
  * What is wrong with a page's result; empty when nothing is. A page that the runner page skipped,
  * and a check whose GPU path the browser lacks, are skips when `missing` allows it: some devices
@@ -1563,6 +1569,11 @@ export function judge(
 			if (removed.length > 0)
 				context?.note?.(
 					`the GPU's driver removed ${removed.length} shader inputs that their programs never read: ${[...new Set(removed.map(({ name }) => name))].join(', ')}`,
+				);
+			const relinked = (result.relinked ?? []) as { shader: string; log: string }[];
+			if (relinked.length > 0)
+				context?.note?.(
+					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
