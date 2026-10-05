@@ -276,7 +276,7 @@ describe('loadCore', () => {
 		}) as typeof fetch;
 		await loadCore('threaded');
 		expect(asked).toHaveLength(1);
-		expect(asked[0]).toEndWith('/threaded/null3d_bg.wasm?no-inline');
+		expect(asked[0]).toEndWith('/threaded/null3d_bg.wasm');
 	});
 
 	it('creates the shared memory with the maximum it is asked for', async () => {

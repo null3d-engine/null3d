@@ -3,10 +3,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { MeshoptEncoder } from 'meshoptimizer/encoder';
+import { shippedDecoder } from '../../../../tests/lib/meshopt-checks';
 import { armBuilder, GltfBuilder, type GltfJson } from '../../../../tests/pages/lib/gltf-files';
 import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { modelAllowance } from './file-limits';
-import { meshoptDecoder } from './gltf-meshopt';
 import { type GltfData, GltfError, parseGltf, readContainer } from './gltf-parse';
 
 const URL_OF = 'https://example.com/models/hostile.glb';
@@ -78,7 +78,7 @@ describe('names that every JavaScript object has', () => {
 	});
 
 	test('a meshopt mode and filter named "constructor" are refused', async () => {
-		const decode = await meshoptDecoder();
+		const decode = await shippedDecoder();
 		for (const [field, words] of [
 			['mode', 'has the mode constructor'],
 			['filter', 'has the filter constructor'],
@@ -129,7 +129,7 @@ describe("a file's total allocation", () => {
 	});
 
 	test('meshopt data that decodes to far more than its file stops at the limit', async () => {
-		const decode = await meshoptDecoder();
+		const decode = await shippedDecoder();
 		const b = new GltfBuilder().uses('EXT_meshopt_compression', true);
 		const count = 2_097_150;
 		const data = MeshoptEncoder.encodeGltfBuffer(

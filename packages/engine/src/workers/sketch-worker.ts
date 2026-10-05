@@ -13,6 +13,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { drawingSenders, ImageTable } from '../shared/images';
+import { setJobTasks } from '../shared/task-host';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
@@ -58,7 +59,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			controlSlots = control.slots;
 			setWakeByMessage(message.wakeByMessage);
 			const started = await startWorkerCore(message, step);
-			core = started.glue;
+			const glue = started.glue;
+			core = glue;
+			setJobTasks({ ports: message.taskPorts, call: (index) => glue.callJobWorker(index) });
 			const memory = started.memory as WebAssembly.Memory;
 			// Texture images and custom materials' shaders go to the thread that draws: another
 			// through a port, or this one.

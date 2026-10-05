@@ -44,7 +44,7 @@ The loader reads `.glb` files, and `.gltf` files with the files they name. It re
 
 ### Compressed meshes
 
-meshopt compression makes a model's vertex and index data several times smaller to download. The loader decodes it in its worker with meshoptimizer's own decoder, so the meshes match what any other meshopt decoder reads from the file. The decoder is about 6 KB after Brotli. It downloads with the first file that holds meshopt data, so a page without such files does not download it. It runs as WebAssembly, with SIMD instructions where the browser has them.
+meshopt compression makes a model's vertex and index data several times smaller to download. The loader decodes it in its worker with meshoptimizer's own decoder, so the meshes match what any other meshopt decoder reads from the file. The decoder is about 4 KB after Brotli. It downloads with the first file that holds meshopt data, so a page without such files does not download it. It runs as WebAssembly with SIMD instructions, and the engine compiles it once per page.
 
 ```ts
 // sketch.ts: the same call loads a compressed model
@@ -56,7 +56,7 @@ The loader reads both names of the extension: `KHR_meshopt_compression`, and the
 
 ## Textures
 
-`assets.loadTexture` loads PNG, JPEG and WebP images, AVIF images where the browser decodes them, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. A worker transcodes KTX2 data into the compressed format that the device supports. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it.
+`assets.loadTexture` loads PNG, JPEG and WebP images, AVIF images where the browser decodes them, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. Workers transcode KTX2 data into the compressed format that the device supports. These are the engine's job workers, which take the work between frames, or one worker of its own on a single-threaded page. A frame never waits for them. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it.
 
 ```ts
 // sketch.ts
