@@ -4,7 +4,7 @@
 // When the page asks for shadows, the sun casts them and every node casts and receives them.
 // ?sides=two draws every box see-through and double-sided, so the transparent pass draws each
 // box's back faces, then its front faces, and ?sides=one draws both faces in one draw, to time the
-// second draw.
+// second draw. ?alpha=hash draws every box with the alpha hash instead.
 import { defineSketch, type Mesh } from '@null3d/engine';
 import {
 	BACKGROUND,
@@ -31,7 +31,8 @@ export default defineSketch((context) => {
 		const [width, height, depth] = s2MeshSize(k);
 		return geometry.box({ width, height, depth });
 	});
-	const sides = new URL(import.meta.url).searchParams.get('sides');
+	const switches = new URL(import.meta.url).searchParams;
+	const sides = switches.get('sides');
 	const seeThrough =
 		sides === null
 			? {}
@@ -41,7 +42,10 @@ export default defineSketch((context) => {
 					doubleSided: true,
 					forceSinglePass: sides === 'one',
 				} as const);
-	const colors = S2_COLORS.map((color) => materials.standard({ color, ...seeThrough }));
+	// ?alpha=hash draws every box with the alpha hash, whose discard tile GPUs pay for.
+	const hashed =
+		switches.get('alpha') === 'hash' ? ({ opacity: 0.85, alphaMode: 'hash' } as const) : {};
+	const colors = S2_COLORS.map((color) => materials.standard({ color, ...seeThrough, ...hashed }));
 	const nodes: Mesh[] = [];
 	const roots: Mesh[] = [];
 	for (let i = 0; i < data.parent.length; i++) {

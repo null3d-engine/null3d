@@ -47,7 +47,8 @@ export interface Null3dPageOptions {
  * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
  * point light shadows on, `environment` lights S1 with the built-in room, which turns every
  * frame, and `sides` draws S2's boxes see-through and double-sided: `two` draws each one's back
- * faces, then its front faces, and `one` draws both in one draw.
+ * faces, then its front faces, and `one` draws both in one draw, and `alpha=hash` draws S2's boxes with
+ * the alpha hash.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -63,6 +64,7 @@ const SKETCH_SWITCHES = [
 	'tileShadows',
 	'environment',
 	'sides',
+	'alpha',
 ] as const;
 
 /**
