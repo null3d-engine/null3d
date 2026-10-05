@@ -54,6 +54,8 @@ export interface MorphTargetsData {
 	positions?: Float32Array[];
 	normals?: Float32Array[];
 	tangents?: Float32Array[];
+	/** As many numbers per vertex as the primitive's colors. */
+	colors?: Float32Array[];
 }
 
 /** One joint of a rig's skeleton. Joints come parents first. */
@@ -135,8 +137,13 @@ const WEIGHTS_PER_JOINT = 3;
  */
 const PATHS: ReadonlySet<string> = new Set(['translation', 'rotation', 'scale']);
 
-/** The attributes that the engine morphs. */
-const MORPHED_ATTRIBUTES: ReadonlySet<string> = new Set(['POSITION', 'NORMAL', 'TANGENT']);
+/** The attributes that the engine morphs, with the morph target lists that hold their deltas. */
+const MORPHED_ATTRIBUTES = [
+	['POSITION', 'positions'],
+	['NORMAL', 'normals'],
+	['TANGENT', 'tangents'],
+	['COLOR_0', 'colors'],
+] as const;
 
 const INTERPOLATIONS: ReadonlyMap<string, KeyInterpolation> = new Map([
 	['LINEAR', 'linear'],
@@ -145,13 +152,16 @@ const INTERPOLATIONS: ReadonlyMap<string, KeyInterpolation> = new Map([
 ]);
 
 /**
- * Reads a primitive's morph targets: the deltas of its positions, normals and tangents, as floats.
- * Returns undefined when it has none. Targets of other attributes, such as colors and texture
- * coordinates, are left out with a note.
+ * Reads a primitive's morph targets: the deltas of its positions, normals, tangents and colors, as
+ * floats. `colors` is the numbers per vertex of the primitive's colors, or 0 when it has none.
+ * Returns undefined when it has none. A target that leaves out an attribute that another target
+ * moves moves it by nothing, as the glTF specification says. Targets of other attributes, such as
+ * texture coordinates, are left out with a note, as are colors of a primitive without colors.
  */
 export function parseMorphTargets(
 	primitive: Entry,
 	vertices: number,
+	colors: number,
 	what: string,
 	read: Reader,
 	budget: FileBudget,
@@ -159,43 +169,52 @@ export function parseMorphTargets(
 ): MorphTargetsData | undefined {
 	const targets = list(primitive.targets, `${what}'s targets`);
 	if (targets.length === 0) return undefined;
-	const others = new Set(
-		targets.flatMap((target) =>
-			Object.keys(target as object).filter((k) => !MORPHED_ATTRIBUTES.has(k)),
-		),
+	const entries = targets.map((value, t) => entry(value, `${what}'s target ${t}`));
+	const named = new Set(entries.flatMap((target) => Object.keys(target)));
+	const fields = MORPHED_ATTRIBUTES.filter(
+		([name]) => named.has(name) && (name !== 'COLOR_0' || colors > 0),
 	);
-	if (others.size > 0)
+	const others = [...named].filter((name) => !fields.some(([morphed]) => morphed === name));
+	if (others.length > 0)
 		notes.push(
-			`${what}'s morph targets move ${[...others].join(', ')}, which the engine does not morph`,
+			`${what}'s morph targets move ${others.join(', ')}, which the engine does not morph${named.has('COLOR_0') && colors === 0 ? " (COLOR_0 needs the primitive's own COLOR_0)" : ''}`,
 		);
 	const out: MorphTargetsData = {};
-	const fields = [
-		['POSITION', 'positions'],
-		['NORMAL', 'normals'],
-		['TANGENT', 'tangents'],
-	] as const;
-	const entries = targets.map((value, t) => entry(value, `${what}'s target ${t}`));
-	// The first target names the attributes that the targets move. A later target that leaves one
-	// out moves it by nothing.
-	for (const [name, field] of fields) if (entries[0]?.[name] !== undefined) out[field] = [];
-	entries.forEach((target, t) => {
-		for (const [name, field] of fields) {
-			const deltas = out[field];
+	for (const [name, field] of fields) {
+		const values = name === 'COLOR_0' ? colors : 3;
+		out[field] = entries.map((target, t) => {
+			const where = `${what}'s target ${t} ${name}`;
 			if (target[name] === undefined) {
-				if (!deltas) continue;
-				budget.take(vertices * 12, `${what}'s target ${t} ${name}`);
-				deltas.push(new Float32Array(vertices * 3));
-				continue;
+				budget.take(vertices * values * 4, where);
+				return new Float32Array(vertices * values);
 			}
-			if (!deltas) broken(`${what}'s target ${t} moves ${name}, and its first target does not`);
-			const data = read(Number(target[name]), `${what}'s target ${t} ${name}`);
-			if (data.components !== 3 || data.count !== vertices)
+			const data = read(Number(target[name]), where);
+			const allowed = name === 'COLOR_0' ? [3, 4] : [3];
+			if (!allowed.includes(data.components) || data.count !== vertices)
 				broken(
 					`${what}'s target ${t} has ${data.count} ${name} deltas of ${data.components} values, and the primitive has ${vertices} vertices`,
 				);
-			deltas.push(toFloats(data.array, data.normalized, budget, `${what}'s target ${t} ${name}`));
-		}
-	});
+			if (name === 'COLOR_0' && data.componentType !== FLOAT && !data.normalized)
+				broken(`${what}'s target ${t} COLOR_0 deltas are integers that are not normalized`);
+			const deltas = toFloats(data.array, data.normalized, budget, where);
+			if (data.components === values) return deltas;
+			budget.take(vertices * values * 4, where);
+			return resized(deltas, data.components, values);
+		});
+	}
+	return fields.length > 0 ? out : undefined;
+}
+
+/**
+ * Color deltas of `from` numbers per vertex as `to` numbers per vertex: an alpha delta of 0 where
+ * the target has none, and none where the primitive's colors have no alpha.
+ */
+function resized(deltas: Float32Array, from: number, to: number): Float32Array {
+	const vertices = deltas.length / from;
+	const out = new Float32Array(vertices * to);
+	const kept = Math.min(from, to);
+	for (let v = 0; v < vertices; v++)
+		for (let c = 0; c < kept; c++) out[v * to + c] = deltas[v * from + c] as number;
 	return out;
 }
 
@@ -225,7 +244,7 @@ export function morphWeights(
 
 function targetCount(p: PrimitiveData): number {
 	const m = p.morph;
-	return m ? (m.positions ?? m.normals ?? m.tangents ?? []).length : 0;
+	return m ? (m.positions ?? m.normals ?? m.tangents ?? m.colors ?? []).length : 0;
 }
 
 /** A skin of the file: its joints by node index in the node list, and their inverse bind matrices. */

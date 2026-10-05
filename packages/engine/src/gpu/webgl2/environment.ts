@@ -55,6 +55,11 @@ export interface CubeGenerator {
 interface Kept {
 	programs: Record<Pipeline, WebGLProgram>;
 	sampler: WebGLSampler;
+	/**
+	 * The texture unit of the source. The programs that read a texture read only the source, so
+	 * they share it. The trace reads none.
+	 */
+	unit: number;
 }
 
 /** The generator of the built-in room, from the environment shader's GLSL build. */
@@ -79,7 +84,7 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 		const programs = {} as Record<Pipeline, WebGLProgram>;
 		for (const pipeline of pipelines)
 			programs[pipeline] = host.program({ shader: variants, pipeline });
-		made = { programs, sampler: makeSampler(gl) };
+		made = { programs, sampler: makeSampler(gl), unit: host.unit(programs.blur, 0, 1) };
 		kept.set(gl, made);
 		return made;
 	};
@@ -92,7 +97,12 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 				programs[pipeline] = await host.programLater({ shader: variants, pipeline });
 			});
 			ready = Promise.all(built).then(() => {
-				if (!kept.has(gl)) kept.set(gl, { programs, sampler: makeSampler(gl) });
+				if (!kept.has(gl))
+					kept.set(gl, {
+						programs,
+						sampler: makeSampler(gl),
+						unit: host.unit(programs.blur, 0, 1),
+					});
 			});
 			preparing.set(gl, ready);
 		}
@@ -100,13 +110,12 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 	};
 	const run: CubeGenerator['run'] = (host, target, size, levels, read) => {
 		const { gl } = host;
-		const { programs, sampler } = keep(host);
+		const { programs, sampler, unit } = keep(host);
 		const alignment = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT) as number;
 		const stride = Math.ceil(STEP_BYTES / alignment) * alignment;
 		const [steps, values] = roomSteps(size, levels, stride);
-		// The source's texture unit and the step values' uniform block binding, as the shader binds
-		// them. Every texture binds on that unit, the only one that the generator changes.
-		const unit = host.slot(0, 1);
+		// The step values' uniform block binding, as the shader binds it. Every texture binds on the
+		// source's unit, the only one that the generator changes.
 		const binding = host.slot(0, 0);
 		gl.activeTexture(gl.TEXTURE0 + unit);
 		const made: WebGLTexture[] = [];

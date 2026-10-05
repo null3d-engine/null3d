@@ -93,6 +93,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, if the device supports it |
 | `?threads=off` | Single-threaded build |
 | `?render=main` | Render on the main thread |
+| `?display-check=off` | Where the main thread draws, stop the two frame callbacks that draw nothing now and then to measure the display's refresh rate while the frames run slower than it, to measure their cost (`guides/testing`) |
 | `?sketch-thread=main` | Run the sketch on the main thread, over the `sketchThread` option |
 | `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without `KHR_parallel_shader_compile` do |

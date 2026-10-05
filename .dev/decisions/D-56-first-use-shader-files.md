@@ -188,6 +188,7 @@ The owner decided on 4 October 2026 that a game can have every shader it needs b
 
 - Each file of a feature that loads on first use has the limits of one start shader file (`FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts`). The size report lists each such file in a section of its own, and no start counts it.
 - One copy of each shader file serves every bundle of a build, as "Copies in a production build" says.
+- Each device module writes once each paragraph that several of its sources share. So a file that loads on first use is about a third of its old size uncompressed ([D-13](D-13-shader-variants.md#addendum-2026-10-05-paragraphs-that-sources-share)).
 - A page that imports the engine but draws nothing still gets the files. Vite emits each worker and each address while it transforms the page's module, before it drops unused code. That needs the add-on and package work of [D-52](D-52-intent-parity.md), and stays open.
 - The engine's own test template, `texcoords`, loads on first use too, so no page downloads it. That settles review findings R7-04 and R5-16.
 
