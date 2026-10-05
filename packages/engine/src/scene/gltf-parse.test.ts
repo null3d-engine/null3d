@@ -488,6 +488,39 @@ describe('materials, textures and lights', () => {
 		expect(data.images[0]?.bytes?.length).toBe(ktx2.length);
 	});
 
+	test('EXT_texture_webp and EXT_texture_avif name the image of a texture, after KTX2', () => {
+		const b = shipBuilder()
+			.uses('EXT_texture_webp', true)
+			.uses('EXT_texture_avif', true)
+			.uses('KHR_texture_basisu');
+		b.json.images = ['image/png', 'image/webp', 'image/avif', 'image/ktx2'].map((mimeType, k) => ({
+			bufferView: b.view(new Uint8Array([k])),
+			mimeType,
+		}));
+		const webp = { EXT_texture_webp: { source: 1 } };
+		const avif = { EXT_texture_avif: { source: 2 } };
+		const basisu = { KHR_texture_basisu: { source: 3 } };
+		b.json.textures = [
+			{ source: 0, extensions: webp },
+			{ source: 0, extensions: avif },
+			{ extensions: { ...avif, ...webp } },
+			{ source: 0, extensions: { ...avif, ...basisu } },
+			{ source: 0 },
+		];
+		const slots = ['baseColorTexture', 'metallicRoughnessTexture'] as const;
+		b.json.materials = b.json.textures.map((_: unknown, k: number) => ({
+			pbrMetallicRoughness: { [slots[k % 2] as string]: { index: k } },
+		}));
+		const data = parse(b.glb());
+		// Each material's map names its image: WebP, AVIF, WebP before AVIF, KTX2 before both, and
+		// the texture's own source without an extension.
+		const images = data.materials.map(({ maps }, k) => {
+			const use = data.textures[(k % 2 ? maps.metalnessRoughnessMap : maps.map) ?? -1];
+			return use && data.images[use.image]?.mimeType;
+		});
+		expect(images).toEqual(['image/webp', 'image/avif', 'image/webp', 'image/ktx2', 'image/png']);
+	});
+
 	test('lights keep glTF units, and spot cones take three.js penumbras', () => {
 		const b = shipBuilder().uses('KHR_lights_punctual');
 		b.json.extensions = {

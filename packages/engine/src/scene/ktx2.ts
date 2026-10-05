@@ -2,8 +2,9 @@
 // KTX2 identifier, so a page without KTX2 files downloads none of this, nor the transcoder.
 //
 // The sketch thread reads the file's header and picks the format that the device samples best:
-// ASTC, BC7 or ETC2 where the device has them, and RGBA8 elsewhere. The Basis Universal
-// transcoder then turns the file's ETC1S or UASTC data into that format in a worker of its own,
+// ASTC, BC7 or ETC2 where the device has them, and RGBA8 elsewhere. High dynamic range data
+// (UASTC HDR) becomes BC6H where the device has BC formats, and shared-exponent floats elsewhere.
+// The Basis Universal transcoder then turns the file's data into that format in a worker of its own,
 // outside the sketch's frames, and hands back every mip level. The texels go into engine memory,
 // and upload a band of rows of blocks per frame as data does.
 //
@@ -24,13 +25,7 @@ import {
 } from '../generated/core';
 import type { LoadTextureOptions } from './assets';
 import { FILE_LIMITS } from './file-limits';
-import type {
-	CompressedTextureFormat,
-	Texture,
-	TextureColorSpace,
-	TextureFormat,
-	Textures,
-} from './textures';
+import type { CompressedTextureFormat, Texture, TextureColorSpace, Textures } from './textures';
 
 /**
  * The transcoder's files. Bundlers copy each as it is and give the copy's address. `no-inline`
@@ -41,8 +36,8 @@ const WORKER = new URL('../workers/transcoder-worker.js?no-inline', import.meta.
 const GLUE = new URL('../../vendor/basis/basis_transcoder.js?no-inline', import.meta.url);
 const WASM = new URL('../../vendor/basis/basis_transcoder.wasm?no-inline', import.meta.url);
 
-/** The data that a KTX2 file holds: Basis Universal's two codecs. */
-export type Ktx2Codec = 'etc1s' | 'uastc';
+/** The data that a KTX2 file holds: Basis Universal's codecs of color, and UASTC HDR. */
+export type Ktx2Codec = 'etc1s' | 'uastc' | 'uastc-hdr';
 
 /** What the engine reads from a KTX2 file's header. */
 export interface Ktx2Header {
@@ -61,8 +56,15 @@ export interface Ktx2Header {
 
 /** A format that the transcoder writes: its name in the transcoder, and the texture's format. */
 export interface Ktx2Target {
-	transcoder: 'cTFASTC_4x4_RGBA' | 'cTFBC7_RGBA' | 'cTFETC1_RGB' | 'cTFETC2_RGBA' | 'cTFRGBA32';
-	format: TextureFormat | CompressedTextureFormat;
+	transcoder:
+		| 'cTFASTC_4x4_RGBA'
+		| 'cTFBC6H'
+		| 'cTFBC7_RGBA'
+		| 'cTFETC1_RGB'
+		| 'cTFETC2_RGBA'
+		| 'cTFRGBA32'
+		| 'cTFRGB_9E5';
+	format: 'rgba8unorm' | 'rgb9e5ufloat' | CompressedTextureFormat;
 }
 
 const ASTC: Ktx2Target = { transcoder: 'cTFASTC_4x4_RGBA', format: 'astc-4x4-unorm' };
@@ -71,6 +73,9 @@ const BC7: Ktx2Target = { transcoder: 'cTFBC7_RGBA', format: 'bc7-rgba-unorm' };
 const ETC2_RGB: Ktx2Target = { transcoder: 'cTFETC1_RGB', format: 'etc2-rgb8unorm' };
 const ETC2_RGBA: Ktx2Target = { transcoder: 'cTFETC2_RGBA', format: 'etc2-rgba8unorm' };
 const RGBA8: Ktx2Target = { transcoder: 'cTFRGBA32', format: 'rgba8unorm' };
+const BC6H: Ktx2Target = { transcoder: 'cTFBC6H', format: 'bc6h-rgb-ufloat' };
+/** Shared-exponent floats: half the memory of `rgba16float`, and every path filters them. */
+const RGB9E5: Ktx2Target = { transcoder: 'cTFRGB_9E5', format: 'rgb9e5ufloat' };
 
 /** Texels on each side of a block of every compressed format. */
 const BLOCK = 4;
@@ -78,6 +83,7 @@ const BLOCK = 4;
 /** Bytes of one block of each compressed format. */
 const BLOCK_BYTES: Record<CompressedTextureFormat, number> = {
 	'astc-4x4-unorm': 16,
+	'bc6h-rgb-ufloat': 16,
 	'bc7-rgba-unorm': 16,
 	'etc2-rgb8unorm': 8,
 	'etc2-rgba8unorm': 16,
@@ -96,6 +102,7 @@ const SUPERCOMPRESSION_ZSTANDARD = 2;
 const MODEL_ETC1S = 163;
 const MODEL_UASTC = 166;
 const MODEL_UASTC_HDR = 167;
+const VK_FORMAT_ASTC_4X4_SFLOAT = 1000066000;
 const TRANSFER_SRGB = 2;
 const ETC1S_CHANNEL_AAA = 15;
 const UASTC_CHANNEL_RGBA = 3;
@@ -113,7 +120,7 @@ function refuse(reason: string): never {
 
 /**
  * Reads a KTX2 file's header, and throws a `Ktx2Refusal` for a file that the engine does not
- * load: one without ETC1S or UASTC data, a cube map or a 3D texture.
+ * load: one without ETC1S, UASTC or UASTC HDR data, a cube map or a 3D texture.
  */
 export function readKtx2Header(file: Uint8Array): Ktx2Header {
 	if (file.length < HEADER_BYTES || IDENTIFIER.some((byte, k) => file[k] !== byte))
@@ -123,16 +130,17 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
 	const [vkFormat, width, height, depth] = [word(12), word(20), word(24), word(28)];
 	const [layers, faces, levels, supercompression] = [word(32), word(36), word(40), word(44)];
 	const [dfd, dfdBytes] = [word(48), word(52)];
-	if (vkFormat !== 0)
+	if (dfd + dfdBytes > file.length || dfdBytes < 4 + DESCRIPTOR_BYTES + SAMPLE_BYTES)
+		refuse('its data format descriptor is cut short');
+	const model = file[dfd + 12];
+	// UASTC HDR blocks are ASTC HDR blocks, so Basis Universal names that format for them.
+	if (vkFormat !== 0 && !(model === MODEL_UASTC_HDR && vkFormat === VK_FORMAT_ASTC_4X4_SFLOAT))
 		refuse(
-			`it holds texels in Vulkan format ${vkFormat}, and the engine loads KTX2 files of Basis Universal data, in ETC1S or UASTC`,
+			`it holds texels in Vulkan format ${vkFormat}, and the engine loads KTX2 files of Basis Universal data, in ETC1S, UASTC or UASTC HDR`,
 		);
 	if (depth > 0) refuse('it holds a 3D texture');
 	if (faces !== 1) refuse('it holds a cube map');
 	if (width === 0 || height === 0) refuse('it has no texels');
-	if (dfd + dfdBytes > file.length || dfdBytes < 4 + DESCRIPTOR_BYTES + SAMPLE_BYTES)
-		refuse('its data format descriptor is cut short');
-	const model = file[dfd + 12];
 	const blockBytes = word(dfd + 8) >>> 16;
 	const samples = Math.floor((blockBytes - DESCRIPTOR_BYTES) / SAMPLE_BYTES);
 	const channel = (sample: number) =>
@@ -151,11 +159,25 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
 			refuse(`its UASTC data has supercompression scheme ${supercompression}`);
 		codec = 'uastc';
 		alpha = channel(0) === UASTC_CHANNEL_RGBA || channel(0) === UASTC_CHANNEL_RRRG;
+	} else if (model === MODEL_UASTC_HDR) {
+		if (
+			supercompression !== SUPERCOMPRESSION_NONE &&
+			supercompression !== SUPERCOMPRESSION_ZSTANDARD
+		)
+			refuse(`its UASTC HDR data has supercompression scheme ${supercompression}`);
+		// The formats it becomes hold no alpha, and its values are linear whatever the file says.
+		return {
+			width,
+			height,
+			layers: Math.max(1, layers),
+			levels: Math.max(1, levels),
+			codec: 'uastc-hdr',
+			alpha: false,
+			colorSpace: 'linear',
+		};
 	} else
 		refuse(
-			model === MODEL_UASTC_HDR
-				? 'it holds UASTC HDR data, and the engine loads ETC1S and UASTC LDR data'
-				: `it holds data of color model ${model}, and the engine loads ETC1S and UASTC data`,
+			`it holds data of color model ${model}, and the engine loads ETC1S, UASTC and UASTC HDR data`,
 		);
 	return {
 		width,
@@ -172,18 +194,22 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
  * The format that a file's data becomes on a device with `capabilities`: UASTC keeps the most
  * detail in ASTC, then BC7, then ETC2. ETC1S data is ETC1, so it becomes ETC2 first, at half the
  * memory without alpha, then BC7 and ASTC. A device without these, or a texture whose size is not
- * a whole number of blocks, gets RGBA8.
+ * a whole number of blocks, gets RGBA8. UASTC HDR data becomes BC6H on a device with BC, and
+ * shared-exponent floats elsewhere, which every path filters: WebGPU and WebGL2 have no ASTC HDR.
  *
  * On WebGL2, a device with BC takes BC7 first for both codecs. Desktop GPUs have BC, and some
  * desktop drivers (Mesa on Linux) offer ETC2 and ASTC on GPUs that lack them, then decode such
- * textures in software on the page's thread. WebGPU offers each family only where the GPU has it.
+ * textures in software on the page's thread. The choice reads the device's formats alone, never
+ * its GPU's name, which some browsers hide. WebGPU offers each family only where the GPU has it.
  */
 export function ktx2Target(
 	capabilities: number,
 	{ codec, alpha, width, height }: Pick<Ktx2Header, 'codec' | 'alpha' | 'width' | 'height'>,
 	webgl2 = false,
 ): Ktx2Target {
-	if (width % BLOCK !== 0 || height % BLOCK !== 0) return RGBA8;
+	const blocks = width % BLOCK === 0 && height % BLOCK === 0;
+	if (codec === 'uastc-hdr') return blocks && capabilities & CAPABILITY_TEXTURE_BC ? BC6H : RGB9E5;
+	if (!blocks) return RGBA8;
 	if (webgl2 && capabilities & CAPABILITY_TEXTURE_BC) return BC7;
 	const etc2 = alpha ? ETC2_RGBA : ETC2_RGB;
 	const order: readonly [number, Ktx2Target][] =
@@ -209,7 +235,7 @@ export function ktx2Target(
  */
 export function ktx2TooLarge(
 	header: Pick<Ktx2Header, 'width' | 'height' | 'layers' | 'levels'>,
-	format: TextureFormat | CompressedTextureFormat,
+	format: Ktx2Target['format'],
 	maxSize: number,
 	limits = FILE_LIMITS,
 ): string | undefined {
@@ -229,7 +255,7 @@ export function ktx2TooLarge(
 
 /** The bytes that the transcoder writes for `levels` mip levels of `layers` layers in `format`. */
 export function transcodedBytes(
-	format: TextureFormat | CompressedTextureFormat,
+	format: Ktx2Target['format'],
 	width: number,
 	height: number,
 	levels: number,
@@ -240,7 +266,7 @@ export function transcodedBytes(
 		const w = Math.max(1, width >> level);
 		const h = Math.max(1, height >> level);
 		bytes +=
-			format === 'rgba8unorm' || format === 'rgba16float'
+			format === 'rgba8unorm' || format === 'rgb9e5ufloat'
 				? w * h * 4
 				: Math.ceil(w / BLOCK) * Math.ceil(h / BLOCK) * BLOCK_BYTES[format];
 	}
@@ -412,10 +438,13 @@ export async function loadKtx2(
 	const tooLarge = ktx2TooLarge({ ...header, levels }, target.format, textures.maxSize);
 	if (tooLarge)
 		throw error('E1412', `${call}() could not load ${address} as a KTX2 texture: ${tooLarge}.`);
-	const compressed = CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_BC | CAPABILITY_TEXTURE_ETC2;
-	if (DEV && target === RGBA8 && textures.capabilities & compressed)
+	const compressed =
+		header.codec === 'uastc-hdr'
+			? CAPABILITY_TEXTURE_BC
+			: CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_BC | CAPABILITY_TEXTURE_ETC2;
+	if (DEV && (target === RGBA8 || target === RGB9E5) && textures.capabilities & compressed)
 		console.warn(
-			`${call}() loads ${address} as uncompressed RGBA8, which takes ${Math.ceil(transcodedBytes(RGBA8.format, width, height, levels, layers) / 1024)} KB: its size, ${width} x ${height}, is not a whole number of 4 x 4 blocks. Save it at a size whose sides are multiples of 4, as the asset tool does.`,
+			`${call}() loads ${address} as uncompressed ${target.format}, which takes ${Math.ceil(transcodedBytes(target.format, width, height, levels, layers) / 1024)} KB: its size, ${width} x ${height}, is not a whole number of 4 x 4 blocks. Save it at a size whose sides are multiples of 4, as the asset tool does.`,
 		);
 	const texels = await transcoderOfThisThread(error).transcode(
 		file,

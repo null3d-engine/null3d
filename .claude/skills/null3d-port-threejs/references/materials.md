@@ -117,7 +117,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `premultiplyAlpha` | `premultipliedAlpha` |
 | `needsUpdate = true` after changing pixels | `texture.update(bitmap)`, or `texture.update(data)` for a texture from `textures.fromData` |
 
-Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files where the browser supports them. It also loads KTX2 files of ETC1S or UASTC data, in the device's compressed format. Convert PNG and JPEG textures to KTX2 with `basisu -mipmap`, or with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
+Texture formats: `loadTexture` decodes PNG, JPEG, WebP and AVIF files. It also loads KTX2 files of ETC1S or UASTC data, in the device's compressed format. KTX2 files of UASTC HDR data (0.2) load too, as with three.js's `KTX2Loader`. They become `bc6h-rgb-ufloat` where the device has BC formats, and `rgb9e5ufloat` elsewhere. three.js uses ASTC HDR or half floats there. They stay linear, so keep tone mapping on. glTF textures in `EXT_texture_webp` and `EXT_texture_avif` (0.2) load with no setup. Convert PNG and JPEG textures to KTX2 with `basisu -mipmap`, or with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
 
 ## 8. Recipes
 

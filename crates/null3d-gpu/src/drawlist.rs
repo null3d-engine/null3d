@@ -343,9 +343,13 @@ pub mod format {
     /// ambient occlusion's copy of the depth. WebGL2 calls it `R32F`, and draws into it with
     /// `EXT_color_buffer_float`.
     pub const R32_FLOAT: u32 = 20;
+    /// BC6H in blocks of 4 x 4 texels, 16 bytes each, with three unsigned half floats per texel
+    /// and no alpha: high dynamic range color in an eighth of the bytes of `RGBA16_FLOAT`
+    /// (`Capabilities::TEXTURE_BC`).
+    pub const BC6H_RGB_UFLOAT: u32 = 21;
 
     /// Every format.
-    pub const ALL: [u32; 21] = [
+    pub const ALL: [u32; 22] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -367,6 +371,7 @@ pub mod format {
         ETC2_RGBA8_UNORM_SRGB,
         RGB9E5_UFLOAT,
         R32_FLOAT,
+        BC6H_RGB_UFLOAT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -409,7 +414,7 @@ pub mod format {
     pub const fn capability(format: u32) -> Capabilities {
         match format {
             ASTC_4X4_UNORM | ASTC_4X4_UNORM_SRGB => Capabilities::TEXTURE_ASTC,
-            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB => Capabilities::TEXTURE_BC,
+            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB | BC6H_RGB_UFLOAT => Capabilities::TEXTURE_BC,
             ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB | ETC2_RGBA8_UNORM | ETC2_RGBA8_UNORM_SRGB => {
                 Capabilities::TEXTURE_ETC2
             }
@@ -420,7 +425,7 @@ pub mod format {
     /// Texels on each side of a block: 4 for the compressed formats, and 1 for the rest.
     pub const fn block_size(format: u32) -> u32 {
         match format {
-            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB => 4,
+            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB | BC6H_RGB_UFLOAT => 4,
             _ => 1,
         }
     }
@@ -437,6 +442,7 @@ pub mod format {
             | ASTC_4X4_UNORM_SRGB
             | BC7_RGBA_UNORM
             | BC7_RGBA_UNORM_SRGB
+            | BC6H_RGB_UFLOAT
             | ETC2_RGBA8_UNORM
             | ETC2_RGBA8_UNORM_SRGB => 16,
             _ => 0,
@@ -460,6 +466,12 @@ pub mod format {
     /// Bytes of one row of blocks of a mip level: a row of texels for an uncompressed format.
     pub const fn row_bytes(format: u32, width: u32, level: u32) -> u64 {
         blocks(format, width, level) as u64 * block_bytes(format) as u64
+    }
+
+    /// True for the formats whose textures get their texels from writes alone: the compressed
+    /// formats and `RGB9E5_UFLOAT`, which no path draws into or copies.
+    pub const fn writes_only(format: u32) -> bool {
+        is_compressed(format) || format == RGB9E5_UFLOAT
     }
 
     /// True for the formats whose mip levels `GenerateMipmaps` makes: 8-bit color, which every
@@ -1473,6 +1485,7 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
                 ("R32_FLOAT", format::R32_FLOAT),
+                ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
             ],
         ),
         (
@@ -2136,6 +2149,14 @@ mod tests {
             format::capability(format::BC7_RGBA_UNORM_SRGB),
             Capabilities::TEXTURE_BC
         );
+        // BC6H holds high dynamic range color in the same blocks of 16 bytes as BC7.
+        let bc6h = format::BC6H_RGB_UFLOAT;
+        assert!(format::is_compressed(bc6h));
+        assert_eq!(format::level_bytes(bc6h, 64, 32, 0), 16 * 8 * 16);
+        assert_eq!(format::capability(bc6h), Capabilities::TEXTURE_BC);
+        assert!(format::writes_only(bc6h));
+        assert!(format::writes_only(format::RGB9E5_UFLOAT));
+        assert!(!format::writes_only(format::RGBA16_FLOAT));
         assert_eq!(
             format::capability(format::RGBA8_UNORM),
             Capabilities::empty()

@@ -120,9 +120,10 @@ export class Assets {
 
 	/**
 	 * Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a
-	 * texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it
-	 * supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the
-	 * device supports, with the file's mip levels, and the first KTX2 file loads the transcoder.
+	 * texture from it. The browser decodes PNG, JPEG, WebP and AVIF files. A KTX2 file of ETC1S or
+	 * UASTC data becomes the compressed format that the device supports, with the file's mip
+	 * levels, and UASTC HDR data becomes BC6H or shared-exponent floats. The first KTX2 file loads
+	 * the transcoder.
 	 * Throws E1411 when the file does not download, E1413 when a server of another origin does not
 	 * allow the page to read it, E1412 when the file does not decode or passes a limit of the
 	 * engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the
@@ -521,8 +522,8 @@ async function loadModule(address: URL, call: string): Promise<typeof import('./
 const HEADER_BYTES = 1 << 20;
 
 /**
- * Decodes an image file as `options` ask, or throws E1412. A PNG or JPEG file whose header gives a
- * side longer than `maxSide` fails before the browser decodes it.
+ * Decodes an image file as `options` ask, or throws E1412. A PNG, JPEG, WebP or AVIF file whose
+ * header gives a side longer than `maxSide` fails before the browser decodes it.
  */
 async function decode(
 	blob: Blob,
