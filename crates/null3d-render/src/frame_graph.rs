@@ -37,8 +37,8 @@
 //!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
-//! scene color and draws the canvas: it applies the exposure and the tone mapping, and encodes the
-//! color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
+//! scene color, which holds exposed color, and draws the canvas: it applies the tone mapping, and
+//! encodes the color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
 //! instead: the render pass that draws the scene resolves its multisampled color straight into
 //! the canvas, with no pass, copy or target of its own. With one sample, or while the render scale
 //! can drop below the whole canvas, the final pass copies the scene color into the canvas. In the
@@ -370,6 +370,10 @@ pub(crate) struct FrameGraph {
     bloom_passes: Vec<PassId>,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
+    /// True once bloom's pipelines draw: built, after the frame whose list created them.
+    bloom_built: bool,
+    /// True once ambient occlusion's pipelines draw: built, after the frame whose list created them.
+    ao_built: bool,
     /// The size of bloom's base and the governor's halvings of it.
     bloom_chain: ChainFrame,
     /// The texture that each of bloom's steps reads, and the base level's, found once for each
@@ -461,6 +465,8 @@ impl FrameGraph {
             bloom_passes: Vec::new(),
             bloom_ids: ids.bloom,
             bloom: None,
+            bloom_built: false,
+            ao_built: false,
             bloom_chain: ChainFrame::default(),
             bloom_textures: None,
             ao_pass: None,
@@ -553,8 +559,16 @@ impl FrameGraph {
     /// from, or `None` while ambient occlusion draws no frame. Valid once the frame's
     /// [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn ao_texture(&self) -> Option<u32> {
-        self.ao
-            .and_then(|_| self.sampled_id(AO_TARGETS[ao::STEPS - 1]))
+        self.ao_draws()
+            .then(|| self.sampled_id(AO_TARGETS[ao::STEPS - 1]))
+            .flatten()
+    }
+
+    /// True while ambient occlusion draws: the sketch turned it on, and its pipelines are built.
+    /// Until then the prepass runs, so its pipelines build too, and the opaque pass reads no
+    /// ambient occlusion.
+    pub(crate) fn ao_draws(&self) -> bool {
+        self.ao.is_some() && self.ao_built
     }
 
     /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
@@ -624,7 +638,7 @@ impl FrameGraph {
         } else {
             0
         };
-        let ao = if self.ao.is_some() {
+        let ao = if self.ao_draws() {
             AoPass::UPLOAD_BYTES
         } else {
             0
@@ -728,8 +742,14 @@ impl FrameGraph {
         self.bloom_textures = None;
     }
 
-    /// True while bloom draws: the sketch turned it on, and the scene color holds HDR color.
+    /// True while bloom draws: the sketch turned it on, the scene color holds HDR color, and
+    /// bloom's pipelines are built.
     pub(crate) fn bloom_draws(&self) -> bool {
+        self.bloom_wanted() && self.bloom_built
+    }
+
+    /// True while the sketch turns bloom on and the scene color holds HDR color.
+    fn bloom_wanted(&self) -> bool {
         self.bloom.is_some() && self.bloom_pass.is_some()
     }
 
@@ -848,7 +868,7 @@ impl FrameGraph {
                 if self.skins() {
                     prepass = prepass.reads(SKINNED);
                 }
-                let occludes = index == ViewId::CAMERA.index() && self.ao.is_some();
+                let occludes = index == ViewId::CAMERA.index() && self.ao_draws();
                 if occludes {
                     prepass = prepass.creates(PREPASS_COLOR, color);
                 }
@@ -1084,17 +1104,48 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's. A builder
-    /// asks before it records the pipelines that its frame creates. Frames that resolve into the
-    /// canvas ask too, so the pipeline is ready once the render scale can drop.
-    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
-        let blooms = self.bloom_draws();
-        self.final_pass.request_pipeline(pipelines, blooms);
-        if self.ao.is_some() {
-            self.ao_steps().request_pipelines(pipelines);
+    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's, and those of
+    /// bloom and ambient occlusion while the sketch turns them on. A builder asks before it records
+    /// the pipelines that its frame creates. Frames that resolve into the canvas ask too, so the
+    /// pipeline is ready once the render scale can drop. Bloom's and ambient occlusion's passes
+    /// draw once their pipelines are built, by `pipelines_built`, the newest frame that the thread
+    /// that draws drew with every pipeline built. Until then the frame keeps its passes without
+    /// them: a pass whose pipeline still builds, or waits for its shader file, draws nothing, and a
+    /// final pass that draws nothing leaves the canvas without its frame.
+    pub(crate) fn request_pipelines(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) {
+        let wanted = self.bloom_wanted();
+        let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
+        let built = match (wanted, final_bloom, self.bloom_pass.as_mut()) {
+            (true, Some(final_bloom), Some(bloom)) => {
+                let (down, up) = bloom.request_pipelines(pipelines);
+                pipelines.built(down, pipelines_built)
+                    && pipelines.built(up, pipelines_built)
+                    && pipelines.built(final_bloom, pipelines_built)
+            }
+            _ => false,
+        };
+        let ao_built = self.ao.is_some() && {
+            let steps = self.ao_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        if ao_built != self.ao_built {
+            let was = self.ao_draws();
+            self.ao_built = ao_built;
+            if self.ao_draws() != was {
+                self.declared = false;
+            }
         }
-        if let (true, Some(bloom)) = (blooms, self.bloom_pass.as_mut()) {
-            bloom.request_pipelines(pipelines);
+        if built != self.bloom_built {
+            let was = self.bloom_draws();
+            self.bloom_built = built;
+            if self.bloom_draws() != was {
+                self.enable_outputs();
+            }
         }
     }
 
@@ -1128,7 +1179,8 @@ impl FrameGraph {
             );
             match (self.bloom, self.bloom_pass.as_mut()) {
                 (Some(settings), Some(pass)) => {
-                    pass.prepare(list, arena, canvas, scale, chain, settings, &sources, made)?;
+                    let bloom = (settings, output.exposure);
+                    pass.prepare(list, arena, canvas, scale, chain, bloom, &sources, made)?;
                     Some(BloomInputs::new(pass.ids(), base))
                 }
                 _ => None,
@@ -1148,7 +1200,7 @@ impl FrameGraph {
         self.final_pass.prepare(
             list,
             arena,
-            output,
+            output.tone_mapping,
             render_size,
             scene_color,
             bloom,
@@ -1195,7 +1247,7 @@ impl FrameGraph {
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<(), RecordError> {
-        let Some(settings) = self.ao else {
+        let Some(settings) = self.ao.filter(|_| self.ao_built) else {
             return Ok(());
         };
         let id = |name: &str| {
@@ -2025,7 +2077,7 @@ mod tests {
 
         let chain = ChainFrame::default();
         frames.set_bloom(Some(Bloom::default()), chain);
-        frames.request_pipelines(&mut PipelineCache::default());
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
@@ -2131,7 +2183,7 @@ mod tests {
             },
         );
         frames.sync_views(&[View::default()]);
-        frames.request_pipelines(&mut PipelineCache::default());
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
@@ -2146,6 +2198,42 @@ mod tests {
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+    }
+
+    #[test]
+    fn bloom_draws_after_the_first_frame_only_once_its_pipelines_are_built() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        let mut list = DrawList::with_capacity(4096);
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        // The sketch turns bloom on in frame 5, after the thread that draws drew frame 3.
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 3);
+        pipelines.create_new(&mut list, 5).unwrap();
+        assert!(!frames.bloom_draws(), "bloom waits for its pipelines");
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames).last().unwrap(), &["Final"]);
+        frames.request_pipelines(&mut pipelines, 4);
+        assert!(!frames.bloom_draws());
+        frames.request_pipelines(&mut pipelines, 5);
+        assert!(
+            frames.bloom_draws(),
+            "bloom draws once a frame drew them built"
+        );
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames).last().unwrap(), &["FinalBloom"]);
+        frames.set_bloom(None, ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 6);
+        assert!(!frames.bloom_draws());
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.request_pipelines(&mut pipelines, 6);
+        assert!(frames.bloom_draws(), "built pipelines draw at once");
     }
 
     #[test]
@@ -2168,7 +2256,7 @@ mod tests {
             assert_eq!(steps(&frames), without);
 
             frames.set_outline(Some(Outline::default()), true);
-            frames.request_pipelines(&mut PipelineCache::default());
+            frames.request_pipelines(&mut PipelineCache::default(), 0);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
@@ -2271,8 +2359,8 @@ mod tests {
                 frames.depth_prepass(),
                 "ambient occlusion needs the prepass's depth"
             );
+            frames.request_pipelines(&mut PipelineCache::default(), 0);
             frames.sync_views(&[View::default(), View::default()]);
-            frames.request_pipelines(&mut PipelineCache::default());
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();

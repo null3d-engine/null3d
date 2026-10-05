@@ -65,12 +65,15 @@ fn on_and_off<B: FrameBuilder>(renderer: B, depth_template: u32) {
     let before = passes(&world.step(&mut mock, false), &made);
 
     world.renderer.settings_mut().set_ao(Some(Ao::default()));
-    let first = world.step(&mut mock, false);
-    note_pipelines(&first, &mut made);
-    let created = templates(&first);
+    let asked = world.step(&mut mock, false);
+    note_pipelines(&asked, &mut made);
+    let created = templates(&asked);
     for template in [depth_template, template::AO, template::AO_DENOISE] {
         assert!(created.contains(&template), "{template} in {created:?}");
     }
+    // The steps draw from the frame after the one that created their pipelines, once the thread
+    // that draws has built them; until then the frame keeps the opaque pass without them.
+    let first = world.step(&mut mock, false);
     let groups: Vec<u32> = first
         .iter()
         .filter(|(op, _)| *op == Op::CreateBindGroup)
@@ -103,9 +106,11 @@ fn on_and_off<B: FrameBuilder>(renderer: B, depth_template: u32) {
     );
     assert_eq!(with.len(), before.len() + 4);
 
-    // A new GPU, as after a device loss and in hold mode's last frame, gets every object again.
+    // A new GPU, as after a device loss, builds the steps' pipelines again. The first frame on it
+    // keeps the opaque pass without them, and the next draws them again.
     world.renderer.reset_gpu();
     let mut fresh = MockBackend::with_capabilities(Capabilities::MSAA_FLOAT16);
+    world.step(&mut fresh, false);
     let again = passes(&world.step(&mut fresh, false), &made);
     assert_eq!(again, with);
     mock = fresh;

@@ -163,7 +163,7 @@ export class Ui {
 				const at = table + slot * LABEL_WORDS;
 				let state = (generations[slot] as number) << GENERATION_SHIFT;
 				const object = objects[slot];
-				if (object !== undefined && object.destroyedFrame >= 0) {
+				if (object !== undefined && object.destroyedFrame !== -1) {
 					this.release(slot);
 					state = (generations[slot] as number) << GENERATION_SHIFT;
 				} else if (

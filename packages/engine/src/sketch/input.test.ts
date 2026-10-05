@@ -146,6 +146,15 @@ describe('input: the ring', () => {
 		expect(edges(input, 'ShiftLeft')).toEqual({ down: true, pressed: true, released: false });
 	});
 
+	it('counts a full ring of unread events as written over, since the page writes the next into it', () => {
+		const { input, next, key, pointer } = setup();
+		key(EVENT_KEY_DOWN, 'ShiftLeft');
+		next();
+		for (let k = 0; k < INPUT_RING_EVENTS; k++) pointer(EVENT_POINTER_MOVE, k, k, 1);
+		next();
+		expect(edges(input, 'ShiftLeft')).toEqual({ down: false, pressed: false, released: true });
+	});
+
 	it('writes each event with the frame on screen, and tells the page when half the ring waits', () => {
 		const { views, ring, input, next, pointer } = setup();
 		Atomics.store(views.slots, Slot.FramePresented, 42);

@@ -284,8 +284,24 @@ export interface InstantiateOptions extends NodeOptions {
 export interface LightOptions extends NodeOptions {
 	/** The light's color. The default is white. */
 	color?: ColorInput;
-	/** A factor that scales the color. The default is 1. */
+	/**
+	 * A factor that scales the color, in three.js's units unless the options name another unit.
+	 * The default is 1.
+	 */
 	intensity?: number;
+}
+
+/**
+ * Options for `scene.createAmbientLight`.
+ *
+ * @category api/lights
+ */
+export interface AmbientLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches every surface. It is three.js's
+	 * unit too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 }
 
 /**
@@ -294,6 +310,11 @@ export interface LightOptions extends NodeOptions {
  * @category api/lights
  */
 export interface DirectionalLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches a surface facing the light, such
+	 * as 100,000 for direct sunlight. It is three.js's unit too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 	/**
 	 * The direction the light travels, relative to the parent. The default, (0, -1, 0), points
 	 * straight down. It sets the light's rotation, so it wins over `rotation`.
@@ -353,6 +374,13 @@ export interface DirectionalShadowOptions {
  * @category api/lights
  */
 export interface PointLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity and of `setIntensity`: `'lumen'`, the light's whole output, such
+	 * as 800 for a 60 W bulb. The engine divides it by 4π for a point light, and by π for a spot
+	 * light at any cone angle, as three.js's `power` and Filament do. Without it, the intensity is
+	 * in candela, three.js's unit.
+	 */
+	intensityUnit?: 'lumen';
 	/**
 	 * The distance in meters where the light ends, above 0. Every point light needs one, because the
 	 * engine finds the lights near each surface by their ranges.
@@ -436,12 +464,44 @@ export interface HemisphereLightOptions extends NodeOptions {
 	groundColor?: ColorInput;
 	/** A factor that scales both colors. The default is 1. */
 	intensity?: number;
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches a surface. It is three.js's unit
+	 * too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 }
 
 /** The options of any light, as the scene's shared create path reads them. */
 type AnyLightOptions = LightOptions &
-	Partial<Omit<SpotLightOptions, keyof LightOptions>> &
-	Pick<DirectionalLightOptions, 'shadow'>;
+	Partial<Omit<SpotLightOptions, keyof LightOptions | 'intensityUnit'>> &
+	Pick<DirectionalLightOptions, 'shadow'> & { intensityUnit?: 'lumen' | 'lux' };
+
+/**
+ * The candela of one lumen of a point or spot light, by kind, as three.js's `power` and Filament
+ * convert them: a point light spreads its lumens over the whole sphere, 4π steradians, and a spot
+ * light over π, whatever its cone, so a narrower cone keeps the light's brightness.
+ */
+const CANDELA_PER_LUMEN: Readonly<Record<number, number>> = {
+	[C.LIGHT_KIND_POINT]: 1 / (4 * Math.PI),
+	[C.LIGHT_KIND_SPOT]: 1 / Math.PI,
+};
+
+/** The unit that each kind of light takes besides three.js's own. */
+const LIGHT_UNITS: Readonly<Record<number, 'lumen' | 'lux'>> = {
+	[C.LIGHT_KIND_DIRECTIONAL]: 'lux',
+	[C.LIGHT_KIND_POINT]: 'lumen',
+	[C.LIGHT_KIND_SPOT]: 'lumen',
+	[C.LIGHT_KIND_HEMISPHERE]: 'lux',
+	[C.LIGHT_KIND_AMBIENT]: 'lux',
+};
+
+/**
+ * The factor that turns an intensity in `unit` into three.js's unit for a light of `kind`: candela
+ * for point and spot lights, and lux for the others. Without a unit, or in lux, the factor is 1.
+ */
+function intensityScale(kind: number, unit: 'lumen' | 'lux' | undefined): number {
+	return unit === 'lumen' ? (CANDELA_PER_LUMEN[kind] ?? 1) : 1;
+}
 
 /** The numbers of a light's options, and their codes in the light table. */
 const LIGHT_NUMBERS = [
@@ -581,9 +641,14 @@ export class Object3D implements Described {
 	/** @internal The object's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly scene: Scene,
-		/** @internal */ readonly handle: number,
+		/**
+		 * @internal The object's handle. Once the object is destroyed, it holds a generation that the
+		 * core never gives a live object, so a later call never reaches another object in its slot.
+		 */
+		public handle: number,
 		/** The name from the create options, or an empty string. */
 		readonly name: string,
 	) {
@@ -815,7 +880,7 @@ export class Object3D implements Described {
 	/** @internal The live parent, or null for a root. */
 	get liveParent(): Object3D | null {
 		const parent = this.parentObject;
-		return parent && parent.destroyedFrame < 0 ? parent : null;
+		return parent && parent.destroyedFrame === -1 ? parent : null;
 	}
 
 	/**
@@ -885,12 +950,14 @@ export class Object3D implements Described {
 		}
 		this.animation?.release();
 		this.scene.forgetListeners(this);
-		// The core checks the handle's generation, so a second destroy frees no other object.
+		// The core checks the handle's generation, so a second destroy frees no other object, even
+		// once the slot's generations have come round.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
 		this.parentObject?.childObjects?.delete(this);
 		this.scene.forget(this);
+		this.handle |= C.HANDLE_DEAD_GENERATION << C.HANDLE_SLOT_BITS;
 	}
 
 	/**
@@ -951,7 +1018,7 @@ export class PrefabInstance extends Group {
 	 */
 	find(name: string): Object3D | undefined {
 		for (const object of this.objects)
-			if (object !== this && object.name === name && object.destroyedFrame < 0) return object;
+			if (object !== this && object.name === name && object.destroyedFrame === -1) return object;
 		return undefined;
 	}
 
@@ -1506,6 +1573,11 @@ export class Light extends Object3D {
 	id = 0;
 	/** @internal The light's color in linear RGB, before the intensity scales it. */
 	readonly linear = new Float64Array([1, 1, 1]);
+	/**
+	 * @internal What an intensity in the light's unit is in three.js's unit: 1, or the candela of
+	 * one lumen for a point or spot light in lumens.
+	 */
+	unitScale = 1;
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
@@ -1517,6 +1589,7 @@ export class Light extends Object3D {
 		const { core } = this.scene;
 		twin.id = core.checkGrowth(core.glue.copyLight(this.id, handle), 'clone', this.label);
 		twin.linear.set(this.linear);
+		twin.unitScale = this.unitScale;
 		return twin;
 	}
 
@@ -1525,9 +1598,9 @@ export class Light extends Object3D {
 		this.paint('setColor', C.LIGHT_COLOR_MAIN, color);
 	}
 
-	/** Sets the factor that scales the color. */
+	/** Sets the factor that scales the color, in the unit that the light was created with. */
 	setIntensity(intensity: number): void {
-		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity);
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity * this.unitScale);
 	}
 
 	/** Removes the light at the next frame. Its children become roots. */
@@ -1746,6 +1819,7 @@ export class InstanceBatch {
 	/** @internal The batch's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		private readonly scene: Scene,
 		/** @internal */ readonly id: number,
@@ -2058,6 +2132,7 @@ export class Scene {
 	private morphTable: Float32Array = new Float32Array(0);
 	private morphGeneration = -1;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
@@ -2100,7 +2175,7 @@ export class Scene {
 	 */
 	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
 		const camera = this.activeCamera;
-		const live = camera !== undefined && camera.destroyedFrame < 0 ? camera : undefined;
+		const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
 		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
 		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
 	}
@@ -2630,7 +2705,7 @@ export class Scene {
 		}
 		let write = this.reserveCommands(records, call);
 		const { core } = this;
-		const at = core.check(core.glue.reserveObjects(count), call);
+		const at = core.checkGrowth(core.glue.reserveObjects(count), call);
 		const handles = core.u32(at, count).slice();
 		const v = this.views;
 		const objects: Object3D[] = [];
@@ -2866,6 +2941,7 @@ export class Scene {
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('sprites');
 		const sprites = await loadSprites(call);
 		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
 		const id = core.checkGrowth(
@@ -2908,6 +2984,7 @@ export class Scene {
 		LINE_CHECKS.width(width, call);
 		LINE_CHECKS.values(options, call);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('lines');
 		const lines = await loadLines(call);
 		const parts = lines.lineParts(makers, core, this.lineMesh, options, LINE_CHECKS, call);
 		this.lineMesh = parts.mesh;
@@ -2998,6 +3075,12 @@ export class Scene {
 		options: AnyLightOptions,
 		call: string,
 	): T {
+		const { intensityUnit } = options;
+		if (DEV && intensityUnit !== undefined && intensityUnit !== LIGHT_UNITS[type])
+			throw new EngineError(
+				'E1213',
+				`${call}() got the intensity unit ${JSON.stringify(intensityUnit)}, and this light takes only '${LIGHT_UNITS[type]}'.`,
+			);
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
 		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call);
 		const { core } = this;
@@ -3008,11 +3091,16 @@ export class Scene {
 			light.destroy();
 			throw error;
 		}
+		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
-			if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
+			if (which === C.LIGHT_VALUE_INTENSITY) {
+				// An intensity in another unit, even the default of 1, is that unit's.
+				if (value !== undefined || light.unitScale !== 1)
+					light.write(call, which, (value ?? 1) * light.unitScale);
+			} else if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
 				light.write(call, which, value as number);
 		}
 		if (options.shadow) light.shadow(call, options.shadow);
@@ -3059,7 +3147,7 @@ export class Scene {
 	}
 
 	/** Light on every surface, from no direction. */
-	createAmbientLight(options: LightOptions = {}): AmbientLight {
+	createAmbientLight(options: AmbientLightOptions = {}): AmbientLight {
 		return this.createLight(AmbientLight, C.LIGHT_KIND_AMBIENT, options, 'createAmbientLight');
 	}
 
@@ -3074,6 +3162,7 @@ export class Scene {
 	setBackground(background: ColorInput | Texture): void {
 		const { glue } = this.core;
 		if (background instanceof Texture) {
+			this.makers?.materials.shaders.need('background');
 			const status = glue.setBackgroundTexture(background.handle);
 			this.core.check(status, 'setBackground', 'a texture', true);
 			return;

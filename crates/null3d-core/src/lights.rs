@@ -27,6 +27,10 @@
 //!   is computed in 64-bit floats, so lights far from the origin keep their precision. Each light
 //!   that survives writes a [`VisibleLight`] record to the visible list, in row order.
 //!
+//! Every color that the frame gets is the light's linear color times its intensity and the frame's
+//! exposure, so a light in real units, such as a sun of 100,000 lux at an exposure for EV100 15,
+//! gives the shaders values near 1, which a 16-bit float holds.
+//!
 //! Hemisphere lights are stored, and the frame does not read them yet.
 //!
 //! # Shadows
@@ -126,7 +130,7 @@ pub struct VisibleLight {
     pub position: [f32; 3],
     /// The distance in meters where its light ends.
     pub range: f32,
-    /// Its linear color times its intensity.
+    /// Its linear color times its intensity and the frame's exposure.
     pub color: [f32; 3],
     /// How fast its light fades with distance.
     pub decay: f32,
@@ -192,9 +196,10 @@ pub struct FrameLights {
     /// The direction the main directional light's light travels, of length 1. Straight down when
     /// there is no main light.
     pub sun_direction: [f32; 3],
-    /// The main directional light's linear color times its intensity: black when there is none.
+    /// The main directional light's linear color times its intensity and the exposure: black when
+    /// there is none.
     pub sun_color: [f32; 3],
-    /// The sum of the ambient lights' linear colors times their intensities.
+    /// The sum of the ambient lights' linear colors times their intensities, times the exposure.
     pub ambient: [f32; 3],
     /// The main directional light's shadows, or `None` when it casts none or there is no main
     /// light.
@@ -471,13 +476,15 @@ impl LightTable {
     }
 
     /// Gathers the lights of the frame whose world output is `parity`'s, for `view`, or for no
-    /// view: then every layer counts, and the visible and shadow lists stay empty. See the module
-    /// documentation. It allocates nothing.
+    /// view: then every layer counts, and the visible and shadow lists stay empty. Each color it
+    /// gives is multiplied by `exposure`, the frame's exposure. See the module documentation. It
+    /// allocates nothing.
     pub fn gather(
         &mut self,
         scene: &SceneStorage,
         parity: usize,
         view: Option<&LightView>,
+        exposure: f32,
     ) -> FrameLights {
         let mut frame = FrameLights::default();
         let mut main_order = None;
@@ -506,7 +513,7 @@ impl LightTable {
                 normal_bias,
                 ..,
             ] = row.values;
-            let lit = row.colors[color::MAIN as usize].map(|c| c * intensity);
+            let lit = row.colors[color::MAIN as usize].map(|c| c * intensity * exposure);
             match row.kind {
                 kind::AMBIENT => {
                     for (sum, add) in frame.ambient.iter_mut().zip(lit) {

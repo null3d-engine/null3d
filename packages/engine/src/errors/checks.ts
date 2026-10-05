@@ -1,13 +1,11 @@
-// Checks of the values that API calls get. Most callers run them inside `if (DEV)`: bundlers
-// replace `__NULL3D_DEV__` with false in release builds, so those checks become dead code and leave
-// the download. A check that passes allocates nothing, so setters can run it every frame.
+// Checks of the values that API calls get. Most callers run them inside `if (DEV)`: release builds
+// define the development flag as false, so those checks become dead code and leave the download. A
+// check that passes allocates nothing, so setters can run it every frame.
 
+import { DEV } from '../shared/dev';
 import { EngineError } from './engine-error';
 
-declare const __NULL3D_DEV__: boolean | undefined;
-
-/** True in development builds, and whenever no bundler has defined the constant. */
-export const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
+export { DEV };
 
 /** Something an error message can name, such as '"Player" (slot 12)'. */
 export interface Described {
@@ -44,7 +42,7 @@ export interface Destroyable extends Described {
  * on, or with `argument`, an object that the call got. Call it inside `if (DEV)`.
  */
 export function checkLive(call: string, target: Destroyable, argument = false): void {
-	if (target.destroyedFrame >= 0)
+	if (target.destroyedFrame !== -1)
 		throw new EngineError(
 			'E1101',
 			`${call}() ${argument ? 'got' : 'was called on'} ${target.describe()}, which was destroyed in frame ${target.destroyedFrame}.`,

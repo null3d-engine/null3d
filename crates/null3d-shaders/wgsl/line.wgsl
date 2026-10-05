@@ -21,7 +21,8 @@ enable draw_index;
 // size, the gap size, the dash scale and the dash offset. The color is the material's color times
 // the segment's color at the nearer end, and a blended material writes premultiplied color.
 #import null3d::color::{srgb_to_linear}
-#import null3d::mesh::{InstanceIn, custom_value, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, custom_value, exposed, find_instance, finish_exposed, fogged}
+#import null3d::mesh::{fragment_color}
 #import null3d::mesh::{frame as engine_frame, material_of}
 #import null3d::vertex::{OUTSIDE_CLIP, mesh_position, to_clip}
 #ifdef LIT
@@ -172,7 +173,8 @@ fn closest_line_to_line(p1: vec3f, p2: vec3f, p3: vec3f, p4: vec3f) -> vec2f {
 /// The light that a line reflects toward the camera, as a standard material with the line's color
 /// reflects it from a surface that faces the camera: the sun, the point and spot lights of its
 /// cluster and the ambient light, plus the light it gives off. `relative` is the point on the line
-/// relative to the camera.
+/// relative to the camera. The frame's lights are exposed, and the light it gives off takes the
+/// exposure here.
 fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let eye = engine_frame.camera_position;
     let normal = normalize(eye.xyz - relative * eye.w);
@@ -185,7 +187,7 @@ fn lit_color(m: Material, base: vec3f, relative: vec3f) -> vec3f {
     let clustered = clustered_light(pbr, relative, normal, normal, compensation);
     let ambient = indirect_diffuse(pbr, engine_frame.ambient.rgb, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
-    return direct + ambient + m.emissive.rgb * m.strengths.w;
+    return direct + ambient + exposed(m.emissive.rgb * m.strengths.w);
 }
 #endif
 
@@ -231,7 +233,9 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     var shaded = m.color.rgb * in.color;
 #ifdef LIT
     shaded = lit_color(m, shaded, in.relative);
+#else
+    shaded = exposed(shaded);
 #endif
-    let finished = finish(fogged(shaded, in.relative, m), in.clip.xy);
+    let finished = finish_exposed(fogged(shaded, in.relative, m), in.clip.xy);
     return fragment_color(m, finished.rgb, m.color.a);
 }

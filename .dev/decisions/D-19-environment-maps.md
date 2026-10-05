@@ -189,7 +189,7 @@ The code and the shaders load on first use:
 | --- | --- | --- |
 | The generators of both paths, in the thread that draws | 2.1 KB | 16 KB |
 | The room's numbers, in the thread that runs the sketch | 0.2 KB | 16 KB |
-| The shaders, WGSL or GLSL, in the thread that draws | 4.2 KB or 4.4 KB | 24 KB |
+| The shaders, WGSL or GLSL, in the thread that draws | 4.2 KB or 4.4 KB | 32 KB |
 
 The engine's JavaScript at a page's start grew by 1.0 KB, to 107.1 KB in pipelined mode. The backends' new command, the image table's generators and the texture call make it.
 

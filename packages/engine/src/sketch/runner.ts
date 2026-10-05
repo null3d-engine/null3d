@@ -41,10 +41,25 @@ import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
+import { ShaderPreloads } from '../scene/shader-preloads';
 import { Textures } from '../scene/textures';
-import { type ControlViews, controlLabels, controlViews, Slot } from '../shared/control';
+import {
+	type ControlViews,
+	controlLabels,
+	controlViews,
+	frameAfter,
+	frameReached,
+	nextFrame,
+	Slot,
+} from '../shared/control';
 import type { CoreGlue } from '../shared/core';
-import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
+import { stopHelperWorkers } from '../shared/helper-workers';
+import {
+	type ImageSender,
+	imagesArrived,
+	type PreloadSender,
+	type ShaderSender,
+} from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -81,6 +96,8 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
+	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
@@ -97,7 +114,7 @@ export interface SketchCore {
 const SLOT_POLL_MS = 4;
 
 /**
- * Resolves once a control slot holds `target` or more, or once the engine stops. It waits without
+ * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
  * blocking the thread, and checks the slot on a timer where the control block is not shared memory.
  * A start's steps wait this way, so each wait also checks the slot again after a short time, in case
  * the browser missed the wake.
@@ -107,7 +124,7 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
 		typeof SharedArrayBuffer !== 'undefined' && slots.buffer instanceof SharedArrayBuffer;
 	for (;;) {
 		const value = Atomics.load(slots, slot);
-		if (value >= target || Atomics.load(slots, Slot.Running) === 0) return;
+		if (frameReached(value, target) || Atomics.load(slots, Slot.Running) === 0) return;
 		if (shared) {
 			const change = slotChangeOrRecheck(slots, slot, value);
 			if (change) await change;
@@ -119,28 +136,37 @@ async function reached(slots: Int32Array, slot: number, target: number): Promise
  * The pipelined frame loop of a thread that runs the sketch while another thread draws: the sketch
  * worker, or the page with sketchThread: 'main'. It steps the sketch once the thread that draws has
  * taken the frame before, and waits for that without blocking, so the thread's event loop stays free
- * for promises, messages and the page's events. It ends when the engine stops.
+ * for promises, messages and the page's events. It ends when the engine stops, or when a frame
+ * step throws, such as a trap in the core: `fault` then hears the error, and the engine draws the
+ * last frame until the page destroys it. Each pass reads the newest published frame, because the
+ * setup's frames publish from the same thread.
  */
-export async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
+export async function runPipelined(
+	sketch: SketchRunner,
+	control: ArrayBufferLike,
+	fault: (error: unknown) => void,
+): Promise<void> {
 	const { slots } = controlViews(control);
-	// A warm-up during the setup may have published a frame that the render worker has not taken.
-	let published = Atomics.load(slots, Slot.FramesPublished);
-	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const paused = Atomics.load(slots, Slot.Paused);
-		if (paused !== 0) {
-			const change = slotChange(slots, Slot.Paused, paused);
-			if (change) await change;
-			continue;
+	try {
+		while (Atomics.load(slots, Slot.Running) !== 0) {
+			const paused = Atomics.load(slots, Slot.Paused);
+			if (paused !== 0) {
+				const change = slotChange(slots, Slot.Paused, paused);
+				if (change) await change;
+				continue;
+			}
+			const taken = Atomics.load(slots, Slot.FramesTaken);
+			if (frameAfter(Atomics.load(slots, Slot.FramesPublished), taken)) {
+				const change = slotChange(slots, Slot.FramesTaken, taken);
+				if (change) await change;
+				continue;
+			}
+			const published = sketch.step(performance.now());
+			Atomics.store(slots, Slot.FramesPublished, published);
+			Atomics.notify(slots, Slot.FramesPublished);
 		}
-		const taken = Atomics.load(slots, Slot.FramesTaken);
-		if (taken < published) {
-			const change = slotChange(slots, Slot.FramesTaken, taken);
-			if (change) await change;
-			continue;
-		}
-		published = sketch.step(performance.now());
-		Atomics.store(slots, Slot.FramesPublished, published);
-		Atomics.notify(slots, Slot.FramesPublished);
+	} catch (error) {
+		if (Atomics.load(slots, Slot.Running) !== 0) fault(error);
 	}
 }
 
@@ -198,6 +224,8 @@ export class SketchRunner {
 	private bloomOn = false;
 	/** The base of bloom's chain that the `bloomSize` setting gives. */
 	private bloomSetting = 0;
+	/** The `followMovingCasters` setting, which the governor's shadow steps keep. */
+	private followMovers = true;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -337,7 +365,11 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
-		const materials = new Materials(this.core, sketch.sendShader);
+		const materials = new Materials(
+			this.core,
+			sketch.sendShader,
+			new ShaderPreloads(sketch.sendPreload),
+		);
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
@@ -352,6 +384,7 @@ export class SketchRunner {
 			this.core,
 			device.effectsSceneColor !== FORMAT_CANVAS,
 			device.occlusionTargets,
+			materials.shaders,
 		);
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
@@ -406,6 +439,9 @@ export class SketchRunner {
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		const { check } = this.sketch.quality;
 		if (check && this.holdSeconds === undefined) await this.checkPreset(check.fps);
+		// Warm-ups that the setup started without waiting for them publish their frames first, so
+		// the frame loop never records while a setup frame does.
+		await this.setupFrames;
 		this.setUp = true;
 		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
 	}
@@ -439,6 +475,7 @@ export class SketchRunner {
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 					maxFps: fps,
+					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
 			);
@@ -471,7 +508,7 @@ export class SketchRunner {
 	private async settle(drawn: boolean): Promise<void> {
 		if (this.holdSeconds !== undefined) return;
 		const { slots } = this.sketch.control;
-		const target = this.setUp ? this.recorded.frame + 1 : await this.queueSetupFrame();
+		const target = this.setUp ? nextFrame(this.recorded.frame) : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
 		if (drawn) await reached(slots, Slot.FramesTaken, target);
 	}
@@ -501,15 +538,31 @@ export class SketchRunner {
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.recorded.frame);
+		while (
+			frameAfter(this.recorded.frame, Atomics.load(slots, Slot.FramesTaken)) &&
+			Atomics.load(slots, Slot.Running) !== 0
+		)
+			await reached(slots, Slot.FramesTaken, this.recorded.frame);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
 		return frame;
 	}
 
-	/** Gives the thread its own Math.random back, where hold mode seeded it. */
+	/**
+	 * Ends the sketch when the engine stops: runs its onDestroy, then makes every later call to the
+	 * engine fail with E1420, so code that outlives the engine never reaches the next engine's core.
+	 * It also gives the thread its own Math.random back, where hold mode seeded it.
+	 */
 	dispose(): void {
+		if (this.core.stopped) return;
+		try {
+			this.callbacks.onDestroy?.();
+		} catch (error) {
+			console.error(error);
+		}
+		this.core.stop();
+		stopHelperWorkers();
 		this.restoreRandom?.();
 		this.restoreRandom = undefined;
 	}
@@ -572,6 +625,7 @@ export class SketchRunner {
 		governor.setOn(settings.governor);
 		governor.setRange(low, high);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
+		this.followMovers = settings.followMovingCasters;
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
@@ -580,7 +634,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
-			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
+			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
@@ -597,7 +651,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		this.stepChanges = governor.stepChanges;
 		if (
-			glue.setShadowQuality(governor.filter, governor.farInterval) !== 0 ||
+			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0
 		)
@@ -762,7 +816,8 @@ export class SketchRunner {
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.dt = dt;
-		const frame = ++this.recorded.frame;
+		const frame = nextFrame(this.recorded.frame);
+		this.recorded.frame = frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
 		this.phaseStart = start;
@@ -782,7 +837,7 @@ export class SketchRunner {
 		// call that passed the step on would allocate a number for it in every frame.
 		if (play) {
 			if (this.holdSeconds === undefined) {
-				this.input.beginFrame(frame, frame - time.frame);
+				this.input.beginFrame(frame, (frame - time.frame) | 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
 			}
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
@@ -854,7 +909,9 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
-		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		if (glue.cullFrame(frame, width, height, built) !== 0)
+			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
 			this.core.refresh();
@@ -865,7 +922,6 @@ export class SketchRunner {
 			}
 		}
 		const scale = this.renderScale();
-		const built = Atomics.load(slots, Slot.PipelinesBuilt);
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);

@@ -204,7 +204,7 @@ mod ids {
     pub const TARGETS: u32 = BLANK_AO + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The comparison sampler of the shadow map.
+    /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
     pub const SHADOW_SAMPLER: u32 = 1;
     /// The linear sampler of bloom's steps and of the final pass's bloom build.
     pub const BLOOM_SAMPLER: u32 = 2;
@@ -561,6 +561,7 @@ impl CpuCulledRenderer {
             .map_err(|_| RecordError::OutOfMemory {
                 bytes: rows.saturating_mul(4),
             })?;
+        self.skins.open_before_first_frame(input.pipelines_built);
         let limit = FrameBuilder::max_sources(self);
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
@@ -627,9 +628,10 @@ impl CpuCulledRenderer {
                 place,
                 RESIDENT,
                 shadows,
-                |slot, key| skins.key(slot, key),
+                |slot, key| skins.sorted_pipeline(slot, key),
             )
             .map_err(out_of_memory)?;
+        self.skins.asked();
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
         self.layout.add_sorted(records, self.sorted.scene_slots());
         self.clusters
@@ -760,7 +762,7 @@ impl CpuCulledRenderer {
     /// material it holds and one for each material's custom values, of three.js's table of
     /// specular terms, and of the shadows' uniform block and comparison sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
+        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER, None)?;
         ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         list.push(
             Op::CreateTexture,
@@ -995,13 +997,14 @@ impl CpuCulledRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
-        self.graph.request_pipelines(&mut self.pipelines);
+        self.graph
+            .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        let created_pipelines = self.pipelines.create_new(list)? > 0;
+        let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
         }
@@ -1337,7 +1340,9 @@ impl FrameBuilder for CpuCulledRenderer {
             input.render_scale,
         );
         self.shadow = self.settings.shadow_frame(input);
-        let camera = self.settings.camera_position(scene, parity);
+        let camera = self
+            .settings
+            .view_frame(ViewId::CAMERA, scene, parity, canvas, scale);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
         self.tiles
@@ -1353,11 +1358,19 @@ impl FrameBuilder for CpuCulledRenderer {
             .zip(self.settings.camera_projection(canvas));
         self.graph.set_ao(ao, self.settings.ao_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
+        let waiting = (self.layout.waiting().iter())
+            .chain(self.casters.waiting())
+            .chain(self.sorted.waiting())
+            .copied();
+        let skinned_appear =
+            self.skins
+                .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         if input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || prepass_changed
+            || skinned_appear
         {
             self.rebuild_layout(input, shadows, outlines)?;
         }
