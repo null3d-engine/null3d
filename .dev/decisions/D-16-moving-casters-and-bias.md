@@ -215,3 +215,75 @@ After the acne on S4's pavements, option 1 of the flat caster options applies. E
 - An iPad check of S4 at Medium on WebGPU, after this change, is still to come.
 - `receiver_plane` and `read_depth` in `crates/null3d-shaders/wgsl/lib/shadows.wgsl` give each read its depth, with `PLANE_MARGIN` and `MAX_PLANE_SLOPE`. The plane comes from the normal that the shading passes to `sun_shadow`. A normal map's normal tilts it, which can light a read that a bumpy surface's own plane would shadow.
 - The acne check (`acneFigures` in `tests/pages/lib/shadow-check.ts`) runs in the visual page. `CONTACT_LIMITS` holds the slab views' acne figures, and `VISUAL_LIMITS` S4's. The benchmark summary and the device runner's bench plan print S4's figure as "Flat-surface acne".
+
+## Addendum, 2026-10-05: one depth per texel
+
+The owner looked at S4 in Chrome on the Mac with `?gpu=webgpu&preset=low&governor=off`. Jagged bright lines showed between the bases of buildings and objects and the start of their shadows on the ground. The shadow seemed to start a little away from each base, with a lit strip with stair-step edges in between.
+
+### What the lines were
+
+Screenshots showed the cause. They covered S4 at Low, Medium and High, on WebGPU, compatibility mode and WebGL2, and the three.js twin at the same settings. Medium and High showed no lines. At Low, the pavement slabs showed bright diagonal stripes, one shadow texel apart. Where the stripes met a shadow's edge beside a building, they cut it into lit teeth. At the same camera, the three.js twin drew the nearest slabs without stripes. It drew the slabs a little further away with fainter ones.
+
+The `'shadows'` debug view showed the stripes. So they are in the shadow factor, not in the specular light or in ambient occlusion, which Low turns off.
+
+These are the stripes that [Acne on flat casters](#acne-on-flat-casters) left at Low. S4's Low preset has 2 cascades of 1,024 texels over 200 m. So a texel of its last cascade is about twice as large as Medium's 23 cm, about 46 cm. Each read of the comparison sampler blends four texels against one depth: the receiver's plane at the lowest of their centers, less 1 cm. Across one texel, under S4's sun, the slab's bottom rises toward the light by about 27 cm along the sun's direction. The bottom lies only 20 cm behind the top along the light, once the casters' offset has moved it. So in a read's texels toward the light, the slab's bottom stands in front of that one depth. Those texels then shadow the slab's own top.
+
+The three.js twin's cascaded shadow addon splits the cascades halfway between the even and the logarithmic spread, against the engine's 65% ([D-15](D-15-cascade-split.md)). So its first cascade reaches further, and holds slabs near the camera that the engine's last cascade holds. Its slabs in its coarse cascade show the same stripes.
+
+### What was not the cause
+
+- The biases. Both are in meters, capped at one texel and scaled by the surface's angle to the light. On S4's ground they move a receiver about 2 cm toward the light, against texels of 46 cm. The fix below removes the stripes with the same biases.
+- A normal offset that does not grow with the texels. It would lift every read by the same amount, and the stripes follow the texels of each read.
+- The filter's size. Low's 3 x 3 square shows the stripes, and Medium's 5 x 5 square over finer texels hides most of them. But the comparison makes them: the fix removes them with Low's 3 x 3 square.
+- The casters' bottom faces. The slab's bottom is 20 cm below its top, as it should be. The buildings' bottoms lie on the slabs' tops, and the casters' offset keeps them in front of the ground.
+- The three.js twin's settings. Its `normalBias` is null3D's default, 0.02 m, and its `bias` is the cascaded shadow addon's default, 0.000001.
+
+### Options
+
+1. Compare each texel with the receiver's plane at that texel's center: option 4 of the flat caster options. WebGPU reads the four texels' depths with one `textureGather`, so the filter keeps its number of reads. The map binds as a float texture with a sampler that does not filter, because compatibility mode allows only comparison samplers on depth textures. WebGL2's shading language has no such read. There, the comparison sampler tests each texel at its center, so WebGL2 makes four reads for each of WebGPU's.
+2. The same, with four comparisons at the texels' centers on WebGPU too. It needs no new binding.
+3. A larger map or another cascade on Low. It costs memory and a pass on phones, and stripes would return with a lower sun or a thinner caster.
+4. The three.js twin's split of 50%. It moves the stripes further out, and it undoes D-15's choice for cameras at eye height.
+
+### Data
+
+The contact scene's views, in Chrome on the Mac, WebGPU and WebGL2, on 5 October 2026. Acne is the mean shadow on lit flat surfaces, in percent. The gap is the light between a box's foot and its shadow, in pixels. The rim is the shadow on the boxes' lit tops past their edges, in pixels. The new `far-slabs-low` view has a 256-texel map and the 3 x 3 filter. So its last cascade's texels are about as large as S4's at Low.
+
+| View | Acne before | Acne after | Gap before | Gap after | Rim before | Rim after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `near` | 0.008 and 0.008 | 0.008 and 0.008 | 0.020 and 0.016 | 0.020 and 0.016 | 0.131 and 0.130 | 0.128 and 0.128 |
+| `far` | 0.068 and 0.066 | 0.068 and 0.066 | 0.077 and 0.080 | 0.077 and 0.081 | 0.203 and 0.157 | 0.182 and 0.142 |
+| `turn` | 0.000 and 0.000 | 0.000 and 0.000 | 0.045 and 0.039 | 0.045 and 0.039 | 0.204 and 0.173 | 0.199 and 0.170 |
+| `far-ground` | 9.709 and 9.548 | 0.068 and 0.066 | 0.078 and 0.078 | 0.077 and 0.081 | 0.220 and 0.177 | 0.182 and 0.142 |
+| `far-slabs` | 3.856 and 3.699 | 0.249 and 0.216 | 0.051 and 0.052 | 0.058 and 0.058 | 0.275 and 0.219 | 0.184 and 0.135 |
+| `far-slabs-sun-35` | 6.539 and 6.376 | 0.378 and 0.345 | 0.217 and 0.234 | 0.221 and 0.238 | 0.411 and 0.351 | 0.229 and 0.178 |
+| `far-slabs-sun-20` | 7.398 and 7.238 | 0.445 and 0.414 | 0.335 and 0.311 | 0.348 and 0.332 | 0.457 and 0.403 | 0.169 and 0.123 |
+| `far-slabs-low` | 10.898 and 10.733 | 0.395 and 0.385 | 0.075 and 0.092 | 0.072 and 0.101 | 0.344 and 0.283 | 0.161 and 0.113 |
+
+A ground that casts shadows now shows the acne of a ground that casts none. The gaps keep their figures. The slab views' gaps rise a little, as in the flat caster fix, because acne beside a foot no longer counts as shadow. The shadow on the boxes' own tops falls in every view. After the fix, SwiftShader gave 0.216 and 0.208, 0.352 and 0.343, and 0.419 and 0.412 in the three slab views. It gave 0.393 and 0.384 in `far-slabs-low`, and 0.071 and 0.069 with the casting ground.
+
+S4 at Low was held at 2 s on the visual page, at 1,920 x 1,080. Its acne figure fell from 1.683% to 0.319% on WebGPU, and to 0.311% on WebGL2. Held at 25 s, from the side where the shadows face the camera, it fell from 1.836% to 0.375%. The contact gap stayed at 0.005 pixels.
+
+What remains comes from surfaces that are not planes across the filter's square. At a slab's edge, for example, the texels beyond the edge hold other surfaces.
+
+GPU time of S4 at Low on the Mac (WebGPU, `bun run bench:run --compare`, 6 runs of 8 s each, medians of the runs' medians):
+
+| Version | Main | The version | Change |
+| --- | --- | --- | --- |
+| Option 2, four comparisons per block | 1.568 ms | 1.637 ms | +0.069 ms |
+| Option 1, a loop over blocks with weights in arrays | 1.556 ms | 1.573 ms | +0.017 ms |
+| Option 1, with the blocks written out | 1.560 ms | 1.454 ms | -0.106 ms |
+
+The loop indexed arrays by its counters, and the last version has no array at all. Each of its 6 runs was faster than each of main's 6 runs. At High, with the 5 x 5 filter, 4 runs each gave 1.822 ms on main and 1.599 ms with the last version. Chrome on the Mac reports no GPU time for WebGL2, so WebGL2's four comparisons per block are not measured. Its CPU time did not change.
+
+### Decision
+
+Option 1. The directional light's filter compares each texel with the receiver's plane at the texel's center. Where the receiver's own depth lies nearer the light, it uses that. WebGPU reads four texels at once, and WebGL2 compares them one at a time. In WebGL2's `standard` depth mode, the comparison sampler passes every test, so every surface stays lit there, as before. Spot and point lights keep the comparison sampler's blend, as their views are not orthographic.
+
+### Consequences
+
+- `sun_texels`, `sun_block` and `sun_filtered` in `crates/null3d-shaders/wgsl/lib/shadows.wgsl` replace `read_depth`. `filtered` serves the shadow atlas alone.
+- The frame group binds the shadow map as an `unfilterable-float` texture on WebGPU, with a non-filtering sampler at binding 12 (`SHADOW_TEXEL_SAMPLER` in `crates/null3d-render/src/gpu_driven/mod.rs`). The WebGL2 path keeps its bindings.
+- `CONTACT_LIMITS` in `tests/lib/visual-checks.ts` holds acne limits of 1.5% for the casting ground and every slab view, and the new `far-slabs-low` view. Each limit sits between the figures after the fix and before it.
+- `concepts/shadows` describes the reads, and their cost on WebGL2.
+- The written-out blocks add 0.6 to 1.7 KB after Brotli to each file of shader modules, 2.0% to 5.4%. A loop over blocks would keep the files smaller, but it cost GPU time on the Mac.

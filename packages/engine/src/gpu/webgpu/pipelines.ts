@@ -316,10 +316,11 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		];
 		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
-		// The materials' custom values, the table of specular terms, then the shadow map, the
-		// sampler that compares depths in it, its cascades, the camera's light grid and light list,
-		// the shadow atlas of point and spot lights with its tiles, and ambient occlusion's
-		// texture, which the lit shading reads with textureLoad.
+		// The materials' custom values, the table of specular terms, then the shadow map, whose
+		// depths the receivers read as floats, the sampler that compares depths in the shadow
+		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
+		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
+		// textureLoad, and the sampler that reads four texels of the shadow map at once.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -331,7 +332,7 @@ export class Pipelines {
 			{
 				binding: 4,
 				visibility: fragment,
-				texture: { sampleType: 'depth', viewDimension: '2d-array' },
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
 			},
 			{ binding: 5, visibility: fragment, sampler: { type: 'comparison' } },
 			{ binding: 6, visibility: fragment, buffer: { type: 'uniform' } },
@@ -345,6 +346,7 @@ export class Pipelines {
 			},
 			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 12, visibility: fragment, sampler: { type: 'non-filtering' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },

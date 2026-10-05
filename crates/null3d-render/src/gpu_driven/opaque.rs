@@ -40,10 +40,11 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
 
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
 /// the materials' custom values, three.js's table of the split-sum terms of specular light, the
-/// main directional light's shadow map, which is `shadow_map`, with its comparison sampler and its
-/// cascades, the camera's light grid and light records, and the shadow atlas of point and spot
-/// lights, which is `atlas`, with its tiles, and the texture of ambient occlusion, `occlusion`. A
-/// new shadow map, atlas or occlusion texture needs the group again.
+/// main directional light's shadow map, which is `shadow_map`, with its cascades and the sampler
+/// that reads four of its texels at once, the camera's light grid and light records, the shadow
+/// atlas of point and spot lights, which is `atlas`, with its comparison sampler and its tiles, and
+/// the texture of ambient occlusion, `occlusion`. A new shadow map, atlas or occlusion texture
+/// needs the group again.
 pub(super) fn bind_frame(
     list: &mut DrawList,
     view: ViewId,
@@ -65,9 +66,10 @@ pub(super) fn bind_frame(
         entry(9, resource_kind::TEXTURE, atlas),
         entry(10, resource_kind::BUFFER, ids::SHADOW_TILES),
         entry(11, resource_kind::TEXTURE, occlusion),
+        entry(12, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
     ];
-    let mut words = [0u32; 3 + 5 * 12];
-    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 12]);
+    let mut words = [0u32; 3 + 5 * 13];
+    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 13]);
     words[3..].copy_from_slice(entries.as_flattened());
     list.push(Op::CreateBindGroup, &words)?;
     Ok(())

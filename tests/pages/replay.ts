@@ -195,6 +195,21 @@ run('replay', async () => {
 		compare,
 		1,
 	);
+	// The sampler that reads the shadow map's depths four texels at a time, unfiltered.
+	memory.push(
+		G.OP_CREATE_SAMPLER,
+		2,
+		clamp,
+		clamp,
+		clamp,
+		nearest,
+		nearest,
+		nearest,
+		0,
+		0,
+		G.COMPARE_NONE,
+		1,
+	);
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		3,
@@ -239,7 +254,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		12,
+		13,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -253,6 +268,7 @@ run('replay', async () => {
 		...[10, G.RESOURCE_BUFFER, 16, 0, 0],
 		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
 		...[11, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[12, G.RESOURCE_SAMPLER, 2, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,
