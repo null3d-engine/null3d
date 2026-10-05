@@ -78,6 +78,19 @@ impl SortedBucket {
     }
 }
 
+/// How a scene object draws in the transparent pass by its skinning, as a builder's `skin`
+/// function gives it for the pipeline of the object's pair.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SkinnedPipeline {
+    /// The object is not skinned, and draws with its pair's pipeline.
+    NotSkinned,
+    /// The object is skinned, and draws from a bucket of its own with this pipeline.
+    Drawn(DrawKey),
+    /// The object is skinned, and draws nothing until this pipeline is built, with the others that
+    /// skin and draw skinned objects (see [`crate::skinning::SkinnedGate`]).
+    Waiting(DrawKey),
+}
+
 /// A batch whose material blends: its handle, its bucket, and the place of its first row in the
 /// builder's data, where it has one.
 #[derive(Clone, Copy, Debug)]
@@ -159,6 +172,8 @@ pub(crate) struct SortedLayout {
     batches: Vec<SortedBatch>,
     /// Scratch for rebuilds: every sorted key with its source count, sorted and merged.
     key_counts: Vec<(SortedKey, u32)>,
+    /// The pipelines of the skinned objects that the layout leaves out until they are built.
+    waiting: Vec<u32>,
     /// The rows that can draw: blended scene objects, and blended batches' capacities.
     rows: u32,
     /// The most runs of rows that a frame's sort takes.
@@ -182,6 +197,12 @@ pub(crate) struct SortedLayout {
 }
 
 impl SortedLayout {
+    /// The pipelines of the skinned objects that the layout leaves out, which must be built before
+    /// they draw.
+    pub(crate) fn waiting(&self) -> &[u32] {
+        &self.waiting
+    }
+
     /// True when some mesh and material pair blends, so the transparent pass has work.
     pub(crate) fn is_empty(&self) -> bool {
         self.buckets.is_empty()
@@ -211,8 +232,9 @@ impl SortedLayout {
     /// key a bucket, with its pipeline id from `pipelines` for a pass that draws into `targets`.
     /// `place` gives a batch's first row in the builder's data and its data texture. While
     /// `shadows` is true, scene objects that receive shadows draw with pipelines that read the
-    /// shadow map. `skin` gives the pipeline of a skinned object's pair, or `None` for an object
-    /// that is not skinned. The layout then reserves every list that a frame's sort takes.
+    /// shadow map. `skin` says how each scene object draws by its skinning: a skinned object that
+    /// waits gets no bucket, and the layout asks only for its pipeline (see [`Self::waiting`]). The
+    /// layout then reserves every list that a frame's sort takes.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild(
         &mut self,
@@ -224,7 +246,7 @@ impl SortedLayout {
         place: impl Fn(usize, &InstanceBatch) -> (u32, u32),
         resident: u32,
         shadows: bool,
-        skin: impl Fn(usize, DrawKey) -> Option<DrawKey>,
+        skin: impl Fn(usize, DrawKey) -> SkinnedPipeline,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<SortedKey> {
@@ -242,26 +264,40 @@ impl SortedLayout {
             Some((pipeline, textures, page, mesh, material, group))
         };
         // A skinned object draws from a bucket of its own, with the pipeline that `skin` gives.
-        let scene_key = |slot: usize| {
+        let pair_key = |slot: usize| {
             let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
-            let key = key_of(mesh, material, resident, scene.flags()[slot])?;
-            Some(match skin(slot, key.0) {
-                Some(skinned) => (
+            key_of(mesh, material, resident, scene.flags()[slot])
+        };
+        let scene_key = |slot: usize| {
+            let key = pair_key(slot)?;
+            match skin(slot, key.0) {
+                SkinnedPipeline::NotSkinned => Some(key),
+                SkinnedPipeline::Drawn(skinned) => Some((
                     skinned,
                     key.1,
                     key.2,
                     key.3,
                     key.4,
                     SKINNED_GROUP | slot as u32,
-                ),
-                None => key,
-            })
+                )),
+                SkinnedPipeline::Waiting(_) => None,
+            }
         };
         // Instance batches receive no shadows yet.
         let batch_key = |index: usize, batch: &InstanceBatch| {
             key_of(batch.mesh(), batch.material(), place(index, batch).1, 0)
         };
         collect_bucket_keys(&mut self.key_counts, scene, batches, scene_key, batch_key);
+
+        self.waiting.clear();
+        for slot in 0..scene.capacity() as usize + 1 {
+            if let Some(key) = pair_key(slot)
+                && let SkinnedPipeline::Waiting(skinned) = skin(slot, key.0)
+            {
+                self.waiting.try_reserve(1)?;
+                self.waiting.push(pipelines.id(skinned.in_pass(targets)));
+            }
+        }
 
         self.buckets.clear();
         let (mut total, mut largest, mut most_parts) = (0u32, 0u32, 1u32);
