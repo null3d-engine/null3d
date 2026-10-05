@@ -26,10 +26,11 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
-use crate::bloom::{self, Bloom};
+use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
@@ -607,9 +608,8 @@ pub struct SceneSettings {
     output: Output,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
-    /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
-    /// settings raise.
-    bloom_divisor: u32,
+    /// The size of bloom's base, which the quality settings set, and the governor's halvings of it.
+    bloom_chain: ChainFrame,
     /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
     morph_cap: u32,
     /// Ambient occlusion's settings while the sketch turns it on.
@@ -621,6 +621,8 @@ pub struct SceneSettings {
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
+    /// The scene's environment while the sketch sets one.
+    environment: Option<Environment>,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
@@ -668,12 +670,13 @@ impl SceneSettings {
             canvas,
             output: Output::default(),
             bloom: None,
-            bloom_divisor: 1,
+            bloom_chain: ChainFrame::default(),
             morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
             lut: None,
             vignette: None,
+            environment: None,
             outline: None,
             clock: [0.0; 4],
             render_scaling: false,
@@ -762,16 +765,21 @@ impl SceneSettings {
         self.bloom = bloom;
     }
 
-    /// How many times fewer taps than three.js's each of bloom's blurs reads.
-    pub fn bloom_divisor(&self) -> u32 {
-        self.bloom_divisor
+    /// The size of bloom's base and the governor's halvings of it.
+    pub(crate) fn bloom_chain(&self) -> ChainFrame {
+        self.bloom_chain
     }
 
-    /// Makes each of bloom's blurs read `divisor` times fewer taps than three.js's, rounded up,
-    /// from 1 to [`bloom::MAX_SAMPLE_DIVISOR`], from the next recorded frame on. Fewer taps read
-    /// the same kernel more coarsely, so the glow keeps its size.
-    pub fn set_bloom_divisor(&mut self, divisor: u32) {
-        self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    /// Gives bloom's chain a base of `size` texels on the canvas's short side, a power of two from
+    /// [`crate::bloom::MIN_SIZE`] to [`crate::bloom::MAX_SIZE`], halved `halvings` times during
+    /// play, from the next recorded frame on. A new size makes the chain's targets again; the
+    /// halvings make no GPU object. Either way the glow keeps its size.
+    pub fn set_bloom_chain(&mut self, size: u32, halvings: u32) {
+        let size = size.clamp(crate::bloom::MIN_SIZE, crate::bloom::MAX_SIZE);
+        self.bloom_chain = ChainFrame {
+            size: 1 << size.ilog2(),
+            halvings: halvings.min(crate::bloom::LEVELS as u32 - 1),
+        };
     }
 
     /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
@@ -830,6 +838,28 @@ impl SceneSettings {
     /// on.
     pub fn set_vignette(&mut self, vignette: Option<Vignette>) {
         self.vignette = vignette;
+    }
+
+    /// Lights the scene with an environment, or with none, from the next recorded frame on.
+    pub fn set_environment(&mut self, environment: Option<Environment>) {
+        self.environment = environment;
+    }
+
+    /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
+    /// while the scene has no environment to draw, with the environment's part of the frame
+    /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
+    /// uploads, so a held frame, which uploads everything, draws with the environment.
+    pub(crate) fn environment_map(&self, blank: u32) -> (u32, EnvironmentUniform) {
+        let ready = self.environment.and_then(|environment| {
+            Some((environment, self.textures.ready_cube(environment.texture)?))
+        });
+        match ready {
+            Some((environment, (map, levels))) => (
+                map,
+                environment.uniform(levels, self.drawn_output().exposure),
+            ),
+            None => (blank, EnvironmentUniform::default()),
+        }
     }
 
     /// The outline's settings while it is on, with its width in pixels of the canvas, and `None`
@@ -1104,14 +1134,14 @@ impl SceneSettings {
         &self.views
     }
 
-    /// The directional light: the direction its light travels, and its linear color times its
-    /// intensity.
+    /// The directional light: the direction its light travels, and its exposed color: its linear
+    /// color times its intensity and the exposure.
     pub fn set_sun(&mut self, direction: [f32; 3], color: [f32; 3]) {
         self.lighting.sun_direction = normalized_direction(direction);
         self.lighting.sun_color = [color[0], color[1], color[2], 0.0];
     }
 
-    /// The ambient light's linear color times its intensity.
+    /// The ambient light's exposed color: its linear color times its intensity and the exposure.
     pub fn set_ambient(&mut self, color: [f32; 3]) {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
     }
@@ -1119,7 +1149,8 @@ impl SceneSettings {
     /// Gathers the lights of the frame whose world output is `parity`'s for the camera's view
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
     /// main directional light and the ambient lights become the light the shaders read, and the
-    /// light table's visible list holds the point and spot lights the camera sees.
+    /// light table's visible list holds the point and spot lights the camera sees. Every light's
+    /// color takes the exposure that frames draw with.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
@@ -1134,7 +1165,7 @@ impl SceneSettings {
                 frustum: frame.frustum,
                 layers: frame.layers,
             });
-        let lit = lights.gather(scene, parity, view.as_ref());
+        let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
         self.set_sun_shadow(lit.sun_shadow);
@@ -1151,12 +1182,12 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
-    /// The shadow filter and the far cascades' update interval.
+    /// The shadow filter and how the far cascades update.
     pub fn shadow_quality(&self) -> ShadowQuality {
         self.lighting.shadow_quality
     }
 
-    /// The shadow filter and the far cascades' update interval, from the next frame on.
+    /// The shadow filter and how the far cascades update, from the next frame on.
     pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
         self.lighting.shadow_quality = quality;
     }
@@ -1215,7 +1246,7 @@ impl SceneSettings {
             absolute,
             shadow.map_size,
             quality.far_interval,
-            |bounds| moving.touch(scene, parity, shadow.layers, bounds),
+            |bounds| quality.follow_movers && moving.touch(scene, parity, shadow.layers, bounds),
         );
         Some(ShadowFrame {
             cascades,
@@ -1224,14 +1255,6 @@ impl SceneSettings {
             layers: shadow.layers,
             drawn,
         })
-    }
-
-    /// Where the camera's view stands in the frame whose world output is `parity`'s: its cell, and
-    /// its position in the cell. `None` when the view has no camera.
-    pub fn camera_position(&self, scene: &SceneStorage, parity: usize) -> Option<CellPosition> {
-        let (camera, _) = self.views[ViewId::CAMERA.index()].camera()?;
-        let slot = scene.resolve(camera).ok()?;
-        Some(scene.cell_position(slot, parity))
     }
 
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
@@ -1272,7 +1295,7 @@ impl SceneSettings {
     }
 
     /// The linear color behind every object. Exposure and tone mapping change it as they change
-    /// the objects.
+    /// the objects: the clear color takes the exposure of each frame.
     pub fn set_background(&mut self, color: [f32; 3]) {
         self.lighting.background = Some(color);
     }
@@ -1372,14 +1395,15 @@ impl SceneSettings {
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
         let (width, height) = Size::Full.viewport(canvas, scale);
         let (width, height) = (width as f32, height as f32);
+        let output = self.drawn_output();
         let uniform = FrameUniform {
             view_proj: camera.view_proj,
             camera_position: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
-            output: self.drawn_output().uniform(),
-            fog: self.lighting.fog.uniform(camera.forward),
+            output: output.uniform(),
+            fog: self.lighting.fog.uniform(camera.forward, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],

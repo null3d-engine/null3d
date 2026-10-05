@@ -3,7 +3,7 @@ id: getting-started/hosting
 title: Hosting and cross-origin isolation
 status: experimental
 since: "0.1"
-summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback."
+summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; worker scripts from the page's origin; the Content-Security-Policy; Brotli; the third-party notices; the single-threaded fallback."
 ---
 
 # Hosting and cross-origin isolation
@@ -39,7 +39,29 @@ With `require-corp`, the browser loads a file from another origin only when that
 - A CORS response (`Access-Control-Allow-Origin`) to a request in CORS mode. `fetch` uses CORS mode for other origins by default.
 - The header `Cross-Origin-Resource-Policy: cross-origin`.
 
-Files from the page's own origin need nothing. Serve the engine's own files, the `.wasm` builds and the worker scripts, from the same origin as the page, or give them the same headers.
+Files from the page's own origin need nothing.
+
+## Serve the build from the page's origin
+
+Serve the files of the production build, `dist/` with its `assets/` folder, from the same origin as the HTML page. The engine's worker scripts are among them, and a browser starts a worker only from a script on the page's own origin. No header changes that rule. If Vite's `base` option points at a CDN, the browser refuses the engine's first worker, and `createEngine` rejects with [E1405](../errors/E1405.md).
+
+Models, textures and other files that your sketch loads may come from a CDN, with CORS or CORP as above.
+
+## Content-Security-Policy
+
+The engine starts under a strict policy. Send this one, or add its parts to your own:
+
+```http
+Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
+```
+
+- `script-src 'self' 'wasm-unsafe-eval'`: the engine core, the meshopt decoder and the KTX2 transcoder are WebAssembly, and a policy blocks WebAssembly unless it holds `'wasm-unsafe-eval'`. This keyword allows WebAssembly and no JavaScript `eval`. Without it, `createEngine` rejects with [E1418](../errors/E1418.md).
+- `worker-src 'self'`: the engine's sketch, render, job and probe workers, and the workers of the glTF loader and the KTX2 transcoder.
+- `connect-src`: the engine downloads its `.wasm` files and your sketch module from the page's origin, which `default-src 'self'` allows. Add the origin of each CDN that your sketch loads models or textures from.
+
+The engine needs no inline script and no inline style. It sets styles from code, which a policy does not block. A page's own inline `<style>` element needs `style-src 'self' 'unsafe-inline'`.
+
+A worker follows the policy of its own script's response, not the page's. A host that sends the header on every file, as the examples below do for the isolation headers, applies the same policy to the workers.
 
 ## Two builds
 
@@ -86,6 +108,30 @@ add_header Cross-Origin-Embedder-Policy require-corp always;
 ```
 
 GitHub Pages cannot send custom headers, so a null3D page there runs single-threaded.
+
+## Send the files with Brotli
+
+The engine's shader text compresses well with Brotli, which finds text that repeats far apart. gzip finds only repeats that are close together. So the host's compression changes what a page downloads at its start. In this version, a pipelined page's start downloads about:
+
+| The host sends | The engine's JavaScript at the start |
+| --- | --- |
+| Brotli | 107 KB |
+| gzip at level 9 | 403 KB |
+| gzip at level 6, a common setting for compression on the fly | about 500 KB |
+| Files as they are | 3.0 MB |
+
+Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module. With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, and send the compressed files with `brotli_static on;`.
+
+## Publish the third-party notices
+
+The engine ships code from other projects:
+
+- the Basis Universal transcoder for KTX2 files, with the Zstandard code inside it
+- the meshoptimizer decoder for meshopt-compressed glTF files
+- a table of values from three.js, in the engine core
+- the Rust crates in the engine core
+
+Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`.
 
 ## Let browsers keep the build files
 

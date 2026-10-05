@@ -7,6 +7,7 @@ import {
 	threadRoles,
 	timerStep,
 } from '../page/frame-stats';
+import { QUALITY_SETTINGS } from '../quality/presets';
 import {
 	Counter,
 	createMetricsBuffer,
@@ -17,6 +18,7 @@ import {
 	type RingRecords,
 	RingSums,
 	Role,
+	SAMPLED_EVERY,
 	SUM_BUSY_MS,
 	SUM_COUNTERS,
 	SUM_INTERVAL_MS,
@@ -34,6 +36,19 @@ function record(recorder: FrameRecorder, frame: number, busy: number, update = 0
 }
 
 describe('frame records', () => {
+	it('keep costly timing on until the last of two overlapping measurements ends', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const recorder = new FrameRecorder(buffer, Role.Render);
+		const first = new MetricsReader(buffer);
+		const second = new MetricsReader(buffer);
+		first.begin();
+		second.begin();
+		first.end();
+		expect(recorder.measuring).toBe(true);
+		second.end();
+		expect(recorder.measuring).toBe(false);
+	});
+
 	it('carry times, phases, counters and intervals from the writer to the reader', () => {
 		const buffer = createMetricsBuffer(true, 2);
 		const reader = new MetricsReader(buffer);
@@ -455,5 +470,16 @@ describe('timerStep', () => {
 		expect(timerStep([0.001, 0.002])).toBeNull();
 		expect(timerStep([0, 0])).toBeNull();
 		expect(timerStep([])).toBeNull();
+	});
+});
+
+describe('SAMPLED_EVERY', () => {
+	it('times frames in every phase of each far cascade interval', () => {
+		const { min, max } = QUALITY_SETTINGS.farCascadeInterval.values;
+		for (let interval = min; interval <= max; interval++) {
+			const phases = new Set<number>();
+			for (let k = 0; k < interval; k++) phases.add((k * SAMPLED_EVERY) % interval);
+			expect([interval, phases.size]).toEqual([interval, interval]);
+		}
 	});
 });

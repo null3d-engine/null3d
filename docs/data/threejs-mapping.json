@@ -77,7 +77,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none', exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
+      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -208,8 +208,8 @@
       "three": "scene.environment (PMREMGenerator, RoomEnvironment, HDR files)",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.setEnvironment(await assets.loadEnvironment('/env/studio.ktx2'))",
-      "notes": "Prefilter HDR files offline with `bunx @null3d/cli assets env`. A built-in neutral studio environment replaces RoomEnvironment: assets.builtinEnvironment('studio').",
+      "target": "scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'))",
+      "notes": "Prefilter HDR files offline with `bunx @null3d/cli assets env`. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. scene.environmentIntensity becomes the `intensity` option.",
       "docs": "concepts/lighting",
       "detect": "\\.environment\\s*=|\\bRoomEnvironment\\b"
     },
@@ -451,7 +451,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "scene.setEnvironment(env, { rotation }) and scene.setBackground(env, { rotation })",
-      "notes": "Rotation is an Euler array in radians, as in three.js.",
+      "notes": "Rotation is an Euler array in radians, in the order X, Y, Z, as in three.js. Each material shares the scene's rotation, so material.envMapRotation has none of its own. scene.setBackground takes environments with environment backgrounds.",
       "docs": "api/scene",
       "detect": "\\b(environment|background|envMap)Rotation\\b"
     },
@@ -538,8 +538,8 @@
       "three": "PointLight(color, intensity, distance, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createPointLight({ position, color, intensity, range, decay, castShadows, shadow })",
-      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges.",
+      "target": "scene.createPointLight({ position, color, intensity, range, decay, castShadows, shadow, intensityUnit })",
+      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. intensity stays in candela. light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by 4π as power does; setIntensity then takes lumens.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
     },
@@ -549,8 +549,8 @@
       "three": "SpotLight(color, intensity, distance, angle, penumbra, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow })",
-      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
+      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, castShadows, shadow, intensityUnit })",
+      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. Spot light cookies (light.map) come after 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -857,8 +857,8 @@
       "three": "material.envMap / envMapIntensity",
       "status": "changed",
       "since": "0.2",
-      "target": "The scene environment; per-material envIntensity",
-      "notes": "",
+      "target": "scene.setEnvironment(env); materials.standard({ envIntensity })",
+      "notes": "One environment lights the scene; a material takes no environment of its own. envMapIntensity becomes `envIntensity`, which multiplies the scene's intensity. three.js uses scene.environmentIntensity in place of envMapIntensity under scene.environment.",
       "docs": "concepts/lighting",
       "detect": "\\benvMap(Intensity)?\\s*[:=]"
     },
@@ -1066,7 +1066,7 @@
       "three": "RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "`bunx @null3d/cli assets env studio.hdr studio.ktx2` offline, then assets.loadEnvironment",
+      "target": "`bunx @null3d/cli assets env sunset.hdr sunset.ktx2` offline, then assets.loadEnvironment",
       "notes": "Prefiltering happens once at build time instead of on every visit.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(RGBE|EXR|HDR|UltraHDR)Loader\\b|\\bPMREMGenerator\\b"
@@ -1125,6 +1125,17 @@
       "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
+    },
+    {
+      "id": "url-modifier",
+      "category": "Loaders",
+      "three": "LoadingManager.setURLModifier",
+      "status": "changed",
+      "since": "0.2",
+      "target": "assets.loadGltf(url, { rewriteUrl: (address) => address })",
+      "notes": "Checks or changes each address that a glTF file names, for its buffers and images. Return null to refuse the file with E1416. It covers glTF files only.",
+      "docs": "api/assets",
+      "detect": "\\bsetURLModifier\\b"
     },
     {
       "id": "draco",
@@ -1239,11 +1250,11 @@
     {
       "id": "mixer",
       "category": "Animation",
-      "three": "AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt)",
+      "three": "AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / time / setEffectiveWeight / timeScale / mixer.update(dt)",
       "status": "changed",
       "since": "0.2",
-      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
-      "notes": "No update call: the engine advances and blends every animator on its job workers. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask.",
+      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.play('walk', { time: 0.4, weight: 0.7 }); anim.setWeight('walk', 0.5); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
+      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. startAt has no counterpart: call play at that time.",
       "docs": "api/animation",
       "detect": "\\bAnimationMixer\\b|\\.clipAction\\s*\\(|\\.crossFade(To|From)\\s*\\(|\\.fade(In|Out)\\s*\\(|setEffectiveWeight|\\bmixer\\.update\\s*\\("
     },
@@ -1405,10 +1416,10 @@
       "id": "bloom",
       "category": "Post-processing",
       "three": "UnrealBloomPass / BloomEffect / bloom() node",
-      "status": "direct",
+      "status": "changed",
       "since": "0.2",
-      "target": "post.set({ bloom: { strength, radius, threshold } })",
-      "notes": "UnrealBloomPass's steps, kernels and weights, so the same strength, radius and threshold give the same glow; drop the resolution argument. For pmndrs BloomEffect and the bloom() node, start from the same numbers and compare images. In WebGPU's compatibility mode with MSAA, bloom moves the engine to HDR color with FXAA.",
+      "target": "post.set({ bloom: { intensity, threshold, knee, blend, weights } })",
+      "notes": "null3D draws bloom through a chain of mip levels whose glow keeps its size as a share of the screen, so the settings map rather than copy. UnrealBloomPass: blend 'add', the same threshold, knee 0.01, intensity about 8.8 x strength, and weights from radius (the port skill's table, or its map-bloom.mjs script for the app's canvas size). The bloom() node: the same at a third of the intensity. pmndrs BloomEffect: blend 'screen', intensity as is, luminanceThreshold becomes threshold and luminanceSmoothing becomes knee, weights from radius and levels. Drop the resolution argument. The match holds at one canvas size, 1080 pixels on the shorter side by default; three.js's glow spans pixels, so on a larger screen null3D's looks wider. A strong bloom also spreads a little wider at the frame's edges than three.js's, whose faint haze fades toward the corners; lower strength or radius to soften it. In WebGPU's compatibility mode with MSAA, bloom moves the engine to HDR color with FXAA.",
       "docs": "concepts/post-processing",
       "detect": "\\bUnrealBloomPass\\b|\\bBloomEffect\\b|\\bbloom\\s*\\("
     },

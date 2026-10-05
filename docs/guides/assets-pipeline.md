@@ -8,7 +8,7 @@ summary: "optimize, env, convert; LODs; texture compression; blockers and stored
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. The engine does not light scenes with the environment maps of `assets env` yet. Coding agents must not use these parts.
+> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -127,7 +127,7 @@ The command encodes each PNG and JPEG texture of a model as a KTX2 file of Basis
 | Normal maps | UASTC always, since ETC1S blurs their detail | Linear |
 | Metal-rough, occlusion and other maps | ETC1S, or UASTC with `--texture-quality high` | Linear |
 
-Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly.
+Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly. A side is never less than 4 texels, so each texture is whole blocks of 4 x 4 texels. A texture in part blocks would load uncompressed, at 4 to 8 times the GPU memory.
 
 Textures are at most 2048 x 2048. The encoder is a 32-bit WebAssembly build, which refuses 4096 x 4096 images.
 
@@ -221,7 +221,20 @@ Both formats filter on every GPU the engine supports. `rgb9e5ufloat` stores thre
 
 three.js prefilters an HDR file in the browser on every visit, with `PMREMGenerator`. The command does it once, before you publish. Your page then downloads the filtered file and does no work before it draws. The same file gives the same bytes on every computer.
 
-`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. The engine's package holds that file.
+`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. It blurs the room by 0.04 radians first, as three.js's examples do with `fromScene(room, 0.04)`. The engine makes the same room on the GPU when `assets.builtinEnvironment('room')` asks for it, so its package ships no file. The engine's tests compare its map with this command's.
+
+A sketch loads the file with `assets.loadEnvironment`, and lights the scene with it through `scene.setEnvironment`:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  scene.setEnvironment(await assets.loadEnvironment('/env/venice.ktx2'));
+  return {};
+});
+```
+
+[Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights each surface.
 
 ## Encode time
 

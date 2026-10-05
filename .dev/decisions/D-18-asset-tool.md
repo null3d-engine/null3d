@@ -139,7 +139,7 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 | Index buffers | 16 bits when the vertices allow | |
 | Compression | `EXT_meshopt_compression` by default, lossless; `--compression none` leaves it out | The engine decodes meshopt in its loader's worker and downloads the decoder only for such files ([D-34](D-34-meshopt-decoding.md)). glTF-Transform writes the EXT form only, which the engine reads as it reads the KHR form |
 | Levels of detail | A half, a quarter and an eighth of the triangles, under an error of a tenth of the mesh, in `MSFT_lod` | The extension that exists for levels; three.js and the engine ignore it until they read levels |
-| Texture sizes | Each side at its nearest power of two, then halved together to fit 2048 | Full mip chains, and fewer sizes for the engine's texture arrays |
+| Texture sizes | Each side at its nearest power of two, then halved together to fit 2048, and at least 4 | Full mip chains, fewer sizes for the engine's texture arrays, and whole 4 x 4 blocks, which the compressed formats need ([D-59](D-59-file-limits.md)) |
 | ETC1S | Quality 128, effort 2 | The basisu command's defaults |
 | UASTC | The default level, no rate-distortion pass, Zstandard | Normal maps keep their detail |
 
@@ -164,7 +164,7 @@ The engine keeps each clip at one fixed rate of keys ([D-26](D-26-animation-clip
 - Step tracks stay step tracks. Cubic spline tracks become linear keys on the curve, the keys the core would store from it.
 - Keys that change come first in the buffer, each path's together, then the one-key tracks.
 
-The loader needs no marker. The core copies a track that holds one key, or one linear or step key at each frame's time. A key within a thousandth of a frame counts. The core resamples only the other tracks. So a file from another tool whose keys lie on frames also loads with copies. Other files still resample, within M2-R17's bound on frames times tracks. `Clip::resampled_tracks` counts the tracks that a clip resampled. The WebAssembly call `resampledClips` counts the clips.
+The loader needs no marker. The core copies a track that holds one key, or one linear or step key at each frame's time. A key within a thousandth of a frame counts. The core resamples only the other tracks. So a file from another tool whose keys lie on frames also loads with copies. Other files still resample, within the bound on frames times tracks of [D-59](D-59-file-limits.md). `Clip::resampled_tracks` counts the tracks that a clip resampled. The WebAssembly call `resampledClips` counts the clips. The tool's `bake` puts tracks on frames with the same code, so it refuses the same clips before it allocates.
 
 Options left out:
 

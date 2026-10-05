@@ -4,7 +4,8 @@ enable draw_index;
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
 // so the rest of the shader does not change with where the lights come from. null3d::lights finds
-// the point and spot lights of each surface's cluster.
+// the point and spot lights of each surface's cluster, and null3d::ibl reads the scene's
+// environment, which every build reads when the frame's values say the scene has one.
 //
 // The fragment shader works in two steps. First a surface function fills a `Surface` from a
 // `SurfaceInput`: `defaultSurface` reads the material's own values and maps, and a custom
@@ -47,6 +48,8 @@ enable draw_index;
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
 #import null3d::gtao::{screen_occlusion}
+#import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
+#import null3d::lighting::{indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
@@ -54,7 +57,7 @@ enable draw_index;
 #ifdef MORPH
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
@@ -438,10 +441,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
 /// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
-/// and `extra` irradiance such as a light map's, which `occlusion` darkens with the ambient light.
-/// `relative` is the surface's position relative to the camera, `to_view` points from the surface
-/// toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and view
-/// angle.
+/// `extra` irradiance such as a light map's, and the environment's light times the material's
+/// factor of it. `occlusion` darkens the ambient light and the environment's diffuse light, and
+/// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
+/// position relative to the camera, `to_view` points from the surface toward the camera, and
+/// `dfg` holds the split-sum terms at the surface's roughness and view angle.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -454,7 +458,12 @@ fn light_surface(
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
-    sun_color *= sun_shadow(relative, normal, -engine_frame.sun_direction.xyz);
+    // A surface that faces away from the sun gets none of its light whatever the shadow map
+    // holds, so it skips the lookup and the filter's reads.
+    let to_sun = -engine_frame.sun_direction.xyz;
+    if dot(normal, to_sun) > 0.0 {
+        sun_color *= sun_shadow(relative, normal, to_sun);
+    }
 #endif
     let sun = direct_light(
         m,
@@ -467,13 +476,25 @@ fn light_surface(
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
     let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
-    return direct + ambient * occlusion;
+    var indirect = ambient * occlusion;
+    let env = engine_frame.environment;
+    if has_environment(env) {
+        let strength = material_row.uv_u.w;
+        let irradiance = environment_irradiance(env, normal) * strength;
+        let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
+        let image = indirect_specular(m, radiance, irradiance, dfg);
+        let n_dot_v = saturate(dot(normal, to_view));
+        let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
+        indirect += image.diffuse * occlusion + specular;
+    }
+    return direct + indirect;
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
 /// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
 /// alpha when the material blends. `pixel` is the fragment's position, whose depth places it in
-/// the frame's ambient occlusion, which darkens the ambient light with the surface's own occlusion.
+/// the frame's ambient occlusion. That darkens the indirect light, with the surface's own
+/// occlusion.
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
@@ -484,6 +505,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
+    // The frame's lights are exposed already. The surface's own light and its baked light take the
+    // exposure here.
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
     let reflected = light_surface(
         pbr,
@@ -491,17 +514,17 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         normal,
         input.viewDirection,
         dfg,
-        s.irradiance,
+        s.irradiance * engine_frame.output.exposure,
         s.occlusion * screen_occlusion(pixel.xyz, blended),
     );
-    let outgoing = reflected + s.emissive;
+    let outgoing = reflected + s.emissive * engine_frame.output.exposure;
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
 #ifdef ALPHA_MASK
     if s.alpha < material_row.emissive.w {
         discard;
     }
 #endif
-    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
+    let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
     return fragment_color(material_row, finished.rgb, s.alpha);
 }
 

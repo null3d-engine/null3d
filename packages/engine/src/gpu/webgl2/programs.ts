@@ -44,7 +44,7 @@ import {
 	type GlslStage,
 	type ShaderVariants,
 } from '../../generated/shaders';
-import { DEV } from '../dev';
+import { DEV } from '../../shared/dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
@@ -52,13 +52,14 @@ import type { DepthSetup } from './depth';
 /**
  * The first slot of each bind group. A slot is a texture unit, a uniform block binding point and a
  * sampler's place, and each binding of a group takes its group's first slot plus its binding
- * number. The per-frame group, which holds the most bindings, comes first. Group 1 has three
- * slots, group 2 eight (the instance textures, then the two textures that skinned meshes read and
- * the two that morphed meshes read) and group 3 the last twelve, whose samplers take the last
- * places. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows, and
- * their textures below the texture upload unit.
+ * number. The per-frame group, which holds the most bindings, comes first, with fourteen. Group 1
+ * has three slots, group 2 eight (the instance textures, then the two textures that skinned meshes
+ * read and the two that morphed meshes read) and group 3 the last twelve, whose samplers take
+ * places past the last texture unit, which only the backend's own table holds. The groups'
+ * uniform blocks stay below the fewest binding points that WebGL2 allows, and their textures below
+ * the texture upload unit.
  */
-const GROUP_BASES = Uint8Array.of(0, 12, 15, 23);
+const GROUP_BASES = Uint8Array.of(0, 14, 17, 25);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -114,9 +115,10 @@ export function buildPermutation(template: GlslTemplate, permutation: number): n
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
 export interface Program {
-	readonly program: WebGLProgram;
+	/** The GL program, which a second link at the first use may replace (see `prepareProgram`). */
+	program: WebGLProgram;
 	readonly source: GlslProgram;
-	readonly shaders: readonly WebGLShader[];
+	shaders: readonly WebGLShader[];
 	/** The location of naga's first-instance uniform, when the vertex shader has one. */
 	firstInstance: WebGLUniformLocation | null;
 	firstInstanceValue: number;
@@ -213,12 +215,32 @@ export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'
 	return { shader: shaders.mipmap, pipeline };
 }
 
-function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
+function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
 	const shader = gl.createShader(type);
 	if (!shader) throw new Error('WebGL2 could not create a shader');
-	gl.shaderSource(shader, stage.source);
+	gl.shaderSource(shader, source);
 	gl.compileShader(shader);
 	return shader;
+}
+
+/**
+ * Starts compiling a program's two shaders, each source with `tail` added, and linking them into a
+ * new GL program.
+ */
+function link(
+	gl: WebGL2RenderingContext,
+	source: GlslProgram,
+	tail: string,
+): { program: WebGLProgram; shaders: WebGLShader[] } {
+	const program = gl.createProgram();
+	if (!program) throw new Error('WebGL2 could not create a program');
+	const shaders = [
+		compile(gl, gl.VERTEX_SHADER, source.vertex.source + tail),
+		compile(gl, gl.FRAGMENT_SHADER, source.fragment.source + tail),
+	];
+	for (const shader of shaders) gl.attachShader(program, shader);
+	gl.linkProgram(program);
+	return { program, shaders };
 }
 
 /**
@@ -237,14 +259,7 @@ export function createProgram(
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
 	if (!source)
 		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
-	const program = gl.createProgram();
-	if (!program) throw new Error('WebGL2 could not create a program');
-	const shaders = [
-		compile(gl, gl.VERTEX_SHADER, source.vertex),
-		compile(gl, gl.FRAGMENT_SHADER, source.fragment),
-	];
-	for (const shader of shaders) gl.attachShader(program, shader);
-	gl.linkProgram(program);
+	const { program, shaders } = link(gl, source, '');
 	return {
 		program,
 		source,
@@ -270,18 +285,46 @@ export function declaresUniform(source: string, name: string): boolean {
 }
 
 /**
+ * The part of a link log that tells of Safari's random Metal fault: its translator now and then
+ * writes Metal that does not compile from GLSL that links at the next try (see "Browser faults" in
+ * the maintainer notes).
+ */
+export const METAL_FAULT = 'MSL compilation error';
+
+/**
+ * The comment that the second link adds to the end of each source. A browser that keeps translated
+ * shaders by their source then translates them afresh.
+ */
+export const RELINK_TAIL = '\n// null3d: second link\n';
+
+/** The error of a program whose link failed, with the logs of its program and shaders. */
+function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Error {
+	const logs = p.shaders
+		.map((shader) => gl.getShaderInfoLog(shader))
+		.filter((log) => log)
+		.join('\n');
+	return new Error(
+		`a WebGL2 program failed to link${attempt}: ${gl.getProgramInfoLog(p.program)}\n${logs}`,
+	);
+}
+
+/**
  * Checks the program's link result, binds its uniform blocks and textures to the slots of their
  * WGSL groups and bindings, and sets its vertex shader's depth mapping for the backend's depth mode,
  * once, at its first use. A block or texture that the driver removed, because the program never
- * reads it, needs no binding and is skipped. The program is in use afterwards.
+ * reads it, needs no binding and is skipped. The program is in use afterwards. A link that failed
+ * with Safari's random Metal fault is done once more, into a new program, and waited for.
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
-		const logs = p.shaders
-			.map((shader) => gl.getShaderInfoLog(shader))
-			.filter((log) => log)
-			.join('\n');
-		throw new Error(`a WebGL2 program failed to link: ${gl.getProgramInfoLog(p.program)}\n${logs}`);
+		if (!gl.getProgramInfoLog(p.program)?.includes(METAL_FAULT)) throw linkError(gl, p, '');
+		for (const shader of p.shaders) gl.deleteShader(shader);
+		gl.deleteProgram(p.program);
+		const relinked = link(gl, p.source, RELINK_TAIL);
+		p.program = relinked.program;
+		p.shaders = relinked.shaders;
+		if (!gl.getProgramParameter(p.program, gl.LINK_STATUS))
+			throw linkError(gl, p, ' twice, the second time after a fault in its Metal');
 	}
 	for (const shader of p.shaders) {
 		gl.detachShader(p.program, shader);
@@ -316,4 +359,51 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 	const mapping = gl.getUniformLocation(p.program, DEPTH_MAPPING_UNIFORM);
 	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);
 	p.ready = true;
+}
+
+/**
+ * What code that loads on first use, such as the texture generators, needs to draw with programs of
+ * its own: the context, and a program for a template of one build, linked, with its blocks and
+ * textures bound to their slots and its depth mapping set. `program` leaves the program in use.
+ * `programLater` compiles in the background where the context can, and leaves the program in use
+ * that was. `slot` gives the slot of each binding. The code then imports nothing from the files
+ * that the start loads.
+ */
+export interface ProgramHost {
+	readonly gl: WebGL2RenderingContext;
+	program(template: GlslTemplate): WebGLProgram;
+	programLater(template: GlslTemplate): Promise<WebGLProgram>;
+	slot(group: number, binding: number): number;
+}
+
+/** How often `programLater` asks whether a program that compiles in the background is done. */
+const COMPILE_POLL_MS = 4;
+
+/**
+ * The program host of a context that draws in a depth mode, with `KHR_parallel_shader_compile`
+ * where the context has it and the device uses it.
+ */
+export function programHost(
+	gl: WebGL2RenderingContext,
+	depth: DepthSetup,
+	parallel: KHR_parallel_shader_compile | null = null,
+): ProgramHost {
+	return {
+		gl,
+		program(template) {
+			const p = createProgram(gl, template, 0);
+			prepareProgram(gl, p, depth);
+			return p.program;
+		},
+		async programLater(template) {
+			const p = createProgram(gl, template, 0);
+			while (parallel && !gl.getProgramParameter(p.program, parallel.COMPLETION_STATUS_KHR))
+				await new Promise((resolve) => setTimeout(resolve, COMPILE_POLL_MS));
+			const inUse = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+			prepareProgram(gl, p, depth);
+			gl.useProgram(inUse);
+			return p.program;
+		},
+		slot: slotOf,
+	};
 }

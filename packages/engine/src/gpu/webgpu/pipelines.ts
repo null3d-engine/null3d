@@ -21,6 +21,7 @@ import {
 	LAYOUT_TEXTURES,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
+	PERMUTATION_VERTEX_TANGENT,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -77,8 +78,8 @@ import {
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
+import { DEV } from '../../shared/dev';
 import type { CustomShader } from '../../shared/images';
-import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import {
@@ -175,6 +176,9 @@ const BLENDS: Readonly<Record<number, GPUBlendState>> = {
 		alpha: { srcFactor: 'zero', dstFactor: 'one' },
 	},
 };
+
+/** The formats whose mip levels the GPU makes: 8-bit color, as the draw list allows. */
+const MIP_FORMATS: readonly GPUTextureFormat[] = ['rgba8unorm', 'rgba8unorm-srgb'];
 
 /** The write mask of every color channel, as `GPUColorWrite.ALL` holds it. */
 const ALL_CHANNELS = 0xf;
@@ -292,7 +296,8 @@ export class Pipelines {
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
 	private readonly skinLayout: GPUPipelineLayout;
-	private readonly skin: WgslShader | undefined;
+	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
+	private readonly skin: ShaderVariants;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The module of the fragment shader that writes nothing, made at its first use. */
@@ -316,10 +321,12 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		];
 		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
-		// The materials' custom values, the table of specular terms, then the shadow map, the
-		// sampler that compares depths in it, its cascades, the camera's light grid and light list,
-		// the shadow atlas of point and spot lights with its tiles, and ambient occlusion's
-		// texture, which the lit shading reads with textureLoad.
+		// The materials' custom values, the table of specular terms, then the shadow map, whose
+		// depths the receivers read as floats, the sampler that compares depths in the shadow
+		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
+		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
+		// textureLoad, the environment's cube map with its filtering sampler, and the sampler that
+		// reads four texels of the shadow map at once.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -331,7 +338,7 @@ export class Pipelines {
 			{
 				binding: 4,
 				visibility: fragment,
-				texture: { sampleType: 'depth', viewDimension: '2d-array' },
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
 			},
 			{ binding: 5, visibility: fragment, sampler: { type: 'comparison' } },
 			{ binding: 6, visibility: fragment, buffer: { type: 'uniform' } },
@@ -345,6 +352,9 @@ export class Pipelines {
 			},
 			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
+			{ binding: 13, visibility: fragment, sampler: {} },
+			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -420,14 +430,12 @@ export class Pipelines {
 			{ binding: 11, visibility: fragment, texture: {} },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
-		// Bloom's levels, which the final pass's bloom build reads with a linear filter, after its
-		// weights.
+		// The base level of bloom's chain, which the final pass's bloom build reads with a linear
+		// filter, after its settings.
 		this.defineLayout(LAYOUT_FINAL_BLOOM, 'final bloom', [
 			...finalEntries,
 			{ binding: 2, visibility: fragment, buffer: { type: 'uniform' } },
-			...[3, 4, 5, 6, 7].map(
-				(binding): GPUBindGroupLayoutEntry => ({ binding, visibility: fragment, texture: {} }),
-			),
+			{ binding: 3, visibility: fragment, texture: {} },
 			{ binding: 8, visibility: fragment, sampler: {} },
 		]);
 		// A step of bloom: its settings, the texture it reads, and the linear sampler.
@@ -553,7 +561,7 @@ export class Pipelines {
 		});
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
-		this.skin = variantFor(shaders.skin, 0, 'wgsl')?.wgsl ?? undefined;
+		this.skin = shaders.skin;
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -592,11 +600,17 @@ export class Pipelines {
 		return template.shader;
 	}
 
-	/** Adds a render pipeline template under an id that no other template has. */
+	/**
+	 * Adds a render pipeline template under an id that no other template has. The shader of a
+	 * feature that loads on first use has no variants until its module arrives.
+	 */
 	defineTemplate(id: number, template: RenderTemplate): void {
 		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);
 		const variants = Object.values(template.shader);
-		if (!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline]))
+		if (
+			variants.length > 0 &&
+			!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline])
+		)
 			throw new Error(`the shader of template ${id} has no pipeline ${template.pipeline}`);
 		this.templates[id] = template;
 	}
@@ -605,6 +619,11 @@ export class Pipelines {
 		const layout = this.layouts[id];
 		if (!layout) throw new Error(`unknown bind group layout ${id}`);
 		return layout;
+	}
+
+	/** Creates the shader module of `shader` ahead of the pipelines that will share it. */
+	prepareModule(label: string, shader: WgslShader): void {
+		this.module(label, shader);
 	}
 
 	private module(label: string, shader: WgslShader): GPUShaderModule {
@@ -708,33 +727,71 @@ export class Pipelines {
 		return this.emptyFragment;
 	}
 
-	/** The pipeline that makes mip levels of textures of `format`, made at its first use. */
+	/**
+	 * Starts to build the pipelines that make mip levels, in the background, for each format whose
+	 * levels the GPU makes. The first texture of each format then makes its levels without a
+	 * compile inside the frame. A build that fails is made again at first use, which reports it.
+	 */
+	prebuildMipmaps(): void {
+		if (!this.mipmap) return;
+		for (const format of MIP_FORMATS)
+			this.device.createRenderPipelineAsync(this.mipDescriptor(format)).then(
+				(pipeline) => {
+					if (!this.mipPipelines.has(format)) this.mipPipelines.set(format, pipeline);
+				},
+				() => {},
+			);
+	}
+
+	/**
+	 * The pipeline that makes mip levels of textures of `format`: the one built in the background
+	 * when it is done, else one made at once.
+	 */
 	mipmaps(format: GPUTextureFormat): GPURenderPipeline {
 		let pipeline = this.mipPipelines.get(format);
 		if (!pipeline) {
-			const shader = this.mipmap;
-			if (!shader) throw new Error("the device's shader module has no mip level shader");
-			const module = this.module('mipmaps', shader);
-			const entryPoints = shader.pipelines.main;
-			pipeline = this.device.createRenderPipeline({
-				label: 'mipmaps',
-				layout: 'auto',
-				vertex: { module, entryPoint: entryPoints?.vertex },
-				fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },
-			});
+			pipeline = this.device.createRenderPipeline(this.mipDescriptor(format));
 			this.mipPipelines.set(format, pipeline);
 		}
 		return pipeline;
 	}
 
-	/** How to build a compute pipeline of a template: culling, skinning, or a step of light clustering. */
-	compute(template: number): GPUComputePipelineDescriptor {
+	/** How to build the pipeline that makes mip levels of textures of `format`. */
+	private mipDescriptor(format: GPUTextureFormat): GPURenderPipelineDescriptor {
+		const shader = this.mipmap;
+		if (!shader) throw new Error("the device's shader module has no mip level shader");
+		const module = this.module('mipmaps', shader);
+		const entryPoints = shader.pipelines.main;
+		return {
+			label: 'mipmaps',
+			layout: 'auto',
+			vertex: { module, entryPoint: entryPoints?.vertex },
+			fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },
+		};
+	}
+
+	/**
+	 * The shader variants of a compute template whose shader loads on first use, the skinning pass's,
+	 * or undefined for a template whose shader the device's module of the start holds.
+	 */
+	computeVariants(template: number): ShaderVariants | undefined {
+		return template === TEMPLATE_SKIN ? this.skin : undefined;
+	}
+
+	/**
+	 * How to build a compute pipeline of a template: culling, skinning, or a step of light
+	 * clustering. The skinning pass takes the build of its permutation bits: with the vertex tangent
+	 * bit for vertex formats that have a tangent.
+	 */
+	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
-			if (!this.skin) throw new Error("the device's shader module has no skinning shader");
+			const tangent = (permutation & PERMUTATION_VERTEX_TANGENT) !== 0;
+			const shader = variantFor(this.skin, permutation, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no skinning shader");
 			return {
-				label: 'skin',
+				label: tangent ? 'skin tangent' : 'skin',
 				layout: this.skinLayout,
-				compute: { module: this.module('skin', this.skin), entryPoint: 'main' },
+				compute: { module: this.module('skin', shader), entryPoint: 'main' },
 			};
 		}
 		if (template === TEMPLATE_CULL) {

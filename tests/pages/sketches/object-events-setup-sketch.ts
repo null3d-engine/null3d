@@ -1,11 +1,12 @@
 // A click on an earlier frame of the setup, for the object events test. The setup draws a frame of
-// a box, then says so on a broadcast channel and waits for the page's answer there: the engine's
-// start waits for the setup, so the page cannot message the sketch yet. The test clicks the box
-// during the wait. Then the setup turns its camera away from the box and draws more frames, and
+// a box. Once that frame is on screen, it says so on a broadcast channel and waits for the page's
+// answer there: the engine's start waits for the setup, so the page cannot message the sketch yet.
+// The test clicks the box during the wait. Then the setup turns its camera away from the box and draws more frames, and
 // the preset check may draw many more. The click must still reach what its own frame showed: the
 // box's click handler writes a line, and the first update writes the object that a ray from
 // `camera.screenToRay` through the click hits. Each message from the page asks for the lines.
 import { defineSketch, type ObjectPointerEvent, type RaycastHit } from '@null3d/engine';
+import { presentedFrame } from '../lib/shown-frame';
 
 /** The channel on which the setup and the page meet, which the page's script names too. */
 const CHANNEL = 'object-events-setup';
@@ -31,6 +32,11 @@ export default defineSketch(async ({ scene, geometry, materials, input, page }) 
 		channel.onmessage = () => resolve();
 	});
 	await scene.warmUp();
+	// The warm-up ends once the frame's pipelines are built, which the thread that draws reports
+	// just before it draws the frame. Where that thread is not the sketch's, a click could still
+	// come while the canvas shows no frame, whose ray takes the camera as it stands. Every frame
+	// before the turn shows the box.
+	while (presentedFrame(input) < 1) await new Promise((resolve) => setTimeout(resolve, 1));
 	channel.postMessage('waiting');
 	await started;
 	channel.close();

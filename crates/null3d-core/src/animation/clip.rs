@@ -181,11 +181,16 @@ impl Clip {
     }
 
     /// The frame before `time` and the fraction of the way to the next frame. Times outside the
-    /// clip take its first or last key, and NaN takes the first.
+    /// clip take its first or last key, and NaN takes the first. The clip's end gives the last
+    /// key exactly: its duration times its rate can round to just below the last frame in 32-bit
+    /// floats, which would leave a step track on the key before.
     #[inline]
     fn position(&self, time: f32) -> (usize, f32) {
-        let p = time.max(0.0).min(self.duration) * self.rate;
         let last = self.frames.saturating_sub(2);
+        if time >= self.duration {
+            return (last as usize, 1.0);
+        }
+        let p = time.max(0.0) * self.rate;
         // A cast to an integer saturates, and turns NaN into 0.
         let frame = (p as u32).min(last);
         (frame as usize, (p - frame as f32).clamp(0.0, 1.0))

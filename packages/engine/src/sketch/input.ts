@@ -1,9 +1,10 @@
 // ctx.input: the sketch's view of the input that the page writes into the input ring. Once per frame,
 // before onUpdate, the reader takes every event that the page wrote since the previous frame, in
 // order, and updates the state that the input calls answer from. So a key pressed and released
-// between two frames counts as both pressed and released in the next frame. The one exception is a
-// press of the pointer after its release: it starts a new drag, and the events from it on wait for
-// the next frame, so the pointer's drag in a frame never joins two drags. Reading allocates
+// between two frames counts as both pressed and released in the next frame. The exceptions follow a
+// release of the pointer: a press starts a new drag, and wheel scroll may start a new gesture. The
+// events from either on wait for the next frame, so a frame's drag never joins two drags, and its
+// scroll never comes after the end of its drag. Reading allocates
 // nothing: the state lives in typed arrays and in objects made once. While objects listen for
 // pointer events, the reader also copies each pointer event into their log. Hold mode never reads
 // the ring, so a held frame never depends on input.
@@ -76,7 +77,8 @@ export interface InputPointer {
 	/**
 	 * The wheel's scroll since the previous frame, in pixels: positive where a page would scroll down.
 	 * A wheel that scrolls by lines counts 16 pixels a line, and one that scrolls by pages counts 100
-	 * a page, as three.js's controls count them.
+	 * a page, as three.js's controls count them. Scroll that follows a release of the pointer waits
+	 * for the next frame, so a frame's scroll never comes after the end of its drag.
 	 */
 	readonly wheel: number;
 	/**
@@ -302,7 +304,8 @@ export class InputReader implements Input, PointerInput {
 
 	/**
 	 * Takes the events the page wrote since the previous frame, for frame `frame`, up to a press of
-	 * the pointer that follows its release. Movement and wheel scroll start again from 0.
+	 * the pointer or wheel scroll that follows its release. Movement and wheel scroll start again
+	 * from 0.
 	 * `setupFrames` is the count of the engine's frames that ran no sketch code.
 	 */
 	beginFrame(frame: number, setupFrames = 0): void {
@@ -322,7 +325,7 @@ export class InputReader implements Input, PointerInput {
 		}
 		const { slots, slotFloats } = this.control;
 		const written = Atomics.load(slots, Slot.InputWrite);
-		if (((written - this.next) | 0) > INPUT_RING_EVENTS) {
+		if (((written - this.next) | 0) >= INPUT_RING_EVENTS) {
 			// The page wrote over events that the sketch never read, one of which may have been a
 			// release. Releasing everything keeps a key from staying down.
 			this.releaseAll();
@@ -338,8 +341,10 @@ export class InputReader implements Input, PointerInput {
 			const primary = ((ints[base + FIELD_FLAGS] as number) & FLAG_PRIMARY) !== 0;
 			// A press of the pointer after its release in this frame starts the next drag, which
 			// waits for the next frame with every event after it. Each frame's drag then belongs to
-			// one press, and two quick clicks count as two presses.
-			if (released && primary && type === EVENT_POINTER_DOWN) break;
+			// one press, and two quick clicks count as two presses. Wheel scroll after the release
+			// waits too: a frame's scroll then never follows the end of its drag, so controls that
+			// ignore the wheel during a drag still take the scroll that comes after it.
+			if (released && (type === EVENT_WHEEL || (primary && type === EVENT_POINTER_DOWN))) break;
 			this.apply(base);
 			if (
 				log !== undefined &&
