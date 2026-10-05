@@ -39,11 +39,12 @@ use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
-use null3d_render::bloom::Bloom;
+use null3d_render::bloom::{self, Blend, Bloom};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
@@ -166,17 +167,29 @@ struct Engine {
     /// The post-processing values that TypeScript writes (`constants::post_value`), with three.js's
     /// defaults until it writes others.
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
+    /// The environment's values that TypeScript writes (`constants::environment_value`).
+    environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
 }
 
-/// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
-/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1,
+/// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
+/// threshold and soft edge, a table at its full intensity over colors from 0 to 1,
 /// `VignetteShader`'s offset and darkness, `GTAOPass`'s radius, thickness, distance exponent,
-/// distance falloff, scale, samples and blend intensity, and a white outline of 2 CSS pixels with
-/// no line around hidden parts.
-const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
-    16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0,
-];
+/// distance falloff, scale, samples and blend intensity, a white outline of 2 CSS pixels with no
+/// line around hidden parts, then bloom's mixing blend and its levels' default shares.
+const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
+    let mut values = [
+        1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
+        16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+    ];
+    let mut level = 0;
+    while level < bloom::LEVELS {
+        values[constants::post_value::BLOOM_WEIGHTS as usize + level] =
+            bloom::DEFAULT_WEIGHTS[level];
+        level += 1;
+    }
+    values
+};
 
 impl Engine {
     /// The post-processing value at `place` (`constants::post_value`).
@@ -464,8 +477,16 @@ pub fn init_engine(
         query_hits: vec![0.0; query::HIT_FLOATS as usize],
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
+        environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
     });
     0
+}
+
+/// The address of the environment's values (`constants::environment_value`), which TypeScript
+/// writes before it calls `setEnvironment`.
+#[wasm_bindgen(js_name = environmentValues)]
+pub fn environment_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.environment_values[..])))
 }
 
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes
@@ -1651,6 +1672,22 @@ pub fn create_volume_texture(width: u32, height: u32, depth: u32, format: u32) -
     })
 }
 
+// Creates a cube texture with faces of `size` x `size` texels in `format`, shared-exponent floats
+// or half floats, with `levels` mip levels and no texels yet, and returns its handle. It is read
+// with linear filters within and between levels. Its texels come from `setTextureData`: each level
+// in turn from the largest, each level's six faces in turn.
+/// Creates a cube texture and returns its handle.
+#[wasm_bindgen(js_name = createCubeTexture)]
+pub fn create_cube_texture(size: u32, levels: u32, format: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .create_cube(size, levels, format)
+            .map(Handle::raw)
+            .map_err(texture_failure)
+    })
+}
+
 // Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
 // `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
 // that id, in id order, and the image uploads once the thread has it. An image of another size
@@ -1665,6 +1702,21 @@ pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u
             .map_err(texture_failure)?;
         e.structure_changed |= moved;
         Ok(image)
+    })
+}
+
+// Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU in
+// `slices` parts of its work, one a frame, and returns the generator's id, which it takes from the
+// images' ids. TypeScript sends the generator's name to the thread that draws under that id, in id
+// order, and the cube fills once the thread has loaded the generator's code.
+/// Gives a cube texture texels from a generator and returns the generator's id.
+#[wasm_bindgen(js_name = generateTexture)]
+pub fn generate_texture(texture: u32, slices: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .set_generated(Handle::from_raw(texture), slices)
+            .map_err(texture_failure)
     })
 }
 
@@ -1998,16 +2050,19 @@ pub fn set_output(tone_mapping: u32) -> u32 {
     })
 }
 
-/// Turns bloom on with its strength, radius and threshold from the post-processing values, or off,
-/// from the next frame on. The TypeScript API checks the values.
+/// Turns bloom on with its intensity, threshold, soft edge, blend and level weights from the
+/// post-processing values, or off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setBloom)]
 pub fn set_bloom(on: bool) -> u32 {
     with_engine(|e| {
-        let [strength, radius, threshold] = e.post_values3(constants::post_value::BLOOM_STRENGTH);
-        let bloom = on.then_some(Bloom {
-            strength,
-            radius,
+        use constants::post_value as place;
+        let [intensity, threshold, knee] = e.post_values3(place::BLOOM_INTENSITY);
+        let bloom = on.then(|| Bloom {
+            intensity,
             threshold,
+            knee,
+            blend: Blend::from_code(e.post_value(place::BLOOM_BLEND) as u32).unwrap_or_default(),
+            weights: std::array::from_fn(|level| e.post_value(place::BLOOM_WEIGHTS + level as u32)),
         });
         e.renderer.settings_mut().set_bloom(bloom);
         0
@@ -2074,6 +2129,36 @@ pub fn set_lut(texture: u32) -> u32 {
     })
 }
 
+/// Lights the scene with the environment whose prefiltered light is cube texture `texture`, or
+/// with none when `texture` is 0, from the next frame on. The environment's values give its
+/// intensity, its rotation and the coefficients of its diffuse light. The TypeScript API checks the
+/// values. Fails for a texture that is not live.
+#[wasm_bindgen(js_name = setEnvironment)]
+pub fn set_environment(texture: u32) -> u32 {
+    with_engine(|e| {
+        use constants::environment_value as at;
+        let values = &e.environment_values;
+        let value = |place: u32| values[place as usize];
+        let rotation = std::array::from_fn(|k| value(at::ROTATION + k as u32));
+        let sh = std::array::from_fn(|i| {
+            std::array::from_fn(|c| value(at::SH + 3 * i as u32 + c as u32))
+        });
+        let intensity = value(at::INTENSITY);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        settings.set_environment((!texture.is_none()).then_some(Environment {
+            texture,
+            intensity,
+            rotation,
+            sh,
+        }));
+        0
+    })
+}
+
 /// Turns the vignette on with three.js's offset and darkness from the post-processing values, or
 /// off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setVignette)]
@@ -2120,11 +2205,12 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
     })
 }
 
-/// How many times fewer taps than three.js's bloom's blurs read, from the next frame on.
-#[wasm_bindgen(js_name = setBloomSamples)]
-pub fn set_bloom_samples(divisor: u32) -> u32 {
+/// The texels on the short side of bloom's base, and the governor's halvings of it, from the
+/// next frame on.
+#[wasm_bindgen(js_name = setBloomChain)]
+pub fn set_bloom_chain(size: u32, halvings: u32) -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_bloom_divisor(divisor);
+        e.renderer.settings_mut().set_bloom_chain(size, halvings);
         0
     })
 }

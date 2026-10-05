@@ -26,10 +26,11 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
-use crate::bloom::{self, Bloom};
+use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
@@ -607,9 +608,8 @@ pub struct SceneSettings {
     output: Output,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
-    /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
-    /// settings raise.
-    bloom_divisor: u32,
+    /// The size of bloom's base, which the quality settings set, and the governor's halvings of it.
+    bloom_chain: ChainFrame,
     /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
     morph_cap: u32,
     /// Ambient occlusion's settings while the sketch turns it on.
@@ -621,6 +621,8 @@ pub struct SceneSettings {
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
+    /// The scene's environment while the sketch sets one.
+    environment: Option<Environment>,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
@@ -668,12 +670,13 @@ impl SceneSettings {
             canvas,
             output: Output::default(),
             bloom: None,
-            bloom_divisor: 1,
+            bloom_chain: ChainFrame::default(),
             morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
             lut: None,
             vignette: None,
+            environment: None,
             outline: None,
             clock: [0.0; 4],
             render_scaling: false,
@@ -762,16 +765,21 @@ impl SceneSettings {
         self.bloom = bloom;
     }
 
-    /// How many times fewer taps than three.js's each of bloom's blurs reads.
-    pub fn bloom_divisor(&self) -> u32 {
-        self.bloom_divisor
+    /// The size of bloom's base and the governor's halvings of it.
+    pub(crate) fn bloom_chain(&self) -> ChainFrame {
+        self.bloom_chain
     }
 
-    /// Makes each of bloom's blurs read `divisor` times fewer taps than three.js's, rounded up,
-    /// from 1 to [`bloom::MAX_SAMPLE_DIVISOR`], from the next recorded frame on. Fewer taps read
-    /// the same kernel more coarsely, so the glow keeps its size.
-    pub fn set_bloom_divisor(&mut self, divisor: u32) {
-        self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    /// Gives bloom's chain a base of `size` texels on the canvas's short side, a power of two from
+    /// [`crate::bloom::MIN_SIZE`] to [`crate::bloom::MAX_SIZE`], halved `halvings` times during
+    /// play, from the next recorded frame on. A new size makes the chain's targets again; the
+    /// halvings make no GPU object. Either way the glow keeps its size.
+    pub fn set_bloom_chain(&mut self, size: u32, halvings: u32) {
+        let size = size.clamp(crate::bloom::MIN_SIZE, crate::bloom::MAX_SIZE);
+        self.bloom_chain = ChainFrame {
+            size: 1 << size.ilog2(),
+            halvings: halvings.min(crate::bloom::LEVELS as u32 - 1),
+        };
     }
 
     /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
@@ -830,6 +838,25 @@ impl SceneSettings {
     /// on.
     pub fn set_vignette(&mut self, vignette: Option<Vignette>) {
         self.vignette = vignette;
+    }
+
+    /// Lights the scene with an environment, or with none, from the next recorded frame on.
+    pub fn set_environment(&mut self, environment: Option<Environment>) {
+        self.environment = environment;
+    }
+
+    /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
+    /// while the scene has no environment to draw, with the environment's part of the frame
+    /// uniform. A frame builder asks after the frame's uploads, so a held frame, which uploads
+    /// everything, draws with the environment.
+    pub(crate) fn environment_map(&self, blank: u32) -> (u32, EnvironmentUniform) {
+        let ready = self.environment.and_then(|environment| {
+            Some((environment, self.textures.ready_cube(environment.texture)?))
+        });
+        match ready {
+            Some((environment, (map, levels))) => (map, environment.uniform(levels)),
+            None => (blank, EnvironmentUniform::default()),
+        }
     }
 
     /// The outline's settings while it is on, with its width in pixels of the canvas, and `None`

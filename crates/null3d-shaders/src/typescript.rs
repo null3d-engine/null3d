@@ -11,7 +11,9 @@
 //! imports on demand, so a page downloads only the builds its device draws with. The builds with
 //! the bits of a feature that loads on demand (`permutation::ON_DEMAND`) go into modules of their
 //! own beside those, which hold only those builds, so a page that never draws the feature
-//! downloads none of them.
+//! downloads none of them. A shader that loads on a feature's first use has a module of its own
+//! for each target, which the feature's code imports, so no page downloads it before it uses the
+//! feature.
 
 use std::collections::BTreeMap;
 
@@ -121,6 +123,11 @@ const LOADER_TYPE: &str = r"
 type DeviceModules = Readonly<Record<number, () => Promise<{ SHADERS: DeviceShaders }>>>;
 ";
 
+/// The start of each module of a shader that loads on first use.
+const FIRST_USE_HEADER: &str = r"
+import type { ShaderVariant } from './shaders';
+";
+
 /// The loaders of the device modules, after the loader tables. Each target has a table and a
 /// function of its own, so a bundle that loads one target's shaders holds none of the other's.
 const LOADERS: &str = r"
@@ -158,7 +165,8 @@ export function loadGlslShaders(bits: number): Promise<DeviceShaders> {
  */
 export async function everyShader(): Promise<Record<string, ShaderVariants>> {
 	const every: Record<string, ShaderVariants> = { ...SHADERS };
-	for (const load of [...Object.values(WGSL_MODULES), ...Object.values(GLSL_MODULES)]) {
+	const loads = [...Object.values(WGSL_MODULES), ...Object.values(GLSL_MODULES), ...FIRST_USE];
+	for (const load of loads) {
 		for (const [name, variants] of Object.entries((await load()).SHADERS)) {
 			every[name] = { ...every[name], ...variants };
 		}
@@ -278,7 +286,78 @@ pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
     for (module, builds) in &devices {
         modules.insert(module.stem(), device_module(*module, builds));
     }
+    for (stem, shader, target) in first_use_modules(output) {
+        modules.insert(stem, first_use_module(output, shader, target));
+    }
     modules
+}
+
+/// Each module of the shaders that load on first use: its file name without its extension, the
+/// shader and the target. The name is the main module's, the shader's name with hyphens, and the
+/// target, such as `shaders-environment-wgsl`.
+fn first_use_modules(output: &Output) -> Vec<(String, &str, Target)> {
+    let mut modules = Vec::new();
+    for shader in &output.first_use {
+        let Some(variants) = output.shaders.get(shader) else {
+            continue;
+        };
+        for target in [Target::Wgsl, Target::Glsl] {
+            if variants.values().any(|variant| has_target(variant, target)) {
+                let stem = format!(
+                    "{MAIN_MODULE}-{}-{}",
+                    shader.replace('_', "-"),
+                    target.name()
+                );
+                modules.push((stem, shader.as_str(), target));
+            }
+        }
+    }
+    modules
+}
+
+/// True when a build has output for `target`.
+fn has_target(variant: &VariantOutput, target: Target) -> bool {
+    match target {
+        Target::Wgsl => variant.wgsl.is_some(),
+        Target::Glsl => variant.glsl.is_some(),
+    }
+}
+
+/// A module of a shader that loads on first use: the builds of one target, as the shader's own
+/// export, and `SHADERS`, which gathers it by name.
+fn first_use_module(output: &Output, shader: &str, target: Target) -> String {
+    let mut ts = Writer::default();
+    ts.out.push_str(HEADER);
+    ts.out.push_str(FIRST_USE_HEADER);
+    let pipelines = output.pipelines.get(shader).map_or(&[][..], Vec::as_slice);
+    let variants: Vec<(&String, &VariantOutput)> = output.shaders[shader]
+        .iter()
+        .filter(|(_, variant)| has_target(variant, target))
+        .collect();
+    ts.line("");
+    ts.line(&format!(
+        "/** The {} builds of the `{shader}` shader, which loads on its first use. */",
+        target.name().to_ascii_uppercase()
+    ));
+    ts.open(&format!("export const {}: {{", export_name(shader)));
+    for (name, _) in &variants {
+        ts.variant_type(name, pipelines);
+    }
+    ts.depth -= 1;
+    ts.open("} = {");
+    for (name, variant) in &variants {
+        ts.open(&format!("{name}: {{"));
+        ts.variant(variant);
+        ts.close("},");
+    }
+    ts.close("};");
+    ts.line("");
+    ts.line("/** The shader above, by name. */");
+    ts.line(&format!(
+        "export const SHADERS = {{ {shader}: {} }} as const;",
+        export_name(shader)
+    ));
+    ts.out
 }
 
 /// The main module: the types, one export per shader that does not load by device, `SHADERS`,
@@ -321,7 +400,9 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
     let own: Vec<(&String, &BTreeMap<String, VariantOutput>)> = output
         .shaders
         .iter()
-        .filter(|(shader, _)| !output.by_device.contains(*shader))
+        .filter(|(shader, _)| {
+            !output.by_device.contains(*shader) && !output.first_use.contains(*shader)
+        })
         .collect();
     for &(shader, variants) in &own {
         let pipelines = output.pipelines.get(shader).map_or(&[][..], Vec::as_slice);
@@ -354,6 +435,20 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         ts.close("} as const;");
     }
     ts.out.push_str(LOADER_TYPE);
+    ts.line("");
+    ts.line(
+        "/** Loaders of the modules of the shaders that load on first use, for `everyShader`. */",
+    );
+    let first_use = first_use_modules(output);
+    if first_use.is_empty() {
+        ts.line("const FIRST_USE: (() => Promise<{ SHADERS: object }>)[] = [];");
+    } else {
+        ts.open("const FIRST_USE: (() => Promise<{ SHADERS: object }>)[] = [");
+        for (stem, _, _) in &first_use {
+            ts.line(&format!("() => import('./{stem}'),"));
+        }
+        ts.close("];");
+    }
     for target in [Target::Wgsl, Target::Glsl] {
         let name = target.name().to_ascii_uppercase();
         let modules: Vec<DeviceModule> = devices
@@ -684,5 +779,28 @@ mod tests {
         let glsl = &modules["shaders-glsl-draw-index-tone-map"];
         assert!(glsl.contains("with DRAW_INDEX and TONE_MAP. */"));
         assert!(glsl.contains("\tcull: {},\n\tlit: {\n\t\twebgl2_draw_index_tone_map: {\n"));
+    }
+
+    #[test]
+    fn a_shader_that_loads_on_first_use_has_a_module_per_target_outside_the_main_module() {
+        let mut output = output();
+        let environment = BTreeMap::from([
+            ("webgpu".to_owned(), build(Target::Wgsl, 0)),
+            ("webgl2".to_owned(), build(Target::Glsl, 0)),
+        ]);
+        output.shaders.insert("room_light".to_owned(), environment);
+        output.first_use = ["room_light".to_owned()].into();
+        let modules = modules(&output);
+        let main = &modules[MAIN_MODULE];
+        assert!(!main.contains("ROOM_LIGHT_SHADER"), "{main}");
+        assert!(main.contains("\t() => import('./shaders-room-light-glsl'),\n"));
+        assert!(main.contains("\t() => import('./shaders-room-light-wgsl'),\n"));
+        let wgsl = &modules["shaders-room-light-wgsl"];
+        assert!(wgsl.contains("export const ROOM_LIGHT_SHADER: {\n\treadonly webgpu:"));
+        assert!(!wgsl.contains("webgl2"));
+        assert!(
+            wgsl.contains("export const SHADERS = { room_light: ROOM_LIGHT_SHADER } as const;")
+        );
+        assert!(modules["shaders-room-light-glsl"].contains("\twebgl2: {\n"));
     }
 }
