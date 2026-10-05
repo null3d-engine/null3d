@@ -1,7 +1,9 @@
 # cargo-nextest runs each test in a process of its own, many at once. The test files that count
 # allocations install a counting allocator and measure the engine's job workers too, so each of
 # their tests runs with the machine to itself, as under cargo test, where no other test file runs
-# beside them. Under the load of other tests, the light grid's allocation test once failed in CI.
+# beside them. Under the load of other tests, the light grid's allocation test once counted frees
+# from job workers that an earlier case had stopped. The counter now stops counting a worker when
+# its work returns, and running alone keeps such timing out of these tests.
 # These tests run first: a test that needs the whole machine waits until every running test ends,
 # and among the others it held back the rest of the run behind each slow test.
 [[profile.default.overrides]]
