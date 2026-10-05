@@ -15,7 +15,8 @@ enable draw_index;
 // ALPHA_MASK builds draw nothing where the alpha falls below the material's cutoff, and a material
 // that blends writes premultiplied color. Fog takes the sprite's center, as three.js's fog depth
 // does.
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
+#import null3d::mesh::{fragment_color}
 #import null3d::mesh::{frame as engine_frame, material_of}
 #import null3d::vertex::{mesh_position, mesh_uv}
 #ifdef MAP
@@ -117,6 +118,6 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         discard;
     }
 #endif
-    let finished = finish(fogged(base, in.relative, m), in.clip.xy);
+    let finished = finish_exposed(fogged(exposed(base), in.relative, m), in.clip.xy);
     return fragment_color(m, finished.rgb, alpha);
 }

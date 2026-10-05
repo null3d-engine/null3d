@@ -171,6 +171,36 @@ function hdrLimitTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the real-units tests: a sun of 100,000 lux at EV100 15, with bloom. */
+export const REAL_UNITS_SKETCH = 'tests/pages/sketches/real-units-sketch.ts';
+
+/**
+ * How far the real-units scene in three.js's units may stray from its image in real units. The
+ * lights take the same exposed values either way, and only the rounding of a 32-bit float apart.
+ */
+const REAL_UNITS_TOLERANCE = { maxDiffRatio: 0.001 };
+
+/**
+ * A scene in real units at EV100 15 with bloom, and the same scene in three.js's units with the
+ * exposure set as a number, which must draw the same image. The engine multiplies the exposure into
+ * the lights, so the sun's highlight stays white and glows on every tier. The real-units spec
+ * checks those pixels too, so the fault of an exposure at the end fails even where a reference
+ * would match.
+ */
+function realUnitsTests(): ImageTest[] {
+	return [
+		{ name: 'real-units', sketch: REAL_UNITS_SKETCH, hold: 0 },
+		{
+			name: 'real-units-exposure',
+			sketch: `${REAL_UNITS_SKETCH}?exposure`,
+			hold: 0,
+			reference: 'real-units',
+			tolerance: REAL_UNITS_TOLERANCE,
+			deviceTolerance: REAL_UNITS_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the ambient occlusion tests: a floor, a wall and shapes on them (bench/scenes/ao.ts). */
 const AO_SKETCH = 'tests/pages/sketches/ao-sketch.ts';
 
@@ -631,6 +661,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...hdrLimitTests(),
+	...realUnitsTests(),
 	...aoTests(),
 	...outlineTests(),
 	...occlusionTests(),

@@ -35,11 +35,11 @@ export default defineSketch(({ scene, time }) => {
 
 | Call | Class | Light | Its own options |
 | --- | --- | --- | --- |
-| `createDirectionalLight(options)` | `DirectionalLight` | Parallel light from one direction, like sunlight | `direction`, `castShadows`, `shadow` |
-| `createPointLight(options)` | `PointLight` | Light from a point in every direction, out to its range | `range` (required), `decay`, `castShadows`, `shadow` |
-| `createSpotLight(options)` | `SpotLight` | Light from a point in a cone, out to its range | `range` (required), `angle`, `penumbra`, `decay`, `direction`, `target`, `castShadows`, `shadow` |
-| `createHemisphereLight(options)` | `HemisphereLight` | Light from the sky above and the ground below | `skyColor`, `groundColor` |
-| `createAmbientLight(options)` | `AmbientLight` | The same light on every surface | |
+| `createDirectionalLight(options)` | `DirectionalLight` | Parallel light from one direction, like sunlight | `direction`, `castShadows`, `shadow`, `intensityUnit` |
+| `createPointLight(options)` | `PointLight` | Light from a point in every direction, out to its range | `range` (required), `decay`, `castShadows`, `shadow`, `intensityUnit` |
+| `createSpotLight(options)` | `SpotLight` | Light from a point in a cone, out to its range | `range` (required), `angle`, `penumbra`, `decay`, `direction`, `target`, `castShadows`, `shadow`, `intensityUnit` |
+| `createHemisphereLight(options)` | `HemisphereLight` | Light from the sky above and the ground below | `skyColor`, `groundColor`, `intensityUnit` |
+| `createAmbientLight(options)` | `AmbientLight` | The same light on every surface | `intensityUnit` |
 
 Every light takes `color` and `intensity`, except the hemisphere light, which takes `skyColor`, `groundColor` and `intensity`. Every light also takes the options of every object: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them.
 
@@ -55,7 +55,28 @@ A light's scale changes neither its range nor its cone.
 
 Each color is a hex string or a number, which are sRGB, or three linear components from 0 to 1. The default is white. The intensity scales the color, and the default is 1. A hemisphere light's intensity scales both of its colors.
 
-Units follow three.js since r155. The intensity of a point or spot light is in candela. A directional light's intensity is the light that reaches a surface facing it. The standard material uses the lighting formulas of three.js's `MeshStandardMaterial`, so the same colors and intensities give the same result in both engines. Take a white directional light with an intensity of π, about 3.14, and no ambient light. A rough surface that faces it shows nearly its full color. [Lighting and environment](../concepts/lighting.md) covers the units in full.
+Units follow three.js since r155. The intensity of a point or spot light is in candela. A directional light's intensity is in lux: the light that reaches a surface facing it. The standard material uses the lighting formulas of three.js's `MeshStandardMaterial`, so the same colors and intensities give the same result in both engines. Take a white directional light with an intensity of π, about 3.14, and no ambient light. A rough surface that faces it shows nearly its full color. [Lighting and environment](../concepts/lighting.md#units-and-exposure) covers the units in full.
+
+The `intensityUnit` option names another unit for the intensity and for `setIntensity`:
+
+| Light | `intensityUnit` | What the engine does |
+| --- | --- | --- |
+| Point | `'lumen'` | Divides by 4π, as three.js's `PointLight.power` does |
+| Spot | `'lumen'` | Divides by π at any cone angle, as three.js's `SpotLight.power` does |
+| Directional, hemisphere, ambient | `'lux'` | Nothing: lux is three.js's unit for these lights |
+
+A light in lumens with no `intensity` gives 1 lumen. A unit that the light does not take throws [E1213](../errors/E1213.md). Lights in real units need a camera exposure to match, such as `post.set({ ev100: 15 })` for a sunny day:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, post }) => {
+  // Real units: a sun of 100,000 lux and an 800-lumen bulb, with a camera set for a sunny day.
+  post.set({ ev100: 15 });
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 100_000, intensityUnit: 'lux' });
+  scene.createPointLight({ position: [0, 2, 0], range: 8, intensity: 800, intensityUnit: 'lumen' });
+});
+```
 
 A point or spot light ends at its `range`, in meters. It has no default, because the engine finds the lights near each surface by their ranges. Its light fades with distance by `decay`, and the default, 2, is the physical rate. A spot light's `angle` goes from its direction to the edge of its cone, in radians, up to π/2, and the default is π/3. Its `penumbra`, from 0 to 1, is the part of the cone over which the light fades out toward the edge.
 
@@ -112,6 +133,7 @@ Point lights cast them where the quality preset's `pointLightShadows` is on, as 
 | `new SpotLight(color, intensity, distance, angle, penumbra, decay)` | `createSpotLight({ color, intensity, range: distance, angle, penumbra, decay, target: [x, y, z] })` |
 | `new HemisphereLight(skyColor, groundColor, intensity)` | `createHemisphereLight({ skyColor, groundColor, intensity })` |
 | `new AmbientLight(color, intensity)` | `createAmbientLight({ color, intensity })` |
+| `pointLight.power = lumens` or `spotLight.power = lumens` | `intensity: lumens, intensityUnit: 'lumen'` at create; `setIntensity` then takes lumens |
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |
 | `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
@@ -137,6 +159,16 @@ Class `AmbientLight`, which extends `Light`.
 
 Light that reaches every surface equally.
 
+### `AmbientLightOptions`
+
+Interface `AmbientLightOptions`, which extends `LightOptions`.
+
+Options for `scene.createAmbientLight`.
+
+| Member | Description |
+| --- | --- |
+| `intensityUnit?: 'lux'` | The unit of the intensity: `'lux'`, the light that reaches every surface. It is three.js's unit too, so the intensity stays as it is. |
+
 ### `DirectionalLight`
 
 Class `DirectionalLight`, which extends `Light`.
@@ -157,6 +189,7 @@ Options for `scene.createDirectionalLight`.
 
 | Member | Description |
 | --- | --- |
+| `intensityUnit?: 'lux'` | The unit of the intensity: `'lux'`, the light that reaches a surface facing the light, such as 100,000 for direct sunlight. It is three.js's unit too, so the intensity stays as it is. |
 | `direction?: Vec3` | The direction the light travels, relative to the parent. The default, (0, -1, 0), points straight down. It sets the light's rotation, so it wins over `rotation`. |
 | `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The first directional light created casts them. |
 | `shadow?: DirectionalShadowOptions` | How the light's shadows draw, like `setShadow`. Each setting has a default. |
@@ -196,6 +229,7 @@ Options for `scene.createHemisphereLight`.
 | `skyColor?: ColorInput` | The color of the light from above. The default is white. |
 | `groundColor?: ColorInput` | The color of the light from below. The default is white. |
 | `intensity?: number` | A factor that scales both colors. The default is 1. |
+| `intensityUnit?: 'lux'` | The unit of the intensity: `'lux'`, the light that reaches a surface. It is three.js's unit too, so the intensity stays as it is. |
 
 ### `Light`
 
@@ -206,7 +240,7 @@ A light: a scene object that lights the objects around it. Each kind of light ha
 | Member | Description |
 | --- | --- |
 | `setColor(color: ColorInput): void` | Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. |
-| `setIntensity(intensity: number): void` | Sets the factor that scales the color. |
+| `setIntensity(intensity: number): void` | Sets the factor that scales the color, in the unit that the light was created with. |
 | `destroy(): void` | Removes the light at the next frame. Its children become roots. |
 
 ### `LightOptions`
@@ -218,7 +252,7 @@ Options every light takes, besides the options of every node.
 | Member | Description |
 | --- | --- |
 | `color?: ColorInput` | The light's color. The default is white. |
-| `intensity?: number` | A factor that scales the color. The default is 1. |
+| `intensity?: number` | A factor that scales the color, in three.js's units unless the options name another unit. The default is 1. |
 
 ### `LightShadowOptions`
 
@@ -252,6 +286,7 @@ Options for `scene.createPointLight`.
 
 | Member | Description |
 | --- | --- |
+| `intensityUnit?: 'lumen'` | The unit of the intensity and of `setIntensity`: `'lumen'`, the light's whole output, such as 800 for a 60 W bulb. The engine divides it by 4π for a point light, and by π for a spot light at any cone angle, as three.js's `power` and Filament do. Without it, the intensity is in candela, three.js's unit. |
 | `range: number` | The distance in meters where the light ends, above 0. Every point light needs one, because the engine finds the lights near each surface by their ranges. |
 | `decay?: number` | How fast the light fades with distance, at least 0. The default, 2, is the physical rate. |
 | `castShadows?: boolean` | True makes the light cast shadows, like `setCastShadows(true)`. The default is false. Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra. |
