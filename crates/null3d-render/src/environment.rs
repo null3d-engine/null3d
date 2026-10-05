@@ -48,14 +48,16 @@ pub struct EnvironmentUniform {
     /// The rows of the matrix that turns a direction in the world into the map's direction: the
     /// inverse of the environment's rotation.
     pub rotation: [[f32; 4]; 3],
-    /// The map's last mip level, the environment's intensity, 1 while the map draws and 0 while
-    /// the scene has none, and a spare.
+    /// The map's last mip level, the environment's intensity times the frame's exposure, 1 while
+    /// the map draws and 0 while the scene has none, and a spare.
     pub params: [f32; 4],
 }
 
 impl Environment {
-    /// The uniform values for a map whose cube texture has `levels` mip levels on the GPU.
-    pub(crate) fn uniform(&self, levels: u32) -> EnvironmentUniform {
+    /// The uniform values for a map whose cube texture has `levels` mip levels on the GPU, in a
+    /// frame whose exposure is `exposure`. The shaders add the environment's light to exposed
+    /// color, as every light's, so its intensity takes the exposure.
+    pub(crate) fn uniform(&self, levels: u32, exposure: f32) -> EnvironmentUniform {
         let mut sh = [[0.0; 4]; 9];
         for (out, coefficient) in sh.iter_mut().zip(&self.sh) {
             out[..3].copy_from_slice(coefficient);
@@ -63,7 +65,12 @@ impl Environment {
         EnvironmentUniform {
             sh,
             rotation: inverse_rotation(self.rotation),
-            params: [levels.saturating_sub(1) as f32, self.intensity, 1.0, 0.0],
+            params: [
+                levels.saturating_sub(1) as f32,
+                self.intensity * exposure,
+                1.0,
+                0.0,
+            ],
         }
     }
 }
@@ -185,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn the_uniform_holds_the_last_level_and_the_intensity() {
+    fn the_uniform_holds_the_last_level_and_the_exposed_intensity() {
         let mut sh = [[0.0; 3]; 9];
         sh[0] = [1.0, 2.0, 3.0];
         let env = Environment {
@@ -194,8 +201,10 @@ mod tests {
             rotation: [0.0; 3],
             sh,
         };
-        let uniform = env.uniform(6);
+        let uniform = env.uniform(6, 1.0);
         assert_eq!(uniform.params, [5.0, 0.5, 1.0, 0.0]);
         assert_eq!(uniform.sh[0], [1.0, 2.0, 3.0, 0.0]);
+        // The exposure scales the intensity, as it scales every light's color.
+        assert_eq!(env.uniform(6, 4.0).params, [5.0, 2.0, 1.0, 0.0]);
     }
 }

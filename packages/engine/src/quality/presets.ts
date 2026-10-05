@@ -104,6 +104,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
+	// Whether a far cascade draws in every frame while a moving caster touches it. Low keeps each
+	// far cascade to its turns, so a moving shadow far from the camera can trail its caster by the
+	// frames between turns, and phones draw fewer shadow passes where cars or crowds fill the far
+	// cascades. D-16 gives the figures.
+	followMovingCasters: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
 	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
@@ -163,7 +172,8 @@ export const QUALITY_SETTINGS = {
 	},
 	// The tiles of the shadow atlas that spot and point lights cast their shadows into: a spot light
 	// takes one, and a point light six. The lights that look largest from the camera get them
-	// first. 0 turns their shadows off. The atlas holds no more layers than the lights can fill.
+	// first. 0 turns their shadows off. The atlas grows to the layers that the lights fill, and
+	// keeps them while some light casts.
 	shadowTiles: {
 		presets: [4, 8, 16, 24],
 		changes: 'start',
@@ -267,6 +277,14 @@ export interface QualitySettings {
 	 * value costs less where far cascades hold still casters alone. It changes during play.
 	 */
 	farCascadeInterval: number;
+	/**
+	 * True when a far shadow cascade draws in every frame while a dynamic object that casts shadows
+	 * touches it, so moving shadows stay under their casters. False keeps each far cascade to its
+	 * turns of `farCascadeInterval` frames: a moving shadow far from the camera then trails its
+	 * caster by up to that many frames less one, and the frames draw fewer shadow passes. Low turns
+	 * it off. It changes during play.
+	 */
+	followMovingCasters: boolean;
 	/**
 	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
 	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes

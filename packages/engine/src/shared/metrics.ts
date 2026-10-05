@@ -67,9 +67,12 @@ export const RING_RECORDS = 1024;
 /**
  * One frame in this many has its GPU time measured while the page measures. Timing costs the
  * thread that draws about as much as drawing a small scene, so the engine samples frames instead
- * of paying it every frame.
+ * of paying it every frame. The count is a prime above the longest interval of the work that
+ * skips frames, such as the far shadow cascades' turns of up to 8 frames. So the sampled frames
+ * step through each phase of that work, where a count that shares a factor with an interval
+ * would time the same phase every time, and skip or always catch the frames that draw it.
  */
-export const SAMPLED_EVERY = 8;
+export const SAMPLED_EVERY = 11;
 
 // 32-bit words of a record.
 const SEQUENCE = 0;
