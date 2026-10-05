@@ -12,8 +12,12 @@ import { run } from './lib/result';
 
 /** The captures with the blue background that the page takes. */
 const BLUE_FRAMES = 30;
-/** The longest the page waits for the room. */
-const LIMIT_MS = 20_000;
+/**
+ * The longest the page waits for the environment to resolve, and then for its frames. A software
+ * GPU on a busy machine takes many seconds for the map's frame, and for each capture.
+ */
+const SET_LIMIT_MS = 60_000;
+const FRAMES_LIMIT_MS = 120_000;
 /** A channel that differs from the steady frame by more than this counts the pixel as changed. */
 const CHANNEL_STEP = 4;
 
@@ -78,7 +82,13 @@ run('room-light', async () => {
 	let blackFrames = 0;
 	let lightMs: number | null = null;
 	const blue: Frame[] = [];
-	while (blue.length < BLUE_FRAMES && performance.now() - started < LIMIT_MS) {
+	// Every frame is captured from the request on, so the first frames that use the environment
+	// are among those checked, however long the map takes.
+	const waiting = () => {
+		const now = performance.now() - started;
+		return setMs === null ? now < SET_LIMIT_MS : now - setMs < FRAMES_LIMIT_MS;
+	};
+	while (blue.length < BLUE_FRAMES && waiting()) {
 		const frame = await engine.captureFrame();
 		if (isBlue(frame)) {
 			lightMs ??= performance.now() - started;

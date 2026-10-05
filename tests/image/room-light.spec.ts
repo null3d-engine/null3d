@@ -56,10 +56,10 @@ for (const { gpu, tier, mode, name, source: file } of RUNS)
 	test(`every frame that uses ${name} shows its light on ${tier}, ${mode.name}`, async ({
 		page,
 	}) => {
-		test.setTimeout(90_000);
+		test.setTimeout(240_000);
 		const source = file ? `&source=${encodeURIComponent(file)}` : '';
 		await page.goto(`room-light.html?gpu=${gpu}&${mode.query}${source}`);
-		const result = await pageResult<RoomLightResult>(page, 60_000);
+		const result = await pageResult<RoomLightResult>(page, 200_000);
 		expect(result.error).toBeUndefined();
 		expect(result.failures).toEqual([]);
 		expect(result.tier).toBe(tier);
