@@ -72,7 +72,9 @@ run('room-light', async () => {
 	let set = false;
 	let setMs: number | null = null;
 	const started = performance.now();
-	const off = engine.onSketchMessage((name) => {
+	let sketchFrames = 0;
+	const off = engine.onSketchMessage((name, data) => {
+		if (name === 'frame') sketchFrames = data as number;
 		if (name !== 'set') return;
 		set = true;
 		setMs = performance.now() - started;
@@ -88,8 +90,18 @@ run('room-light', async () => {
 		const now = performance.now() - started;
 		return setMs === null ? now < SET_LIMIT_MS : now - setMs < FRAMES_LIMIT_MS;
 	};
+	// A capture replays the last frame that the thread that draws took. On a slow software GPU a
+	// capture blocks that thread for seconds, so captures back to back would leave it no turn to
+	// take a new frame. After each capture, the page waits for the sketch's next frame: the sketch
+	// runs at most a frame or two ahead of the thread that draws, so its count moves on only as
+	// that thread takes frames.
+	const nextSketchFrame = async (after: number) => {
+		while (sketchFrames <= after && waiting())
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+	};
 	while (blue.length < BLUE_FRAMES && waiting()) {
 		const frame = await engine.captureFrame();
+		const before = sketchFrames;
 		if (isBlue(frame)) {
 			lightMs ??= performance.now() - started;
 			blue.push(frame);
@@ -97,6 +109,7 @@ run('room-light', async () => {
 			firstBlack ??= frame;
 			blackFrames++;
 		}
+		await nextSketchFrame(before);
 	}
 	off();
 	await new Promise((resolve) => setTimeout(resolve, 300));

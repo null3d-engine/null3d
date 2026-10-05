@@ -2,7 +2,8 @@
 // scene without an environment's light. On the page's 'room' message, during play, it asks for the
 // built-in room, or with a file's address in the message, loads that HDR file as an environment.
 // Once the environment resolves, it sets it and turns the background blue in the same step, then
-// tells the page with a 'set' message. So every frame with the blue background uses it. The scene
+// tells the page with a 'set' message. So every frame with the blue background uses it. Each
+// frame it posts a 'frame' message with its count, so the page can wait for new frames. The scene
 // keeps the whole canvas, so a slow GPU's frames during play do not lower the render scale between
 // the frames that the page compares.
 import { defineSketch } from '@null3d/engine';
@@ -25,4 +26,11 @@ export default defineSketch(({ scene, materials, geometry, assets, page, quality
 			page.post('set');
 		});
 	});
+	let frames = 0;
+	return {
+		onUpdate() {
+			frames++;
+			page.post('frame', frames);
+		},
+	};
 });
