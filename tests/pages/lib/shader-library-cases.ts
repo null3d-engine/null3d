@@ -1418,6 +1418,39 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		expected: (i) => floats(i.f(0).slice(0, 2)),
 		tolerance: 0,
 	},
+	// null3d::color, the limit of HDR color: each channel no brighter than one step below the
+	// largest 16-bit float, infinity included, and every value below it kept.
+	{
+		name: 'color::limit_hdr',
+		cases: (random) => [
+			new Inputs().setF(0, [65472, 65473, 1e30]),
+			new Inputs().setF(0, [Number.POSITIVE_INFINITY, 0.5, -2]),
+			...uniform(3, 0, 70000)(random),
+		],
+		expected: (i) => floats(map3(xyz(i.f(0)), (value) => Math.min(value, 65472))),
+		tolerance: 0,
+	},
+	{
+		name: 'lighting::with_specular',
+		// A reflectance, a specular color whose components may exceed 1, and an intensity.
+		cases: materialCase((random, i) => {
+			i.setF(2, [between(random, 0, 1), ...values(random, 3, 0, 4)]).setF(3, [
+				between(random, 0, 1),
+			]);
+		}),
+		expected: (i) => {
+			const m = materialOf(i);
+			const [reflectance, r, g, b] = i.f(2);
+			const [intensity] = i.f(3);
+			const specular = map3([r, g, b], (c) => Math.min(reflectance * c, 1) * intensity);
+			return floats(
+				[...m.base, intensity + (1 - intensity) * m.metalness],
+				[...m.diffuse, m.roughness],
+				[...specular, m.metalness],
+				mix3(specular, m.base, m.metalness),
+			);
+		},
+	},
 ];
 
 function box(p: V3, half: V3): number {
@@ -1478,4 +1511,32 @@ export function compareResults(cases: readonly Case[], bits: Uint32Array): Misma
 			});
 	});
 	return mismatches;
+}
+
+/**
+ * Whole numbers that the WebGL2 page writes into its 32-bit integer target and reads back before
+ * the library draws. Each has bits set in both halves, so a target or a readback that keeps fewer
+ * than 32 bits changes every one of them.
+ */
+export const TARGET_PROBE: readonly number[] = [0x89abcdef, 0x12345678, 0xfedcba98, 0x76543210];
+
+/**
+ * What a probe of the 32-bit integer target found, when the values it read back differ from
+ * `TARGET_PROBE`: how many low bits of each value survived, and the values both ways. Undefined
+ * when every value came back whole.
+ */
+export function probeFault(what: string, read: ArrayLike<number>): string | undefined {
+	const got = TARGET_PROBE.map((_, k) => (read[k] ?? 0) >>> 0);
+	if (TARGET_PROBE.every((value, k) => got[k] === value)) return undefined;
+	const hex = (values: readonly number[]) =>
+		values.map((v) => `0x${v.toString(16).padStart(8, '0')}`).join(', ');
+	// A value's lowest changed bit counts the low bits that it kept.
+	const kept = Math.min(
+		...TARGET_PROBE.map((value, k) => {
+			const changed = (value ^ got[k]!) >>> 0;
+			return changed === 0 ? 32 : 31 - Math.clz32(changed & -changed);
+		}),
+	);
+	const bits = kept > 0 ? `kept only the low ${kept} bits of each value` : 'changed the values';
+	return `${what} ${bits}: wrote ${hex(TARGET_PROBE)}, read ${hex(got)}`;
 }

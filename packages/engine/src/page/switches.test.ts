@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseSwitches } from './switches';
+import { jobWorkerCount, parseSwitches } from './switches';
 
 describe('parseSwitches', () => {
 	it('leaves every choice to the engine when the address has no switch', () => {
@@ -16,6 +16,7 @@ describe('parseSwitches', () => {
 			freshShaders: false,
 			freshCheck: false,
 			wakeByMessage: false,
+			displayChecks: true,
 			hdr: true,
 			half: undefined,
 			cells: true,
@@ -96,6 +97,23 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?jobs=256').jobs).toBeUndefined();
 	});
 
+	it('ignores a memory maximum outside the range that the memory option takes', () => {
+		for (const mib of [16, 255, 4097, 65_536])
+			expect([mib, parseSwitches(`?memory=${mib}`).memoryMiB]).toEqual([mib, undefined]);
+		expect(parseSwitches('?memory=4096').memoryMiB).toBe(4_096);
+	});
+
+	it('starts no more job workers than the device has logical cores', () => {
+		expect(jobWorkerCount(255, 8)).toBe(8);
+		expect(jobWorkerCount(4, 8)).toBe(4);
+		expect(jobWorkerCount(4, 0)).toBe(1);
+	});
+
+	it('leaves two cores free of job workers without the switch, and starts at least one', () => {
+		expect(jobWorkerCount(undefined, 18)).toBe(16);
+		expect(jobWorkerCount(undefined, 2)).toBe(1);
+	});
+
 	it('turns HDR color off only for ?hdr=off', () => {
 		expect(parseSwitches('?hdr=off').hdr).toBe(false);
 		expect(parseSwitches('?hdr=on').hdr).toBe(true);
@@ -135,6 +153,11 @@ describe('parseSwitches', () => {
 	it('makes the threads wake each other with messages with ?wake=message only', () => {
 		expect(parseSwitches('?wake=message').wakeByMessage).toBe(true);
 		expect(parseSwitches('?wake=atomics').wakeByMessage).toBe(false);
+	});
+
+	it('stops the checks of the display only with ?display-check=off', () => {
+		expect(parseSwitches('?display-check=off').displayChecks).toBe(false);
+		expect(parseSwitches('?display-check=on').displayChecks).toBe(true);
 	});
 
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {

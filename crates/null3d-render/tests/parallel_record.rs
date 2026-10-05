@@ -93,7 +93,7 @@ fn running_out_of_room_is_reported() {
             small.record(jobs, ITEMS, 100, &draw_items, &mut out),
             Err(ParallelRecordError::Full)
         );
-        let mut tiny_out = DrawList::with_capacity(10);
+        let mut tiny_out = DrawList::with_limit(10, 10);
         assert_eq!(
             recorder.record(jobs, 10, 1, &draw_items, &mut tiny_out),
             Err(ParallelRecordError::Full)

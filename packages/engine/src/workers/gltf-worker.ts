@@ -109,13 +109,17 @@ async function finish(
 		for (const mesh of data.meshes)
 			for (const p of mesh.primitives) {
 				if (p.indices) transfer.add(p.indices.buffer as ArrayBuffer);
+				if (p.bvh) transfer.add(p.bvh.buffer as ArrayBuffer);
+				if (typeof p.occluder === 'object')
+					for (const array of [p.occluder.positions, p.occluder.indices])
+						transfer.add(array.buffer as ArrayBuffer);
 				const morph = p.morph;
 				for (const deltas of [morph?.positions, morph?.normals, morph?.tangents])
 					for (const array of deltas ?? []) transfer.add(array.buffer as ArrayBuffer);
 			}
 		// Key times and values can be views of the file's own bytes, which then go along once.
 		for (const clip of data.animation?.clips ?? [])
-			for (const track of [...clip.tracks, ...clip.weights]) {
+			for (const track of clip.tracks) {
 				transfer.add((track.times as Float32Array).buffer as ArrayBuffer);
 				transfer.add((track.values as Float32Array).buffer as ArrayBuffer);
 			}
@@ -160,7 +164,7 @@ async function decode(
 		});
 	} catch (error) {
 		throw new GltfError(
-			'E1416',
+			'E1412',
 			`image ${k} (${image.mimeType ?? 'no media type'}) does not decode: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}

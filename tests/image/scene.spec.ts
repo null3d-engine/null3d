@@ -65,14 +65,21 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 
 /** The layers test's sketch, which moves objects, a batch and the camera between layers each frame. */
 const FLIPPING_LAYERS = encodeURIComponent('./sketches/layers-sketch.ts?flip');
+/**
+ * The fewest frames that the layers test measures, so that the layers change many times. The page
+ * measures again until it has them: a software GPU that shares a busy runner with other tests can
+ * draw fewer of them in one second.
+ */
+const LAYER_FRAMES = 11;
 
 for (const tier of ['webgpu', 'webgl2'] as const)
 	test(`objects, batches and cameras change layers every frame with no rebuild on ${tier}`, async ({
 		page,
 	}) => {
-		const { stats } = await openScene(page, `gpu=${tier}&sketch=${FLIPPING_LAYERS}`);
+		const switches = `gpu=${tier}&sketch=${FLIPPING_LAYERS}&frames=${LAYER_FRAMES}`;
+		const { stats } = await openScene(page, switches);
 		if (!stats) throw new Error('the live page measured no frames');
-		expect(stats.frames).toBeGreaterThan(10);
+		expect(stats.frames).toBeGreaterThanOrEqual(LAYER_FRAMES);
 		// The measurement can start before the first frame, which builds the draw tables.
 		expect(stats.rebuilds).toBeLessThanOrEqual(1);
 	});

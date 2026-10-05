@@ -8,14 +8,15 @@ mod common;
 use std::collections::BTreeSet;
 
 use common::{Rng, Workers, sphere, terrain};
-use null3d_core::bvh::mesh::{IndexedTriangles, Side, Triangles, ray_triangle};
+use null3d_core::bvh::format::HEADER_BYTES;
+use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh, Side, Triangles, ray_triangle};
 use null3d_core::bvh::query::{
     QueryHit, QueryMeshes, QueryScene, SceneQueries, box_touches_triangle, sphere_touches_triangle,
     triangle_in_cell,
 };
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::{WorldRay, in_cell};
-use null3d_core::bvh::{Aabb, Ray};
+use null3d_core::bvh::{Aabb, NODE_BYTES, Ray};
 use null3d_core::cells::{CELL_SIZE, CellCoords};
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -361,7 +362,7 @@ fn queries_give_brute_force_answers_as_the_scene_changes() {
                     &view,
                     jobs,
                     rays.len() as u32,
-                    &|i| rays[i as usize],
+                    &|i| Some(rays[i as usize]),
                     layers,
                 )
                 .unwrap();
@@ -464,6 +465,94 @@ fn queries_follow_late_updates_and_batch_updates() {
     assert_eq!(distance(&mut queries, &scene, &batches, right), None);
 }
 
+/// A static object that a late update moves right after a query keeps its new place in the
+/// queries of later frames, as a door that a sketch opens in `onLateUpdate` after a raycast.
+#[test]
+fn a_late_move_after_a_query_counts_in_later_frames() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(5);
+    let meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let door = scene.reserve().unwrap();
+    scene.set_position(door, [0.0, 0.0, -10.0]).unwrap();
+    scene.set_local_radius(door, 2.0).unwrap();
+    scene
+        .apply_commands(&[Command::create(door, Handle::NONE, 3, flags::VISIBLE)], 1)
+        .unwrap();
+    scene.update_transforms(jobs);
+    let mut distance = |scene: &SceneStorage, height: f64| {
+        let view = QueryScene {
+            scene,
+            batches: &batches,
+            meshes: &meshes,
+        };
+        queries.sync(&view, jobs).unwrap();
+        let forward = WorldRay::new([0.0, height, 0.0], [0.0, 0.0, -1.0]);
+        queries
+            .raycast(&view, &forward, u32::MAX)
+            .map(|h| h.distance)
+    };
+    // In frame 1's late update: a query, then the move up, out of the box the trees held.
+    assert_eq!(distance(&scene, 0.0), Some(9.0));
+    scene.set_position(door, [0.0, 50.0, -10.0]).unwrap();
+    scene.update_late_transforms();
+    // The next frames move nothing, and their queries find the door where it went.
+    for frame in 2..5 {
+        scene.begin_frame(frame);
+        scene.update_transforms(jobs);
+        assert_eq!(distance(&scene, 50.0), Some(9.0), "frame {frame}");
+        assert_eq!(distance(&scene, 0.0), None, "frame {frame}");
+    }
+    // A query after the late update of the same frame finds it too.
+    scene.set_position(door, [0.0, -50.0, -10.0]).unwrap();
+    scene.update_late_transforms();
+    assert_eq!(distance(&scene, -50.0), Some(9.0));
+    assert_eq!(distance(&scene, 50.0), None);
+}
+
+/// A batch's rays that are not rays, such as one with a direction of length 0, miss, and the
+/// others find their hits.
+#[test]
+fn missing_rays_of_a_batch_miss() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(6);
+    let meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let h = scene.reserve().unwrap();
+    scene.set_position(h, [0.0, 0.0, -10.0]).unwrap();
+    scene.set_local_radius(h, 2.0).unwrap();
+    scene
+        .apply_commands(&[Command::create(h, Handle::NONE, 3, flags::VISIBLE)], 1)
+        .unwrap();
+    scene.update_transforms(jobs);
+    let view = QueryScene {
+        scene: &scene,
+        batches: &batches,
+        meshes: &meshes,
+    };
+    queries.sync(&view, jobs).unwrap();
+    let directions = [
+        [0.0, 0.0, -1.0],
+        [0.0; 3],
+        [0.0, 0.0, -1e-200],
+        [f64::NAN; 3],
+    ];
+    let ray = |i: u32| WorldRay::toward([0.0; 3], directions[i as usize]);
+    let found: Vec<_> = queries
+        .raycast_batch(&view, jobs, 4, &ray, u32::MAX)
+        .unwrap()
+        .iter()
+        .map(|hit| hit.map(|h| h.distance))
+        .collect();
+    assert_eq!(found, [Some(9.0), None, Some(9.0), None]);
+}
+
 /// Before the first frame's transform update nothing has a place, so queries find nothing.
 #[test]
 fn queries_before_the_first_frame_find_nothing() {
@@ -488,4 +577,94 @@ fn queries_before_the_first_frame_find_nothing() {
             .overlap_sphere(&view, [0.0; 3], 100.0, u32::MAX)
             .is_empty()
     );
+}
+
+/// A stored tree's bytes with every box grown on each side: still a tree for the mesh, since each
+/// box still holds what lies under it, but with bytes that no build of the mesh gives.
+fn grown_tree(bytes: &[u8], by: f32) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    let mut grow = |at: usize, sign: f32| {
+        let v = f32::from_le_bytes(std::array::from_fn(|i| out[at + i]));
+        out[at..at + 4].copy_from_slice(&(v + sign * by).to_le_bytes());
+    };
+    // The header's box: three minimum floats, then three maximum floats.
+    for k in 0..3 {
+        grow(24 + k * 4, -1.0);
+        grow(36 + k * 4, 1.0);
+    }
+    // Each node, as many as the header counts: its children's minimums, four floats per axis,
+    // then their maximums.
+    let nodes = u32::from_le_bytes(std::array::from_fn(|i| bytes[12 + i])) as usize;
+    for node in 0..nodes {
+        let at = HEADER_BYTES + node * NODE_BYTES;
+        for f in 0..12 {
+            grow(at + f * 4, -1.0);
+            grow(at + 48 + f * 4, 1.0);
+        }
+    }
+    out
+}
+
+/// A mesh given a stored tree before its first query keeps that tree, and the tree answers rays as
+/// brute force does. A mesh that already has a tree keeps its own.
+#[test]
+fn stored_trees_take_the_place_of_builds() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(17);
+    let meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let mut commands = Vec::new();
+    for (mesh, position) in [(1, [-6.0, 1.0, 0.0]), (2, [0.0, 0.0, 0.0])] {
+        let h = scene.reserve().unwrap();
+        scene.set_position(h, position).unwrap();
+        scene.set_local_radius(h, 0.25).unwrap();
+        commands.push(Command::create(h, Handle::NONE, mesh, flags::VISIBLE));
+    }
+    scene.apply_commands(&commands, 1).unwrap();
+    scene.update_transforms(jobs);
+    let terrain = meshes.mesh(2).unwrap();
+    let built = MeshBvh::build(&terrain).unwrap().to_bytes();
+    let stored = grown_tree(&built, 0.25);
+    assert_ne!(stored, built);
+    let tree = MeshBvh::from_bytes(&stored, &terrain).unwrap();
+    queries.store_mesh_bvh(2, tree).unwrap();
+    // Mesh id 0 names no mesh, and is left alone.
+    queries.store_mesh_bvh(0, MeshBvh::default()).unwrap();
+    let view = QueryScene {
+        scene: &scene,
+        batches: &batches,
+        meshes: &meshes,
+    };
+    queries.sync(&view, jobs).unwrap();
+    assert_eq!(queries.mesh_bvh(2).unwrap().to_bytes(), stored);
+    let sphere = MeshBvh::build(&meshes.mesh(1).unwrap()).unwrap().to_bytes();
+    assert_eq!(queries.mesh_bvh(1).unwrap().to_bytes(), sphere);
+    // A tree stored after the sync built one leaves the built tree in place.
+    let late = MeshBvh::from_bytes(&grown_tree(&sphere, 0.5), &meshes.mesh(1).unwrap()).unwrap();
+    queries.store_mesh_bvh(1, late).unwrap();
+    queries.sync(&view, jobs).unwrap();
+    assert_eq!(queries.mesh_bvh(1).unwrap().to_bytes(), sphere);
+    let items = brute_items(&scene, &batches, &meshes, u32::MAX);
+    let mut hits = 0;
+    for _ in 0..400 {
+        let origin = [
+            f64::from(rng.range(-12.0, 12.0)),
+            f64::from(rng.range(3.0, 10.0)),
+            f64::from(rng.range(-4.0, 12.0)),
+        ];
+        let target = [
+            rng.range(-7.0, 8.0),
+            rng.range(0.0, 2.0),
+            rng.range(-1.0, 8.0),
+        ];
+        let d: [f32; 3] = std::array::from_fn(|k| target[k] - origin[k] as f32);
+        let ray = WorldRay::new(origin, d);
+        let found = queries.raycast(&view, &ray, u32::MAX).map(|h| h.distance);
+        assert_eq!(found, brute_closest(&items, &meshes, &ray));
+        hits += u32::from(found.is_some());
+    }
+    assert!(hits > 200, "{hits} of 400 rays hit");
 }

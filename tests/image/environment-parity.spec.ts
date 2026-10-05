@@ -20,8 +20,20 @@ import {
 } from '../lib/environment-maps.ts';
 import { pageResult } from '../lib/page-result.ts';
 
-/** HDR files with and without a sun, each on disk for the tool and on the dev server for three.js. */
-const FILES = {
+/** How far a map may lie from three.js's PMREM: D-19's tolerances, or its own where it names them. */
+type Tolerances = typeof TOLERANCE;
+
+/**
+ * HDR files with and without a sun, each on disk for the tool and on the dev server for three.js,
+ * and the tool's built-in room beside three.js's RoomEnvironment, prefiltered with the blur of
+ * three.js's examples. The engine makes the room on the GPU, and environment-generator.spec.ts
+ * holds that map to the tool's. The room's panels are small and far brighter than its walls, so the
+ * edges of their reflections take looser limits than an HDR file's (D-19).
+ */
+const FILES: Record<
+	string,
+	{ path?: string; url: string; builtin?: boolean; sigma?: number; tolerance?: Partial<Tolerances> }
+> = {
 	'a sunset': {
 		path: samplePath('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr'),
 		url: '/samples/sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr',
@@ -30,12 +42,22 @@ const FILES = {
 		path: samplePath('sources/hdri/polyhaven/potsdamer_platz/potsdamer_platz_2k.hdr'),
 		url: '/samples/sources/hdri/polyhaven/potsdamer_platz/potsdamer_platz_2k.hdr',
 	},
+	'the built-in room': {
+		url: 'room',
+		builtin: true,
+		sigma: 0.04,
+		tolerance: {
+			same: { mean: 9, p99: 40 },
+			matched: { mean: 4.5, p99: 25 },
+		},
+	},
 };
 
 /** The call that the parity page offers: three.js's PMREM light in each direction at each roughness. */
 interface PmremPage {
 	pmremLight?: (request: {
 		url: string;
+		sigma?: number;
 		directions: number[];
 		roughness: number[];
 	}) => Promise<{ cubeSize: number; light: number[] }>;
@@ -116,14 +138,19 @@ for (const [name, source] of Object.entries(FILES))
 			(request) => (globalThis as PmremPage).pmremLight?.(request),
 			{
 				url: source.url,
+				sigma: source.sigma,
 				directions: dirs,
 				roughness: ROUGHNESS,
 			},
 		);
 		if (!three) throw new Error('the page offers no pmremLight');
 		const theirs = (k: number) => three.light.slice(k * 3 * count, (k + 1) * 3 * count);
-		const hdr = new Uint8Array(readFileSync(source.path));
-		const file = environmentMap({ file: hdr }, { size: 256, format: 'rgb9e5ufloat' });
+		const limits = { ...TOLERANCE, ...source.tolerance };
+		const settings = { size: 256, format: 'rgb9e5ufloat' } as const;
+		const hdr = source.path ? new Uint8Array(readFileSync(source.path)) : new Uint8Array();
+		const file = source.builtin
+			? environmentMap({ builtin: 'room' }, settings)
+			: environmentMap({ file: hdr }, settings);
 		const env = readEnvironment(file);
 		const average = averageLight(env.sh);
 		const lines: string[] = [];
@@ -135,9 +162,9 @@ for (const [name, source] of Object.entries(FILES))
 		ROUGHNESS.forEach((r, k) => {
 			const same = compare(lookup(file, env, dirs, r), theirs(k), average);
 			const matched = compare(lookup(file, env, dirs, threePmremRoughness(r)), theirs(k), average);
-			check(`roughness ${r}`, same, TOLERANCE.same);
-			check(`roughness ${r} matched`, matched, TOLERANCE.matched);
-			if (r >= 0.1 && Math.abs(same.ratio - 1) > TOLERANCE.ratio)
+			check(`roughness ${r}`, same, limits.same);
+			check(`roughness ${r} matched`, matched, limits.matched);
+			if (r >= 0.1 && Math.abs(same.ratio - 1) > limits.ratio)
 				failures.push(`roughness ${r}: the total light differs by ${same.ratio.toFixed(3)}`);
 			lines.push(
 				`${r.toFixed(2)}: same ${shown(same)}, ratio ${same.ratio.toFixed(3)}; matched ${shown(matched)}`,
@@ -149,10 +176,10 @@ for (const [name, source] of Object.entries(FILES))
 		for (let i = 0; i < dirs.length; i += 3)
 			irradiance.push(...shIrradiance(env.sh, dirs.slice(i, i + 3)).map((c) => c / Math.PI));
 		const diffuse = compare(irradiance, theirs(ROUGHNESS.length - 1), average);
-		check('diffuse', diffuse, TOLERANCE.diffuse);
+		check('diffuse', diffuse, limits.diffuse);
 		lines.push(`diffuse: ${shown(diffuse)}, ratio ${diffuse.ratio.toFixed(3)}`);
 
-		if (process.env.NULL3D_ENV_PARITY_FIT) {
+		if (process.env.NULL3D_ENV_PARITY_FIT && !source.builtin) {
 			const grid = Array.from({ length: 101 }, (_, x) => lookup(file, env, dirs, x / 100));
 			ROUGHNESS.forEach((r, k) => {
 				let best = 0;

@@ -18,6 +18,7 @@ use null3d_core::bvh::mesh::Triangles;
 use null3d_gpu::drawlist::vertex;
 
 use crate::geometry::Geometry;
+use crate::morph::{MorphError, MorphTargets, with_ranges};
 
 /// The most vertices one part of a mesh uses, and the most a WebGL2 page holds: what 16-bit
 /// indices reach below 65,535, the index that WebGL2 always reads as a primitive restart.
@@ -63,6 +64,10 @@ pub struct MeshSlot {
     pub joints: u32,
     /// Where the mesh's joint spheres start in the storage's list of them.
     first_sphere: u32,
+    /// The mesh's morph targets, 0 for none.
+    pub targets: u32,
+    /// Where each target's reach starts in the storage's list of them.
+    first_reach: u32,
 }
 
 /// One shared buffer or page: interleaved vertices of one format, as the GPU reads their bytes,
@@ -106,6 +111,17 @@ pub enum MeshError {
     NotTriangles,
     /// A page cannot hold one triangle of the mesh's format: the page limit is too small.
     PageTooSmall,
+    /// The mesh's morph targets make no morphed mesh.
+    Morph(MorphError),
+    /// The engine's memory could not grow by `bytes` for the mesh. The storage holds no part of it.
+    OutOfMemory { bytes: u64 },
+}
+
+/// Room for `more` values in `v`, or the bytes they need when memory cannot grow.
+fn reserve<T>(v: &mut Vec<T>, more: usize) -> Result<(), MeshError> {
+    v.try_reserve(more).map_err(|_| MeshError::OutOfMemory {
+        bytes: (more as u64).saturating_mul(size_of::<T>() as u64),
+    })
 }
 
 #[derive(Debug)]
@@ -117,6 +133,10 @@ pub struct MeshStorage {
     meshes: Vec<MeshSlot>,
     /// The joint spheres of every skinned mesh, mesh after mesh (see [`joint_spheres`]).
     spheres: Vec<[f32; 4]>,
+    /// The delta texels of every morphed mesh's targets, mesh after mesh (see [`crate::morph`]).
+    morph_texels: Vec<[u16; 4]>,
+    /// How far each target of each morphed mesh moves a position at weight 1.
+    reaches: Vec<f32>,
     /// Each part's edge list as a part of its page, in the order of `parts`, once made.
     edge_parts: Vec<MeshPart>,
     /// True once every part has an edge list, so each new part gets one too.
@@ -175,6 +195,8 @@ impl MeshStorage {
             parts: Vec::new(),
             meshes: Vec::new(),
             spheres: Vec::new(),
+            morph_texels: Vec::new(),
+            reaches: Vec::new(),
             edge_parts: Vec::new(),
             edges: false,
             drawing_edges: false,
@@ -194,6 +216,39 @@ impl MeshStorage {
     pub fn joint_spheres(&self, mesh: &MeshSlot) -> &[[f32; 4]] {
         let first = mesh.first_sphere as usize;
         &self.spheres[first..first + mesh.joints as usize]
+    }
+
+    /// The delta texels of every morphed mesh's targets, in half floats, which the texture of
+    /// deltas uploads.
+    pub fn morph_texels(&self) -> &[[u16; 4]] {
+        &self.morph_texels
+    }
+
+    /// How far each morph target of a mesh moves any position at weight 1, or none for a mesh
+    /// without targets.
+    pub fn reach(&self, mesh: &MeshSlot) -> &[f32] {
+        let first = mesh.first_reach as usize;
+        &self.reaches[first..first + mesh.targets as usize]
+    }
+
+    /// Adds a mesh whose vertices `targets` morph, and returns its id: each vertex gets the morph
+    /// attribute that names its sparse entries (see [`crate::morph`]).
+    pub fn add_morphed(
+        &mut self,
+        geometry: &Geometry,
+        targets: &MorphTargets<'_>,
+    ) -> Result<u32, MeshError> {
+        let first = self.morph_texels.len() as u32;
+        let sparse = targets
+            .sparse(geometry.vertex_count(), first)
+            .map_err(MeshError::Morph)?;
+        let id = self.add(&with_ranges(geometry, &sparse.ranges))?;
+        self.morph_texels.extend_from_slice(&sparse.texels);
+        let mesh = &mut self.meshes[id as usize];
+        mesh.targets = targets.targets;
+        mesh.first_reach = self.reaches.len() as u32;
+        self.reaches.extend_from_slice(&sparse.reach);
+        Ok(id)
     }
 
     /// The number of meshes.
@@ -286,11 +341,17 @@ impl MeshStorage {
         }
         let (max_vertices, max_indices) = self.part_limits(geometry.format)?;
         let first_part = self.parts.len() as u32;
-        if vertex_count <= max_vertices && indices.len() <= max_indices {
-            let part = self.place(geometry.format, &geometry.vertices, indices);
-            self.parts.push(part);
+        reserve(&mut self.meshes, 1)?;
+        let placed = if vertex_count <= max_vertices && indices.len() <= max_indices {
+            self.place(geometry.format, &geometry.vertices, indices)
+                .map(|part| self.parts.push(part))
         } else {
-            self.split(geometry, max_vertices, max_indices);
+            self.split(geometry, max_vertices, max_indices)
+        };
+        if let Err(error) = placed {
+            // No mesh names the parts placed so far, so nothing draws them.
+            self.parts.truncate(first_part as usize);
+            return Err(error);
         }
         if self.edges {
             self.add_edge_parts();
@@ -312,6 +373,8 @@ impl MeshStorage {
             radius,
             joints: self.spheres.len() as u32 - first_sphere,
             first_sphere,
+            targets: 0,
+            first_reach: 0,
         });
         Ok(self.meshes.len() as u32 - 1)
     }
@@ -329,8 +392,14 @@ impl MeshStorage {
     }
 
     /// Puts one part's vertices and part-local indices into the last page of their format, or
-    /// into a new page when they do not fit it, and returns where the part landed.
-    fn place(&mut self, format: u32, vertices: &[u8], indices: &[u32]) -> MeshPart {
+    /// into a new page when they do not fit it, and returns where the part landed. It reserves
+    /// every byte first, with room for the part's edge list, so it fails before it changes a page.
+    fn place(
+        &mut self,
+        format: u32,
+        vertices: &[u8],
+        indices: &[u32],
+    ) -> Result<MeshPart, MeshError> {
         let count = (vertices.len() / vertex::stride(format) as usize) as u32;
         let (limit, packing) = (self.max_page_bytes, self.packing);
         // With edge lists, the part's edges follow its triangles: twice as many indices.
@@ -342,13 +411,23 @@ impl MeshStorage {
                 && (packing == Packing::SharedBuffers
                     || page.vertex_count() + count <= MAX_PAGE_VERTICES)
         };
+        reserve(&mut self.parts, 1)?;
         let page_index = match self.pages.iter().rposition(|page| page.format == format) {
-            Some(last) if fits(&self.pages[last]) => last,
+            Some(last) if fits(&self.pages[last]) => {
+                let page = &mut self.pages[last];
+                reserve(&mut page.vertices, vertices.len())?;
+                reserve(&mut page.indices, indices_placed)?;
+                last
+            }
             _ => {
-                self.pages.push(Page {
+                let mut page = Page {
                     format,
                     ..Page::default()
-                });
+                };
+                reserve(&mut page.vertices, vertices.len())?;
+                reserve(&mut page.indices, indices_placed)?;
+                reserve(&mut self.pages, 1)?;
+                self.pages.push(page);
                 self.pages.len() - 1
             }
         };
@@ -362,21 +441,29 @@ impl MeshStorage {
         page.vertices.extend_from_slice(vertices);
         page.indices
             .extend(indices.iter().map(|&i| (i + rebase) as u16));
-        MeshPart {
+        Ok(MeshPart {
             page: page_index as u32,
             first_index,
             index_count: indices.len() as u32,
             base_vertex,
             vertex_count: count,
-        }
+        })
     }
 
     /// Adds a mesh too large for one part as several: runs of whole triangles, in order, each
     /// with at most `max_vertices` vertices and `max_indices` indices. Each part copies the
     /// vertices it uses in the order its triangles first use them.
-    fn split(&mut self, geometry: &Geometry, max_vertices: u32, max_indices: usize) {
+    fn split(
+        &mut self,
+        geometry: &Geometry,
+        max_vertices: u32,
+        max_indices: usize,
+    ) -> Result<(), MeshError> {
+        let mut local = Vec::new();
+        reserve(&mut local, geometry.vertex_count())?;
+        local.resize(geometry.vertex_count(), UNUSED);
         let mut part = PartBuilder {
-            local: vec![UNUSED; geometry.vertex_count()],
+            local,
             ..PartBuilder::default()
         };
         for triangle in geometry.indices.as_chunks::<3>().0 {
@@ -387,15 +474,16 @@ impl MeshStorage {
                 .count();
             if part.used.len() + new > max_vertices as usize || part.indices.len() + 3 > max_indices
             {
-                part.finish(self, geometry);
+                part.finish(self, geometry)?;
             }
             for &v in triangle {
                 part.add(v);
             }
         }
         if !part.indices.is_empty() {
-            part.finish(self, geometry);
+            part.finish(self, geometry)?;
         }
+        Ok(())
     }
 }
 
@@ -490,7 +578,7 @@ impl PartBuilder {
     }
 
     /// Places the part in the storage, and starts the next one.
-    fn finish(&mut self, storage: &mut MeshStorage, geometry: &Geometry) {
+    fn finish(&mut self, storage: &mut MeshStorage, geometry: &Geometry) -> Result<(), MeshError> {
         let stride = geometry.stride();
         self.vertices.clear();
         for &v in &self.used {
@@ -499,10 +587,11 @@ impl PartBuilder {
                 .extend_from_slice(&geometry.vertices[at..at + stride]);
             self.local[v as usize] = UNUSED;
         }
-        let part = storage.place(geometry.format, &self.vertices, &self.indices);
+        let part = storage.place(geometry.format, &self.vertices, &self.indices)?;
         storage.parts.push(part);
         self.used.clear();
         self.indices.clear();
+        Ok(())
     }
 }
 
@@ -617,14 +706,17 @@ mod tests {
             let mut ids = Vec::new();
             // Every format twice, in format order, so each format's second mesh follows another
             // format's mesh.
+            // The morph attribute's bit sits above the others, which a morphed mesh's own test
+            // covers.
+            let all = vertex::ALL & !vertex::MORPH;
             for round in 0..2 {
-                for format in 0..=vertex::ALL {
+                for format in 0..=all {
                     let mesh = grid(2 + round, 3, format);
                     ids.push((storage.add(&mesh).unwrap(), mesh));
                 }
             }
             // One page per format, each holding only its own format's vertices.
-            assert_eq!(storage.pages().len(), (vertex::ALL + 1) as usize);
+            assert_eq!(storage.pages().len(), (all + 1) as usize);
             for (id, mesh) in &ids {
                 let slot = storage.mesh(*id).unwrap();
                 assert_eq!(slot.format, mesh.format);
@@ -703,6 +795,45 @@ mod tests {
                         .all(|p| p.vertex_count() <= MAX_PAGE_VERTICES)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_morphed_mesh_past_65535_vertices_keeps_each_vertexs_entries_in_every_part() {
+        use crate::morph::{MorphTargets, has_targets, with_ranges};
+
+        // 300 x 300 quads, whose one target lifts the first and the last vertex.
+        let big = grid(300, 300, 0);
+        let vertices = big.vertex_count();
+        let mut positions = vec![0.0; vertices * 3];
+        positions[1] = 1.0;
+        positions[vertices * 3 - 2] = 2.0;
+        let targets = MorphTargets {
+            targets: 1,
+            positions: Some(&positions),
+            normals: None,
+            tangents: None,
+            colors: None,
+        };
+        let sparse = targets.sparse(vertices, 0).unwrap();
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let id = storage.add_morphed(&big, &targets).unwrap();
+            let slot = *storage.mesh(id).unwrap();
+            assert!(has_targets(slot.format));
+            assert_eq!(storage.parts(&slot).len(), 2, "{packing:?}");
+            // Each vertex keeps the attribute that names its own entries, in whichever part.
+            assert_eq!(
+                resolved_vertices(&storage, id),
+                original_vertices(&with_ranges(&big, &sparse.ranges))
+            );
+            assert_eq!(storage.morph_texels().len(), 2);
+            assert_eq!(storage.reach(&slot), [2.0]);
+            // A second mesh's entries follow the first's.
+            let second = storage.add_morphed(&big, &targets).unwrap();
+            let second = *storage.mesh(second).unwrap();
+            assert_eq!(storage.morph_texels().len(), 4);
+            assert_eq!(second.targets, 1);
         }
     }
 

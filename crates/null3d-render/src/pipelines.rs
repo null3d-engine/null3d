@@ -173,8 +173,10 @@ impl DrawKey {
     /// template ([`Prepass::DepthTemplate`]), or `None` when the pair stays out of the prepass. The
     /// depth template places the vertices of the engine's templates as they do, with the same faces
     /// and depth bias. The prepass cannot follow a pair that blends, discards fragments by their
-    /// alpha, skips the depth test or depth writes, or has a custom material, whose vertices may
-    /// move, or a sprite or line material, whose quads turn to face the camera.
+    /// alpha, skips the depth test or depth writes, or has a line material, whose fragment shader
+    /// cuts out round ends and dashes. A pair whose template places its own vertices
+    /// ([`DrawKey::places_own_vertices`]) takes only the key's faces and state, and draws with its
+    /// own vertex shader.
     pub const fn prepass(self) -> Option<DrawKey> {
         let unfit = state_flags::BLEND
             | state_flags::LINE_LIST
@@ -182,9 +184,6 @@ impl DrawKey {
             | state_flags::NO_DEPTH_TEST;
         if self.state & unfit != 0
             || self.permutation & permutation::ALPHA_MASK != 0
-            || self.template >= template::CUSTOM_FIRST
-            || self.template == template::SPRITE
-            || self.template == template::SPRITE_MAP
             || self.template == template::LINE
             || self.template == template::LINE_LIT
         {
@@ -198,6 +197,16 @@ impl DrawKey {
             state: (self.state & faces) | state_flags::NO_COLOR_WRITE,
             bias: self.bias,
         })
+    }
+
+    /// True for a pair whose template places its vertices in a way that the depth template does not
+    /// follow: a custom material, whose vertex offset may move them, or a sprite material, whose
+    /// quads turn to face the camera. The prepass draws such a pair with its own vertex shader on
+    /// every path, as WebGL2 draws every pair ([`Prepass::OwnVertexShader`]).
+    pub const fn places_own_vertices(self) -> bool {
+        self.template >= template::CUSTOM_FIRST
+            || self.template == template::SPRITE
+            || self.template == template::SPRITE_MAP
     }
 
     /// The key of the pipeline that shades the pair after the depth prepass drew its depth: it
@@ -230,6 +239,8 @@ impl DrawKey {
 pub struct PipelineCache {
     keys: Vec<PipelineKey>,
     created: usize,
+    /// The frame whose list created each pipeline that the GPU has, by id - 1.
+    created_in: Vec<u32>,
     /// The ids of created pipelines that the cache released, which the next list destroys.
     released: Vec<u32>,
 }
@@ -251,9 +262,9 @@ impl PipelineCache {
         index as u32 + 1
     }
 
-    /// Records the creation of every pipeline that the GPU does not have yet, in id order, and
-    /// returns how many it recorded.
-    pub fn create_new(&mut self, list: &mut DrawList) -> Result<usize, RecordError> {
+    /// Records the creation of every pipeline that the GPU does not have yet, in id order, in the
+    /// list of `frame`, and returns how many it recorded.
+    pub fn create_new(&mut self, list: &mut DrawList, frame: u32) -> Result<usize, RecordError> {
         let mut count = 0;
         while let Some(key) = self.keys.get(self.created) {
             if key.template != RELEASED {
@@ -262,6 +273,10 @@ impl PipelineCache {
                     &key.operands(self.created as u32 + 1),
                 )?;
                 count += 1;
+            }
+            match self.created_in.get_mut(self.created) {
+                Some(created_in) => *created_in = frame,
+                None => self.created_in.push(frame),
             }
             self.created += 1;
         }
@@ -297,13 +312,14 @@ impl PipelineCache {
             _ => return (self.id(key.in_pass(targets)), 0),
         };
         let shading = key.after_prepass().in_pass(targets);
-        let depth = match prepass {
-            Prepass::OwnVertexShader => PipelineKey {
+        let depth = if prepass == Prepass::OwnVertexShader || key.places_own_vertices() {
+            PipelineKey {
                 permutation: shading.permutation | permutation::PREPASS,
                 state: depth.state,
                 ..shading
-            },
-            _ => depth.in_pass(targets.depth_only()),
+            }
+        } else {
+            depth.in_pass(targets.depth_only())
         };
         (self.id(shading), self.id(depth))
     }
@@ -311,6 +327,28 @@ impl PipelineCache {
     /// Every key, in id order: the key at index `k` has id `k + 1`.
     pub fn keys(&self) -> &[PipelineKey] {
         &self.keys
+    }
+
+    /// True when the pipeline `id` draws once the GPU replays a list that uses it, for a builder
+    /// whose thread that draws last drew every pipeline built in frame `pipelines_built`: its list
+    /// created the pipeline in that frame or before. Until the thread that draws has drawn a frame,
+    /// each frame waits for its pipelines, so every pipeline draws then. After that, a draw whose
+    /// pipeline is still building, or waits for its shader file, draws nothing. A pass that must
+    /// not draw nothing, such as one that writes the whole canvas, keeps to the pipelines it had
+    /// until its new ones are built.
+    pub fn built(&self, id: u32, pipelines_built: u32) -> bool {
+        let index = id as usize - 1;
+        pipelines_built == 0
+            || (index < self.created
+                && self
+                    .created_in
+                    .get(index)
+                    .is_some_and(|&frame| frame <= pipelines_built))
+    }
+
+    /// True when every pipeline of `ids` draws, by [`Self::built`].
+    pub fn all_built(&self, mut ids: impl Iterator<Item = u32>, pipelines_built: u32) -> bool {
+        ids.all(|id| self.built(id, pipelines_built))
     }
 
     /// Forgets which pipelines the GPU has, after the thread that draws replaced it, so the next
@@ -449,7 +487,7 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let first = cache.id(lit(0).in_pass(TARGETS));
         let second = cache.id(lit(vertex::UV0).in_pass(TARGETS));
-        assert_eq!(cache.create_new(&mut list), Ok(2));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(2));
         let created = commands(&list);
         assert_eq!(created.len(), 2);
         assert!(
@@ -466,17 +504,43 @@ mod tests {
         // Known keys create nothing; a new key creates only its own pipeline.
         list.clear();
         cache.id(lit(0).in_pass(TARGETS));
-        assert_eq!(cache.create_new(&mut list), Ok(0));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(0));
         let third = cache.id(lit(vertex::COLOR).in_pass(TARGETS));
-        assert_eq!(cache.create_new(&mut list), Ok(1));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(1));
         assert_eq!(commands(&list)[0].1[0], third);
 
         // A new device has none of them: the next list creates all three under the same ids.
         list.clear();
         cache.forget();
-        assert_eq!(cache.create_new(&mut list), Ok(3));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(3));
         let ids: Vec<u32> = commands(&list).iter().map(|(_, o)| o[0]).collect();
         assert_eq!(ids, [first, second, third]);
+    }
+
+    #[test]
+    fn a_pipeline_draws_once_a_frame_drew_with_every_pipeline_built_since_its_creation() {
+        let mut cache = PipelineCache::default();
+        let mut list = DrawList::with_capacity(256);
+        let first = cache.id(lit(0).in_pass(TARGETS));
+        assert!(cache.built(first, 0), "before the first frame, frames wait");
+        assert!(
+            !cache.built(first, 4),
+            "a pipeline the GPU lacks does not draw"
+        );
+        cache.create_new(&mut list, 5).unwrap();
+        let second = cache.id(lit(vertex::UV0).in_pass(TARGETS));
+        cache.create_new(&mut list, 7).unwrap();
+        assert!(!cache.built(first, 4));
+        assert!(cache.built(first, 5));
+        assert!(!cache.built(second, 6));
+        assert!(cache.built(second, 7));
+        cache.forget();
+        cache.create_new(&mut list, 9).unwrap();
+        assert!(
+            !cache.built(first, 8),
+            "a new device builds each pipeline again"
+        );
+        assert!(cache.built(first, 9));
     }
 
     #[test]
@@ -489,15 +553,19 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let kept = cache.id(lit(0).in_pass(TARGETS));
         let gone = cache.id(custom(0).in_pass(TARGETS));
-        cache.create_new(&mut list).unwrap();
+        cache.create_new(&mut list, 1).unwrap();
         // A key asked for after the last list, which the GPU never had.
         cache.id(custom(vertex::UV0).in_pass(TARGETS));
         cache.release(|t| t == template::CUSTOM_FIRST);
         list.clear();
-        assert_eq!(cache.create_new(&mut list), Ok(0), "nothing new is created");
+        assert_eq!(
+            cache.create_new(&mut list, 1),
+            Ok(0),
+            "nothing new is created"
+        );
         assert_eq!(commands(&list), [(Op::DestroyPipeline, vec![gone])]);
         list.clear();
-        cache.create_new(&mut list).unwrap();
+        cache.create_new(&mut list, 1).unwrap();
         assert!(
             commands(&list).is_empty(),
             "each pipeline is destroyed once"
@@ -508,7 +576,7 @@ mod tests {
         cache.forget();
         list.clear();
         assert_eq!(
-            cache.create_new(&mut list),
+            cache.create_new(&mut list, 1),
             Ok(2),
             "a new device skips released keys"
         );
@@ -593,14 +661,30 @@ mod tests {
                 state: state_flags::NO_DEPTH_TEST,
                 ..lit(0)
             },
-            DrawKey {
-                template: template::CUSTOM_FIRST + 3,
-                ..lit(0)
-            },
         ];
         for key in out {
             assert_eq!(key.prepass(), None, "{key:?}");
         }
+        // A custom material and a sprite place their own vertices, so they draw their depth with
+        // their own vertex shader on every path, with the depth key's faces and state.
+        for template in [
+            template::CUSTOM_FIRST + 3,
+            template::SPRITE,
+            template::SPRITE_MAP,
+        ] {
+            let key = DrawKey { template, ..base };
+            assert!(key.places_own_vertices());
+            let mut cache = PipelineCache::default();
+            let (shading, depth) = cache.opaque(key, TARGETS, Prepass::DepthTemplate);
+            let [shading, depth] = [shading, depth].map(|id| cache.keys()[id as usize - 1]);
+            assert_eq!(depth.template, template);
+            assert_eq!(
+                depth.permutation,
+                shading.permutation | permutation::PREPASS
+            );
+            assert_eq!(depth.state, key.prepass().unwrap().state);
+        }
+        assert!(!base.places_own_vertices());
         // After the prepass, the pair draws only at the depth the prepass found, and writes none.
         assert_eq!(
             base.after_prepass().state,

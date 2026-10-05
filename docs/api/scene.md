@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; background, environment, fo
 
 # Scene
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Sky and environments are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1, with the environment from 0.2. The API is experimental, so it can still change between versions. The sky and environment backgrounds are not built yet, so coding agents must not use them.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -114,6 +114,22 @@ export default defineSketch(async ({ scene, assets }) => {
 
 The color set before a texture shows until the texture's texels are on the GPU, and again if you destroy the texture. A later color takes the place of the texture.
 
+## The environment
+
+`setEnvironment` lights the scene with an environment map from [`assets.loadEnvironment` or `assets.builtinEnvironment`](assets.md#environments), as three.js's `scene.environment` does with a texture from `PMREMGenerator`. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light. `setEnvironment(null)` removes it. The background stays as `setBackground` set it.
+
+```ts
+const sunset = await assets.loadEnvironment('/env/sunset.ktx2');
+scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `intensity` | 1 | The factor of the environment's light, 0 or more, as three.js's `scene.environmentIntensity` |
+| `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z, as `scene.environmentRotation` |
+
+Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map is whole in the first frame that uses it. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
+
 ## Fog
 
 `setFog` covers every object in fog, with three.js's formulas. Linear fog is clear up to `near` and hides objects from `far`, with a smooth change between them. Exponential squared fog thickens with the square of the distance, at a rate that `density` sets. Distances run from the camera along its view direction, for both kinds of camera. `setFog(null)` removes the fog.
@@ -158,6 +174,7 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - One engine holds up to 16,383 objects at once: groups, meshes, cameras and lights together. One more throws E1102. A destroyed object frees its place when the frame applies the change.
 - The rows of an instance batch take none of those places. One engine holds up to 256 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.
+- The animation table holds up to 1,024 animated objects: each copy of a model with clips or skins takes one. One more throws E1102, and `instantiate` or `clone` then creates no part of the copy.
 
 ## Related pages
 
@@ -167,10 +184,22 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - [Materials](materials.md) and [Geometry](geometry.md): what a mesh draws.
 - [Loading screens and warm-up](../guides/loading-screens.md): waiting for the scene's pipelines.
 - [Assets and prefabs](../concepts/assets.md): models from glTF files, and what a prefab shares.
+- [Lighting and environment](../concepts/lighting.md#environment-maps): how an environment lights the scene.
 
 ## API reference
 
 <!-- null3d:api:start -->
+
+### `EnvironmentOptions`
+
+Interface `EnvironmentOptions`.
+
+The options of `scene.setEnvironment`. A call that leaves an option out takes its default.
+
+| Member | Description |
+| --- | --- |
+| `intensity?: number` | The factor of the environment's light on every surface, 0 or more, as three.js's `scene.environmentIntensity`. A material's `envIntensity` multiplies it. The default is 1. |
+| `rotation?: readonly [number, number, number]` | The turn of the environment about the scene, as Euler angles in radians in the order X, Y, Z, as three.js's `scene.environmentRotation`. The default is `[0, 0, 0]`. |
 
 ### `Exp2FogOptions`
 
@@ -207,6 +236,8 @@ Many copies of one mesh and material. Write rows straight into the typed arrays;
 | `readonly colors: Float32Array \| undefined` | Linear RGBA colors, 4 floats per row, when the batch was created with colors. This version stores them but does not draw them yet. |
 | `setActiveCount(count: number): void` | Draws only the first `count` rows. |
 | `setLayers(mask: number): void` | Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A new mask needs no rebuild. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does. The event's `instance` names the row. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks rows of a static batch to update and upload. |
 | `destroy(): void` | Removes the batch and frees its rows. Its typed arrays are not valid after this: another batch can take their memory. |
 
@@ -234,7 +265,8 @@ Options for `scene.instantiate`: where the copy's group goes, and settings for a
 | --- | --- |
 | `castShadows?: boolean` | True makes every mesh of the copy cast the shadows of a directional light. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
-| `occluder?: boolean` | True makes every mesh of the copy block the view for software occlusion culling on WebGL2, like `setOccluder(true)`. The default is false. |
+| `occluder?: boolean` | True makes every mesh of the copy block the view for software occlusion culling on WebGL2, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset tool gave blockers block, and the others do not. |
+| `layers?: number` | The layers of every object of the copy and of its instance batches, as a 32-bit mask. Left out, they keep the default, 1, which is layer 0. |
 
 ### `LinearFogOptions`
 
@@ -289,6 +321,8 @@ The group that holds a copy of a model, which `scene.instantiate` returns. Its c
 | --- | --- |
 | `batches: readonly InstanceBatch[]` | The instance batches of the nodes with instancing of their own, as the file gives them. Their rows are placed in the world when the copy is created, and they do not move with the group. |
 | `find(name: string): Object3D \| undefined` | The copy's first object with `name`, in the file's order, which is not destroyed, or undefined. It searches the copy's objects, so call it at setup. |
+| `destroy(): void` | Removes the whole copy at the next frame: this group, every object that the copy created and that is not destroyed yet, and its instance batches. Objects that the sketch put under the copy later become roots, as children of any destroyed object do. |
+| `setOutlined(outlined: boolean): void` | Outlines every mesh of the copy, or stops, as `Mesh.setOutlined` does for one mesh: the whole model takes one outline, as three.js's `OutlinePass` outlines a selected group. The copy's instance batches take none. |
 
 ### `Scene`
 
@@ -301,11 +335,12 @@ The scene: every object, the active camera, the lights and the background.
 | `find(name: string): Object3D \| undefined` | The first object created with `name` that is not destroyed, or undefined when no object has the name. It looks the name up in an index, so its cost does not grow with the scene. Call it at setup and keep the object it returns. |
 | `createGroup(options: NodeOptions = {}): Group` | An empty node, for hierarchy. |
 | `createMesh(options: MeshOptions): Mesh` | A drawn object. It is static unless `dynamic: true`. |
-| `instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance` | Creates the objects of a model that `assets.loadGltf` loaded, under one new group that `options` places, and returns that group. All the objects are created with one batch of commands, and every copy shares the model's meshes, materials and textures. The group's `find` gives the copy's object of a node, by the node's name. A model with clips or skins gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws E1102 when the scene has no room for the objects, before it creates any. |
-| `clone<T extends Object3D>(object: T): T` | Copies an object and every object below it, as three.js's `clone` does, with their meshes, materials, lights, cameras and settings, and returns the copy of the object. The copy has the same parent, so it starts in the same place. The copies are created with one batch of commands. An animated object's copy gets an animator of its own, with no clip playing, which moves the copies of its meshes, as three.js's `SkeletonUtils.clone` does. Instance batches are not objects, so they are not copied. Throws E1102 when the scene has no room for the copies, before it creates any. |
+| `instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance` | Creates the objects of a model that `assets.loadGltf` loaded, under one new group that `options` places, and returns that group. All the objects are created with one batch of commands, and every copy shares the model's meshes, materials and textures. The group's `find` gives the copy's object of a node, by the node's name. A model with clips or skins gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws E1102 when the scene, the animation table or the batch table has no room for the copy. Then no part of the copy stays. `destroy()` on the group removes the whole copy. |
+| `clone<T extends Object3D>(object: T): T` | Copies an object and every object below it, as three.js's `clone` does, with their meshes, materials, lights, cameras and settings, and returns the copy of the object. The copy has the same parent, so it starts in the same place. The copies are created with one batch of commands. An animated object's copy gets an animator of its own, with no clip playing, which moves the copies of its meshes, as three.js's `SkeletonUtils.clone` does. Instance batches are not objects, so they are not copied. Throws E1102 when the scene or the animation table has no room for the copies. Then no copy stays. |
 | `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createInstances(prefab: Prefab, count: number, options?: Omit<InstanceOptions, 'material'>): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createSprites(options: SpriteOptions): Promise<SpriteBatch>` | Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended sprites draw back to front with the other blended objects. The first call downloads the sprite code. Throws E1108 for an atlas side that is not a whole number from 1 to 2048, E1203 for a center that is not two finite numbers, and E1406 when the sprite code does not download. |
+| `createPoints(options: PointOptions): Promise<PointBatch>` | Many points in one batch: squares that face the camera, all of one size, like three.js's `Points` with a `PointsMaterial`. Each point is a sprite: typed arrays give each point its position and color, as an instance batch's arrays give its rows. Sizes above one pixel work on every GPU path. Points are opaque by default, and blended points draw back to front with the other blended objects. The first call downloads the sprite code. Throws E1206 for points or colors that make no points, E1108 for a size that is not above 0, E1203 for a size that is not finite, and E1406 when the sprite code does not download. |
 | `createLines(options: LineOptions): Promise<LineBatch>` | Lines of any width in one batch, like three.js's `Line2` and `LineSegments2` with a `LineMaterial`, and its `Line`, `LineSegments` and `LineLoop`. Each segment between two points draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or world units wide with `worldUnits`. A typed array gives each point its position and color, as an instance batch's arrays give its rows. The first call downloads the line code. Throws E1206 for points or colors that make no line, E1217 for an unknown mode, E1108 for a width that is not positive or a dash or gap below 0, E1203 for a value that is not finite, and E1406 when the line code does not download. |
 | `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
 | `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
@@ -314,8 +349,9 @@ The scene: every object, the active camera, the lights and the background.
 | `createPointLight(options: PointLightOptions): PointLight` | Light from a point in every direction, out to `range` meters, which it needs. |
 | `createSpotLight(options: SpotLightOptions): SpotLight` | Light from a point in a cone, out to `range` meters, which it needs. |
 | `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
-| `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
+| `createAmbientLight(options: AmbientLightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
 | `setBackground(background: ColorInput \| Texture): void` | What the camera shows behind every object: a color, or a texture. A texture fills the view and stretches to its shape, as a texture in three.js's `scene.background` does. The color set before it shows until the texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of a texture. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
+| `setEnvironment(environment: Environment \| null, options?: EnvironmentOptions): void` | Lights the scene with an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene draws without a file's environment until its map is on the GPU. The built-in room's map is whole in the first frame that uses it. It allocates nothing, so a sketch can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for a negative intensity, E1213 for a value that is not an environment, and E1101 for an environment that was destroyed. |
 | `setFog(fog: FogOptions \| null): void` | Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Converting the color allocates. |
 | `raycast(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hit: RaycastHit): boolean` | Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they were. The direction needs no unit length. The ray tests the triangles of objects and instance rows on the layers of `options.layers`, as their materials draw them: front faces, or both faces for a double-sided material. Queries see the scene as the last frame's update left it, so a move, a new object or a destroy in this frame counts from the next frame, or from `onLateUpdate`. Create `hit` and `options` once and pass them each time. |
 | `raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean` | True when a ray from `origin` along `direction` hits anything on the layers of `options.layers`. It stops at the first hit it finds, so it is faster than `raycast`: use it for line-of-sight checks. |

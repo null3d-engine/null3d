@@ -259,7 +259,10 @@ const SKIPPED_FILES = new Set([
 	'tools/lib/sample-url.ts',
 ]);
 const CODE = /\.(ts|js|mjs|html)$/;
+/** A `samplePath` or `sampleUrl` call, with the path when it is a string literal. */
 const NAME_CALL = /\bsample(?:Path|Url)\(\s*(?:(['"`])([^'"`$\n]*)\1)?/g;
+/** A module that imports a sample model optimized, such as `'/samples/sources/a.glb?optimized'`. */
+const OPTIMIZED_IMPORT = /(['"])\/samples\/([^'"?\n]+)\?optimized\1/g;
 
 /** Every sample file that the repository's code names, with where it names it. */
 export function namedSamples(root: string, folders = SCANNED): NamedSample[] {
@@ -271,7 +274,10 @@ export function namedSamples(root: string, folders = SCANNED): NamedSample[] {
 				if (!SKIPPED_FOLDERS.has(entry.name)) visit(path);
 			} else if (CODE.test(entry.name) && !SKIPPED_FILES.has(path)) {
 				const text = readFileSync(join(root, path), 'utf8');
-				for (const match of text.matchAll(NAME_CALL)) {
+				const named = [...text.matchAll(NAME_CALL), ...text.matchAll(OPTIMIZED_IMPORT)].sort(
+					(a, b) => a.index - b.index,
+				);
+				for (const match of named) {
 					const line = text.slice(0, match.index).split('\n').length;
 					out.push({ file: path, line, path: match[2] ?? null });
 				}
@@ -359,9 +365,25 @@ export function sampleFileFor(root: string, url: string): SampleFile | null {
 }
 
 /**
+ * The cached file that a module imports optimized, as `/samples/<path>?optimized`, with the query
+ * kept for the null3D plugin, which runs the asset tool on it. Null for any other import. Throws,
+ * with what to do, for a file that the manifest does not pin or that the cache lacks.
+ */
+export function optimizedSampleFile(root: string, id: string): string | null {
+	if (!id.startsWith(SAMPLES_URL) || !id.endsWith('?optimized')) return null;
+	const path = id.slice(SAMPLES_URL.length, -'?optimized'.length);
+	if (!pinnedFiles(root).has(path)) throw new Error(`${path} is not in ${MANIFEST_PATH}`);
+	const full = join(samplesDir(root), path);
+	if (!existsSync(full)) throw new Error(`${path} is missing: run bun run samples:fetch`);
+	return `${full}?optimized`;
+}
+
+/**
  * Serves the pinned sample files under `/samples/` on the dev server and the preview server. Only
  * files in the pinned manifest are served, from the shared cache. The SHA-256 is the entity tag, so
- * a browser revalidates each file and never keeps one from an earlier pin.
+ * a browser revalidates each file and never keeps one from an earlier pin. A module may also import
+ * a pinned model as `/samples/<path>?optimized`: the import resolves to the cached file, and the
+ * null3D plugin optimizes it as it does a model of the project.
  */
 export function samplesServer(root: string): Plugin {
 	const serve: Connect.NextHandleFunction = (req, res: ServerResponse, next) => {
@@ -395,6 +417,15 @@ export function samplesServer(root: string): Plugin {
 	};
 	return {
 		name: 'null3d-samples',
+		// Before Vite's own resolver, which would look for the address under the project's root.
+		enforce: 'pre',
+		resolveId(id) {
+			try {
+				return optimizedSampleFile(root, id);
+			} catch (error) {
+				return this.error((error as Error).message);
+			}
+		},
 		configureServer: (server) => void server.middlewares.use(serve),
 		configurePreviewServer: (server) => void server.middlewares.use(serve),
 	};

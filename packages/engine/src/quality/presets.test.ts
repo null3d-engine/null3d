@@ -100,12 +100,15 @@ describe('the preset table', () => {
 			'shadowMapSize',
 			'shadowFilter',
 			'farCascadeInterval',
+			'followMovingCasters',
 			'shadowTiles',
 			'shadowTileSize',
 			'pointLightShadows',
-			'bloomSamples',
+			'bloomSize',
+			'aoScale',
 			'governor',
 			'depthPrepass',
+			'morphTargets',
 			'softwareOcclusion',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
@@ -133,7 +136,9 @@ describe('the preset table', () => {
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
-			'bloomSamples',
+			'followMovingCasters',
+			'bloomSize',
+			'aoScale',
 			'softwareOcclusion',
 			'governor',
 			'antialias',
@@ -143,6 +148,7 @@ describe('the preset table', () => {
 			'shadowTileSize',
 			'pointLightShadows',
 			'depthPrepass',
+			'morphTargets',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
 			'maxPixelRatio',
@@ -152,7 +158,9 @@ describe('the preset table', () => {
 			'uploadBytesPerFrame',
 			'shadowFilter',
 			'farCascadeInterval',
-			'bloomSamples',
+			'followMovingCasters',
+			'bloomSize',
+			'aoScale',
 			'softwareOcclusion',
 			'governor',
 		]);
@@ -181,15 +189,17 @@ describe('presetSettings', () => {
 			maxRenderScale: 1,
 			governor: true,
 			depthPrepass: false,
-			bloomSamples: 1 as const,
 		};
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,
 			...full,
+			bloomSize: 128,
+			aoScale: 0,
 			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
+			followMovingCasters: false,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
 			antialias: 'fxaa',
@@ -198,14 +208,18 @@ describe('presetSettings', () => {
 			shadowTiles: 4,
 			shadowTileSize: 512,
 			pointLightShadows: false,
+			morphTargets: 8,
 		});
 		expect(presetSettings('medium')).toEqual({
 			maxPixelRatio: 2,
 			minRenderScale: 0.6,
 			...full,
+			bloomSize: 512,
+			aoScale: 0,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 3,
+			followMovingCasters: true,
 			maxAnisotropy: 4,
 			uploadBytesPerFrame: 4 * MIB,
 			antialias: 'msaa',
@@ -214,14 +228,18 @@ describe('presetSettings', () => {
 			shadowTiles: 8,
 			shadowTileSize: 512,
 			pointLightShadows: false,
+			morphTargets: 16,
 		});
 		expect(presetSettings('high')).toEqual({
 			maxPixelRatio: 2,
 			minRenderScale: 0.75,
 			...full,
+			bloomSize: 512,
+			aoScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
+			followMovingCasters: true,
 			maxAnisotropy: 8,
 			uploadBytesPerFrame: 8 * MIB,
 			antialias: 'msaa',
@@ -230,14 +248,18 @@ describe('presetSettings', () => {
 			shadowTiles: 16,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
+			morphTargets: 32,
 		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
 			minRenderScale: 1,
 			...full,
+			bloomSize: 512,
+			aoScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
+			followMovingCasters: true,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: 16 * MIB,
 			antialias: 'msaa',
@@ -246,6 +268,7 @@ describe('presetSettings', () => {
 			shadowTiles: 24,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
+			morphTargets: 64,
 		});
 	});
 
@@ -305,7 +328,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, bloomSamples, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, bloomSize, aoScale, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

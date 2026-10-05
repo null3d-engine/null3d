@@ -1,13 +1,16 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
-// by the KTX2 transcoder (ktx2.ts) or by the color grading table readers (lut-files.ts), outside
-// the sketch's frames, and a count of the downloads
-// for loading screens. Relative addresses resolve against the page's address, in every thread
+// by the KTX2 transcoder (ktx2.ts), by the color grading table readers (lut-files.ts) or by the
+// environment map reader (environment-file.ts), outside the sketch's frames, and a count of the
+// downloads for loading screens. Built-in environments need no file: the GPU makes them
+// (builtin-environments.ts). Relative addresses resolve against the page's address, in every thread
 // mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
 // address at the same time share one download; the HTTP cache keeps everything else.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
+import { type BuiltinEnvironmentName, Environment } from './environment';
+import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
@@ -53,6 +56,23 @@ export interface LoadImageOptions {
 	flipY?: boolean;
 	/** True to multiply each color by its alpha. The default is false. */
 	premultipliedAlpha?: boolean;
+}
+
+/**
+ * The options of `assets.loadGltf`.
+ *
+ * @category api/assets
+ */
+export interface LoadGltfOptions {
+	/**
+	 * Checks or changes each address that the file names, for a buffer or an image, before it
+	 * downloads. It gets the address resolved against the file's own, and returns the address to
+	 * download, or null to refuse the file with E1416. A model that a user uploads can name any
+	 * address, which the page then requests with its cookies, so a page that loads such models
+	 * should allow only the addresses it expects. three.js's `LoadingManager.setURLModifier` does
+	 * the same for its loaders.
+	 */
+	rewriteUrl?: (address: URL) => URL | string | null;
 }
 
 /** @internal What `loadGltf` makes a model's meshes, materials and skeleton with. */
@@ -104,15 +124,16 @@ export class Assets {
 	 * supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the
 	 * device supports, with the file's mip levels, and the first KTX2 file loads the transcoder.
 	 * Throws E1411 when the file does not download, E1413 when a server of another origin does not
-	 * allow the page to read it, E1412 when the file does not decode, E1406 when the transcoder does
-	 * not load, and E1208 for options the engine does not know.
+	 * allow the page to read it, E1412 when the file does not decode or passes a limit of the
+	 * engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the
+	 * transcoder does not load, and E1208 for options the engine does not know.
 	 */
 	async loadTexture(url: string | URL, options: LoadTextureOptions = {}): Promise<Texture> {
 		const call = 'assets.loadTexture';
 		const address = this.resolve(url);
 		const blob = await this.file(address, call);
 		if (await isKtx2(blob)) return loadKtx2(this.textures, blob, address, options, call);
-		const image = await decode(blob, address, options, call);
+		const image = await decode(blob, address, options, call, this.textures.maxSize);
 		return this.textures.fromImage(image, options, options.premultipliedAlpha ? 1 : 0, call);
 	}
 
@@ -124,11 +145,13 @@ export class Assets {
 	 * downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too,
 	 * and they take files that `preload` downloaded. Throws E1411 when a file does not download,
 	 * E1413 when a server of another origin does not allow the page to read it, E1416 for a file
-	 * that is not a glTF model the engine reads, E1417 for a file that requires an extension the
-	 * engine does not read, E1412 when an image does not decode, and E1406 when the loader or the
-	 * meshopt decoder does not download.
+	 * that is not a glTF model the engine reads or that passes a limit on what one file may decode
+	 * to, E1417 for a file that requires an extension the engine does not read, E1412 when an image
+	 * does not decode, E1109 when a mesh does not fit engine memory, and E1406 when the loader or
+	 * the meshopt decoder does not download. `options.rewriteUrl` checks the addresses that the
+	 * file names.
 	 */
-	async loadGltf(url: string | URL): Promise<Prefab> {
+	async loadGltf(url: string | URL, options: LoadGltfOptions = {}): Promise<Prefab> {
 		const call = 'assets.loadGltf';
 		const address = this.resolve(url);
 		const makers = this.makers;
@@ -138,9 +161,9 @@ export class Assets {
 			{
 				...makers,
 				textures: this.textures,
-				download: (at, during) => this.file(at, during),
+				download: (at, during) => this.file(rewritten(at, address, options, during), during),
 				decode: (blob, at, colorSpace, during) =>
-					decode(blob, at, { colorSpace, flipY: false }, during),
+					decode(blob, at, { colorSpace, flipY: false }, during, this.textures.maxSize),
 				error: (code, message) => new EngineError(code, message),
 			},
 			file,
@@ -157,7 +180,8 @@ export class Assets {
 	async loadImageBitmap(url: string | URL, options: LoadImageOptions = {}): Promise<ImageBitmap> {
 		const call = 'assets.loadImageBitmap';
 		const address = this.resolve(url);
-		return decode(await this.file(address, call), address, options, call);
+		const blob = await this.file(address, call);
+		return decode(blob, address, options, call, FILE_LIMITS.imageSide);
 	}
 
 	/**
@@ -194,6 +218,71 @@ export class Assets {
 		const { size, title, domainMin, domainMax, texels } = table;
 		const texture = this.textures.fromVolume(size, texels, call);
 		return new Lut(texture, size, title, domainMin, domainMax);
+	}
+
+	/**
+	 * Downloads an environment map that `bunx @null3d/cli assets env` made, a KTX2 file, and makes
+	 * an `Environment` from it, for `scene.setEnvironment`. The map's cube texture uploads in the
+	 * frames after the call, and the scene draws without the environment until it is on the GPU.
+	 * The first environment loads the file reader. Throws E1411 or E1413 as `loadTexture` does,
+	 * E1412 when the file is not an environment map that the engine reads, and E1406 when the
+	 * reader does not load.
+	 */
+	async loadEnvironment(url: string | URL): Promise<Environment> {
+		const call = 'assets.loadEnvironment';
+		return this.environment(this.resolve(url), call);
+	}
+
+	/**
+	 * Makes a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for
+	 * soft, neutral light with no file of your own. No file downloads: the GPU draws the room into
+	 * its cube map and filters it for each roughness, as three.js's `PMREMGenerator.fromScene` does.
+	 * It resolves once the code and the shaders that make the map are ready. The next frame then
+	 * makes the whole map before it draws, so the first frame with the environment already has its
+	 * light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a
+	 * call during play makes one long frame. The first one loads the code that makes it, about 7 KB
+	 * after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its
+	 * code does not download.
+	 */
+	async builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment> {
+		const call = 'assets.builtinEnvironment';
+		let builtins: typeof import('./builtin-environments');
+		try {
+			builtins = await import('./builtin-environments');
+		} catch (error) {
+			throw new EngineError(
+				'E1406',
+				`the built-in environments did not download for ${call}(): ${reasonOf(error)}.`,
+			);
+		}
+		if (!Object.hasOwn(builtins.BUILTIN_ENVIRONMENTS, name))
+			throw new EngineError(
+				'E1213',
+				`${call}() got ${JSON.stringify(name)}, which names no built-in environment. Use 'room'.`,
+			);
+		const { size, levels, sh } = builtins.BUILTIN_ENVIRONMENTS[name];
+		const texture = await this.textures.fromGenerator(name, size, levels, call);
+		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
+	}
+
+	/** Downloads and reads an environment map's file, and makes its cube texture. */
+	private async environment(address: URL, call: string): Promise<Environment> {
+		const [file, reader] = await Promise.all([
+			this.file(address, call),
+			environmentReader(call, String(address)),
+		]);
+		let map: import('./environment-file').EnvironmentFile;
+		try {
+			map = reader.readEnvironmentFile(await file.arrayBuffer());
+		} catch (error) {
+			throw new EngineError(
+				'E1412',
+				`${call}() could not read ${address} as an environment map: ${reasonOf(error)}.`,
+			);
+		}
+		const { size, levels, format, texels, sh } = map;
+		const texture = this.textures.fromCube(size, levels, format, texels, call);
+		return new Environment(texture, size, levels, format, sh);
 	}
 
 	/**
@@ -384,6 +473,38 @@ async function loadKtx2(
 	);
 }
 
+/**
+ * The address to download for one that a model file at `file` names: `options.rewriteUrl`'s
+ * answer, or the address itself. Throws E1416 when the option refuses it.
+ */
+function rewritten(at: URL, file: URL, options: LoadGltfOptions, call: string): URL {
+	if (!options.rewriteUrl) return at;
+	const answer = options.rewriteUrl(at);
+	if (answer === null)
+		throw new EngineError(
+			'E1416',
+			`${call}() could not read ${file}: it names ${at}, which the rewriteUrl option refused.`,
+		);
+	return new URL(answer, at);
+}
+
+type EnvironmentReader = typeof import('./environment-file');
+
+/**
+ * Imports the environment map reader, which a page downloads with its first environment, or
+ * throws E1406 that names what `call` was loading.
+ */
+async function environmentReader(call: string, what: string): Promise<EnvironmentReader> {
+	try {
+		return await import('./environment-file');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the environment map reader did not download for ${call}() of ${what}: ${reasonOf(error)}.`,
+		);
+	}
+}
+
 /** Imports the glTF loader, which a page downloads with its first glTF file, or throws E1406. */
 async function loadModule(address: URL, call: string): Promise<typeof import('./gltf')> {
 	try {
@@ -396,13 +517,30 @@ async function loadModule(address: URL, call: string): Promise<typeof import('./
 	}
 }
 
-/** Decodes an image file as `options` ask, or throws E1412. */
+/**
+ * The bytes at the start of an image file that its size is read from. A JPEG's frame header comes
+ * after its other header segments, which rarely pass this.
+ */
+const HEADER_BYTES = 1 << 20;
+
+/**
+ * Decodes an image file as `options` ask, or throws E1412. A PNG or JPEG file whose header gives a
+ * side longer than `maxSide` fails before the browser decodes it.
+ */
 async function decode(
 	blob: Blob,
 	address: URL,
 	options: LoadImageOptions,
 	call: string,
+	maxSide: number,
 ): Promise<ImageBitmap> {
+	const head = new Uint8Array(await blob.slice(0, HEADER_BYTES).arrayBuffer());
+	const refused = imageTooLarge(imageSize(head), maxSide);
+	if (refused)
+		throw new EngineError(
+			'E1412',
+			`${call}() could not decode ${address} as an image: ${refused}.`,
+		);
 	const { colorSpace = 'srgb', flipY = true, premultipliedAlpha = false } = options;
 	const decoding: ImageBitmapOptions = {
 		premultiplyAlpha: premultipliedAlpha ? 'premultiply' : 'none',

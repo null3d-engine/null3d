@@ -5,6 +5,7 @@ import { decode } from 'fast-png';
 import { featureImagePath } from '../../tests/image/manifest.ts';
 import {
 	BENCH_SCENES,
+	BLOOM_STRONG_MAX_DIFFERENT_PERCENT,
 	compareFrames,
 	compareImages,
 	comparisonName,
@@ -25,6 +26,7 @@ import {
 	JOBS_PAGES,
 	LEFT_OUT_OF_PARITY,
 	MAX_DIFFERENT_PERCENT,
+	OUTLINE_MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
 	PARITY_SCENE_NAMES,
 	PARITY_SCENES,
@@ -258,16 +260,29 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the shadows and three glTF models a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the points, the shadows, the strong bloom, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
+		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
+		expect(featureScene('bloom-strong')?.limit).toBe(BLOOM_STRONG_MAX_DIFFERENT_PERCENT);
+		expect(featureScene('bloom-soft')?.limit).toBeUndefined();
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
+		expect(featureScene('outline-hidden')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
+			'points',
 			'gltf-instancing',
 			'gltf-ktx2',
 			'gltf-meshopt-ext',
 			'shadows',
+			'morph',
+			'bloom-strong',
+			'ao-default',
+			'ao-wide',
+			'outline-plain',
+			'outline-hidden',
 		]);
+		// The close-up of the morph scene shows the deltas' precision best, so it keeps three.js's rule.
+		expect(featureScene('morph-closeup')?.limit).toBeUndefined();
 		// three.js's WebGPURenderer draws the Khronos meshopt test wrong, so WebGLRenderer is its reference.
 		expect(featureScene('gltf-meshopt-khr')?.webglOnly).toBe(true);
 		expect(featureScene('gltf-meshopt-ext')?.webglOnly).toBeUndefined();
@@ -369,7 +384,7 @@ describe('the scenes', () => {
 	});
 
 	test('compares with three.js the scenes that both engines draw in full', () => {
-		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2']);
+		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2', 's5']);
 		for (const scene of BENCH_SCENES)
 			expect(PARITY_SCENES.includes(scene)).toBe(LEFT_OUT_OF_PARITY[scene].length === 0);
 	});
@@ -531,7 +546,7 @@ describe('parseParityArgs', () => {
 	test('compares every scene on every GPU tier by default: benchmark scenes, then features', () => {
 		const features = FEATURE_SCENES.map((scene) => scene.test);
 		expect(parseParityArgs([])).toEqual({
-			scenes: ['s1', 's1-static', 's1-cells', 's2', ...features],
+			scenes: ['s1', 's1-static', 's1-cells', 's2', 's5', ...features],
 			comparisons: [
 				{
 					label: 'webgpu',
@@ -607,7 +622,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, standard-grid,',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, standard-grid,',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(

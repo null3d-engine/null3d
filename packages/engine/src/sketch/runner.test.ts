@@ -5,12 +5,20 @@ import { FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import { presetSettings } from '../quality/presets';
 import type { Material, MeshGeometry } from '../scene/resources';
-import { controlViews, createControlBuffer, Slot } from '../shared/control';
+import {
+	controlViews,
+	createControlBuffer,
+	frameAfter,
+	frameReached,
+	nextFrame,
+	Slot,
+} from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { onEngineStop } from '../shared/helper-workers';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
-import { SketchRunner } from './runner';
+import { runPipelined, SketchRunner } from './runner';
 
 /** The core's frame steps, which the tests follow among the sketch's callbacks. */
 const FRAME_STEPS = new Set([
@@ -124,15 +132,16 @@ function drawFrames(
 	const timer = setInterval(() => {
 		if (replaying !== 0) {
 			// The frame two after shares the list.
-			if (Atomics.load(slots, Slot.FramesPublished) >= replaying + 2)
+			if (frameReached(Atomics.load(slots, Slot.FramesPublished), nextFrame(nextFrame(replaying))))
 				drawing.overwritten?.push(replaying);
 			else if (performance.now() < replayEnd) return;
 			replaying = 0;
 		}
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (published <= Atomics.load(slots, Slot.FramesTaken)) return;
+		if (!frameAfter(published, Atomics.load(slots, Slot.FramesTaken))) return;
 		Atomics.store(slots, Slot.PipelinesBuilt, published);
 		Atomics.store(slots, Slot.FramesTaken, published);
+		if (slots.buffer instanceof SharedArrayBuffer) Atomics.notify(slots, Slot.FramesTaken);
 		if (drawing.replayMs) {
 			replaying = published;
 			replayEnd = performance.now() + drawing.replayMs;
@@ -171,17 +180,19 @@ async function start(
 		drawing,
 		grows = false,
 		holdSeconds,
+		shared = false,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
 		grows?: boolean;
 		holdSeconds?: number;
+		shared?: boolean;
 	} = {},
 ) {
 	const log: string[] = [];
 	const calls: unknown[][] = [];
 	const updates: QualityUpdate[] = [];
-	const control = controlViews(createControlBuffer(false));
+	const control = controlViews(createControlBuffer(shared));
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
@@ -211,6 +222,7 @@ async function start(
 				antialias: C.ANTIALIAS_MSAA,
 				effectsSceneColor: FORMAT_RGBA16_FLOAT,
 				effectsAntialias: C.ANTIALIAS_MSAA,
+				occlusionTargets: true,
 				transparent: false,
 				shaderBits: 0,
 				cellCulling: true,
@@ -226,6 +238,7 @@ async function start(
 			},
 			sendImage: () => {},
 			sendShader: () => {},
+			sendPreload: () => {},
 			pageUrl: 'http://localhost/',
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
@@ -404,16 +417,16 @@ describe('SketchRunner', () => {
 		expect(record?.[4]).toBe(1000);
 	});
 
-	it("gives the core the preset's shadow filter and far cascade interval, and each change", async () => {
+	it("gives the core the preset's shadow filter, far cascade interval and moving casters, and each change", async () => {
 		const { runner, calls } = await start(({ quality }) => ({
 			onUpdate: () => {
-				quality.set({ shadowFilter: 3, farCascadeInterval: 1 });
+				quality.set({ shadowFilter: 3, farCascadeInterval: 1, followMovingCasters: false });
 			},
 		}));
 		const shadowCalls = () => calls.filter((call) => call[0] === 'setShadowQuality');
-		expect(shadowCalls()).toEqual([['setShadowQuality', 5, 3]]);
+		expect(shadowCalls()).toEqual([['setShadowQuality', 5, 3, true]]);
 		runner.step(0);
-		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1]);
+		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1, false]);
 	});
 
 	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {
@@ -532,6 +545,96 @@ describe('SketchRunner', () => {
 		);
 		stopDrawing();
 		expect(drawing.overwritten).toEqual([]);
+	});
+
+	it('records no frame of the loop while warm-ups that the setup did not wait for record', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16, replayMs: 10, overwritten: [] as number[] };
+		const { runner, control, stopDrawing } = await start(
+			({ scene }) => {
+				void scene.warmUp();
+				void scene.warmUp();
+				return {};
+			},
+			undefined,
+			{ drawing, shared: true },
+		);
+		const faults: unknown[] = [];
+		const loop = runPipelined(runner, control.slots.buffer, (error) => faults.push(error));
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		Atomics.store(control.slots, Slot.Running, 0);
+		await loop;
+		stopDrawing();
+		expect(faults).toEqual([]);
+		expect(drawing.overwritten).toEqual([]);
+	});
+
+	it('counts frames on past the last of the 32-bit count, with no frame 0 or -1', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16, replayMs: 2, overwritten: [] as number[] };
+		const { runner, control, calls, stopDrawing } = await start(() => ({}), undefined, {
+			drawing,
+			shared: true,
+		});
+		// The engine's count stands four frames before the end of the circle.
+		(runner as unknown as { recorded: { frame: number } }).recorded.frame = -5;
+		Atomics.store(control.slots, Slot.FramesPublished, -5);
+		Atomics.store(control.slots, Slot.FramesTaken, -5);
+		calls.length = 0;
+		const loop = runPipelined(runner, control.slots.buffer, () => {});
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		Atomics.store(control.slots, Slot.Running, 0);
+		await loop;
+		stopDrawing();
+		const frames = calls.filter(([name]) => name === 'recordFrame').map(([, frame]) => frame);
+		expect(frames.slice(0, 6)).toEqual([-4, -3, -2, 1, 2, 3]);
+		expect(frames).not.toContain(0);
+		expect(frames).not.toContain(-1);
+		expect(Atomics.load(control.slots, Slot.FramesTaken)).toBeGreaterThan(3);
+		expect(drawing.overwritten).toEqual([]);
+	});
+
+	it('ends the pipelined loop with a fault when a frame step throws', async () => {
+		const drawing = { presentedMs: 16, completedMs: 16 };
+		let frames = 0;
+		const { runner, control, stopDrawing } = await start(
+			() => ({
+				onUpdate() {
+					frames++;
+					if (frames === 3) throw new Error('a sketch error is reported, and play goes on');
+				},
+			}),
+			undefined,
+			{ drawing, shared: true },
+		);
+		const step = runner.step.bind(runner);
+		let steps = 0;
+		runner.step = (timestamp) => {
+			if (++steps === 5) throw new Error('the core trapped');
+			return step(timestamp);
+		};
+		const faults: unknown[] = [];
+		const errors = spyOn(console, 'error').mockImplementation(() => {});
+		await runPipelined(runner, control.slots.buffer, (error) => faults.push(error));
+		errors.mockRestore();
+		stopDrawing();
+		expect(faults.map(messageOf)).toEqual(['the core trapped']);
+		expect(frames).toBe(4);
+	});
+
+	it('runs onDestroy once when the engine stops, then refuses every call with E1420', async () => {
+		let destroyed = 0;
+		const { runner, context } = await start(() => ({
+			onDestroy() {
+				destroyed++;
+			},
+		}));
+		let helperStopped = 0;
+		onEngineStop(() => helperStopped++);
+		runner.dispose();
+		runner.dispose();
+		expect(destroyed).toBe(1);
+		expect(helperStopped).toBe(1);
+		expect(() => context.geometry.box()).toThrow('E1420');
+		expect(() => context.scene.createGroup()).toThrow('E1420');
 	});
 
 	it('refuses options out of range with E1214, before the setup function runs', async () => {

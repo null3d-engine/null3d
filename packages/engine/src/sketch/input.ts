@@ -1,14 +1,17 @@
 // ctx.input: the sketch's view of the input that the page writes into the input ring. Once per frame,
 // before onUpdate, the reader takes every event that the page wrote since the previous frame, in
 // order, and updates the state that the input calls answer from. So a key pressed and released
-// between two frames counts as both pressed and released in the next frame. The one exception is a
-// press of the pointer after its release: it starts a new drag, and the events from it on wait for
-// the next frame, so the pointer's drag in a frame never joins two drags. Reading allocates
-// nothing: the state lives in typed arrays and in objects made once. Hold mode never reads the ring,
-// so a held frame never depends on input.
+// between two frames counts as both pressed and released in the next frame. The exceptions follow a
+// release of the pointer: a press starts a new drag, and wheel scroll may start a new gesture. The
+// events from either on wait for the next frame, so a frame's drag never joins two drags, and its
+// scroll never comes after the end of its drag. Reading allocates
+// nothing: the state lives in typed arrays and in objects made once. While objects listen for
+// pointer events, the reader also copies each pointer event into their log. Hold mode never reads
+// the ring, so a held frame never depends on input.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import type { PointerInput, PointerLog } from '../scene/pointer-events';
 import {
 	type ControlViews,
 	EVENT_GAMEPAD_AXIS,
@@ -16,6 +19,7 @@ import {
 	EVENT_KEY_DOWN,
 	EVENT_KEY_UP,
 	EVENT_POINTER_DOWN,
+	EVENT_POINTER_LEAVE,
 	EVENT_POINTER_MOVE,
 	EVENT_POINTER_UP,
 	EVENT_WHEEL,
@@ -73,7 +77,8 @@ export interface InputPointer {
 	/**
 	 * The wheel's scroll since the previous frame, in pixels: positive where a page would scroll down.
 	 * A wheel that scrolls by lines counts 16 pixels a line, and one that scrolls by pages counts 100
-	 * a page, as three.js's controls count them.
+	 * a page, as three.js's controls count them. Scroll that follows a release of the pointer waits
+	 * for the next frame, so a frame's scroll never comes after the end of its drag.
 	 */
 	readonly wheel: number;
 	/**
@@ -212,8 +217,9 @@ class PointerState implements InputPointer {
 	/** The pointer id of the last event, or -1 before the first. */
 	id = -1;
 	/**
-	 * The frame on screen at the pointer's last event, in the sketch's count, whose camera a pick of
-	 * that event uses. 0 is a frame that the setup drew, before the sketch's first update.
+	 * The frame on screen at the pointer's last event, in the engine's count, whose camera a pick of
+	 * that event uses. The engine's count includes the frames that ran no sketch code, such as the
+	 * setup's, and 0 means that no frame was on screen yet.
 	 */
 	frame = 0;
 }
@@ -224,13 +230,15 @@ class TouchState implements InputTouch {
 	y = 0;
 	dx = 0;
 	dy = 0;
-	/** The frame on screen at the finger's last event. */
+	/** The frame on screen at the finger's last event, in the engine's count. */
 	frame = 0;
 }
 
 /** Reads the input ring once per frame, and answers the sketch's input calls. */
-export class InputReader implements Input {
+export class InputReader implements Input, PointerInput {
 	readonly pointer = new PointerState();
+	/** The log that copies each frame's pointer events, which pointer events on objects set. */
+	pointerLog: PointerLog | undefined = undefined;
 	readonly touches: TouchState[];
 	readonly actions: InputActions = { define: (actions) => this.define(actions) };
 	/** Control numbers by name, and each action's number plus the count of controls. */
@@ -260,8 +268,11 @@ export class InputReader implements Input {
 	private mouseButtons = 0;
 	/** The frame the state belongs to, or -1 before the first, so nothing counts as just pressed. */
 	private frame = -1;
-	/** The engine's frames so far that ran no sketch code: the setup's. */
-	private setupFrames = 0;
+	/**
+	 * @internal The engine's frames so far that ran no sketch code, such as the setup's. A frame of
+	 * the pointer less this count gives the sketch's frame, as `time.frame` counts it.
+	 */
+	setupFrames = 0;
 	/** The index of the next record to read. */
 	private next = 0;
 
@@ -293,9 +304,9 @@ export class InputReader implements Input {
 
 	/**
 	 * Takes the events the page wrote since the previous frame, for frame `frame`, up to a press of
-	 * the pointer that follows its release. Movement and wheel scroll start again from 0.
-	 * `setupFrames` is the count of the engine's frames that ran no sketch code, which the pointer's
-	 * frame numbers leave out, as the sketch's `time.frame` does.
+	 * the pointer or wheel scroll that follows its release. Movement and wheel scroll start again
+	 * from 0.
+	 * `setupFrames` is the count of the engine's frames that ran no sketch code.
 	 */
 	beginFrame(frame: number, setupFrames = 0): void {
 		this.frame = frame;
@@ -314,13 +325,15 @@ export class InputReader implements Input {
 		}
 		const { slots, slotFloats } = this.control;
 		const written = Atomics.load(slots, Slot.InputWrite);
-		if (((written - this.next) | 0) > INPUT_RING_EVENTS) {
+		if (((written - this.next) | 0) >= INPUT_RING_EVENTS) {
 			// The page wrote over events that the sketch never read, one of which may have been a
 			// release. Releasing everything keeps a key from staying down.
 			this.releaseAll();
 			this.next = written;
 		}
-		const ints = this.control.inputInts;
+		const { inputInts: ints, inputFloats: floats } = this.control;
+		const log = this.pointerLog;
+		if (log !== undefined) log.count = 0;
 		let released = false;
 		while (this.next !== written) {
 			const base = (this.next & RING_MASK) * INPUT_EVENT_INTS;
@@ -328,9 +341,19 @@ export class InputReader implements Input {
 			const primary = ((ints[base + FIELD_FLAGS] as number) & FLAG_PRIMARY) !== 0;
 			// A press of the pointer after its release in this frame starts the next drag, which
 			// waits for the next frame with every event after it. Each frame's drag then belongs to
-			// one press, and two quick clicks count as two presses.
-			if (released && primary && type === EVENT_POINTER_DOWN) break;
+			// one press, and two quick clicks count as two presses. Wheel scroll after the release
+			// waits too: a frame's scroll then never follows the end of its drag, so controls that
+			// ignore the wheel during a drag still take the scroll that comes after it.
+			if (released && (type === EVENT_WHEEL || (primary && type === EVENT_POINTER_DOWN))) break;
 			this.apply(base);
+			if (
+				log !== undefined &&
+				(type === EVENT_POINTER_MOVE ||
+					type === EVENT_POINTER_DOWN ||
+					type === EVENT_POINTER_UP ||
+					type === EVENT_POINTER_LEAVE)
+			)
+				log.add(ints, floats, base);
 			if (primary && type === EVENT_POINTER_UP) released = true;
 			this.next = (this.next + 1) | 0;
 		}
@@ -343,8 +366,8 @@ export class InputReader implements Input {
 
 	/**
 	 * The frame that was on screen at the last event of the pointer or a finger at (`x`, `y`) in CSS
-	 * pixels, or -1 when neither is there. A point that the sketch read from the input then names the
-	 * frame that its event's user saw, which is 0 while a frame of the setup was on screen.
+	 * pixels, in the engine's count, or -1 when neither is there. A point that the sketch read from
+	 * the input then names the frame that its event's user saw.
 	 */
 	frameAt(x: number, y: number): number {
 		const { pointer, touches } = this;
@@ -354,6 +377,11 @@ export class InputReader implements Input {
 			if (touch.x === x && touch.y === y) return touch.frame;
 		}
 		return -1;
+	}
+
+	/** The frame on screen now, in the engine's count, as the pointer's frame numbers use it. */
+	presentedFrame(): number {
+		return Atomics.load(this.control.slots, Slot.FramePresented);
 	}
 
 	isDown(name: string): boolean {
@@ -494,7 +522,7 @@ export class InputReader implements Input {
 		const y = floats[base + FIELD_Y] as number;
 		const id = ints[base + FIELD_ID] as number;
 		const flags = ints[base + FIELD_FLAGS] as number;
-		const frame = Math.max(0, (ints[base + FIELD_FRAME] as number) - this.setupFrames);
+		const frame = ints[base + FIELD_FRAME] as number;
 		if ((flags & FLAG_TOUCH) !== 0) this.onTouch(type, id, x, y, frame);
 		if ((flags & FLAG_PRIMARY) === 0) return;
 		const { pointer } = this;

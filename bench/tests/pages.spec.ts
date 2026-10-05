@@ -7,6 +7,7 @@ import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import type { TraceSecond } from '../pages/lib/trace';
+import { S5_BACKGROUND } from '../scenes/s5';
 import {
 	BACKGROUND,
 	createS4,
@@ -48,6 +49,7 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s2: 0.005,
 	s3: 0.1,
 	s4: 0.5,
+	s5: 0.3,
 };
 /** Each scene's background color. S4's is its fog's color. */
 const BACKGROUNDS: Record<(typeof SCENES)[number], string> = {
@@ -57,6 +59,7 @@ const BACKGROUNDS: Record<(typeof SCENES)[number], string> = {
 	s2: BACKGROUND,
 	s3: BACKGROUND,
 	s4: S4_FOG.color,
+	s5: S5_BACKGROUND,
 };
 /**
  * Pages whose renderer cannot draw their scene on the GPU that the tests draw with. WebGLRenderer's
@@ -69,6 +72,14 @@ const CANNOT_DRAW: readonly string[] = ['s3 on threejs-webgl'];
 const SWIFTSHADER = defaultEnvironment() === 'chromium-swiftshader';
 /** The instance count of the short benchmark runs. */
 const SHORT_RUN_COUNT = 1000;
+/** S5's characters in the short benchmark runs: a crowd that SwiftShader skins in time. */
+const S5_SHORT_RUN_COUNT = 20;
+/**
+ * The scenes whose canvas fills the window at the quality preset's pixel ratio, as a full-screen
+ * app on a phone does, and whose pages record a trace of each second.
+ */
+const PHONE_SCENES: readonly (typeof SCENES)[number][] = ['s4', 's5'];
+const isPhoneScene = (scene: (typeof SCENES)[number]) => PHONE_SCENES.includes(scene);
 /**
  * Pages that SwiftShader draws too slowly for the tests: S4's three.js twins take minutes over their
  * first frames, with shadows in cascades over 5,000 objects. The tests run them on real GPUs only.
@@ -90,12 +101,15 @@ const skipWhereTooSlow = (page: string) =>
  * twin on WebGPU take seconds, so its run is longer on every GPU.
  */
 function shortRunSeconds(scene: (typeof SCENES)[number], kind: PageKind): number {
-	if ((scene === 's3' || scene === 's4') && SWIFTSHADER) return 8;
+	if ((scene === 's3' || isPhoneScene(scene)) && SWIFTSHADER) return 8;
 	if (scene === 's3' && kind === 'threejs-webgpu') return 5;
 	return 2;
 }
-/** S4's canvas fills the window. A small window keeps its frames short on SwiftShader. */
-const S4_VIEWPORT = { width: 480, height: 320 };
+/** S4's and S5's canvas fills the window. A small window keeps their frames short on SwiftShader. */
+const PHONE_VIEWPORT = { width: 480, height: 320 };
+/** The object count that a scene's short runs ask for. */
+const shortRunAsked = (scene: (typeof SCENES)[number]): number =>
+	scene === 's5' ? S5_SHORT_RUN_COUNT : SHORT_RUN_COUNT;
 /**
  * The object count that a scene's short runs report: S2 rounds the count up to whole trees, and S4
  * has one town, whose count is fixed.
@@ -105,7 +119,7 @@ const shortRunCount = (scene: (typeof SCENES)[number]): number =>
 		? s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE
 		: scene === 's4'
 			? createS4().count
-			: SHORT_RUN_COUNT;
+			: shortRunAsked(scene);
 
 interface Report extends PageReport {
 	scene: string;
@@ -127,6 +141,10 @@ interface BenchReport extends Report {
 	cpuMs: { median: number; p95: number; p99: number; mean: number };
 	intervalMs: { median: number; p95: number; p99: number };
 	userAgent: string;
+	stats: {
+		drawCalls: { median: number; p99: number };
+		gpuPassMs: { name: string }[] | null;
+	};
 }
 
 /** How many pixels of an RGBA8 image have the background color, within the tolerance. */
@@ -199,10 +217,10 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 
 		test(`${scene} on ${kind} runs a short benchmark`, async ({ page }) => {
 			skipWhereTooSlow(`${scene} on ${kind}`);
-			if (scene === 's4') await page.setViewportSize(S4_VIEWPORT);
+			if (isPhoneScene(scene)) await page.setViewportSize(PHONE_VIEWPORT);
 			const result = await runPage<BenchReport>(
 				page,
-				pagePath(scene, kind, `seconds=${shortRunSeconds(scene, kind)}&n=${SHORT_RUN_COUNT}`),
+				pagePath(scene, kind, `seconds=${shortRunSeconds(scene, kind)}&n=${shortRunAsked(scene)}`),
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			expect(result.n).toBe(shortRunCount(scene));
@@ -210,10 +228,10 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 			expect(result.cpuMs.median).toBeGreaterThan(0);
 			expect(result.intervalMs.median).toBeGreaterThan(0);
 			expect(result.userAgent).toContain('Chrome');
-			if (scene === 's4') {
+			if (isPhoneScene(scene)) {
 				// The canvas fills the window below the status line, and each second has its row.
-				expect(result.canvas?.width).toBe(S4_VIEWPORT.width);
-				expect(result.canvas?.height).toBeLessThan(S4_VIEWPORT.height);
+				expect(result.canvas?.width).toBe(PHONE_VIEWPORT.width);
+				expect(result.canvas?.height).toBeLessThan(PHONE_VIEWPORT.height);
 				expect(result.trace?.length).toBeGreaterThan(0);
 				for (const second of result.trace ?? []) {
 					expect(second.renderScale).toBeGreaterThan(0);
@@ -252,13 +270,59 @@ for (const kind of [
 	});
 }
 
+/**
+ * The draw calls of S4's frames at Low with the governor off, as the gate's GPU comparison on the
+ * iPad runs it. On WebGPU the GPU culls, so the draw calls do not depend on the view: the camera's
+ * opaque pass and each shadow cascade draw S4's buckets, and the final pass draws one triangle.
+ * Low keeps its far cascade to its turns of 4 frames, though S4's cars drive through it (D-16).
+ * So most frames draw the near cascade alone, and one frame in 4 draws both. A new pass or draw
+ * in these frames costs every phone that runs S4, so a change to these figures needs its reason
+ * in .dev/implementation-notes.md.
+ */
+const S4_LOW_DRAW_CALLS = { nearCascadeOnly: 56, bothCascades: 63 };
+/** The passes of S4's frames at Low: the culling, the cascades, the scene and the final pass. */
+const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
+/** Enough measured frames to hold a frame that draws the far cascade, which draws 1 in 4. */
+const S4_LOW_FRAMES_WITH_TURNS = 8;
+
+function s4LowPassesTest(): void {
+	test('s4 on null3d-webgpu at Low draws the far cascade in its turns and no other pass', async ({
+		page,
+	}) => {
+		await page.setViewportSize(PHONE_VIEWPORT);
+		const result = await runPage<BenchReport>(
+			page,
+			pagePath(
+				's4',
+				'null3d-webgpu',
+				`seconds=${shortRunSeconds('s4', 'null3d-webgpu')}&preset=low&governor=off`,
+			),
+		);
+		expect(result.frames).toBeGreaterThan(0);
+		const { drawCalls, gpuPassMs } = result.stats;
+		expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS.nearCascadeOnly);
+		if (result.frames >= S4_LOW_FRAMES_WITH_TURNS)
+			expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS.bothCascades);
+		else expect(drawCalls.p99).toBeLessThanOrEqual(S4_LOW_DRAW_CALLS.bothCascades);
+		// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
+		if (gpuPassMs) {
+			const passes = gpuPassMs
+				.map((part) => part.name)
+				.filter((name) => name !== 'copies' && name !== 'between passes');
+			expect(S4_LOW_PASSES).toEqual(expect.arrayContaining(passes));
+			expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES.slice(0, 4)));
+		}
+	});
+}
+
 for (const scene of SCENES) {
-	if (scene === 's4')
-		// S4 keeps SwiftShader's processor busy, so two of its runs side by side can measure no whole
-		// second. Its pages take turns in one worker, while the other scenes' tests run beside them.
-		test.describe("S4's pages take turns", () => {
+	if (isPhoneScene(scene))
+		// S4 and S5 keep SwiftShader's processor busy, so two runs of one side by side can measure no
+		// whole second. Each one's pages take turns in one worker, while other tests run beside them.
+		test.describe(`${scene.toUpperCase()}'s pages take turns`, () => {
 			test.describe.configure({ mode: 'default' });
 			sceneTests(scene);
+			if (scene === 's4') s4LowPassesTest();
 		});
 	else sceneTests(scene);
 }
@@ -267,7 +331,7 @@ for (const scene of SCENES) {
 	test(`${scene}'s scene code runs alone and reports its time`, async ({ page }) => {
 		const result = await runPage<BenchReport>(
 			page,
-			pagePath(scene, SCENE_CODE, `seconds=1&n=${SHORT_RUN_COUNT}`),
+			pagePath(scene, SCENE_CODE, `seconds=1&n=${shortRunAsked(scene)}`),
 		);
 		expect([result.scene, result.renderer]).toEqual([scene, SCENE_CODE]);
 		expect(result.n).toBe(shortRunCount(scene));

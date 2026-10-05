@@ -3,24 +3,24 @@ id: guides/assets-pipeline
 title: "The asset pipeline (the `assets` command)"
 status: experimental
 since: "0.2"
-summary: "optimize, env, convert; LODs; texture compression; budget reports."
+summary: "optimize, env, convert; LODs; texture compression; blockers and stored trees; budget reports."
 ---
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`, and blocker meshes and prebuilt BVHs in the files. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. The engine does not light scenes with the environment maps of `assets env` yet. Coding agents must not use these parts.
+> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
     source["Your glTF models:<br/>.glb or .gltf files,<br/>PNG and JPEG textures"] --> optimize["bunx @null3d/cli<br/>assets optimize"]
-    optimize --> glb["One .glb per model:<br/>meshes in 8-bit and<br/>16-bit integers"]
+    optimize --> glb["One .glb per model:<br/>meshes in 8-bit and<br/>16-bit integers, clips at<br/>the engine's key rate,<br/>blockers and trees"]
     optimize --> ktx2["textures/*.ktx2:<br/>ETC1S and UASTC,<br/>every mip level"]
     optimize --> report["A budget report"]
     glb --> load["assets.loadGltf"]
     ktx2 --> load
 ```
 
-The `assets optimize` command makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as small integers, in the order that the GPU reads them fastest. It encodes each texture as a KTX2 file, which the GPU keeps compressed. Your files download less, take less GPU memory and upload in fewer frames. The command runs on your computer before you publish, from npm, with nothing else to install. The same files give the same output bytes on every computer.
+The `assets optimize` command makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as small integers, in the order that the GPU reads them fastest. It stores each animation clip in the form the engine keeps in memory. It encodes each texture as a KTX2 file, which the GPU keeps compressed. Your files download less, take less GPU memory and upload in fewer frames. The command runs on your computer before you publish, from npm, with nothing else to install. The same files give the same output bytes on every computer.
 
 ## Optimize a model
 
@@ -54,6 +54,8 @@ scene.instantiate(ship);
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC, several times larger than ETC1S, with less loss | `size` |
 | `--compression <none\|meshopt>` | `none` leaves the file's buffers uncompressed | `meshopt` |
+| `--no-blockers` | Gives no mesh a blocker for software occlusion culling | Blockers for meshes that enclose space |
+| `--bvh <triangles>` | Stores the tree that raycasts walk for each mesh part of at least this many triangles, or for none with 0 | 20000 |
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
 
@@ -73,6 +75,48 @@ The integers need a transform that turns them back into positions. The command p
 
 Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`.
 
+## What it does to clips
+
+The engine keeps each animation clip at one fixed rate of keys, so it never searches for the keys around a time. A file from another tool can hold keys at any times, so the loader resamples its clips on the job workers. The command stores each clip at the engine's rate already, and the loader then copies the keys instead.
+
+| Data | In the output | Why |
+| --- | --- | --- |
+| Key times | One list of evenly spaced times per clip. The file's own spacing when every key lies on one grid of up to 30 keys a second, else 30 keys a second | The rate that the engine picks for the clip at load |
+| Rotations that change | One key per time, as 16-bit integers, compressed with meshopt's quaternion filter | A quarter of the size of floats. The engine keeps rotations in 16 bits as well |
+| Translations, scales and morph weights that change | One key per time, as 32-bit floats | glTF asks for floats. meshopt compresses them with no loss |
+| A track whose value never changes, or moves by under a millionth of its size | One key, at the clip's last time | The clip keeps its length, in null3D and in three.js. Exporters leave rounding noise of that size in tracks that do not move, and the engine counts such a track as constant in every file |
+| Step tracks | Step tracks, with a key at each time | The engine steps at the same times |
+| Cubic spline tracks | Linear keys on the curve | The engine stores the same keys from the curve at load |
+
+The command drops no key and no track. A clip blends only where it has tracks, as in three.js, so a dropped track would change how the clip blends. Poses stay within the engine's tolerance of three.js. The KayKit Knight's skinning matrices differ by at most 7e-5, the same as from its source file.
+
+For the Knight and its 76 clips, the file's binary part falls from 838 KB to 405 KB after Brotli. On the engine's test page, its clips were ready in 8 ms on two job workers, against 16.5 ms for the source file.
+
+## Blockers and stored trees
+
+On WebGL2, objects that block the view hide the objects behind them from the GPU, as [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains. The command gives each mesh that encloses space a blocker: one or two boxes that fill its inside, joined into one closed surface. The engine draws the blocker in place of the mesh, for the cost of a few dozen triangles. A copy of the model blocks with those meshes from the start.
+
+A blocker that bulged out of its mesh would hide objects that show. So the command checks each blocker against the mesh's triangles, and drops one that fails:
+
+- The blocker is closed and faces outward.
+- No blocker triangle touches or crosses a triangle of the mesh.
+- Each corner of the blocker, and points spread over its faces, lie inside the mesh. From each point, rays in 48 directions meet the mesh, and the last face that each ray meets faces away from the point.
+
+The command takes the ground into account. The ground hides a model that stands upright from below. So a mesh that is open at its bottom still gets a blocker. Most buildings are open at the bottom. Such a blocker stops a little above the mesh's lowest point. A model that is turned or tipped gets no help from the ground.
+
+| Mesh | Blocker |
+| --- | --- |
+| Closed, such as a building, a rock or a wall | Yes, when one fills at least 5% of the mesh's box |
+| Open at its bottom, standing upright | Yes, as above |
+| Flat, thin or open to the sky, such as a floor, a sign or a fence | None, and the report says why |
+| Skinned, with morph targets, blended or with an alpha mask | None: its drawn shape can change or have gaps |
+
+A mesh's glTF extras can override the choice. The extras `"occluder": false` give the mesh no blocker. The extras `"occluder": true` make a mesh without a blocker block with its own triangles, up to 4,096 of them. That suits a mesh that is solid but too thin for a box. In the scene, `scene.instantiate(model, { occluder: false })` keeps a copy's meshes from blocking. Later, `setOccluder` changes an object.
+
+Raycasts walk a tree over each mesh's triangles. The engine builds a mesh's tree on the job workers on the first query, in about 0.2 to 0.3 µs per triangle. The `--bvh` option stores the trees in the file instead, for each mesh part of at least that many triangles. A stored tree takes about 20 bytes per triangle, as much as the mesh's positions and indices together. meshopt compresses it to about 12. So a stored tree pays only for large meshes, whose build would hold up the first raycast. The engine checks each stored tree against the mesh in about a tenth of the time of a build. It builds its own tree where a stored one does not fit.
+
+The file keeps both in extensions of the engine's own, which other loaders ignore: `NULL3D_occluder` and `NULL3D_mesh_bvh`. A file optimized again gets new ones.
+
 ## Textures
 
 The command encodes each PNG and JPEG texture of a model as a KTX2 file of Basis Universal data, with every mip level. KTX2 images that the model already had move to files of their own, unchanged. The engine turns each file into the compressed format that the device supports, as [Textures](../api/textures.md) lists.
@@ -83,7 +127,7 @@ The command encodes each PNG and JPEG texture of a model as a KTX2 file of Basis
 | Normal maps | UASTC always, since ETC1S blurs their detail | Linear |
 | Metal-rough, occlusion and other maps | ETC1S, or UASTC with `--texture-quality high` | Linear |
 
-Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly.
+Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly. A side is never less than 4 texels, so each texture is whole blocks of 4 x 4 texels. A texture in part blocks would load uncompressed, at 4 to 8 times the GPU memory.
 
 Textures are at most 2048 x 2048. The encoder is a 32-bit WebAssembly build, which refuses 4096 x 4096 images.
 
@@ -104,6 +148,9 @@ The engine does not draw levels of detail yet, and draws the full mesh. three.js
 | `size` | The scene's size in its own units, from the meshes' bounds |
 | Textures | Each group of textures that share a size, a format and a color space |
 | `texture memory` | The textures' GPU memory with every mip level: where the GPU takes ETC2 and ASTC, as phones, tablets and Macs do; where it takes only BC7, as most Windows PCs do; and with no compressed format |
+| `blockers` | The meshes that got blockers, and their triangles |
+| `no blocker` | Each mesh that could block but got no blocker, with the reason |
+| `stored trees` | The mesh parts whose trees the file stores, and their bytes before compression |
 
 `--report` writes the same figures as JSON, with each texture's source size, output size and encode time.
 
@@ -124,7 +171,7 @@ The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your 
 bun add -d @null3d/cli
 ```
 
-The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options:
+The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `maxTextureSize`, `textureQuality`, `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
 
 ```ts
 // vite.config.ts
@@ -132,7 +179,7 @@ import null3d from '@null3d/vite-plugin';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [null3d({ assets: { lod: true, maxTextureSize: 1024 } })],
+  plugins: [null3d({ assets: { lod: true, maxTextureSize: 1024, bvh: 5000 } })],
 });
 ```
 
@@ -174,7 +221,20 @@ Both formats filter on every GPU the engine supports. `rgb9e5ufloat` stores thre
 
 three.js prefilters an HDR file in the browser on every visit, with `PMREMGenerator`. The command does it once, before you publish. Your page then downloads the filtered file and does no work before it draws. The same file gives the same bytes on every computer.
 
-`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. The engine's package holds that file.
+`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. It blurs the room by 0.04 radians first, as three.js's examples do with `fromScene(room, 0.04)`. The engine makes the same room on the GPU when `assets.builtinEnvironment('room')` asks for it, so its package ships no file. The engine's tests compare its map with this command's.
+
+A sketch loads the file with `assets.loadEnvironment`, and lights the scene with it through `scene.setEnvironment`:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  scene.setEnvironment(await assets.loadEnvironment('/env/venice.ktx2'));
+  return {};
+});
+```
+
+[Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights each surface.
 
 ## Encode time
 

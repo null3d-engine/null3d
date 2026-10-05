@@ -8,6 +8,8 @@ type FakeRenderer = Recoverable & {
 	canvas: Size;
 	lose(reason: string): void;
 	destroyed: boolean;
+	/** How many times the renderer was destroyed. */
+	destroys: number;
 	/** The canvas's size at each blank frame, and when the renderer was destroyed. */
 	blanks: Size[];
 	destroyedAt?: Size;
@@ -26,6 +28,7 @@ function fakeRenderer(): FakeRenderer {
 		canvas: { width: 640, height: 360 },
 		lost,
 		destroyed: false,
+		destroys: 0,
 		blanks: [],
 		lose,
 		simulateLoss() {
@@ -35,6 +38,7 @@ function fakeRenderer(): FakeRenderer {
 			this.blanks.push({ ...this.canvas });
 		},
 		destroy() {
+			this.destroys++;
 			this.destroyed = true;
 			this.destroyedAt = { ...this.canvas };
 		},
@@ -147,6 +151,45 @@ describe('Drawing', () => {
 		await frames();
 		expect(replacement.destroyed).toBe(true);
 		expect(failures).toEqual([]);
+	});
+
+	it('waits for a recovery under way before a stop resolves, and never releases a renderer twice', async () => {
+		let release: (renderer: FakeRenderer) => void = () => {};
+		const replacement = fakeRenderer();
+		const { drawing, loops, renderers, last } = setup(
+			() =>
+				new Promise<FakeRenderer>((resolve) => {
+					release = resolve;
+				}),
+		);
+		last().lose('driver reset');
+		await settle();
+		let resolved = false;
+		const stopped = drawing.stop().then(() => {
+			resolved = true;
+		});
+		await frames();
+		// The stop holds until the new renderer exists, so that it cannot take the canvas later.
+		expect(resolved).toBe(false);
+		release(replacement);
+		await stopped;
+		expect(replacement.destroys).toBe(1);
+		expect(replacement.blanks).toEqual([{ width: 1, height: 1 }]);
+		expect(renderers[0]?.destroys).toBe(1);
+		expect(renderers[0]?.blanks).toEqual([]);
+		expect(loops).toHaveLength(1);
+	});
+
+	it('releases no renderer again after a recovery that failed', async () => {
+		const { drawing, failures, renderers, last } = setup(async () => {
+			throw new Error('no adapter');
+		});
+		last().lose('driver reset');
+		await settle();
+		await drawing.stop();
+		expect(failures).toHaveLength(1);
+		expect(renderers[0]?.destroys).toBe(1);
+		expect(renderers[0]?.blanks).toEqual([]);
 	});
 
 	it('shows a blank frame of one pixel before it destroys the renderer, then restores the canvas', async () => {

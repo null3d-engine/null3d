@@ -19,6 +19,8 @@ const OPTIONS = /** @type {const} */ ({
 	'max-texture-size': { type: 'string', default: String(MAX_TEXTURE_SIDE) },
 	'texture-quality': { type: 'string', default: DEFAULT_OPTIONS.textureQuality },
 	compression: { type: 'string', default: DEFAULT_OPTIONS.meshopt ? 'meshopt' : 'none' },
+	'no-blockers': { type: 'boolean', default: false },
+	bvh: { type: 'string', default: String(DEFAULT_OPTIONS.bvh) },
 	jobs: { type: 'string' },
 	report: { type: 'string' },
 	help: { type: 'boolean', short: 'h', default: false },
@@ -34,6 +36,8 @@ its file.
 
 Meshes: vertices reordered for the GPU's vertex cache, then stored as 8-bit and 16-bit integers
 (KHR_mesh_quantization).
+Clips: keys at the rate the engine keeps them, 16-bit rotations, one key for a track that never
+changes, so the engine copies them at load. No key or track is dropped.
 Textures: PNG and JPEG images encoded to KTX2 with every mip level, each side at its nearest
 power of two. Normal maps take UASTC; color and data maps take ETC1S, or UASTC with
 --texture-quality high. Every texture encodes on its own worker thread, and the same input gives
@@ -47,6 +51,10 @@ Options:
                                larger with less loss (size)
   --compression <none|meshopt> Compress the file's buffers with meshopt
                                (EXT_meshopt_compression), or leave them as they are (meshopt)
+  --no-blockers                Give no mesh a blocker for software occlusion culling
+                               (NULL3D_occluder)
+  --bvh <triangles>            Store the tree that raycasts walk for each mesh part of at least
+                               this many triangles, or for none with 0 (NULL3D_mesh_bvh) (20000)
   --jobs <count>               The worker threads that encode textures (one per CPU core)
   --report <file.json>         Also write the budget report as a JSON file`;
 
@@ -85,6 +93,11 @@ export function parseOptimizeArgs(args) {
 	const compression = values.compression;
 	if (compression !== 'none' && compression !== 'meshopt')
 		throw new UsageError(`--compression takes none or meshopt, not "${compression}"`);
+	const bvh = Number(values.bvh);
+	if (!Number.isInteger(bvh) || bvh < 0)
+		throw new UsageError(
+			`--bvh takes a whole number of triangles from 0, such as 5000, not "${values.bvh}"`,
+		);
 	const jobs = values.jobs === undefined ? defaultJobs() : Number(values.jobs);
 	if (!Number.isInteger(jobs) || jobs < 1)
 		throw new UsageError(`--jobs takes a whole number from 1, such as 4, not "${values.jobs}"`);
@@ -98,6 +111,8 @@ export function parseOptimizeArgs(args) {
 			maxTextureSize: side,
 			textureQuality: quality,
 			meshopt: compression === 'meshopt',
+			blockers: !values['no-blockers'],
+			bvh,
 		},
 		jobs,
 		...(values.report !== undefined && { report: resolve(values.report) }),

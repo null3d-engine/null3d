@@ -123,7 +123,7 @@ Queries test a skinned character as one capsule per bone. Its triangles move in 
 
 A stored mesh tree is a 48-byte header, the nodes, and one 32-bit triangle index per triangle. The header holds the bytes `N3BV`, the format version, the triangle count, the node count, the leaf size and the mesh's box. Every number is little-endian, and every record size is a multiple of 4, as a glTF buffer view needs. `crates/null3d-core/src/bvh/format.rs` gives the layout. The asset tool writes `MeshBvh::to_bytes()`, and the loader reads `MeshBvh::from_bytes()`.
 
-The reader checks each child word and the depth. It checks that each node has one parent, which comes before it, and that the leaves name every triangle once. It also checks that every stored box holds what lies under it. A tree that passes gives the same hits as a tree the engine builds, though its shape may differ. A test damages a stored tree 2,000 times at random. The reader refuses each damaged tree, or the tree still answers 20 random rays as brute force does.
+The reader checks each child word and the depth. It checks that each node has one parent, which comes before it, and that the leaves name every triangle once. It also checks that every stored box is finite and holds what lies under it, and that every empty slot holds the empty box ([D-59](D-59-file-limits.md)). A tree that passes gives the same hits as a tree the engine builds, though its shape may differ. A test damages a stored tree 2,000 times at random. The reader refuses each damaged tree, or the tree still answers 20 random rays as brute force does.
 
 ### How three.js handles it
 
@@ -134,6 +134,6 @@ three.js's `Raycaster` tests each object's bounding sphere and box, then each tr
 - `crates/null3d-core/src/bvh/` holds the trees, the queries, the capsules and the stored format. `SceneBvh` keeps the scene's two top-level trees. `SceneStorage` gained `structure_epoch()` and `created()`. The trees follow structural changes through them, and leave the renderer's flag alone.
 - M2-D2 builds the public queries on `SceneBvh`, `TopTree` and `MeshBvh`, and adds instance batch rows to the top level. It writes the "how queries find objects" part of the `api/raycast` docs page from this record. [D-30](D-30-scene-queries.md) records those queries. It also gives each item the box of its mesh, moved by its world matrix, in place of the box around its bounding sphere.
 - M2-A2 keeps the CPU copy of a mesh's positions and indices when queries need them, and builds its tree on a job worker at load.
-- M2-B4 stores trees for large static meshes with `MeshBvh::to_bytes()`. When the reader refuses a stored tree, the loader builds one instead.
+- The asset tool stores trees for large meshes with `MeshBvh::to_bytes()` ([D-50](D-50-blockers-and-stored-trees.md)). When the reader refuses a stored tree, the mesh builds one instead.
 - The skinning tasks give the capsules from the joint matrices.
 - The benchmarks in `crates/null3d-core/tests/bench.rs` measure the budgets again after any change to the builds.

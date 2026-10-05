@@ -145,6 +145,8 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 
 ## Switches for tests
 
+The engine reads these switches from the page's address in development builds, on the dev server and in the `null3d` command's runs. A production build ignores them, so a link cannot change how a shipped game runs. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`.
+
 | Switch | Effect |
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
@@ -157,6 +159,7 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 | `?threads=off` | The single-threaded build |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` need, such as Firefox before 145 |
 | `?render=main` | Draw on the page's main thread |
+| `?display-check=off` | Where the page's main thread draws, stop the checks of the display. While the frames run slower than the display, two frame callbacks now and then draw nothing, and the time between them measures the display's refresh rate. The switch measures what they cost |
 | `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
 | `?cells=off` | Cull every object, with no [grid cell](../concepts/culling.md) out of view skipped first, to measure what skipping cells saves |

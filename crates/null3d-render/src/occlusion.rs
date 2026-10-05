@@ -10,7 +10,9 @@
 //! camera's culling then hides each source whose bounding sphere lies behind them.
 //!
 //! A mesh's blocker, its welded corners and its edges, is built the first time an object with
-//! that mesh blocks the view, and kept, as meshes never change.
+//! that mesh blocks the view, and kept, as meshes never change. A mesh from a model file can come
+//! with a simplified blocker of its own, which the asset tool made and checked to lie inside the
+//! mesh; objects with that mesh draw it instead.
 
 use std::collections::TryReserveError;
 
@@ -198,6 +200,26 @@ impl Occluders {
             }
             self.distances.push((along - radius).max(0.0).to_bits());
             self.candidates.push(s as u32);
+        }
+        Ok(())
+    }
+
+    /// Gives a mesh a blocker of its own, such as the simplified blocker that the asset tool
+    /// stores in a model file, which objects with that mesh then draw in place of the mesh.
+    /// `mesh` is a mesh id, which counts from 1. Fails only when memory cannot grow.
+    pub fn set_blocker(&mut self, mesh: u32, blocker: BlockerMesh) -> Result<(), TryReserveError> {
+        let id = mesh as usize;
+        if self.by_mesh.len() <= id {
+            self.by_mesh.try_reserve(id + 1 - self.by_mesh.len())?;
+            self.by_mesh.resize(id + 1, UNBUILT);
+        }
+        match self.by_mesh[id] {
+            UNBUILT | NOT_BLOCKER => {
+                self.meshes.try_reserve(1)?;
+                self.meshes.push(blocker);
+                self.by_mesh[id] = self.meshes.len() as u32;
+            }
+            index => self.meshes[index as usize - 1] = blocker,
         }
         Ok(())
     }

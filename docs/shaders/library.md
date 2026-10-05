@@ -370,6 +370,22 @@ fn srgb_to_linear(c: vec3f) -> vec3f
 
 Decodes an sRGB color to linear color. It undoes `linear_to_srgb`. Use it for colors given in sRGB, such as hex colors and colors picked from the screen.
 
+### `HDR_LIMIT`
+
+```wgsl
+const HDR_LIMIT: f32 = 65472.0;
+```
+
+The brightest linear color that the engine stores in a 16-bit float target: one step below the largest 16-bit float, 65,504. Some GPUs store a larger value as infinity, and the tone mapping curves turn infinity into black.
+
+### `limit_hdr`
+
+```wgsl
+fn limit_hdr(c: vec3f) -> vec3f
+```
+
+A linear color with each channel no brighter than HDR_LIMIT, so that a 16-bit float target holds it. Infinity becomes HDR_LIMIT too.
+
 ### `luminance`
 
 ```wgsl
@@ -678,9 +694,9 @@ A surface of glTF's metallic-roughness model at one point, set up for lighting a
 
 - `base_color`: The base color, which metals reflect.
 - `diffuse`: The color of diffuse light: the base color without its metallic part.
-- `specular`: The dielectric reflectance at normal incidence, 0.04.
+- `specular`: The dielectric reflectance at normal incidence: 0.04, unless `with_specular` changes it.
 - `specular_blended`: The reflectance at normal incidence, blended from `specular` toward the base color by metalness.
-- `specular_grazing`: The reflectance at grazing angles.
+- `specular_grazing`: The reflectance at grazing angles: 1, unless `with_specular` changes it.
 - `roughness`: The perceptual roughness, from 0.0525 to 1.
 - `metalness`: The metalness, from 0 to 1.
 
@@ -691,6 +707,14 @@ fn pbr_material(base_color: vec3f, metalness: f32, roughness: f32, geometry_roug
 ```
 
 Sets up a PbrMaterial as three.js does. It raises `roughness` to at least 0.0525, adds `geometry_roughness`, and keeps the sum at 1 or less. `geometry_roughness` softens highlights where the normal changes fast between pixels. Pass 0 to leave it out.
+
+### `with_specular`
+
+```wgsl
+fn with_specular(m: PbrMaterial, reflectance: f32, color: vec3f, intensity: f32) -> PbrMaterial
+```
+
+A PbrMaterial with the dielectric specular values of glTF's KHR_materials_ior and KHR_materials_specular. It sets them as three.js's MeshPhysicalMaterial does. `reflectance` is `((ior - 1) / (ior + 1))^2`, which the color tints up to a reflectance of 1, and `intensity` scales. Metals keep their base color, and their grazing reflectance stays 1. A reflectance of 0.04 with a white color at full intensity gives `m` back unchanged.
 
 ### `Reflected`
 

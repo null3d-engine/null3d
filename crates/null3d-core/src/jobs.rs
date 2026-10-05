@@ -46,6 +46,11 @@
 //!    (loaded with acquire ordering) reaches the chunk count, so it only waits for chunks already
 //!    in flight. It never blocks: the sketch worker must stay responsive.
 //!
+//! A job worker that dies inside a chunk, as a WebAssembly trap ends a thread, never counts its
+//! chunk as done. Each job worker marks the chunk it holds, so the host can call
+//! [`JobSystem::worker_failed`] from the dead worker's thread: that counts the held chunk as done
+//! and as panicked, and the caller's wait ends with the panic instead of spinning for good.
+//!
 //! An add after the last chunk only moves the index past the count; each thread makes at most
 //! one such add per job, so the index never reaches the count's half.
 //!
@@ -198,6 +203,8 @@ pub struct JobSystem {
     clock: Option<Clock>,
     /// Nanoseconds of work per job worker since its total was last taken.
     busy_ns: Box<[CachePadded<AtomicU64>]>,
+    /// True while each job worker runs a frame chunk that it has not counted as done.
+    holding: Box<[CachePadded<AtomicBool>]>,
 }
 
 // SAFETY: the job descriptor is written only by the thread that won the `busy` flag, while no
@@ -245,6 +252,9 @@ impl JobSystem {
             clock: config.clock,
             busy_ns: (0..workers)
                 .map(|_| CachePadded(AtomicU64::new(0)))
+                .collect(),
+            holding: (0..workers)
+                .map(|_| CachePadded(AtomicBool::new(false)))
                 .collect(),
         }
     }
@@ -438,6 +448,22 @@ impl JobSystem {
         (&self.wake.0, &self.shutdown)
     }
 
+    /// Counts the chunk that job worker `worker_index` held as done and as panicked, when it held
+    /// one. The host calls it on the worker's thread after the worker died inside the job system,
+    /// so the loop that handed out the chunk ends with a panic instead of waiting for it for good.
+    /// Returns true when the worker held a chunk.
+    pub fn worker_failed(&self, worker_index: u32) -> bool {
+        let Some(holding) = self.holding.get(worker_index as usize) else {
+            return false;
+        };
+        if !holding.0.swap(false, Ordering::Relaxed) {
+            return false;
+        }
+        self.panicked.store(true, Ordering::Relaxed);
+        self.done.0.fetch_add(1, Ordering::Release);
+        true
+    }
+
     /// True after [`JobSystem::shutdown`].
     pub fn is_shut_down(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
@@ -464,6 +490,10 @@ impl JobSystem {
     /// Runs one claimed chunk and counts it as done, even when it panics. A job worker adds the
     /// chunk's time to its busy time first.
     fn run_chunk(&self, chunk: u32, worker: WorkerId) {
+        let holding = self.holding.get(worker.index().wrapping_sub(1));
+        if let Some(holding) = holding {
+            holding.0.store(true, Ordering::Relaxed);
+        }
         let started = self.work_started(worker);
         // SAFETY: the chunk was claimed from the current job, so the publishing caller is still
         // waiting inside `parallel_for` and has written the descriptor before publishing the
@@ -478,6 +508,9 @@ impl JobSystem {
             self.panicked.store(true, Ordering::Relaxed);
         }
         self.work_finished(worker, started);
+        if let Some(holding) = holding {
+            holding.0.store(false, Ordering::Relaxed);
+        }
         // Nothing may touch the job after this increment: the caller may return at once.
         self.done.0.fetch_add(1, Ordering::Release);
     }
@@ -714,6 +747,44 @@ mod tests {
         assert_eq!(jobs.run_background_tasks(10), 4);
         assert_eq!(RAN.load(Ordering::Relaxed), 1 + 2 + 3);
         assert_eq!(jobs.pending_background(), 0);
+    }
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // The test runs a job worker and the caller on native threads.
+    fn a_worker_that_dies_inside_a_chunk_ends_the_loop_with_a_panic() {
+        use std::sync::{Arc, mpsc};
+        use std::time::Duration;
+        static CLAIMED: AtomicBool = AtomicBool::new(false);
+        let jobs = Arc::new(JobSystem::new(1));
+        // Stands in for job worker 0 when its thread dies inside a chunk: it claims a chunk, holds
+        // it as `run_chunk` does, and never counts it as done. Its host then reports the failure.
+        let dead = Arc::clone(&jobs);
+        let worker = std::thread::spawn(move || {
+            while dead.try_claim().is_none() {
+                spin_loop();
+            }
+            dead.holding[0].0.store(true, Ordering::Relaxed);
+            CLAIMED.store(true, Ordering::SeqCst);
+            assert!(dead.worker_failed(0));
+            assert!(!dead.worker_failed(0));
+        });
+        let (sender, receiver) = mpsc::channel();
+        let caller = Arc::clone(&jobs);
+        std::thread::spawn(move || {
+            let outcome = catch_unwind(AssertUnwindSafe(|| {
+                caller.parallel_for(4, 1, &|_, _| {
+                    while !CLAIMED.load(Ordering::SeqCst) {
+                        spin_loop();
+                    }
+                });
+            }));
+            let _ = sender.send(outcome.is_err());
+        });
+        let panicked = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the loop waited for the dead worker's chunk");
+        assert!(panicked);
+        worker.join().unwrap();
     }
 
     #[test]

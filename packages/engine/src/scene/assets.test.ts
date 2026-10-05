@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { Assets } from './assets';
+import { Environment } from './environment';
 import type { Texture, TextureOptions, Textures } from './textures';
 
 const PAGE = 'https://game.example/levels/one.html';
 
 /** What the fake server answers for each address: a body, an HTTP status, or a network failure. */
-type Answer = string | number | 'network';
+type Answer = string | Uint8Array | number | 'network';
 
 const realFetch = globalThis.fetch;
 const realDecode = globalThis.createImageBitmap;
@@ -24,7 +26,7 @@ function serve(answers: Record<string, Answer>): void {
 		const answer = answers[url];
 		if (answer === undefined || answer === 'network') throw new TypeError('Failed to fetch');
 		if (typeof answer === 'number') return new Response('', { status: answer });
-		return new Response(answer);
+		return new Response(answer as BodyInit);
 	}) as typeof fetch;
 	globalThis.createImageBitmap = (async (blob: Blob, options: ImageBitmapOptions) => {
 		decoded.push(options);
@@ -149,6 +151,27 @@ describe('assets', () => {
 		expect(events.length).toBe(5);
 	});
 
+	test('an image whose header claims more pixels than its use takes fails with E1412 before it decodes', async () => {
+		serve({
+			'https://game.example/huge.png': pngHeader(65536, 65536) as Uint8Array<ArrayBuffer>,
+			'https://game.example/wide.jpg': jpegHeader(20000, 10) as Uint8Array<ArrayBuffer>,
+			'https://game.example/ok.png': pngHeader(4096, 2) as Uint8Array<ArrayBuffer>,
+		});
+		const { textures } = fakeTextures();
+		Object.defineProperty(textures, 'maxSize', { value: 4096 });
+		const assets = new Assets(textures, PAGE);
+		expect(await codeOf(assets.loadTexture('/huge.png'))).toBe(
+			'E1412: assets.loadTexture() could not decode https://game.example/huge.png as an image: its header gives 65536 x 65536 pixels, larger than the 4096 a side that it may have.',
+		);
+		// A bitmap for other uses may reach the largest canvas, 16,384 a side.
+		expect(await codeOf(assets.loadImageBitmap('/wide.jpg'))).toContain(
+			'its header gives 20000 x 10 pixels, larger than the 16384 a side',
+		);
+		expect(decoded).toEqual([]);
+		await assets.loadTexture('/ok.png');
+		expect(decoded).toHaveLength(1);
+	});
+
 	test('a missing file gives E1411, a blocked file of another origin E1413, and a broken image E1412', async () => {
 		serve({
 			'https://game.example/missing.png': 404,
@@ -179,5 +202,87 @@ describe('assets', () => {
 			'E1411: assets.loadBinary()',
 		);
 		expect(fetched.filter((url) => url.endsWith('missing.png')).length).toBe(3);
+	});
+});
+
+describe('environments', () => {
+	/**
+	 * The smallest environment map: a KTX2 cube of 8 x 8 shared-exponent texels with one level, and
+	 * its diffuse light in the key-value data. environment-file.test.ts checks every part of the file.
+	 */
+	function smallMap(): Uint8Array {
+		const kvd = new TextEncoder().encode(
+			`null3d.environment\0${JSON.stringify({ version: 1, sh: Array(27).fill(1) })}\0`,
+		);
+		const padded = kvd.length + ((4 - (kvd.length % 4)) % 4);
+		const texels = 80 + 24 + 4 + padded;
+		const bytes = new Uint8Array(texels + 6 * 8 * 8 * 4);
+		const view = new DataView(bytes.buffer);
+		bytes.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+		for (const [at, word] of [
+			[12, 123],
+			[16, 4],
+			[20, 8],
+			[24, 8],
+			[36, 6],
+			[40, 1],
+			[56, 104],
+			[60, 4 + padded],
+			[104, kvd.length],
+		])
+			view.setUint32(at as number, word as number, true);
+		bytes.set(kvd, 108);
+		view.setBigUint64(80, BigInt(texels), true);
+		view.setBigUint64(88, BigInt(6 * 8 * 8 * 4), true);
+		return bytes;
+	}
+
+	/** Textures that record the cube maps that `fromCube` and `fromGenerator` got. */
+	function cubeTextures() {
+		const cubes: [number, number, string, number | string][] = [];
+		const textures = {
+			fromCube(size: number, levels: number, format: string, texels: Uint8Array[]) {
+				cubes.push([size, levels, format, texels.length]);
+				return { bytes: 0 } as unknown as Texture;
+			},
+			async fromGenerator(name: string, size: number, levels: number) {
+				cubes.push([size, levels, 'rgb9e5ufloat', name]);
+				return { bytes: 0 } as unknown as Texture;
+			},
+		} as unknown as Textures;
+		return { textures, cubes };
+	}
+
+	test("load the asset tool's files into cube maps, and make the built-in room on the GPU", async () => {
+		serve({ 'https://game.example/env/room.ktx2': smallMap() });
+		const { textures, cubes } = cubeTextures();
+		const assets = new Assets(textures, PAGE);
+		const loaded = await assets.loadEnvironment('/env/room.ktx2');
+		const builtin = await assets.builtinEnvironment('room');
+		expect(fetched).toEqual(['https://game.example/env/room.ktx2']);
+		for (const env of [loaded, builtin]) {
+			expect(env).toBeInstanceOf(Environment);
+			expect([env.format, env.sh.length]).toEqual(['rgb9e5ufloat', 27]);
+		}
+		expect([loaded.size, loaded.levels, builtin.size, builtin.levels]).toEqual([8, 1, 256, 6]);
+		expect(cubes).toEqual([
+			[8, 1, 'rgb9e5ufloat', 1],
+			[256, 6, 'rgb9e5ufloat', 'room'],
+		]);
+	});
+
+	test('a file that is no environment map gives E1412, and an unknown name E1213', async () => {
+		serve({ 'https://game.example/env/flat.ktx2': 'not a ktx2 file' });
+		const assets = new Assets(cubeTextures().textures, PAGE);
+		expect(await codeOf(assets.loadEnvironment('/env/flat.ktx2'))).toBe(
+			'E1412: assets.loadEnvironment() could not read https://game.example/env/flat.ktx2 as an environment map: it is not a KTX2 file.',
+		);
+		expect(
+			await codeOf(
+				assets.builtinEnvironment('studio' as Parameters<Assets['builtinEnvironment']>[0]),
+			),
+		).toBe(
+			`E1213: assets.builtinEnvironment() got "studio", which names no built-in environment. Use 'room'.`,
+		);
 	});
 });

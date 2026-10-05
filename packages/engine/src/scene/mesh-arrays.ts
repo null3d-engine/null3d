@@ -16,6 +16,9 @@ import {
 	ARRAY_UVS1,
 	ARRAY_WEIGHTS,
 	ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE,
+	ARRAYS_PROBLEM_MORPH_LENGTH,
+	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
+	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
 	ARRAYS_PROBLEM_NOT_FINITE,
 	MESH_ARRAYS_COLORS,
 	MESH_ARRAYS_COLORS_ALPHA,
@@ -28,6 +31,12 @@ import {
 	MESH_ARRAYS_UVS,
 	MESH_ARRAYS_UVS1,
 	MESH_ARRAYS_WEIGHTS,
+	MORPH_COLORS,
+	MORPH_DELTA_BYTES,
+	MORPH_MAX_TARGETS,
+	MORPH_NORMALS,
+	MORPH_POSITIONS,
+	MORPH_TANGENTS,
 } from '../generated/core';
 import {
 	VERTEX_ATTRIBUTES,
@@ -43,7 +52,7 @@ import {
 	VERTEX_TYPES,
 } from '../generated/gpu';
 import type { CoreMemory, ViewConstructor } from './memory';
-import type { IntegerArray, MeshArrays, VertexValues } from './resources';
+import type { IntegerArray, MeshArrays, MorphTargets, VertexValues } from './resources';
 
 /**
  * The bits that give the attribute at `location` the type `type` in a vertex format, or undefined
@@ -239,6 +248,65 @@ function arrayTypes(arrays: MeshArrays): (number | string | undefined)[] {
 	});
 }
 
+/** The morph target lists in the order that the core reads them, with their bits. */
+const MORPH_LISTS = [
+	['positions', MORPH_POSITIONS],
+	['normals', MORPH_NORMALS],
+	['tangents', MORPH_TANGENTS],
+	['colors', MORPH_COLORS],
+] as const;
+
+type MorphList = (typeof MORPH_LISTS)[number][0];
+
+/** The numbers per vertex of each color target that the core reads: red, green, blue and alpha. */
+const CORE_COLOR_VALUES = 4;
+
+/** The numbers per vertex of a mesh's colors, 3 or 4, or 0 for a mesh without colors. */
+function colorValues(arrays: MeshArrays, vertices: number): number {
+	return arrays.colors ? valuesOf(arrays.colors).array.length / vertices : 0;
+}
+
+/** The numbers per vertex of each array of morph target list `name`, as the arrays give them. */
+function morphValues(name: MorphList, colors: number): number {
+	return name === 'colors' ? colors : 3;
+}
+
+/** The number of morph targets that `targets` gives: the length of its first list, or 0. */
+export function morphTargetCount(targets: MorphTargets | undefined): number {
+	if (!targets) return 0;
+	for (const [name] of MORPH_LISTS) {
+		const list = targets[name];
+		if (list) return list.length;
+	}
+	return 0;
+}
+
+/**
+ * What is wrong with the shapes of a mesh's morph targets, or undefined when they fit it. `colors`
+ * is the numbers per vertex of the mesh's colors, or 0 without colors.
+ */
+function morphProblem(targets: MorphTargets, vertices: number, colors: number): string | undefined {
+	const count = morphTargetCount(targets);
+	if (count === 0) return 'got morphTargets without any target.';
+	if (count > MORPH_MAX_TARGETS)
+		return `got ${count} morph targets; a mesh takes up to ${MORPH_MAX_TARGETS}.`;
+	if (targets.colors && colors === 0)
+		return "got morphTargets.colors but no colors; color targets move the mesh's own colors.";
+	for (const [name] of MORPH_LISTS) {
+		const list = targets[name];
+		if (!list) continue;
+		if (list.length !== count)
+			return `got ${list.length} morph targets in ${name} and ${count} in another list; every list needs one array per target.`;
+		const length = vertices * morphValues(name, colors);
+		const at = list.findIndex((array) => array.length !== length);
+		if (at >= 0)
+			return `got ${list[at]?.length} numbers in morphTargets.${name}[${at}] for ${vertices} vertices, not ${length}.`;
+	}
+	if (targets.names && targets.names.length !== count)
+		return `got ${targets.names.length} morph target names for ${count} targets.`;
+	return undefined;
+}
+
 /** What is wrong with the shapes of a mesh's arrays, or undefined when they make a mesh. */
 export function arraysProblem(arrays: MeshArrays): string | undefined {
 	const { indices, computeNormals = false, computeTangents = false } = arrays;
@@ -277,6 +345,8 @@ export function arraysProblem(arrays: MeshArrays): string | undefined {
 	if (computeTangents && !arrays.uvs) return 'got computeTangents: true but no uvs.';
 	if (arrays.joints && !arrays.weights) return 'got joints but no weights.';
 	if (arrays.weights && !arrays.joints) return 'got weights but no joints.';
+	if (arrays.morphTargets)
+		return morphProblem(arrays.morphTargets, vertices, colorValues(arrays, vertices));
 	return undefined;
 }
 
@@ -312,13 +382,21 @@ export function meshFromArrays(core: CoreMemory, arrays: MeshArrays, call: strin
 		typeFields |= typeField(spec.location, type) ?? 0;
 		words += wordBytes(type, valuesOf(given).array.length) / 4;
 	}
-	if (valuesOf(arrays.colors ?? []).array.length === vertices * 4)
-		layout |= MESH_ARRAYS_COLORS_ALPHA;
+	const colors = colorValues(arrays, vertices);
+	if (colors === 4) layout |= MESH_ARRAYS_COLORS_ALPHA;
 	if (indices) layout |= MESH_ARRAYS_INDICES;
 	if (arrays.computeNormals) layout |= MESH_ARRAYS_COMPUTE_NORMALS;
 	if (arrays.computeTangents) layout |= MESH_ARRAYS_COMPUTE_TANGENTS;
 	const indexCount = indices?.length ?? 0;
-	const address = core.checkGrowth(core.glue.meshArrays(words + indexCount), call);
+	const targets = morphTargetCount(arrays.morphTargets);
+	let morphBits = 0;
+	let morphWords = 0;
+	for (const [name, bit] of MORPH_LISTS) {
+		if (!arrays.morphTargets?.[name]) continue;
+		morphBits |= bit;
+		morphWords += targets * vertices * (name === 'colors' ? CORE_COLOR_VALUES : 3);
+	}
+	const address = core.checkGrowth(core.glue.meshArrays(words + indexCount + morphWords), call);
 	let at = address;
 	for (const [k, spec] of ARRAYS.entries()) {
 		const given = arrays[spec.name];
@@ -329,7 +407,30 @@ export function meshFromArrays(core: CoreMemory, arrays: MeshArrays, call: strin
 		at += wordBytes(type, array.length);
 	}
 	if (indices) core.u32(at, indexCount).set(indices);
-	const id = core.glue.createMeshFromArrays(vertices, indexCount, layout, typeFields);
+	at += indexCount * 4;
+	for (const [name] of MORPH_LISTS)
+		for (const array of arrays.morphTargets?.[name] ?? []) {
+			if (name === 'colors' && colors !== CORE_COLOR_VALUES) {
+				// Colors without alpha take an alpha delta of 0 in the core's four values per vertex.
+				const out = core.f32(at, vertices * CORE_COLOR_VALUES);
+				out.fill(0);
+				for (let v = 0; v < vertices; v++)
+					for (let c = 0; c < colors; c++)
+						out[v * CORE_COLOR_VALUES + c] = array[v * colors + c] as number;
+				at += out.length * 4;
+				continue;
+			}
+			core.f32(at, array.length).set(array);
+			at += array.length * 4;
+		}
+	const id = core.glue.createMeshFromArrays(
+		vertices,
+		indexCount,
+		layout,
+		typeFields,
+		targets,
+		morphBits,
+	);
 	if (id === 0) throw arraysFailure(core, arrays, call);
 	return id;
 }
@@ -340,6 +441,32 @@ function arraysFailure(core: CoreMemory, arrays: MeshArrays, call: string): Engi
 	if (glue.lastErrorCode() !== BAD_ARRAYS) return coreFailure(glue, call);
 	const problem = glue.lastErrorDetail(0);
 	const at = glue.lastErrorDetail(1);
+	if (problem === ARRAYS_PROBLEM_MORPH_TOO_LARGE) {
+		const mib = ((at * MORPH_DELTA_BYTES) / 2 ** 20).toLocaleString('en-US', {
+			maximumFractionDigits: 1,
+		});
+		return new EngineError(
+			'E1206',
+			`${call}() got morph targets that move a vertex more than 255 times, or that would pass the ${at.toLocaleString('en-US')} delta texels (${mib} MiB) that the engine holds for every mesh's targets together.`,
+		);
+	}
+	if (problem === ARRAYS_PROBLEM_MORPH_NOT_FINITE) {
+		const [name] = MORPH_LISTS[at >>> 28] ?? MORPH_LISTS[0];
+		const vertices = valuesOf(arrays.positions).array.length / 3;
+		// The core's place counts its own values per vertex; the arrays may hold fewer.
+		const stored = name === 'colors' ? CORE_COLOR_VALUES : 3;
+		const given = morphValues(name, colorValues(arrays, vertices));
+		const value = (at & 0xfffffff) % (vertices * stored);
+		const target = Math.floor((at & 0xfffffff) / (vertices * stored));
+		const place = Math.floor(value / stored) * given + (value % stored);
+		const found = arrays.morphTargets?.[name]?.[target]?.[place];
+		return new EngineError(
+			'E1206',
+			`${call}() got ${found} at morphTargets.${name}[${target}][${place}].`,
+		);
+	}
+	if (problem === ARRAYS_PROBLEM_MORPH_LENGTH)
+		return new EngineError('E1206', `${call}() got morph targets that do not fit its vertices.`);
 	if (problem === ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE) {
 		const index = arrays.indices?.[at];
 		const vertices = valuesOf(arrays.positions).array.length / 3;

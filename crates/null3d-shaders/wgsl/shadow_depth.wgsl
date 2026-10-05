@@ -30,6 +30,9 @@ enable draw_index;
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
+#ifdef MORPH
+#import null3d::mesh::{Morphed, morph_vertex}
+#endif
 
 /// How far a back face that faces straight away from the light moves toward it, in texels of the
 /// map where it stands.
@@ -47,18 +50,29 @@ struct VertexIn {
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
 #endif
+#ifdef MORPH
+    @location(8) morph: vec2f,
+#endif
 }
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     let found = find_instance(i);
+#ifdef MORPH
+    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, vec3f(0.0), vec4f(1.0)));
+    let rest_position = rest.position;
+    let rest_normal = rest.normal;
+#else
+    let rest_position = mesh_position(v.position);
+    let rest_normal = v.normal;
+#endif
 #ifdef SKIN
     let skin = skin_of(found, v.joints, v.weights);
-    let position = skinned_point(skin, mesh_position(v.position));
-    let normal = skinned_direction(skin, v.normal);
+    let position = skinned_point(skin, rest_position);
+    let normal = skinned_direction(skin, rest_normal);
 #else
-    let position = mesh_position(v.position);
-    let normal = v.normal;
+    let position = rest_position;
+    let normal = rest_normal;
 #endif
     let relative = relative_position(found, position);
     var clip = clip_of(found, relative);

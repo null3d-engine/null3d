@@ -40,6 +40,22 @@
 //! mip levels and no bind group of the store's: the pass that reads it binds it by its GPU id,
 //! which [`TextureStore::ready_volume`] gives once its texels are on the GPU.
 //!
+//! # Cube textures
+//!
+//! A cube texture, such as an environment map (see [`crate::environment`]), has a texture of its
+//! own whose six layers are its faces, in the order +X, -X, +Y, -Y, +Z, -Z. Its texels come from
+//! data alone, with every mip level, each level's faces in turn, as a KTX2 file holds them. Like a
+//! 3D texture, it has no bind group of the store's: the frame's group binds it by its GPU id, which
+//! [`TextureStore::ready_cube`] gives once its texels are on the GPU.
+//!
+//! A cube texture's texels can also come from a generator, which the thread that draws runs on
+//! the GPU, such as the built-in room environment's. A generator takes the next image id and waits
+//! for the thread that draws as an image does: that thread counts it once the generator's code has
+//! loaded and its pipelines are built, so the generator runs as soon as the list names it. The
+//! first frame after the generator arrives records one command that fills every level, outside
+//! the upload budget and before the frame's passes, so that frame already draws with the texture.
+//! The store keeps the generator, so a new GPU device fills the texture again.
+//!
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
 //!
@@ -50,8 +66,9 @@
 //! whose texels are gone keeps its layer and draws as without a map until it gets new texels.
 
 use null3d_core::error::CoreError;
+use null3d_core::frames::frame_after;
 use null3d_core::handle::{Handle, SlotAllocator};
-use null3d_gpu::caps::TEXTURE_3D_SIZE;
+use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, TEXTURE_3D_SIZE};
 use null3d_gpu::drawlist::{
     DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage,
     upload_flags, view,
@@ -65,7 +82,7 @@ pub const MAX_LAYERS: u32 = 256;
 pub const FIRST_LAYERS: u32 = 4;
 /// The most textures that live at once.
 pub const MAX_TEXTURES: u32 = 4095;
-/// The group of a texture that has no bind group of the store's: a 3D texture.
+/// The group of a texture that has no bind group of the store's: a 3D or a cube texture.
 const NO_GROUP: u32 = u32::MAX;
 /// The bytes that one frame uploads, until the quality preset sets another budget.
 pub const DEFAULT_UPLOAD_BUDGET: u32 = 4 * 1024 * 1024;
@@ -172,6 +189,10 @@ enum Source {
     Image { id: u32, flags: u32 },
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
+    /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU in
+    /// one command. The store keeps it until the texture gets other texels or is destroyed, so a
+    /// new GPU device runs it again.
+    Generated { id: u32 },
 }
 
 /// Where a texture is on its way to the GPU.
@@ -230,6 +251,17 @@ impl TextureSlot {
     }
 }
 
+/// How shaders see an array's GPU texture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// Layers of 2D images, which textures of one key share.
+    Layers,
+    /// A 3D texture, whose layers are its depth slices.
+    Volume,
+    /// A cube texture, whose six layers are its faces.
+    Cube,
+}
+
 /// What makes textures share an array.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ArrayKey {
@@ -239,8 +271,8 @@ struct ArrayKey {
     mips: u32,
     /// The layers of each texture: an array of textures of more than one has one texture.
     depth: u32,
-    /// True for a 3D texture, whose layers are its depth slices. It has a texture of its own.
-    volume: bool,
+    /// How shaders see the texture. A 3D or a cube texture has a texture of its own.
+    kind: Kind,
 }
 
 /// Where a band of texels starts: a row of blocks of one layer of one mip level.
@@ -262,10 +294,19 @@ impl ArrayKey {
         format::layer_bytes(self.format, self.width, self.height, self.mips)
     }
 
-    /// True when textures share the array. A texture of several layers, of a compressed format or
-    /// of three dimensions has an array of its own.
+    /// True when textures share the array. A texture of several layers, of a compressed format,
+    /// of three dimensions or of a cube's faces has an array of its own.
     fn shared(&self) -> bool {
-        self.depth == 1 && !format::is_compressed(self.format) && !self.volume
+        self.depth == 1 && !format::is_compressed(self.format) && self.kind == Kind::Layers
+    }
+
+    /// The view dimension that bind groups see the GPU texture as.
+    fn view(&self) -> u32 {
+        match self.kind {
+            Kind::Layers => view::D2_ARRAY,
+            Kind::Volume => view::D3,
+            Kind::Cube => view::CUBE,
+        }
     }
 
     /// The rows of blocks of the first `levels` mip levels, through every layer.
@@ -374,7 +415,7 @@ struct SamplerSlot {
 }
 
 /// The maps of one map set's bind group, in the order of the material's map slots.
-pub const MAP_SET_SLOTS: usize = 6;
+pub const MAP_SET_SLOTS: usize = crate::materials::MAP_SLOTS;
 
 /// What a bind group binds: one array and its sampler, or a map set of an array and a sampler
 /// for each map slot.
@@ -515,7 +556,7 @@ impl TextureStore {
 
     /// Creates a texture with no texels yet, in a free layer of an array of its key.
     pub fn create(&mut self, desc: TextureDesc) -> Result<Handle, TextureError> {
-        self.create_in(desc, false)
+        self.create_in(desc, Kind::Layers)
     }
 
     /// Creates a 3D texture of `width` x `height` x `depth` texels in `format::RGBA8_UNORM` or
@@ -544,11 +585,40 @@ impl TextureStore {
             levels: 1,
             sampling: Sampling::default(),
         };
-        self.create_in(desc, true)
+        self.create_in(desc, Kind::Volume)
     }
 
-    /// Creates a texture of `desc`, in three dimensions when `volume`.
-    fn create_in(&mut self, desc: TextureDesc, volume: bool) -> Result<Handle, TextureError> {
+    /// Creates a cube texture with faces of `size` x `size` texels in `format::RGB9E5_UFLOAT` or
+    /// `format::RGBA16_FLOAT`, with `levels` mip levels and no texels yet. It is read with linear
+    /// filters within and between levels, and its texels bring every level. A face takes at most
+    /// [`CUBE_TEXTURE_SIZE`] texels a side, the least that WebGL2 allows.
+    pub fn create_cube(
+        &mut self,
+        size: u32,
+        levels: u32,
+        format: u32,
+    ) -> Result<Handle, TextureError> {
+        let limit = CUBE_TEXTURE_SIZE.min(self.max_size);
+        if size > limit {
+            return Err(TextureError::TooLarge { limit });
+        }
+        if !matches!(format, format::RGB9E5_UFLOAT | format::RGBA16_FLOAT) {
+            return Err(TextureError::Unsupported);
+        }
+        let desc = TextureDesc {
+            width: size,
+            height: size,
+            depth: view::CUBE_FACES,
+            format,
+            mipmaps: false,
+            levels,
+            sampling: Sampling::default(),
+        };
+        self.create_in(desc, Kind::Cube)
+    }
+
+    /// Creates a texture of `desc` that shaders see as `kind`.
+    fn create_in(&mut self, desc: TextureDesc, kind: Kind) -> Result<Handle, TextureError> {
         self.check_size(desc.format, desc.width, desc.height)?;
         let sampling = desc.sampling;
         let known = |code: u32, last: u32| code <= last;
@@ -559,6 +629,7 @@ impl TextureStore {
             && match desc.format {
                 format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB => true,
                 format::RGBA16_FLOAT => !desc.mipmaps,
+                format::RGB9E5_UFLOAT => kind == Kind::Cube,
                 code => format::is_compressed(code) && !desc.mipmaps,
             }
             && sampling
@@ -593,7 +664,7 @@ impl TextureStore {
             format: desc.format,
             mips: slot.mips(desc.width, desc.height),
             depth: desc.depth,
-            volume,
+            kind,
         };
         self.settle(&mut slot, key);
         let index = handle.slot() as usize;
@@ -605,13 +676,13 @@ impl TextureStore {
     }
 
     /// Gives a texture a layer of an array of `key`, and the bind group of that array and its
-    /// sampler, or none for a 3D texture.
+    /// sampler, or none for a 3D or a cube texture.
     fn settle(&mut self, slot: &mut TextureSlot, key: ArrayKey) {
         let (array, layer) = self.place(key);
         self.arrays[array as usize].mark(layer, true);
         slot.array = array;
         slot.layer = layer;
-        slot.group = if key.volume {
+        slot.group = if key.kind != Kind::Layers {
             NO_GROUP
         } else {
             self.group_for(array, slot.sampler)
@@ -708,7 +779,8 @@ impl TextureStore {
     ) -> Result<(u32, bool), TextureError> {
         let slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
-        if key.depth > 1 || key.volume || !format::makes_mipmaps(key.format) || slot.levels > 1 {
+        let layers = key.kind == Kind::Layers;
+        if key.depth > 1 || !layers || !format::makes_mipmaps(key.format) || slot.levels > 1 {
             return Err(TextureError::Unsupported);
         }
         let moved = self.resize(texture, width, height)?;
@@ -716,6 +788,23 @@ impl TextureStore {
         let id = self.last_image;
         self.queue_source(texture, Source::Image { id, flags })?;
         Ok((id, moved))
+    }
+
+    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU,
+    /// all in the first frame after the generator arrives, and returns the generator's id, which it
+    /// takes from the images' ids. The caller sends the generator to the thread that draws under
+    /// that id, in the order of the ids, as it sends images. Texels that were waiting are released
+    /// unused.
+    pub fn set_generated(&mut self, texture: Handle) -> Result<u32, TextureError> {
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT {
+            return Err(TextureError::Unsupported);
+        }
+        self.last_image += 1;
+        let id = self.last_image;
+        self.queue_source(texture, Source::Generated { id })?;
+        Ok(id)
     }
 
     /// Gives a texture new texels of `width` x `height` in each of its layers, and returns the
@@ -786,7 +875,10 @@ impl TextureStore {
         slot.state = State::Queued { source, rows: 0 };
         match old {
             State::Queued { source, .. } => self.release_unused(source),
-            State::Uploaded { .. } => {
+            State::Uploaded { source, .. } => {
+                if let Source::Generated { .. } = source {
+                    self.release_unused(source);
+                }
                 self.layers_changed = true;
                 self.queue.push(texture);
             }
@@ -807,7 +899,12 @@ impl TextureStore {
                 self.release_unused(source);
                 self.queue.retain(|&queued| queued != texture);
             }
-            State::Uploaded { .. } => self.layers_changed = true,
+            State::Uploaded { source, .. } => {
+                if let Source::Generated { .. } = source {
+                    self.release_unused(source);
+                }
+                self.layers_changed = true;
+            }
             State::Empty => {}
         }
         self.arrays[slot.array as usize].mark(slot.layer, false);
@@ -820,7 +917,7 @@ impl TextureStore {
         self.releases.push(Release {
             source,
             after: match source {
-                Source::Image { .. } => 0,
+                Source::Image { .. } | Source::Generated { .. } => 0,
                 Source::Data { .. } => self.recorded,
             },
             texture: Handle::NONE,
@@ -871,12 +968,20 @@ impl TextureStore {
     pub fn ready_volume(&self, texture: Handle) -> Option<(u32, [u32; 3])> {
         let slot = self.slot(texture).ok()?;
         let key = self.arrays[slot.array as usize].key;
-        (key.volume && matches!(slot.state, State::Uploaded { .. })).then(|| {
+        (key.kind == Kind::Volume && matches!(slot.state, State::Uploaded { .. })).then(|| {
             (
                 self.array_id(slot.array),
                 [key.width, key.height, key.depth],
             )
         })
+    }
+
+    /// The GPU id of a cube texture and its mip levels, once its texels are on the GPU.
+    pub fn ready_cube(&self, texture: Handle) -> Option<(u32, u32)> {
+        let slot = self.slot(texture).ok()?;
+        let key = self.arrays[slot.array as usize].key;
+        (key.kind == Kind::Cube && matches!(slot.state, State::Uploaded { .. }))
+            .then(|| (self.array_id(slot.array), key.mips))
     }
 
     /// The GPU bytes of a texture: its layers, with every mip level.
@@ -1006,8 +1111,9 @@ impl TextureStore {
                 old_id
             };
             // Images upload into and mip levels draw into a texture that textures share, and a
-            // larger one copies its layers. A compressed texture and a 3D texture take writes only.
-            let usage = if format::is_compressed(key.format) || key.volume {
+            // larger one copies its layers. A compressed texture, a 3D texture and a cube texture
+            // take writes only.
+            let usage = if format::is_compressed(key.format) || key.kind != Kind::Layers {
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
             } else {
                 texture_usage::TEXTURE_BINDING
@@ -1026,7 +1132,7 @@ impl TextureStore {
                     usage,
                     1,
                     key.mips,
-                    if key.volume { view::D3 } else { view::D2_ARRAY },
+                    key.view(),
                 ],
             )?;
             if old_capacity > 0 {
@@ -1068,12 +1174,16 @@ impl TextureStore {
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         let (arrived, taken) = (self.arrived, self.frames_taken);
         let due = |r: &Release| match r.source {
-            Source::Image { id, .. } => id <= arrived && r.after < frame,
-            Source::Data { .. } => r.after < taken,
+            Source::Image { id, .. } | Source::Generated { id, .. } => {
+                id <= arrived && (r.after == 0 || frame_after(frame, r.after))
+            }
+            Source::Data { .. } => frame_after(taken, r.after),
         };
         for release in self.releases.iter().filter(|r| due(r)) {
             match release.source {
-                Source::Image { id, .. } => list.push(Op::ReleaseImage, &[id])?,
+                Source::Image { id, .. } | Source::Generated { id, .. } => {
+                    list.push(Op::ReleaseImage, &[id])?;
+                }
                 Source::Data { slot } => self.data[slot as usize] = Vec::new(),
             }
             if let Ok(slot) = self.handles.resolve(release.texture) {
@@ -1124,7 +1234,7 @@ impl TextureStore {
             let State::Queued { source, mut rows } = slot.state else {
                 continue;
             };
-            if let Source::Image { id, .. } = source
+            if let Source::Image { id, .. } | Source::Generated { id, .. } = source
                 && id > self.arrived
             {
                 continue;
@@ -1132,8 +1242,17 @@ impl TextureStore {
             let key = self.arrays[slot.array as usize].key;
             let id = self.array_id(slot.array);
             let levels = slot.source_levels(key);
-            let total = key.rows(levels);
             let block = format::block_size(key.format);
+            let total = match source {
+                Source::Generated { .. } => 1,
+                _ => key.rows(levels),
+            };
+            if let Source::Generated { id: generator } = source {
+                // The generator makes the whole map in one command, outside the upload budget, so
+                // the frame that records it already draws with the map.
+                list.push(Op::GenerateTexture, &[id, generator])?;
+                rows = total;
+            }
             while rows < total {
                 let band = key.band(rows, levels);
                 let left = budget.saturating_sub(spent);
@@ -1147,33 +1266,32 @@ impl TextureStore {
                 }
                 let layer = slot.layer + band.layer;
                 let y = band.row * block;
-                match source {
-                    Source::Image { id: image, flags } => list.push(
+                if let Source::Image { id: image, flags } = source {
+                    list.push(
                         Op::UploadImage,
                         &[id, 0, 0, y, layer, key.width, take, image, flags, 0, y],
-                    )?,
-                    Source::Data { slot: data } => {
-                        let bytes = words_as_bytes(&self.data[data as usize]);
-                        let length = u64::from(take) * band.row_bytes;
-                        let texels = &bytes[band.offset as usize..(band.offset + length) as usize];
-                        // The last row of blocks may reach past the level's edge.
-                        let level_height = format::level_size(key.height, band.level);
-                        list.push(
-                            Op::WriteTexture,
-                            &[
-                                id,
-                                band.level,
-                                0,
-                                y,
-                                layer,
-                                format::level_size(key.width, band.level),
-                                (take * block).min(level_height - y),
-                                1,
-                                memory_address(texels),
-                                length as u32,
-                            ],
-                        )?;
-                    }
+                    )?;
+                } else if let Source::Data { slot: data } = source {
+                    let bytes = words_as_bytes(&self.data[data as usize]);
+                    let length = u64::from(take) * band.row_bytes;
+                    let texels = &bytes[band.offset as usize..(band.offset + length) as usize];
+                    // The last row of blocks may reach past the level's edge.
+                    let level_height = format::level_size(key.height, band.level);
+                    list.push(
+                        Op::WriteTexture,
+                        &[
+                            id,
+                            band.level,
+                            0,
+                            y,
+                            layer,
+                            format::level_size(key.width, band.level),
+                            (take * block).min(level_height - y),
+                            1,
+                            memory_address(texels),
+                            length as u32,
+                        ],
+                    )?;
                 }
                 spent += u64::from(take) * band.row_bytes;
                 rows += take;
@@ -1184,11 +1302,14 @@ impl TextureStore {
                         self.finished.push((id, layer));
                     }
                 }
-                self.releases.push(Release {
-                    source,
-                    after: frame,
-                    texture: handle,
-                });
+                // A generator stays for a new GPU device, which runs it again.
+                if !matches!(source, Source::Generated { .. }) {
+                    self.releases.push(Release {
+                        source,
+                        after: frame,
+                        texture: handle,
+                    });
+                }
                 self.layers_changed = true;
                 State::Uploaded {
                     source,
@@ -1338,6 +1459,8 @@ impl TextureStore {
                 Source::Image { .. } => released_in == 0 || released_in > taken,
                 // The store frees data as it records the release.
                 Source::Data { .. } => released_in == 0,
+                // The store keeps a generator until the texture no longer uses it.
+                Source::Generated { .. } => true,
             };
             texture.state = match texture.state {
                 State::Queued { source, .. } => State::Queued { source, rows: 0 },
@@ -1446,9 +1569,11 @@ mod tests {
         /// Records one frame and replays it twice, and returns its commands and whether it made
         /// bind groups again.
         fn frame(&mut self) -> (Vec<(Op, Vec<u32>)>, bool) {
-            self.frame += 1;
+            // The thread that draws took the frame recorded before this one, if any.
+            let taken = self.frame;
+            self.frame = null3d_core::frames::next_frame(self.frame);
             self.list.clear();
-            self.store.sync(self.arrived, self.frame - 1);
+            self.store.sync(self.arrived, taken);
             let groups = self.store.record(&mut self.list, self.frame).unwrap();
             self.list.push(Op::Submit, &[]).unwrap();
             for _ in 0..2 {
@@ -1460,6 +1585,30 @@ mod tests {
                 .collect();
             (commands, groups)
         }
+    }
+
+    #[test]
+    fn images_and_data_are_released_across_the_wrap_of_the_frame_count() {
+        let mut h = Harness::new();
+        h.frame = u32::MAX - 3;
+        let texture = h.texture(4, 4);
+        h.image(texture, 4, 4);
+        h.arrive(1);
+        let data = h.texture(4, 4);
+        let (_, _) = h.store.set_data(data, 4, 4).unwrap();
+        let mut released = Vec::new();
+        for _ in 0..6 {
+            let (commands, _) = h.frame();
+            released.extend(ops(&commands, Op::ReleaseImage));
+        }
+        assert_eq!(
+            h.frame, 4,
+            "the frames went round past the last of the count"
+        );
+        assert_eq!(released, [vec![1]]);
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        // The data's texels are freed once a frame after the list that read them was taken.
+        assert!(h.store.data.iter().all(Vec::is_empty));
     }
 
     fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {

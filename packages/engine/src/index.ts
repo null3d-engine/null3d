@@ -5,6 +5,7 @@ export type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './de
 export type { FrameStats, FrameStatsThread } from './debug/stats';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
+export type { ShaderFeature } from './generated/shader-features';
 /**
  * Colors as linear RGB in plain arrays of three numbers, from hex colors, sRGB components, or hue,
  * saturation and lightness: `color.fromHex(out, '#ff8800')`.
@@ -69,16 +70,24 @@ export type {
 	AnimationEvent,
 	AnimationEventHandler,
 	Animator,
+	BlendOptions,
 	PlayOptions,
 	StopOptions,
 } from './scene/animation';
 export type {
 	Assets,
+	LoadGltfOptions,
 	LoadImageOptions,
 	LoadTextureOptions,
 	ProgressHandler,
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
+export type {
+	BuiltinEnvironmentName,
+	Environment,
+	EnvironmentFormat,
+	EnvironmentOptions,
+} from './scene/environment';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
 export type {
@@ -90,7 +99,15 @@ export type {
 } from './scene/lines';
 export type { Lut, LutDomain } from './scene/lut';
 export type {
+	ObjectEventHandler,
+	ObjectEventType,
+	ObjectPointerEvent,
+} from './scene/pointer-events';
+export type {
+	AoSettings,
+	BloomBlend,
 	BloomSettings,
+	OutlineSettings,
 	Post,
 	PostSettings,
 	ToneMapping,
@@ -122,6 +139,7 @@ export type {
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	MorphTargets,
 	PlaneOptions,
 	RingOptions,
 	ShaderOptions,
@@ -140,6 +158,7 @@ export type {
 } from './scene/resources';
 export type {
 	AmbientLight,
+	AmbientLightOptions,
 	Camera,
 	CameraOptions,
 	DirectionalLight,
@@ -173,6 +192,9 @@ export type {
 	Vec3,
 } from './scene/scene';
 export type {
+	PointBatch,
+	PointOptions,
+	PointValues,
 	SpriteAtlas,
 	SpriteBatch,
 	SpriteOptions,

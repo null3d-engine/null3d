@@ -2,8 +2,9 @@
 // preset itself. It draws the scene as the setup built it, first for a grace time, then for a
 // measured window, and reads the rates at which the thread that draws presented frames and the GPU
 // finished them. When the lower rate misses the target, it lowers the preset by one, waits for the
-// new preset's first frame, and measures again, down to Low. The rules and the thresholds live in
-// quality/check.ts.
+// new preset's first frame, and measures again, down to Low. A round during which the page was
+// hidden or paused measures again: a hidden page draws no frames, and the first frame after it
+// carries the hidden time as its interval. The rules and the thresholds live in quality/check.ts.
 
 import {
 	CHECK_GRACE_MS,
@@ -35,6 +36,8 @@ export interface CheckHost {
 	uploading(): boolean;
 	/** The frame rate that the ?fps= switch holds, which caps the target. */
 	maxFps: number | undefined;
+	/** How many times the page showed again after it was hidden, or resumed after a pause. */
+	resumes(): number;
 }
 
 /** Draws frames until `until` returns false; resolves with false when the engine stopped. */
@@ -64,6 +67,7 @@ export async function checkPreset(
 	let targetFps = 0;
 	let start = graceStart;
 	for (;;) {
+		const resumes = host.resumes();
 		const graceEnd = start + CHECK_GRACE_MS;
 		const uploadEnd = graceEnd + CHECK_UPLOAD_WAIT_MS;
 		const grace = () => {
@@ -77,6 +81,10 @@ export async function checkPreset(
 		if (!(await drawWhile(host, () => performance.now() < windowEnd))) return undefined;
 		presented.add();
 		completed.add();
+		if (host.resumes() !== resumes) {
+			start = performance.now();
+			continue;
+		}
 		targetFps = raiseTarget(targetFps, refreshRate(host.metrics), host.maxFps);
 		const round = {
 			preset: host.preset,

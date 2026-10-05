@@ -8,9 +8,9 @@
 // and the preset check, at the same pace as play. In a worker, each callback also sets a timer that
 // wakes the thread shortly before the next is due.
 
-import { controlViews, Slot } from '../shared/control';
+import { controlViews, frameAfter, Slot } from '../shared/control';
 import type { SketchRunner } from '../sketch/runner';
-import { guardFrame, type LoopFault, Presenter, type RenderLoop } from './loop';
+import { type FramePacing, guardFrame, type LoopFault, Presenter, type RenderLoop } from './loop';
 import type { Renderer } from './renderer';
 
 export function runDirectLoop(
@@ -18,13 +18,12 @@ export function runDirectLoop(
 	renderer: Renderer,
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,
-	fps: number | undefined,
-	queue?: number,
+	pacing: FramePacing,
 	fault?: LoopFault,
 	presented?: () => void,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue, undefined, presented);
+	const presenter = new Presenter(slots, renderer, metrics, pacing, undefined, presented);
 	let stopped = false;
 	/** A frame that is recorded and waits to draw, or 0. */
 	let pending = 0;
@@ -36,7 +35,7 @@ export function runDirectLoop(
 		presenter.applyResize();
 		if (pending === 0) {
 			const published = Atomics.load(slots, Slot.FramesPublished);
-			if (published > Atomics.load(slots, Slot.FramesTaken)) {
+			if (frameAfter(published, Atomics.load(slots, Slot.FramesTaken))) {
 				if (presenter.due(timestamp)) pending = published;
 			} else if (
 				runner.started &&

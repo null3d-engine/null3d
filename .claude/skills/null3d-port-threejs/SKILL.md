@@ -112,13 +112,13 @@ When parity images differ, check these first.
 
 - Color management. three.js r152 and later, like null3D, read hex colors as sRGB and light in linear space. Older projects (with `outputEncoding`, or `ColorManagement.enabled = false`) look different by design; decide with the user which look to keep.
 - Texture color spaces. Color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. If the original forgot the sRGB flag, its look is wrong in a way users may like; ask before "fixing" it.
-- Tone mapping. three.js defaults to none, and null3D to ACES. Set `post.set({ toneMapping: 'none' })` to match an original without tone mapping, and copy `toneMappingExposure` to `exposure`.
-- Light units. null3D uses physical units, as three.js r155 and later do. Scenes tuned with legacy lights need new intensities.
+- Tone mapping. three.js defaults to none, and null3D to ACES. Set `post.set({ toneMapping: 'none' })` to match an original without tone mapping, and copy `toneMappingExposure` to `exposure` unchanged. null3D multiplies the exposure into each light instead of the finished picture; the image is the same, and bloom's threshold keeps its meaning.
+- Light units. null3D uses physical units, as three.js r155 and later do: candela for point and spot lights, lux for the others. Scenes tuned with legacy lights need new intensities. `light.power = lumens` becomes `intensity: lumens, intensityUnit: 'lumen'` (0.2), which divides as `power` does. A scene in real units, such as a 100,000-lux sun, sets `post.set({ ev100 })` (0.2); `exposure` then acts as exposure compensation (`api/post`).
 - Point and spot light range. three.js `distance: 0` means infinite range; null3D needs a finite `range`. Pick the distance where the light no longer matters; the edge of the light may differ slightly.
 - Shadows. three.js shadow cameras are hand-fitted; null3D cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`. The `shadowFilter` quality setting replaces `shadowMap.type` and `shadow.radius`.
 - Pixel ratio. Many three.js apps render at the full device pixel ratio (3 on many phones); null3D's presets cap it (`concepts/quality-presets`). For parity tests, fix the pixel ratio to 1 in both.
 - Material approximations. Lambert, Phong and Toon materials become standard materials or surface functions; small differences are expected (`references/materials.md`).
-- Post effects. Bloom runs `UnrealBloomPass`'s own steps, so copy its strength, radius and threshold. Color grading and the vignette take `LUTPass`'s and `VignetteShader`'s numbers as they are. Ambient occlusion is implemented differently; match its look by tuning, one effect at a time.
+- Post effects. Bloom is a chain of mip levels, so map `UnrealBloomPass`'s, `bloom()`'s or pmndrs `BloomEffect`'s settings onto it with the table or `scripts/map-bloom.mjs` (`references/post-processing.md`). The match holds at one canvas size; on a larger screen null3D's glow looks wider. Color grading and the vignette take `LUTPass`'s and `VignetteShader`'s numbers as they are. Outlines are a crisp line: map `OutlinePass`'s colors to `color` and `hiddenColor`, and `edgeThickness` to a `width` of about twice its value (`references/post-processing.md`). A soft edge, glow or pulse cannot be matched, so list it as a visible difference. Ambient occlusion runs `GTAOPass`'s steps, so copy its settings. It darkens only the ambient light. Match other occlusion passes by tuning, one effect at a time.
 
 ## 5. When there is no equivalent
 
@@ -197,10 +197,11 @@ The resize handler, the pixel-ratio call, `scene.add` and the render call disapp
 - `references/api-mapping.md`: the full mapping table, grouped by area. Search it for a class or property name.
 - `references/threejs-mapping.json`: the same data, used by the scanner.
 - `scripts/analyze-threejs.mjs`: the scanner (phase 1).
+- `scripts/map-bloom.mjs`: maps `UnrealBloomPass`, `bloom()` and pmndrs `BloomEffect` settings onto null3D's bloom for a canvas size (`references/post-processing.md`, section 5).
 - `references/architecture-and-loop.md`: what goes on the page and what goes in the sketch; loops, input, messages, per-object classes.
 - `references/materials.md`: every material and texture parameter, approximations, and toon, matcap and clipping recipes.
 - `references/shaders.md`: GLSL to WGSL, three.js built-ins, `onBeforeCompile` patterns, TSL, worked examples and pitfalls.
-- `references/post-processing.md`: composer passes, pmndrs effects and three.js TSL post nodes, mapped to `post.set` and `post.addEffect`.
+- `references/post-processing.md`: composer passes, pmndrs effects and three.js TSL post nodes, mapped to `post.set` and `post.addEffect`, with the bloom mapping tables.
 - `references/react-three-fiber.md`: R3F and drei to null3D, with a React wrapper component.
 - `references/verification.md`: baseline capture, parity tests, performance comparison and the report template.
 

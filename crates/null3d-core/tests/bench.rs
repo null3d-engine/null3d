@@ -874,7 +874,8 @@ fn bench_scene_queries() {
         let pool = Workers::start(workers);
         let jobs = pool.jobs();
         let batch = fastest(20, || {
-            let out = queries.raycast_batch(&view, jobs, 10_000, &|i| rays[i as usize], u32::MAX);
+            let out =
+                queries.raycast_batch(&view, jobs, 10_000, &|i| Some(rays[i as usize]), u32::MAX);
             black_box(out.unwrap().len());
         });
         line += &format!(" {} threads {:.2} ms,", workers + 1, micros(batch) / 1000.0);

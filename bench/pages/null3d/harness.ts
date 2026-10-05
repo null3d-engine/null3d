@@ -39,12 +39,29 @@ export interface Null3dPageOptions {
 
 /**
  * The page's switches that reach the sketch module's address as they are: `blend` makes S1's
- * boxes see through, `animated` adds that many animated characters to S1, `grading` gives S1 a
+ * boxes see through, `animated` adds that many animated characters to S1, `morphed` adds that
+ * many morphed spheres whose weights change every frame, `grading` gives S1 a
  * color grading table and the vignette, `sprites` draws S1's swarm as sprites, `lines` draws it
- * as dashed line segments, and `labels` adds that many labeled objects to S1, whose elements the
- * page binds.
+ * as dashed line segments, `ao` turns ambient occlusion on in S1, `bloom` turns bloom on in S1,
+ * `outline` adds outlined boxes to S1, `labels` adds that many labeled objects to S1, whose
+ * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
+ * point light shadows on, and `environment` lights S1 with the built-in room, which turns every
+ * frame.
  */
-const SKETCH_SWITCHES = ['blend', 'animated', 'grading', 'sprites', 'lines', 'labels'] as const;
+const SKETCH_SWITCHES = [
+	'blend',
+	'animated',
+	'morphed',
+	'grading',
+	'sprites',
+	'lines',
+	'ao',
+	'bloom',
+	'outline',
+	'labels',
+	'tileShadows',
+	'environment',
+] as const;
 
 /**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
@@ -81,6 +98,8 @@ export function runNull3dPage(
 		if (options.shadowFilter !== null)
 			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
+		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
+		if (options.demo) sketchUrl.searchParams.set('demo', '');
 		// The allocation check's switches, which only some sketches read.
 		for (const name of SKETCH_SWITCHES) {
 			const value = params.get(name);
@@ -95,6 +114,7 @@ export function runNull3dPage(
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,
+			...(params.has('tileShadows') && { pointLightShadows: true, shadowTiles: 24 }),
 			hold: options.hold ?? undefined,
 		});
 		bindLabels(engine, Number(params.get('labels') ?? 0));

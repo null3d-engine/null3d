@@ -10,6 +10,8 @@ import {
 	MAP_SLOT_METAL_ROUGH,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_OCCLUSION,
+	MAP_SLOT_SPECULAR_COLOR,
+	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_BLEND,
@@ -24,12 +26,16 @@ import {
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
+	MATERIAL_PARAM_ENV_INTENSITY,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
 	MATERIAL_PARAM_OPACITY,
+	MATERIAL_PARAM_REFLECTANCE,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_SPECULAR_COLOR,
+	MATERIAL_PARAM_SPECULAR_INTENSITY,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
@@ -53,21 +59,31 @@ import type { ShaderVariants } from '../generated/shaders';
 import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
-import { arraysProblem, meshFromArrays } from './mesh-arrays';
+import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
+import { ShaderPreloads } from './shader-preloads';
 import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
 /**
- * A mesh the engine can draw: its id in the engine core, and its bounding radius.
+ * A mesh the engine can draw: its id in the engine core, its bounding radius, and its morph
+ * targets.
  *
  * @category api/geometry
  */
 export class MeshGeometry {
+	/** @internal */
 	constructor(
 		/** @internal */ readonly id: number,
-		/** The distance from the mesh's origin to its farthest vertex. */
+		/** The distance from the mesh's origin to its farthest vertex, at rest. */
 		readonly radius: number,
 		/** @internal */ readonly core: CoreMemory,
+		/** How many morph targets the mesh has. 0 for a mesh without any. */
+		readonly morphTargets = 0,
+		/**
+		 * The morph targets' names, by target, or none when the mesh's arrays named none. Like
+		 * three.js's `morphTargetDictionary`, turned around. `mesh.setMorphWeight` takes a name too.
+		 */
+		readonly morphTargetNames: readonly string[] = [],
 	) {}
 }
 
@@ -368,6 +384,36 @@ export interface VertexArray {
 export type VertexValues = Float32Array | IntegerArray | readonly number[] | VertexArray;
 
 /**
+ * A mesh's morph targets, like three.js's `morphAttributes` with `morphTargetsRelative` set, as
+ * glTF stores them. Each list holds one array per target, of three numbers per vertex, or for
+ * colors as many as the mesh's `colors` hold. They say how far the target moves the vertex's
+ * position, normal, tangent or color at weight 1. Every list has the same number of targets, from
+ * 1 to 256. A mesh's targets move its vertices by their weights, which each object sets with
+ * `setMorphWeight`, and clips animate.
+ *
+ * @category api/geometry
+ */
+export interface MorphTargets {
+	/** For each target, how far it moves each position. Like `morphAttributes.position`. */
+	positions?: readonly (Float32Array | readonly number[])[];
+	/** For each target, how far it turns each normal. Like `morphAttributes.normal`. */
+	normals?: readonly (Float32Array | readonly number[])[];
+	/**
+	 * For each target, how far it turns each tangent's direction: three numbers per vertex, as
+	 * glTF gives them. three.js does not morph tangents.
+	 */
+	tangents?: readonly (Float32Array | readonly number[])[];
+	/**
+	 * For each target, how far it changes each vertex color: three or four numbers per vertex, as
+	 * many as the mesh's `colors` hold, in linear color. Like `morphAttributes.color`. A morphed
+	 * color is clamped to the range 0 to 1, as the glTF specification asks. Needs `colors`.
+	 */
+	colors?: readonly (Float32Array | readonly number[])[];
+	/** The targets' names, one per target, which `setMorphWeight` takes in place of numbers. */
+	names?: readonly string[];
+}
+
+/**
  * The arrays of a mesh for `geometry.fromArrays`. Each array holds its values for vertex 0, then
  * vertex 1, and so on, as three.js's `BufferGeometry` keeps its attributes. The engine copies
  * them.
@@ -442,6 +488,11 @@ export interface MeshArrays {
 	 * `computeTangents` does, on the job workers.
 	 */
 	computeTangents?: boolean;
+	/**
+	 * The mesh's morph targets: shapes that each object of the mesh blends in by its own weights.
+	 * The engine keeps, for each vertex, only the targets that move it.
+	 */
+	morphTargets?: MorphTargets;
 }
 
 /**
@@ -532,13 +583,23 @@ export class Geometry {
 	 * each in the type of number it came in, and meshes whose attributes have the same types share
 	 * GPU buffers. A mesh can have any number of vertices. Throws E1206 when an array's length does
 	 * not fit the vertex count, when its attribute does not take its type of number, when an index
-	 * names no vertex, and for a value that is not a finite number.
+	 * names no vertex, for a value that is not a finite number, and for morph targets whose arrays
+	 * do not fit the vertices or whose lists hold different numbers of targets.
 	 */
 	fromArrays(arrays: MeshArrays): MeshGeometry {
 		const call = 'geometry.fromArrays';
 		const problem = arraysProblem(arrays);
 		if (problem) throw new EngineError('E1206', `${call}() ${problem}`);
-		return this.mesh(meshFromArrays(this.core, arrays, call), call);
+		const id = meshFromArrays(this.core, arrays, call);
+		this.core.checkGrowth(id, call);
+		const { morphTargets } = arrays;
+		return new MeshGeometry(
+			id,
+			this.core.glue.meshRadius(id),
+			this.core,
+			morphTargetCount(morphTargets),
+			morphTargets?.names?.slice() ?? [],
+		);
 	}
 }
 
@@ -629,6 +690,33 @@ export interface StandardValues extends MaterialOptions {
 	aoMapIntensity?: number;
 	/** The factor of the light map's light: 0 or more. The default is 1. */
 	lightMapIntensity?: number;
+	/**
+	 * The index of refraction of the surface's non-metallic part, 1 or more, as three.js's
+	 * `MeshPhysicalMaterial.ior`. It sets how much light the surface reflects when seen head on:
+	 * `((ior - 1) / (ior + 1))^2`. The default is 1.5, which reflects 4%, as glTF's metallic-roughness
+	 * model does.
+	 */
+	ior?: number;
+	/**
+	 * The strength of the specular reflection of the surface's non-metallic part, from 0 to 1, as
+	 * three.js's `specularIntensity`. It scales the reflection at every angle, so 0 leaves only
+	 * diffuse light. Metals ignore it. The default is 1.
+	 */
+	specularIntensity?: number;
+	/**
+	 * The color that tints the specular reflection of the surface's non-metallic part when seen head
+	 * on, as three.js's `specularColor`. At grazing angles the reflection stays white, and metals
+	 * ignore it. It takes the forms that `color` takes, and its three linear components may also
+	 * exceed 1, as glTF allows, to reflect more than the index of refraction gives, up to all the
+	 * light. The default is white.
+	 */
+	specularColor?: ColorInput;
+	/**
+	 * The factor of the scene environment's light on the surface, 0 or more, as three.js's
+	 * `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The
+	 * default is 1.
+	 */
+	envIntensity?: number;
 	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
 	uvTransform?: UvTransform;
 }
@@ -673,6 +761,10 @@ export interface StandardMaps {
 	emissiveMap?: Texture;
 	/** Baked light, added to the ambient light. Light maps usually use the second coordinates. */
 	lightMap?: Texture;
+	/** The specular intensity in alpha, in linear color. Its alpha multiplies `specularIntensity`. */
+	specularIntensityMap?: Texture;
+	/** The specular color, in sRGB. Its color multiplies `specularColor`. */
+	specularColorMap?: Texture;
 }
 
 /**
@@ -850,7 +942,9 @@ type Ranged =
 	| 'roughness'
 	| 'emissiveIntensity'
 	| 'aoMapIntensity'
-	| 'lightMapIntensity';
+	| 'lightMapIntensity'
+	| 'specularIntensity'
+	| 'envIntensity';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -871,6 +965,8 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 		Number.POSITIVE_INFINITY,
 		'lightMapIntensity',
 	],
+	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1, 'specularIntensity'],
+	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
 ];
 
 /** The core's slot of each map option. */
@@ -881,6 +977,8 @@ const MAP_OPTIONS: readonly (readonly [keyof StandardMaps, number])[] = [
 	['aoMap', MAP_SLOT_OCCLUSION],
 	['emissiveMap', MAP_SLOT_EMISSIVE],
 	['lightMap', MAP_SLOT_LIGHT],
+	['specularIntensityMap', MAP_SLOT_SPECULAR_INTENSITY],
+	['specularColorMap', MAP_SLOT_SPECULAR_COLOR],
 ];
 
 /** Throws E1108 for a pair or a transform with a number that is not finite. */
@@ -902,6 +1000,9 @@ function checkNumbers(values: AnyValues, call: string): void {
 /** Throws E1108 for each number of `values` outside its range. Call it inside `if (DEV)`. */
 function checkValues(values: AnyValues, call: string): void {
 	checkNumbers(values, call);
+	const { ior } = values;
+	if (ior !== undefined && !(ior >= 1 && ior < Number.POSITIVE_INFINITY))
+		throw new EngineError('E1108', `${call}() got the ior ${ior}; it takes a finite 1 or more.`);
 	for (const [key, , most, name] of RANGED) {
 		const value = values[key];
 		if (value === undefined) continue;
@@ -927,6 +1028,7 @@ function writeValues(
 	values: AnyValues,
 	color: readonly number[] | undefined,
 	emissive: readonly number[] | undefined,
+	specular: readonly number[] | undefined,
 ): void {
 	const write = (param: number, x: number, y: number, z: number) =>
 		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
@@ -939,11 +1041,19 @@ function writeValues(
 			emissive[1] as number,
 			emissive[2] as number,
 		);
+	if (specular)
+		write(
+			MATERIAL_PARAM_SPECULAR_COLOR,
+			specular[0] as number,
+			specular[1] as number,
+			specular[2] as number,
+		);
 	for (const [key, param] of RANGED) {
 		const value = values[key];
 		if (value !== undefined) write(param, value, 0, 0);
 	}
-	const { normalScale, uvTransform } = values;
+	const { normalScale, uvTransform, ior } = values;
+	if (ior !== undefined) write(MATERIAL_PARAM_REFLECTANCE, reflectance(ior), 0, 0);
 	if (normalScale) write(MATERIAL_PARAM_NORMAL_SCALE, normalScale[0], normalScale[1], 0);
 	if (uvTransform) {
 		// three.js's texture matrix with its center at the origin, by rows.
@@ -959,6 +1069,27 @@ function writeValues(
 /** The linear value of a color option, or none when it is not set. */
 function linearOrNone(color: ColorInput | undefined, call: string): readonly number[] | undefined {
 	return color === undefined ? undefined : linearColor(color, call);
+}
+
+/**
+ * The linear value of a specular color option, or none when it is not set. Its three linear
+ * components may exceed 1, as glTF's specular color factor may.
+ */
+function specularOrNone(
+	color: ColorInput | undefined,
+	call: string,
+): readonly number[] | undefined {
+	if (Array.isArray(color) && color.length === 3 && color.every((c) => c >= 0 && c < Infinity))
+		return color;
+	return linearOrNone(color, call);
+}
+
+/**
+ * The dielectric reflectance at normal incidence of a surface with index of refraction `ior`, by
+ * the Fresnel equations, as three.js's physical material computes it.
+ */
+function reflectance(ior: number): number {
+	return ((ior - 1) / (ior + 1)) ** 2;
 }
 
 /** The alpha modes, each with the core's feature bit that draws it. */
@@ -1026,6 +1157,8 @@ const UNIFORM_FLOATS: Readonly<Record<CompiledUniform['type'], number>> = {
 const STANDARD_VALUES: ReadonlySet<string> = new Set([
 	'color',
 	'emissive',
+	'specularColor',
+	'ior',
 	...RANGED.map(([key]) => key),
 ]);
 
@@ -1132,6 +1265,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The engine core's id, or 0 once the material is destroyed. */
 	private liveId: number;
 
+	/** @internal */
 	constructor(
 		id: number,
 		/** @internal */ readonly core: CoreMemory,
@@ -1163,7 +1297,8 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		if (DEV) checkValues(values, call);
 		const color = linearOrNone(values.color, call);
 		const emissive = linearOrNone(values.emissive, call);
-		writeValues(core, id, call, values, color, emissive);
+		const specular = specularOrNone(values.specularColor, call);
+		writeValues(core, id, call, values, color, emissive, specular);
 	}
 
 	/**
@@ -1227,10 +1362,13 @@ export class Materials {
 	private readonly templates = new WeakMap<CompiledWgsl, number>();
 	private nextTemplate = SHADING_CUSTOM_FIRST;
 
+	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,
 		/** Sends each custom material's shader to the thread that draws, once. */
 		private readonly sendShader: ShaderSender = () => {},
+		/** @internal Asks the thread that draws for the shader files of features early. */
+		readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
 
 	/**
@@ -1249,6 +1387,7 @@ export class Materials {
 	private createId(shading: number, options: StandardOptions, call: string): number {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call);
+		const specular = specularOrNone(options.specularColor, call);
 		if (DEV) {
 			checkValues(options, call);
 			checkFeatures(options, call);
@@ -1262,7 +1401,7 @@ export class Materials {
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
-		writeValues(core, id, call, values, undefined, emissive);
+		writeValues(core, id, call, values, undefined, emissive, specular);
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
 			if (!map) continue;

@@ -36,6 +36,7 @@ import { controlViews, createControlBuffer } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
 import { type ColorInput, linearColor } from './color';
+import { type Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
@@ -64,6 +65,14 @@ import {
 } from './lens';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory } from './memory';
+import {
+	type ObjectEventHandler,
+	type ObjectEventType,
+	PointerEvents,
+	type PointerInput,
+	type PointerListeners,
+	type PointerTarget,
+} from './pointer-events';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
 	type OverlapHit,
@@ -73,9 +82,17 @@ import {
 	type RaycastOptions,
 	SceneQueries,
 } from './queries';
-import type { Material, MeshGeometry } from './resources';
+import type { AlphaMode, Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
-import type { SpriteBatch, SpriteMakers, SpriteOptions } from './sprites';
+import type {
+	PointBatch,
+	PointChecks,
+	PointOptions,
+	SpriteBatch,
+	SpriteLook,
+	SpriteMakers,
+	SpriteOptions,
+} from './sprites';
 import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
@@ -256,9 +273,15 @@ export interface InstantiateOptions extends NodeOptions {
 	receiveShadows?: boolean;
 	/**
 	 * True makes every mesh of the copy block the view for software occlusion culling on WebGL2,
-	 * like `setOccluder(true)`. The default is false.
+	 * like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset
+	 * tool gave blockers block, and the others do not.
 	 */
 	occluder?: boolean;
+	/**
+	 * The layers of every object of the copy and of its instance batches, as a 32-bit mask. Left
+	 * out, they keep the default, 1, which is layer 0.
+	 */
+	layers?: number;
 }
 
 /**
@@ -269,8 +292,24 @@ export interface InstantiateOptions extends NodeOptions {
 export interface LightOptions extends NodeOptions {
 	/** The light's color. The default is white. */
 	color?: ColorInput;
-	/** A factor that scales the color. The default is 1. */
+	/**
+	 * A factor that scales the color, in three.js's units unless the options name another unit.
+	 * The default is 1.
+	 */
 	intensity?: number;
+}
+
+/**
+ * Options for `scene.createAmbientLight`.
+ *
+ * @category api/lights
+ */
+export interface AmbientLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches every surface. It is three.js's
+	 * unit too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 }
 
 /**
@@ -279,6 +318,11 @@ export interface LightOptions extends NodeOptions {
  * @category api/lights
  */
 export interface DirectionalLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches a surface facing the light, such
+	 * as 100,000 for direct sunlight. It is three.js's unit too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 	/**
 	 * The direction the light travels, relative to the parent. The default, (0, -1, 0), points
 	 * straight down. It sets the light's rotation, so it wins over `rotation`.
@@ -338,6 +382,13 @@ export interface DirectionalShadowOptions {
  * @category api/lights
  */
 export interface PointLightOptions extends LightOptions {
+	/**
+	 * The unit of the intensity and of `setIntensity`: `'lumen'`, the light's whole output, such
+	 * as 800 for a 60 W bulb. The engine divides it by 4π for a point light, and by π for a spot
+	 * light at any cone angle, as three.js's `power` and Filament do. Without it, the intensity is
+	 * in candela, three.js's unit.
+	 */
+	intensityUnit?: 'lumen';
 	/**
 	 * The distance in meters where the light ends, above 0. Every point light needs one, because the
 	 * engine finds the lights near each surface by their ranges.
@@ -421,12 +472,44 @@ export interface HemisphereLightOptions extends NodeOptions {
 	groundColor?: ColorInput;
 	/** A factor that scales both colors. The default is 1. */
 	intensity?: number;
+	/**
+	 * The unit of the intensity: `'lux'`, the light that reaches a surface. It is three.js's unit
+	 * too, so the intensity stays as it is.
+	 */
+	intensityUnit?: 'lux';
 }
 
 /** The options of any light, as the scene's shared create path reads them. */
 type AnyLightOptions = LightOptions &
-	Partial<Omit<SpotLightOptions, keyof LightOptions>> &
-	Pick<DirectionalLightOptions, 'shadow'>;
+	Partial<Omit<SpotLightOptions, keyof LightOptions | 'intensityUnit'>> &
+	Pick<DirectionalLightOptions, 'shadow'> & { intensityUnit?: 'lumen' | 'lux' };
+
+/**
+ * The candela of one lumen of a point or spot light, by kind, as three.js's `power` and Filament
+ * convert them: a point light spreads its lumens over the whole sphere, 4π steradians, and a spot
+ * light over π, whatever its cone, so a narrower cone keeps the light's brightness.
+ */
+const CANDELA_PER_LUMEN: Readonly<Record<number, number>> = {
+	[C.LIGHT_KIND_POINT]: 1 / (4 * Math.PI),
+	[C.LIGHT_KIND_SPOT]: 1 / Math.PI,
+};
+
+/** The unit that each kind of light takes besides three.js's own. */
+const LIGHT_UNITS: Readonly<Record<number, 'lumen' | 'lux'>> = {
+	[C.LIGHT_KIND_DIRECTIONAL]: 'lux',
+	[C.LIGHT_KIND_POINT]: 'lumen',
+	[C.LIGHT_KIND_SPOT]: 'lumen',
+	[C.LIGHT_KIND_HEMISPHERE]: 'lux',
+	[C.LIGHT_KIND_AMBIENT]: 'lux',
+};
+
+/**
+ * The factor that turns an intensity in `unit` into three.js's unit for a light of `kind`: candela
+ * for point and spot lights, and lux for the others. Without a unit, or in lux, the factor is 1.
+ */
+function intensityScale(kind: number, unit: 'lumen' | 'lux' | undefined): number {
+	return unit === 'lumen' ? (CANDELA_PER_LUMEN[kind] ?? 1) : 1;
+}
 
 /** The numbers of a light's options, and their codes in the light table. */
 const LIGHT_NUMBERS = [
@@ -549,19 +632,31 @@ export class Object3D implements Described {
 	row: number;
 	/**
 	 * @internal The object's parent, as its create options or its last `setParent` gave it. A
-	 * destroyed parent leaves the object a root, as in the engine core.
+	 * destroyed parent leaves the object a root, as in the engine core. `attachTo` sets it.
 	 */
 	parentObject: Object3D | null = null;
+	/**
+	 * @internal The objects whose `parentObject` this object is, from its first child on, so
+	 * `scene.clone` walks a tree without a pass over the scene. Destroyed children leave it.
+	 */
+	childObjects: Set<Object3D> | undefined;
 	/** @internal The object's flags (`FLAG_*`), as its create options and its setters gave them. */
 	flags: number = C.FLAG_VISIBLE;
 	/** @internal The object's layer mask, as its create options and `setLayers` gave it. */
 	layerMask: number = C.LAYERS_DEFAULT;
 	/** @internal The object's animator, when a model with animations created the object. */
 	animation: Animator | undefined;
+	/** @internal The object's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly scene: Scene,
-		/** @internal */ readonly handle: number,
+		/**
+		 * @internal The object's handle. Once the object is destroyed, it holds a generation that the
+		 * core never gives a live object, so a later call never reaches another object in its slot.
+		 */
+		public handle: number,
 		/** The name from the create options, or an empty string. */
 		readonly name: string,
 	) {
@@ -777,13 +872,23 @@ export class Object3D implements Described {
 		}
 		const keep = options?.keepWorld ? C.COMMAND_KEEP_WORLD : 0;
 		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, keep, 'setParent');
+		this.attachTo(parent);
+	}
+
+	/** @internal Records `parent` as the object's parent, in both objects. */
+	attachTo(parent: Object3D | null): void {
+		this.parentObject?.childObjects?.delete(this);
 		this.parentObject = parent;
+		if (parent) {
+			parent.childObjects ??= new Set();
+			parent.childObjects.add(this);
+		}
 	}
 
 	/** @internal The live parent, or null for a root. */
 	get liveParent(): Object3D | null {
 		const parent = this.parentObject;
-		return parent && parent.destroyedFrame < 0 ? parent : null;
+		return parent && parent.destroyedFrame === -1 ? parent : null;
 	}
 
 	/**
@@ -852,11 +957,37 @@ export class Object3D implements Described {
 			this.scene.unmarkedWrites?.watch(this, false);
 		}
 		this.animation?.release();
-		// The core checks the handle's generation, so a second destroy frees no other object.
+		this.scene.forgetListeners(this);
+		// The core checks the handle's generation, so a second destroy frees no other object, even
+		// once the slot's generations have come round.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.row = 0;
+		this.parentObject?.childObjects?.delete(this);
 		this.scene.forget(this);
+		this.handle |= C.HANDLE_DEAD_GENERATION << C.HANDLE_SLOT_BITS;
+	}
+
+	/**
+	 * Calls `handler` for each pointer event of `type` on the object: 'click', 'pointerdown',
+	 * 'pointerup', 'pointermove', 'pointerenter' or 'pointerleave'. An event on a child goes on to
+	 * its parents, so a handler on a model's group hears clicks on all its parts. The engine casts
+	 * a ray from the frame that was on screen at each event, against objects where they are now.
+	 * Handlers run on the sketch's thread at the start of the next frame, before `onUpdate`.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', this);
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal The parent that the object's pointer events go on to. */
+	pointerParent(): PointerTarget | null {
+		return this.liveParent;
 	}
 
 	/** @internal Sets or clears one of the object's flags from the next frame. */
@@ -895,8 +1026,30 @@ export class PrefabInstance extends Group {
 	 */
 	find(name: string): Object3D | undefined {
 		for (const object of this.objects)
-			if (object !== this && object.name === name && object.destroyedFrame < 0) return object;
+			if (object !== this && object.name === name && object.destroyedFrame === -1) return object;
 		return undefined;
+	}
+
+	/**
+	 * Removes the whole copy at the next frame: this group, every object that the copy created and
+	 * that is not destroyed yet, and its instance batches. Objects that the sketch put under the
+	 * copy later become roots, as children of any destroyed object do.
+	 */
+	override destroy(): void {
+		super.destroy();
+		for (const object of this.objects)
+			if (object !== this && object.destroyedFrame < 0) object.destroy();
+		for (const batch of this.batches) if (batch.destroyedFrame < 0) batch.destroy();
+	}
+
+	/**
+	 * Outlines every mesh of the copy, or stops, as `Mesh.setOutlined` does for one mesh: the
+	 * whole model takes one outline, as three.js's `OutlinePass` outlines a selected group. The
+	 * copy's instance batches take none.
+	 */
+	setOutlined(outlined: boolean): void {
+		for (const object of this.objects)
+			if (object instanceof Mesh && object.destroyedFrame < 0) object.setOutlined(outlined);
 	}
 }
 
@@ -912,6 +1065,17 @@ export class Mesh extends Object3D {
 	material: Material | undefined;
 	/** @internal The render order, as `setRenderOrder` gave it. */
 	renderOrder = 0;
+	/** @internal The mesh's block of morph weights in the engine core, plus one, or 0 for none. */
+	morphBlock = 0;
+	/** @internal The place of the block's first weight in the core's table of morph weights. */
+	morphFirst = 0;
+	/** @internal The weights that the block holds: the mesh's morph targets, or 0. */
+	morphCount = 0;
+	/**
+	 * @internal The first joint of the model's skeleton that animates the weights, or -1 when no
+	 * clip of the model animates them.
+	 */
+	morphJoint = -1;
 
 	/** @internal */
 	override twin(handle: number): Object3D {
@@ -919,7 +1083,65 @@ export class Mesh extends Object3D {
 		twin.mesh = this.mesh;
 		twin.material = this.material;
 		twin.renderOrder = this.renderOrder;
+		twin.morphJoint = this.morphJoint;
 		return twin;
+	}
+
+	/**
+	 * Sets how far the mesh moves toward one of its morph targets, from the next frame: 0 keeps
+	 * the target's shape out, 1 adds all of it, and other numbers scale it. Like setting three.js's
+	 * `morphTargetInfluences[target]`. `target` is the target's number, from 0, or its name. A clip
+	 * that animates the weight blends its own value with this one while it plays, as three.js's
+	 * mixer does, and this one holds when no clip moves it. A WebGL2 device draws a preset's count
+	 * of each mesh's largest weights (the `morphTargets` quality setting). Throws E1218 for a
+	 * target that the mesh does not have, and E1203 for a weight that is not a finite number.
+	 */
+	setMorphWeight(target: number | string, weight: number): void {
+		const k = this.morphIndex('setMorphWeight', target);
+		if (DEV) checkNumber('setMorphWeight', 'weight', weight, this);
+		this.scene.morphWeights()[this.morphFirst + k] = weight;
+	}
+
+	/**
+	 * The weight of one of the mesh's morph targets, as `setMorphWeight` or the model's file set
+	 * it, without what a playing clip adds. Throws E1218 for a target that the mesh does not have.
+	 */
+	getMorphWeight(target: number | string): number {
+		return this.scene.morphWeights()[
+			this.morphFirst + this.morphIndex('getMorphWeight', target)
+		] as number;
+	}
+
+	/**
+	 * The number of the morph target that `target` names. A whole number below the target count
+	 * takes the short path, which the browser can inline into a sketch's frame code.
+	 */
+	private morphIndex(call: string, target: number | string): number {
+		return typeof target === 'number' && target >>> 0 === target && target < this.morphCount
+			? target
+			: this.morphTarget(call, target);
+	}
+
+	/** The number of a morph target that `target` names, or E1218 when the mesh lacks it. */
+	private morphTarget(call: string, target: number | string): number {
+		if (DEV) checkLive(call, this);
+		const names = this.mesh?.morphTargetNames ?? [];
+		const k = typeof target === 'string' ? names.indexOf(target) : target;
+		if (Number.isInteger(k) && k >= 0 && k < this.morphCount) return k;
+		const has =
+			this.morphCount === 0
+				? 'which has no morph targets'
+				: `which has ${this.morphCount} morph targets${names.length > 0 ? `: ${names.join(', ')}` : ''}`;
+		throw new EngineError(
+			'E1218',
+			`${call}() got ${typeof target === 'string' ? `"${target}"` : target}, which names no morph target of ${this.describe()}, ${has}.`,
+		);
+	}
+
+	/** Removes the object at the next frame, and frees its morph weights. Its children become roots. */
+	override destroy(): void {
+		super.destroy();
+		this.scene.releaseMorph(this);
 	}
 
 	/** Changes the material from the next frame. */
@@ -946,6 +1168,12 @@ export class Mesh extends Object3D {
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
 		this.keepFlag(C.FLAG_CUSTOM_BOUNDS, false);
+		// A mesh of as many morph targets keeps its weights; another gets weights of its own.
+		if (mesh.morphTargets !== this.morphCount) {
+			this.scene.releaseMorph(this);
+			const block = this.scene.makeMorph(this, mesh, undefined, 'setMesh');
+			if (block !== 0) this.scene.command(C.COMMAND_SET_MORPH, this.handle, block, 0, 'setMesh');
+		}
 	}
 
 	/**
@@ -965,14 +1193,26 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Makes the mesh block the view, or stop. The default is false. On WebGL2, while the
-	 * `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small
-	 * depth buffer every frame, and the engine skips every object that lies wholly behind the
-	 * blockers. Mark large, solid meshes that hide much of the scene, such as buildings and walls,
-	 * whose mesh has at most 4,096 triangles. A blocker's mesh must lie inside what the object
-	 * draws, as the object's own mesh does. Objects that blend, cut holes with an alpha mask, use
-	 * a custom material or are skinned never block, whatever this says. WebGPU culls hidden
-	 * objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
+	 * Draws an outline around the mesh, or stops, as adding it to three.js's
+	 * `OutlinePass.selectedObjects` does. The outline shows while `post.set({ outline })` turns
+	 * outlines on, and every outlined mesh takes its settings. The default is false. A change
+	 * rebuilds the engine's tables of what it draws, as a new material does.
+	 */
+	setOutlined(outlined: boolean): void {
+		this.setFlag('setOutlined', C.FLAG_OUTLINED, outlined);
+	}
+
+	/**
+	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
+	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
+	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
+	 * frame, and the engine skips every object that lies wholly behind the blockers. Mark large,
+	 * solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most
+	 * 4,096 triangles. A mesh that the asset tool gave a blocker draws that blocker instead, a few
+	 * boxes inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what
+	 * the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
+	 * mask, use a custom material or are skinned never block, whatever this says. WebGPU culls
+	 * hidden objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
 		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
@@ -1106,8 +1346,9 @@ export abstract class Camera extends Object3D {
 	 * starts at the camera, and an orthographic ray on the near plane. The direction has length 1.
 	 *
 	 * When the point is the position of the pointer or a finger from `input`, the ray uses the
-	 * camera of the frame that was on screen at that event, if it is one of the last four frames.
-	 * So a click during a fast pan picks what the user saw. Any other point uses the camera of the
+	 * camera of the frame that was on screen at that event, if the engine still keeps it. It keeps
+	 * the last four views, and frames in a row with the same view count as one. So a click during
+	 * a fast pan picks what the user saw. Any other point uses the camera of the
 	 * frame that last ran, with its lens as it is now. Objects stay where they are now, so a moving
 	 * object can be up to a frame of its motion away from where the user saw it.
 	 */
@@ -1340,6 +1581,11 @@ export class Light extends Object3D {
 	id = 0;
 	/** @internal The light's color in linear RGB, before the intensity scales it. */
 	readonly linear = new Float64Array([1, 1, 1]);
+	/**
+	 * @internal What an intensity in the light's unit is in three.js's unit: 1, or the candela of
+	 * one lumen for a point or spot light in lumens.
+	 */
+	unitScale = 1;
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
@@ -1351,6 +1597,7 @@ export class Light extends Object3D {
 		const { core } = this.scene;
 		twin.id = core.checkGrowth(core.glue.copyLight(this.id, handle), 'clone', this.label);
 		twin.linear.set(this.linear);
+		twin.unitScale = this.unitScale;
 		return twin;
 	}
 
@@ -1359,9 +1606,9 @@ export class Light extends Object3D {
 		this.paint('setColor', C.LIGHT_COLOR_MAIN, color);
 	}
 
-	/** Sets the factor that scales the color. */
+	/** Sets the factor that scales the color, in the unit that the light was created with. */
 	setIntensity(intensity: number): void {
-		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity);
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity * this.unitScale);
 	}
 
 	/** Removes the light at the next frame. Its children become roots. */
@@ -1577,7 +1824,10 @@ export class InstanceBatch {
 	};
 	/** @internal */
 	destroyedFrame = -1;
+	/** @internal The batch's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
+	/** @internal */
 	constructor(
 		private readonly scene: Scene,
 		/** @internal */ readonly id: number,
@@ -1651,6 +1901,25 @@ export class InstanceBatch {
 		for (const part of this.parts) core.glue.setBatchLayers(part, mask >>> 0);
 	}
 
+	/**
+	 * Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does.
+	 * The event's `instance` names the row.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
+		this.scene.pointerEvents.add(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(this, type, handler);
+	}
+
+	/** @internal A batch has no parent for its pointer events to go on to. */
+	pointerParent(): PointerTarget | null {
+		return null;
+	}
+
 	/** @internal Places the origin that the rows of the batch and of its parts are relative to. */
 	setOrigin([x, y, z]: Vec3, call: string): void {
 		const { core } = this.scene;
@@ -1673,6 +1942,7 @@ export class InstanceBatch {
 		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
 		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
+		this.scene.forgetListeners(this);
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
@@ -1745,27 +2015,66 @@ function linePoints(
 		throw bad(`${points} points for segments, which join points in pairs`);
 	if (colors && colors.length !== positions.length)
 		throw bad(`${colors.length} numbers in colors for ${points} points, not ${positions.length}`);
-	if (DEV)
-		for (const [name, values] of [
-			['positions', positions],
-			['colors', colors ?? []],
-		] as const)
-			for (let k = 0; k < values.length; k++)
-				if (!Number.isFinite(values[k])) throw bad(`${values[k]} at index ${k} of ${name}`);
+	checkFinitePoints(call, positions, colors);
 	return points;
+}
+
+/**
+ * The points of `scene.createPoints`'s arrays: 3 numbers per point in `positions`, and 3 or 4 in
+ * `colors`. Throws E1206 for arrays that make no points.
+ */
+function pointCount(
+	call: string,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): number {
+	const points = positions.length / 3;
+	if (!Number.isInteger(points) || points < 1)
+		throw new EngineError(
+			'E1206',
+			`${call}() got ${positions.length} numbers in positions; points take 3 numbers each, and at least 1 point.`,
+		);
+	if (colors && colors.length !== points * 3 && colors.length !== points * 4)
+		throw new EngineError(
+			'E1206',
+			`${call}() got ${colors.length} numbers in colors for ${points} points, not ${points * 3} or ${points * 4}.`,
+		);
+	checkFinitePoints(call, positions, colors);
+	return points;
+}
+
+/** Development builds: throws E1206 for a number of `positions` or `colors` that is not finite. */
+function checkFinitePoints(
+	call: string,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): void {
+	if (!DEV) return;
+	for (const [name, values] of [
+		['positions', positions],
+		['colors', colors ?? []],
+	] as const)
+		for (let k = 0; k < values.length; k++)
+			if (!Number.isFinite(values[k]))
+				throw new EngineError('E1206', `${call}() got ${values[k]} at index ${k} of ${name}.`);
+}
+
+/** Development builds: throws E1203 for a `name` value that is not finite, and E1108 for one not above 0. */
+function checkPositive(call: string, name: string, value: number): void {
+	if (!DEV) return;
+	if (!Number.isFinite(value))
+		throw new EngineError('E1203', `${call}() got ${value} for ${name}.`);
+	if (!(value > 0))
+		throw new EngineError(
+			'E1108',
+			`${call}() got the ${name} ${value}; it takes a number above 0.`,
+		);
 }
 
 /** The checks of line batches' calls, which the line code takes from the scene. */
 const LINE_CHECKS: LineChecks = {
 	width(width: number, call: string): void {
-		if (!DEV) return;
-		if (!Number.isFinite(width))
-			throw new EngineError('E1203', `${call}() got ${width} for width.`);
-		if (!(width > 0))
-			throw new EngineError(
-				'E1108',
-				`${call}() got the width ${width}; it takes a number above 0.`,
-			);
+		checkPositive(call, 'width', width);
 	},
 	values(values: LineValues, call: string): void {
 		if (!DEV) return;
@@ -1777,6 +2086,13 @@ const LINE_CHECKS: LineChecks = {
 			if (key !== 'dashOffset' && value < 0)
 				throw new EngineError('E1108', `${call}() got the ${key} ${value}; it takes 0 or more.`);
 		}
+	},
+};
+
+/** The checks of a point batch's later calls. */
+const POINT_CHECKS: PointChecks = {
+	size(size: number, call: string): void {
+		checkPositive(call, 'size', size);
 	},
 };
 
@@ -1848,10 +2164,12 @@ export class Scene {
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
 	private sceneQueries: SceneQueries | undefined;
+	/** The environment's values in the core, made on the first `setEnvironment`. */
+	private sceneEnvironment: SceneEnvironment | undefined;
+	/** Pointer events on objects, made on the first `on`. */
+	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
-	/** Every live object, which `clone` searches for the objects below the one it copies. */
-	private readonly live = new Set<Object3D>();
 	/** @internal The batches of command records published so far, which tests count. */
 	commandBatches = 0;
 	private warnedPastPortable = false;
@@ -1862,7 +2180,13 @@ export class Scene {
 	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
+	/** @internal True once an object has morph weights, so each frame's animation step runs. */
+	morphed = false;
+	/** The core's table of morph weights, made again after the engine's memory grew. */
+	private morphTable: Float32Array = new Float32Array(0);
+	private morphGeneration = -1;
 
+	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
@@ -1876,6 +2200,8 @@ export class Scene {
 		 * gives.
 		 */
 		private readonly makers?: SpriteMakers,
+		/** The input reader, whose pointer events reach objects' handlers. */
+		private readonly pointerInput?: PointerInput,
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -1888,10 +2214,40 @@ export class Scene {
 		return this.cameras;
 	}
 
+	/** @internal Pointer events on objects, made on the first call. */
+	get pointerEvents(): PointerEvents {
+		this.objectEvents ??= new PointerEvents(
+			{ pick: (frame, numbers, ray) => this.pick(frame, numbers, ray) },
+			this.pointerInput,
+		);
+		return this.objectEvents;
+	}
+
 	/**
-	 * @internal Keeps the active camera of sketch frame `frame`, which drew on a canvas of `width`
-	 * by `height` device pixels, so rays from that frame's input use it. The setup's frames are
-	 * frame 0.
+	 * Casts the ray of a pointer event from the camera of engine frame `frame`, or from the active
+	 * camera as it stands when the ring no longer holds the frame, on the camera's layers.
+	 */
+	private pick(frame: number, numbers: Float64Array, ray: Ray): PointerTarget | null {
+		const camera = this.activeCamera;
+		const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
+		const layers = this.frameCameras.frameRay(frame, numbers, ray, live);
+		return layers < 0 ? null : this.queries.pick(ray, layers, numbers);
+	}
+
+	/** @internal Calls the handlers of the pointer events that the input of this frame brought. */
+	dispatchPointerEvents(report: (error: unknown) => void): void {
+		this.objectEvents?.dispatch(report);
+	}
+
+	/** @internal Removes the pointer event handlers of an object or a batch that is destroyed. */
+	forgetListeners(target: PointerTarget): void {
+		if (target.pointerListeners !== undefined) this.objectEvents?.forget(target);
+	}
+
+	/**
+	 * @internal Keeps the active camera of engine frame `frame`, which drew on a canvas of `width`
+	 * by `height` device pixels, so rays from that frame's input use it. The engine's count includes
+	 * the frames that ran no sketch code, such as the setup's.
 	 */
 	keepFrameCamera(frame: number, width: number, height: number): void {
 		this.frameCameras.record(frame, this.activeCamera, width, height);
@@ -2030,6 +2386,60 @@ export class Scene {
 	}
 
 	/**
+	 * @internal The core's table of morph weights. Sketches set weights every frame, so the check
+	 * stays small enough for the browser to inline into their code.
+	 */
+	morphWeights(): Float32Array {
+		if (this.morphGeneration !== this.core.generation) this.morphView();
+		return this.morphTable;
+	}
+
+	private morphView(): void {
+		const { core } = this;
+		this.morphTable = core.f32(core.glue.morphWeightsAddress(), C.MORPH_MAX_WEIGHTS);
+		this.morphGeneration = core.generation;
+	}
+
+	/**
+	 * @internal Gives `mesh` a block of morph weights for `geometry`'s targets, which start at
+	 * `weights` or at 0, and returns the block's id plus one for its `SET_MORPH` command, or 0 for
+	 * a geometry without morph targets.
+	 */
+	makeMorph(
+		mesh: Mesh,
+		geometry: MeshGeometry,
+		weights: ArrayLike<number> | undefined,
+		call: string,
+	): number {
+		const count = geometry.morphTargets;
+		if (!count) return 0;
+		const { core } = this;
+		const block = core.checkGrowth(core.glue.createMorphWeights(count), call, mesh.label);
+		this.morphed = true;
+		mesh.morphBlock = block;
+		mesh.morphFirst = core.glue.morphWeightsFirst(block - 1);
+		mesh.morphCount = count;
+		this.morphView();
+		if (weights)
+			for (let k = 0; k < count; k++) this.morphTable[mesh.morphFirst + k] = weights[k] ?? 0;
+		return block;
+	}
+
+	/** @internal The weights of `mesh`'s block, copied, or none for a mesh without one. */
+	morphWeightsOf(mesh: Mesh): Float32Array | undefined {
+		if (mesh.morphBlock === 0) return undefined;
+		return this.morphWeights().slice(mesh.morphFirst, mesh.morphFirst + mesh.morphCount);
+	}
+
+	/** @internal Frees `mesh`'s block of morph weights, if it has one. */
+	releaseMorph(mesh: Mesh): void {
+		if (mesh.morphBlock === 0) return;
+		this.core.glue.destroyMorphWeights(mesh.morphBlock - 1);
+		mesh.morphBlock = 0;
+		mesh.morphCount = 0;
+	}
+
+	/**
 	 * @internal Writes the local bounding sphere of the object in `slot`. The command that follows
 	 * makes the engine recompute the object.
 	 */
@@ -2048,11 +2458,10 @@ export class Scene {
 	}
 
 	/**
-	 * Adds a new object to the live objects, to the index of slots that queries read, and to the
-	 * index of names after those with its name.
+	 * Adds a new object to the index of slots that queries read, and to the index of names after
+	 * those with its name.
 	 */
 	private remember(object: Object3D): void {
-		this.live.add(object);
 		this.objectSlots[object.slot] = object;
 		const { name } = object;
 		if (!name) return;
@@ -2070,7 +2479,6 @@ export class Scene {
 
 	/** @internal Takes a destroyed object out of the index of names. */
 	forget(object: Object3D): void {
-		this.live.delete(object);
 		const { name } = object;
 		const known = this.names.get(name);
 		if (known === object) this.names.delete(name);
@@ -2124,8 +2532,11 @@ export class Scene {
 
 	/**
 	 * Creates an object of class `kind` from the next frame: its slot with the transform of
-	 * `options`, its create command with `flags` besides visibility and `dynamic`, its layers, and
-	 * its wrapper, built with any further constructor arguments, which the index of names learns.
+	 * `options`, its create command with `flags` besides visibility and `dynamic`, its layers, the
+	 * material `material` names when it is not 0, and its wrapper, built with any further
+	 * constructor arguments, which the index of names learns. It checks that the command ring has
+	 * room for every record before it reserves the slot, and publishes the records at once, so a
+	 * failure leaves nothing behind.
 	 */
 	private create<T extends Object3D, A extends unknown[]>(
 		kind: ObjectClass<T, A>,
@@ -2133,6 +2544,7 @@ export class Scene {
 		mesh: number,
 		radius: number,
 		flags: number,
+		material: number,
 		call: string,
 		...extra: A
 	): T {
@@ -2141,6 +2553,8 @@ export class Scene {
 			if (options.parent) checkLive(call, options.parent, true);
 			if (layers !== undefined) checkLayers(call, layers);
 		}
+		const layered = layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT;
+		let write = this.reserveCommands(1 + (layered ? 1 : 0) + (material ? 1 : 0), call);
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
@@ -2150,11 +2564,13 @@ export class Scene {
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
 		v.radii[slot] = radius;
 		const all = flags | C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
-		this.command(C.COMMAND_CREATE | (all << 8), handle, options.parent?.handle ?? 0, mesh, call);
-		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
-			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
+		const parent = options.parent?.handle ?? 0;
+		this.writeCommand(write++, C.COMMAND_CREATE | (all << 8), handle, parent, mesh);
+		if (layered) this.writeCommand(write++, C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0);
+		if (material) this.writeCommand(write++, C.COMMAND_SET_MATERIAL, handle, material, 0);
+		this.publishCommands(write);
 		const object = new kind(this, handle, options.name ?? '', ...extra);
-		object.parentObject = options.parent ?? null;
+		object.attachTo(options.parent ?? null);
 		object.flags = all;
 		object.layerMask = (layers ?? C.LAYERS_DEFAULT) >>> 0;
 		this.remember(object);
@@ -2164,7 +2580,7 @@ export class Scene {
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 'createGroup');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup');
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
@@ -2178,10 +2594,19 @@ export class Scene {
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
 			(options.occluder ? C.FLAG_OCCLUDER : 0);
-		const object = this.create(Mesh, options, mesh.id, mesh.radius, flags, 'createMesh');
-		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
+		const object = this.create(
+			Mesh,
+			options,
+			mesh.id,
+			mesh.radius,
+			flags,
+			material.id,
+			'createMesh',
+		);
 		object.mesh = mesh;
 		object.material = material;
+		const block = this.makeMorph(object, mesh, undefined, 'createMesh');
+		if (block !== 0) this.command(C.COMMAND_SET_MORPH, object.handle, block, 0, 'createMesh');
 		return object;
 	}
 
@@ -2190,8 +2615,9 @@ export class Scene {
 	 * `options` places, and returns that group. All the objects are created with one batch of
 	 * commands, and every copy shares the model's meshes, materials and textures. The group's
 	 * `find` gives the copy's object of a node, by the node's name. A model with clips or skins
-	 * gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws E1102 when the scene has
-	 * no room for the objects, before it creates any.
+	 * gives the group an animator, which plays the clips: `copy.animator().play('Walk')`. Throws
+	 * E1102 when the scene, the animation table or the batch table has no room for the copy. Then
+	 * no part of the copy stays. `destroy()` on the group removes the whole copy.
 	 */
 	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
 		const call = 'instantiate';
@@ -2213,11 +2639,28 @@ export class Scene {
 			layers: (options.layers ?? C.LAYERS_DEFAULT) >>> 0,
 			root: true,
 		};
-		const objects = this.createNodes(template, call, options.parent ?? null, root, extra);
+		const cleared = options.occluder === false ? C.FLAG_OCCLUDER : 0;
+		// Layers reach every object of the copy and its batches, as the shadow flags reach every mesh.
+		const nodes =
+			options.layers === undefined
+				? template
+				: template.map((node) => ({ ...node, layers: root.layers }));
+		const objects = this.createNodes(nodes, call, options.parent ?? null, root, extra, cleared);
 		const instance = objects[0] as PrefabInstance;
 		instance.objects = objects;
-		prefab.animate(objects);
-		instance.batches = prefab.instancing.map((spec) => this.placeInstancing(instance, spec, call));
+		const batches: InstanceBatch[] = [];
+		try {
+			prefab.animate(objects);
+			for (const spec of prefab.instancing)
+				batches.push(this.placeInstancing(instance, spec, call, options.layers));
+		} catch (error) {
+			// The animation table or the batch table is full: the copy goes whole, so the sketch
+			// holds no part of it that it cannot reach.
+			instance.batches = batches;
+			instance.destroy();
+			throw error;
+		}
+		instance.batches = batches;
 		return instance;
 	}
 
@@ -2227,8 +2670,8 @@ export class Scene {
 	 * same parent, so it starts in the same place. The copies are created with one batch of
 	 * commands. An animated object's copy gets an animator of its own, with no clip playing, which
 	 * moves the copies of its meshes, as three.js's `SkeletonUtils.clone` does. Instance batches are
-	 * not objects, so they are not copied. Throws E1102 when the scene has no room for the copies,
-	 * before it creates any.
+	 * not objects, so they are not copied. Throws E1102 when the scene or the animation table has
+	 * no room for the copies. Then no copy stays.
 	 */
 	clone<T extends Object3D>(object: T): T {
 		const call = 'clone';
@@ -2241,30 +2684,29 @@ export class Scene {
 		const copies = new Map(
 			nodes.map((node, k) => [node.source as Object3D, objects[k] as Object3D]),
 		);
-		for (const [source, made] of copies) source.animation?.copyTo(made, copies);
+		try {
+			for (const [source, made] of copies) source.animation?.copyTo(made, copies);
+		} catch (error) {
+			// The animation table is full: the copies go, so the sketch holds none it cannot reach.
+			for (const made of objects) if (made.destroyedFrame < 0) made.destroy();
+			throw error;
+		}
 		return copy;
 	}
 
 	/**
 	 * The objects at and below `object` as template nodes, parents first, each with its object as
-	 * the source of its copy. It goes through every live object once.
+	 * the source of its copy. It walks each object's children, so it visits only the tree.
 	 */
 	private subtree(object: Object3D): TemplateNode[] {
-		const children = new Map<Object3D, Object3D[]>();
-		for (const each of this.live) {
-			const parent = each.liveParent;
-			if (!parent) continue;
-			const list = children.get(parent);
-			if (list) list.push(each);
-			else children.set(parent, [each]);
-		}
 		const order: Object3D[] = [object];
 		const parents: number[] = [-1];
 		for (let k = 0; k < order.length; k++)
-			for (const child of children.get(order[k] as Object3D) ?? []) {
-				order.push(child);
-				parents.push(k);
-			}
+			for (const child of (order[k] as Object3D).childObjects ?? [])
+				if (child.destroyedFrame < 0) {
+					order.push(child);
+					parents.push(k);
+				}
 		const v = this.views;
 		return order.map((each, k): TemplateNode => {
 			const row = each.row;
@@ -2294,8 +2736,8 @@ export class Scene {
 	/**
 	 * Creates an object for each template node, with one core call that reserves their slots and
 	 * one batch of command records, and returns them in the nodes' order. A node whose parent is -1
-	 * goes under `parent`. `root`, when given, takes the place of the first node, and `extra` adds
-	 * flags to every node with a mesh. Throws E1102 before it creates anything when the scene or
+	 * goes under `parent`. `root`, when given, takes the place of the first node, `extra` adds
+	 * flags to every node with a mesh, and `cleared` takes flags away from them. Throws E1102 before it creates anything when the scene or
 	 * the command ring has no room.
 	 */
 	private createNodes(
@@ -2304,6 +2746,7 @@ export class Scene {
 		parent: Object3D | null,
 		root?: TemplateNode,
 		extra = 0,
+		cleared = 0,
 	): Object3D[] {
 		const count = nodes.length;
 		const node = (k: number) => (k === 0 && root ? root : (nodes[k] as TemplateNode));
@@ -2311,11 +2754,12 @@ export class Scene {
 		for (let k = 0; k < count; k++) {
 			const { mesh, layers, renderOrder } = node(k);
 			records += 1 + (mesh ? 1 : 0) + (layers !== C.LAYERS_DEFAULT ? 1 : 0);
+			if (mesh && mesh.morphTargets > 0) records++;
 			if (renderOrder !== 0) records++;
 		}
 		let write = this.reserveCommands(records, call);
 		const { core } = this;
-		const at = core.check(core.glue.reserveObjects(count), call);
+		const at = core.checkGrowth(core.glue.reserveObjects(count), call);
 		const handles = core.u32(at, count).slice();
 		const v = this.views;
 		const objects: Object3D[] = [];
@@ -2327,7 +2771,7 @@ export class Scene {
 			this.writePosition(slot, t[0] as number, t[1] as number, t[2] as number);
 			for (let i = 0; i < 3; i++) v.scales[slot * 3 + i] = t[7 + i] as number;
 			for (let i = 0; i < 4; i++) v.rotations[slot * 4 + i] = t[3 + i] as number;
-			const flags = n.mesh ? n.flags | extra : n.flags;
+			const flags = n.mesh ? (n.flags | extra) & ~cleared : n.flags;
 			const bounds = n.bounds;
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
@@ -2345,7 +2789,14 @@ export class Scene {
 				this.writeCommand(write++, C.COMMAND_SET_RENDER_ORDER, handle, bits, 0);
 			}
 			const object = this.makeObject(n, handle, call);
-			object.parentObject = n.parent < 0 ? parent : (objects[n.parent] as Object3D);
+			if (n.mesh && n.mesh.morphTargets > 0) {
+				const source = n.source as Mesh | undefined;
+				const weights = source ? this.morphWeightsOf(source) : n.morph?.weights;
+				const block = this.makeMorph(object as Mesh, n.mesh, weights, call);
+				this.writeCommand(write++, C.COMMAND_SET_MORPH, handle, block, 0);
+				if (n.morph) (object as Mesh).morphJoint = n.morph.joint;
+			}
+			object.attachTo(n.parent < 0 ? parent : (objects[n.parent] as Object3D));
 			object.flags = flags;
 			object.layerMask = n.layers;
 			objects.push(object);
@@ -2392,6 +2843,7 @@ export class Scene {
 		instance: PrefabInstance,
 		spec: InstancingTemplate,
 		call: string,
+		layers?: number,
 	): InstanceBatch {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
@@ -2408,7 +2860,7 @@ export class Scene {
 			object = object.liveParent;
 		}
 		const origin: Vec3 = [world[12] as number, world[13] as number, world[14] as number];
-		const batch = this.createParts(spec.parts, spec.count, { origin }, call);
+		const batch = this.createParts(spec.parts, spec.count, { origin, layers }, call);
 		const { positions, rotations, scales } = batch;
 		for (let r = 0; r < spec.count; r++) {
 			trs(spec.positions.subarray(r * 3, r * 3 + 3), spec.rotations, spec.scales, r);
@@ -2526,9 +2978,6 @@ export class Scene {
 	 */
 	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
 		const call = 'createSprites';
-		const { core, makers } = this;
-		const { count, layers } = options;
-		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const { columns = 1, rows = 1 } = options.atlas ?? {};
 		for (const [name, side] of [
 			['columns', columns],
@@ -2542,9 +2991,55 @@ export class Scene {
 		const { center } = options;
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
+		const [, batch] = await this.spriteBatch(call, options.count, options, columns, rows, 'blend');
+		return batch;
+	}
+
+	/**
+	 * Many points in one batch: squares that face the camera, all of one size, like three.js's
+	 * `Points` with a `PointsMaterial`. Each point is a sprite: typed arrays give each point its
+	 * position and color, as an instance batch's arrays give its rows. Sizes above one pixel work on
+	 * every GPU path. Points are opaque by default, and blended points draw back to front with the
+	 * other blended objects. The first call downloads the sprite code. Throws E1206 for points or
+	 * colors that make no points, E1108 for a size that is not above 0, E1203 for a size that is not
+	 * finite, and E1406 when the sprite code does not download.
+	 */
+	async createPoints(options: PointOptions): Promise<PointBatch> {
+		const call = 'createPoints';
+		const { positions, colors, size = 1 } = options;
+		const count = pointCount(call, positions, colors);
+		POINT_CHECKS.size(size, call);
+		const [sprites, batch] = await this.spriteBatch(call, count, options, 1, 1, 'opaque');
+		return sprites.pointBatch(batch, POINT_CHECKS, positions, colors, size);
+	}
+
+	/**
+	 * Downloads the sprite code on first use, and creates a sprite batch of `count` rows with the
+	 * look, layers and origin of `options`, an atlas of `columns` by `rows` frames, and `alphaMode`
+	 * when the options give none.
+	 */
+	private async spriteBatch(
+		call: string,
+		count: number,
+		options: SpriteLook,
+		columns: number,
+		rows: number,
+		alphaMode: AlphaMode,
+	): Promise<[typeof import('./sprites'), SpriteBatch]> {
+		const { core, makers } = this;
+		const { layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('sprites');
 		const sprites = await loadSprites(call);
-		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
+		const parts = sprites.spriteParts(
+			makers,
+			this.spriteQuads,
+			options,
+			[columns, rows],
+			alphaMode,
+			call,
+		);
 		const id = core.checkGrowth(
 			core.glue.createSpriteBatch(
 				count,
@@ -2563,7 +3058,7 @@ export class Scene {
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
 		if (layers !== undefined) batch.setLayers(layers);
-		return batch;
+		return [sprites, batch];
 	}
 
 	/**
@@ -2585,6 +3080,7 @@ export class Scene {
 		LINE_CHECKS.width(width, call);
 		LINE_CHECKS.values(options, call);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		makers.materials.shaders.need('lines');
 		const lines = await loadLines(call);
 		const parts = lines.lineParts(makers, core, this.lineMesh, options, LINE_CHECKS, call);
 		this.lineMesh = parts.mesh;
@@ -2653,7 +3149,7 @@ export class Scene {
 		...lens: A
 	): T {
 		const node = { dynamic: true, ...options };
-		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, 0, call, ...lens);
+		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, 0, 0, call, ...lens);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
@@ -2675,15 +3171,32 @@ export class Scene {
 		options: AnyLightOptions,
 		call: string,
 	): T {
+		const { intensityUnit } = options;
+		if (DEV && intensityUnit !== undefined && intensityUnit !== LIGHT_UNITS[type])
+			throw new EngineError(
+				'E1213',
+				`${call}() got the intensity unit ${JSON.stringify(intensityUnit)}, and this light takes only '${LIGHT_UNITS[type]}'.`,
+			);
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
-		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, call);
+		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call);
 		const { core } = this;
-		light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);
+		try {
+			light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);
+		} catch (error) {
+			// The object has no light row, so it goes before the sketch could reach it.
+			light.destroy();
+			throw error;
+		}
+		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
-			if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
+			if (which === C.LIGHT_VALUE_INTENSITY) {
+				// An intensity in another unit, even the default of 1, is that unit's.
+				if (value !== undefined || light.unitScale !== 1)
+					light.write(call, which, (value ?? 1) * light.unitScale);
+			} else if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
 				light.write(call, which, value as number);
 		}
 		if (options.shadow) light.shadow(call, options.shadow);
@@ -2730,7 +3243,7 @@ export class Scene {
 	}
 
 	/** Light on every surface, from no direction. */
-	createAmbientLight(options: LightOptions = {}): AmbientLight {
+	createAmbientLight(options: AmbientLightOptions = {}): AmbientLight {
 		return this.createLight(AmbientLight, C.LIGHT_KIND_AMBIENT, options, 'createAmbientLight');
 	}
 
@@ -2745,6 +3258,7 @@ export class Scene {
 	setBackground(background: ColorInput | Texture): void {
 		const { glue } = this.core;
 		if (background instanceof Texture) {
+			this.makers?.materials.shaders.need('background');
 			const status = glue.setBackgroundTexture(background.handle);
 			this.core.check(status, 'setBackground', 'a texture', true);
 			return;
@@ -2752,6 +3266,22 @@ export class Scene {
 		const [r, g, b] = linearColor(background, 'setBackground');
 		glue.setBackground(r, g, b);
 		glue.setBackgroundTexture(0);
+	}
+
+	/**
+	 * Lights the scene with an environment from `assets.loadEnvironment` or
+	 * `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from
+	 * `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth
+	 * and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene
+	 * draws without a file's environment until its map is on the GPU. The built-in room's map is
+	 * whole in the first frame that uses it. It allocates nothing, so a sketch
+	 * can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for
+	 * a negative intensity, E1213 for a value that is not an environment, and E1101 for an
+	 * environment that was destroyed.
+	 */
+	setEnvironment(environment: Environment | null, options?: EnvironmentOptions): void {
+		this.sceneEnvironment ??= new SceneEnvironment(this.core);
+		this.sceneEnvironment.set(environment, options);
 	}
 
 	/**

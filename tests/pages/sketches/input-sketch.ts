@@ -1,9 +1,10 @@
 // Records what ctx.input reports each frame: how often each name was pressed and released, the names
 // pressed and released in one frame, the sums of the pointer's movement, drags, wheel and pinches,
-// the fingers, and the gamepad's values. It answers the page's 'state' message with all of it. Its
-// setup tells the page when it starts and waits a moment, so the page can send input before the
-// first frame.
+// the fingers, the gamepad's values, and the frame on screen at the pointer's last event in the
+// sketch's count. It answers the page's 'state' message with all of it. Its setup tells the page
+// when it starts and waits a moment, so the page can send input before the first frame.
 import { defineSketch } from '@null3d/engine';
+import { shownFrame } from '../lib/shown-frame';
 
 const NAMES = [
 	'KeyW',
@@ -39,6 +40,7 @@ export default defineSketch(async ({ input, page }) => {
 			together,
 			down: Object.fromEntries(NAMES.map((n) => [n, input.isDown(n)])),
 			pointer: { ...input.pointer },
+			shownFrame: shownFrame(input),
 			moved,
 			touches: input.touches.map((touch) => ({ ...touch })),
 			mostTouches,

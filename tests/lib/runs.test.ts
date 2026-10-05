@@ -390,6 +390,20 @@ describe("the runner page's report", () => {
 		]);
 		for (const plan of REPORT_ON_TOP_PLANS) expect(Object.keys(PLANS)).toContain(plan);
 	});
+
+	// Under the report, a worker's canvas barely changes the screen, and Android can lower the
+	// display to 24 Hz, which fails the engine page's limit on the time between frames.
+	it('stays under the frame of each page whose check limits the time between frames', () => {
+		const timed = [...REPORT_ON_TOP_PLANS].flatMap((name) =>
+			(PLANS[name]?.() ?? []).filter((item) => item.check.kind === 'engine'),
+		);
+		expect(timed.length).toBeGreaterThan(0);
+		for (const item of timed)
+			expect({ id: item.id, timesFrames: item.timesFrames }).toEqual({
+				id: item.id,
+				timesFrames: true,
+			});
+	});
 });
 
 describe('the checks plan', () => {
@@ -434,6 +448,7 @@ describe('the checks plan', () => {
 			path: '/__null3d/load/warm/{run}.{runner}.production/tests/pages/engine.html?gpu=webgl2&latency=low&seconds=2',
 			timeoutSeconds: 45,
 			check: { kind: 'engine', tier: 'webgl2', mode: ENGINE_MODES[1] },
+			timesFrames: true,
 		});
 		// The runner builds the production pages for a plan that loads them, and only then.
 		expect(planItems(parseArgs(['Safari']))?.some((item) => isLoadPath(item.path))).toBe(true);
@@ -617,17 +632,20 @@ describe('the checks plan', () => {
 		]);
 	});
 
-	it('splits into shards that run each item once, each with the items its check compares with', () => {
+	it('splits into shards that run each item once, each with the items its check compares with, and the capabilities page first', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
 		for (const count of [2, 3, 4]) {
 			const shards = Array.from(
 				{ length: count },
 				(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
 			);
-			expect(ids(shards.flat())).toEqual(ids(items));
-			// The largest group is an image test in every thread mode.
+			for (const shard of shards) expect(shard[0]?.id).toBe('capabilities');
+			const once = [shards[0] ?? [], ...shards.slice(1).map((shard) => shard.slice(1))];
+			expect(ids(once.flat())).toEqual(ids(items));
+			// The largest group is an image test in every thread mode; each later shard adds the
+			// capabilities page.
 			const sizes = shards.map((shard) => shard.length);
-			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length);
+			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length + 1);
 			for (const shard of shards) {
 				const inShard = new Set(shard.map(({ id }) => id));
 				for (const { check } of shard)
@@ -997,7 +1015,7 @@ describe('the parity plan', () => {
 	it('opens every hold page once and pairs each null3d page with three.js on its tier', () => {
 		expect(PLANS.parity).toBe(parityPlan);
 		// Per scene: two three.js pages and three null3D pages, one per GPU tier.
-		expect(items).toHaveLength(20);
+		expect(items).toHaveLength(25);
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
 		// Compatibility mode needs WebGPU, and it is compared with three.js's WebGPU page.
 		expect(item('parity-s1-null3d-compat').check).toEqual({
@@ -1013,7 +1031,7 @@ describe('the parity plan', () => {
 			check.kind === 'parity' ? [`${id} ${check.pair.reference}`] : [],
 		);
 		expect(pairs).toEqual(
-			['s1', 's1-static', 's1-cells', 's2'].flatMap((scene) => [
+			['s1', 's1-static', 's1-cells', 's2', 's5'].flatMap((scene) => [
 				`parity-${scene}-null3d-webgpu threejs-webgpu`,
 				`parity-${scene}-null3d-compat threejs-webgpu`,
 				`parity-${scene}-null3d-webgl2 threejs-webgl`,
@@ -1034,7 +1052,7 @@ describe('the parity plan', () => {
 			'parity-s1-static-threejs-webgpu',
 			'parity-s1-static-threejs-webgl',
 		]);
-		// Each scene is one group of five pages, so two shards split the four scenes 10 to 10.
+		// Each scene is one group of five pages, so two shards split the five scenes 15 to 10.
 		const scenes = (index: number) => [
 			...new Set(
 				(planItems(parseArgs(['--plan', 'parity', '--shard', `${index}/2`, 'Safari'])) ?? []).map(
@@ -1042,7 +1060,7 @@ describe('the parity plan', () => {
 				),
 			),
 		];
-		expect(scenes(1)).toEqual(['s1', 's1-cells']);
+		expect(scenes(1)).toEqual(['s1', 's1-cells', 's5']);
 		expect(scenes(2)).toEqual(['s1-static', 's2']);
 	});
 
@@ -1595,6 +1613,17 @@ describe('the startup plan', () => {
 });
 
 describe('parseArgs', () => {
+	it('runs no Brave in bun run devices, while a run can still name it', async () => {
+		const scripts = (await Bun.file(join(import.meta.dir, '../../package.json')).json()).scripts;
+		const devices = String(scripts.devices).split(' && ').at(-1)!.split(' ').slice(2);
+		expect(devices.join(' ')).not.toContain('brave');
+		expect(parseArgs(devices)).toMatchObject({ android: ['chrome'], lan: ['ipad-safari'] });
+		expect(parseArgs(['--android', 'brave', '--lan', 'ipad-brave'])).toMatchObject({
+			android: ['brave'],
+			lan: ['ipad-brave'],
+		});
+	});
+
 	it('reads the plan, the flags, the device lists and the macOS apps', () => {
 		expect(
 			parseArgs([
@@ -1608,7 +1637,7 @@ describe('parseArgs', () => {
 		).toEqual({
 			plan: 'checks',
 			missing: { webgpu: true, webgl2: false },
-			mac: ['Safari'],
+			apps: ['Safari'],
 			android: ['chrome', 'brave'],
 			lan: ['ipad-safari'],
 			cloud: [],
@@ -1647,7 +1676,7 @@ describe('parseArgs', () => {
 		);
 		expect(() => parseArgs(['--plan', 'bench', '--scenes', ''])).toThrow('--scenes: use some of');
 		expect(() => parseArgs(['--plan', 'parity', '--scenes', 's2'])).toThrow(
-			'--scenes works with --plan bench only',
+			'--scenes works with --plan bench or --plan scale only',
 		);
 		expect(() =>
 			parseArgs(['--plan', 'bench', '--jobs', '2', '--pages', 'null3d-webgl2,threejs-webgl']),
@@ -1655,6 +1684,10 @@ describe('parseArgs', () => {
 		expect(parseArgs(['--shard', '2/3', 'Safari']).shard).toEqual({ index: 2, count: 3 });
 		for (const shard of ['0/2', '3/2', '1', '1/2/3', 'one/two'])
 			expect(() => parseArgs(['--shard', shard])).toThrow('--shard: use <i>/<n>');
+		expect(parseArgs(['--plan', 'scale', '--scenes', 's5']).scenes).toEqual(['s5']);
+		expect(() => parseArgs(['--plan', 'scale', '--scenes', 's1,s4'])).toThrow(
+			'the scale plan searches s1 and s5 only; leave out s4',
+		);
 		expect(() => parseArgs(['--plan', 'scale', '--shard', '1/2'])).toThrow(
 			'--shard picks items of a fixed plan, so it does not work with --plan scale',
 		);

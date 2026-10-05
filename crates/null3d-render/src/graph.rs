@@ -22,6 +22,9 @@
 //!
 //! Passes that write one resource run in the order they were declared. A pass that reads a
 //! resource runs after every pass that writes it, so it sees the resource as the frame leaves it.
+//! A pass that reads a resource so far ([`Pass::reads_so_far`]) sees it as the passes declared
+//! before it leave it instead: it runs after those writers and before the writers declared after
+//! it, as a depth pyramid built between two passes that draw one depth target does.
 //! Where these rules leave a choice, the next pass is the first declared one that can join the
 //! open render or compute pass. Else it is the first declared compute pass, since compute passes
 //! never share a render pass and running them early keeps later render passes whole. Else it is
@@ -161,9 +164,17 @@ pub enum Size {
     /// The render size: the canvas at the render scale.
     Full,
     /// The render size halved this many times each way, rounding up at each halving, from 1 up:
-    /// [`Size::HALF`] and [`Size::QUARTER`] are 1 and 2. A chain of effect passes, such as
-    /// bloom's, takes one more halving at each step.
+    /// [`Size::HALF`] and [`Size::QUARTER`] are 1 and 2.
     Halved(u8),
+    /// The canvas's shape with `texels` on its short side, halved `halvings` times each way,
+    /// rounding up, as the levels of bloom's chain are. The short side takes at most half the
+    /// canvas's: `texels` halves until it fits. The render scale leaves the size whole.
+    ShortSide {
+        /// Texels on the short side before the halvings.
+        texels: u16,
+        /// Halvings each way.
+        halvings: u8,
+    },
     /// The whole canvas at any render scale, as the final pass draws it.
     Canvas,
     /// A fixed size in pixels, such as a shadow map's.
@@ -190,7 +201,28 @@ impl Size {
             Self::Full | Self::Canvas => canvas,
             Self::Halved(times) => Self::halve(canvas, times),
             Self::Fixed { width, height } => (width.max(1), height.max(1)),
+            Self::ShortSide { texels, halvings } => {
+                let short = canvas.0.min(canvas.1);
+                let texels = u64::from(Self::short_side(texels, canvas));
+                let side = |pixels: u32| {
+                    let scaled =
+                        (u64::from(pixels) * texels + u64::from(short) / 2) / u64::from(short);
+                    (scaled as u32).max(1)
+                };
+                Self::halve((side(canvas.0), side(canvas.1)), halvings)
+            }
         }
+    }
+
+    /// The texels on the short side of a [`Size::ShortSide`] of `texels` before its halvings:
+    /// `texels` halved until it is at most half the canvas's short side, and at least 1.
+    pub fn short_side(texels: u16, canvas: (u32, u32)) -> u32 {
+        let short = canvas.0.max(1).min(canvas.1.max(1));
+        let mut texels = u32::from(texels.max(1));
+        while texels > 1 && texels * 2 > short {
+            texels /= 2;
+        }
+        texels
     }
 
     /// The part of such a texture that a pass draws into at render scale `scale`: a top-left
@@ -201,7 +233,7 @@ impl Size {
         match self {
             Self::Full => render,
             Self::Halved(times) => Self::halve(render, times),
-            Self::Canvas | Self::Fixed { .. } => self.extent(canvas),
+            Self::Canvas | Self::Fixed { .. } | Self::ShortSide { .. } => self.extent(canvas),
         }
     }
 
@@ -221,6 +253,12 @@ impl Size {
             Self::Halved(times) => format!("1/{} size", 1u64 << times.min(63)),
             Self::Canvas => "canvas size".into(),
             Self::Fixed { width, height } => format!("{width} x {height}"),
+            Self::ShortSide { texels, halvings } => {
+                format!(
+                    "{} texels on the short side",
+                    u32::from(texels) >> halvings.min(15)
+                )
+            }
         }
     }
 }
@@ -342,6 +380,8 @@ impl Target {
 pub(crate) enum Mode {
     /// Samples a texture, or reads a buffer.
     Read,
+    /// Samples a texture, or reads a buffer, as the passes declared before it leave it.
+    ReadSoFar,
     /// Draws into a whole target or one of its layers, or writes a buffer.
     Write,
     /// Draws into part of a target, so the rest keeps what it held.
@@ -354,13 +394,13 @@ pub(crate) enum Mode {
 
 impl Mode {
     pub(crate) const fn writes(self) -> bool {
-        !matches!(self, Self::Read)
+        !matches!(self, Self::Read | Self::ReadSoFar)
     }
 
     /// How much the use does, to keep the larger when a pass names one resource twice.
     const fn rank(self) -> u8 {
         match self {
-            Self::Read => 0,
+            Self::Read | Self::ReadSoFar => 0,
             Self::Write => 1,
             Self::WritePart => 2,
             Self::CreateTexture(_) | Self::CreateBuffer => 3,
@@ -398,6 +438,12 @@ impl Pass {
             layers: ALL_LAYERS,
             uses: Vec::new(),
         }
+    }
+
+    /// The same declaration under another name, as a second build of one pass needs.
+    pub fn named(mut self, name: impl Into<Cow<'static, str>>) -> Self {
+        self.name = name.into();
+        self
     }
 
     /// The size the pass draws at, and that the targets it creates take.
@@ -444,6 +490,12 @@ impl Pass {
     /// Samples a texture or reads a buffer, after every pass that writes it.
     pub fn reads(self, name: impl Into<Cow<'static, str>>) -> Self {
         self.with(name, Mode::Read, None)
+    }
+
+    /// Samples a texture or reads a buffer as the passes declared before this one leave it: after
+    /// those that write it, and before those declared after this one that write it.
+    pub fn reads_so_far(self, name: impl Into<Cow<'static, str>>) -> Self {
+        self.with(name, Mode::ReadSoFar, None)
     }
 
     fn with(mut self, name: impl Into<Cow<'static, str>>, mode: Mode, layer: Option<u32>) -> Self {

@@ -6,6 +6,7 @@ import {
 	TEXTURE_FILTER_NEAREST,
 	TEXTURE_FORMAT_HALF_FLOAT,
 	TEXTURE_FORMAT_LINEAR,
+	TEXTURE_FORMAT_SHARED_EXPONENT,
 	TEXTURE_FORMAT_SRGB,
 	TEXTURE_PREMULTIPLIED_ALPHA,
 	TEXTURE_STAT_MAX_SIZE,
@@ -38,21 +39,30 @@ const DATA_ADDRESS = 1024;
 
 /**
  * A core that records its texture calls, the images that went to the thread that draws, and the
- * data calls, with a largest texture of 64 texels.
+ * data calls, with a largest texture of 64 texels. `arrived` stands for the wait until the thread
+ * that draws holds an image or generator.
  */
-function fakeCore() {
+function fakeCore(arrived?: (id: number) => Promise<void>) {
 	const created: number[][] = [];
 	const images: number[][] = [];
 	const data: number[][] = [];
 	const destroyed: number[] = [];
-	const sent: [number, ImageBitmap][] = [];
+	const sent: [number, ImageBitmap | string][] = [];
 	let nextImage = 0;
 	const glue = {
 		createTexture: (...args: (number | boolean)[]) => {
 			created.push(args.map(Number));
 			return 7;
 		},
+		createCubeTexture: (...args: number[]) => {
+			created.push(args);
+			return 9;
+		},
 		setTextureImage: (...args: number[]) => {
+			images.push(args);
+			return ++nextImage;
+		},
+		generateTexture: (...args: number[]) => {
 			images.push(args);
 			return ++nextImage;
 		},
@@ -75,7 +85,8 @@ function fakeCore() {
 	} as unknown as CoreGlue;
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue, memory);
-	const textures = new Textures(core, (id, bitmap) => sent.push([id, bitmap]), { frame: 3 }, 0);
+	const send = (id: number, bitmap: ImageBitmap | string) => sent.push([id, bitmap]);
+	const textures = new Textures(core, send, { frame: 3 }, 0, undefined, arrived);
 	return { textures, created, images, data, destroyed, sent, memory };
 }
 
@@ -163,6 +174,33 @@ describe('textures.fromImageBitmap', () => {
 		const uvSet = 2 as unknown as 0;
 		fails(() => textures.fromImageBitmap(image(), { uvSet }), 'got the uvSet 2: give 0 or 1');
 		expect(created).toEqual([]);
+	});
+});
+
+describe('textures.fromGenerator', () => {
+	test('makes a shared-exponent cube, sends the generator under its id, and waits for it to arrive', async () => {
+		let arrive = () => {};
+		const waited: number[] = [];
+		const { textures, created, images, sent } = fakeCore((id) => {
+			waited.push(id);
+			return new Promise((resolve) => {
+				arrive = resolve;
+			});
+		});
+		let made = false;
+		const making = textures.fromGenerator('room', 256, 6, 'assets.builtinEnvironment');
+		void making.then(() => {
+			made = true;
+		});
+		expect(created).toEqual([[256, 6, TEXTURE_FORMAT_SHARED_EXPONENT]]);
+		expect(images).toEqual([[9]]);
+		expect(sent).toEqual([[1, 'room']]);
+		expect(waited).toEqual([1]);
+		await Promise.resolve();
+		expect(made).toBe(false);
+		arrive();
+		const texture = await making;
+		expect([texture.width, texture.depth, texture.format]).toEqual([256, 6, 'rgb9e5ufloat']);
 	});
 });
 

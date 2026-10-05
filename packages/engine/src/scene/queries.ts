@@ -4,11 +4,19 @@
 // grows, and new hit objects only when the caller's array is too short, so a query allocates
 // nothing in steady state.
 
-import { checkLayers, DEV, type Described } from '../errors/checks';
+import { checkLayers, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
+import type { Ray } from './frame-cameras';
 import type { CoreMemory } from './memory';
+import {
+	EVENT_DISTANCE,
+	EVENT_NORMAL,
+	EVENT_POINT,
+	EVENT_ROW,
+	EVENT_TRIANGLE,
+} from './pointer-events';
 import type { InstanceBatch, Object3D } from './scene';
 
 /**
@@ -100,37 +108,81 @@ const MAX = described('the highest corner');
 
 const AXES = ['x', 'y', 'z'] as const;
 
-/** Throws E1203 when a point or vector has a component that is not finite. */
-function checkPoint(call: string, what: Described, v: Vec3Like): void {
+/**
+ * The largest 32-bit float. The core holds query points and radii in 32 bits, where a number past
+ * it becomes infinite. Directions become unit vectors in 64 bits first, so they take any finite
+ * number.
+ */
+const F32_MAX = 3.4028234663852886e38;
+
+// Every query checks its input in every build, not only in development builds: a query input
+// that is not finite in 32 bits would give the core's trees nothing to stand on. A check that
+// passes costs a few comparisons and allocates nothing; messages are built only on failure.
+
+/** Throws E1203 for a number that is not finite, and E1108 for a finite one past `F32_MAX`. */
+function badNumber(call: string, value: number, what: string): never {
+	if (!Number.isFinite(value))
+		throw new EngineError('E1203', `${call}() got ${value} for ${what}.`);
+	throw new EngineError(
+		'E1108',
+		`${call}() got ${value} for ${what}: pass a number from -3.4e38 to 3.4e38, the range of 32-bit floats.`,
+	);
+}
+
+/**
+ * Checks each part of a point or vector: `badNumber` throws for a part that is not finite or lies
+ * past `limit` either way.
+ */
+function checkPoint(call: string, what: Described, v: Vec3Like, limit: number): void {
 	for (let k = 0; k < 3; k++) {
 		const value = v[k] as number;
-		if (!Number.isFinite(value))
-			throw new EngineError(
-				'E1203',
-				`${call}() got ${value} for ${AXES[k]} of ${what.describe()}.`,
-			);
+		if (!(Math.abs(value) <= limit)) badNumber(call, value, `${AXES[k]} of ${what.describe()}`);
 	}
 }
 
-/** Throws E1108 for a number that is NaN or below 0. */
-function checkNotBelowZero(call: string, name: string, value: number, finite: boolean): void {
-	if (value >= 0 && (!finite || value < Infinity)) return;
-	const range = finite ? 'a finite number of 0 or more' : '0 or more';
+/** Throws E1108 for a direction of length 0. `which` names the ray in a batch. */
+function checkDirection(call: string, x: number, y: number, z: number, which: string): void {
+	if (x === 0 && y === 0 && z === 0)
+		throw new EngineError(
+			'E1108',
+			`${call}() got a direction of length 0${which}: pass a direction of any length above 0.`,
+		);
+}
+
+/** Throws E1108 for a number that is NaN, below 0 or past `limit`. */
+function checkNotBelowZero(call: string, name: string, value: number, limit: number): void {
+	if (value >= 0 && value <= limit) return;
+	const range = limit === Infinity ? '0 or more' : 'a number from 0 to 3.4e38';
 	throw new EngineError('E1108', `${call}() got ${value} for ${name}: pass ${range}.`);
+}
+
+/** Checks a raycast's far limit and layers. */
+function checkOptions(call: string, options: RaycastOptions | undefined): void {
+	if (options?.maxDistance !== undefined)
+		checkNotBelowZero(call, 'maxDistance', options.maxDistance, Infinity);
+	if (options?.layers !== undefined) checkLayers(call, options.layers);
 }
 
 /** Checks a raycast's ray and options. */
 function checkRay(call: string, origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions) {
-	checkPoint(call, ORIGIN, origin);
-	checkPoint(call, DIRECTION, direction);
-	if (direction[0] === 0 && direction[1] === 0 && direction[2] === 0)
-		throw new EngineError(
-			'E1108',
-			`${call}() got a direction of length 0: pass a direction of any length above 0.`,
-		);
-	if (options?.maxDistance !== undefined)
-		checkNotBelowZero(call, 'maxDistance', options.maxDistance, false);
-	if (options?.layers !== undefined) checkLayers(call, options.layers);
+	checkPoint(call, ORIGIN, origin, F32_MAX);
+	checkPoint(call, DIRECTION, direction, Number.MAX_VALUE);
+	checkDirection(call, direction[0] as number, direction[1] as number, direction[2] as number, '');
+	checkOptions(call, options);
+}
+
+/** Checks each of the first `count` rays of a batch as `checkRay` checks one ray. */
+function checkRays(call: string, rays: ArrayLike<number>, count: number): void {
+	for (let i = 0; i < count; i++) {
+		const at = i * C.QUERY_RAY_FLOATS;
+		for (let k = 0; k < C.QUERY_RAY_FLOATS; k++) {
+			const value = rays[at + k] as number;
+			const limit = k < 3 ? F32_MAX : Number.MAX_VALUE;
+			if (!(Math.abs(value) <= limit)) badNumber(call, value, `index ${at + k} of its rays`);
+		}
+		const x = rays[at + 3] as number;
+		checkDirection(call, x, rays[at + 4] as number, rays[at + 5] as number, ` for ray ${i}`);
+	}
 }
 
 /** Throws E1108 when an output array is shorter than a batch of `count` rays needs. */
@@ -260,7 +312,7 @@ export class SceneQueries {
 		options: RaycastOptions | undefined,
 		hit: RaycastHit,
 	): boolean {
-		if (DEV) checkRay('raycast', origin, direction, options);
+		checkRay('raycast', origin, direction, options);
 		this.writeRay(origin, direction, options);
 		const found = this.finish(
 			this.core.glue.raycast(C.QUERY_CLOSEST, layersOf(options)),
@@ -274,8 +326,28 @@ export class SceneQueries {
 		return true;
 	}
 
+	/**
+	 * Casts `ray` on `layers` for pointer events. Writes the closest hit's distance, triangle, row,
+	 * point and normal into `out` at the `EVENT_*` offsets, and returns its object or batch, or null
+	 * after a miss. The numbers go into an array, as an object's fields would each hold a new number
+	 * in some browsers.
+	 */
+	pick(ray: Ray, layers: number, out: Float64Array): Object3D | InstanceBatch | null {
+		this.writeRay(ray.origin, ray.direction, undefined);
+		if (this.finish(this.core.glue.raycast(C.QUERY_CLOSEST, layers), 'raycast') === 0) return null;
+		const r = this.hits;
+		out[EVENT_DISTANCE] = r[C.QUERY_HIT_DISTANCE] as number;
+		out[EVENT_TRIANGLE] = r[C.QUERY_HIT_TRIANGLE] as number;
+		out[EVENT_ROW] = r[C.QUERY_HIT_ROW] as number;
+		for (let k = 0; k < 3; k++) {
+			out[EVENT_POINT + k] = r[C.QUERY_HIT_POINT + k] as number;
+			out[EVENT_NORMAL + k] = r[C.QUERY_HIT_NORMAL + k] as number;
+		}
+		return this.targetAt(0);
+	}
+
 	raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean {
-		if (DEV) checkRay('raycastAny', origin, direction, options);
+		checkRay('raycastAny', origin, direction, options);
 		this.writeRay(origin, direction, options);
 		return this.finish(this.core.glue.raycast(C.QUERY_ANY, layersOf(options)), 'raycastAny') !== 0;
 	}
@@ -286,7 +358,7 @@ export class SceneQueries {
 		options: RaycastOptions | undefined,
 		hits: RaycastHit[],
 	): number {
-		if (DEV) checkRay('raycastAll', origin, direction, options);
+		checkRay('raycastAll', origin, direction, options);
 		this.writeRay(origin, direction, options);
 		const count = this.finish(this.core.glue.raycast(C.QUERY_ALL, layersOf(options)), 'raycastAll');
 		this.readList(count, hits, true);
@@ -298,26 +370,20 @@ export class SceneQueries {
 		options: RaycastOptions | undefined,
 		out: RaycastBatchHits,
 	): number {
+		const call = 'raycastBatch';
 		const count = rays.length / C.QUERY_RAY_FLOATS;
-		if (DEV) {
-			const call = 'raycastBatch';
-			if (!Number.isInteger(count))
-				throw new EngineError(
-					'E1108',
-					`${call}() got ${rays.length} numbers for its rays: pass six numbers per ray, its origin and then its direction.`,
-				);
-			for (let i = 0; i < rays.length; i++)
-				if (!Number.isFinite(rays[i] as number))
-					throw new EngineError('E1203', `${call}() got ${rays[i]} at index ${i} of its rays.`);
-			if (options?.maxDistance !== undefined)
-				checkNotBelowZero(call, 'maxDistance', options.maxDistance, false);
-			if (options?.layers !== undefined) checkLayers(call, options.layers);
-			checkLength(call, 'distances', out.distances.length, count);
-			if (out.objects) checkLength(call, 'objects', out.objects.length, count);
-			if (out.instances) checkLength(call, 'instances', out.instances.length, count);
-			if (out.points) checkLength(call, 'points', out.points.length, count * 3);
-			if (out.normals) checkLength(call, 'normals', out.normals.length, count * 3);
-		}
+		if (!Number.isInteger(count))
+			throw new EngineError(
+				'E1108',
+				`${call}() got ${rays.length} numbers for its rays: pass six numbers per ray, its origin and then its direction.`,
+			);
+		checkRays(call, rays, count);
+		checkOptions(call, options);
+		checkLength(call, 'distances', out.distances.length, count);
+		if (out.objects) checkLength(call, 'objects', out.objects.length, count);
+		if (out.instances) checkLength(call, 'instances', out.instances.length, count);
+		if (out.points) checkLength(call, 'points', out.points.length, count * 3);
+		if (out.normals) checkLength(call, 'normals', out.normals.length, count * 3);
 		const { core } = this;
 		if (count > this.rayCapacity) {
 			core.checkGrowth(core.glue.reserveRays(count), 'raycastBatch', undefined, true);
@@ -349,11 +415,9 @@ export class SceneQueries {
 		options: QueryOptions | undefined,
 		out: OverlapHit[],
 	): number {
-		if (DEV) {
-			checkPoint('overlapSphere', CENTER, center);
-			checkNotBelowZero('overlapSphere', 'radius', radius, true);
-			if (options?.layers !== undefined) checkLayers('overlapSphere', options.layers);
-		}
+		checkPoint('overlapSphere', CENTER, center, F32_MAX);
+		checkNotBelowZero('overlapSphere', 'radius', radius, F32_MAX);
+		checkOptions('overlapSphere', options);
 		this.views();
 		const input = this.input;
 		for (let k = 0; k < 3; k++) input[k] = center[k] as number;
@@ -367,17 +431,15 @@ export class SceneQueries {
 		options: QueryOptions | undefined,
 		out: OverlapHit[],
 	): number {
-		if (DEV) {
-			checkPoint('overlapBox', MIN, min);
-			checkPoint('overlapBox', MAX, max);
-			for (let k = 0; k < 3; k++)
-				if ((min[k] as number) > (max[k] as number))
-					throw new EngineError(
-						'E1108',
-						`overlapBox() got a lowest corner above the highest on ${AXES[k]}: ${min[k]} > ${max[k]}.`,
-					);
-			if (options?.layers !== undefined) checkLayers('overlapBox', options.layers);
-		}
+		checkPoint('overlapBox', MIN, min, F32_MAX);
+		checkPoint('overlapBox', MAX, max, F32_MAX);
+		for (let k = 0; k < 3; k++)
+			if ((min[k] as number) > (max[k] as number))
+				throw new EngineError(
+					'E1108',
+					`overlapBox() got a lowest corner above the highest on ${AXES[k]}: ${min[k]} > ${max[k]}.`,
+				);
+		checkOptions('overlapBox', options);
 		this.views();
 		const input = this.input;
 		for (let k = 0; k < 3; k++) {

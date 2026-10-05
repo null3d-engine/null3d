@@ -5,6 +5,7 @@
 
 pub mod blended;
 pub mod graph;
+pub mod morphed;
 pub mod skinned;
 
 use std::f64::consts::{PI, TAU};
@@ -13,7 +14,9 @@ use null3d_core::animation::Animations;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightShadow, LightTable, VisibleLight, kind, value};
+use null3d_core::layers::DEFAULT_LAYERS;
+use null3d_core::lights::{LightShadow, LightTable, SunShadow, VisibleLight, kind, value};
+use null3d_core::morph::MorphWeights;
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::format;
@@ -57,7 +60,8 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub lights: Vec<VisibleLight>,
     /// The point and spot lights that cast shadows, as the core's light table lists them.
     pub shadow_lights: Vec<LightShadow>,
-    /// The newest frame that the thread that draws drew with every pipeline built.
+    /// The newest frame that the thread that draws drew with every pipeline built, or `u32::MAX`
+    /// for the frame being recorded, as when every pipeline is always built.
     pub pipelines_built: u32,
     /// A light table that each frame gathers its lights from, as the engine does, or `None` to
     /// take `lights` and `shadow_lights` as they are.
@@ -67,6 +71,8 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     /// The animation table, whose step runs at the start of each frame's core work, as the
     /// engine's does, and the seconds that each step advances.
     pub animations: Option<Animations>,
+    /// The morph weights of morphed objects.
+    pub morphs: MorphWeights,
     pub animation_step: f32,
 }
 
@@ -181,7 +187,22 @@ impl<B: FrameBuilder> World<B> {
             render_scale: RenderScale::FULL,
             animations: None,
             animation_step: 0.0,
+            morphs: MorphWeights::new(),
         }
+    }
+
+    /// Turns on the sun's shadows, straight down, in `cascades` cascades that reach 40 meters.
+    pub fn cast_sun_shadows(&mut self, cascades: u32) {
+        let settings = self.renderer.settings_mut();
+        settings.set_sun([0.0, -1.0, 0.0], [3.0; 3]);
+        settings.set_sun_shadow(Some(SunShadow {
+            cascades,
+            map_size: 1024,
+            bias: 0.5,
+            normal_bias: 1.0,
+            distance: 40.0,
+            layers: DEFAULT_LAYERS,
+        }));
     }
 
     /// Adds a spot light at `position` that points straight down and casts shadows, with a range
@@ -264,9 +285,14 @@ impl<B: FrameBuilder> World<B> {
         }
         if let Some(animations) = self.animations.as_mut() {
             animations.update(&self.jobs, self.animation_step);
-            let meshes = self.renderer.settings().meshes();
-            skinning::update_bounds(&mut self.scene, animations, meshes);
         }
+        let meshes = self.renderer.settings().meshes();
+        skinning::update_bounds(
+            &mut self.scene,
+            self.animations.as_ref(),
+            &self.morphs,
+            meshes,
+        );
         self.scene.update_transforms(&self.jobs);
         self.batches
             .update(&self.jobs, frame, self.scene.cell_table_mut());
@@ -292,8 +318,13 @@ impl<B: FrameBuilder> World<B> {
             lines: self.lines.lines(),
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
-            pipelines_built: self.pipelines_built,
+            pipelines_built: if self.pipelines_built == u32::MAX {
+                frame
+            } else {
+                self.pipelines_built
+            },
             animations: self.animations.as_ref(),
+            morphs: &self.morphs,
         };
         let recorded = self
             .renderer
