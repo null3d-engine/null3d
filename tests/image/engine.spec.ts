@@ -174,6 +174,52 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 	});
 }
 
+/** The early script that the Vite plugin adds to each built page whose scripts load the core. */
+const EARLY_SCRIPT = /\/early-core-[\w-]{8}\.js(\?|$)/;
+/** A script of a production build. */
+const BUILT_SCRIPT = /\/assets\/[^/]+\.js(\?|$)/;
+
+// In a production build, the early script starts the core's download before the page's own scripts
+// have arrived, and the engine compiles that download, so the core downloads once. The test holds
+// every other script back until the core's request goes out. A core that waits for the page's
+// scripts would wait for the hold's limit, and see its request after theirs. An early script that
+// picked the other build than the engine does would make the engine download a second core.
+for (const mode of ENGINE_MODES)
+	test(`the early script starts the core's download before the page's scripts arrive, ${mode.name}`, async ({
+		page,
+	}, testInfo) => {
+		test.skip(
+			testInfo.project.name !== 'production build',
+			'only a production build has the early script',
+		);
+		const order: string[] = [];
+		const cores: string[] = [];
+		let coreAsked: () => void = () => undefined;
+		const asked = new Promise<void>((resolve) => {
+			coreAsked = resolve;
+		});
+		page.context().on('request', (request) => {
+			if (!CORE_FILE.test(request.url())) return;
+			cores.push(new URL(request.url()).pathname);
+			if (!order.includes('core')) order.push('core');
+			coreAsked();
+		});
+		await page.context().route(BUILT_SCRIPT, async (route) => {
+			if (!EARLY_SCRIPT.test(route.request().url())) {
+				await Promise.race([asked, new Promise((resolve) => setTimeout(resolve, CORE_HOLD_MS))]);
+				if (!order.includes('scripts')) order.push('scripts');
+			}
+			await route.continue();
+		});
+		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+		await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+		expect(result.error).toBeUndefined();
+		expect(engineProblems(result, mode, 'webgl2', notPacing)).toEqual([]);
+		expect(order).toEqual(['core', 'scripts']);
+		expect(cores).toHaveLength(1);
+	});
+
 /** The text as a regular expression that matches it alone. */
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

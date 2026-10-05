@@ -162,6 +162,17 @@ Notes on the figures:
 
 - The desktop target's run overlapped other work on the Mac: SwiftShader image checks, an allocation run, and the iPad's reruns served from the Mac. 10.8% passes by a wide margin, so the overlap cannot change the verdict. null3D's own work, 0.35 ms, is 2.5 times M0's 0.14 ms ([D-06](decisions/D-06-success-targets.md)). three.js's own work rose from about 0.8 ms to 3.25 ms when the scenes moved to the standard material. The gate's clean run confirms the null3D figure.
 - T-28's target is on the S24+ in Chrome on Slow 4G: a cold start within 4.5 s, and a warm one within 1 s ([D-06](decisions/D-06-success-targets.md)). The Mac is inside both, but the gate's figures come from the S24+ and the iPad. On the iPad, the preset check took about 1 s for each preset it measured. Pull request #234 skips the check on repeat visits ([D-17](decisions/D-17-stored-preset-check.md)), so the warm figures change on the gate commit.
+- T-28 on the S24+ at 1533939f, after the early shader download (#296): cold 4.64 to 4.70 s in the five thread modes, over 4.5 s; warm 0.95 to 0.98 s. The page script ran at 1.51 s and the core was ready at 4.48 to 4.56 s, so the core's download came last. The core's request went out only once the page's own scripts had arrived and run. The Vite plugin now adds an early script that starts that request one round trip after the HTML ([Start order](implementation-notes.md#start-order)). On the Mac, Chrome on Slow 4G, WebGL2, medians of 5 loads (`bun run bench:startup -- --runs 5 --gpu webgl2 --modes all --loads cold,warm`), the first frame was done at:
+
+| Thread mode | Cold, before | Cold, after | Warm, before | Warm, after |
+| --- | --- | --- | --- | --- |
+| Pipelined | 4,429 ms | 4,240 ms | 677 ms | 658 ms |
+| Low latency | 4,417 ms | 4,220 ms | 657 ms | 642 ms |
+| Single-threaded | 4,358 ms | 4,167 ms | 658 ms | 637 ms |
+| Drawing on the main thread | 4,408 ms | 4,207 ms | 666 ms | 664 ms |
+| Sketch on the main thread | 4,389 ms | 4,191 ms | 671 ms | 669 ms |
+
+  A cold load makes one request more, for the early script's 0.2 KB, and downloads the core once. The S24+ runs the page's scripts about 0.19 s slower than the Mac, so the change should save about 0.37 s there, for about 4.27 to 4.33 s. `bun run bench:startup -- --android` on the S24+ confirms it.
 
 ### The allocation fix for S4
 

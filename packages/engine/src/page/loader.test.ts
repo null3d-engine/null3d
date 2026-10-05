@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
+import { coreUrls } from '../shared/core';
 import {
 	createSharedMemory,
 	DEFAULT_MAXIMUM_MIB,
+	EARLY_CORE_SLOT,
 	loadCore,
 	MAX_MAXIMUM_MIB,
 	MEMORY_RETRY_MS,
@@ -159,6 +161,73 @@ describe('loadCore', () => {
 		} finally {
 			WebAssembly.Memory = BrowserMemory;
 		}
+	});
+});
+
+describe("the page's early core download", () => {
+	const browserFetch = globalThis.fetch;
+	const slots = globalThis as Record<symbol, unknown>;
+	afterEach(() => {
+		globalThis.fetch = browserFetch;
+		delete slots[EARLY_CORE_SLOT];
+	});
+
+	/** Counts the downloads that the loader starts itself. */
+	function countFetches(): { count: number } {
+		const fetches = { count: 0 };
+		globalThis.fetch = (async () => {
+			fetches.count++;
+			return new Response(EMPTY_MODULE, { headers: { 'Content-Type': 'application/wasm' } });
+		}) as unknown as typeof fetch;
+		return fetches;
+	}
+
+	const early = (url: URL) => ({
+		url: url.href,
+		response: Promise.resolve(
+			new Response(EMPTY_MODULE, { headers: { 'Content-Type': 'application/wasm' } }),
+		),
+	});
+
+	it("compiles the early script's response once, and downloads afresh for a later start", async () => {
+		const fetches = countFetches();
+		slots[EARLY_CORE_SLOT] = early(coreUrls('single').wasm);
+		await loadCore('single');
+		expect(fetches.count).toBe(0);
+		expect(slots[EARLY_CORE_SLOT]).toBeUndefined();
+		await loadCore('single');
+		expect(fetches.count).toBe(1);
+	});
+
+	it("leaves a response for the other build's core, and downloads its own", async () => {
+		const fetches = countFetches();
+		const threaded = early(coreUrls('threaded').wasm);
+		slots[EARLY_CORE_SLOT] = threaded;
+		await loadCore('single');
+		expect(fetches.count).toBe(1);
+		expect(slots[EARLY_CORE_SLOT]).toBe(threaded);
+	});
+
+	it('picks the build as createEngine does, and leaves the response in the slot the loader reads', async () => {
+		const requested: string[] = [];
+		globalThis.fetch = (async (input: string | URL | Request) => {
+			requested.push(String(input));
+			return new Response(EMPTY_MODULE);
+		}) as unknown as typeof fetch;
+		const page = globalThis as { crossOriginIsolated?: boolean; location?: unknown };
+		const saved = { isolated: page.crossOriginIsolated, location: page.location };
+		// An isolated page that asks for the single-threaded build with ?threads=off.
+		page.crossOriginIsolated = true;
+		page.location = { search: '?gpu=webgl2&threads=off' };
+		try {
+			await import('./early-core');
+		} finally {
+			page.crossOriginIsolated = saved.isolated;
+			page.location = saved.location;
+		}
+		const url = coreUrls('single').wasm.href;
+		expect(requested).toEqual([url]);
+		expect((slots[EARLY_CORE_SLOT] as { url: string }).url).toBe(url);
 	});
 });
 

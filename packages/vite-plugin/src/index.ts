@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
-import type { Connect, Plugin } from 'vite';
+import type { Connect, HtmlTagDescriptor, Plugin, Rollup } from 'vite';
 import {
 	ASSET_FOLDER,
 	type AssetOptions,
@@ -106,6 +106,60 @@ export const CORE_FILES = [
 	'single/null3d_bg.wasm',
 ];
 
+/**
+ * The engine's early script, which starts the core's download as soon as a page's HTML arrives.
+ * A production build ships it as a file of its own, and each page whose scripts load the core gets
+ * a script tag for it.
+ */
+export const EARLY_CORE_MODULE = '@null3d/engine/early-core';
+
+/** The chunks that a page's entry chunk imports, directly or through others, with the entry. */
+function staticChunks(
+	entry: Rollup.OutputChunk,
+	bundle: Rollup.OutputBundle,
+): Rollup.OutputChunk[] {
+	const seen = new Map<string, Rollup.OutputChunk>([[entry.fileName, entry]]);
+	for (const chunk of seen.values())
+		for (const name of chunk.imports) {
+			const imported = bundle[name];
+			if (imported?.type === 'chunk' && !seen.has(name)) seen.set(name, imported);
+		}
+	return [...seen.values()];
+}
+
+/**
+ * The script tag of the early script for a built page, or undefined when the page's scripts do not
+ * load the engine core. The core files are the WebAssembly files that the early script names, and a
+ * page loads the core when one of its chunks names one of them too. `htmlFile` is the page's path in
+ * the build, and `base` the build's public base.
+ */
+export function earlyCoreTag(
+	early: Rollup.OutputChunk,
+	entry: Rollup.OutputChunk,
+	bundle: Rollup.OutputBundle,
+	htmlFile: string,
+	base: string,
+): HtmlTagDescriptor | undefined {
+	const cores = Object.values(bundle)
+		.filter((file) => file.type === 'asset' && file.fileName.endsWith('.wasm'))
+		.map((file) => posix.basename(file.fileName))
+		.filter((name) => early.code.includes(name));
+	if (!staticChunks(entry, bundle).some((chunk) => cores.some((name) => chunk.code.includes(name))))
+		return undefined;
+	const relativeBase = base === '' || base.startsWith('.');
+	const path = posix.relative(posix.dirname(htmlFile), early.fileName);
+	const src = relativeBase
+		? path.startsWith('.')
+			? path
+			: `./${path}`
+		: `${base}${early.fileName}`;
+	return {
+		tag: 'script',
+		attrs: { type: 'module', async: true, src },
+		injectTo: 'head-prepend',
+	};
+}
+
 /** True for a sketch module: a script that calls `defineSketch`. */
 function isSketchModule(path: string): boolean {
 	return existsSync(path) && readFileSync(path, 'utf8').includes('defineSketch(');
@@ -154,10 +208,16 @@ export function missingCoreFiles(root: string): string[] | null {
 /**
  * The null3D Vite plugin: isolation headers on the dev and preview servers, optional HTTPS, WGSL
  * compiled for WebGPU and WebGL2 in dev and in builds, and a production build that compiles each
- * sketch module and ships the engine core.
+ * sketch module, ships the engine core and starts its download from each page that loads it.
  */
 export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let building = false;
+	/** True for a production build of pages, which gets the early script. */
+	let buildingPages = false;
+	/** The early script's module, once a build of pages that imports the engine has added it. */
+	let earlyCoreId: string | undefined;
+	/** True once the build has looked for the early script. */
+	let earlyCoreSought = false;
 	let root = process.cwd();
 	let base = '/';
 	let assetsDir = 'assets';
@@ -187,12 +247,15 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		configResolved(config) {
 			building = config.command === 'build';
+			buildingPages = building && !config.build.lib && !config.build.ssr;
 			root = config.root;
 			base = config.base;
 			assetsDir = config.build.assetsDir;
 		},
 		buildStart() {
 			emitted.clear();
+			earlyCoreId = undefined;
+			earlyCoreSought = false;
 			if (!building) return;
 			const missing = missingCoreFiles(root);
 			if (missing && missing.length > 0) {
@@ -200,6 +263,35 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					`null3D: the installed @null3d/engine lacks its WebAssembly core (${missing.join(', ')}). Reinstall the package; in a copy of the engine's source, run bun run build first.`,
 				);
 			}
+		},
+		// A build of pages that imports the engine ships the early script, found from the module that
+		// imports the engine, as the engine itself is. The page's own scripts run only once all of
+		// them have arrived. The early script imports nothing, so it runs as soon as it arrives, and
+		// the core's download starts sooner by the time the others take to arrive and run.
+		resolveId: {
+			filter: { id: /^@null3d\/engine$/ },
+			async handler(_source, importer) {
+				if (!buildingPages || earlyCoreSought) return null;
+				earlyCoreSought = true;
+				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
+				if (early && !early.external) {
+					earlyCoreId = early.id;
+					this.emitFile({ type: 'chunk', id: early.id, name: 'early-core' });
+				}
+				return null;
+			},
+		},
+		transformIndexHtml: {
+			order: 'post',
+			handler(html, { bundle, chunk, path }) {
+				if (!earlyCoreId || !bundle || !chunk) return;
+				const early = Object.values(bundle).find(
+					(file): file is Rollup.OutputChunk =>
+						file.type === 'chunk' && file.facadeModuleId === earlyCoreId,
+				);
+				const tag = early && earlyCoreTag(early, chunk, bundle, path.replace(/^\//, ''), base);
+				return tag ? { html, tags: [tag] } : html;
+			},
 		},
 		load: {
 			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL], exclude: /^\0/ } },

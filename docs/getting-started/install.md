@@ -46,7 +46,7 @@ export default defineConfig({ plugins: [null3d()] });
 The plugin does four jobs that a three.js project does not need:
 
 - Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
-- Compiles your sketch file for the sketch worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core.
+- Compiles your sketch file for the sketch worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core. Each built page that loads the engine gets a small script of its own, which starts the core's download as soon as the page arrives.
 - Compiles the WGSL in your code, in `.wgsl` files and in strings tagged `/* wgsl */`, for WebGPU and WebGL2. A shader error stops Vite with its file, line and column. Beside each `.wgsl` file, the plugin writes a TypeScript declaration that holds the types of the file's uniforms. [Custom shaders](../guides/custom-shaders.md) explains both forms.
 - Keeps the engine's development checks in the dev server and removes them from production builds.
 
