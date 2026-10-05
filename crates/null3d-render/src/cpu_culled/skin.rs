@@ -31,8 +31,9 @@ use super::ids;
 use crate::frame::{RecordError, UploadArena, words_as_bytes};
 use crate::meshes::MeshStorage;
 use crate::morph::{MorphTexture, NOT_MORPHED};
-use crate::pipelines::DrawKey;
-use crate::skinning::{JointTexture, skin_of};
+use crate::pipelines::{DrawKey, PipelineCache};
+use crate::skinning::{JointTexture, SkinnedGate, skin_of};
+use crate::sorted::SkinnedPipeline;
 
 /// The first joint of a scene slot that no animated instance skins.
 const NOT_SKINNED: u32 = u32::MAX;
@@ -64,6 +65,8 @@ pub(super) struct Skins {
     pending: bool,
     /// Rows of the texture of first joints and weights, both halves, 0 before it exists.
     rows: u32,
+    /// Whether the passes draw the skinned objects yet.
+    gate: SkinnedGate,
 }
 
 impl Default for Skins {
@@ -76,6 +79,7 @@ impl Default for Skins {
             span: None,
             pending: false,
             rows: 0,
+            gate: SkinnedGate::default(),
         }
     }
 }
@@ -130,6 +134,57 @@ impl Skins {
             permutation: key.permutation | bits,
             ..key
         })
+    }
+
+    /// True when the layouts leave out the object at scene slot `slot`: a skinned or morphed
+    /// object, while the pipelines that draw such objects are not built yet.
+    pub(super) fn hides(&self, slot: usize) -> bool {
+        !self.gate.drawn()
+            && (self
+                .firsts
+                .get(slot)
+                .is_some_and(|&first| first != NOT_SKINNED)
+                || self.morph.base(slot as u32) != NOT_MORPHED)
+    }
+
+    /// How the object at scene slot `slot`, whose pair's pipeline has `key`, draws in the
+    /// transparent pass by its skinning and morph targets.
+    pub(super) fn sorted_pipeline(&self, slot: usize, key: DrawKey) -> SkinnedPipeline {
+        match self.key(slot, key) {
+            None => SkinnedPipeline::NotSkinned,
+            Some(skinned) if self.gate.drawn() => SkinnedPipeline::Drawn(skinned),
+            Some(skinned) => SkinnedPipeline::Waiting(skinned),
+        }
+    }
+
+    /// Lets the passes draw the skinned objects once every pipeline in `waiting` is built, by
+    /// `pipelines_built` (see [`SkinnedGate`]). Returns true when they start to draw, so the layouts
+    /// take them in.
+    pub(super) fn open_when_built(
+        &mut self,
+        pipelines: &PipelineCache,
+        waiting: impl Iterator<Item = u32>,
+        pipelines_built: u32,
+    ) -> bool {
+        let skinned = self.span.is_some();
+        self.gate.open_when_built(skinned, pipelines_built, || {
+            pipelines.all_built(waiting, pipelines_built)
+        })
+    }
+
+    /// Lets the passes draw the skinned objects at once while the thread that draws has drawn no
+    /// frame yet, since the first frame waits for every pipeline.
+    pub(super) fn open_before_first_frame(&mut self, pipelines_built: u32) {
+        let skinned = self.span.is_some();
+        self.gate
+            .open_when_built(skinned, pipelines_built, || false);
+    }
+
+    /// Records that the layouts left the skinned objects out and asked for their pipelines.
+    pub(super) fn asked(&mut self) {
+        if self.span.is_some() {
+            self.gate.asked();
+        }
     }
 
     /// The bytes that the next frame copies into its arena.
@@ -234,6 +289,7 @@ impl Skins {
     pub(super) fn forget_gpu(&mut self) {
         self.joints.forget_gpu();
         self.morph.forget_gpu();
+        self.gate.forget_gpu();
         self.rows = 0;
         self.pending = self.span.is_some();
     }
