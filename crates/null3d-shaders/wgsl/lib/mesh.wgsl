@@ -1,7 +1,7 @@
 enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
-#import null3d::fog::{apply_fog, fog_color, fog_factor}
+#import null3d::fog::{fog_color, fog_factor}
 #import null3d::globals::{Frame, Material}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
@@ -193,8 +193,7 @@ fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
     if (factor == 0.0) {
         return c;
     }
-    let color = fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz);
-    return apply_fog(c, color, factor);
+    return mix(c, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.

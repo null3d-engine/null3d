@@ -1459,12 +1459,18 @@ const FOG_HEIGHT_EXPONENT_LIMIT = 40;
 /**
  * Inputs of a scene fog with `curve` and `falloff`: its color and density, its curve, its shape (near,
  * far, falloff and the density share at the camera's height), and a point relative to the camera.
+ * Without a falloff the share is 1, as the engine writes it.
  */
 function sceneFog(random: () => number, curve: number, falloff: number): Inputs {
 	return new Inputs()
 		.setF(0, [...values(random, 3, 0, 1), between(random, 0, 0.05)])
 		.setU(1, [curve])
-		.setF(2, [between(random, 0, 20), between(random, 30, 100), falloff, between(random, 0.2, 3)])
+		.setF(2, [
+			between(random, 0, 20),
+			between(random, 30, 100),
+			falloff,
+			falloff === 0 ? 1 : between(random, 0.2, 3),
+		])
 		.setF(4, values(random, 3, -80, 80));
 }
 
@@ -1482,7 +1488,7 @@ function fogPath(i: Inputs): number {
 	const relative = xyz(i.f(4));
 	const [, , falloff, share] = i.f(2);
 	const distance = length(relative);
-	return falloff === 0 ? distance : distance * share * heightRatio(falloff * relative[1]);
+	return distance * share * heightRatio(falloff * relative[1]);
 }
 
 /** The scene fog's factor for its inputs. */

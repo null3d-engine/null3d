@@ -748,12 +748,12 @@ The light that a PBR surface reflects from an environment map, as three.js's `RE
 
 ## `null3d::fog`
 
-The scene's fog. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog measures each point's straight-line distance from the camera, so a point keeps its fog as the camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix their exposed linear color with the fog before any tone mapping and encoding.  Per pixel, the fog costs a square root, one `exp` and a `pow` for the sun glow. Fog that thins with height adds an `exp` and a division. The fog is a branch on the frame's values, not a permutation bit, so every scene shares the same shader builds.
+The scene's fog. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog measures each point's straight-line distance from the camera, so a point keeps its fog as the camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix their exposed linear color with the fog before any tone mapping and encoding.  Per pixel, the fog costs a square root, two `exp`, a division and a `pow` for the sun glow. The height terms take one `exp` and the division even for fog that is the same at every height, which keeps the shader text short. The fog is a branch on the frame's values, not a permutation bit, so every scene shares the same shader builds.
 
-### `NONE`
+### `OFF`
 
 ```wgsl
-const NONE: u32 = 0u;
+const OFF: u32 = 0u;
 ```
 
 No fog, as `Fog.curve` names it.
@@ -802,7 +802,7 @@ The scene's fog, as the engine writes it into each frame's values for the camera
 - `sun_glow`: How much of the sun's light the fog scatters toward the camera: 0 for no glow.
 - `sun_exponent`: The power of the glow's fall away from the sun: higher values make the glow smaller.
 - `spare`: Fills the block to a multiple of 16 bytes.
-- `curve`: The fog's curve: `NONE`, `LINEAR`, `EXP2` or `EXPONENTIAL`.
+- `curve`: The fog's curve: `OFF`, `LINEAR`, `EXP2` or `EXPONENTIAL`.
 
 ### `fog_linear`
 
@@ -847,10 +847,10 @@ The factor of the scene's `fog` at a point, by its position relative to the came
 ### `fog_color`
 
 ```wgsl
-fn fog_color(fog: Fog, relative_position: vec3f, sun_direction: vec3f, sun_color: vec3f) -> vec3f
+fn fog_color(fog: Fog, relative_position: vec3f, light_direction: vec3f, light_color: vec3f) -> vec3f
 ```
 
-The color of the scene's `fog` toward a point, by its position relative to the camera. It is the fog's color, plus the sun's light that the fog scatters toward the camera. That light is brightest toward the sun. `sun_direction` is the unit direction that the sun's light travels, and `sun_color` its exposed color.
+The color of the scene's `fog` toward a point, by its position relative to the camera. It is the fog's color, plus the sun's light that the fog scatters toward the camera. That light is brightest toward the sun. `light_direction` is the unit direction that the sun's light travels, and `light_color` its exposed color.
 
 ### `apply_fog`
 

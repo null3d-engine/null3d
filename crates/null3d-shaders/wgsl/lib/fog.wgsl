@@ -5,12 +5,13 @@
 // camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix
 // their exposed linear color with the fog before any tone mapping and encoding.
 //
-// Per pixel, the fog costs a square root, one `exp` and a `pow` for the sun glow. Fog that thins
-// with height adds an `exp` and a division. The fog is a branch on the frame's values, not a
-// permutation bit, so every scene shares the same shader builds.
+// Per pixel, the fog costs a square root, two `exp`, a division and a `pow` for the sun glow. The
+// height terms take one `exp` and the division even for fog that is the same at every height,
+// which keeps the shader text short. The fog is a branch on the frame's values, not a permutation
+// bit, so every scene shares the same shader builds.
 
 /// No fog, as `Fog.curve` names it.
-const NONE: u32 = 0u;
+const OFF: u32 = 0u;
 /// Linear fog: none up to a near distance, full from a far one, and a smooth step between them.
 const LINEAR: u32 = 1u;
 /// Exponential squared fog: a factor of 1 - exp(-(density × distance)²).
@@ -33,7 +34,7 @@ struct Fog {
     sun_exponent: f32,
     /// Fills the block to a multiple of 16 bytes.
     spare: f32,
-    /// The fog's curve: `NONE`, `LINEAR`, `EXP2` or `EXPONENTIAL`.
+    /// The fog's curve: `OFF`, `LINEAR`, `EXP2` or `EXPONENTIAL`.
     curve: u32,
 }
 
@@ -73,13 +74,13 @@ fn fog_height_ratio(climb: f32) -> f32 {
 /// the way where the fog thins with height. Fog at its base density hides as much over that path
 /// as the fog hides on the way to the point.
 fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
-    if (fog.curve == NONE) {
+    if (fog.curve == OFF) {
         return 0.0;
     }
-    var path = length(relative_position);
-    if (fog.shape.z != 0.0) {
-        path *= fog.shape.w * fog_height_ratio(fog.shape.z * relative_position.y);
-    }
+    // Fog that is the same at every height has a falloff of 0 and a density share of 1, so the
+    // height ratio is 1 and the path is the distance.
+    let path = length(relative_position) * fog.shape.w
+        * fog_height_ratio(fog.shape.z * relative_position.y);
     let k = fog.color.w * path;
     let exponential = 1.0 - exp(-select(k, k * k, fog.curve == EXP2));
     return select(exponential, smoothstep(fog.shape.x, fog.shape.y, path), fog.curve == LINEAR);
@@ -87,11 +88,11 @@ fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
 
 /// The color of the scene's `fog` toward a point, by its position relative to the camera. It is
 /// the fog's color, plus the sun's light that the fog scatters toward the camera. That light is
-/// brightest toward the sun. `sun_direction` is the unit direction that the sun's light travels,
-/// and `sun_color` its exposed color.
-fn fog_color(fog: Fog, relative_position: vec3f, sun_direction: vec3f, sun_color: vec3f) -> vec3f {
-    let toward_sun = max(dot(normalize(relative_position), -sun_direction), 0.0);
-    return fog.color.xyz + sun_color * (fog.sun_glow * pow(toward_sun, fog.sun_exponent));
+/// brightest toward the sun. `light_direction` is the unit direction that the sun's light travels,
+/// and `light_color` its exposed color.
+fn fog_color(fog: Fog, relative_position: vec3f, light_direction: vec3f, light_color: vec3f) -> vec3f {
+    let toward_sun = max(dot(normalize(relative_position), -light_direction), 0.0);
+    return fog.color.xyz + light_color * (fog.sun_glow * pow(toward_sun, fog.sun_exponent));
 }
 
 /// A color seen through fog: `c` blended toward `fog_color` by the fog factor.
