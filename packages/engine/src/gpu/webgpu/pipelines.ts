@@ -21,6 +21,7 @@ import {
 	LAYOUT_TEXTURES,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
+	PERMUTATION_VERTEX_TANGENT,
 	SIZE_INSTANCE_STRIDE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -175,6 +176,9 @@ const BLENDS: Readonly<Record<number, GPUBlendState>> = {
 		alpha: { srcFactor: 'zero', dstFactor: 'one' },
 	},
 };
+
+/** The formats whose mip levels the GPU makes: 8-bit color, as the draw list allows. */
+const MIP_FORMATS: readonly GPUTextureFormat[] = ['rgba8unorm', 'rgba8unorm-srgb'];
 
 /** The write mask of every color channel, as `GPUColorWrite.ALL` holds it. */
 const ALL_CHANNELS = 0xf;
@@ -723,23 +727,47 @@ export class Pipelines {
 		return this.emptyFragment;
 	}
 
-	/** The pipeline that makes mip levels of textures of `format`, made at its first use. */
+	/**
+	 * Starts to build the pipelines that make mip levels, in the background, for each format whose
+	 * levels the GPU makes. The first texture of each format then makes its levels without a
+	 * compile inside the frame. A build that fails is made again at first use, which reports it.
+	 */
+	prebuildMipmaps(): void {
+		if (!this.mipmap) return;
+		for (const format of MIP_FORMATS)
+			this.device.createRenderPipelineAsync(this.mipDescriptor(format)).then(
+				(pipeline) => {
+					if (!this.mipPipelines.has(format)) this.mipPipelines.set(format, pipeline);
+				},
+				() => {},
+			);
+	}
+
+	/**
+	 * The pipeline that makes mip levels of textures of `format`: the one built in the background
+	 * when it is done, else one made at once.
+	 */
 	mipmaps(format: GPUTextureFormat): GPURenderPipeline {
 		let pipeline = this.mipPipelines.get(format);
 		if (!pipeline) {
-			const shader = this.mipmap;
-			if (!shader) throw new Error("the device's shader module has no mip level shader");
-			const module = this.module('mipmaps', shader);
-			const entryPoints = shader.pipelines.main;
-			pipeline = this.device.createRenderPipeline({
-				label: 'mipmaps',
-				layout: 'auto',
-				vertex: { module, entryPoint: entryPoints?.vertex },
-				fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },
-			});
+			pipeline = this.device.createRenderPipeline(this.mipDescriptor(format));
 			this.mipPipelines.set(format, pipeline);
 		}
 		return pipeline;
+	}
+
+	/** How to build the pipeline that makes mip levels of textures of `format`. */
+	private mipDescriptor(format: GPUTextureFormat): GPURenderPipelineDescriptor {
+		const shader = this.mipmap;
+		if (!shader) throw new Error("the device's shader module has no mip level shader");
+		const module = this.module('mipmaps', shader);
+		const entryPoints = shader.pipelines.main;
+		return {
+			label: 'mipmaps',
+			layout: 'auto',
+			vertex: { module, entryPoint: entryPoints?.vertex },
+			fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },
+		};
 	}
 
 	/**
@@ -750,15 +778,20 @@ export class Pipelines {
 		return template === TEMPLATE_SKIN ? this.skin : undefined;
 	}
 
-	/** How to build a compute pipeline of a template: culling, skinning, or a step of light clustering. */
-	compute(template: number): GPUComputePipelineDescriptor {
+	/**
+	 * How to build a compute pipeline of a template: culling, skinning, or a step of light
+	 * clustering. The skinning pass takes the build of its permutation bits: with the vertex tangent
+	 * bit for vertex formats that have a tangent.
+	 */
+	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
-			const skin = variantFor(this.skin, 0, 'wgsl')?.wgsl;
-			if (!skin) throw new Error("the device's shader modules have no skinning shader");
+			const tangent = (permutation & PERMUTATION_VERTEX_TANGENT) !== 0;
+			const shader = variantFor(this.skin, permutation, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no skinning shader");
 			return {
-				label: 'skin',
+				label: tangent ? 'skin tangent' : 'skin',
 				layout: this.skinLayout,
-				compute: { module: this.module('skin', skin), entryPoint: 'main' },
+				compute: { module: this.module('skin', shader), entryPoint: 'main' },
 			};
 		}
 		if (template === TEMPLATE_CULL) {

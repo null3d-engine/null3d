@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import {
 	isFirstUseShaderPart,
@@ -46,10 +47,22 @@ async function workersCannotDraw(page: Page): Promise<void> {
  * The engine checks without their frame-rate checks, for the tests whose job is not the pace of the
  * frame loop. The engine must still run after its start, at whatever rate the machine draws. A busy
  * runner can slow every frame of a short measurement, which says nothing about what these tests
- * check. The tests that run each thread mode, and those that wake the threads with messages, check
- * the pace.
+ * check. The tests that run each thread mode check the pace, and so do those that wake the threads
+ * with messages, on a real GPU.
  */
 const notPacing: EngineChecks = { pacing: false };
+
+/**
+ * The engine checks of the tests without Atomics.waitAsync, whose threads wake each other with a
+ * message for each frame. On a real GPU they check the pace too. On CI's software GPU the GPU sets
+ * the pace, not the messages: a busy runner drew those frames at medians of 42 to 50 ms.
+ */
+const wakeChecks: EngineChecks = { pacing: defaultEnvironment() === 'chrome-real-gpu' };
+/**
+ * The fewest frames that the tests without Atomics.waitAsync count after the pause, to show that
+ * its end woke the threads. The page counts until they come, however slowly the GPU draws them.
+ */
+const RESUMED_FRAMES = 11;
 
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
@@ -178,6 +191,52 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		expect(order).toEqual(['shaders', 'core']);
 	});
 }
+
+/** The early script that the Vite plugin adds to each built page whose scripts load the core. */
+const EARLY_SCRIPT = /\/early-core-[\w-]{8}\.js(\?|$)/;
+/** A script of a production build. */
+const BUILT_SCRIPT = /\/assets\/[^/]+\.js(\?|$)/;
+
+// In a production build, the early script starts the core's download before the page's own scripts
+// have arrived, and the engine compiles that download, so the core downloads once. The test holds
+// every other script back until the core's request goes out. A core that waits for the page's
+// scripts would wait for the hold's limit, and see its request after theirs. An early script that
+// picked the other build than the engine does would make the engine download a second core.
+for (const mode of ENGINE_MODES)
+	test(`the early script starts the core's download before the page's scripts arrive, ${mode.name}`, async ({
+		page,
+	}, testInfo) => {
+		test.skip(
+			testInfo.project.name !== 'production build',
+			'only a production build has the early script',
+		);
+		const order: string[] = [];
+		const cores: string[] = [];
+		let coreAsked: () => void = () => undefined;
+		const asked = new Promise<void>((resolve) => {
+			coreAsked = resolve;
+		});
+		page.context().on('request', (request) => {
+			if (!CORE_FILE.test(request.url())) return;
+			cores.push(new URL(request.url()).pathname);
+			if (!order.includes('core')) order.push('core');
+			coreAsked();
+		});
+		await page.context().route(BUILT_SCRIPT, async (route) => {
+			if (!EARLY_SCRIPT.test(route.request().url())) {
+				await Promise.race([asked, new Promise((resolve) => setTimeout(resolve, CORE_HOLD_MS))]);
+				if (!order.includes('scripts')) order.push('scripts');
+			}
+			await route.continue();
+		});
+		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+		await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+		expect(result.error).toBeUndefined();
+		expect(engineProblems(result, mode, 'webgl2', notPacing)).toEqual([]);
+		expect(order).toEqual(['core', 'scripts']);
+		expect(cores).toHaveLength(1);
+	});
 
 /** The text as a regular expression that matches it alone. */
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -353,13 +412,16 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 for (const mode of THREADED_MODES) {
 	test(`the engine runs without Atomics.waitAsync, ${mode.name}`, async ({ page }) => {
 		await withoutWaitAsync(page);
-		await page.goto(`engine.html?gpu=webgl2&seconds=1&pause&${mode.query}`);
+		const switches = `gpu=webgl2&seconds=1&pause&resumed-frames=${RESUMED_FRAMES}&${mode.query}`;
+		await page.goto(`engine.html?${switches}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		await restoreWaitAsync(page);
 		expect(result.error).toBeUndefined();
 		expect(result.report.atomicsWaitAsync).toBe(false);
-		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+		expect(engineProblems(result, mode, 'webgl2', wakeChecks)).toEqual([]);
 		expect(result.pause?.paused.frames, 'frames computed during the pause').toBe(0);
-		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThan(10);
+		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThanOrEqual(
+			RESUMED_FRAMES,
+		);
 	});
 }

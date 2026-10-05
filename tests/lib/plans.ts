@@ -127,6 +127,7 @@ import {
 	type PlanItem,
 	slug,
 } from './runs.ts';
+import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import {
@@ -175,6 +176,8 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
+	| { kind: 'skin-pass'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -281,7 +284,8 @@ function pageItem(
 
 /**
  * The runner page's item for the engine test page with these switches, measured for 2 seconds: the
- * development page, or with a load, the production build.
+ * development page, or with a load, the production build. The engine check limits the time between
+ * frames, so with that check the page's frame stays on top of the runner page's report.
  */
 function engineItem(
 	id: string,
@@ -289,11 +293,14 @@ function engineItem(
 	check: Check,
 	load?: Load,
 ): PlanItem<Check> {
-	return pageItem(id, 'engine', check, {
-		switches: [...switches, 'seconds=2'],
-		timeoutSeconds: 45,
-		load,
-	});
+	return {
+		...pageItem(id, 'engine', check, {
+			switches: [...switches, 'seconds=2'],
+			timeoutSeconds: 45,
+			load,
+		}),
+		...(check.kind === 'engine' && { timesFrames: true as const }),
+	};
 }
 
 /** Switches of a timed run of a benchmark page, each left out when undefined. */
@@ -404,6 +411,14 @@ export function checksPlan(): PlanItem<Check>[] {
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`skin-pass-${path}`,
+				'skin-pass',
+				{ kind: 'skin-pass', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
 		// The device's own check each run, never one that an earlier run stored.
 		pageItem('quality', 'quality', { kind: 'quality' }, { switches: ['check=fresh'] }),
 		...TIERS.map((tier) =>
@@ -1181,8 +1196,9 @@ export function startupPlan({ runs = STARTUP_RUNS }: PlanSettings = {}): PlanIte
 }
 
 /**
- * The plans whose pages only check results, without timing them, so the runner page may draw its
- * report over their frames. Any other plan keeps each page's frame on top.
+ * The plans whose pages check results, so the runner page may draw its report over their frames.
+ * Any other plan keeps each page's frame on top, and so does an item of these plans that times its
+ * frames.
  */
 export const REPORT_ON_TOP_PLANS: ReadonlySet<string> = new Set([
 	'checks',
@@ -1530,6 +1546,12 @@ export function restartProblems(
 	return problems;
 }
 
+/** The first line of a Metal compile log that names an error at a place in the source, or its first line. */
+function metalFaultLine(log: string): string {
+	const lines = log.split('\n');
+	return (lines.find((line) => /:\d+:\d+: error:/.test(line)) ?? lines[0] ?? '').trim();
+}
+
 /**
  * What is wrong with a page's result; empty when nothing is. A page that the runner page skipped,
  * and a check whose GPU path the browser lacks, are skips when `missing` allows it: some devices
@@ -1571,6 +1593,11 @@ export function judge(
 				context?.note?.(
 					`the GPU's driver removed ${removed.length} shader inputs that their programs never read: ${[...new Set(removed.map(({ name }) => name))].join(', ')}`,
 				);
+			const relinked = (result.relinked ?? []) as { shader: string; log: string }[];
+			if (relinked.length > 0)
+				context?.note?.(
+					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
+				);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
 			return problems;
@@ -1589,6 +1616,21 @@ export function judge(
 				),
 			];
 			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
+			// The engine draws no whole numbers into a target on WebGL2, so a device that cannot hand
+			// them back is a fault of the check's readback, which the run records without a failure.
+			if (typeof result.deviceFault === 'string')
+				context?.note?.(
+					`device fault: ${result.deviceFault}. The page could not read the library's results back on this device`,
+				);
+			// Engine shaders keep whole numbers as the library's shader does, so they lose bits too.
+			if (typeof result.shaderFault === 'string')
+				problems.push(
+					`${result.shaderFault}. The target kept every bit, so the GLSL lost them, and engine shaders keep whole numbers the same way`,
+				);
+			if (typeof result.precisionFault === 'string')
+				context?.note?.(
+					`driver fault: ${result.precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
+				);
 			return problems;
 		}
 		case 'engine':
@@ -1616,6 +1658,11 @@ export function judge(
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));
 			return mipLevelsProblems(mips);
+		}
+		case 'skin-pass': {
+			const skin = result as unknown as SkinPassResult;
+			context?.note?.(skinPassNote(skin));
+			return skinPassProblems(skin);
 		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];

@@ -2,10 +2,12 @@
 // shared memory, reports that it is ready, and waits until the sketch thread has created the job
 // system, without blocking where the browser has Atomics.waitAsync. Then it serves the job system
 // until the engine stops, and reports that it has stopped. Serving blocks this worker's thread,
-// which a job worker may do; the sketch worker never blocks.
+// which a job worker may do; the sketch worker never blocks. A failure after the start ends the
+// worker's part in the job system and reaches the page as a failure of the running engine.
 
 import { messageOf } from '../errors/message';
 import { controlViews, Slot } from '../shared/control';
+import type { CoreGlue } from '../shared/core';
 import {
 	type JobWorkerInit,
 	replyToPage,
@@ -18,8 +20,9 @@ const step = startSteps('job');
 
 startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 	const message = event.data;
+	let core: CoreGlue | undefined;
 	try {
-		const { glue: core } = await startWorkerCore(message, step);
+		core = (await startWorkerCore(message, step)).glue;
 		replyToPage({
 			type: 'ready',
 			role: 'job',
@@ -47,10 +50,18 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 		}
 		replyToPage({ type: 'stopped', role: 'job', index: message.index });
 	} catch (e) {
-		replyToPage({
-			type: 'error',
-			role: 'job',
-			message: messageOf(e),
-		});
+		if (!core) {
+			replyToPage({ type: 'error', role: 'job', message: messageOf(e) });
+			return;
+		}
+		// A failure inside the job system, such as a trap in the core, leaves the chunk this worker
+		// held unfinished. Counting it lets the sketch thread's wait end, so the thread fails too
+		// instead of waiting for good, which would hang the page when the sketch runs there.
+		try {
+			core.jobWorkerFailed(message.index);
+		} catch {
+			// The core could not count the chunk; the page still hears of the failure.
+		}
+		replyToPage({ type: 'fault', role: 'job', index: message.index, message: messageOf(e) });
 	}
 });

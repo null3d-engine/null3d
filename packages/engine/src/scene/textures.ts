@@ -304,6 +304,8 @@ export class Textures {
 		/** @internal The device's capability flags, which say what compressed formats it has. */
 		readonly capabilities: number,
 		private readonly ownBudget: () => void = () => {},
+		/** Resolves once the thread that draws holds every image and generator up to an id. */
+		private readonly arrived: (id: number) => Promise<void> = async () => {},
 		/** @internal True when the engine draws with WebGL2. */
 		readonly webgl2 = false,
 		/**
@@ -457,29 +459,29 @@ export class Textures {
 	/**
 	 * @internal A cube texture of shared-exponent floats with faces of `size` texels a side and
 	 * `levels` mip levels, read with linear filters within and between levels, whose texels a
-	 * generator makes on the GPU in `slices` parts of its work, one a frame. The thread that draws
-	 * loads the generator's code first, and the texture draws as none until its texels are made.
+	 * generator makes on the GPU. It resolves once the thread that draws has loaded the generator's
+	 * code and built its pipelines. The next frame then makes every texel in one submit, before it
+	 * draws, so no frame draws with the texture before its texels are made.
 	 */
-	fromGenerator(
+	async fromGenerator(
 		name: GeneratorName,
 		size: number,
 		levels: number,
-		slices: number,
 		call: string,
-	): Texture {
+	): Promise<Texture> {
 		const { core } = this;
 		const format = TEXTURE_FORMAT_SHARED_EXPONENT;
 		const handle = core.checkGrowth(core.glue.createCubeTexture(size, levels, format), call);
 		const texture = new Texture(handle, size, size, 6, 'rgb9e5ufloat', 'linear', 0, this, true);
+		let id: number;
 		try {
-			this.send(
-				core.checkGrowth(core.glue.generateTexture(handle, slices), call, 'a texture'),
-				name,
-			);
+			id = core.checkGrowth(core.glue.generateTexture(handle), call, 'a texture');
+			this.send(id, name);
 		} catch (error) {
 			texture.destroy();
 			throw error;
 		}
+		await this.arrived(id);
 		return texture;
 	}
 
