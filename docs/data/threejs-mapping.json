@@ -747,10 +747,21 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard for the base layer",
-      "notes": "Clearcoat, transmission, sheen, iridescence, anisotropy and specular come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas. Clearcoat, transmission, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
+    },
+    {
+      "id": "mat-specular-ior",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial ior / reflectivity / specularIntensity / specularColor / specularIntensityMap / specularColorMap",
+      "status": "direct",
+      "since": "0.2",
+      "target": "materials.standard({ ior, specularIntensity, specularColor, specularIntensityMap, specularColorMap })",
+      "notes": "Same names, ranges and formulas, so the values carry over, and glTF's KHR_materials_ior and KHR_materials_specular load into them. specularColor takes linear components above 1, as three.js's Color does. reflectivity has no option: set ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity), as three.js converts it.",
+      "docs": "api/materials",
+      "detect": "\\bspecular(Intensity|Color)(Map)?\\b|\\.ior\\b|\\bior\\s*:"
     },
     {
       "id": "mat-basic",

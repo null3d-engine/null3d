@@ -363,6 +363,17 @@ impl Animations {
         self.push_clip(skeleton, clip, id)
     }
 
+    /// The clips added so far that [`super::resample`] evaluated at each frame, in some track at
+    /// least. The others were copied from keys already on their frames.
+    pub fn resampled_clips(&self) -> u32 {
+        // An additive clip counts through its source.
+        self.clips
+            .iter()
+            .enumerate()
+            .filter(|(k, clip)| self.clip_sources[*k] as usize == *k && clip.resampled_tracks() > 0)
+            .count() as u32
+    }
+
     /// Stores a clip with its skeleton and source, and returns its id.
     fn push_clip(&mut self, skeleton: u32, clip: Clip, source: u32) -> Result<u32, AnimationError> {
         let failed = |_| out_of_memory(size_of::<Clip>());

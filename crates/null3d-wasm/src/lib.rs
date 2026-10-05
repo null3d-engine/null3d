@@ -16,8 +16,8 @@ use std::cell::{Cell, UnsafeCell};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
-    AnimationError, Animations, Blend, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_BLEND,
-    MAX_JOINTS, Play, REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
+    AnimationError, Animations, Blend, Clip, MATRIX_FLOATS, MAX_BLEND, MAX_JOINTS, Play,
+    REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
 };
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
@@ -69,9 +69,9 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
-    camera_target, debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query,
-    ring_field, scene_field, shading, texture_option, texture_stat,
+    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
+    debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
+    scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -2409,56 +2409,6 @@ pub fn create_skeleton(joints: u32) -> u32 {
     })
 }
 
-/// The tracks that the staging words hold for `createClip`.
-fn staged_tracks(words: &[u32], tracks: usize) -> Result<Vec<SourceTrack<'_>>, AnimationError> {
-    let header = TRACK_WORDS as usize;
-    if tracks.saturating_mul(header) > words.len() {
-        return Err(AnimationError::Track {
-            track: (words.len() / header) as u32,
-            problem: TrackProblem::Keys,
-        });
-    }
-    let floats = as_floats(words);
-    let mut at = tracks * header;
-    let mut out = Vec::with_capacity(tracks);
-    for track in 0..tracks {
-        let problem = |problem| AnimationError::Track {
-            track: track as u32,
-            problem,
-        };
-        let head = &words[track * header..track * header + header];
-        let channel = Channel::from_u32(head[1]).ok_or(problem(TrackProblem::Kind))?;
-        let interpolation = Interpolation::from_u32(head[2]).ok_or(problem(TrackProblem::Kind))?;
-        let keys = head[3] as usize;
-        let per_key = match interpolation {
-            Interpolation::CubicSpline => 3 * channel.components(),
-            Interpolation::Linear | Interpolation::Step => channel.components(),
-        };
-        let end = keys
-            .checked_mul(1 + per_key)
-            .and_then(|n| n.checked_add(at))
-            .filter(|&end| end <= floats.len());
-        let Some(end) = end else {
-            return Err(problem(TrackProblem::Keys));
-        };
-        out.push(SourceTrack {
-            joint: head[0],
-            channel,
-            interpolation,
-            times: &floats[at..at + keys],
-            values: &floats[at + keys..end],
-        });
-        at = end;
-    }
-    Ok(out)
-}
-
-/// The staging words as 32-bit floats, which have the same size and alignment.
-fn as_floats(words: &[u32]) -> &[f32] {
-    // SAFETY: `u32` and `f32` have the same size and alignment, and every bit pattern is a float.
-    unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len()) }
-}
-
 // The staging words hold `tracks` headers of `TRACK_WORDS` words (joint, channel, interpolation,
 // key count), then each track's key times and values as floats, track after track. The clip is
 // resampled at `rate` keys per second (`resample`).
@@ -2613,6 +2563,13 @@ pub fn remove_animated_instance(instance: u32) -> u32 {
             .map_err(animation_failure)?;
         Ok(0)
     })
+}
+
+/// The clips that loading resampled at each frame, plus one: the others held keys on their frames
+/// already, as the asset tool writes them, and were copied.
+#[wasm_bindgen(js_name = resampledClips)]
+pub fn resampled_clips() -> u32 {
+    with_animations(|animations, _| Ok(animations.resampled_clips() + 1))
 }
 
 /// The first joint of animated instance `instance` in the skinning matrices, plus one, or 0 when
