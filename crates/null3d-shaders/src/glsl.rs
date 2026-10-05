@@ -116,6 +116,7 @@ fn write_stage(
     source = crate::half::mediump_items(&source, mediump);
     source = lower_arrays(&source);
     source = drop_unused_constants(&source);
+    source = highp_integers(&source);
 
     let entry = module
         .entry_points
@@ -567,6 +568,42 @@ fn closing_parenthesis(text: &str) -> Option<usize> {
     None
 }
 
+/// GLSL's whole-number types.
+const INTEGER_TYPES: [&str; 8] = [
+    "int", "uint", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4",
+];
+
+/// GLSL's precision qualifiers.
+const PRECISIONS: [&str; 3] = ["highp", "mediump", "lowp"];
+
+/// Writes `highp` on each declaration of a whole number that names no precision: globals, inputs
+/// and outputs, uniform block and struct members, constants, function results and parameters, and
+/// locals. The default `precision highp int;` should cover them, but a fragment shader's built-in
+/// default for whole numbers is `mediump`, and the Adreno 619 driver of a Galaxy Tab A9 Plus kept
+/// only the low 16 bits of whole numbers declared without a precision. A declaration is a type
+/// followed by a name; a type followed by `(` is a constructor or a conversion, and stays.
+pub(crate) fn highp_integers(source: &str) -> String {
+    let tokens = crate::scan::tokenize(source);
+    let mut out = String::with_capacity(source.len() + source.len() / 32);
+    let mut copied = 0;
+    for (index, token) in tokens.iter().enumerate() {
+        let declares = INTEGER_TYPES.contains(&token.text)
+            && tokens
+                .get(index + 1)
+                .is_some_and(|next| next.kind == crate::scan::Kind::Ident)
+            && !index
+                .checked_sub(1)
+                .is_some_and(|previous| PRECISIONS.contains(&tokens[previous].text));
+        if declares {
+            out.push_str(&source[copied..token.start]);
+            out.push_str("highp ");
+            copied = token.start;
+        }
+    }
+    out.push_str(&source[copied..]);
+    out
+}
+
 /// True for a GLSL identifier.
 fn is_identifier(word: &str) -> bool {
     word.bytes()
@@ -621,6 +658,14 @@ mod tests {
         let source = "vec3[2] pick(vec2 u) {\n    if (u.x > 0.5) {\n        return vec3[2](u.xxx, u.yyy);\n    }\n    return _e4;\n}\n\nfloat[2] none() {\n    return w;\n}\n\nvoid main() {\n    vec3 _e20[2] = pick(uv);\n    float _e21[2] = none();\n    return;\n}\n";
         let expected = "void pick(vec2 u, out vec3 _n3d_result[2]) {\n    if (u.x > 0.5) {\n        vec3 _n3d_array1[2];\n        _n3d_array1[0] = u.xxx;\n        _n3d_array1[1] = u.yyy;\n        _n3d_result = _n3d_array1;\n        return;\n    }\n    _n3d_result = _e4;\n    return;\n}\n\nvoid none(out float _n3d_result[2]) {\n    _n3d_result = w;\n    return;\n}\n\nvoid main() {\n    vec3 _e20[2];\n    pick(uv, _e20);\n    float _e21[2];\n    none(_e21);\n    return;\n}\n";
         assert_eq!(lower_arrays(source), expected);
+    }
+
+    #[test]
+    fn each_whole_number_declaration_names_highp() {
+        let source = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nstruct Results {\n    uvec4 a;\n    ivec2 b;\n};\nconst int INPUTS = 8;\nuniform highp usampler2D cases;\nflat in uint _vs2fs_location2;\nlayout(location = 0) out uvec4 color;\nuint hash(uint v, inout int n) {\n    return uint(n) ^ v;\n}\nvoid main() {\n    uvec4 u[2];\n    mediump int low = 1;\n    for (int i = 0; i < INPUTS; i++) {\n        u[i] = uvec4(texelFetch(cases, ivec2(i, 0), 0));\n    }\n    color = u[0];\n}\n";
+        let expected = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nstruct Results {\n    highp uvec4 a;\n    highp ivec2 b;\n};\nconst highp int INPUTS = 8;\nuniform highp usampler2D cases;\nflat in highp uint _vs2fs_location2;\nlayout(location = 0) out highp uvec4 color;\nhighp uint hash(highp uint v, inout highp int n) {\n    return uint(n) ^ v;\n}\nvoid main() {\n    highp uvec4 u[2];\n    mediump int low = 1;\n    for (highp int i = 0; i < INPUTS; i++) {\n        u[i] = uvec4(texelFetch(cases, ivec2(i, 0), 0));\n    }\n    color = u[0];\n}\n";
+        assert_eq!(highp_integers(source), expected);
+        assert_eq!(highp_integers(expected), expected);
     }
 
     #[test]
