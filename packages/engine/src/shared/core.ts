@@ -91,8 +91,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
-	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
-	cullFrame(frame: number, width: number, height: number): number;
+	/**
+	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
+	 * is the newest frame that the thread that draws drew with every pipeline built, as for
+	 * `recordFrame`.
+	 */
+	cullFrame(frame: number, width: number, height: number, built: number): number;
 	/**
 	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
 	 * with every pipeline built.
@@ -693,35 +697,28 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 /** Stack size for each engine thread. */
 export const THREAD_STACK_BYTES = 1024 * 1024;
 
-export interface MemoryLimits {
-	initial: number;
-	maximum: number | null;
-	shared: boolean;
-}
-
 export interface CoreFiles {
 	/** The generated JavaScript that binds the core. */
 	glue: URL;
 	/** The compiled core. */
 	wasm: URL;
-	/** The shared memory's page limits; only the threaded build has them. */
-	memory?: URL;
 }
 
 /**
  * Each build's files. Every path is written out in full, so a bundler finds the files, ships them
- * with the app and rewrites the addresses to the shipped copies.
+ * with the app and rewrites the addresses to the shipped copies. `no-inline` keeps Vite from
+ * turning a file into a data: address when a project raises its inline limit: a Content-Security-
+ * Policy that allows only the page's origin blocks the import or the download of one.
  */
 export function coreUrls(build: Build): CoreFiles {
 	return build === 'threaded'
 		? {
-				glue: new URL('../../dist/wasm/threaded/null3d.js', import.meta.url),
-				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url),
-				memory: new URL('../../dist/wasm/threaded/null3d_memory.json', import.meta.url),
+				glue: new URL('../../dist/wasm/threaded/null3d.js?no-inline', import.meta.url),
+				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm?no-inline', import.meta.url),
 			}
 		: {
-				glue: new URL('../../dist/wasm/single/null3d.js', import.meta.url),
-				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url),
+				glue: new URL('../../dist/wasm/single/null3d.js?no-inline', import.meta.url),
+				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm?no-inline', import.meta.url),
 			};
 }
 

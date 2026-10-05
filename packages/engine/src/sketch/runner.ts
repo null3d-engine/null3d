@@ -41,10 +41,16 @@ import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
+import { ShaderPreloads } from '../scene/shader-preloads';
 import { Textures } from '../scene/textures';
 import { type ControlViews, controlLabels, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
-import { type ImageSender, imagesArrived, type ShaderSender } from '../shared/images';
+import {
+	type ImageSender,
+	imagesArrived,
+	type PreloadSender,
+	type ShaderSender,
+} from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -81,6 +87,8 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
+	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
@@ -341,7 +349,11 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
-		const materials = new Materials(this.core, sketch.sendShader);
+		const materials = new Materials(
+			this.core,
+			sketch.sendShader,
+			new ShaderPreloads(sketch.sendPreload),
+		);
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
@@ -356,6 +368,7 @@ export class SketchRunner {
 			this.core,
 			device.effectsSceneColor !== FORMAT_CANVAS,
 			device.occlusionTargets,
+			materials.shaders,
 		);
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
@@ -870,7 +883,9 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
-		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		if (glue.cullFrame(frame, width, height, built) !== 0)
+			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
 			this.core.refresh();
@@ -881,7 +896,6 @@ export class SketchRunner {
 			}
 		}
 		const scale = this.renderScale();
-		const built = Atomics.load(slots, Slot.PipelinesBuilt);
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);
