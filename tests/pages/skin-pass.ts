@@ -13,9 +13,8 @@
 // character does, and tangents of three types, which the pass's tangent build skins. Two cases are
 // not the renderer's own: one dispatch for each part, and a joint texture written whole. They tell
 // a fault of the table from one of the joint texture.
-import type { DeviceShaders } from '@null3d/engine/internal';
-import { loadWgslShaders } from '@null3d/engine/internal';
 import { PERMUTATION_VERTEX_TANGENT } from '../../packages/engine/src/generated/gpu';
+import { loadWgslFeature } from '../../packages/engine/src/generated/shaders';
 import { variantFor } from '../../packages/engine/src/gpu/variants';
 import type { SkinPassCase, SkinPassResult, SkinPassWrong } from '../lib/skin-pass-checks';
 import { progress, run } from './lib/result';
@@ -644,7 +643,9 @@ run('skin-pass', async () => {
 	device.addEventListener('uncapturederror', (event) => {
 		errors.push((event as GPUUncapturedErrorEvent).error.message);
 	});
-	const shaders: DeviceShaders = await loadWgslShaders(0);
+	// The pass's builds load on first use, with the skinning feature's own module.
+	const { skin: skinBuilds } = await loadWgslFeature('skinning', 0);
+	if (!skinBuilds) throw new Error('the skinning module has no skinning pass');
 	// The renderer's layout of the pass (packages/engine/src/gpu/webgpu/pipelines.ts).
 	const compute = GPUShaderStage.COMPUTE;
 	const data: GPUTextureBindingLayout = { sampleType: 'unfilterable-float' };
@@ -660,7 +661,7 @@ run('skin-pass', async () => {
 	});
 	// The pass's two builds, as the renderer picks them: for formats without a tangent, and with one.
 	const build = (bits: number) => {
-		const skin = variantFor(shaders.skin, bits, 'wgsl')?.wgsl;
+		const skin = variantFor(skinBuilds, bits, 'wgsl')?.wgsl;
 		if (!skin) throw new Error(`the shader module has no skinning build of bits ${bits}`);
 		return device.createComputePipeline({
 			layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
