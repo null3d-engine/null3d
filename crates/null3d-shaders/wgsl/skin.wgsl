@@ -20,9 +20,12 @@
 //   the joint texture, or every bit set for a mesh that no joint skins, the first texel of its
 //   object's morph weights in the morph texture, and padding.
 //
-// A skinned vertex has its position, then its normal, as 32-bit floats, then the source's other
-// attributes in their order, with a tangent as 32-bit floats. Each attribute takes whole words, so
-// the skinned vertex is the mesh's vertex format without joints and weights.
+// A skinned vertex has its position as 32-bit floats, then its normal, then the source's other
+// attributes in their order. The normal and a tangent take one word each, as 8-bit normalized
+// integers of their unit directions, with the tangent's handedness in the fourth byte. A pipeline
+// constant turns them into 32-bit floats instead, for the measurements of decision record D-20.
+// Each attribute takes whole words, so the skinned vertex is the mesh's vertex format without
+// joints and weights.
 //
 // Morphing and skinning follow three.js's: each morph target moves the position, the normal and
 // the tangent by its deltas times its weight, before skinning. The joint weights are used as they
@@ -51,6 +54,10 @@ const MORPH_TEXELS_PER_ROW: u32 = 2048u;
 const HEADER: u32 = 4u;
 /// A field of the format that names no attribute.
 const NONE: u32 = 0xffffffffu;
+
+/// True when a skinned vertex holds its normal and tangent in 8 bits a component, false for
+/// 32-bit floats. The pipeline that skins with floats sets it.
+@id(1100) override narrow_directions: bool = true;
 
 @group(0) @binding(0) var<storage, read> table: array<vec4u>;
 @group(0) @binding(1) var<storage, read> source: array<u32>;
@@ -158,6 +165,24 @@ fn store(at: u32, value: vec3f) {
     skinned[at + 2u] = bitcast<u32>(value.z);
 }
 
+/// The unit direction of `v`, or no direction for a zero vector.
+fn unit(v: vec3f) -> vec3f {
+    return v * inverseSqrt(max(dot(v, v), 1e-30));
+}
+
+/// Writes a direction and a fourth value in the skinned format: one word of four 8-bit normalized
+/// integers, or the direction as three floats followed by `w` when `with_w` holds.
+fn store_direction(at: u32, direction: vec3f, w: f32, with_w: bool) {
+    if narrow_directions {
+        skinned[at] = pack4x8snorm(vec4f(unit(direction), w));
+    } else {
+        store(at, direction);
+        if with_w {
+            skinned[at + 3u] = bitcast<u32>(w);
+        }
+    }
+}
+
 @compute @workgroup_size(64)
 fn main(
     @builtin(workgroup_id) id: vec3u,
@@ -218,12 +243,13 @@ fn main(
     let p = vec4f(rest.position, 1.0);
     store(out, vec3f(dot(row_x, p), dot(row_y, p), dot(row_z, p)));
     let n = rest.normal;
-    store(out + 3u, vec3f(dot(row_x.xyz, n), dot(row_y.xyz, n), dot(row_z.xyz, n)));
+    let normal = vec3f(dot(row_x.xyz, n), dot(row_y.xyz, n), dot(row_z.xyz, n));
+    store_direction(out + 3u, normal, 0.0, false);
     if more.x != NONE {
         let t = rest.tangent;
         let at = out + ((more.x >> 16u) & 0xffu);
-        store(at, vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t)));
-        skinned[at + 3u] = bitcast<u32>(component(vertex, more.x, 3u));
+        let turned = vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t));
+        store_direction(at, turned, component(vertex, more.x, 3u), true);
     }
     copy_run(vertex, out, runs.x);
     copy_run(vertex, out, runs.y);

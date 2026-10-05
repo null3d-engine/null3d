@@ -19,10 +19,19 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
-import type { CompressionFamily, DepthMode, Switches } from './switches';
+import type { CompressionFamily, DepthMode, SkinningSwitch, Switches } from './switches';
 
 /** The anti-aliasing mode, as the quality settings name it. */
 export type AntialiasMode = QualitySettings['antialias'];
+
+/** The core's code of each skinning mode that ?skinning= picks. */
+const SKINNING_CODES: Record<SkinningSwitch, number> = {
+	lean: C.SKINNING_LEAN,
+	vertex: C.SKINNING_VERTEX,
+	full: C.SKINNING_FULL,
+	skip: C.SKINNING_SKIP_ONLY,
+	narrow: C.SKINNING_NARROW_ONLY,
+};
 
 /** Each anti-aliasing mode's code in the core. */
 const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
@@ -117,10 +126,10 @@ export interface CoreDevice {
 	 */
 	depthPrepass: boolean;
 	/**
-	 * True when WebGPU skins skinned meshes in the vertex shader of each pass, false when it skins
-	 * each once per frame in a compute pass.
+	 * The core's code of WebGPU's skinning mode: the skinning pass, with or without its savings, or
+	 * the vertex shader of each pass.
 	 */
-	vertexSkinning: boolean;
+	skinning: number;
 	/**
 	 * True when each object's position holds whole cells besides its 32-bit part, so positions keep
 	 * their precision at any distance from the origin.
@@ -173,7 +182,7 @@ export type DeviceOptions = Pick<
 	| 'freshShaders'
 	| 'compression'
 	| 'cells'
-	| 'vertexSkinning'
+	| 'skinning'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -308,7 +317,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		transparent: options.transparent,
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,
-		vertexSkinning: options.vertexSkinning,
+		skinning: SKINNING_CODES[options.skinning],
 		largeWorld: options.largeWorld,
 	};
 	if (tier !== 'webgl2') {

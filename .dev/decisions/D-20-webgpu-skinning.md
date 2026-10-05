@@ -83,3 +83,36 @@ The technique review and the owner's rulings of 4 October 2026 ([D-53](D-53-tech
 ## Addendum, 2026-10-04: skinning loads on first use
 
 [D-56](D-56-first-use-shader-files.md) moves the skinning pass and every SKIN build into the skinning feature's own shader files, which a page downloads with its first skinned mesh. Every pass leaves a page's skinned meshes out until their pipelines are built: the skinning pass's, and every one that draws them. So no pass draws vertices that the skinning pass has not written. So neither way's shaders count at a page's start any longer.
+
+## Addendum, 2026-10-06: the lean skinning pass
+
+M2-C8 builds the lean pass that the first addendum proposes. The decision itself still waits for prototype A1's runs, listed below. No report of A1 existed when this work started, so its runs start from this branch.
+
+### What the pass does now
+
+- It skips each object whose regions already hold its pose. The core gives each animated instance a pose step: the frame step that last changed its skinning matrices (`Animations::pose_step`). The step compares the new matrices with the step before's. A character keeps its step while it stands still or a paused clip holds it. It keeps it too while a slower update rate (M2-C6) leaves it alone. An object skins when its pose step or its morph weights changed since its last skin.
+- The regions keep no pose after a new layout, a new skinned vertex buffer or a new GPU device. They keep none in frames whose skinning pipelines may still build either, since a dispatch of a pipeline that is not built writes nothing. Each of these skins every object that a view draws once more.
+- The joint texture uploads nothing while no pose changed. A new layout uploads it again, which also covers a frame that failed before its list replayed.
+- It writes normals and tangents as 8-bit normalized integers, one word each, as unit directions. A tangent keeps its handedness in the fourth byte, which stores -1 and 1 exactly. The Knight's skinned vertex falls from 28 to 20 bytes. A knight draws 4,957 vertices: the body's six skinned meshes, the helmet, the cape, a sword and a shield. S5's 500 knights so take 49.6 MB of skinned vertices, down from 69.4 MB.
+- A pipeline constant (`@id(1100)`, `narrow_directions`) picks floats instead, so one shader module serves both layouts. The constant is fixed when the pipeline is built, so no driver sees a runtime branch around the writes. That matters on Adreno. On the Galaxy S25 in October 2026, its driver ran a write of the skinning pass behind a runtime check that was false.
+
+### Why 8 bits
+
+- The asset tool already stores optimized meshes' normals in 8 bits, so a skinned normal in 8 bits keeps the precision the mesh had. Its largest error is under half a degree.
+- 16-bit normals would take 24 bytes per Knight vertex, for precision that the source lacks.
+- An octahedral 16-bit normal in one word would be more precise for the same 4 bytes. But no vertex format decodes it, so every vertex shader of every template, custom materials' included, would need a decode step and a second build. 8-bit normals need no shader change: the vertex fetch reads them as fractions.
+
+### Switches for the runs
+
+`?skinning=` picks the way. Without the switch, the pass has both savings. `full` has neither, as main had before this change. `skip` has the pose skip with 32-bit directions, and `narrow` has 8-bit directions without the skip. `vertex` skins in the vertex shaders. The benchmark page kinds `null3d-webgpu-skin-full`, `-skin-skip`, `-skin-narrow` and `-skin-vertex` carry them. S5's knights all walk in every frame. So the pose skip saves nothing there until M2-C6 slows far characters' updates. S5's `?still=<share>` switch makes that share of the knights stand still, so the runs can measure the skip too.
+
+The D-20 timing page now writes what the engine writes for the Knight: positions as floats, 8-bit normals and 16-bit texture coordinates. That is 20 bytes per vertex, or 28 with `?normals=float`. It wrote 24 bytes before, against the engine's 28 to 48 (review new issue 10).
+
+### Runs that decide this record (prototype A1)
+
+- The Mac, Chrome, at a load below 8: `bun run bench:run --scenes s5 --pages null3d-webgpu,null3d-webgpu-skin-full,null3d-webgpu-skin-skip,null3d-webgpu-skin-narrow,null3d-webgpu-skin-vertex --switches "governor=off&preset=high"`, then the same with `still=0.5` added to the switches.
+- The Mac, Safari: `bun tests/real-browsers.ts --plan bench --scenes s5 --pages <the same five> --switches "governor=off&preset=high" Safari`.
+- The iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s5 --pages <the same five> --n <S5's iPad count> --switches governor=off`.
+- BrowserStack's Galaxy S25 (Adreno), Pixel 9 (Mali) and Pixel 11 (PowerVR): the same plan with `--cloud`, as the coordinator's commands give.
+
+The rule stays: keep the compute pass if it saves at least 10% of S5's frame time with two or more cascades, with identical images.

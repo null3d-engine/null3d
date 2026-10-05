@@ -2,7 +2,7 @@
 //! that advances every instance's clips and writes its skinning matrices on the job workers.
 
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::actions::{Action, Advance, EventSink, flag};
 use super::pose::{
@@ -38,6 +38,10 @@ pub const EVENT_WORDS: usize = 4;
 
 /// The skeleton of an instance id that holds no instance: one that was removed.
 const REMOVED: u32 = u32::MAX;
+
+/// The pose step of an instance whose matrices no frame step has written yet. The next step counts
+/// its pose as changed, whatever the matrices it replaces.
+const FRESH: u32 = u32::MAX;
 
 /// The sample slots of every instance: slot `k` of instance `i` sits at `i * MAX_BLEND + k`. Each
 /// frame, every slot with a weight above 0 samples its clip at its time, and the instance's pose
@@ -194,6 +198,14 @@ pub struct Animations {
     matrices: [Box<[f32]>; 2],
     /// The buffer that the last frame step wrote.
     written: usize,
+    /// The frame steps so far, never [`FRESH`].
+    step: u32,
+    /// The last frame step that changed each instance's skinning matrices, or [`FRESH`].
+    pose_steps: Box<[u32]>,
+    /// The last frame step that changed some instance's skinning matrices.
+    changed_step: u32,
+    /// True once the running frame step has changed some instance's matrices.
+    pose_changed: AtomicBool,
     /// The last frame step's events, in order of instance and time.
     events: Box<[[u32; EVENT_WORDS]]>,
     /// The events of the last frame step, then those it could not keep.
@@ -246,6 +258,10 @@ impl Animations {
                 boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
             ],
             written: 0,
+            step: 0,
+            pose_steps: boxed(n, FRESH)?,
+            changed_step: 0,
+            pose_changed: AtomicBool::new(false),
             events: boxed(EVENT_CAPACITY, [0; EVENT_WORDS])?,
             event_totals: boxed(2, 0)?,
             event_count: AtomicU32::new(0),
@@ -493,6 +509,7 @@ impl Animations {
         };
         self.instance_skeletons[instance] = skeleton;
         self.first_joints[instance] = first;
+        self.pose_steps[instance] = FRESH;
         let slots = instance * MAX_BLEND..(instance + 1) * MAX_BLEND;
         self.slots.weight[slots.clone()].fill(0.0);
         self.actions[slots].fill(Action::default());
@@ -601,6 +618,20 @@ impl Animations {
         &self.matrices()[first..first + joints * MATRIX_FLOATS]
     }
 
+    /// The last frame step that changed the skinning matrices of instance `instance`: a number
+    /// that changes whenever its pose does, and stays the same while its pose holds still. Only
+    /// equality between two readings means anything. `None` when no live instance has that id.
+    pub fn pose_step(&self, instance: u32) -> Option<u32> {
+        self.live_skeleton(instance).ok()?;
+        Some(self.pose_steps[instance as usize])
+    }
+
+    /// The last frame step that changed some instance's skinning matrices, a new instance's first
+    /// pose included. While it stays the same, every instance holds its pose.
+    pub fn changed_step(&self) -> u32 {
+        self.changed_step
+    }
+
     /// The events of the last frame step, [`EVENT_WORDS`] words each, in order of instance and,
     /// within an instance, of time. The buffer never moves.
     pub fn events(&self) -> &[[u32; EVENT_WORDS]] {
@@ -635,7 +666,8 @@ impl Animations {
     /// The frame step: advances every played clip by `dt` seconds of the instance's time,
     /// collects the events it passes, then samples, blends and composes every instance's pose
     /// and writes its skinning matrices into the buffer that the step before did not write, in
-    /// parallel on `jobs`. It allocates nothing.
+    /// parallel on `jobs`. An instance whose matrices differ from the step before's, or that no
+    /// step has posed yet, gets this step as its pose step. It allocates nothing.
     ///
     /// # Panics
     /// When `jobs` has more threads than the job system the table was made for.
@@ -648,6 +680,10 @@ impl Animations {
                 "the animation table was made for a job system with fewer threads"
             );
             self.written = 1 - self.written;
+            self.step = self.step.wrapping_add(1) % FRESH;
+            self.pose_changed.store(false, Ordering::Relaxed);
+            let step = self.step;
+            let pose_steps = SharedMut::new(&mut self.pose_steps);
             let out = SharedMut::new(&mut self.matrices[self.written]);
             let times = SharedMut::new(&mut self.slots.time);
             let weights = SharedMut::new(&mut self.slots.weight);
@@ -696,9 +732,21 @@ impl Animations {
                         this.advance(&mut advance, dt * this.time_scales[i]);
                         this.pose_instance(i, skeleton, scratch, &advance);
                         this.compose(skeleton, scratch, matrices);
+                        // The step before wrote the other buffer, which no thread writes now.
+                        let before = &this.matrices[1 - this.written][first..first + len];
+                        // SAFETY: each instance is in one chunk, so no other thread touches its
+                        // pose step.
+                        let pose_step = unsafe { &mut pose_steps.slice(i, 1)[0] };
+                        if *pose_step == FRESH || *matrices != *before {
+                            *pose_step = step;
+                            this.pose_changed.store(true, Ordering::Relaxed);
+                        }
                     }
                 },
             );
+        }
+        if self.pose_changed.load(Ordering::Relaxed) {
+            self.changed_step = self.step;
         }
         let kept = (self.event_count.load(Ordering::Relaxed) as usize).min(EVENT_CAPACITY);
         // In place and without allocation; the keys are unique, so the order is exact.

@@ -163,5 +163,6 @@ The engine reads these switches from the page's address in development builds, o
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
 | `?cells=off` | Cull every object, with no [grid cell](../concepts/culling.md) out of view skipped first, to measure what skipping cells saves |
 | `?skinning=vertex` | On WebGPU, skin skinned meshes in the vertex shader of each pass that draws them, as WebGL2 does, instead of once per frame in a compute pass, to compare the two ([Animation](../api/animation.md#skinned-meshes)). Custom materials then draw skinned meshes in their rest pose |
+| `?skinning=full`, `?skinning=skip`, `?skinning=narrow` | On WebGPU, turn off the compute pass's savings, to measure each one. `full` skins every character that a view draws in every frame, with normals and tangents as 32-bit floats. `skip` keeps only the skip of unchanged poses, and `narrow` keeps only the 8-bit normals and tangents |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision. WebGPU needs the device feature `shader-f16`, and a device without it keeps full precision. `engine.capabilities.halfPrecision` says which one the engine took |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |

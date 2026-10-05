@@ -47,7 +47,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	shaderBits: 0,
 	cellCulling: true,
 	depthPrepass: false,
-	vertexSkinning: false,
+	skinning: C.SKINNING_LEAN,
 	largeWorld: false,
 });
 
@@ -80,7 +80,7 @@ const PLAIN: DeviceOptions = {
 	freshShaders: false,
 	compression: undefined,
 	cells: true,
-	vertexSkinning: false,
+	skinning: 'lean',
 	hdr: true,
 	half: undefined,
 	antialias: 'msaa',

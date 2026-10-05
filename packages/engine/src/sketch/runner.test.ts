@@ -227,7 +227,7 @@ async function start(
 				shaderBits: 0,
 				cellCulling: true,
 				depthPrepass: false,
-				vertexSkinning: false,
+				skinning: C.SKINNING_LEAN,
 				largeWorld: false,
 			},
 			capabilities: CAPABILITIES,

@@ -21,7 +21,7 @@ describe('parseSwitches', () => {
 			cells: true,
 			prepass: undefined,
 			occlusion: undefined,
-			vertexSkinning: false,
+			skinning: 'lean',
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -33,9 +33,11 @@ describe('parseSwitches', () => {
 		});
 	});
 
-	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
-		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
-		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
+	it('picks how WebGPU skins with ?skinning=, and the lean skinning pass otherwise', () => {
+		for (const mode of ['vertex', 'full', 'skip', 'narrow'] as const)
+			expect(parseSwitches(`?skinning=${mode}`).skinning).toBe(mode);
+		expect(parseSwitches('?skinning=compute').skinning).toBe('lean');
+		expect(parseSwitches('').skinning).toBe('lean');
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {

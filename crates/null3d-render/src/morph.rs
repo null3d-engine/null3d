@@ -329,6 +329,8 @@ pub(crate) struct MorphedObject {
     block: u32,
     /// Its first texel in the texture of weights.
     offset: u32,
+    /// True when the last upload gave it other weights than the upload before.
+    changed: bool,
 }
 
 /// The morph textures (see the module documentation) and the morphed objects whose weights they
@@ -346,6 +348,9 @@ pub(crate) struct MorphTexture {
     objects: Vec<MorphedObject>,
     /// The weight texels that the objects take.
     weight_texels: u32,
+    /// The weights of the last upload, four per texel, which the next upload compares its own
+    /// with.
+    last_weights: Vec<f32>,
     /// The most weights that each object keeps, or `u32::MAX` for all.
     cap: u32,
 }
@@ -361,6 +366,7 @@ impl MorphTexture {
             uploaded: 0,
             objects: Vec::new(),
             weight_texels: 0,
+            last_weights: Vec::new(),
             cap: u32::MAX,
         }
     }
@@ -406,8 +412,22 @@ impl MorphTexture {
                 slot: slot as u32,
                 block: scene.morphs()[slot] - 1,
                 offset: self.weight_texels,
+                changed: true,
             });
             self.weight_texels += block.count.div_ceil(4);
+        }
+        // No weight equals NaN, so each object's first upload counts as a change.
+        self.last_weights.clear();
+        self.last_weights
+            .resize(self.weight_texels as usize * 4, f32::NAN);
+    }
+
+    /// True when the object in scene slot `slot` is morphed and the last upload changed its
+    /// weights, or none uploaded them yet.
+    pub(crate) fn changed(&self, slot: u32) -> bool {
+        match self.objects.binary_search_by_key(&slot, |o| o.slot) {
+            Ok(k) => self.objects[k].changed,
+            Err(_) => false,
         }
     }
 
@@ -468,7 +488,7 @@ impl MorphTexture {
     }
 
     /// Uploads the deltas that the texture of deltas lacks, and every object's weights for the
-    /// frame, at most `cap` of each.
+    /// frame, at most `cap` of each. Marks each object whose weights differ from the last upload's.
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
@@ -495,7 +515,7 @@ impl MorphTexture {
         let bytes = (self.weight_texels * WEIGHT_BYTES) as usize;
         let (at, bytes) = arena.push_zeroed(bytes)?;
         let mut weights = [0.0f32; MAX_TARGETS as usize];
-        for object in &self.objects {
+        for object in &mut self.objects {
             let Some(block) = morphs.block(object.block) else {
                 continue;
             };
@@ -504,6 +524,9 @@ impl MorphTexture {
             cap_weights(&mut weights[..count], self.cap as usize);
             let out = &mut bytes[(object.offset * WEIGHT_BYTES) as usize..][..count * 4];
             out.copy_from_slice(floats_as_bytes(&weights[..count]));
+            let last = &mut self.last_weights[object.offset as usize * 4..][..count];
+            object.changed = *last != weights[..count];
+            last.copy_from_slice(&weights[..count]);
         }
         let texels = (0, self.weight_texels);
         write_texels(list, self.weights, texels, WEIGHT_BYTES, at)

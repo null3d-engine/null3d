@@ -8,7 +8,9 @@
 //!
 //! When the scene's structure changes, each skinned or morphed scene object (see
 //! [`crate::skinning`] and [`crate::morph`]) gets a region of a skinned vertex buffer for each part
-//! of its mesh, as large as the part's vertices in the mesh's skinned format. The regions stay
+//! of its mesh, as large as the part's vertices in the mesh's skinned format. That format holds
+//! positions as 32-bit floats, and normals and tangents as 8-bit normalized integers, one word
+//! each: a vertex of the crowd scene's Knight takes 20 bytes, where 32-bit directions took 28. The regions stay
 //! until the structure changes again, so the views' bundles draw from them without being recorded
 //! again. A skinned object draws from a bucket of its own, as every object with bounds of its own
 //! does, and its bucket's draws read its regions in place of its mesh page's vertices, with the
@@ -26,6 +28,12 @@
 //! The CPU tests each skinned object's world sphere against each view that draws in the frame: the
 //! camera views, and for objects that cast shadows, the cascades and tiles that draw. An object that
 //! no view draws is not skinned, and keeps the vertices of an earlier frame, which no view draws.
+//! An object whose regions already hold its pose is not skinned either: its animated instance's
+//! pose step (see `Animations::pose_step`) and its morph weights held still since its last skin.
+//! A character that stands still, or that a slower update rate leaves in its pose, so costs the
+//! GPU nothing. The regions hold no pose to keep after a new layout, a new skinned vertex buffer
+//! or a new GPU device, and in frames whose skinning pipelines may not be built yet, so those
+//! skin every object that a view draws.
 //! The pass's table lists, for each segment, the page's vertex format and the parts of the objects
 //! that some view draws, with their regions and their first joints. Each segment that has parts to
 //! skin gets one dispatch, with one thread per vertex. A dispatch reaches at most 65,535 workgroups
@@ -37,14 +45,15 @@
 //!
 //! # Skinning in the vertex shader
 //!
-//! With [`super::RendererConfig::vertex_skinning`], the builder skins in the vertex shader of each
-//! pass instead, as WebGL2 does: skinned objects draw their mesh's vertices with the SKIN builds,
+//! With [`SkinningMode::vertex_shader`], the builder skins in the vertex shader of each pass
+//! instead, as WebGL2 does: skinned objects draw their mesh's vertices with the SKIN builds,
 //! which read the joint texture through a bind group of their own. Each skinned object's bucket
 //! names the first joint of its skin, which the culling pass copies into each instance it draws.
 //! Custom materials and the debug views have no SKIN builds, so they draw skinned meshes at rest
 //! in this mode. Morphed objects, skinned or not, still go through the skinning pass, as WebGPU
 //! has no MORPH builds. The mode is there to measure against the skinning pass, as decision record
-//! D-20 asks.
+//! D-20 asks. The other modes turn the pass's two savings off one at a time, for the same
+//! measurement.
 
 use null3d_core::animation::Animations;
 use null3d_core::morph::MorphWeights;
@@ -63,7 +72,7 @@ use crate::meshes::MeshStorage;
 use crate::morph::{MORPH_LOCATION, MorphTexture, morph_of};
 use crate::pipelines::{DrawKey, PipelineCache};
 use crate::skinning::{
-    JointTexture, SkinnedGate, skin_of, skinned_format, skinned_in_vertex_shader,
+    JointTexture, SkinnedGate, SkinningMode, skin_of, skinned_format, skinned_in_vertex_shader,
 };
 use crate::sorted::SkinnedPipeline;
 use crate::view::ViewFrame;
@@ -113,6 +122,8 @@ pub(super) struct SkinnedObject {
     slot: u32,
     /// Its animated instance's first joint in the joint texture, or [`NOT_SKINNED`].
     pub(super) joint_base: u32,
+    /// The animated instance that skins it, or `None` for a mesh that only morph targets move.
+    instance: Option<u32>,
     /// True when the skinning pass skins and morphs it, false when the vertex shaders skin it.
     computed: bool,
     /// Its parts: `parts` of the pass's parts from `first_part` on.
@@ -160,8 +171,8 @@ struct Segment {
 /// The skinning pass's layout and GPU objects.
 #[derive(Debug)]
 pub(super) struct Skinning {
-    /// True to skin in the vertex shader of each pass, false to skin in the skinning pass.
-    vertex_shader: bool,
+    /// Where to skin, and the skinning pass's savings.
+    mode: SkinningMode,
     objects: Vec<SkinnedObject>,
     parts: Vec<SkinnedPart>,
     /// The mesh pages that hold skinned parts, in the order the objects first name them, with
@@ -188,21 +199,27 @@ pub(super) struct Skinning {
     computed: u32,
     /// Whether some view draws each object in the frame being recorded.
     seen: Vec<bool>,
+    /// The pose step that each object's regions hold, or `None` when they hold no pose to keep.
+    held: Vec<Option<u32>>,
+    /// The newest frame that the thread that draws drew with every pipeline built.
+    pipelines_built: u32,
+    /// The vertices that the frame being recorded skins.
+    skinned_vertices: u32,
     /// The frame's table, as it uploads.
     table: Vec<u32>,
 }
 
 impl Default for Skinning {
     fn default() -> Self {
-        Self::new(false)
+        Self::new(SkinningMode::default())
     }
 }
 
 impl Skinning {
-    /// Skinning in the skinning pass, or with `vertex_shader`, in the vertex shader of each pass.
-    pub(super) fn new(vertex_shader: bool) -> Self {
+    /// Skinning as `mode` says.
+    pub(super) fn new(mode: SkinningMode) -> Self {
         Self {
-            vertex_shader,
+            mode,
             objects: Vec::new(),
             parts: Vec::new(),
             pages: Vec::new(),
@@ -219,6 +236,9 @@ impl Skinning {
             morph: MorphTexture::new(ids::MORPHS, ids::MORPH_WEIGHTS),
             computed: 0,
             seen: Vec::new(),
+            held: Vec::new(),
+            pipelines_built: 0,
+            skinned_vertices: 0,
             table: Vec::new(),
         }
     }
@@ -295,10 +315,11 @@ fn copied_run(format: u32, skinned: u32, locations: &[usize]) -> u32 {
     (start(format, first) / 4) | ((start(skinned, first) / 4) << 8) | (words << 16)
 }
 
-/// The table entries of a source vertex format: the strides, where each attribute sits, and the
-/// runs that the pass copies (see `skin.wgsl`).
-fn format_entries(format: u32) -> [[u32; 4]; 3] {
-    let skinned = skinned_format(format);
+/// The table entries of a source vertex format whose skinned format has 8-bit directions where
+/// `narrow`: the strides, where each attribute sits, and the runs that the pass copies (see
+/// `skin.wgsl`).
+fn format_entries(format: u32, narrow: bool) -> [[u32; 4]; 3] {
+    let skinned = skinned_format(format, narrow);
     let tangent = match vertex::offset(skinned, TANGENT) {
         Some(out) => field(format, TANGENT) | ((out / 4) << 16),
         None => NONE,
@@ -357,6 +378,7 @@ impl Skinning {
         waiting: impl Iterator<Item = u32>,
         pipelines_built: u32,
     ) -> bool {
+        self.pipelines_built = pipelines_built;
         let skinned = self.active();
         let pass_built =
             !self.dispatches() || (self.pipeline_made && self.pipeline_frame <= pipelines_built);
@@ -386,7 +408,7 @@ impl Skinning {
     pub(super) fn skinned_key(&self, object: &SkinnedObject, key: DrawKey) -> DrawKey {
         if object.computed {
             return DrawKey {
-                vertex_format: skinned_format(key.vertex_format),
+                vertex_format: skinned_format(key.vertex_format, self.mode.narrow_directions),
                 ..key
             };
         }
@@ -441,6 +463,7 @@ impl Skinning {
         buffer_bytes: u32,
     ) -> Result<(), RecordError> {
         self.morph.rebuild(scene, morphs, meshes);
+        self.joints.upload_again();
         let laid_out = self
             .gather(scene, animations, morphs, meshes)
             .and_then(|()| self.place(buffer_bytes));
@@ -459,6 +482,8 @@ impl Skinning {
         self.table_entries = entries;
         self.seen.clear();
         self.seen.resize(self.objects.len(), false);
+        self.held.clear();
+        self.held.resize(self.objects.len(), None);
         // A segment's bind group binds its part of the table and its buffer, which a new layout
         // can move.
         self.groups_stale = true;
@@ -492,7 +517,7 @@ impl Skinning {
             let Some(mesh) = meshes.mesh(scene.meshes()[slot] - 1) else {
                 continue;
             };
-            let computed = morphed || !self.vertex_shader;
+            let computed = morphed || !self.mode.vertex_shader;
             self.computed += u32::from(computed);
             let first_part = self.parts.len() as u32;
             let parts = if computed { meshes.parts(mesh) } else { &[] };
@@ -515,6 +540,7 @@ impl Skinning {
             self.objects.push(SkinnedObject {
                 slot: slot as u32,
                 joint_base: skin.unwrap_or(NOT_SKINNED),
+                instance: skin.map(|_| scene.skins()[slot] - 1),
                 computed,
                 first_part,
                 parts: self.parts.len() as u32 - first_part,
@@ -533,8 +559,9 @@ impl Skinning {
             megabytes: ((u64::from(MAX_SKINNED_BUFFERS) * u64::from(buffer_bytes)) >> 20) as u32,
         };
         let mut buffer = 0;
+        let narrow = self.mode.narrow_directions;
         for &(page, format) in &self.pages {
-            let stride = vertex::stride(skinned_format(format));
+            let stride = vertex::stride(skinned_format(format, narrow));
             for part in self.parts.iter_mut().filter(|part| part.page == page) {
                 let bytes = part.vertices * stride;
                 let used = self.skinned_bytes[buffer];
@@ -552,7 +579,7 @@ impl Skinning {
                     self.segments.push(Segment {
                         page,
                         buffer: buffer as u32,
-                        format: format_entries(format),
+                        format: format_entries(format, narrow),
                         first_entry: 0,
                         capacity: 0,
                         parts: 0,
@@ -609,7 +636,7 @@ impl Skinning {
         let made_morph = self.morph.size(list, storage, self.dispatches())?;
         self.groups_stale |= made_joints || made_morph || pages_remade;
         let mut remade = false;
-        if made_joints && self.vertex_shader {
+        if made_joints && self.mode.vertex_shader {
             // The SKIN builds read the joint texture through a bind group of its own.
             let id = self.joints.id();
             let entry = [0, resource_kind::TEXTURE, id, 0, 0];
@@ -632,6 +659,10 @@ impl Skinning {
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 remade = true;
             }
+        }
+        if remade {
+            // A new skinned vertex buffer holds no object's vertices yet.
+            self.held.fill(None);
         }
         let table_bytes = self.table_entries * ENTRY_WORDS * 4;
         if self.table_made < table_bytes {
@@ -715,7 +746,8 @@ impl Skinning {
     }
 
     /// Uploads the frame's joint matrices, its morph weights, and the parts to skin and morph of
-    /// each segment: those of the objects that some view draws, with their workgroups.
+    /// each segment: those of the objects that some view draws, with their workgroups, apart from
+    /// objects whose regions hold their pose already (see the module documentation).
     pub(super) fn upload(
         &mut self,
         list: &mut DrawList,
@@ -739,10 +771,24 @@ impl Skinning {
             segment.parts = 0;
             segment.groups = 0;
         }
-        for (object, &seen) in self.objects.iter().zip(&self.seen) {
+        // The regions keep a pose only once the pipelines that write them are surely built: a
+        // dispatch whose pipeline is still building writes nothing.
+        let built = self.pipeline_frame <= self.pipelines_built || self.pipelines_built == 0;
+        let keeps = self.mode.skip_held_poses && self.gate.drawn() && built;
+        self.skinned_vertices = 0;
+        for ((object, &seen), held) in self.objects.iter().zip(&self.seen).zip(&mut self.held) {
             if !seen {
                 continue;
             }
+            let pose = match object.instance {
+                Some(instance) => animations.and_then(|a| a.pose_step(instance)),
+                None => Some(0),
+            };
+            let still = pose.is_some() && *held == pose && !self.morph.changed(object.slot);
+            if keeps && still {
+                continue;
+            }
+            *held = if keeps { pose } else { None };
             let first = object.first_part as usize;
             for part in &self.parts[first..first + object.parts as usize] {
                 let Some(segment) = self.segments.get_mut(part.segment as usize) else {
@@ -763,6 +809,7 @@ impl Skinning {
                 ]);
                 segment.parts += 1;
                 segment.groups += groups;
+                self.skinned_vertices += part.vertices;
             }
         }
         for segment in &self.segments {
@@ -785,6 +832,19 @@ impl Skinning {
             )?;
         }
         Ok(())
+    }
+
+    /// The vertices that the frame recorded last skins and morphs in the skinning pass.
+    pub(super) fn skinned_vertices(&self) -> u32 {
+        self.skinned_vertices
+    }
+
+    /// Bytes of skinned vertices that the layout's regions take, in every skinned vertex buffer.
+    pub(super) fn skinned_bytes(&self) -> u64 {
+        self.skinned_bytes
+            .iter()
+            .map(|&bytes| u64::from(bytes))
+            .sum()
     }
 
     /// Records the frame's dispatches, one per segment with parts to skin, inside the compute
@@ -811,6 +871,7 @@ impl Skinning {
         self.table_made = 0;
         self.groups_stale = true;
         self.pipeline_made = false;
+        self.held.fill(None);
         self.gate.forget_gpu();
         self.joints.forget_gpu();
         self.morph.forget_gpu();
@@ -870,7 +931,7 @@ mod tests {
         // Source: position 0 (8 bytes), normal 8, uv 20, tangent 28, color 44, joints 48,
         // weights 56, 60 bytes in all. Skinned: position 0, normal 12, uv 24, tangent 32, color
         // 48, 52 bytes in all.
-        let [strides, more, runs] = format_entries(format);
+        let [strides, more, runs] = format_entries(format, false);
         assert_eq!(strides, [15, 13, (Type::Sint16 as u32) << 8, 2]);
         let tangent = 7 | (8 << 16);
         let joints = 12 | (Type::Uint16 as u32) << 8;
@@ -881,7 +942,7 @@ mod tests {
             [5 | (6 << 8) | (2 << 16), 11 | (12 << 8) | (1 << 16), 0, 0]
         );
         // Floats with no tangent, coordinates or color: nothing to copy.
-        let plain = format_entries(vertex::JOINTS | vertex::WEIGHTS);
+        let plain = format_entries(vertex::JOINTS | vertex::WEIGHTS, false);
         assert_eq!(plain[1][0], NONE);
         assert_eq!(plain[2], [0; 4]);
     }

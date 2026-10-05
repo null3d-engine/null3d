@@ -4,7 +4,8 @@
 // benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
 // shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
 // without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for occlusion
-// culling, and ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU. ?hold
+// culling, and ?skinning= for how WebGPU skins: vertex for the vertex shader of each pass, or full,
+// skip or narrow for the skinning pass with fewer of its savings. ?hold
 // starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
 // running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
 
@@ -47,6 +48,15 @@ export type SketchThread = 'worker' | 'main';
  * @category api/engine
  */
 export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
+
+/**
+ * How WebGPU skins, which ?skinning= picks to measure the ways against each other: `lean`, the
+ * default, skins in the skinning pass, which skips characters whose pose held still and writes
+ * normals and tangents in 8 bits. `full` skins every drawn character every frame with 32-bit
+ * directions, `skip` only skips held poses, and `narrow` only writes 8-bit directions. `vertex`
+ * skins in the vertex shader of each pass that draws a character, as WebGL2 does.
+ */
+export type SkinningSwitch = 'lean' | 'vertex' | 'full' | 'skip' | 'narrow';
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
@@ -123,12 +133,8 @@ export interface Switches {
 	 * occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
-	/**
-	 * True when ?skinning=vertex makes WebGPU skin skinned meshes in the vertex shader of each pass
-	 * that draws them, as WebGL2 does, instead of once per frame in a compute pass, to measure the
-	 * two against each other.
-	 */
-	vertexSkinning: boolean;
+	/** How ?skinning= makes WebGPU skin, `lean` without the switch. */
+	skinning: SkinningSwitch;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -239,7 +245,8 @@ export function parseSwitches(search: string): Switches {
 		cells: params.get('cells') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
-		vertexSkinning: params.get('skinning') === 'vertex',
+		skinning:
+			oneOf(params.get('skinning'), ['vertex', 'full', 'skip', 'narrow'] as const) ?? 'lean',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

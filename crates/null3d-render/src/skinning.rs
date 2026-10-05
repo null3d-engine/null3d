@@ -77,6 +77,8 @@ const ROW_BYTES: u32 = JOINTS_PER_ROW * MATRIX_FLOATS as u32 * 4;
 
 /// The vertex location of a skinned mesh's joints.
 const JOINTS_LOCATION: usize = 6;
+/// The vertex location of tangents.
+const TANGENT_LOCATION: usize = 4;
 /// The vertex location of a skinned mesh's weights.
 const WEIGHTS_LOCATION: usize = 7;
 
@@ -108,22 +110,107 @@ pub fn skin_of(
         .filter(|&(_, joints)| mesh.joints <= joints)
 }
 
+/// How the WebGPU frame builder skins skinned meshes, which decision record D-20 measures: in the
+/// skinning pass, with each of its two savings on or off, or in the vertex shader of each pass
+/// that draws them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SkinningMode {
+    /// True to skin in the vertex shader of each pass, as WebGL2 does.
+    pub vertex_shader: bool,
+    /// True for a skinning pass that skips objects whose pose and morph weights held still since
+    /// their last skin.
+    pub skip_held_poses: bool,
+    /// True for a skinning pass that writes normals and tangents as 8-bit integers, false for
+    /// 32-bit floats.
+    pub narrow_directions: bool,
+}
+
+impl SkinningMode {
+    /// The skinning pass with both savings: the default.
+    pub const LEAN: Self = Self {
+        vertex_shader: false,
+        skip_held_poses: true,
+        narrow_directions: true,
+    };
+    /// Skinning in the vertex shader of each pass.
+    pub const VERTEX: Self = Self {
+        vertex_shader: true,
+        ..Self::LEAN
+    };
+    /// The skinning pass with neither saving: every object that a view draws, every frame, with
+    /// 32-bit directions.
+    pub const FULL: Self = Self {
+        vertex_shader: false,
+        skip_held_poses: false,
+        narrow_directions: false,
+    };
+    /// The skinning pass that skips held poses, with 32-bit directions.
+    pub const SKIP_ONLY: Self = Self {
+        skip_held_poses: true,
+        ..Self::FULL
+    };
+    /// The skinning pass with 8-bit directions that skins every object a view draws.
+    pub const NARROW_ONLY: Self = Self {
+        narrow_directions: true,
+        ..Self::FULL
+    };
+    /// Every mode, by its code.
+    const BY_CODE: [Self; 5] = [
+        Self::LEAN,
+        Self::VERTEX,
+        Self::FULL,
+        Self::SKIP_ONLY,
+        Self::NARROW_ONLY,
+    ];
+
+    /// The mode's code, which TypeScript passes when the engine starts.
+    pub fn code(self) -> u32 {
+        Self::BY_CODE
+            .iter()
+            .position(|&mode| mode == self)
+            .unwrap_or(0) as u32
+    }
+
+    /// The mode with code `code`, or `None` for an unknown code.
+    pub fn from_code(code: u32) -> Option<Self> {
+        Self::BY_CODE.get(code as usize).copied()
+    }
+}
+
+impl Default for SkinningMode {
+    fn default() -> Self {
+        Self::LEAN
+    }
+}
+
 /// The vertex format of a skinned or morphed mesh's vertices once a compute pass has skinned and
 /// morphed them: the mesh's format without its joints, weights and morph attribute, with
-/// positions, normals and tangents as 32-bit floats. The other attributes keep their types, as the
-/// pass copies them unchanged.
-pub fn skinned_format(format: u32) -> u32 {
+/// positions as 32-bit floats, and normals and tangents as 8-bit normalized integers where
+/// `narrow`, as 32-bit floats otherwise. The other attributes keep their types, as the pass copies
+/// them unchanged.
+pub fn skinned_format(format: u32, narrow: bool) -> u32 {
     let mut types = 0;
     for location in [
         vertex::POSITION,
         vertex::NORMAL,
-        4,
+        TANGENT_LOCATION,
         JOINTS_LOCATION,
         WEIGHTS_LOCATION,
     ] {
         types |= vertex::ATTRIBUTES[location].mask();
     }
-    format & !(vertex::JOINTS | vertex::WEIGHTS | vertex::MORPH | types)
+    let plain = format & !(vertex::JOINTS | vertex::WEIGHTS | vertex::MORPH | types);
+    if !narrow {
+        return plain;
+    }
+    let directions = if format & vertex::TANGENT != 0 {
+        &[vertex::NORMAL, TANGENT_LOCATION][..]
+    } else {
+        &[vertex::NORMAL][..]
+    };
+    directions.iter().fold(plain, |f, &location| {
+        vertex::with(f, location, vertex::Type::Snorm8).unwrap_or(f)
+    })
 }
 
 /// The pipeline that skins an object in its vertex shader, as WebGL2 draws skinned objects
@@ -290,11 +377,18 @@ pub(crate) struct JointTexture {
     id: u32,
     /// Its rows, 0 before it exists.
     rows: u32,
+    /// The animation table's changed step (`Animations::changed_step`) whose matrices the
+    /// texture holds, or `None` before an upload to the texture as it is.
+    uploaded: Option<u32>,
 }
 
 impl JointTexture {
     pub(crate) fn new(id: u32) -> Self {
-        Self { id, rows: 0 }
+        Self {
+            id,
+            rows: 0,
+            uploaded: None,
+        }
     }
 
     /// The texture's id.
@@ -321,6 +415,7 @@ impl JointTexture {
             return Ok(false);
         }
         self.rows = rows;
+        self.uploaded = None;
         list.push(
             Op::CreateTexture,
             &[
@@ -340,12 +435,18 @@ impl JointTexture {
 
     /// Uploads the joints in use, from the matrix buffer of the animation table's last step,
     /// which no later step writes while the frame's draw list waits to replay: one write of the
-    /// rows they fill, and one of the part of a row that holds the rest.
+    /// rows they fill, and one of the part of a row that holds the rest. Uploads nothing while
+    /// every instance holds the pose that the texture has.
     pub(crate) fn upload(
-        &self,
+        &mut self,
         list: &mut DrawList,
         animations: &Animations,
     ) -> Result<(), RecordError> {
+        let step = animations.changed_step();
+        if self.uploaded == Some(step) {
+            return Ok(());
+        }
+        self.uploaded = Some(step);
         let joints = animations.joints().min(self.rows * JOINTS_PER_ROW);
         let matrices = animations.matrices();
         let (full, rest) = (joints / JOINTS_PER_ROW, joints % JOINTS_PER_ROW);
@@ -377,9 +478,16 @@ impl JointTexture {
         Ok(())
     }
 
+    /// Makes the next upload write the matrices again, whether or not a pose changed: after a new
+    /// layout, which also follows a frame that failed before its list replayed.
+    pub(crate) fn upload_again(&mut self) {
+        self.uploaded = None;
+    }
+
     /// Forgets the texture, after the thread that draws replaced the GPU.
     pub(crate) fn forget_gpu(&mut self) {
         self.rows = 0;
+        self.uploaded = None;
     }
 }
 
@@ -546,11 +654,61 @@ mod tests {
         .and_then(|f| vertex::with(f, 2, vertex::Type::Unorm16))
         .and_then(|f| vertex::with(f, JOINTS_LOCATION, vertex::Type::Uint16))
         .unwrap();
-        let skinned = skinned_format(quantized);
+        let skinned = skinned_format(quantized, false);
         assert_eq!(skinned & vertex::ALL, vertex::UV0);
         assert_eq!(vertex::type_of(skinned, 0), Some(vertex::Type::F32));
+        assert_eq!(vertex::type_of(skinned, 1), Some(vertex::Type::F32));
         assert_eq!(vertex::type_of(skinned, 2), Some(vertex::Type::Unorm16));
         assert!(has_joints(quantized) && !has_joints(skinned));
+    }
+
+    #[test]
+    fn the_narrow_skinned_format_keeps_normals_and_tangents_in_one_word_each() {
+        // A character as the asset tool writes it: 16-bit positions, 8-bit normals and 16-bit
+        // texture coordinates, as the Knight of the crowd scene has.
+        let knight = [
+            (vertex::POSITION, vertex::Type::Sint16),
+            (vertex::NORMAL, vertex::Type::Snorm8),
+            (2, vertex::Type::Unorm16),
+            (JOINTS_LOCATION, vertex::Type::Uint8),
+            (WEIGHTS_LOCATION, vertex::Type::Unorm8),
+        ]
+        .into_iter()
+        .try_fold(
+            vertex::UV0 | vertex::JOINTS | vertex::WEIGHTS,
+            |f, (l, ty)| vertex::with(f, l, ty),
+        )
+        .unwrap();
+        assert_eq!(vertex::stride(skinned_format(knight, false)), 28);
+        assert_eq!(vertex::stride(skinned_format(knight, true)), 20);
+
+        let tangents = skinned_format(knight | vertex::TANGENT, true);
+        assert_eq!(vertex::stride(tangents), 24);
+        for location in [vertex::NORMAL, TANGENT_LOCATION] {
+            assert_eq!(
+                vertex::type_of(tangents, location),
+                Some(vertex::Type::Snorm8)
+            );
+        }
+        assert_eq!(vertex::type_of(tangents, 0), Some(vertex::Type::F32));
+        let plain = skinned_format(knight, true);
+        assert_eq!(
+            plain & vertex::TANGENT,
+            0,
+            "no tangent where the mesh has none"
+        );
+        assert!(vertex::valid(plain) && vertex::valid(tangents));
+    }
+
+    #[test]
+    fn skinning_modes_cross_from_typescript_by_code() {
+        for code in 0..5 {
+            let mode = SkinningMode::from_code(code).unwrap();
+            assert_eq!(mode.code(), code);
+        }
+        assert_eq!(SkinningMode::from_code(0), Some(SkinningMode::LEAN));
+        assert_eq!(SkinningMode::from_code(5), None);
+        assert_eq!(SkinningMode::default(), SkinningMode::LEAN);
     }
 
     #[test]
