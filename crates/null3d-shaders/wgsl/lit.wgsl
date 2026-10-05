@@ -57,7 +57,7 @@ enable draw_index;
 #ifdef MORPH
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
@@ -500,6 +500,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
+    // The frame's lights are exposed already. The surface's own light and its baked light take the
+    // exposure here.
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
     let reflected = light_surface(
         pbr,
@@ -507,17 +509,17 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         normal,
         input.viewDirection,
         dfg,
-        s.irradiance,
+        s.irradiance * engine_frame.output.exposure,
         s.occlusion * screen_occlusion(pixel.xyz, blended),
     );
-    let outgoing = reflected + s.emissive;
+    let outgoing = reflected + s.emissive * engine_frame.output.exposure;
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
 #ifdef ALPHA_MASK
     if s.alpha < material_row.emissive.w {
         discard;
     }
 #endif
-    let finished = finish(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
+    let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
     return fragment_color(material_row, finished.rgb, s.alpha);
 }
 

@@ -1,6 +1,6 @@
 //! The final pass: one triangle over the canvas, which reads the scene color and writes the canvas
-//! (see [`crate::output`]). On the HDR path it applies the exposure and the tone mapping, encodes
-//! sRGB and dithers. In the FXAA mode it smooths edges first. On the 8-bit path the scene shaders
+//! (see [`crate::output`]). On the HDR path it applies the tone mapping, encodes sRGB and dithers.
+//! The scene color holds exposed color already, so the pass's exposure is 1. In the FXAA mode it smooths edges first. On the 8-bit path the scene shaders
 //! did the output transform, and the pass runs when the scene has one sample per pixel or the
 //! render scale can drop: it copies the scene color, or runs FXAA on it. Below the whole canvas's
 //! render scale, it scales the scene's corner of the scene color up to the canvas instead. With
@@ -20,7 +20,7 @@ use crate::bloom::{BloomIds, FINAL_OFFSET, LEVELS};
 use crate::frame::{RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::outline::Outline;
-use crate::output::{Antialias, Output, OutputUniform, SceneColor};
+use crate::output::{Antialias, Output, OutputUniform, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
 /// Bytes of the final pass's settings: the output settings, then the vignette's vector, the color
@@ -195,10 +195,10 @@ impl FinalPass {
         }
     }
 
-    /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for `output`,
-    /// the scene's size in pixels, `render_size`, `grading` and `outline` when they changed, and
-    /// binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom build, the
-    /// color grading table and the outline mask, when they are new. The frame's list made
+    /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for
+    /// `tone_mapping`, the scene's size in pixels, `render_size`, `grading` and `outline` when they
+    /// changed, and binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom
+    /// build, the color grading table and the outline mask, when they are new. The frame's list made
     /// the plan's textures again when `textures_made`, which leaves an older bind group reading a
     /// texture that is gone.
     #[allow(clippy::too_many_arguments)]
@@ -206,7 +206,7 @@ impl FinalPass {
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
-        output: Output,
+        tone_mapping: ToneMapping,
         render_size: (u32, u32),
         scene_color: u32,
         bloom: Option<BloomInputs>,
@@ -219,6 +219,10 @@ impl FinalPass {
             Self::create_objects(list, ids)?;
             self.created = true;
         }
+        let output = Output {
+            tone_mapping,
+            exposure: 1.0,
+        };
         let mut settings = FinalUniform {
             output: OutputUniform {
                 flags: self.flags,
@@ -404,7 +408,7 @@ mod tests {
         pass.prepare(
             &mut list,
             &mut arena,
-            Output::default(),
+            ToneMapping::default(),
             (64, 64),
             5,
             None,
@@ -438,7 +442,7 @@ mod tests {
                 let (key, settings, _) = prepared(scene, antialias, Grading::default());
                 assert_eq!(key.permutation, bits, "{antialias:?}");
                 assert_eq!(settings.output.flags, flags, "{scene}");
-                assert_eq!(settings.output.exposure, Output::default().exposure);
+                assert_eq!(settings.output.exposure, 1.0);
             }
         }
     }

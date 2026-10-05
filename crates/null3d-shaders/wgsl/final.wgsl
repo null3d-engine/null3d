@@ -1,5 +1,5 @@
 // The final pass: one triangle over the whole canvas. Each pixel reads the scene color under it,
-// applies the exposure and the tone mapping, encodes sRGB and dithers. The FXAA build smooths
+// which holds exposed color, applies the tone mapping, encodes sRGB and dithers. The FXAA build smooths
 // edges first. On the 8-bit path the scene shaders did the output transform already, so the scene
 // color holds display color, and the pass keeps the color as it reads it.
 //
@@ -195,7 +195,7 @@ fn squeeze(texel: vec4f) -> vec4f {
     if display_color() {
         return texel;
     }
-    return vec4f(texel.rgb / (1.0 + settings.output.exposure * dot(texel.rgb, LUMINANCE)), texel.a);
+    return vec4f(texel.rgb / (1.0 + dot(texel.rgb, LUMINANCE)), texel.a);
 }
 
 /// Undoes `squeeze`.
@@ -203,7 +203,7 @@ fn unsqueeze(c: vec4f) -> vec4f {
     if display_color() {
         return c;
     }
-    let squeezed = min(settings.output.exposure * dot(c.rgb, LUMINANCE), 0.999);
+    let squeezed = min(dot(c.rgb, LUMINANCE), 0.999);
     return vec4f(c.rgb / (1.0 - squeezed), c.a);
 }
 
@@ -222,11 +222,11 @@ fn tap(point: vec2f, last: vec2i) -> vec4f {
     return mix(top, bottom, f.y);
 }
 
-/// The brightness that FXAA compares, from 0 to 1 as the eye sees it. Squeezed HDR color takes
-/// the exposure and a square root, near the sRGB curve.
+/// The brightness that FXAA compares, from 0 to 1 as the eye sees it. Squeezed HDR color takes a
+/// square root, near the sRGB curve.
 fn luma(c: vec4f) -> f32 {
     let y = dot(c.rgb, LUMINANCE);
-    return select(sqrt(settings.output.exposure * y), y, display_color());
+    return select(sqrt(y), y, display_color());
 }
 
 /// The scene color of the pixel at `position`, smoothed along the edge that crosses it.

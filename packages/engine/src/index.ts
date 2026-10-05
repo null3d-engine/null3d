@@ -155,6 +155,7 @@ export type {
 } from './scene/resources';
 export type {
 	AmbientLight,
+	AmbientLightOptions,
 	Camera,
 	CameraOptions,
 	DirectionalLight,

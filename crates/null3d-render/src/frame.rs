@@ -843,14 +843,17 @@ impl SceneSettings {
 
     /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
     /// while the scene has no environment to draw, with the environment's part of the frame
-    /// uniform. A frame builder asks after the frame's uploads, so a held frame, which uploads
-    /// everything, draws with the environment.
+    /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
+    /// uploads, so a held frame, which uploads everything, draws with the environment.
     pub(crate) fn environment_map(&self, blank: u32) -> (u32, EnvironmentUniform) {
         let ready = self.environment.and_then(|environment| {
             Some((environment, self.textures.ready_cube(environment.texture)?))
         });
         match ready {
-            Some((environment, (map, levels))) => (map, environment.uniform(levels)),
+            Some((environment, (map, levels))) => (
+                map,
+                environment.uniform(levels, self.drawn_output().exposure),
+            ),
             None => (blank, EnvironmentUniform::default()),
         }
     }
@@ -1127,14 +1130,14 @@ impl SceneSettings {
         &self.views
     }
 
-    /// The directional light: the direction its light travels, and its linear color times its
-    /// intensity.
+    /// The directional light: the direction its light travels, and its exposed color: its linear
+    /// color times its intensity and the exposure.
     pub fn set_sun(&mut self, direction: [f32; 3], color: [f32; 3]) {
         self.lighting.sun_direction = normalized_direction(direction);
         self.lighting.sun_color = [color[0], color[1], color[2], 0.0];
     }
 
-    /// The ambient light's linear color times its intensity.
+    /// The ambient light's exposed color: its linear color times its intensity and the exposure.
     pub fn set_ambient(&mut self, color: [f32; 3]) {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
     }
@@ -1142,7 +1145,8 @@ impl SceneSettings {
     /// Gathers the lights of the frame whose world output is `parity`'s for the camera's view
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
     /// main directional light and the ambient lights become the light the shaders read, and the
-    /// light table's visible list holds the point and spot lights the camera sees.
+    /// light table's visible list holds the point and spot lights the camera sees. Every light's
+    /// color takes the exposure that frames draw with.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
@@ -1157,7 +1161,7 @@ impl SceneSettings {
                 frustum: frame.frustum,
                 layers: frame.layers,
             });
-        let lit = lights.gather(scene, parity, view.as_ref());
+        let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
         self.set_sun_shadow(lit.sun_shadow);
@@ -1295,7 +1299,7 @@ impl SceneSettings {
     }
 
     /// The linear color behind every object. Exposure and tone mapping change it as they change
-    /// the objects.
+    /// the objects: the clear color takes the exposure of each frame.
     pub fn set_background(&mut self, color: [f32; 3]) {
         self.lighting.background = Some(color);
     }
@@ -1395,14 +1399,15 @@ impl SceneSettings {
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
         let (width, height) = Size::Full.viewport(canvas, scale);
         let (width, height) = (width as f32, height as f32);
+        let output = self.drawn_output();
         let uniform = FrameUniform {
             view_proj: camera.view_proj,
             camera_position: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
-            output: self.drawn_output().uniform(),
-            fog: self.lighting.fog.uniform(camera.forward),
+            output: output.uniform(),
+            fog: self.lighting.fog.uniform(camera.forward, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
