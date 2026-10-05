@@ -317,7 +317,7 @@ const isPageSource = (source: string) => /^(tests|bench|examples|templates)\//.t
 function shaderPartOf(file: BuiltFile): string | undefined {
 	const engine = file.sources.filter((source) => source.startsWith(ENGINE_SOURCE));
 	const module = engine.length === 1 ? engine[0]!.slice(ENGINE_SOURCE.length) : '';
-	const match = /^generated\/(shaders-[a-z-]+)\.js$/.exec(module);
+	const match = /^generated\/(shaders-[a-z-]+)\.[jt]s$/.exec(module);
 	return match ? `${match[1]}.js` : undefined;
 }
 
