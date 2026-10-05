@@ -108,4 +108,14 @@ describe('waits of a start', () => {
 		Atomics.store(slots, Slot.PipelinesBuilt, 2);
 		expect(slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0)).toBeUndefined();
 	});
+	test('check again after a short time on memory that no other thread shares', async () => {
+		const { slots } = controlViews(createControlBuffer(false));
+		const started = performance.now();
+		const change = slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0);
+		if (!change) throw new Error('the wait ended before the slot changed');
+		Atomics.store(slots, Slot.PipelinesBuilt, 1);
+		await change;
+		expect(performance.now() - started).toBeGreaterThanOrEqual(RECHECK_MS - 5);
+		expect(slotChangeOrRecheck(slots, Slot.PipelinesBuilt, 0)).toBeUndefined();
+	});
 });

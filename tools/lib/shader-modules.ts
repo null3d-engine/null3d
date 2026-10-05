@@ -46,7 +46,9 @@ interface ModuleRecord {
  */
 export function isShaderModule(name: string): boolean {
 	return (
-		name === 'shaders.ts' || name === 'shader-features.ts' || /^shaders-[a-z0-9-]+\.js$/.test(name)
+		name === 'shader-features.ts' ||
+		/^shaders(-[a-z0-9-]+)?\.ts$/.test(name) ||
+		/^shaders-[a-z0-9-]+\.js$/.test(name)
 	);
 }
 

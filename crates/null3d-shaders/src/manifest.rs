@@ -70,6 +70,11 @@ pub struct Shader {
     /// module. Each of its variants has one target.
     #[serde(default)]
     pub by_device: bool,
+    /// True for a shader that the engine loads on a feature's first use: its builds go into a
+    /// module of their own for each target, not into the main module or the device modules, so no
+    /// page downloads them before it asks for the feature. Each of its variants has one target.
+    #[serde(default)]
+    pub first_use: bool,
     /// True for the template that custom materials build with their own WGSL added.
     #[serde(default)]
     pub custom_materials: bool,
@@ -171,8 +176,24 @@ impl Manifest {
             check_name(&mut errors, &key, name);
             check_file(&mut errors, &key, &shader.file);
             errors.extend(check_builds(&key, &shader.pipelines, &shader.variants));
-            if shader.by_device {
-                check_by_device(&mut errors, &key, &shader.variants);
+            if shader.by_device && shader.first_use {
+                errors.push(format!(
+                    "{key} sets both by_device and first_use. A shader loads with the device's shaders or on its first use: keep one."
+                ));
+            } else if shader.by_device {
+                check_one_target(
+                    &mut errors,
+                    &key,
+                    &shader.variants,
+                    "loads by device, and a device module holds one target's builds",
+                );
+            } else if shader.first_use {
+                check_one_target(
+                    &mut errors,
+                    &key,
+                    &shader.variants,
+                    "loads on first use, and each of its modules holds one target's builds",
+                );
             }
         }
         check_first_use(&mut errors, &manifest);
@@ -299,13 +320,18 @@ fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) -> bool
     known
 }
 
-/// Checks that each variant of a shader that loads by device has one target, since a device
-/// module holds the builds of one target.
-fn check_by_device(errors: &mut Vec<String>, key: &str, variants: &BTreeMap<String, Variant>) {
+/// Checks that each variant of a shader whose modules hold one target's builds has one target.
+/// `why` says how the shader loads, for the message.
+fn check_one_target(
+    errors: &mut Vec<String>,
+    key: &str,
+    variants: &BTreeMap<String, Variant>,
+    why: &str,
+) {
     for (name, variant) in variants {
         if variant.targets.len() > 1 {
             errors.push(format!(
-                "{key}.variants.{name} targets both \"wgsl\" and \"glsl\", but {key} loads by device, and a device module holds one target's builds. Give the variant one target, and add a variant for the other."
+                "{key}.variants.{name} targets both \"wgsl\" and \"glsl\", but {key} {why}. Give the variant one target, and add a variant for the other."
             ));
         }
     }
@@ -630,6 +656,21 @@ bits = ["BLOOM"]
         let errors = Manifest::parse(&unlisted).unwrap_err();
         assert!(
             errors[0].contains("which does not load by device"),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn a_shader_that_loads_on_first_use_has_one_target_per_variant_and_no_device_modules() {
+        let text = format!("{VALID}first_use = true\n");
+        let errors = Manifest::parse(&text).unwrap_err();
+        assert!(errors[0].contains("loads on first use"), "{errors:?}");
+        let one_target = text.replace("[\"glsl\", \"wgsl\"]", "[\"glsl\"]");
+        assert!(Manifest::parse(&one_target).unwrap().shaders["mesh"].first_use);
+        let both = format!("{one_target}by_device = true\n");
+        let errors = Manifest::parse(&both).unwrap_err();
+        assert!(
+            errors[0].contains("sets both by_device and first_use"),
             "{errors:?}"
         );
     }

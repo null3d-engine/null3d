@@ -76,7 +76,6 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/basis/basis_transcoder.js',
 			'vendor/basis/basis_transcoder.wasm',
 			'THIRD-PARTY-NOTICES.txt',
-			'environments/room.ktx2',
 			'docs/index.md',
 		],
 		repositoryOnly: ['internal.ts'],

@@ -52,13 +52,14 @@ import type { DepthSetup } from './depth';
 /**
  * The first slot of each bind group. A slot is a texture unit, a uniform block binding point and a
  * sampler's place, and each binding of a group takes its group's first slot plus its binding
- * number. The per-frame group, which holds the most bindings, comes first. Group 1 has three
- * slots, group 2 eight (the instance textures, then the two textures that skinned meshes read and
- * the two that morphed meshes read) and group 3 the last twelve, whose samplers take the last
- * places. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows, and
- * their textures below the texture upload unit.
+ * number. The per-frame group, which holds the most bindings, comes first, with fourteen. Group 1
+ * has three slots, group 2 eight (the instance textures, then the two textures that skinned meshes
+ * read and the two that morphed meshes read) and group 3 the last twelve, whose samplers take
+ * places past the last texture unit, which only the backend's own table holds. The groups'
+ * uniform blocks stay below the fewest binding points that WebGL2 allows, and their textures below
+ * the texture upload unit.
  */
-const GROUP_BASES = Uint8Array.of(0, 12, 15, 23);
+const GROUP_BASES = Uint8Array.of(0, 14, 17, 25);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -316,4 +317,51 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 	const mapping = gl.getUniformLocation(p.program, DEPTH_MAPPING_UNIFORM);
 	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);
 	p.ready = true;
+}
+
+/**
+ * What code that loads on first use, such as the texture generators, needs to draw with programs of
+ * its own: the context, and a program for a template of one build, linked, with its blocks and
+ * textures bound to their slots and its depth mapping set. `program` leaves the program in use.
+ * `programLater` compiles in the background where the context can, and leaves the program in use
+ * that was. `slot` gives the slot of each binding. The code then imports nothing from the files
+ * that the start loads.
+ */
+export interface ProgramHost {
+	readonly gl: WebGL2RenderingContext;
+	program(template: GlslTemplate): WebGLProgram;
+	programLater(template: GlslTemplate): Promise<WebGLProgram>;
+	slot(group: number, binding: number): number;
+}
+
+/** How often `programLater` asks whether a program that compiles in the background is done. */
+const COMPILE_POLL_MS = 4;
+
+/**
+ * The program host of a context that draws in a depth mode, with `KHR_parallel_shader_compile`
+ * where the context has it and the device uses it.
+ */
+export function programHost(
+	gl: WebGL2RenderingContext,
+	depth: DepthSetup,
+	parallel: KHR_parallel_shader_compile | null = null,
+): ProgramHost {
+	return {
+		gl,
+		program(template) {
+			const p = createProgram(gl, template, 0);
+			prepareProgram(gl, p, depth);
+			return p.program;
+		},
+		async programLater(template) {
+			const p = createProgram(gl, template, 0);
+			while (parallel && !gl.getProgramParameter(p.program, parallel.COMPLETION_STATUS_KHR))
+				await new Promise((resolve) => setTimeout(resolve, COMPILE_POLL_MS));
+			const inUse = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+			prepareProgram(gl, p, depth);
+			gl.useProgram(inUse);
+			return p.program;
+		},
+		slot: slotOf,
+	};
 }

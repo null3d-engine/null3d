@@ -1,8 +1,9 @@
 // The size report's measuring: raw, gzip and Brotli sizes, and the parts of the engine's JavaScript
 // in a production build. Vite names each built file after a module and adds a content hash, so the
 // report names each part by the engine module that its file holds, a file loaded on demand by the
-// part that loads it, and a shader file by the device module of the shader build that it holds: a
-// module of the start, or the module of a feature that loads on first use.
+// part that loads it, and a shader file by the module of the shader build that it holds: a device
+// module of the start, the module of a feature that loads on first use, or the module of a shader
+// that loads on a feature's first use as a whole, such as the texture generators'.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
@@ -78,6 +79,8 @@ export interface EnginePart {
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
+ * The built-in environments' numbers load in the thread that runs the sketch with the first one,
+ * and the texture generators that make their maps on the GPU load in the thread that draws.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page.js', module: 'page/engine.ts' },
@@ -87,10 +90,25 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'gpu/webgl2/call-timing.ts',
 		loadedBy: 'page-renderer.js',
 	},
+	{
+		name: 'page-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
+		loadedBy: 'page-renderer.js',
+	},
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-environment.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
+		name: 'page-builtin-environments.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
 	{
@@ -109,11 +127,26 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'gpu/webgl2/call-timing.ts',
 		loadedBy: 'sketch-worker-renderer.js',
 	},
+	{
+		name: 'sketch-worker-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
+		loadedBy: 'sketch-worker-renderer.js',
+	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-environment.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-builtin-environments.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-lines.js', module: 'scene/lines.ts', loadedBy: 'sketch-worker.js' },
 	{
@@ -127,6 +160,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'render-worker-call-timing.js',
 		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'render-worker.js',
+	},
+	{
+		name: 'render-worker-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
 		loadedBy: 'render-worker.js',
 	},
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
@@ -155,10 +193,12 @@ export const SHADER_PARTS: readonly string[] = [
 ];
 
 /**
- * True for the part of a device module of a feature that loads on first use: the shader build
- * names it after the feature, then the target and the bits, as `shaders-sprites-glsl-draw-index.js`.
- * A page downloads one the first time it uses the feature, so no start counts it. The manifest's
- * `[first_use.<feature>]` tables name the features, and the parts follow from them.
+ * True for the part of a shader module that loads on a feature's first use: a device module of a
+ * feature, which the shader build names after the feature, then the target and the bits, as
+ * `shaders-sprites-glsl-draw-index.js`, or the module of a shader that loads on first use as a
+ * whole, named after the shader and the target, as `shaders-environment-wgsl.js`. A page downloads
+ * one the first time it uses the feature, so no start counts it. The manifest's
+ * `[first_use.<feature>]` tables and `first_use` shaders name them, and the parts follow from them.
  */
 export function isFirstUseShaderPart(name: string): boolean {
 	return (
@@ -320,7 +360,7 @@ export function findEngineParts(
 		if (!part) continue;
 		if (!shaderParts.includes(part) && !isFirstUseShaderPart(part))
 			throw new Error(
-				`${file.file} holds the shader build's device module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
+				`${file.file} holds the shader build's module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
 			);
 		claimed.add(file);
 		const copy = shaders.get(part);

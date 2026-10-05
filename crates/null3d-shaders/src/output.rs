@@ -41,6 +41,10 @@ pub struct Output {
     /// The features whose builds load on first use, in device modules of their own.
     #[serde(skip)]
     pub first_use: FirstUseFeatures,
+    /// The shaders that load on a feature's first use as a whole, each in a module of its own per
+    /// target, which the feature's code imports.
+    #[serde(skip)]
+    pub first_use_shaders: BTreeSet<String>,
 }
 
 /// The features whose builds load on first use: the feature of each shader whose builds all belong

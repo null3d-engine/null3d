@@ -27,6 +27,10 @@
 #                              order, such as `webgl2_draw_index`. Each build records its bits as
 #                              its permutation word, which the backends pick it by.
 #                targets       "wgsl" for WebGPU, "glsl" for WebGL2 (GLSL ES 3.00), or both.
+#   first_use  true for a shader that the engine loads on a feature's first use. Its builds go into
+#              a module of their own for each target, generated/shaders-<name>-<target>.ts, which
+#              the feature's code imports, and not into shaders.ts or the device modules. So no
+#              page downloads them before it asks for the feature. Each variant has one target.
 #   custom_materials  True for the one template that custom materials build with: the shader
 #              compiler adds a material's WGSL after the file's last line, and builds every variant
 #              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
@@ -298,6 +302,20 @@ file = "mipmap.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# Environment maps made on the GPU (D-19): the built-in room, traced from its center, blurred as
+# three.js's examples blur it, halved into a chain of levels, and filtered for each roughness, one
+# face of one level per draw. It loads on first use, with the generator code that the thread that
+# draws loads when a sketch first asks for the room.
+[shaders.environment]
+file = "environment.wgsl"
+first_use = true
+pipelines.trace = { vertex = "vs_main", fragment = "fs_trace" }
+pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
+pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
+pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 

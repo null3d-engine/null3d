@@ -39,6 +39,7 @@ export const OP_COPY_BUFFER_TO_BUFFER = 48;
 export const OP_COPY_TEXTURE_TO_TEXTURE = 49;
 export const OP_RELEASE_IMAGE = 51;
 export const OP_DESTROY_PIPELINE = 52;
+export const OP_GENERATE_TEXTURE = 54;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;
@@ -215,7 +216,7 @@ export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
-export const SIZE_FRAME_UNIFORM_BYTES = 304;
+export const SIZE_FRAME_UNIFORM_BYTES = 512;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;

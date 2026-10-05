@@ -12,7 +12,8 @@
 //! - [`OUTPUT_PATH`] is the main generated module. The device modules sit beside it in
 //!   [`OUTPUT_DIR`], one for each target and each value of the permutation bits that a device
 //!   fixes, with the builds of the shaders that load by device. The builds of each feature that
-//!   loads on first use go into device modules of their own there.
+//!   loads on first use go into device modules of their own there, and each shader that loads on
+//!   a feature's first use as a whole has a module of its own for each target.
 
 mod composition;
 mod features;
@@ -160,6 +161,9 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
         output.pipelines.insert(shader_name.clone(), pipelines);
         if shader.by_device {
             output.by_device.insert(shader_name.clone());
+        }
+        if shader.first_use {
+            output.first_use_shaders.insert(shader_name.clone());
         }
     }
     for (feature, first_use) in &manifest.first_use {
