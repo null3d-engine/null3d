@@ -309,6 +309,19 @@ The same plan measured the change on the same devices, the old commit against th
 
 The HDR files' times fell by 0.25 to 1.2 s on every device and path. The room's path did not change, and its figures moved both ways. The S24's old runs ranged from 926 to 1,061 ms and its new runs from 1,233 to 1,259 ms. Four more pairs of the S24's room page alone settled it (runs `20261005-153346` to `20261005-153913`). The first lit frame's median was 1,140 ms before and 1,095 ms after. The pairs differed by -328 to +163 ms, so the change makes no difference that the runs can show.
 
+On the Mac (Apple M5 Max, Chrome on its GPU), the room light test ran 3 times with each commit. The load was 3.4 to 4.0. All 27 tests passed in each round. The table gives median milliseconds to the environment resolving, then to the first lit frame, before and after:
+
+| File, path | Before | After |
+| --- | --- | --- |
+| `.hdr`, WebGPU | 112 / 161 | 104 / 162 |
+| `.hdr`, compatibility mode | 111 / 161 | 103 / 161 |
+| `.hdr`, WebGL2 | 120 / 177 | 103 / 161 |
+| `.exr`, WebGPU | 97 / 142 | 88 / 143 |
+| `.exr`, compatibility mode | 95 / 139 | 86 / 141 |
+| `.exr`, WebGL2 | 103 / 160 | 87 / 141 |
+
+The files resolved 8 to 17 ms sooner. The first lit frame came up to 19 ms sooner on WebGL2 and at the same time on WebGPU. The room took 10 to 17 ms to resolve and 53 to 61 ms to light, in both rounds. The Mac downloads the file from its own server in a few milliseconds and builds the shaders fast, so there is little to overlap. The saving shows on phones, where the download and the shader builds take far longer.
+
 The code that loads on first use, after Brotli: the reader's worker 5.8 KB, and its loader 0.6 KB in the sketch's thread. The generators' file grew from 2.1 to 2.7 KB. The environment shaders grew from 4.2 to 4.7 KB in WGSL, and from 4.4 to 4.8 KB in GLSL.
 
 A KTX2 map from the tool is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. The studio's 1K OpenEXR file takes 1.23 MB, and its map 1.36 MB.
