@@ -17,7 +17,8 @@
 // as its result, rests so the device can free the tab's memory, and goes on with the next page.
 // The page reports the run: a grid with one cell per page, the failures with their errors, and a
 // line per result, newest first. The report lies under each page's frame, or over it when the plan
-// asks, as plans that only check results do, so the screen does not flash between pages. Each
+// asks, as plans that check results do, so the screen does not flash between pages. A page that
+// times its frames stays on top in every plan. Each
 // result changes one cell and adds one line, so the page does no work while a test page runs.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
@@ -40,6 +41,8 @@ interface PlanItem {
 	timeoutSeconds: number;
 	/** The page may end its tab on purpose, and posts its progress as it goes. */
 	endsTab?: boolean;
+	/** The page times its frames, so its frame stays on top of a report that the plan draws over pages. */
+	timesFrames?: boolean;
 	/** The GPU path that the page needs. */
 	gpu?: GpuPath;
 }
@@ -378,7 +381,9 @@ async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number
  * its first item reads the device. Before an item that may end its tab, the page notes that the
  * item started, under the item's progress. In a plan that asks for it, the page measures the
  * display's refresh rate before each item, with no test page loaded, and adds it to the item's
- * result. In a plan that lets the device lack GPU paths, once the capabilities page has reported
+ * result. In a plan that draws its report over the pages, a page that times its frames keeps its
+ * frame on top: a canvas hidden under the report barely changes the screen, and a phone may then
+ * lower its refresh rate. In a plan that lets the device lack GPU paths, once the capabilities page has reported
  * the device's paths, the page skips each item that needs a path the device lacks: it posts a skip
  * as the item's result, and does not open the item's page.
  */
@@ -390,7 +395,6 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		skipMissing?: { report: string; allowed: MissingAllowed };
 	};
 	await claim(run);
-	stage.classList.toggle('report-on-top', plan.reportOnTop === true);
 	const start = from ?? (await resumeAt(run, plan.items));
 	report.start(run, plan.items, start);
 	if (start === 0) {
@@ -416,6 +420,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		}
 		if (item.endsTab)
 			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
+		stage.classList.toggle('report-on-top', plan.reportOnTop === true && !item.timesFrames);
 		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
 		const result = await runItem(item, run);
 		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);

@@ -390,6 +390,20 @@ describe("the runner page's report", () => {
 		]);
 		for (const plan of REPORT_ON_TOP_PLANS) expect(Object.keys(PLANS)).toContain(plan);
 	});
+
+	// Under the report, a worker's canvas barely changes the screen, and Android can lower the
+	// display to 24 Hz, which fails the engine page's limit on the time between frames.
+	it('stays under the frame of each page whose check limits the time between frames', () => {
+		const timed = [...REPORT_ON_TOP_PLANS].flatMap((name) =>
+			(PLANS[name]?.() ?? []).filter((item) => item.check.kind === 'engine'),
+		);
+		expect(timed.length).toBeGreaterThan(0);
+		for (const item of timed)
+			expect({ id: item.id, timesFrames: item.timesFrames }).toEqual({
+				id: item.id,
+				timesFrames: true,
+			});
+	});
 });
 
 describe('the checks plan', () => {
@@ -434,6 +448,7 @@ describe('the checks plan', () => {
 			path: '/__null3d/load/warm/{run}.{runner}.production/tests/pages/engine.html?gpu=webgl2&latency=low&seconds=2',
 			timeoutSeconds: 45,
 			check: { kind: 'engine', tier: 'webgl2', mode: ENGINE_MODES[1] },
+			timesFrames: true,
 		});
 		// The runner builds the production pages for a plan that loads them, and only then.
 		expect(planItems(parseArgs(['Safari']))?.some((item) => isLoadPath(item.path))).toBe(true);
