@@ -14,8 +14,13 @@
 //! texture there, so the scene's render pass need not store its depth.
 //!
 //! Each effect's block of the uniform buffer holds the render size, the targets' size, the clock,
-//! the inverse of the camera's projection and the effect's uniforms. A frame uploads a block only
-//! when it changed, so effects whose uniforms stay still upload nothing.
+//! the inverse of the camera's projection and the effect's uniforms. A frame uploads the blocks only
+//! when one changed, so effects whose uniforms stay still upload nothing. On WebGL2 the buffer holds
+//! a ring of slots, each with every effect's block: a frame that changes a block writes all of them
+//! into the next slot, in one write, and binds that slot's groups. A write into a range that the
+//! GPU may still read from an earlier frame makes some phones' drivers wait for the GPU, which cost
+//! about 0.7 ms of CPU per effect on a Pixel 10 (D-71). WebGPU orders a write after the draws before
+//! it, so its ring has one slot.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
@@ -70,8 +75,12 @@ struct Block {
 const BLOCK_BYTES: usize = std::mem::size_of::<Block>();
 const _: () = assert!(BLOCK_BYTES <= BLOCK);
 
-/// Bytes of the uniform buffer: a block for each effect that can run.
-const BUFFER_BYTES: usize = MAX_EFFECTS * BLOCK;
+/// Bytes of one slot of the uniform buffer: a block for each effect that can run.
+const SLOT_BYTES: usize = MAX_EFFECTS * BLOCK;
+
+/// The most slots of the uniform buffer's ring: the frame being recorded and the two that the GPU
+/// may still draw.
+pub(crate) const MAX_SLOTS: usize = 3;
 
 /// The GPU objects of the effects, which the frame builder's id ranges set.
 #[derive(Clone, Copy, Debug)]
@@ -80,10 +89,13 @@ pub(crate) struct EffectIds {
     pub(crate) buffer: u32,
     /// The linear sampler that effects read their color with.
     pub(crate) sampler: u32,
-    /// The bind group of each effect, from this id on.
+    /// The bind group of each effect in each slot of the ring, from this id on: `slots` times
+    /// [`MAX_EFFECTS`] groups.
     pub(crate) first_group: u32,
     /// The texture of one texel that effects which read no depth bind in its place.
     pub(crate) blank_depth: u32,
+    /// The slots of the uniform buffer's ring, at most [`MAX_SLOTS`].
+    pub(crate) slots: u32,
 }
 
 /// What an effect reads: its color's texture, and the depth texture or the blank one.
@@ -121,28 +133,36 @@ pub(crate) struct EffectPass {
     /// Each effect's pipeline, with the template and depth read it was asked for.
     pipelines: [Option<(u32, bool, u32)>; MAX_EFFECTS],
     created: bool,
-    /// The block that each effect's part of the buffer holds, or `None` before its upload.
+    /// The ring slot that the frames draw from.
+    slot: usize,
+    /// The block of each effect that the slot holds, or `None` before its upload.
     uploaded: [Option<Block>; MAX_EFFECTS],
-    /// What each effect's bind group reads, with its layout, or `None` before the group exists.
-    bound: [Option<(Sources, u32)>; MAX_EFFECTS],
+    /// What each effect's bind group reads in each slot, with its layout, or `None` before the
+    /// group exists.
+    bound: [[Option<(Sources, u32)>; MAX_EFFECTS]; MAX_SLOTS],
 }
 
 impl EffectPass {
     /// The effects' passes, with GPU objects from `ids`, whose depth reads are multisampled when
     /// `multisampled_depth` says.
     pub(crate) fn new(ids: EffectIds, multisampled_depth: bool) -> Self {
+        assert!(
+            (1..=MAX_SLOTS as u32).contains(&ids.slots),
+            "the effects' ring has 1 to {MAX_SLOTS} slots"
+        );
         Self {
             ids,
             multisampled_depth,
             pipelines: [None; MAX_EFFECTS],
             created: false,
+            slot: 0,
             uploaded: [None; MAX_EFFECTS],
-            bound: [None; MAX_EFFECTS],
+            bound: [[None; MAX_EFFECTS]; MAX_SLOTS],
         }
     }
 
-    /// Bytes a frame may copy into its arena: every effect's block.
-    pub(crate) const UPLOAD_BYTES: usize = MAX_EFFECTS * BLOCK_BYTES;
+    /// Bytes a frame may copy into its arena: a slot of the ring.
+    pub(crate) const UPLOAD_BYTES: usize = SLOT_BYTES;
 
     /// True when an effect that reads depth reads a multisampled texture.
     fn reads_multisampled(&self, effect: &Effect) -> bool {
@@ -162,11 +182,12 @@ impl EffectPass {
         }
     }
 
-    /// Makes the buffer, the sampler and the blank depth when the GPU lacks them, uploads each
-    /// effect's block when it changed, and binds each effect to its `sources` when its group is new
-    /// or the frame made the plan's textures again. `render` is the render size in pixels, `canvas`
-    /// the targets' size, `clock` the sketch time and the seconds since the frame before, and
-    /// `inverse_projection` the inverse of the camera's projection.
+    /// Makes the buffer, the sampler and the blank depth when the GPU lacks them, uploads every
+    /// effect's block into the next slot of the ring when one changed, and binds each effect of the
+    /// slot to its `sources` when its group is new or the frame made the plan's textures again.
+    /// `render` is the render size in pixels, `canvas` the targets' size, `clock` the sketch time
+    /// and the seconds since the frame before, and `inverse_projection` the inverse of the camera's
+    /// projection.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &mut self,
@@ -185,24 +206,41 @@ impl EffectPass {
             self.created = true;
         }
         let render = Size::Full.viewport(canvas, scale);
-        for (index, (effect, &found)) in effects.iter().zip(sources).enumerate() {
-            let block = Block {
-                size: [
-                    render.0 as f32,
-                    render.1 as f32,
-                    canvas.0.max(1) as f32,
-                    canvas.1.max(1) as f32,
-                ],
-                clock: [clock[0], clock[1], 0.0, 0.0],
-                inverse_projection: inverse_projection.unwrap_or(IDENTITY),
-                values: effect.values,
-            };
-            if self.uploaded[index] != Some(block) {
-                let (at, bytes) = arena.push(bytes_of(&block))?;
-                let offset = (index * BLOCK) as u32;
-                list.push(Op::WriteBuffer, &[ids.buffer, offset, at, bytes])?;
-                self.uploaded[index] = Some(block);
+        let block = |effect: &Effect| Block {
+            size: [
+                render.0 as f32,
+                render.1 as f32,
+                canvas.0.max(1) as f32,
+                canvas.1.max(1) as f32,
+            ],
+            clock: [clock[0], clock[1], 0.0, 0.0],
+            inverse_projection: inverse_projection.unwrap_or(IDENTITY),
+            values: effect.values,
+        };
+        let changed = effects
+            .iter()
+            .zip(&self.uploaded)
+            .any(|(effect, &uploaded)| uploaded != Some(block(effect)));
+        if changed && !effects.is_empty() {
+            self.slot = (self.slot + 1) % ids.slots as usize;
+            let bytes = (effects.len() - 1) * BLOCK + BLOCK_BYTES;
+            let (at, data) = arena.push_zeroed(bytes)?;
+            for (index, uploaded) in self.uploaded.iter_mut().enumerate() {
+                *uploaded = effects.get(index).map(|effect| {
+                    let written = block(effect);
+                    data[index * BLOCK..index * BLOCK + BLOCK_BYTES]
+                        .copy_from_slice(bytes_of(&written));
+                    written
+                });
             }
+            let offset = (self.slot * SLOT_BYTES) as u32;
+            list.push(Op::WriteBuffer, &[ids.buffer, offset, at, bytes as u32])?;
+        }
+        if textures_made {
+            self.bound = [[None; MAX_EFFECTS]; MAX_SLOTS];
+        }
+        let slot = self.slot;
+        for (index, (effect, &found)) in effects.iter().zip(sources).enumerate() {
             let sources = Sources {
                 color: found.color,
                 depth: if effect.depth {
@@ -216,15 +254,14 @@ impl EffectPass {
             } else {
                 bind_layout::EFFECT
             };
-            if !textures_made && self.bound[index] == Some((sources, layout)) {
+            if self.bound[slot][index] == Some((sources, layout)) {
                 continue;
             }
-            let group = ids.first_group + index as u32;
-            let offset = (index * BLOCK) as u32;
+            let offset = (slot * SLOT_BYTES + index * BLOCK) as u32;
             list.push(
                 Op::CreateBindGroup,
                 &[
-                    group,
+                    self.group(index),
                     layout,
                     4,
                     0,
@@ -249,9 +286,14 @@ impl EffectPass {
                     0,
                 ],
             )?;
-            self.bound[index] = Some((sources, layout));
+            self.bound[slot][index] = Some((sources, layout));
         }
         Ok(())
+    }
+
+    /// The bind group of effect `index` in the slot that the frames draw from.
+    fn group(&self, index: usize) -> u32 {
+        self.ids.first_group + (self.slot * MAX_EFFECTS + index) as u32
     }
 
     /// Records effect `index` inside the render pass that the render graph began into its target.
@@ -259,10 +301,7 @@ impl EffectPass {
         let (_, _, pipeline) =
             self.pipelines[index].expect("each effect asks for its pipeline before it records");
         list.push(Op::SetPipeline, &[pipeline])?;
-        list.push(
-            Op::SetBindGroup,
-            &[0, self.ids.first_group + index as u32, 0],
-        )?;
+        list.push(Op::SetBindGroup, &[0, self.group(index), 0])?;
         list.push(Op::Draw, &[3, 1, 0, 0])?;
         Ok(())
     }
@@ -272,7 +311,7 @@ impl EffectPass {
     pub(crate) fn reset_gpu(&mut self) {
         self.created = false;
         self.uploaded = [None; MAX_EFFECTS];
-        self.bound = [None; MAX_EFFECTS];
+        self.bound = [[None; MAX_EFFECTS]; MAX_SLOTS];
     }
 }
 
@@ -283,7 +322,7 @@ fn create_objects(list: &mut DrawList, ids: EffectIds) -> Result<(), RecordError
         Op::CreateBuffer,
         &[
             ids.buffer,
-            BUFFER_BYTES as u32,
+            ids.slots * SLOT_BYTES as u32,
             usage::UNIFORM | usage::COPY_DST,
         ],
     )?;
@@ -329,6 +368,7 @@ mod tests {
         sampler: 2,
         first_group: 10,
         blank_depth: 3,
+        slots: 3,
     };
 
     fn effect(template: u32, depth: bool, first: f32) -> Effect {
@@ -383,13 +423,18 @@ mod tests {
         let mut pass = EffectPass::new(IDS, false);
         let effects = [effect(64, false, 0.5), effect(65, true, 2.0)];
         let list = prepare(&mut pass, &effects, true);
+        // One write holds both blocks, in the next slot of the ring.
         let writes = operands(&list, Op::WriteBuffer);
-        assert_eq!(writes.len(), 2);
-        assert_eq!((writes[0][1], writes[1][1]), (0, BLOCK as u32));
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0][1], SLOT_BYTES as u32);
+        assert_eq!(writes[0][3], (BLOCK + BLOCK_BYTES) as u32);
         let groups = operands(&list, Op::CreateBindGroup);
         assert_eq!(groups.len(), 2);
         // The first effect reads no depth and binds the blank texture; the second binds the depth.
-        assert_eq!((groups[0][0], groups[0][1]), (10, bind_layout::EFFECT));
+        let first = 10 + MAX_EFFECTS as u32;
+        assert_eq!((groups[0][0], groups[0][1]), (first, bind_layout::EFFECT));
+        assert_eq!(groups[0][3 + 3], SLOT_BYTES as u32);
+        assert_eq!(groups[1][3 + 3], (SLOT_BYTES + BLOCK) as u32);
         assert_eq!(groups[0][3 + 5 * 3 + 2], IDS.blank_depth);
         assert_eq!(groups[1][3 + 5 * 3 + 2], 41);
         assert_eq!(groups[1][3 + 5 + 2], 42);
@@ -397,10 +442,48 @@ mod tests {
         let again = prepare(&mut pass, &effects, false);
         assert!(operands(&again, Op::WriteBuffer).is_empty());
         assert!(operands(&again, Op::CreateBindGroup).is_empty());
+    }
 
-        let changed = [effect(64, false, 0.75), effects[1]];
-        let list = prepare(&mut pass, &changed, false);
-        assert_eq!(operands(&list, Op::WriteBuffer).len(), 1);
+    #[test]
+    fn a_change_writes_every_block_into_the_next_slot_of_the_ring() {
+        let mut pass = EffectPass::new(IDS, false);
+        let mut effects = [effect(64, false, 0.5), effect(65, true, 2.0)];
+        pass.request_pipelines(&mut PipelineCache::default(), &effects);
+        prepare(&mut pass, &effects, true);
+        // Each change moves to the next slot, which binds its own groups once, so no frame writes
+        // where the two frames before it read.
+        for (step, slot) in [2, 0, 1, 2].into_iter().enumerate() {
+            effects[1].values[0] = step as f32;
+            let list = prepare(&mut pass, &effects, false);
+            let writes = operands(&list, Op::WriteBuffer);
+            assert_eq!(writes.len(), 1);
+            assert_eq!(writes[0][1], (slot * SLOT_BYTES) as u32);
+            let groups = operands(&list, Op::CreateBindGroup);
+            assert_eq!(groups.len(), if step < 2 { 2 } else { 0 }, "step {step}");
+            let bound = operands(&pass_record(&pass, 1), Op::SetBindGroup);
+            assert_eq!(bound[0][1], 10 + (slot * MAX_EFFECTS) as u32 + 1);
+        }
+        // New textures bind every slot again, as each slot's next frame draws.
+        let list = prepare(&mut pass, &effects, true);
+        assert_eq!(operands(&list, Op::CreateBindGroup).len(), 2);
+    }
+
+    #[test]
+    fn one_slot_writes_in_place() {
+        let mut pass = EffectPass::new(EffectIds { slots: 1, ..IDS }, false);
+        let mut effects = [effect(64, false, 0.5)];
+        prepare(&mut pass, &effects, true);
+        effects[0].values[0] = 1.0;
+        let list = prepare(&mut pass, &effects, false);
+        assert_eq!(operands(&list, Op::WriteBuffer)[0][1], 0);
+        assert!(operands(&list, Op::CreateBindGroup).is_empty());
+    }
+
+    /// The commands that record effect `index`.
+    fn pass_record(pass: &EffectPass, index: usize) -> DrawList {
+        let mut list = DrawList::with_capacity(64);
+        pass.record(&mut list, index).unwrap();
+        list
     }
 
     #[test]

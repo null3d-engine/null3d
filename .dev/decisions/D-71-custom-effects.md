@@ -33,6 +33,14 @@ How do a sketch's own full-screen effects and its own tone curve join the post-p
 
 `bun run bench:allocation --effects` adds two effects to S1, one of which reads depth, and changes a color uniform of each every frame. On 5 October 2026 both GPU paths passed, with no place of the effects' code in the sample. The first runs found 126 to 141 bytes per frame in the uniform writer, which the writer's change fixed ([benchmarks](../benchmarks.md)). Each effect pass adds about 64 bytes per frame to the WebGPU replay: the browser's render pass encoder.
 
+### CPU time on WebGL2
+
+- The cloud Pixel 10 (PowerVR, Chrome) ran the `effects` plan on 5 October 2026. On WebGL2, 4 effects raised CPU time per frame from 0.52 to 3.33 ms at a render scale of 1. At 0.5 they raised it from 0.53 to 3.68 ms. That is about 0.7 ms per effect. WebGPU moved from 0.60 to 0.64 ms. Bloom's 15 passes add 0.05 to 0.15 ms on WebGL2 on the Pixel 9 and the Pixel 11, so a pass alone does not cost this.
+- The Mac does not show it. Chrome on ANGLE's Metal, OpenGL and SwiftShader back ends kept CPU time at 0.03 to 0.09 ms per frame with 4 effects. Each effect added about 10 WebGL calls, and none of them waits for the browser's GPU process.
+- The effects did one thing that bloom does not. Each block of their uniform buffer holds the clock, so every frame wrote every block. Those writes went into the range that the frames before still read. Some mobile drivers wait for the GPU before such a write. The WebGL2 path's other per-frame data already moves through rings of 3 slots for this reason (`cpu_culled/data.rs`).
+- The blocks now move the same way on WebGL2. A frame that changes a block writes every effect's block into the next of 3 slots, in one write, and binds that slot's groups. WebGPU orders a write after the draws before it, so it keeps one slot.
+- The effect cost page reports each thread's CPU time. With `?gltiming` it also reports each WebGL call's time per frame, for the device run that confirms the fix.
+
 ### Pending timings
 
 These two figures were asked for on the Mac. The Mac was not quiet enough to time them before this record, so they run on devices, as the other effect costs do:

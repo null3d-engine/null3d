@@ -4,10 +4,17 @@
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
 // turns, three times each, and reports the medians of each side's GPU time per frame, where the
-// device has a GPU timer, and of its frame interval and CPU time. The device runner's bloom and ao
+// device has a GPU timer, of its frame interval and CPU time, and of each thread's CPU time. With
+// ?gltiming it also reports each side's WebGL calls on the thread that draws, with their time and
+// count per frame. The device runner's bloom and ao
 // plans run it on each GPU path at the scales of 1 and 0.5. With bloom, ?size= sets the quality
 // setting bloomSize, the base of its chain, as the bloom-sizes plan does.
 import { createEngine } from '@null3d/engine';
+import {
+	GL_TIMING_CHANNEL,
+	GL_TIMING_REQUEST,
+	type GlTimingReport,
+} from '../../packages/engine/src/gpu/webgl2/call-timing';
 import { featureCost } from './lib/feature-cost';
 import { run } from './lib/result';
 
@@ -33,6 +40,13 @@ if (antialias !== null && antialias !== 'msaa' && antialias !== 'fxaa' && antial
 const asked = params.get('effect') ?? 'bloom';
 if (!Object.hasOwn(SKETCHES, asked)) throw new Error(`the page measures no effect ${asked}`);
 const effect = asked as Effect;
+// ?gltiming times each WebGL call of the thread that draws. The device runner takes switch names
+// of letters only, so the page passes it on as the engine's own ?gl-timing switch.
+const glTiming = params.has('gltiming');
+if (glTiming && !params.has('gl-timing')) {
+	params.set('gl-timing', '');
+	history.replaceState(null, '', `${location.pathname}?${params}`);
+}
 
 run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
@@ -51,15 +65,51 @@ run('effect-cost', async () => {
 				resolve();
 			});
 		});
-	const { off, on } = await featureCost(engine, async (drawn) => {
-		if (!drawn) {
-			engine.postToSketch(`${effect}-off`, null);
-			return;
+	// With ?gltiming, the WebGL calls of each side's measurements, from the totals that the thread
+	// that draws keeps.
+	const glCalls = {
+		off: new Map<string, [number, number]>(),
+		on: new Map<string, [number, number]>(),
+	};
+	const glFrames = { off: 0, on: 0 };
+	let glLast: GlTimingReport | undefined;
+	const glSnapshot = async (side: 'off' | 'on') => {
+		if (!glTiming) return;
+		const report = await requestGlTiming();
+		if (!report) return;
+		const before = new Map(glLast?.calls.map((c) => [c.name, c]));
+		glFrames[side] += report.frames - (glLast?.frames ?? 0);
+		for (const call of report.calls) {
+			const was = before.get(call.name);
+			const sum = glCalls[side].get(call.name) ?? [0, 0];
+			sum[0] += call.ms - (was?.ms ?? 0);
+			sum[1] += call.calls - (was?.calls ?? 0);
+			glCalls[side].set(call.name, sum);
 		}
-		const built = settled();
-		engine.postToSketch(effect, null);
-		await built;
-	});
+		glLast = report;
+	};
+	const glSummary = (side: 'off' | 'on') =>
+		[...glCalls[side]]
+			.sort((a, b) => b[1][0] - a[1][0])
+			.slice(0, 20)
+			.map(([name, [ms, calls]]) => ({
+				name,
+				msPerFrame: +(ms / Math.max(1, glFrames[side])).toFixed(4),
+				callsPerFrame: +(calls / Math.max(1, glFrames[side])).toFixed(2),
+			}));
+	const { off, on } = await featureCost(
+		engine,
+		async (drawn) => {
+			if (!drawn) {
+				engine.postToSketch(`${effect}-off`, null);
+				return;
+			}
+			const built = settled();
+			engine.postToSketch(effect, null);
+			await built;
+		},
+		glSnapshot,
+	);
 	await engine.destroy();
 	return {
 		effect,
@@ -75,6 +125,23 @@ run('effect-cost', async () => {
 		devicePixelRatio,
 		off,
 		on,
+		...(glTiming && {
+			glTiming: { frames: glFrames, off: glSummary('off'), on: glSummary('on') },
+		}),
 		failures,
 	};
 });
+
+/** The thread that draws' WebGL call totals, or undefined when none come: a WebGPU page times none. */
+function requestGlTiming(): Promise<GlTimingReport | undefined> {
+	const channel = new BroadcastChannel(GL_TIMING_CHANNEL);
+	return new Promise<GlTimingReport | undefined>((resolve) => {
+		const timeout = setTimeout(() => resolve(undefined), 2000);
+		channel.onmessage = (event: MessageEvent<GlTimingReport>) => {
+			if (event.data?.type !== 'gl-timing') return;
+			clearTimeout(timeout);
+			resolve(event.data);
+		};
+		channel.postMessage(GL_TIMING_REQUEST);
+	}).finally(() => channel.close());
+}

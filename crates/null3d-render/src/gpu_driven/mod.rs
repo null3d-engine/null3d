@@ -513,6 +513,7 @@ impl GpuDrivenRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                            slots: 1,
                         },
                     },
                 );
