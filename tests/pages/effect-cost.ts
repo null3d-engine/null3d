@@ -1,5 +1,6 @@
-// Measures what an effect costs on this device: ?effect=bloom (the default) or ?effect=ao names
-// it. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
+// Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao or
+// ?effect=tone names it. The tone effect is punchy AgX against plain AgX, in bloom's scene with
+// bloom off. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
 // turns, three times each, and reports the medians of each side's GPU time per frame, where the
 // device has a GPU timer, and of its frame interval and CPU time. The device runner's bloom and ao
@@ -16,6 +17,7 @@ import { run } from './lib/result';
 const SKETCHES = {
 	bloom: './sketches/bloom-sketch.ts',
 	ao: './sketches/ao-sketch.ts',
+	tone: './sketches/bloom-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
