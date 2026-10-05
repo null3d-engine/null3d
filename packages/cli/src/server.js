@@ -123,7 +123,13 @@ export async function startBuildServer() {
 		customLogger: collectingLogger(errors),
 	};
 	try {
-		await vite.build({ ...shared, build: { outDir, emptyOutDir: true } });
+		// The tools set the engine's switches through the page's address, such as ?hold= and ?gpu=,
+		// which a production build reads only when it asks for them.
+		await vite.build({
+			...shared,
+			define: { __NULL3D_URL_SWITCHES__: 'true' },
+			build: { outDir, emptyOutDir: true },
+		});
 	} catch (error) {
 		remove();
 		const message = error instanceof Error ? error.message : String(error);

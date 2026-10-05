@@ -50,6 +50,7 @@ pub mod clusters;
 pub mod culling;
 pub mod depth_sort;
 pub mod error;
+pub mod frames;
 pub mod handle;
 pub mod instances;
 pub mod jobs;

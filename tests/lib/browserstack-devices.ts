@@ -2,6 +2,12 @@
 // guide (.dev/devices.md), as BrowserStack's Automate list names them. Each entry is one runner,
 // named bs<device>-<browser>. Where Automate lacks a device or a browser of the guide's table, the
 // entry names the stand-in and says why.
+//
+// Automate's Windows machines have no GPU: their browsers draw with Microsoft's software renderer,
+// which gives no WebGPU adapter. So the Windows runners may lack WebGPU, and their runs test the
+// WebGL2 path in software and the clear failure of each WebGPU page. Firefox on them is left out:
+// it gave no WebGL2 context either, so the smoke plan of 4 October 2026 passed only 2 of its 51
+// pages there, and tested nothing that Chrome's run does not.
 
 /** A tier of the device guide: A for each gate and release, B for each milestone. */
 export type CloudTier = 'A' | 'B';
@@ -122,6 +128,7 @@ export const CLOUD_DEVICES: readonly CloudDevice[] = [
 		osVersion: '11',
 		browser: 'chrome',
 		browserVersion: 'latest',
+		allowNoWebgpu: true,
 	},
 	{
 		runner: 'bsipad10-safari',
@@ -212,14 +219,7 @@ export const CLOUD_DEVICES: readonly CloudDevice[] = [
 		osVersion: '11',
 		browser: 'edge',
 		browserVersion: 'latest',
-	},
-	{
-		runner: 'bswin11-firefox',
-		tier: 'B',
-		os: 'Windows',
-		osVersion: '11',
-		browser: 'firefox',
-		browserVersion: 'latest',
+		allowNoWebgpu: true,
 	},
 	{
 		runner: 'bsmacsequoia-safari',
