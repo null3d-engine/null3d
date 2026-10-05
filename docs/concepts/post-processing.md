@@ -3,7 +3,7 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, bloom through a chain of mip levels, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette."
+summary: "HDR scene color, ambient occlusion at half size, bloom through a chain of mip levels, an outline mask, and one final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering."
 ---
 
 # The post-processing chain
@@ -16,15 +16,15 @@ flowchart LR
     ao --> scene
     scene["Scene passes:<br/>linear HDR color"] --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
     down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
-    scene --> final["Final pass: blends in bloom,<br/>then tone mapping,<br/>FXAA and dithering"]
+    scene --> final["Final pass: blends in bloom,<br/>then the vignette,<br/>FXAA and tone mapping"]
     up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
     final --> line["In the same pass:<br/>the outline's line"]
-    line --> grade["In the same pass:<br/>color grading table,<br/>then the vignette"]
+    line --> grade["In the same pass:<br/>color grading table,<br/>then dithering"]
     grade --> canvas["Canvas"]
 ```
 
-Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
+Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -162,12 +162,23 @@ Outlines draw the outlined meshes twice into the mask, which takes 4 bytes per p
 
 ## Color grading and the vignette
 
-A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut`, maps each display color to a graded color. The vignette darkens the picture toward its edges. Both follow three.js: `LUTPass` and `VignetteShader`, placed after its `OutputPass`. [The post-processing API](../api/post.md#color-grading) lists their settings.
+A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut`, maps each display color to a graded color, as three.js's `LUTPass` does after its `OutputPass`. The vignette darkens the picture toward its edges. [The post-processing API](../api/post.md#color-grading) lists their settings.
 
-- They work on display color, after the tone mapping, so they draw on every GPU path, the 8-bit path included.
+- The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do. three.js's `VignetteShader` blends display color toward a gray after the tone mapping, which turns bright corners gray.
+- The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
+- Both draw on every GPU path. On the 8-bit path there is no HDR color, so the vignette multiplies the linear value of the display color there.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - The table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
-- The engine's parity tests compare two scenes with three.js's composer: a `.cube` table alone, and a table at 0.7 of its intensity with the vignette. Both match in all but under 0.1% of the pixels on every GPU path.
+- The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings, about 1.1% of the pixels differ, all in the outer corners. There three.js's darkness of 1.1 passes black sooner.
+
+## Dithering
+
+An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two close colors shows as bands. The final pass adds noise of up to one step to each pixel, so the bands break up into fine grain. This is dithering. It runs last, after the table and the vignette.
+
+- The noise has the shape of a triangle: values near 0 come most often. Its strength is then the same at every brightness. Noise of even spread still shows bands at some brightness levels, as Mikkel Gjoel showed in "Banding in Games" (2016). Filament and Unity's URP dither with triangle noise too.
+- The noise is the same in every frame, so a still picture does not shimmer.
+- The dither comes after every other step, so no later step shrinks it. In the dark corners of a vignette, where bands show first, it keeps its full step.
+- On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table or the vignette.
 
 ## Effects on devices without HDR color
 
@@ -191,7 +202,7 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - `OutlinePass` blurs its edge, and `edgeStrength`, `edgeGlow` and `pulsePeriod` set how bright it is, how far it glows and how fast it pulses. null3D's line is crisp and opaque, so it has none of these settings. To pulse the line, change its color or width every frame.
 - `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
 - `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`.
-- A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { offset, darkness } })`.
+- A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { size: offset, intensity: darkness } })`. The default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not.
 
 ## Related pages
 

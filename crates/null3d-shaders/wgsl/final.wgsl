@@ -1,7 +1,7 @@
 // The final pass: one triangle over the whole canvas. Each pixel reads the scene color under it,
-// which holds exposed color, applies the tone mapping, encodes sRGB and dithers. The FXAA build smooths
-// edges first. On the 8-bit path the scene shaders did the output transform already, so the scene
-// color holds display color, and the pass keeps the color as it reads it.
+// which holds exposed color, darkens it by the vignette, applies the tone mapping and encodes sRGB.
+// The FXAA build smooths edges first. On the 8-bit path the scene shaders did the output transform
+// already, so the scene color holds display color, and the pass keeps the color as it reads it.
 //
 // The scene drew into the top-left corner of the scene color at the render scale, and the scene
 // color has the canvas's size. At the whole canvas's scale, each pixel reads the texel it covers.
@@ -23,14 +23,22 @@
 //
 // While objects are outlined, the pass draws a crisp line around them from the outline mask, after
 // the output transform: outside the objects, the highest coverage of the mask at 8 places on a
-// circle of the line's width is the line's coverage, so the line has no blur and shows its colors
-// exactly. The 8-bit path draws it the same way, because both paths hold display color there.
+// circle of the line's width is the line's coverage, so the line has no blur and shows its colors,
+// apart from the dither. The 8-bit path draws it the same way, because both paths hold display
+// color there.
 //
-// Last, the pass grades each pixel's display color, as three.js's LUTPass and VignetteShader do
-// after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
-// table is a 3D texture that maps a display color to its graded color, read with a linear filter.
-// Grading works on the color that a pixel's coverage divides out, and multiplies it back after.
-#import null3d::color::{limit_hdr}
+// The vignette multiplies HDR color before the tone mapping, as Filament, URP, Bevy and Babylon.js
+// do, so bright corners darken as dark ones do instead of turning gray. The 8-bit path has no HDR
+// color, so there the pass multiplies the linear value of the display color, before the outline.
+//
+// Last, the pass grades each pixel's display color with a color grading table while its flag is
+// set, as three.js's LUTPass does after its OutputPass, then dithers it. The table is a 3D texture
+// that maps a display color to its graded color, read with a linear filter. The dither comes after
+// every other step, so no later step shrinks its noise below one step of the canvas. On the 8-bit
+// path the scene shaders dithered already, and the pass dithers again only where it changes the
+// color. Grading and the dither work on the color that a pixel's coverage divides out, and
+// multiply it back after.
+#import null3d::color::{limit_hdr, linear_to_srgb, srgb_to_linear}
 #import null3d::tonemap
 
 /// The settings flag that says the scene color holds display color.
@@ -42,10 +50,11 @@ const LUT: u32 = 4u;
 /// The settings flag that draws the outline's line.
 const OUTLINE: u32 = 8u;
 
-/// The pass's settings: the output settings, then the vignette's offset and darkness, then the
-/// scale and the offset that place a display color in the table, with the table's intensity in
-/// the scale's last value, then the outline's display colors: the visible one with the line's width
-/// in pixels of the canvas, then the hidden one with 1 where the line draws around hidden parts.
+/// The pass's settings: the output settings, then the vignette's intensity, size, falloff and
+/// roundness, then the scale and the offset that place a display color in the table, with the
+/// table's intensity in the scale's last value, then the outline's display colors: the visible one
+/// with the line's width in pixels of the canvas, then the hidden one with 1 where the line draws
+/// around hidden parts.
 struct Settings {
     output: null3d::tonemap::Output,
     vignette: vec4f,
@@ -162,6 +171,44 @@ fn with_glow(texel: vec4f, light: vec4f) -> vec4f {
 }
 #endif
 
+/// True when the scene color holds display color, on the 8-bit path.
+fn display_color() -> bool {
+    return (settings.output.flags & DISPLAY_COLOR) != 0u;
+}
+
+/// The vignette's factor at canvas pixel `position` of a canvas of `size` pixels: 1 at the center,
+/// falling toward the edges by the intensity. The place from the center is scaled by the size, and
+/// across by the canvas's shape as the roundness sets it: 0 follows the canvas, 1 makes a circle.
+/// The factor is 1 everywhere while the flag is clear.
+fn vignette(position: vec2f, size: vec2f) -> f32 {
+    if (settings.output.flags & VIGNETTE) == 0u {
+        return 1.0;
+    }
+    let shape = settings.vignette;
+    var d = (position / size - 0.5) * shape.y;
+    d.x *= mix(1.0, size.x / size.y, shape.w);
+    // The smallest value keeps the power's logarithm finite at the edges, on every GPU.
+    let light = pow(max(1.0 - dot(d, d), 1e-6), shape.z);
+    return max(mix(1.0 - shape.x, 1.0, light), 0.0);
+}
+
+/// Scene color `texel` darkened by the vignette's factor `shade` where it holds HDR color. Display
+/// color stays as it is, and `shaded_display` darkens it.
+fn shaded(texel: vec4f, shade: f32) -> vec4f {
+    return vec4f(texel.rgb * select(shade, 1.0, display_color()), texel.a);
+}
+
+/// Canvas color `color`, multiplied by its coverage, darkened by the vignette's factor `shade` on
+/// the 8-bit path: the linear value of its display color times the factor. The HDR path's color
+/// stays as it is, because `shaded` darkened it.
+fn shaded_display(color: vec4f, shade: f32) -> vec4f {
+    if !display_color() || shade >= 1.0 || color.a <= 0.0 {
+        return color;
+    }
+    let c = linear_to_srgb(srgb_to_linear(color.rgb / color.a) * shade);
+    return vec4f(c * color.a, color.a);
+}
+
 /// The scene color's texel at `pixel`, no brighter than a 16-bit float holds. The scene shaders
 /// write no brighter color, but additive blending can add past it, and some GPUs store the sum as
 /// infinity, which the tone mapping curves would turn into black.
@@ -198,11 +245,6 @@ const REDUCE_MUL: f32 = 1.0 / 8.0;
 /// The longest blend along an edge, in pixels.
 const SPAN_MAX: f32 = 8.0;
 const LUMINANCE = vec3f(0.2126, 0.7152, 0.0722);
-
-/// True when the scene color holds display color, which FXAA blends as it is.
-fn display_color() -> bool {
-    return (settings.output.flags & DISPLAY_COLOR) != 0u;
-}
 
 /// HDR color squeezed below 1: exposed luminance l becomes l / (1 + l). Display color stays as it
 /// is.
@@ -278,9 +320,9 @@ fn pixel_color(position: vec2f) -> vec4f {
 }
 #endif
 
-/// Scene color `texel` as canvas pixel `pixel` shows it: tone mapped, encoded and dithered for
-/// that pixel, and multiplied by its coverage. Display color stays as it is.
-fn display(texel: vec4f, pixel: vec2f) -> vec4f {
+/// Scene color `texel` as the canvas shows it before the dither: tone mapped and encoded, and
+/// multiplied by its coverage. Display color stays as it is.
+fn display(texel: vec4f) -> vec4f {
     if (settings.output.flags & DISPLAY_COLOR) != 0u {
         return texel;
     }
@@ -290,16 +332,17 @@ fn display(texel: vec4f, pixel: vec2f) -> vec4f {
         return vec4f(0.0);
     }
     let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings.output);
-    let encoded = saturate(null3d::tonemap::encode(mapped, pixel));
+    let encoded = saturate(linear_to_srgb(mapped));
     return vec4f(encoded * coverage, coverage);
 }
 
-/// Canvas color `color`, multiplied by its coverage, as canvas pixel `position` of a canvas of
-/// `size` pixels shows it after the color grading table and the vignette. With neither, it stays
-/// as it is.
-fn grade(color: vec4f, position: vec2f, size: vec2f) -> vec4f {
+/// Canvas color `color`, multiplied by its coverage, as canvas pixel `position` shows it last:
+/// graded by the color grading table, then dithered. The 8-bit path's color stays as it is while
+/// the pass grades nothing.
+fn finish(color: vec4f, position: vec2f) -> vec4f {
     let flags = settings.output.flags;
-    if (flags & (LUT | VIGNETTE)) == 0u || color.a <= 0.0 {
+    let grades = (flags & (LUT | VIGNETTE)) != 0u;
+    if (display_color() && !grades) || color.a <= 0.0 {
         return color;
     }
     var c = color.rgb / color.a;
@@ -308,12 +351,7 @@ fn grade(color: vec4f, position: vec2f, size: vec2f) -> vec4f {
         let graded = textureSampleLevel(lut, lut_sampler, at, 0.0).rgb;
         c = mix(c, graded, settings.lut_scale.w);
     }
-    if (flags & VIGNETTE) != 0u {
-        // three.js's VignetteShader: the place from the canvas's center, scaled by the offset,
-        // blends the color toward the gray of 1 - darkness by its squared distance.
-        let uv = (position / size - 0.5) * settings.vignette.x;
-        c = mix(c, vec3f(1.0 - settings.vignette.y), dot(uv, uv));
-    }
+    c = saturate(c + null3d::tonemap::dither(position));
     return vec4f(c * color.a, color.a);
 }
 
@@ -336,9 +374,10 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     // target of the frame shares.
     let uv = position.xy / size;
     let light = glow(uv);
+    let shade = vignette(position.xy, size);
     var color = vec4f(0.0);
     if whole {
-        color = display(with_glow(pixel_color(position.xy), light), position.xy);
+        color = display(shaded(with_glow(pixel_color(position.xy), light), shade));
     }
 #ifdef WEBGL2
     let from_top = vec2f(position.x, size.y - position.y);
@@ -359,7 +398,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let weights = mix(1.0 - share, share, corner);
         let texel = corner_texel(min(first + corner, render - 1.0), size);
         let texel_color = with_glow(scene_texel(texel), light);
-        color += weights.x * weights.y * display(texel_color, position.xy);
+        color += weights.x * weights.y * display(shaded(texel_color, shade));
     }
-    return grade(outlined(color, uv, size, render), position.xy, size);
+    return finish(outlined(shaded_display(color, shade), uv, size, render), position.xy);
 }

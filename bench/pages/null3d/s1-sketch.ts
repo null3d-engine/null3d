@@ -46,7 +46,7 @@ export default defineSketch(async (context) => {
 	if (outlined) createOutlined(context);
 	const moveCasters = switches.has('tileShadows') ? createTileShadows(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
-	const vignette = { offset: 1, darkness: 1 };
+	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
 	const line = { width: 2 };
 	const outlineSettings = { outline: line };
@@ -90,7 +90,7 @@ export default defineSketch(async (context) => {
 		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
-		vignette.offset = 1 + 0.25 * Math.cos(t);
+		vignette.size = 1 + 0.25 * Math.cos(t);
 		context.post.set(settings);
 	};
 	pose(time.now);

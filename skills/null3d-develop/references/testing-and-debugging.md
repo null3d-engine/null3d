@@ -101,6 +101,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, as on a device with only those. `none` uploads them uncompressed (`api/textures`) |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` do, such as Firefox before 145 |
 | `?hdr=off` | Take the 8-bit color path, where the scene shaders tone map themselves, as devices without float color targets do (`concepts/backends`) |
+| `?scene-format=rg11b10`, `?scene-format=rgba16f` | Draw the HDR scene color in the packed small float format (4 bytes a pixel) or in 16-bit floats (8 bytes), where the device can; to compare memory, speed and banding (`concepts/backends`) |
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?prepass=on`, `?prepass=off` | Turn the depth prepass on or off over the `depthPrepass` option, to compare GPU time (`concepts/quality-presets`) |

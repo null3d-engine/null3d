@@ -71,7 +71,8 @@ const WEBGL2_EXTENSIONS = [
 
 /**
  * The color that the float render target test clears to. One channel is above 1, which high
- * dynamic range color needs, and every value is exact as a 16-bit float.
+ * dynamic range color needs, and every value is exact as a 16-bit float and in the packed format.
+ * A format without alpha reads back an alpha of 1.
  */
 const FLOAT_TARGET_COLOR = [2, 0.5, 0.25, 1] as const;
 
@@ -139,17 +140,19 @@ export interface WebGL2Report {
 	} | null;
 	/**
 	 * Whether the device renders into float textures, which high dynamic range color needs. The
-	 * engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer
-	 * with the texture is complete. `readsBack` says whether a clear to a known color, with a value
-	 * above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that
-	 * the format takes, or 0 where the device does not render into it. WebGL2 renders into both
-	 * formats with `EXT_color_buffer_float`, and into the 16-bit one with
-	 * `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
+	 * engine tests a 16-bit and a 32-bit float RGBA texture, and the 32-bit packed format
+	 * `R11F_G11F_B10F`, which holds three channels in half the bytes of the 16-bit one. `complete`
+	 * says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a
+	 * known color, with a value above 1, reads back as floats. `samples` is the most samples per
+	 * pixel for antialiasing that the format takes, or 0 where the device does not render into it.
+	 * WebGL2 renders into the three formats with `EXT_color_buffer_float`, and into the 16-bit one
+	 * with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
 	 * format passes both tests, and with MSAA takes 4 samples. Null without WebGL2.
 	 */
 	floatRenderTargets: {
 		rgba16f: { complete: boolean; readsBack: boolean; samples: number };
 		rgba32f: { complete: boolean; readsBack: boolean; samples: number };
+		r11fG11fB10f: { complete: boolean; readsBack: boolean; samples: number };
 	} | null;
 	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
@@ -375,6 +378,7 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 			floatRenderTargets: {
 				rgba16f: probeFloatTarget(gl, gl.RGBA16F),
 				rgba32f: probeFloatTarget(gl, gl.RGBA32F),
+				r11fG11fB10f: probeFloatTarget(gl, gl.R11F_G11F_B10F),
 			},
 			renderer: debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : null,
 		};

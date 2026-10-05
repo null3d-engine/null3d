@@ -1,11 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Eight more set what the
-// benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
-// shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
-// without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for occlusion
-// culling, and ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU. ?hold
-// starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
+// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Eight more set
+// what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory=
+// for the shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for
+// culling without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for
+// occlusion culling, and ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU.
+// ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
 // running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
@@ -47,6 +47,11 @@ export type SketchThread = 'worker' | 'main';
  * @category api/engine
  */
 export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
+
+/** A format of the HDR scene color that the ?scene-format= switch names. */
+export type SceneFormat = 'rg11b10' | 'rgba16f';
+
+const SCENE_FORMATS: readonly SceneFormat[] = ['rg11b10', 'rgba16f'];
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
@@ -101,6 +106,13 @@ export interface Switches {
 	 * themselves, on a device that draws HDR color.
 	 */
 	hdr: boolean;
+	/**
+	 * The HDR scene color's format that ?scene-format= asks for where the device draws it:
+	 * `'rg11b10'`, the packed small float format of 4 bytes a pixel, or `'rgba16f'`, 16-bit floats
+	 * of 8 bytes. Undefined for the GPU path's own choice. A transparent canvas always takes
+	 * 16-bit floats, which hold its alpha.
+	 */
+	sceneFormat: SceneFormat | undefined;
 	/**
 	 * True when ?half=on makes the scene shaders do their color math at half precision, where the
 	 * device can, false when ?half=off makes them use full precision, and undefined for the
@@ -235,6 +247,7 @@ export function parseSwitches(search: string): Switches {
 		freshCheck: params.get('check') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
 		hdr: params.get('hdr') !== 'off',
+		sceneFormat: oneOf(params.get('scene-format'), SCENE_FORMATS),
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
 		prepass: onOff(params.get('prepass')),

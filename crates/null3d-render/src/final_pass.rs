@@ -5,10 +5,11 @@
 //! render scale can drop: it copies the scene color, or runs FXAA on it. Below the whole canvas's
 //! render scale, it scales the scene's corner of the scene color up to the canvas instead. With
 //! bloom (see [`crate::bloom`]), the pass draws with its bloom build, which blends the base level of
-//! bloom's chain into the scene color before the output transform. While objects are outlined, the pass paints the
-//! outline's line around them after the output transform (see [`crate::outline`]). Last, it grades
-//! the canvas color with a color grading table and the vignette while the sketch sets them (see
-//! [`crate::grading`]). Each frame builder owns one, with GPU object ids from its own ranges, and
+//! bloom's chain into the scene color before the output transform. The vignette darkens HDR color
+//! before the output transform too. While objects are outlined, the pass paints the
+//! outline's line around them after the output transform (see [`crate::outline`]). Then it grades
+//! the canvas color with a color grading table while the sketch sets one (see
+//! [`crate::grading`]), and it dithers last. Each frame builder owns one, with GPU object ids from its own ranges, and
 //! its pipelines come from the builder's pipeline cache like every other.
 
 use null3d_gpu::drawlist::{
@@ -37,7 +38,7 @@ const OUTLINE_BINDING: u32 = 11;
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct FinalUniform {
     output: OutputUniform,
-    /// The vignette's offset and darkness, then two spare values.
+    /// The vignette's intensity, size, falloff and roundness.
     vignette: [f32; 4],
     /// The scale that places a color in the color grading table, then the table's intensity.
     lut_scale: [f32; 4],
@@ -238,7 +239,7 @@ impl FinalPass {
         settings.output.set_render_size(render_size);
         if let Some(vignette) = grading.vignette {
             settings.output.flags |= OutputUniform::VIGNETTE;
-            settings.vignette = [vignette.offset, vignette.darkness, 0.0, 0.0];
+            settings.vignette = vignette.uniform();
         }
         let lut = match grading.lut {
             Some((texture, scale, offset)) => {
@@ -479,8 +480,10 @@ mod tests {
         let grading = Grading {
             lut: Some((40, scale, offset)),
             vignette: Some(Vignette {
-                offset: 1.2,
-                darkness: 0.7,
+                intensity: 0.7,
+                size: 1.2,
+                falloff: 2.0,
+                roundness: 0.5,
             }),
         };
         let (_, settings, list) = prepared(format::CANVAS, Antialias::Msaa, grading);
@@ -488,7 +491,7 @@ mod tests {
             settings.output.flags,
             OutputUniform::DISPLAY_COLOR | OutputUniform::VIGNETTE | OutputUniform::LUT
         );
-        assert_eq!(settings.vignette, [1.2, 0.7, 0.0, 0.0]);
+        assert_eq!(settings.vignette, [0.7, 1.2, 2.0, 0.5]);
         assert_eq!((settings.lut_scale, settings.lut_offset), (scale, offset));
         assert_eq!(bound_table(&list), 40);
     }

@@ -1,6 +1,6 @@
-//! Color grading and the vignette, which the final pass applies to the canvas color after the
-//! tone mapping and the sRGB encoding, as three.js's `LUTPass` and `VignetteShader` do after its
-//! `OutputPass`.
+//! Color grading and the vignette, which the final pass applies: the vignette to HDR color before
+//! the tone mapping, and the table to the canvas color after the tone mapping and the sRGB
+//! encoding, as three.js's `LUTPass` does after its `OutputPass`.
 //!
 //! A color grading table is a 3D texture of the texture store (see [`crate::textures`]): a lookup
 //! table whose texel at (r, g, b) holds the graded color of that display color. The final pass
@@ -8,13 +8,17 @@
 //! with the color by the table's intensity. A table's file may name the range of colors that it
 //! covers, its domain, which `LUTPass` leaves out; the final pass maps the color into it.
 //!
-//! The vignette is three.js's `VignetteShader`: each pixel blends toward the gray of
-//! `1 - darkness` by the squared distance from the canvas's center, scaled by the offset.
+//! The vignette multiplies each pixel's HDR color by a factor that falls from 1 at the canvas's
+//! center toward its edges, as Filament, URP, Bevy and Babylon.js do: darkening before the tone
+//! curve keeps bright corners from turning gray. Its default falloff, a power of 2, darkens linear
+//! color about as three.js's `VignetteShader` darkens display color toward black, so a port maps
+//! `offset` to the size and `darkness` to the intensity.
 //!
 //! Both are values of the final pass's settings, not builds of its shader: the pass binds a blank
 //! table of one texel while the sketch sets none, and its flags say what to apply. So turning
 //! either on builds no pipeline. The 8-bit path's scene shaders tone map and encode color
-//! themselves, so the final pass grades display color on every path.
+//! themselves, so there the final pass grades display color, and multiplies the vignette's factor
+//! into the linear value of the display color.
 
 use null3d_core::handle::Handle;
 
@@ -59,14 +63,28 @@ impl Lut {
     }
 }
 
-/// The vignette, with the meanings of three.js's `VignetteShader`.
+/// The vignette: at a place `d` from the canvas's center, in canvas widths and heights scaled by
+/// the size, the factor is `mix(1 - intensity, 1, (1 - |d|²)^falloff)`, at least 0.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vignette {
-    /// How far toward the center the darkening reaches: it scales the distance from the center.
-    /// At 1, the corners blend halfway toward the gray of `darkness`.
-    pub offset: f32,
-    /// How dark the edges turn: pixels blend toward the gray of `1 - darkness`.
-    pub darkness: f32,
+    /// How dark the edges turn: 0 leaves them as they are, and 1 darkens them to black where the
+    /// falloff reaches 0. Above 1 they reach black sooner.
+    pub intensity: f32,
+    /// How much of the picture the darkening covers: it scales the distance from the center. From
+    /// the square root of 2, the corners take the full intensity.
+    pub size: f32,
+    /// The power of the falloff from the center, above 0: higher values darken more of the
+    /// picture.
+    pub falloff: f32,
+    /// The shape: 0 follows the canvas's shape, as three.js's does, and 1 makes a circle.
+    pub roundness: f32,
+}
+
+impl Vignette {
+    /// The vignette's four values as the final pass's settings hold them.
+    pub(crate) fn uniform(self) -> [f32; 4] {
+        [self.intensity, self.size, self.falloff, self.roundness]
+    }
 }
 
 /// What the final pass grades a frame with: the table, once its texels are on the GPU, and the

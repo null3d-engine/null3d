@@ -84,3 +84,5 @@ The owner settled the vignette's default that evening, as ruling 3 of [D-53](D-5
 - The `lut-vignette` parity scene keeps its strict limit until the vignette moves. Then the vignette gets null3D's own references and a sanity comparison, and the table keeps its strict test in a scene without a vignette.
 
 The work is the proposed task M2-F9, with `R11F_G11F_B10F` scene color on WebGL2 after prototype P3.
+
+[D-77](D-77-final-pass-order-and-formats.md) records the build: the vignette's new settings and its falloff, the dither, and the WebGL2 format's probe and switch. The `lut-vignette` parity scene became a sanity comparison.

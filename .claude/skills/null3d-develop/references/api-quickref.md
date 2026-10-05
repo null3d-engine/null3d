@@ -454,7 +454,7 @@ post.set({
   bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) GTAOPass's meanings; darkens only ambient light; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
-  vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
+  vignette: { intensity: 1, size: 1 },   // (0.2) darkens HDR color before the tone curve; falloff (2) and roundness (0) too; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
 post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples

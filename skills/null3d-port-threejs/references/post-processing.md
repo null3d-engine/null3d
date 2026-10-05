@@ -38,7 +38,7 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `TAARenderPass` | Not in 1.0 | MSAA meanwhile |
 | `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeThickness`, `selectedObjects`) | `outline: { color, hiddenColor, width }` and `mesh.setOutlined(true)` (0.2) | A crisp line, with no blur. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`. `OutlinePass` draws its edge at half size, so `width` is about 2 × `edgeThickness`. three.js draws a dark brown hidden line by default; keep it with `hiddenColor: [0.1, 0.04, 0.02]`, as null3D draws none by default. `edgeStrength` has no setting, as the line is opaque. `edgeGlow` above 0, `pulsePeriod` and the pattern texture have no setting: list the soft look as a visible difference. To pulse the line, change its color or width every frame. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh |
 | `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file |
-| `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { offset, darkness }` (0.2) | Same meanings, so keep the two numbers |
+| `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { size: offset, intensity: darkness }` (0.2) | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. The default `falloff` of 2 gives a close match. With `darkness` below 1, three.js also lifts dark corners toward a gray: list that as a visible difference |
 | `BokehPass` (depth of field) | Not in 1.0 | Custom `hdr` effect with `sampleDepth` (0.2), or skip |
 | `SSRPass`, `ReflectorForSSRPass` | Not in 1.0 | Environment reflections (0.2) |
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass`, `AfterimagePass` | `post.addEffect` (0.2) | Cookbook recipes cover film grain, pixelation and afterimage |
@@ -53,7 +53,7 @@ Versions: the HDR scene buffer, the final pass, `post.set({ toneMapping, exposur
 | `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `radius`, `levels`, `mipmapBlur`) | `bloom: { intensity, threshold: luminanceThreshold, knee: luminanceSmoothing, blend: 'screen', weights }` (0.2), mapped (section 5). `mipmapBlur: false` (Kawase) has no match: map it as the mip blur and list the difference |
 | `ToneMappingEffect` (`mode`) | `toneMapping` |
 | `SMAAEffect`, `FXAAEffect` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` |
-| `VignetteEffect` (`offset`, `darkness`) | `vignette: { offset, darkness }` (0.2): the `ESKIL` technique's meanings; tune the numbers for the default technique |
+| `VignetteEffect` (`offset`, `darkness`) | `vignette: { size: offset, intensity: darkness }` (0.2) for the `ESKIL` technique; for the default technique, tune `intensity` and `size` by eye |
 | `SSAOEffect`, N8AO | `ao` (0.2) |
 | `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2; per-pixel, so they merge into the final pass) |
