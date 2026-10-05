@@ -377,7 +377,7 @@ export async function createRenderer(
 			// context that an earlier engine on the canvas gave up comes back when asked. A scene's
 			// shaders download meanwhile.
 			const [, , shaders, timing] = await Promise.all([
-				reclaimContext(gl),
+				reclaimContext(canvas),
 				contextRestored(gl),
 				scene && deviceShaders(device, options, loadGlslShaders, loadGlslFeature),
 				options.glTiming && import('../gpu/webgl2/call-timing'),

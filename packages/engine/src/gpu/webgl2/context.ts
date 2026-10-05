@@ -11,11 +11,20 @@ const SIMULATED_RESTORE_MS = 50;
 export const LOST_EVENTS = ['contextlost', 'webglcontextlost'];
 export const RESTORED_EVENTS = ['contextrestored', 'webglcontextrestored'];
 
+type ContextCanvas = OffscreenCanvas | HTMLCanvasElement;
+
+/** The key of the thread's given-up contexts on its global object. */
+const GIVEN_UP = Symbol.for('null3d.givenUpContexts');
+/** The thread's global object, which holds the given-up contexts for every copy of this module. */
+const thread = globalThis as { [GIVEN_UP]?: WeakMap<ContextCanvas, Promise<WEBGL_lose_context>> };
 /**
- * The contexts that an engine gave up. Each one's promise gives the extension that brings it back,
- * once the browser has run the loss event: a restore before that event fails.
+ * The canvases whose context an engine gave up. Each one's promise gives the extension that brings
+ * the context back, once the browser has run the loss event: a restore before that event fails.
+ * The entry holds only the canvas's own context and extension, never an engine's renderer, memory
+ * or workers, and goes with the canvas.
  */
-const givenUp = new WeakMap<WebGL2RenderingContext, Promise<WEBGL_lose_context>>();
+const givenUp = thread[GIVEN_UP] ?? new WeakMap<ContextCanvas, Promise<WEBGL_lose_context>>();
+thread[GIVEN_UP] = givenUp;
 
 /**
  * The canvas's WebGL2 context. The engine draws into its own multisampled targets and resolves or
@@ -73,16 +82,18 @@ export function contextFinished(gl: WebGL2RenderingContext): Promise<void> {
  * Gives the context up, unless the browser already took it, so the GPU frees its memory at once. A
  * canvas keeps its context for good, so the next engine on the canvas gets this one, lost, and
  * `reclaimContext` brings it back. The browser offers a context back only when the loss event was
- * cancelled, so this cancels it.
+ * cancelled, so this cancels it. `gl` may wrap the canvas's context, as call timing does, so the
+ * canvas's own context is the one given up.
  */
 export function releaseContext(gl: WebGL2RenderingContext): void {
-	if (gl.isContextLost()) return;
+	const canvas = gl.canvas as ContextCanvas;
+	const own = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
+	if (!own || own.isContextLost()) return;
 	// A lost context has no extensions, so the extension is kept from before the loss.
-	const lose = gl.getExtension('WEBGL_lose_context');
+	const lose = own.getExtension('WEBGL_lose_context');
 	if (!lose) return;
-	const canvas = gl.canvas as EventTarget;
 	givenUp.set(
-		gl,
+		canvas,
 		new Promise((resolve) => {
 			const heard = new AbortController();
 			const onLost = (event: Event) => {
@@ -98,12 +109,12 @@ export function releaseContext(gl: WebGL2RenderingContext): void {
 }
 
 /**
- * Asks the browser for the context back when an earlier engine gave it up. The context then comes
- * back as after any loss, with the restore event.
+ * Asks the browser for the canvas's context back when an earlier engine gave it up. The context
+ * then comes back as after any loss, with the restore event.
  */
-export async function reclaimContext(gl: WebGL2RenderingContext): Promise<void> {
-	const givenBack = givenUp.get(gl);
+export async function reclaimContext(canvas: ContextCanvas): Promise<void> {
+	const givenBack = givenUp.get(canvas);
 	if (!givenBack) return;
-	givenUp.delete(gl);
+	givenUp.delete(canvas);
 	(await givenBack).restoreContext();
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
+import { releaseContext } from '../gpu/webgl2/context';
 import type { CoreDevice } from '../page/limits';
 import { createRenderer, type RenderCanvas } from './renderer';
 
@@ -141,6 +142,16 @@ describe('the WebGL2 renderer', () => {
 		expect(heard).toBe(false);
 		second.destroy();
 		expect(gl.isContextLost()).toBe(true);
+	});
+
+	it('gives up the canvas own context when the renderer drew through a wrapper of it', async () => {
+		const { canvas } = fakeCanvas();
+		const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
+		// A stand-in like call timing's: it reads the canvas, and its extensions are its own.
+		releaseContext({ canvas, getExtension: () => null } as unknown as WebGL2RenderingContext);
+		expect(gl.isContextLost()).toBe(true);
+		await createRenderer(canvas, { tier: 'webgl2', device: {} as CoreDevice });
+		expect(gl.isContextLost()).toBe(false);
 	});
 });
 
