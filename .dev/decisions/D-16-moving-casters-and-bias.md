@@ -276,6 +276,19 @@ GPU time of S4 at Low on the Mac (WebGPU, `bun run bench:run --compare`, 6 runs 
 
 The loop indexed arrays by its counters, and the last version has no array at all. Each of its 6 runs was faster than each of main's 6 runs. At High, with the 5 x 5 filter, 4 runs each gave 1.822 ms on main and 1.599 ms with the last version. Chrome on the Mac reports no GPU time for WebGL2, so WebGL2's four comparisons per block are not measured. Its CPU time did not change.
 
+On the Galaxy S24+ (Chrome 154, Xclipse 940 through ANGLE on Vulkan, display at 60 Hz), S4 at Low on WebGL2, with the governor off, ran 30 s per turn, in the order main, fix, main, fix, on 5 October 2026. The phone was cool at each start (thermal status 0, skin 32.2 °C to 33.2 °C through the turns, Samsung throttle level 0).
+
+| Turn | Version | Seconds at 60 fps | Frame interval median / p95 / p99, ms | CPU ms median / p95 | All threads, ms | GPU delay median / p95, ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Main | 30 of 30 | 16.67 / 16.80 / 16.92 | 4.26 / 6.72 | 5.50 | 15.88 / 20.15 |
+| 2 | Fix | 29 of 29 | 16.67 / 16.81 / 16.98 | 4.28 / 6.71 | 5.49 | 15.81 / 17.33 |
+| 3 | Main | 29 of 29 | 16.67 / 16.79 / 16.88 | 3.97 / 6.53 | 5.16 | 15.88 / 17.84 |
+| 4 | Fix | 29 of 29 | 16.67 / 16.78 / 16.89 | 4.26 / 6.66 | 5.49 | 15.82 / 17.52 |
+
+Both versions held 60 fps for every measured second, with the same frame intervals. The CPU time did not change: the fix's two turns gave 4.28 and 4.26 ms, and main's gave 4.26 and 3.97 ms. The phone reports no GPU time. Chrome on Android has no WebGL2 timer queries, and the engine's WebGL2 path does not use them. The display caps the frame at 60 Hz, so the four reads per block fit inside the frame at Low and do not show in the frame interval. The GPU delay, the time from a frame's submit to its end on the GPU, includes the wait for the display, so it does not give the GPU's work either. The fix's flat-surface acne was 0.012% against main's 0.014%, and its shadow edge offset 0.081 px against 0.102 px. The contact gap was 0.026 px on both.
+
+To measure the cost itself on the phone, a page must draw faster than the display, as the effect cost page does: frames back to back, with a pixel read at the end of each batch.
+
 ### Decision
 
 Option 1. The directional light's filter compares each texel with the receiver's plane at the texel's center. Where the receiver's own depth lies nearer the light, it uses that. WebGPU reads four texels at once, and WebGL2 compares them one at a time. In WebGL2's `standard` depth mode, the comparison sampler passes every test, so every surface stays lit there, as before. Spot and point lights keep the comparison sampler's blend, as their views are not orthographic.
