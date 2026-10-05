@@ -304,6 +304,8 @@ export class Textures {
 		/** @internal The device's capability flags, which say what compressed formats it has. */
 		readonly capabilities: number,
 		private readonly ownBudget: () => void = () => {},
+		/** @internal True when the engine draws with WebGL2. */
+		readonly webgl2 = false,
 	) {}
 
 	/**

@@ -14,9 +14,16 @@ use super::{AnimationError, Clip, Skeleton, TrackProblem, field, filled, out_of_
 /// another.
 pub const DEFAULT_RATE: f32 = 30.0;
 
-/// The most frames one clip holds: about 9.7 hours at 30 keys per second. Longer clips come from
-/// broken files.
-pub const MAX_FRAMES: u32 = 1 << 20;
+/// The most keys one clip holds, counted as its frames times its tracks: 4,194,304. Resampling
+/// holds about 28 bytes per key at its peak, so a clip stays near 112 MiB at most. That is 23
+/// minutes at 30 keys per second for a 65-joint rig with all three channels, or 45 seconds for the
+/// largest skeleton's 3,072 tracks. A clip past it comes from a broken or hostile file, such as two
+/// keys hours apart.
+pub const MAX_CLIP_KEYS: u64 = 1 << 22;
+
+/// The shortest clip, in seconds, that keeps more than one frame. A shorter one holds its first
+/// values: its rate would pass the range of a 32-bit float, and its poses would be NaN.
+pub const MIN_CLIP_SECONDS: f64 = 1e-6;
 
 /// How far past a whole number of frames a clip's end may lie and still end on that frame, in
 /// frames, as far as a key may lie from the source grid.
@@ -441,7 +448,7 @@ pub fn resample(
         .iter()
         .map(|t| f64::from(t.times[t.times.len() - 1]))
         .fold(0.0, f64::max);
-    let frames = if duration > 0.0 {
+    let frames = if duration >= MIN_CLIP_SECONDS {
         let keys_per_second = keys_per_second(tracks, rate);
         // The clip's end is a 32-bit float, which can round past its last frame by a few
         // millionths of a frame: a key within a thousandth of a frame counts as on it, as the
@@ -449,15 +456,18 @@ pub fn resample(
         let intervals = (duration * keys_per_second - FRAME_TOLERANCE)
             .ceil()
             .max(1.0);
-        if intervals >= f64::from(MAX_FRAMES) {
-            return Err(AnimationError::Frames {
-                frames: intervals.min(f64::from(u32::MAX)) as u32,
-            });
-        }
-        intervals as u32 + 1
+        intervals + 1.0
     } else {
-        1
+        1.0
     };
+    // Every allocation below grows with frames times tracks, so the bound comes before any.
+    let keys = frames * tracks.len().max(1) as f64;
+    if keys > MAX_CLIP_KEYS as f64 {
+        return Err(AnimationError::Keys {
+            keys: keys.min(f64::from(u32::MAX)) as u32,
+        });
+    }
+    let frames = frames as u32;
 
     let mut resampled = Vec::new();
     resampled

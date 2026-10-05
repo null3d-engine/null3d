@@ -74,6 +74,7 @@ export type {
 } from './scene/animation';
 export type {
 	Assets,
+	LoadGltfOptions,
 	LoadImageOptions,
 	LoadTextureOptions,
 	ProgressHandler,
