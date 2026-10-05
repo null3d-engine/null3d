@@ -50,6 +50,7 @@ const engine = await createEngine({
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
+  preload: ['skinning', 'bloom'],  // (0.2) features whose shaders load before the first frame, for games that fetch nothing in play (E1421 for an unknown name)
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 

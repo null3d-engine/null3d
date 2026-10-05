@@ -53,7 +53,7 @@ function post(hdrEffects = true) {
 	} as unknown as CoreMemory;
 	const templates = new ShaderTemplates((template, shader) => sent.push([template, shader]));
 	return {
-		post: new Post(core, hdrEffects, true, templates),
+		post: new Post(core, hdrEffects, true, undefined, templates),
 		effects,
 		curves,
 		sent,

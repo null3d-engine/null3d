@@ -11,8 +11,9 @@
 //!   shaders import as `null3d::<file name>`.
 //! - [`OUTPUT_PATH`] is the main generated module. The device modules sit beside it in
 //!   [`OUTPUT_DIR`], one for each target and each value of the permutation bits that a device
-//!   fixes, with the builds of the shaders that load by device. So do the modules of the shaders
-//!   that load on a feature's first use, one for each target of each.
+//!   fixes, with the builds of the shaders that load by device. The builds of each feature that
+//!   loads on first use go into device modules of their own there, and each shader that loads on
+//!   a feature's first use as a whole has a module of its own for each target.
 
 mod composition;
 mod effect;
@@ -48,8 +49,8 @@ pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate};
 pub use output::{
-    Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output, Response,
-    VariantOutput, WgslOutput,
+    Binding, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output,
+    Response, VariantOutput, WgslOutput,
 };
 pub use position::Position;
 pub use problem::{BuildError, Problem};
@@ -167,7 +168,22 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             output.by_device.insert(shader_name.clone());
         }
         if shader.first_use {
-            output.first_use.insert(shader_name.clone());
+            output.first_use_shaders.insert(shader_name.clone());
+        }
+    }
+    for (feature, first_use) in &manifest.first_use {
+        for shader in &first_use.shaders {
+            output
+                .first_use
+                .shaders
+                .insert(shader.clone(), feature.clone());
+        }
+        for bit in first_use
+            .bits
+            .iter()
+            .filter_map(|bit| permutation::bit(bit))
+        {
+            output.first_use.bits.insert(bit, feature.clone());
         }
     }
     errors.or(output)
@@ -369,7 +385,7 @@ impl Compiler {
         let glsl = if variant.has(Target::Glsl) {
             // GLSL has no pipeline constants, so each takes its default. WebGL2 reads plain
             // integer vertex attributes as whole numbers itself, which needs no other value.
-            let (module, info) = naga::back::pipeline_constants::process_overrides(
+            let (module, _) = naga::back::pipeline_constants::process_overrides(
                 &module,
                 &info,
                 None,
@@ -381,9 +397,8 @@ impl Compiler {
                     format!("naga cannot give the pipeline constants their defaults: {e}"),
                 )]
             })?;
-            let (module, info) = (module.as_ref(), info.as_ref());
             let programs = pipelines.iter().map(|(name, pipeline)| {
-                glsl::write_program(module, info, name, pipeline, &mediump)
+                glsl::write_program(&module, capabilities, name, pipeline, &mediump)
                     .map(|program| (name.clone(), program))
                     .map_err(|message| vec![Problem::in_file(path, message)])
             });
@@ -461,7 +476,7 @@ fn finish_source(source: &str) -> String {
 pub fn typescript(output: &Output) -> BTreeMap<String, String> {
     typescript::modules(output)
         .into_iter()
-        .map(|(stem, text)| (format!("{OUTPUT_DIR}/{stem}.ts"), text))
+        .map(|(name, text)| (format!("{OUTPUT_DIR}/{name}"), text))
         .collect()
 }
 
@@ -488,7 +503,10 @@ fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String>
     let mut stale: Vec<String> = entries
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.starts_with(typescript::DEVICE_MODULE_PREFIX) && name.ends_with(".ts"))
+        .filter(|name| {
+            name.starts_with(typescript::DEVICE_MODULE_PREFIX)
+                && (name.ends_with(".ts") || name.ends_with(".js"))
+        })
         .map(|name| format!("{OUTPUT_DIR}/{name}"))
         .filter(|path| !modules.contains_key(path))
         .collect();

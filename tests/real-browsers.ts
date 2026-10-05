@@ -10,16 +10,16 @@
 // changes through the run marks the run's timing figures as unreliable.
 // From the repository root:
 //   bun tests/real-browsers.ts Safari Firefox
-//   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard 1/2 Safari
 //   bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan scale --scenes s5 --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 250000
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8
 //   bun tests/real-browsers.ts --plan memory --android chrome --lan ipad-safari
-//   bun tests/real-browsers.ts --plan startup --android brave --lan ipad-safari,ipad-brave
-//   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
-//   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --plan startup --lan ipad-safari
+//   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan skinning-webgpu --lan ipad-safari
 //   bun tests/real-browsers.ts --plan animation --android chrome --lan ipad-safari
@@ -80,7 +80,8 @@
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
-//                       cannot read: it goes into each Brave result and the run's summary
+//                       cannot read: it goes into each Brave result and the run's summary. No
+//                       plan tests Brave any more; it runs only where a run names it
 //   --switches <q>      page switches that every page of the plan gets, such as half=on or
 //                       half=on&preset=ultra: the checks plan's image tests then compare the
 //                       scene shaders at half precision with the usual references
@@ -134,6 +135,9 @@ import {
 	browserText,
 	type DeviceFacts,
 	detectBrowser,
+	NO_FRAMES,
+	type NoFramesRecord,
+	noFramesText,
 	testedDeviceRow,
 } from './lib/device-record.ts';
 import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
@@ -888,6 +892,17 @@ export function memoryResetText(
 	return `Quit and reopen ${app} on ${place}${front} then run again with --only ${only.join(',')}`;
 }
 
+/**
+ * What to do after a runner page got no animation frames. A cloud session tried to bring the page
+ * to the front when it opened, so a new session is the next try there.
+ */
+export function noFramesTodo(runner: string, launch: Launch | undefined): string {
+	if (launch?.kind === 'cloud')
+		return `The session could not bring the page to the front. Run it again with bun run devices:cloud --only ${runner} for a new session, or test this browser in BrowserStack Live, where a person holds the device`;
+	const { app, place } = deviceWords(runner, launch);
+	return `Bring the runner page to the front in ${app} on ${place}, keep the screen on, then run again`;
+}
+
 /** The display refresh rate that the device checklist asks for, in hertz. */
 export const EXPECTED_REFRESH_HZ = 60;
 /** The lowest refresh rate at which a run's timing figures still compare with other runs', in hertz. */
@@ -952,7 +967,7 @@ export function refreshText(runner: string, launch: Launch | undefined, problem:
 /** Why the out-of-memory guard ended a runner's turn, and what to do before the next run. */
 export interface EndedEarly {
 	reason: string;
-	/** The latest pages that failed for lack of memory. */
+	/** The latest pages that failed for lack of memory, or the step that got no frames. */
 	pages: string[];
 	/** What the person at the device does next. */
 	todo: string;
@@ -983,13 +998,15 @@ interface LatestPage {
 }
 
 /**
- * Ends a runner's turn as soon as its browser keeps refusing memory: enough of its latest pages
- * failed for lack of memory, as Safari does after hours of runs, when every later page would fail
- * too and only a new browser process helps. It reads each runner's results as they come, in the
- * plan's order, and skips the pages that push the memory limit on purpose. `stop` ends the
- * runner page's turn; the guard then records why, in the runner's results, and prints what to do.
+ * Ends a runner's turn early when no later page can pass. That is so when its runner page got no
+ * animation frames and stopped, as when the browser reports the page hidden. It is so too when the
+ * browser keeps refusing memory: enough of its latest pages failed for lack of memory, as Safari
+ * does after hours of runs, and only a new browser process helps. The guard reads each runner's
+ * results as they come, in the plan's order, and skips the pages that push the memory limit on
+ * purpose. `stop` ends the runner page's turn; the guard then records why, in the runner's results,
+ * and prints what to do.
  */
-export class MemoryGuard {
+export class TurnGuard {
 	/** For each runner, the plan index of its next result to read, and its latest pages. */
 	private readonly seen = new Map<string, { next: number; latest: LatestPage[] }>();
 	/** The runners whose turn the guard ended, and why. */
@@ -1001,9 +1018,24 @@ export class MemoryGuard {
 		private readonly stop: (runner: string) => void,
 	) {}
 
-	/** Reads a runner's new results, and ends its turn when its browser keeps refusing memory. */
+	/**
+	 * Reads a runner's new results, and ends its turn when its runner page got no frames or its
+	 * browser keeps refusing memory.
+	 */
 	readonly endTurn = (runner: string): boolean => {
 		const { run, items } = this.plan;
+		if (this.ended.has(runner)) return true;
+		const noFrames = storedResult(run, runner, NO_FRAMES) as NoFramesRecord | undefined;
+		if (noFrames) {
+			this.record(runner, {
+				reason: noFramesText(noFrames.visibility),
+				pages: [noFrames.step],
+				todo: noFramesTodo(runner, this.launches.get(runner)),
+				only: [],
+				endedAt: new Date().toISOString(),
+			});
+			return true;
+		}
 		const seen = this.seen.get(runner) ?? { next: 0, latest: [] };
 		this.seen.set(runner, seen);
 		while (seen.next < items.length) {
@@ -1026,7 +1058,6 @@ export class MemoryGuard {
 	};
 
 	private end(runner: string, latest: readonly LatestPage[]): void {
-		this.stop(runner);
 		const failed = latest.filter((page) => page.outOfMemory !== undefined);
 		const errors = [
 			...new Set(
@@ -1043,20 +1074,25 @@ export class MemoryGuard {
 				})
 				.map((item) => item.id),
 		);
-		const ended: EndedEarly = {
+		this.record(runner, {
 			reason: `the browser keeps refusing the engine's memory (${errors.join(' and ')} on ${failed.length} of its last ${latest.length} pages)`,
 			pages: failed.map((page) => page.id),
 			todo: memoryResetText(runner, this.launches.get(runner), only),
 			only,
 			endedAt: new Date().toISOString(),
-		};
+		});
+	}
+
+	/** Ends a runner's turn, and records and prints why. */
+	private record(runner: string, ended: EndedEarly): void {
+		this.stop(runner);
 		this.ended.set(runner, ended);
 		writeRunnerFile(this.plan.run, runner, 'ended-early', ended);
 		console.log(endedEarlyText(runner, ended));
 	}
 }
 
-/** The message for a runner whose turn the out-of-memory guard ended. */
+/** The message for a runner whose turn the guard ended. */
 export const endedEarlyText = (runner: string, { reason, todo }: EndedEarly) =>
 	`${runner}: ${reason}. ${todo}`;
 
@@ -1168,7 +1204,7 @@ async function runPlan(
 	let turns: string[] = [];
 	// A runner whose turn ends leaves the turn list first, so a reloaded runner page does not start
 	// the run again, and then loses its claim, so its runner page stops at its next result.
-	const guard = new MemoryGuard(plan, launches, (name) => {
+	const guard = new TurnGuard(plan, launches, (name) => {
 		turns = turns.filter((turn) => turn !== name);
 		setTurns(run, turns);
 		endTurnClaim(run, name);
@@ -1266,6 +1302,13 @@ async function runPlan(
 		}
 		const browser = browserOf(device);
 		counts.browser = browserText(browser);
+		// A runner page without frames tested nothing after it stopped, which fails the run.
+		if (readResult(run, name, NO_FRAMES)) {
+			counts.fail++;
+			console.log(
+				`FAIL  ${name}: ${endedEarly?.reason ?? 'its runner page got no animation frames'}`,
+			);
+		}
 		const mismatch = browserMismatch(name, browser);
 		if (mismatch) console.log(`WARN  ${mismatch}`);
 		const imagesOf = imageDevice(runner);

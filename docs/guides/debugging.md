@@ -87,7 +87,7 @@ console.log(JSON.stringify(engine.report)); // every result of the start's tests
 
 Add `engine.report` to a bug report. It holds the result of every test, and the GPU's name where the browser shows one. [Page API: createEngine](../api/engine.md#what-the-engine-reports) describes each value.
 
-Switches in the page's address force a choice, so you can find which path shows a fault:
+Switches in the page's address force a choice, so you can find which path shows a fault. The engine reads them in development builds only:
 
 | Switch | Effect |
 | --- | --- |

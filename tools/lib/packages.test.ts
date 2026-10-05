@@ -2,8 +2,11 @@ import { describe, expect, it } from 'bun:test';
 import {
 	builtAddress,
 	exportTargets,
+	internalConstructorClasses,
 	type Manifest,
 	packageProblems,
+	protectedConstructors,
+	repositoryOnlyFiles,
 	rewriteAddresses,
 } from './packages';
 
@@ -125,6 +128,16 @@ describe('packageProblems', () => {
 		'docs/index.md',
 	]);
 
+	it('names each repository-only file that the package holds', () => {
+		const build = { compile: true, shaders: false, docs: false, needs: [], required: [] };
+		const forbidden = repositoryOnlyFiles({ ...build, repositoryOnly: ['internal.ts'] });
+		expect(forbidden).toEqual(['lib/internal.js', 'lib/internal.d.ts']);
+		expect(packageProblems(manifest, files, [], forbidden)).toEqual([]);
+		expect(
+			packageProblems(manifest, new Set([...files, 'lib/internal.js']), [], forbidden),
+		).toEqual(['it holds lib/internal.js, which only the repository uses']);
+	});
+
 	it('accepts a complete public package', () => {
 		expect(packageProblems(manifest, files, ['docs/index.md'])).toEqual([]);
 	});
@@ -145,5 +158,35 @@ describe('packageProblems', () => {
 			'it lacks bin/demo.js, which its manifest names',
 			'it lacks docs/api.md',
 		]);
+	});
+});
+
+describe('internal constructors', () => {
+	it('finds each class whose constructor is marked @internal', () => {
+		const source = `
+export class Made {
+	/** @internal */
+	constructor(readonly id: number) {}
+}
+export class Open {
+	constructor(readonly id: number) {}
+}`;
+		expect(internalConstructorClasses(source)).toEqual(['Made']);
+	});
+
+	it('gives each such class a protected constructor in its declarations', () => {
+		const declarations = `export declare class Made {
+    readonly radius: number;
+}
+export declare class Open {
+}
+`;
+		expect(protectedConstructors(declarations, new Set(['Made']))).toBe(`export declare class Made {
+    protected constructor();
+    readonly radius: number;
+}
+export declare class Open {
+}
+`);
 	});
 });

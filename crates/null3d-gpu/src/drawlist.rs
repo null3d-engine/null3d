@@ -742,11 +742,6 @@ pub mod permutation {
     /// these bits, and a page loads only its own.
     pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP | HALF;
 
-    /// The bits of features whose builds go into device modules of their own, beside those of
-    /// the device's bits, which a page loads the first time a pipeline asks for one: morph
-    /// targets, which WebGL2 draws with MORPH builds of every template that draws meshes.
-    pub const ON_DEMAND: u32 = MORPH;
-
     /// Every bit.
     pub const ALL: u32 = {
         let mut all = 0;
@@ -1576,8 +1571,6 @@ pub fn typescript_constants() -> String {
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
-        // The bits of features whose builds load on demand, in modules of their own.
-        ("PERMUTATION", &[("ON_DEMAND", permutation::ON_DEMAND)]),
         (
             "VERTEX",
             &[

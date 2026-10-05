@@ -259,6 +259,7 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 - Ambient occlusion's code: `crates/null3d-render/src/ao.rs`, the frame graph's ambient occlusion passes, `wgsl/ao.wgsl` and `wgsl/lib/gtao.wgsl`. Also the frame uniform's `occlusion` values, the frame group's binding 11, the `aoScale` quality setting and the governor's step. Also `occlusionTargets` in `page/limits.ts`, and the WebGL2 backend's copy of a multisampled depth.
 - Ambient occlusion's tests: the `ao-*` image tests, the parity scenes `ao-default` and `ao-wide`, `crates/null3d-render/tests/ambient_occlusion.rs`, and the `ao` device plan with its three.js page.
 - Tests: the bloom image tests with null3D's own references, `bloom-switch.spec.ts` and the render scale test with bloom. Also the parity scenes `bloom-soft` and `bloom-strong` as sanity comparisons, and `bench:allocation --bloom`. Also the mapping's tests in `tools/lib/bloom-mapping.test.ts`, and the `bloom` and `bloom-sizes` device plans.
+- Bloom's steps and the final pass's BLOOM builds load on first use ([D-56](D-56-first-use-shader-files.md)). The frames keep the final pass without bloom until those pipelines are built, so turning bloom on skips no draw.
 - Docs: `concepts/post-processing`, `api/post`, `api/quality`, `concepts/quality-presets`, `concepts/color-management`, `concepts/backends`, the mapping's composer and bloom entries, and both skills. The porting skill's `references/post-processing.md` holds the bloom tables, and its `scripts/map-bloom.mjs` the mapping.
 
 ## History

@@ -205,13 +205,18 @@ impl FinalPass {
     /// Asks `pipelines` for the pass's pipeline, once, and for its bloom build's once a frame has
     /// `bloom`. A builder asks before it records the pipelines that its frame creates, so the list
     /// creates them with the others, at its start.
-    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache, bloom: bool) {
+    pub(crate) fn request_pipeline(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        bloom: bool,
+    ) -> Option<u32> {
         if self.pipeline.is_none() {
             self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve)));
         }
         if bloom && self.bloom_pipeline.is_none() {
             self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve)));
         }
+        self.bloom_pipeline
     }
 
     /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for
