@@ -176,3 +176,18 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 		expect(table.shaders.size).toBe(0);
 	});
 });
+
+describe('features whose shader files the sketch asks for early', () => {
+	test("reach the renderer's listener once each, and a cleared table lets go of the listener", () => {
+		const table = new ImageTable();
+		const heard: string[] = [];
+		table.onPreload = (feature) => heard.push(feature);
+		table.preload(['skinning', 'bloom']);
+		table.preload(['skinning']);
+		expect(heard).toEqual(['skinning', 'bloom']);
+		// A stopped drawing clears its table. The page's end of the image port keeps the table, so
+		// a listener that stayed would keep the stopped renderer and the engine's memory.
+		table.clear();
+		expect(table.onPreload).toBeUndefined();
+	});
+});

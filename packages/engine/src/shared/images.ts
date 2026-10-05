@@ -167,6 +167,9 @@ export class ImageTable {
 		this.images.clear();
 		this.generators.clear();
 		this.shaders.clear();
+		// The listener belongs to a renderer: a table that kept it would keep that renderer, and the
+		// engine's memory with it, for as long as the port that fills the table lives.
+		this.onPreload = undefined;
 	}
 }
 
