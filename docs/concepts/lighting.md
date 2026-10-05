@@ -191,11 +191,21 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 ### Cost
 
 - A page downloads the file reader, under 1 KB after Brotli, with its first environment file.
-- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 7 KB after Brotli. The GPU then makes the map in parts over 32 frames, so no frame carries all of the work. That takes about half a second at 60 frames per second. In the engine's test of the room, a MacBook Pro's GPU (Apple M5 Max) took about 1 ms for a part. The longest took 2.5 ms. The shaders compile in the background before the first part. A still frame makes the whole room before it draws.
+- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 7 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
+- Ask for the room while the scene loads. A call during play makes one long frame: on a phone, the time of 3 to 7 frames at 60 frames per second.
 - A map of the default size takes 2 MB of GPU memory. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
 - On WebGL2 the cube map takes one of the 16 texture units that a fragment shader may use. A standard material with all six maps uses 13 of them.
+
+The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
+
+| Device | Shaders, in the background | The whole map, in one frame |
+| --- | --- | --- |
+| MacBook Pro (Apple M5 Max), WebGPU | 8 to 14 ms, once 300 ms | 20 to 21 ms, then about 9 ms for each later map |
+| MacBook Pro (Apple M5 Max), WebGL2 | 9 to 15 ms | 20 to 27 ms, of which 16 to 17 ms on the GPU |
+| Galaxy S25, Pixel 9, Pixel 10 and Pixel 11, WebGPU | 93 to 129 ms | 48 to 100 ms |
+| The same phones, WebGL2 | 100 to 226 ms | 58 to 107 ms |
 
 ### Differences from three.js
 
