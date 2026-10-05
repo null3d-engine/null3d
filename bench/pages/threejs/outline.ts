@@ -1,7 +1,7 @@
 // The three.js twin of the outline's scene (bench/scenes/outline.ts), which null3D's image tests
 // draw. It draws one frame with an EffectComposer: a RenderPass, an OutlinePass with the scene's
 // outlined shapes as its selected objects, an OutputPass, which applies the AgX tone mapping that
-// null3D applies by default, and a ShaderPass that draws null3D's crisp line from OutlinePass's
+// null3D's page sets, and a ShaderPass that draws null3D's crisp line from OutlinePass's
 // mask, with the settings that ?outline=plain or ?outline=hidden names. The OutlinePass has no
 // strength, so its own soft edges add nothing: it serves only for its mask, so the comparison
 // checks which parts the mask counts as hidden, and where the line falls. The last pass draws into

@@ -30,6 +30,8 @@ const FIXED = params.has('fixed');
 const SIZE = params.get('size');
 
 export default defineSketch(({ scene, materials, geometry, post, quality, time, page }) => {
+	// The three.js twin draws with AgXToneMapping, which plain AgX matches.
+	post.set({ toneMapping: 'agx' });
 	if (BLOOM && !LATER) post.set({ bloom: BLOOM });
 	if (SCALE !== null) {
 		const scale = Number(SCALE);

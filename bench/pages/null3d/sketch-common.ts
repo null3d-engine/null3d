@@ -62,7 +62,7 @@ export function readGovernor(moduleUrl: string): boolean {
 /**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
- * default of AgX. The twins also draw every pixel of the canvas and never lighten their shadows,
+ * default curve. The twins also draw every pixel of the canvas and never lighten their shadows,
  * so the null3D pages keep the render scale at 1 and turn off the quality governor, unless the
  * scene asks for dynamic resolution.
  */

@@ -45,15 +45,15 @@ pub enum ToneMapping {
     /// ACES filmic, three.js's `ACESFilmicToneMapping`, kept for ports of three.js scenes that set
     /// it. It shifts the hues of bright colors, so new scenes use AgX.
     Aces = 0,
-    /// AgX, three.js's `AgXToneMapping`, and the engine's default: it keeps the hues of bright
-    /// colors on their way to white.
-    #[default]
+    /// AgX, three.js's `AgXToneMapping`: it keeps the hues of bright colors on their way to white.
     Agx = 1,
     /// Khronos PBR Neutral, three.js's `NeutralToneMapping`.
     Neutral = 2,
     /// No curve: the exposed color, clipped at 1, as three.js's `LinearToneMapping` gives it.
     None = 3,
-    /// AgX with Filament's punchy look: more contrast and color after AgX's curve.
+    /// AgX with Filament's punchy look, and the engine's default: more contrast and color after
+    /// AgX's curve, with AgX's hues.
+    #[default]
     AgxPunchy = 4,
 }
 
@@ -476,8 +476,8 @@ mod tests {
             assert!(library.contains(&line), "tonemap.wgsl lacks {line}");
         }
         assert_eq!(ToneMapping::from_code(5), None);
-        assert_eq!(ToneMapping::default(), ToneMapping::Agx);
-        assert_eq!(Output::default().tone_mapping, ToneMapping::Agx);
+        assert_eq!(ToneMapping::default(), ToneMapping::AgxPunchy);
+        assert_eq!(Output::default().tone_mapping, ToneMapping::AgxPunchy);
     }
 
     #[test]

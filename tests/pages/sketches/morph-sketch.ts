@@ -6,7 +6,7 @@
 // looks at the third sphere from close by, where a step of the deltas' half floats would show.
 // ?late adds the spheres during play, on the page's 'spheres' message, and posts 'added' once
 // their pipelines are built: the first morphed mesh needs its shader file. ?tone=none
-// turns off the engine's default of AgX, as the parity test asks: the three.js twin draws with no
+// turns off the engine's default curve, as the parity test asks: the three.js twin draws with no
 // tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
 import {

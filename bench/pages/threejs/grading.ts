@@ -1,6 +1,6 @@
 // The three.js twin of color grading's scene (bench/scenes/grading.ts), which null3D's image tests
 // draw. It draws one frame with an EffectComposer: a RenderPass, an OutputPass, which applies the
-// AgX tone mapping that null3D applies by default and encodes sRGB, then a LUTPass with the warm
+// AgX tone mapping that null3D's page sets and encodes sRGB, then a LUTPass with the warm
 // table from its .cube file through LUTCubeLoader, and with ?mix at the tests' intensity and a
 // ShaderPass of VignetteShader. The last pass draws into the canvas, which the page reads back at
 // once and publishes. The composer's targets have no MSAA, so null3D's page draws with

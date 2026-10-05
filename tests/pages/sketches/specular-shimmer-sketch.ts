@@ -115,8 +115,10 @@ function bumps({ scene, materials, geometry, textures }: SketchContext): void {
 }
 
 export default defineSketch((context) => {
-	const { scene, quality, page } = context;
+	const { scene, quality, page, post } = context;
 	quality.set({ minRenderScale: 1, governor: false });
+	// One curve for every build that the page compares, whatever the engine's default.
+	post.set({ toneMapping: 'agx-punchy' });
 	scene.setBackground('#05070a');
 	scene.createDirectionalLight({ direction: [-0.4, -0.35, -1], color: '#ffffff', intensity: 3 });
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.05 });

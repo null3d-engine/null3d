@@ -40,7 +40,7 @@ The owner's decision of 4 October 2026, in five parts.
 | Intent: what a file or an author means | glTF interpretation, material parameters and lighting terms, color spaces, units, animation curves and sampling, skinning poses | The meaning that the glTF specification gives, with three.js as the reference | Strict: three.js's image rule, or the numeric limits of the record that settled the feature |
 | Look: how a technique draws an effect | Bloom, levels of detail, the vignette, other post effects | The best technique that the engine knows | null3D's own references. A looser sanity comparison with three.js shows that the effect is in the same place and of the same size |
 
-A tone curve is a choice of look. When the engine offers a curve that three.js also has, the curve is a shared building block. Its pixels then compare with three.js's rule.
+A tone curve is a choice of look. When the engine offers a curve that three.js also has, the curve is a shared building block. Its pixels then compare with three.js's rule. The default for new scenes is AgX with Filament's punchy look, which the owner picked on 6 October 2026 ([D-79](D-79-lighting-defaults.md)). three.js has no such curve, so it keeps null3D's own references. Plain AgX and Neutral stay shared building blocks.
 
 ### The three-compat add-on
 

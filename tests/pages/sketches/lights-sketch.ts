@@ -1,7 +1,7 @@
 // The point, spot and hemisphere light scenes (bench/scenes/lights.ts). ?lights=N lights the floor
 // with N point lights in a square grid, ?scene=spot with three spot lights instead, and
 // ?scene=hemisphere with a hemisphere light. ?camera=ortho draws through an orthographic camera.
-// ?tone=none turns off the engine's default of AgX, as the parity test asks: the three.js twin
+// ?tone=none turns off the engine's default curve, as the parity test asks: the three.js twin
 // draws with no tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
 import {

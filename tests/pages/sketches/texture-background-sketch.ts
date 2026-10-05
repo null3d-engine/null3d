@@ -2,7 +2,7 @@
 // draws with three.js. The picture loads as three.js's TextureLoader loads it, and fills the wide
 // view behind a lit box and an unlit box. The color set first shows only until the picture is on
 // the GPU. The three.js twin draws with no tone mapping, three.js's default, so the sketch turns
-// off the engine's default of AgX.
+// off the engine's default curve.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,

@@ -50,6 +50,8 @@ const SCALE = params.get('scale');
 const FIXED = params.has('fixed');
 
 export default defineSketch(({ scene, materials, geometry, post, quality, time, page }) => {
+	// The three.js twin draws with AgXToneMapping, which plain AgX matches.
+	post.set({ toneMapping: 'agx' });
 	quality.set({ aoScale: AO_SCALE === 0.25 ? 0.25 : 0.5 });
 	if (AO) post.set({ ao: AO });
 	if (SCALE !== null) {

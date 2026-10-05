@@ -26,6 +26,8 @@ const VIGNETTE = params.has('vignette');
 const SCALE = params.get('scale');
 
 export default defineSketch(async ({ scene, materials, geometry, post, quality, assets }) => {
+	// The three.js twin draws with AgXToneMapping, which plain AgX matches.
+	post.set({ toneMapping: 'agx' });
 	if (LUT) {
 		const lut = await assets.loadLut(LUT);
 		post.set({ lut, lutIntensity: MIX ? GRADING_INTENSITY : 1 });

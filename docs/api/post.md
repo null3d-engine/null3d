@@ -25,7 +25,7 @@ export default defineSketch(({ post }) => {
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `toneMapping` | `'agx'`, `'agx-punchy'`, `'neutral'`, `'aces'` or `'none'` | `'agx'` |
+| `toneMapping` | `'agx-punchy'`, `'agx'`, `'neutral'`, `'aces'` or `'none'` | `'agx-punchy'` |
 | `exposure` | A number from 0 up. 2 is one stop brighter, and 0.5 one stop darker. | 1 |
 | `ev100` | The camera's exposure value at ISO 100, for lights in real units: a number from -20 to 30, or `false` for none | `false` |
 
@@ -302,7 +302,7 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 
 | Member | Description |
 | --- | --- |
-| `toneMapping?: ToneMapping` | How the engine maps high dynamic range color to the screen. The default is `'agx'`, which keeps the hues of bright colors on their way to white. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. |
+| `toneMapping?: ToneMapping` | How the engine maps high dynamic range color to the screen. The default is `'agx-punchy'`, which keeps the hues of bright colors on their way to white and keeps the picture's contrast. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. |
 | `exposure?: number` | Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does: 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. With `ev100`, it scales the camera's exposure, as exposure compensation does. |
 | `ev100?: number \| false` | The camera's exposure value at ISO 100, for lights in real units: 15 suits a sunny day lit by a sun of 100,000 lux, 12 an overcast day, and 7 a lit room. It scales the scene's color by 1 / (1.2 × 2^ev100), as Filament and Bevy do, so each step up is one stop darker. It is a number from -20 to 30, and `false`, the default, turns it off, which leaves three.js's units. |
 | `bloom?: BloomSettings \| false` | Light that spreads from the bright parts of the scene through a chain of blurred levels. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by default. Its glow keeps its size as a share of the canvas at any pixel ratio and render scale. |

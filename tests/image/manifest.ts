@@ -1420,6 +1420,7 @@ const HALF_PRECISION_TESTS = [
 	'lights-16',
 	'shadows',
 	toneMappingTest('agx', 0),
+	toneMappingTest('agx-punchy', 0),
 	eightBitTest('aces'),
 ];
 

@@ -3,7 +3,7 @@
 // (columns, from 0 to 1), lit by a sun and an ambient light. `?scene=grid&env=room` or `&env=venice`
 // lights the grid with an environment alone (bench/scenes/standard-grid.ts), and `&rotate` turns
 // the environment a quarter turn. ?tone=none turns off the engine's
-// default of AgX, as the parity test asks: the grid's three.js twin draws with no tone mapping,
+// default curve, as the parity test asks: the grid's three.js twin draws with no tone mapping,
 // three.js's default. `?scene=features` draws what a material fixes when it is created, in
 // pairs: an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a
 // double-sided plane seen from behind beside a single-sided one that draws nothing, and a quad of

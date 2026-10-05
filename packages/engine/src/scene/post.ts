@@ -218,8 +218,8 @@ export interface OutlineSettings {
  */
 export interface PostSettings {
 	/**
-	 * How the engine maps high dynamic range color to the screen. The default is `'agx'`, which
-	 * keeps the hues of bright colors on their way to white. three.js uses no tone mapping by
+	 * How the engine maps high dynamic range color to the screen. The default is `'agx-punchy'`,
+	 * which keeps the hues of bright colors on their way to white and keeps the picture's contrast. three.js uses no tone mapping by
 	 * default, so a port of a three.js scene without it sets `'none'`.
 	 */
 	toneMapping?: ToneMapping;
@@ -302,7 +302,7 @@ function writeColor(values: Float32Array, place: number, color: ColorInput, call
  * @category api/post
  */
 export class Post {
-	private toneMapping = C.TONE_MAPPING_AGX;
+	private toneMapping = C.TONE_MAPPING_AGX_PUNCHY;
 	/** The sketch's exposure, before the camera exposure of `ev100` scales it. */
 	private exposure = 1;
 	private ev100: number | false = false;

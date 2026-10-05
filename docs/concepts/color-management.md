@@ -76,20 +76,20 @@ Set both from the sketch with [`post.set`](../api/post.md):
 
 ```ts
 export default defineSketch(({ post }) => {
-  post.set({ toneMapping: 'agx', exposure: 1.5 });
+  post.set({ toneMapping: 'neutral', exposure: 1.5 });
   return {};
 });
 ```
 
 | `toneMapping` | three.js equivalent | Look |
 | --- | --- | --- |
-| `'agx'` (the default) | `AgXToneMapping` | Softer contrast. Bright colors fade toward white and keep their hue. |
-| `'agx-punchy'` | None | AgX with Filament's punchy look: more contrast and more color, with AgX's hues. |
+| `'agx-punchy'` (the default) | None | AgX with Filament's punchy look: more contrast and more color, with AgX's hues. |
+| `'agx'` | `AgXToneMapping` | Softer contrast. Bright colors fade toward white and keep their hue. |
 | `'aces'` | `ACESFilmicToneMapping` | Strong contrast. Bright saturated colors change hue on their way to white: red turns orange, then yellow, and blue turns purple. |
 | `'neutral'` | `NeutralToneMapping` | Base colors keep their values until they near white. Khronos made it for product images. |
 | `'none'` | `LinearToneMapping` | The exposed color, clipped at white. A bright color loses detail once a channel reaches white. |
 
-AgX suits most scenes, because bright lights and colors keep their hue. For a product view, where a material's color must show as its maker gave it, use `'neutral'`, as model-viewer does.
+Punchy AgX suits most scenes: bright lights and colors keep their hue, and the picture keeps its contrast. Plain AgX looks flatter. For a product view, where a material's color must show as its maker gave it, use `'neutral'`, as model-viewer does.
 
 The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine applies it to each light and each color as they enter the scene. That gives the same picture as scaling the finished color, and keeps scenes in real units inside the range of the HDR target. [Lighting and environment](lighting.md#units-and-exposure) explains it. The engine uses three.js's formulas for each curve, so a scene looks the same in both engines with the same settings.
 
@@ -117,7 +117,7 @@ const engine = await createEngine({
 - Three numbers are linear, as `Color.setRGB` reads them.
 - A color map with `texture.colorSpace = SRGBColorSpace` is a texture with an sRGB format in null3D.
 - A data map with `NoColorSpace` or `LinearSRGBColorSpace` is a texture with a linear format.
-- The tone mapping curves use three.js's formulas. The defaults differ: three.js uses no tone mapping, and null3D uses AgX. A port of a scene without tone mapping sets `toneMapping: 'none'`.
+- The tone mapping curves use three.js's formulas. The defaults differ: three.js uses no tone mapping, and null3D uses punchy AgX, which three.js lacks. A port of a scene with `AgXToneMapping` sets `toneMapping: 'agx'`. A port of a scene without tone mapping sets `toneMapping: 'none'`.
 - three.js's `NoToneMapping` ignores the exposure. null3D's `'none'` applies it, as `LinearToneMapping` does, and an exposure of 1 gives the same image.
 - three.js's WebGLRenderer draws a `scene.background` color without tone mapping. null3D tone maps the background, as three.js's WebGPURenderer does.
 - null3D always dithers its output, and three.js only dithers materials that ask for it. The difference is at most one step of an 8-bit color.
