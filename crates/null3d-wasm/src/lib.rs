@@ -521,6 +521,16 @@ pub fn job_worker_loop(index: u32) {
     JOBS.wait().worker_loop(index);
 }
 
+/// Counts the frame chunk that job worker `index` held when its loop failed as done and as
+/// failed, so the sketch thread's wait for it ends. The worker's own thread calls it after the
+/// failure.
+#[wasm_bindgen(js_name = jobWorkerFailed)]
+pub fn job_worker_failed(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.worker_failed(index);
+    }
+}
+
 /// The milliseconds job worker `index` spent on work since the last call for it, which starts
 /// its total again from zero. The sketch thread reads it once per frame.
 #[wasm_bindgen(js_name = takeJobBusyMs)]
@@ -695,14 +705,15 @@ pub fn update_batches(frame: u32) -> u32 {
 }
 
 /// Finds the frame's visible objects on the job workers, where the frame builder culls on the CPU,
-/// for a canvas of this size in device pixels. Call it before `recordFrame`.
+/// for a canvas of this size in device pixels. Call it before `recordFrame`, with the same `built`:
+/// the newest frame that the thread that draws drew with every pipeline built.
 #[wasm_bindgen(js_name = cullFrame)]
-pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
+pub fn cull_frame(frame: u32, width: u32, height: u32, built: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, 0);
+        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, built);
         match renderer.cull(&input) {
             Ok(()) => 0,
             Err(error) => record_failure(error),

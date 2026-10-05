@@ -145,6 +145,8 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 
 ## Switches for tests
 
+The engine reads these switches from the page's address in development builds, on the dev server and in the `null3d` command's runs. A production build ignores them, so a link cannot change how a shipped game runs. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`.
+
 | Switch | Effect |
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |

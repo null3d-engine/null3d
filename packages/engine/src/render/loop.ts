@@ -8,7 +8,7 @@
 // draw nothing while the frames run slower than the display, so the interval between them measures
 // the display.
 
-import { controlLabels, controlViews, Slot } from '../shared/control';
+import { controlLabels, controlViews, frameAfter, Slot } from '../shared/control';
 import { type LabelRegion, presentLabels } from '../shared/labels';
 import { FrameRecorder, Role } from '../shared/metrics';
 import { TARGET_CAP_HZ } from '../shared/stats';
@@ -354,7 +354,7 @@ export class Presenter {
 		if (this.stale(frame)) return true;
 		const ready = this.renderer.prepare(frame);
 		if ((this.lastPresented[0] as number) < 0) this.record.markWarmUp(this.renderer.building);
-		if (!this.renderer.building && frame > this.builtFrame) {
+		if (!this.renderer.building && frameAfter(frame, this.builtFrame)) {
 			this.builtFrame = frame;
 			Atomics.store(this.slots, Slot.PipelinesBuilt, frame);
 			notifySlot(this.slots, Slot.PipelinesBuilt, this.wake);
@@ -463,7 +463,7 @@ export function runRenderLoop(
 		presenter.wakeBeforeNextFrame();
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (published > taken && presenter.ready(published) && presenter.due(timestamp)) {
+		if (frameAfter(published, taken) && presenter.ready(published) && presenter.due(timestamp)) {
 			taken = published;
 			Atomics.store(slots, Slot.FramesTaken, taken);
 			notifySlot(slots, Slot.FramesTaken, wake);

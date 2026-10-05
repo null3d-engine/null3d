@@ -3,8 +3,9 @@
 //! stage, and the reflection maps those names back to WGSL bindings.
 
 use naga::back::glsl::{self as backend, Options, PipelineOptions, Version, WriterFlags};
+use naga::compact::{KeepUnused, compact};
 use naga::proc::BoundsCheckPolicies;
-use naga::valid::ModuleInfo;
+use naga::valid::{Capabilities, ModuleInfo, ValidationFlags, Validator};
 use naga::{
     ArraySize, Binding as IoBinding, BuiltIn, EntryPoint, Handle, Module, ShaderStage, Type,
     TypeInner, VectorSize,
@@ -24,18 +25,51 @@ pub(crate) const DEPTH_MAPPING_UNIFORM: &str = "null3d_depth_mapping";
 /// that `mediump` names run at that precision.
 pub(crate) fn write_program(
     module: &Module,
-    info: &ModuleInfo,
+    capabilities: Capabilities,
     name: &str,
     pipeline: &Pipeline,
     mediump: &[String],
 ) -> Result<GlslProgram, String> {
     let [vertex, fragment] = pipeline.stages().map(|(stage, stage_name, entry_point)| {
-        write_stage(module, info, name, stage, stage_name, entry_point, mediump)
+        let (stage_module, info) = stage_module(module, capabilities, stage, entry_point)?;
+        write_stage(
+            &stage_module,
+            &info,
+            name,
+            stage,
+            stage_name,
+            entry_point,
+            mediump,
+        )
     });
     Ok(GlslProgram {
         vertex: vertex?,
         fragment: fragment?,
     })
+}
+
+/// The module with only the entry point of one stage, and only what that entry point uses. Each
+/// stage's text then depends only on its own code: a bit that changes only the vertex shader
+/// leaves the fragment shader's text as it is, so the builds that differ in that bit share it.
+fn stage_module(
+    module: &Module,
+    capabilities: Capabilities,
+    stage: ShaderStage,
+    entry_point: &str,
+) -> Result<(Module, ModuleInfo), String> {
+    let mut stage_module = module.clone();
+    stage_module
+        .entry_points
+        .retain(|ep| ep.stage == stage && ep.name == entry_point);
+    compact(&mut stage_module, KeepUnused::No);
+    let info = Validator::new(ValidationFlags::all(), capabilities)
+        .validate(&stage_module)
+        .map_err(|e| {
+            format!(
+                "the module of the entry point `{entry_point}` alone failed validation, which is a bug in the shader build: {e}"
+            )
+        })?;
+    Ok((stage_module, info))
 }
 
 fn write_stage(
@@ -81,6 +115,8 @@ fn write_stage(
 
     source = crate::half::mediump_items(&source, mediump);
     source = lower_arrays(&source);
+    source = drop_unused_constants(&source);
+    source = highp_integers(&source);
 
     let entry = module
         .entry_points
@@ -282,6 +318,59 @@ pub(crate) fn enable_multi_draw(source: &str) -> String {
     after_version(&converted, MULTI_DRAW_EXTENSION)
 }
 
+/// Drops each constant that the text declares at its top level and names nowhere else. naga writes
+/// every named constant of the module, also those that only another stage reads, and a blank line
+/// after them, which goes too when no constant is left above it.
+pub(crate) fn drop_unused_constants(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut dropped = false;
+    let mut kept_constant = false;
+    for line in source.split_inclusive('\n') {
+        let constant = constant_name(line);
+        let unused = constant.is_some_and(|name| {
+            source
+                .match_indices(name)
+                .filter(|&(at, _)| is_whole_word(source, at, name.len()))
+                .nth(1)
+                .is_none()
+        });
+        if unused {
+            dropped = true;
+            continue;
+        }
+        if dropped && !kept_constant && line.trim().is_empty() {
+            dropped = false;
+            continue;
+        }
+        dropped = false;
+        kept_constant = constant.is_some();
+        out.push_str(line);
+    }
+    out
+}
+
+/// The name that a top-level `const <type> <name> = <value>;` line declares.
+fn constant_name(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("const ")?;
+    let (_, rest) = rest.split_once(' ')?;
+    let (name, _) = rest.split_once(" = ")?;
+    is_identifier(name).then_some(name)
+}
+
+/// Whether the text at `at`, `len` bytes long, is a whole identifier.
+fn is_whole_word(source: &str, at: usize, len: usize) -> bool {
+    let word_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let before = source[..at]
+        .chars()
+        .next_back()
+        .is_none_or(|c| !word_char(c));
+    let after = source[at + len..]
+        .chars()
+        .next()
+        .is_none_or(|c| !word_char(c));
+    before && after
+}
+
 /// The name of the parameter through which a function that returns an array gives its result.
 const ARRAY_RESULT: &str = "_n3d_result";
 /// The start of the names of the arrays that take array constructors' values. naga's namer never
@@ -479,6 +568,42 @@ fn closing_parenthesis(text: &str) -> Option<usize> {
     None
 }
 
+/// GLSL's whole-number types.
+const INTEGER_TYPES: [&str; 8] = [
+    "int", "uint", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4",
+];
+
+/// GLSL's precision qualifiers.
+const PRECISIONS: [&str; 3] = ["highp", "mediump", "lowp"];
+
+/// Writes `highp` on each declaration of a whole number that names no precision: globals, inputs
+/// and outputs, uniform block and struct members, constants, function results and parameters, and
+/// locals. The default `precision highp int;` should cover them, but a fragment shader's built-in
+/// default for whole numbers is `mediump`, and the Adreno 619 driver of a Galaxy Tab A9 Plus kept
+/// only the low 16 bits of whole numbers declared without a precision. A declaration is a type
+/// followed by a name; a type followed by `(` is a constructor or a conversion, and stays.
+pub(crate) fn highp_integers(source: &str) -> String {
+    let tokens = crate::scan::tokenize(source);
+    let mut out = String::with_capacity(source.len() + source.len() / 32);
+    let mut copied = 0;
+    for (index, token) in tokens.iter().enumerate() {
+        let declares = INTEGER_TYPES.contains(&token.text)
+            && tokens
+                .get(index + 1)
+                .is_some_and(|next| next.kind == crate::scan::Kind::Ident)
+            && !index
+                .checked_sub(1)
+                .is_some_and(|previous| PRECISIONS.contains(&tokens[previous].text));
+        if declares {
+            out.push_str(&source[copied..token.start]);
+            out.push_str("highp ");
+            copied = token.start;
+        }
+    }
+    out.push_str(&source[copied..]);
+    out
+}
+
 /// True for a GLSL identifier.
 fn is_identifier(word: &str) -> bool {
     word.bytes()
@@ -533,6 +658,28 @@ mod tests {
         let source = "vec3[2] pick(vec2 u) {\n    if (u.x > 0.5) {\n        return vec3[2](u.xxx, u.yyy);\n    }\n    return _e4;\n}\n\nfloat[2] none() {\n    return w;\n}\n\nvoid main() {\n    vec3 _e20[2] = pick(uv);\n    float _e21[2] = none();\n    return;\n}\n";
         let expected = "void pick(vec2 u, out vec3 _n3d_result[2]) {\n    if (u.x > 0.5) {\n        vec3 _n3d_array1[2];\n        _n3d_array1[0] = u.xxx;\n        _n3d_array1[1] = u.yyy;\n        _n3d_result = _n3d_array1;\n        return;\n    }\n    _n3d_result = _e4;\n    return;\n}\n\nvoid none(out float _n3d_result[2]) {\n    _n3d_result = w;\n    return;\n}\n\nvoid main() {\n    vec3 _e20[2];\n    pick(uv, _e20);\n    float _e21[2];\n    none(_e21);\n    return;\n}\n";
         assert_eq!(lower_arrays(source), expected);
+    }
+
+    #[test]
+    fn each_whole_number_declaration_names_highp() {
+        let source = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nstruct Results {\n    uvec4 a;\n    ivec2 b;\n};\nconst int INPUTS = 8;\nuniform highp usampler2D cases;\nflat in uint _vs2fs_location2;\nlayout(location = 0) out uvec4 color;\nuint hash(uint v, inout int n) {\n    return uint(n) ^ v;\n}\nvoid main() {\n    uvec4 u[2];\n    mediump int low = 1;\n    for (int i = 0; i < INPUTS; i++) {\n        u[i] = uvec4(texelFetch(cases, ivec2(i, 0), 0));\n    }\n    color = u[0];\n}\n";
+        let expected = "#version 300 es\n\nprecision highp float;\nprecision highp int;\n\nstruct Results {\n    highp uvec4 a;\n    highp ivec2 b;\n};\nconst highp int INPUTS = 8;\nuniform highp usampler2D cases;\nflat in highp uint _vs2fs_location2;\nlayout(location = 0) out highp uvec4 color;\nhighp uint hash(highp uint v, inout highp int n) {\n    return uint(n) ^ v;\n}\nvoid main() {\n    highp uvec4 u[2];\n    mediump int low = 1;\n    for (highp int i = 0; i < INPUTS; i++) {\n        u[i] = uvec4(texelFetch(cases, ivec2(i, 0), 0));\n    }\n    color = u[0];\n}\n";
+        assert_eq!(highp_integers(source), expected);
+        assert_eq!(highp_integers(expected), expected);
+    }
+
+    #[test]
+    fn constants_that_no_other_line_names_are_dropped() {
+        let source = "const float A = 1.0;\nconst float AB = A * 2.0;\nconst uint UNUSED = 3u;\nconst float B_1 = 2.0;\nfloat f() { return AB + B_1; }\n";
+        assert_eq!(
+            drop_unused_constants(source),
+            "const float A = 1.0;\nconst float AB = A * 2.0;\nconst float B_1 = 2.0;\nfloat f() { return AB + B_1; }\n"
+        );
+        let only_unused = "struct S {\n    float x;\n};\nconst uint UNUSED = 3u;\n\nin float v;\n\nvoid main() {}\n";
+        assert_eq!(
+            drop_unused_constants(only_unused),
+            "struct S {\n    float x;\n};\nin float v;\n\nvoid main() {}\n"
+        );
     }
 
     #[test]
