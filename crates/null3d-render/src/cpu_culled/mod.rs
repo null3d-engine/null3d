@@ -102,6 +102,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
@@ -184,8 +185,10 @@ mod ids {
     pub const LIGHTS: u32 = LIGHT_GRID + RING;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = LIGHTS + RING;
+    /// The blank cube that the frame's groups bind while the scene has no environment.
+    pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
-    pub const BLANK_OUTLINE: u32 = BLANK_LUT + 1;
+    pub const BLANK_OUTLINE: u32 = BLANK_ENVIRONMENT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
     pub const JOINTS: u32 = BLANK_OUTLINE + 1;
     /// The first joint of the instance that skins each source row, then the first texel of the
@@ -207,8 +210,10 @@ mod ids {
     pub const BLOOM_SAMPLER: u32 = 2;
     /// The linear sampler of the final pass's color grading table.
     pub const LUT_SAMPLER: u32 = 3;
+    /// The sampler of the environment's cube texture.
+    pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 4;
+    pub const SAMPLERS: u32 = 5;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -352,6 +357,9 @@ pub struct CpuCulledRenderer {
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
+    /// The cube texture that the camera views' frame groups bind: the environment's, or the
+    /// blank one.
+    bound_environment: u32,
 }
 
 impl CpuCulledRenderer {
@@ -444,6 +452,7 @@ impl CpuCulledRenderer {
             skins: Skins::default(),
             created: false,
             dfg_pending: false,
+            bound_environment: ids::BLANK_ENVIRONMENT,
         }
     }
 
@@ -768,6 +777,7 @@ impl CpuCulledRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         self.dfg_pending = true;
         self.created = true;
@@ -1011,10 +1021,11 @@ impl CpuCulledRenderer {
             .shadow_map()
             .zip(self.graph.shadow_atlas())
             .expect("the builder's graph binds a shadow map and a shadow atlas");
-        let lit = LitTextures {
+        let mut lit = LitTextures {
             shadow_map,
             atlas,
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
+            environment: self.bound_environment,
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1058,6 +1069,21 @@ impl CpuCulledRenderer {
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings
             .record_materials(list, arena, table, input.frame)?;
+        // The environment's map may have finished its upload, or gone, with this frame's texture
+        // work, so the views read it from here on.
+        let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
+        if environment != self.bound_environment {
+            self.bound_environment = environment;
+            lit.environment = environment;
+            for index in 0..self.opaque.views() {
+                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit))?;
+            }
+        }
+        for index in 0..views {
+            if let Some(frame) = self.culling.frame_mut(ViewId::from_index(index)) {
+                frame.uniform.environment = uniform;
+            }
+        }
         self.graph.upload(
             list,
             arena,
@@ -1444,6 +1470,7 @@ impl FrameBuilder for CpuCulledRenderer {
     fn reset_gpu(&mut self) {
         self.lists.reset_gpu();
         self.created = false;
+        self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

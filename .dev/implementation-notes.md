@@ -42,6 +42,7 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 
 - The page and the sketch worker load the renderer and the GPU layer (`render/draw.ts`) with a dynamic import, only in the modes where they draw. A pipelined page then downloads the GPU layer once, in the render worker.
 - In their other modules, import only types from the renderer and the GPU layer: a value import bundles the GPU layer into their files again.
+- Code that loads on first use imports only types from the files that the start loads, too. The texture generators once imported three functions from `gpu/webgl2/programs.ts`. Rolldown then moved that module into a file that the start and the generators shared. All of `generated/shaders.ts` came with it: 1.6 MB of shaders, the debug views' among them. The backend now hands the generator what it needs (`programHost`).
 - The page and the sketch worker start that import while the core downloads, as "Start order" says. It once started after the core, because an earlier start slowed the core's download and delayed the first frame by 22 to 37 ms. Now that the other downloads start early too, the renderer is the last download to arrive unless it starts early.
 - The page loads the sketch runner and the scene API (`sketch/runner.ts`) with a dynamic import, only in single-threaded mode, where it runs the sketch itself. Other page modules import only types from them.
 - The page starts that import as soon as it knows the mode, while the core downloads, because it needs the runner right after the core. In `bun run bench:startup --switches threads=off`, the first frame came at a median of 4,131 ms over 14 runs. With the runner in the page's file, it came at 4,131 ms too. A start after the core's download gave 4,135 ms.
@@ -129,7 +130,7 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
 - WebGL2 keeps GL's row order in everything a render pass draws: row 0 is the bottom row, and on WebGPU it is the top row. Uploaded and written texels keep their order on both paths.
 - Draw lists give viewport and scissor rectangles from the top-left corner. The WebGL2 backend flips them, so each covers the same part of the image on both paths.
 - A shader that samples a target that a pass drew flips its v coordinate in its WebGL2 variant. The texture test shader (`test_textures.wgsl`) shows the pattern, and so does the shadow map lookup (`null3d::shadows`).
-- GLSL ES 3.00 has no binding numbers. So the WebGL2 backend gives each WGSL binding a slot: a texture unit, a uniform block binding point and a sampler's place. Each bind group starts at a slot of its own (`slotOf` in `gpu/webgl2/programs.ts`). The per-frame group has eleven slots, and group 1 three. Group 2 has six: the instance textures, then the joint texture and the first joints of skinned meshes. Group 3 has the last twelve. Its samplers take the last places, which are no texture units, so its textures stay below the texture upload unit. A unit test checks every GLSL shader's bindings against the slots.
+- GLSL ES 3.00 has no binding numbers. So the WebGL2 backend gives each WGSL binding a slot: a texture unit, a uniform block binding point and a sampler's place. Each bind group starts at a slot of its own (`slotOf` in `gpu/webgl2/programs.ts`). The per-frame group has fourteen slots: the environment's cube map and its sampler take the last two, 12 and 13. Group 1 has three. Group 2 has six: the instance textures, then the joint texture and the first joints of skinned meshes. Group 3 has the last twelve, from slot 23. Its textures take units 23 to 28, and its samplers places 29 to 34, which the backend's own table holds and no texture unit uses. So its textures stay below the texture upload unit, 31. A unit test checks every GLSL shader's bindings against the slots.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
 
 ## Cube, 3D and high dynamic range textures
@@ -161,7 +162,7 @@ The test page `tests/pages/replay-cube-3d.ts` checks each format on each path. I
 | `rgba32float` | 16 | Filters only with the optional feature `float32-filterable` | Filters only with `OES_texture_float_linear`, asked for by name |
 
 - `rgb9e5ufloat` holds high dynamic range color in half the memory of `rgba16float`. Its three channels share one exponent, so a channel far below the brightest keeps fewer bits. It has no alpha.
-- No path draws into `rgb9e5ufloat`. So a cube that the GPU prefilters at run time needs `rgba16float`, and only files that a tool wrote can use `rgb9e5ufloat`. D-19 chooses between them for environments.
+- No path draws into `rgb9e5ufloat`. A cube that the GPU makes at run time in that format takes its texels through a buffer, as "Cubes that the GPU makes" says. D-19 chooses the format for environments.
 - Hard rule 12 keeps 32-bit floats unfiltered. The page still reads one 32-bit float texture with a linear filter, where the device offers the filter, and reports whether the texels blended. GPUs differ there, so the page paints that cell black before it publishes its image.
 - The capability reports of the team's devices show `float32-filterable` in Chrome, Safari and Firefox on the Mac, and not on the iPad. A WebGL2 context without `OES_texture_float_linear` reads black from a 32-bit float texture through a linear filter. On the Mac, a run that did not ask for the extension read black. A run that asked read blended texels.
 
@@ -186,6 +187,19 @@ Measured on 3 October 2026 through the device runner, Safari 26.6.2 and Firefox 
 
 - Safari first failed both WebGPU paths: it dropped the copy of a 2D layer into the last 3D slice ("Browser faults"). The WebGPU backend now copies through a buffer, and these results come from after that fix.
 - The iPad and the phones have not run the page yet. Add their rows here when they do.
+
+### Cubes that the GPU makes
+
+The built-in room environment is the first cube that the engine makes on the GPU (M2-E2, [D-19](decisions/D-19-environment-maps.md#the-built-in-room-on-the-gpu)). Its generator runs in the thread that draws, at the draw list's `GenerateTexture` command.
+
+- No path draws into `rgb9e5ufloat`, and WebGL2 draws into `rgba16float` only with an extension. So each draw writes its texels packed as `rgb9e5ufloat` into the four bytes of an `rgba8unorm` target. WebGPU copies the target into a buffer and the buffer into the cube's face. WebGL2 reads the target into a pixel pack buffer and unpacks the same buffer into the face, with `UNSIGNED_INT_5_9_9_9_REV`. Both copies stay on the GPU.
+- Each draw fills rows of a whole level, its six faces side by side in the target, and the copies take each face's part. A draw of one face of a small level keeps few of the GPU's lanes busy, and each texel loops over thousands of reads. On the Mac, the faces side by side made the room twice as fast.
+- The core records the work in 32 slices of about the same cost, one a frame, as it uploads a large texture in bands. A slice covers bands of rows, so a level can span slices. The fragment shader takes its texel from the fragment's place, so a viewport over a band draws the band's rows.
+- The generator builds its pipelines with `createRenderPipelineAsync`, or with `KHR_parallel_shader_compile` on WebGL2, before it counts as arrived. A WebGL2 program that it prepares outside a replay puts the program in use back, so the backend's state cache stays true.
+- The shader writes each byte as (byte + 0.25) / 255. A GPU may round or truncate when it stores 8 bits, and the quarter step keeps the byte either way.
+- The shader takes its texel from the fragment's place, not from texture coordinates. WebGPU's copy reads the target's top row first and GL's reads its bottom row first. Each of those rows holds the fragments of row 0, so the face's rows come out the same on both paths, with no flip.
+- The WebGL2 generator binds its own program, sampler, textures, uniform buffer and framebuffer. The backend sets its fixed-function state first, through its cache, and forgets the cached bindings afterwards.
+- Its constant tables are functions with `switch`, not constant arrays. A WGSL constant array becomes a GLSL array type with its size, which Arm's Mali GPUs reject ("Browser faults").
 
 ### Draw-list numbers held for M2
 
@@ -346,6 +360,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
   - Stopping the whole engine on `pagehide`. The browser can keep a page in its back-forward cache and show it again. That page would then show a dead canvas. With only the job workers stopped, it runs on, with their share of the work on the sketch thread.
 - three.js has no worker threads or shared memory, so it has no such problem.
 - A start can also stall in Safari, with every worker ready. On 3 October 2026, the first engine in a frame on the iPad drew no frame within 20 s. It drew on the page's thread. In Safari on the Mac, 1 start in about 190 in frames did the same, in pipelined mode. Both times the sketch thread had started its setup, and no later step came. That setup waits for the thread that draws to take each setup frame. The stall comes and goes: 120 such starts in a row then passed. A report of WebKit's own faults matches it. A worker's `Atomics.waitAsync` can stay pending after the notify that should end it. A second notify does not end it either. It ends once the worker's event loop turns for another reason, such as a timer or a message. The report, [libid-org/tlsn#10](https://github.com/libid-org/tlsn/pull/10), counted 9 such stalls in about 102,000 waits. It used Playwright's WebKit on Linux.
+- In the single-threaded build the control block is plain memory, which `Atomics.waitAsync` refuses. A wait of a start there waits for the 50 ms timer alone. Hold mode waits so for the built-in room's generator, which counts among the images once its code has loaded.
 - So each wait of a start races its `Atomics.waitAsync` with a 50 ms timer, and then checks its slot again (`slotChangeOrRecheck` in `shared/wake.ts`). These are `reached` in `sketch/runner.ts` and the wait for texture images. A start waits a few times, so the timers cost nothing that shows. Options rejected:
   - A time limit on `Atomics.waitAsync` itself. WebKit ends a timed-out wait through the same deferred work as a notify, so the fault can hold it too.
   - The same timer in the frame loop. It would make a timer and a promise in every frame (hard rule 1). Runs of many minutes on the iPad and the Mac have shown no frame loop that stopped.

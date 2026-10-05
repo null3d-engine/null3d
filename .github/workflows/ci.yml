@@ -230,7 +230,13 @@ jobs:
           if-no-files-found: ignore
 
   bench:
-    # The benchmark pages' tests on SwiftShader, in shards like the browser tests.
+    # The benchmark pages' tests on SwiftShader, in two shards of about equal measured time.
+    # Playwright's own --shard splits the test list into equal counts in file order, and these
+    # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
+    # and the other 4 tests and 3 minutes. Shard 1 runs the page tests of the scenes that
+    # BENCH_SHARD_1 names, and shard 2 every other test, so each test runs in exactly one shard.
+    # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
+    # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
     runs-on: ubuntu-latest
@@ -238,9 +244,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        include:
+          - shard: 1
+            select: --grep
+          - shard: 2
+            select: --grep-invert
     env:
       HUSKY: "0"
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -253,7 +264,7 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       - name: The benchmark pages on SwiftShader
-        run: bun run test:bench --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        run: bun run test:bench ${{ matrix.select }} "$BENCH_SHARD_1"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

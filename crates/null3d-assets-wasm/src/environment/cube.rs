@@ -5,7 +5,7 @@
 //! holds the light that arrives from the world direction a shader samples it with, so the engine
 //! needs no flip.
 
-use super::vector::{Vec3, add, normalize, scale};
+use super::vector::{Vec3, add, frame, normalize, scale};
 
 /// The number of faces of a cube map.
 pub const FACES: usize = 6;
@@ -90,6 +90,42 @@ impl Cube {
                         }
                     }
                     texels.push(scale(sum, weight));
+                }
+            }
+        }
+        Self { size, texels }
+    }
+
+    /// The cube map blurred by a Gaussian of `sigma` radians over the sphere, as three.js's
+    /// `PMREMGenerator.fromScene` blurs a scene with its `sigma`. Each texel weighs the light of
+    /// the directions around its own on a grid of half a sigma, out to three sigmas, by the
+    /// Gaussian of their angle.
+    pub fn blurred(&self, sigma: f32) -> Self {
+        const STEPS: i32 = 6;
+        let step = sigma / 2.0;
+        let mut taps = Vec::new();
+        for j in -STEPS..=STEPS {
+            for i in -STEPS..=STEPS {
+                let (u, v) = (i as f32 * step, j as f32 * step);
+                let weight = (-(u * u + v * v) / (2.0 * sigma * sigma)).exp();
+                taps.push((u.tan(), v.tan(), weight));
+            }
+        }
+        let total: f32 = taps.iter().map(|t| t.2).sum();
+        let chain = Chain::new(self);
+        let size = self.size;
+        let mut texels = Vec::with_capacity(self.texels.len());
+        for face in 0..FACES {
+            for y in 0..size {
+                for x in 0..size {
+                    let n = Self::texel_direction(size, face, x, y);
+                    let (t, b) = frame(n);
+                    let mut sum = [0.0; 3];
+                    for &(u, v, weight) in &taps {
+                        let d = add(add(n, scale(t, u)), scale(b, v));
+                        sum = add(sum, scale(chain.sample(d, 0.0), weight));
+                    }
+                    texels.push(scale(sum, 1.0 / total));
                 }
             }
         }
@@ -278,5 +314,25 @@ mod tests {
             |c: &Cube| c.texels.iter().map(|t| t[0] + t[1]).sum::<f32>() / c.texels.len() as f32;
         assert!((mean(&cube) - mean(&half)).abs() < 1e-4);
         assert_eq!(half.size, 4);
+    }
+
+    #[test]
+    fn a_blur_keeps_constant_light_and_spreads_a_spot() {
+        let flat = Cube::from_fn(16, 1, |_| [2.0, 1.0, 0.5]).blurred(0.04);
+        assert!(flat.texels.iter().all(|t| (t[0] - 2.0).abs() < 1e-4));
+        // A spot about a degree wide, which a blur of 0.1 radians spreads to its side.
+        let spot = |d: Vec3| {
+            if d[2] > 0.9998 {
+                [100.0, 0.0, 0.0]
+            } else {
+                [0.0; 3]
+            }
+        };
+        let sharp = Cube::from_fn(64, 4, spot);
+        let soft = sharp.blurred(0.1);
+        let side = normalize([0.08, 0.0, 1.0]);
+        assert_eq!(sharp.nearest(side)[0], 0.0);
+        assert!(soft.nearest(side)[0] > 0.0);
+        assert!(soft.nearest([0.0, 0.0, 1.0])[0] < sharp.nearest([0.0, 0.0, 1.0])[0]);
     }
 }
