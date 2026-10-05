@@ -295,7 +295,19 @@ Why the iPad's `.hdr` took 2,291 ms on WebGPU and 1,544 ms on WebGL2: the gap li
 
 The task's done-when line asks only that an HDR file lights a scene on all three tiers, and sets no time. Its note took prototype L1's rule: under 200 ms in all on the slowest cloud phone. Option A (D-66) then made the map in one submit, and the rule's 200 ms is the map's own cost. Here, the part after the environment resolved holds the map, its frame and the capture. It stayed under 200 ms on every device and path: at most 150 ms for the room and 173 ms for a file. The first second or more is the download and the background setup, during which frames keep their pace. So the room's 1 s on phones passes the rule.
 
-The generator's code and shaders start to load only when the first generator reaches the thread that draws. For an HDR file, that is after the download and the reading, so the two waits add up. Starting them at the call would overlap them, saving up to the room's time until it resolved: 0.8 to 1.1 s on these devices.
+In those runs, the generator's code and shaders started to load only when the first generator reached the thread that draws. For an HDR file, that was after the download and the reading, so the two waits added up. Now `loadEnvironment` asks for them at the call, when the address ends in `.hdr` or `.exr`. It asks once the file's first bytes show an HDR file otherwise. It starts the reader's worker then too. The sketch sends a reserved name among the shader features to preload. The thread that draws then loads the code and builds the pipelines, before any generator arrives.
+
+The same plan measured the change on the same devices, the old commit against the new one in turns: old, new, old, new. The runs are `20261005-145731` to `20261005-151647`, each ending in `-environment-load`. Every run passed. In each pair, one run was slowed by a stall of 10 to 14 s in the cloud's tunnel. So the table takes the faster run of each pair. A stall only adds time. Milliseconds to the first lit frame, before and after:
+
+| Device, path | `.hdr` | `.exr` | Room |
+| --- | --- | --- | --- |
+| iPad Pro 13, WebGPU | 2,160 to 989 (-1,171) | 1,615 to 887 (-728) | 1,203 to 720 |
+| iPad Pro 13, WebGL2 | 1,592 to 842 (-750) | 1,537 to 846 (-691) | 962 to 751 |
+| Pixel 10, WebGPU | 2,633 to 2,176 (-457) | 1,920 to 1,666 (-254) | 1,080 to 1,093 |
+| Pixel 10, WebGL2 | 2,428 to 1,326 (-1,102) | 2,138 to 1,687 (-451) | 1,090 to 1,016 |
+| Galaxy S24, WebGL2 | 2,884 to 2,455 (-429) | 2,379 to 1,812 (-567) | 926 to 1,233 |
+
+The HDR files' times fell by 0.25 to 1.2 s on every device and path. The room's path did not change, and its figures moved both ways. The S24's old runs ranged from 926 to 1,061 ms and its new runs from 1,233 to 1,259 ms. With two runs each, that reads as the devices' noise.
 
 The code that loads on first use, after Brotli: the reader's worker 5.8 KB, and its loader 0.6 KB in the sketch's thread. The generators' file grew from 2.1 to 2.7 KB. The environment shaders grew from 4.2 to 4.7 KB in WGSL, and from 4.4 to 4.8 KB in GLSL.
 
@@ -340,7 +352,6 @@ The lookup's code adds 0.7 to 2.2 KB after Brotli to each device module, 2.9% to
 - Open: after the browser replaces the GPU, an environment whose texels the store freed draws as none until the sketch loads it again. Every texture from data does the same, as M2-R6 notes for #76.
 - Open for M2-E3: a blurred background reads the same levels. A sharp background may want `--size 512` or larger.
 - Open: the HDR load time on the owner's iPad and S24+. The cloud's iPad Pro 13, Pixel 10 and Galaxy S24 ran the `environment-load` plan on 5 October 2026, as above.
-- Open: start the generator's code and shaders at the first HDR load's call, so they load during the download.
 - Open: a size option for HDR files at load, such as `--size 512` for sharp backgrounds.
 - Open: KTX2 supercompression. A map of 256 is 2.0 MB. The room's was 393 KB with Brotli and 562 KB with gzip, so a host that compresses `.ktx2` files saves most of a map's bytes. Zstandard in the file would need a decoder in the engine.
 - The tool and the GPU's generator keep their filter, and do not copy three.js r187's. Release r187 shares the tool's GGX lobe, its 256 cube with 6 levels and its roughness of each level. It differs in three ways. Its levels 1 and 2 take 256 samples of the visible normals, with a bias of half a level. The tool takes 512 and then 1,024 there, with a bias of one level. Its levels 3 to 5 weigh every texel of a 16 x 16 copy of the source. The tool samples 2,048 to 8,192 directions of the full chain there. Its blur takes two passes of a 20-tap golden-angle spiral. The tool's takes one pass of a 13 x 13 grid. Under [D-52](D-52-intent-parity.md) a look need not match three.js's pixels. The tool's method takes more samples than r187's at every level, so its map is at least as good. The generator's counts, biases and blur match the tool's. They are in `packages/engine/src/gpu/environment-steps.ts` and `crates/null3d-shaders/wgsl/environment.wgsl`.
