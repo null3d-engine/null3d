@@ -44,6 +44,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::effects::{EFFECT_FLOATS, Effect};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
@@ -169,6 +170,8 @@ struct Engine {
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
     /// The environment's values that TypeScript writes (`constants::environment_value`).
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
+    /// The uniforms of the custom effect that TypeScript sets next with `setEffect`.
+    effect_values: Box<[f32; EFFECT_FLOATS]>,
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
@@ -486,6 +489,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
+        effect_values: Box::new([0.0; EFFECT_FLOATS]),
     });
     0
 }
@@ -495,6 +499,44 @@ pub fn init_engine(
 #[wasm_bindgen(js_name = environmentValues)]
 pub fn environment_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
+/// The address of a custom effect's uniforms, the floats that TypeScript writes before it calls
+/// `setEffect`.
+#[wasm_bindgen(js_name = effectValues)]
+pub fn effect_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.effect_values[..])))
+}
+
+/// Sets the custom effect at place `index` in the order effects run, from the next frame on: the
+/// effect whose compiled WGSL has render pipeline template `template`, with the flags
+/// (`constants::effect_flag`) and the uniforms at `effectValues`. A new place goes after the last
+/// one. Template 0 removes the effect at `index` and every one after it. The TypeScript API checks
+/// the places and the uniforms.
+#[wasm_bindgen(js_name = setEffect)]
+pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
+    with_engine(|e| {
+        let effect = (template != 0).then_some(Effect {
+            template,
+            depth: flags & constants::effect_flag::DEPTH != 0,
+            values: *e.effect_values,
+        });
+        e.renderer.settings_mut().set_effect(index as usize, effect);
+        0
+    })
+}
+
+/// Makes the final pass map HDR color with the custom tone curve whose compiled WGSL has render
+/// pipeline templates from `template` on, from the next frame on: the pass's build at `template`
+/// and its bloom build at the next. Template 0 returns to the tone mapping that `setOutput` sets.
+#[wasm_bindgen(js_name = setToneCurve)]
+pub fn set_tone_curve(template: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_tone_curve((template != 0).then_some(template));
+        0
+    })
 }
 
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes

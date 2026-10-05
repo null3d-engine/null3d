@@ -646,6 +646,13 @@ pub mod layout {
     /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
     /// textures that the step reads with `textureLoad`.
     pub const AO: u32 = 18;
+    /// Group 0 of a custom effect's pass: the effect's uniform block, the color it reads, a linear
+    /// sampler, and the scene's depth as unfilterable floats, or a blank texture for an effect that
+    /// reads no depth.
+    pub const EFFECT: u32 = 21;
+    /// [`EFFECT`] with a multisampled scene depth, whose sample 0 the effect reads. Only WebGPU has
+    /// it: WebGL2 reads a copy of one sample that the backend keeps.
+    pub const EFFECT_DEPTH_MS: u32 = 22;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -703,9 +710,11 @@ pub mod permutation {
     /// The outline mask template marks the parts of outlined objects that nothing hides. Without
     /// it, the template marks every part, hidden or not.
     pub const OUTLINE_VISIBLE: u32 = 65536;
+    /// A custom effect reads the scene's depth from a multisampled target, at sample 0.
+    pub const DEPTH_MULTISAMPLED: u32 = 262144;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 17] = [
+    pub const NAMES: [(&str, u32); 18] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -723,6 +732,7 @@ pub mod permutation {
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -1561,6 +1571,8 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
+                ("EFFECT", layout::EFFECT),
+                ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),

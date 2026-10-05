@@ -1,5 +1,5 @@
-// Measures what an effect costs on this device: ?effect=bloom (the default) or ?effect=ao names
-// it. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
+// Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao or
+// ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to bloom's scene. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
 // turns, three times each, and reports the medians of each side's GPU time per frame, where the
 // device has a GPU timer, and of its frame interval and CPU time. The device runner's bloom and ao
@@ -16,6 +16,7 @@ import { run } from './lib/result';
 const SKETCHES = {
 	bloom: './sketches/bloom-sketch.ts',
 	ao: './sketches/ao-sketch.ts',
+	effects: './sketches/effects-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -23,6 +24,7 @@ type Effect = keyof typeof SKETCHES;
 const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
+const count = params.get('count');
 const asked = params.get('effect') ?? 'bloom';
 if (!Object.hasOwn(SKETCHES, asked)) throw new Error(`the page measures no effect ${asked}`);
 const effect = asked as Effect;
@@ -31,7 +33,7 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}`;
 	const engine = await createEngine({ canvas, sketch });
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -60,6 +62,7 @@ run('effect-cost', async () => {
 		hdr: engine.capabilities.hdr,
 		scale,
 		bloomSize: size === null ? null : Number(size),
+		effects: effect === 'effects' ? Number(count ?? '4') : null,
 		// The window in CSS pixels and the screen's pixel ratio: the preset's cap on the ratio sets
 		// the drawing buffer's size from them.
 		window: [innerWidth, innerHeight],

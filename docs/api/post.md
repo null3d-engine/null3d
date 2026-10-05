@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, ambient occlusion, outlines, color grading tables and the vignette; the other effects and post.addEffect of 0.2."
+summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, ambient occlusion, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
 ---
 
 # Post-processing API
 
-> Ships in null3D 0.1, with bloom, ambient occlusion, outlines, color grading and the vignette in 0.2. The API is experimental, so it can still change between versions. `post.addEffect` is not built yet, so coding agents must not use it.
+> Ships in null3D 0.1, with bloom, ambient occlusion, outlines, color grading, the vignette, custom effects and custom tone curves in 0.2. The API is experimental, so it can still change between versions.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, outlines, a color grading table and the vignette. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom and ambient occlusion do.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom and ambient occlusion do.
 
 ## Tone mapping and exposure
 
@@ -25,13 +25,14 @@ export default defineSketch(({ post }) => {
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `toneMapping` | `'aces'`, `'agx'`, `'neutral'` or `'none'` | `'aces'` |
+| `toneMapping` | `'aces'`, `'agx'`, `'neutral'`, `'none'`, or a custom tone curve's WGSL | `'aces'` |
 | `exposure` | A number from 0 up. 2 is one stop brighter, and 0.5 one stop darker. | 1 |
 | `ev100` | The camera's exposure value at ISO 100, for lights in real units: a number from -20 to 30, or `false` for none | `false` |
 
 - The curves use three.js's formulas: `'aces'` for `ACESFilmicToneMapping`, `'agx'` for `AgXToneMapping` and `'neutral'` for `NeutralToneMapping`.
 - `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
 - three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
+- A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one.
 - The settings apply to the whole scene, the background included, from the next frame on. A setting that a call leaves out keeps its value.
 
 ## Lights in real units
@@ -211,20 +212,65 @@ post.set({ vignette: { offset: 1, darkness: 1.2 } });
 
 Grading and the vignette work on display color, so they draw on every GPU path, with HDR color or without it. They cost the final pass a few operations per pixel, and the table one texture read. On a device that resolves its multisampled picture straight into the canvas, they make the final pass run, which reads the picture once more.
 
+## Custom effects
+
+`post.addEffect` adds a full-screen effect of the sketch's own WGSL. It returns the effect, which the other two calls take:
+
+```ts
+const grade = /* wgsl */ `
+struct Uniforms { warmth: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    let warm = input.color.rgb * vec3f(1.0 + uniforms.warmth, 1.0, 1.0 - uniforms.warmth);
+    return vec4f(warm, input.color.a);
+}
+`;
+
+const effect = post.addEffect({ wgsl: grade, uniforms: { warmth: 0.1 } });
+post.setEffectUniform(effect, 'warmth', 0.2);
+post.removeEffect(effect);
+```
+
+| Option | Values | Default |
+| --- | --- | --- |
+| `wgsl` | WGSL that the null3D Vite plugin compiled, which declares `fn effect(input: EffectInput) -> vec4f` | Required |
+| `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name | 0 for each field |
+| `order` | A number. Effects run from the lowest order to the highest. | 0 |
+
+A custom tone curve takes the place of the built-in curves:
+
+```ts
+const reinhard = /* wgsl */ `
+fn toneCurve(color: vec3f) -> vec3f {
+    return color / (vec3f(1.0) + color);
+}
+`;
+
+post.set({ toneMapping: reinhard });
+```
+
+- Effects run on linear HDR color, after the exposure and before bloom and the tone curve. Each runs in a pass of its own, and at most 8 run at once.
+- `setEffectUniform` allocates nothing for a number or an array, so a sketch can call it every frame.
+- Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
+- [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
+
 ## Errors
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, strength, threshold, offset, darkness or outline width below 0, a bloom radius or `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
-| [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, strength, threshold, offset, darkness or outline width below 0, a bloom radius or `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
-| [E1101](../errors/E1101.md) | A table whose `destroy()` was called. |
+| [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
+| [E1216](../errors/E1216.md) | An effect's uniform that its WGSL does not declare, or a value of the wrong kind. |
+| [E1101](../errors/E1101.md) | A table whose `destroy()` was called, or an effect that `removeEffect` removed. |
 
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
-- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion and outlines work, what they cost, and the effects still to come.
-- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `OutlinePass`, `LUTPass` and `VignetteShader`.
+- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, outlines and custom effects work, and what they cost.
+- [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
+- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.
 - [Quality presets](../concepts/quality-presets.md): `aoScale` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables.
@@ -271,6 +317,28 @@ Bloom's settings. Bloom blurs the scene's color through a chain of up to 10 leve
 | `blend?: BloomBlend` | How the glow meets the scene's color. It is `'mix'` by default. |
 | `weights?: readonly number[]` | Each level's share of the glow, from the narrowest level to the widest: up to 10 numbers of 0 or more, not all 0. The engine divides them by their sum, and a missing level takes 0. Each level spreads light twice as far as the one before: the eighth over about a quarter of the canvas's shorter side, and the tenth over all of it. Levels past the last one with a weight cost nothing. The default gives 8 levels weights, most to the narrow ones, for a soft glow. |
 
+### `Effect`
+
+Class `Effect`.
+
+A custom effect that `post.addEffect` added. `post.setEffectUniform` changes its uniforms, and `post.removeEffect` removes it. `Values` gives the names and types of its uniforms.
+
+| Member | Description |
+| --- | --- |
+| `readonly live: boolean` | True until `post.removeEffect` removes the effect. |
+
+### `EffectOptions`
+
+Interface `EffectOptions`.
+
+Options of `post.addEffect`: the effect's WGSL, the first values of its uniforms, and its place among the effects. `Wgsl` is the type of the effect's WGSL. It gives the names and types of the uniforms.
+
+| Member | Description |
+| --- | --- |
+| `wgsl: Wgsl` | The effect's WGSL, compiled by the null3D Vite plugin. It declares `fn effect(input: EffectInput) -> vec4f`, which the engine calls for each pixel of the scene's image. It can declare `struct Uniforms`, whose fields the effect reads from `uniforms`. Effects made from the same WGSL share their shader. |
+| `uniforms?: NoInfer<[keyof UniformValues<Wgsl>] extends [never] ? { readonly [name: string]: never; } : UniformValues<Wgsl>>` | The first value of each uniform, by name. A uniform without one starts at 0. When TypeScript can see the WGSL's uniforms, a name that the WGSL does not declare fails the type check. |
+| `order?: number` | The effect's place among the effects: effects run from the lowest order to the highest, and effects of the same order run in the order they were added. It is 0 by default. |
+
 ### `OutlineSettings`
 
 Interface `OutlineSettings`.
@@ -291,6 +359,9 @@ The post-processing settings, as `ctx.post`. The engine applies them to every pi
 
 | Member | Description |
 | --- | --- |
+| `addEffect<const Wgsl extends string \| CompiledWgsl>(options: EffectOptions<Wgsl>): Effect<UniformValues<Wgsl>>` | Adds a custom effect, which runs from the next frame on, and returns it. An effect is a full-screen pass of WGSL that declares `fn effect(input: EffectInput) -> vec4f`. It reads the scene's HDR color after the exposure, before bloom and the tone mapping, and returns the new color. Effects run from the lowest `order` to the highest, each in a pass of its own. At most 8 run at once. An effect needs HDR color, as bloom does; on a device without an HDR target it stays off, and development builds warn once. Throws E1215 for WGSL that the null3D Vite plugin did not compile as an effect, E1216 for a uniform that the WGSL does not declare or a value of the wrong kind, E1203 for an order that is not a number, and E1213 for a ninth effect. |
+| `setEffectUniform<Values, Name extends keyof Values & string>(effect: Effect<Values>, name: Name, value: NonNullable<Values[Name]>): void` | Changes one uniform of an effect, from the next frame on. A number or an array of numbers allocates nothing, so a sketch can change a uniform every frame. Throws E1216 for a uniform that the effect's WGSL does not declare or a value of the wrong kind, and E1101 for an effect that `removeEffect` removed. |
+| `removeEffect<Values>(effect: Effect<Values>): void` | Removes an effect from the next frame on. Removing an effect twice does nothing. |
 | `set(settings: PostSettings): void` | Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so a sketch can change the exposure, bloom, the outline, the table's intensity or the vignette every frame. It throws E1213 for a setting or a tone mapping it does not know, or a value out of its range, E1203 for a value that is not a number, E1204 for a color it cannot read, and E1101 for a table that was destroyed. |
 
 ### `PostSettings`
@@ -301,7 +372,7 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 
 | Member | Description |
 | --- | --- |
-| `toneMapping?: ToneMapping` | How the engine maps high dynamic range color to the screen. The default is `'aces'`. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. |
+| `toneMapping?: ToneMapping \| ToneCurve` | How the engine maps high dynamic range color to the screen: a built-in curve's name, or a custom tone curve's WGSL. The default is `'aces'`. three.js uses no tone mapping by default, so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR color, as bloom does; on a device without an HDR target the built-in curve stays. |
 | `exposure?: number` | Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does: 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. With `ev100`, it scales the camera's exposure, as exposure compensation does. |
 | `ev100?: number \| false` | The camera's exposure value at ISO 100, for lights in real units: 15 suits a sunny day lit by a sun of 100,000 lux, 12 an overcast day, and 7 a lit room. It scales the scene's color by 1 / (1.2 × 2^ev100), as Filament and Bevy do, so each step up is one stop darker. It is a number from -20 to 30, and `false`, the default, turns it off, which leaves three.js's units. |
 | `bloom?: BloomSettings \| false` | Light that spreads from the bright parts of the scene through a chain of blurred levels. Settings turn bloom on, `{}` with the values it had, and `false` turns it off. It is off by default. Its glow keeps its size as a share of the canvas at any pixel ratio and render scale. |
@@ -310,6 +381,14 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |
 | `vignette?: VignetteSettings \| false` | Darkens the picture toward its edges, as three.js's `VignetteShader` does. Settings turn the vignette on, `{}` with the values it had, and `false` turns it off. It is off by default. |
 | `outline?: OutlineSettings \| false` | A sharp line around the objects that `setOutlined(true)` marks. Settings turn outlines on, `{}` with the values they had, and `false` turns them off. They are off by default. |
+
+### `ToneCurve`
+
+```ts
+type ToneCurve = CompiledWgsl | `${string}toneCurve${string}`;
+```
+
+A custom tone curve: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. The final pass calls it in place of the built-in curves, with the exposed linear color of each pixel. It clamps what the curve returns to 0 to 1. TypeScript sees a tagged template literal as its text, which names the function.
 
 ### `ToneMapping`
 

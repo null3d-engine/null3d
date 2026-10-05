@@ -107,6 +107,12 @@ pub mod map_slot {
     pub const LIGHT: u32 = MapSlot::Light as u32;
 }
 
+/// The flags of an effect that `setEffect` takes.
+pub mod effect_flag {
+    /// The effect reads the scene's depth.
+    pub const DEPTH: u32 = 1;
+}
+
 /// The numbers that `textureStat` reads from the texture store.
 /// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
 /// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
@@ -686,6 +692,16 @@ pub fn typescript() -> String {
                 ("ENV_INTENSITY", param::ENV_INTENSITY as u32),
                 ("UV_U", param::UV_U as u32),
                 ("UV_V", param::UV_V as u32),
+            ],
+        ),
+        // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
+        // TypeScript writes at `effectValues` first.
+        (
+            "EFFECT",
+            &[
+                ("MAX", null3d_render::effects::MAX_EFFECTS as u32),
+                ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
+                ("DEPTH", effect_flag::DEPTH),
             ],
         ),
         (

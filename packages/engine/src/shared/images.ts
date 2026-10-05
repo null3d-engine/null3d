@@ -20,10 +20,17 @@ import { Slot } from './control';
 import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
 
 /**
- * A custom material's shader, as the thread that draws builds its pipelines: its variants, whose
- * render pipeline is `main`, and the mesh locations that its vertex stage reads.
+ * A shader of the sketch's compiled WGSL, as the thread that draws builds its pipelines: its
+ * variants, whose render pipeline is `main`, and for a custom material the mesh locations that its
+ * vertex stage reads.
  */
 export interface CustomShader {
+	/**
+	 * What the shader draws: a custom effect's pass, or the final pass with a custom tone curve,
+	 * which binds as the final pass does, or as its bloom build does. A shader without a kind
+	 * draws a custom material's meshes.
+	 */
+	readonly kind?: 'effect' | 'final' | 'finalBloom';
 	readonly variants: ShaderVariants;
 	readonly locations: readonly number[];
 	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */

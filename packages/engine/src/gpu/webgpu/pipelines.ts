@@ -11,6 +11,8 @@ import {
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
+	LAYOUT_EFFECT,
+	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
@@ -19,6 +21,7 @@ import {
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	SIZE_INSTANCE_STRIDE,
@@ -110,6 +113,11 @@ export interface RenderTemplate {
 	readonly pipeline: string;
 	/** The bind group layout of each group, by layout id, from group 0 on. */
 	readonly layouts: readonly number[];
+	/**
+	 * For a custom effect's template: the layouts of its builds that read a multisampled depth, the
+	 * pipelines whose permutation has the DEPTH_MULTISAMPLED bit.
+	 */
+	readonly multisampledLayouts?: readonly number[];
 	/**
 	 * For a template that draws meshes: the vertex shader locations that it reads from a mesh's
 	 * vertices, in slot 0, where each pipeline's vertex format places them.
@@ -287,6 +295,7 @@ export class Pipelines {
 	 */
 	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly skinLayouts: (GPUPipelineLayout | undefined)[] = [];
+	private readonly multisampledLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
 	private readonly lightLayout: GPUPipelineLayout;
@@ -455,6 +464,18 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
+		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
+		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
+		const effectEntries: GPUBindGroupLayoutEntry[] = [
+			aoSettings,
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, sampler: {} },
+		];
+		this.defineLayout(LAYOUT_EFFECT, 'effect', [...effectEntries, unfiltered(3)]);
+		this.defineLayout(LAYOUT_EFFECT_DEPTH_MS, 'effect depth ms', [
+			...effectEntries,
+			unfiltered(3, true),
+		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -567,11 +588,27 @@ export class Pipelines {
 	}
 
 	/**
-	 * Adds a custom material's template: the standard material's template with the material's WGSL,
-	 * in the shader variants that the plugin built, which also read the first texture coordinates.
-	 * A material with textures binds them in the slots of the maps' layout.
+	 * Adds a template of the sketch's compiled WGSL. A custom material's is the standard material's
+	 * template with the material's WGSL, in the shader variants that the plugin built, which also
+	 * read the first texture coordinates. A material with textures binds them in the slots of the
+	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and a custom tone
+	 * curve's binds as the final pass or its bloom build does.
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
+		const { kind } = shader;
+		if (kind !== undefined) {
+			this.defineTemplate(id, {
+				label: kind === 'effect' ? `custom effect ${id}` : `custom tone curve ${id}`,
+				shader: shader.variants,
+				pipeline: 'main',
+				layouts: [
+					kind === 'effect' ? LAYOUT_EFFECT : kind === 'final' ? LAYOUT_FINAL : LAYOUT_FINAL_BLOOM,
+				],
+				multisampledLayouts: kind === 'effect' ? [LAYOUT_EFFECT_DEPTH_MS] : undefined,
+				vertexBuffers: [],
+			});
+			return;
+		}
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
 			shader: shader.variants,
@@ -646,10 +683,20 @@ export class Pipelines {
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		const skins = (permutation & PERMUTATION_SKIN) !== 0;
-		const layouts = skins ? this.skinLayouts : this.pipelineLayouts;
+		const multisampled =
+			t.multisampledLayouts !== undefined && (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
+		const layouts = skins
+			? this.skinLayouts
+			: multisampled
+				? this.multisampledLayouts
+				: this.pipelineLayouts;
 		let layout = layouts[template];
 		if (!layout) {
-			const groups = skins ? [...t.layouts, LAYOUT_JOINTS] : t.layouts;
+			const groups = skins
+				? [...t.layouts, LAYOUT_JOINTS]
+				: multisampled
+					? (t.multisampledLayouts as readonly number[])
+					: t.layouts;
 			layout = this.device.createPipelineLayout({
 				label: t.label,
 				bindGroupLayouts: groups.map((id) => this.layout(id)),

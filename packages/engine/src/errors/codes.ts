@@ -150,9 +150,9 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1215: {
-		title: 'Invalid custom material WGSL',
+		title: 'Invalid custom WGSL',
 		cause:
-			'materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh.',
+			'materials.shader(), post.addEffect() or post.set() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, and a tone curve fn toneCurve.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
@@ -160,7 +160,7 @@ const DOCS = {
 	E1216: {
 		title: 'Invalid uniform or texture',
 		cause:
-			"A custom material's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer.",
+			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer.",
 		example:
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
 		since: '0.1',

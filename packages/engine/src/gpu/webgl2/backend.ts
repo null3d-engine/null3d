@@ -578,8 +578,12 @@ export class WebGL2Backend {
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
 			if (!shader) return false;
-			// A custom material's prepass draws with its own vertex shader, as every mesh's does.
-			defined = { shader: shader.variants, pipeline: 'main', meshPrepass: true };
+			// A custom material's prepass draws with its own vertex shader, as every mesh's does. A
+			// custom effect's or tone curve's template draws one triangle, as the final pass does.
+			defined =
+				shader.kind === undefined
+					? { shader: shader.variants, pipeline: 'main', meshPrepass: true }
+					: { shader: shader.variants, pipeline: 'main' };
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);

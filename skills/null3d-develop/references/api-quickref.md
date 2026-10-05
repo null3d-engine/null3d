@@ -455,9 +455,10 @@ post.set({
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
-post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
-post.setEffectUniform('pixelate', 'size', 8);  // (0.2)
-post.removeEffect('pixelate');                 // (0.2)
+post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
+const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; one pass each, at most 8
+post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
+post.removeEffect(fx);                  // (0.2)
 ```
 
 ## 16. Render graph (0.2) (`api/render`)

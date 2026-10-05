@@ -15,6 +15,7 @@
 //!   that load on a feature's first use, one for each target of each.
 
 mod composition;
+mod effect;
 mod features;
 mod glsl;
 mod half;
@@ -41,6 +42,7 @@ use naga_oil::compose::{NagaModuleDescriptor, ShaderDefValue};
 use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
+pub use effect::{EffectOutput, EffectSource, PostTemplates};
 pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
@@ -155,6 +157,9 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             &label,
             &mut errors,
         );
+        if shader.custom_effects {
+            continue;
+        }
         output.shaders.insert(shader_name.clone(), variants);
         let pipelines = shader.pipelines.keys().cloned().collect();
         output.pipelines.insert(shader_name.clone(), pipelines);

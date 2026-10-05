@@ -105,16 +105,16 @@ struct Edit {
 
 /// A module-scope `var` declaration: the token that starts it, its name's token, the tokens of its
 /// type, and the token that ends it.
-struct Declaration {
-    first: usize,
-    name: usize,
+pub(crate) struct Declaration {
+    pub(crate) first: usize,
+    pub(crate) name: usize,
     ty: std::ops::Range<usize>,
     end: usize,
 }
 
 /// The module-scope `var` declarations of resources, which have no address space: textures and
 /// samplers.
-fn resource_declarations(tokens: &[Token]) -> Vec<Declaration> {
+pub(crate) fn resource_declarations(tokens: &[Token]) -> Vec<Declaration> {
     let mut found = Vec::new();
     let mut depth = 0usize;
     for (index, token) in tokens.iter().enumerate() {

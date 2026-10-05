@@ -35,7 +35,6 @@ import {
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
-	SHADING_CUSTOM_FIRST,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
@@ -51,10 +50,10 @@ import {
 	SHAPE_TORUS,
 } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
-import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
+import { ShaderTemplates } from './shader-templates';
 import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -810,8 +809,11 @@ export interface UnlitOptions extends UnlitValues, MaterialFeatures {
  * @category api/materials
  */
 export interface CompiledWgsl {
-	/** `'material'` for the functions of a custom material, and `'shader'` for a whole shader. */
-	readonly kind: 'material' | 'shader';
+	/**
+	 * `'material'` for the functions of a custom material, `'effect'` for a custom effect,
+	 * `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader.
+	 */
+	readonly kind: 'material' | 'effect' | 'toneCurve' | 'shader';
 }
 
 /**
@@ -1278,14 +1280,10 @@ class ShaderMaterial extends Material<ShaderValues> {
  * @category api/materials
  */
 export class Materials {
-	/** The render pipeline template of each custom material's compiled WGSL. */
-	private readonly templates = new WeakMap<CompiledWgsl, number>();
-	private nextTemplate = SHADING_CUSTOM_FIRST;
-
 	constructor(
 		private readonly core: CoreMemory,
-		/** Sends each custom material's shader to the thread that draws, once. */
-		private readonly sendShader: ShaderSender = () => {},
+		/** The templates of compiled WGSL, which send each custom material's shader once. */
+		private readonly templates = new ShaderTemplates(),
 	) {}
 
 	/**
@@ -1417,17 +1415,13 @@ export class Materials {
 
 	/** The template of a custom material's WGSL, which goes to the thread that draws once. */
 	private templateOf(compiled: CompiledMaterial): number {
-		let template = this.templates.get(compiled);
-		if (template === undefined) {
-			template = this.nextTemplate++;
-			this.templates.set(compiled, template);
-			this.sendShader(template, {
+		return this.templates.of(compiled, () => [
+			{
 				variants: compiled.variants,
 				locations: compiled.locations,
 				textures: compiled.textures.length,
-			});
-		}
-		return template;
+			},
+		]);
 	}
 }
 

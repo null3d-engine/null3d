@@ -35,6 +35,13 @@
 #              compiler adds a material's WGSL after the file's last line, and builds every variant
 #              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
 #              `fn surface`). The shader compiler holds this manifest and the entry shaders.
+#   custom_effects  True for the one template that custom effects build with. It is a template
+#              only: the build checks that it builds, with an effect that keeps each pixel, and
+#              writes no module of it. The shader compiler adds an effect's WGSL after its last
+#              line, and builds every variant with the shader def CUSTOM_EFFECT.
+#   custom_tone_curves  True for the one shader that custom tone curves build with, the final
+#              pass: the shader compiler adds a curve's WGSL after its last line, and builds every
+#              variant but its HALF builds with the shader def CUSTOM_TONE_CURVE.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -165,9 +172,20 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 [shaders.final]
 file = "final.wgsl"
 by_device = true
+custom_tone_curves = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
+
+# The template of custom effects: one triangle over the effect's target, which calls the effect's
+# function for each pixel. It builds for WebGPU, where DEPTH_MULTISAMPLED reads a multisampled
+# scene depth, and for WebGL2. Only effects build it: the build writes no module of it.
+[shaders.effect]
+file = "effect.wgsl"
+custom_effects = true
+pipelines.main = { vertex = "effect_vs", fragment = "effect_fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 
 # One step of bloom's mip chain: a 13-tap step down or a tent step up, as its uniform block says.
 # Each step reads its source with a linear filter. A step up blends over its own level.
