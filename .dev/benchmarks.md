@@ -65,7 +65,10 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - The comparison drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
 - Each run's engine chooses its own preset, with the preset check, and the pages do not fix it. On a busy CI Mac, the two builds of one round can choose different presets. In one pull request's run, S2's WebGL2 ratios ran from 0.57 to 2.16 for that reason, with no change to S2's code path. Three runs of 10 rounds on a MacBook Pro then measured that page at -9.1%, -2.5% and -9.5%. Read a page whose ratios swing that far as noise, and measure it again.
 - Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the comparison divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
-- A page fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
+- Each change also gets its noise: the standard error of the median ratio, from the spread of the rounds. The summary's table gives it beside the change.
+- A page fails when the busiest thread's change is more than 8% and more than 0.05 ms. It also fails when own work's change is more than 15% and more than 0.05 ms. In both cases the change must also be more than twice its noise. "Faster" follows the same rules.
+- The fixed 0.05 ms decides on the pages whose frames take less than about 0.6 ms: S1-static, S1-cells, S2, S3 and S4. There, 8% of a frame is a few steps of the browser's 5-microsecond timer. 0.05 ms is 0.3% of a frame at 60 Hz.
+- These rules catch a slowdown of about 15% in S1, or 0.1 ms on the other pages. A smaller change needs device runs or a comparison on a quiet Mac. [How the rules were chosen](#how-the-rules-were-chosen) gives the replay behind them.
 - A shard fails when one of its own pages fails, and the report fails when any page fails. Each shard's page shows the summary of its own pages, and the report's page shows them all.
 - To measure a shard again, open the run and use "Re-run failed jobs". GitHub then runs the failed shards and the report again, with the same commits and the same builds. The shards that passed keep their records, and a shard that runs again replaces its own.
 - The report also fails when no record holds a page of the plan, such as after a shard ran out of time. Its log names the missing pages.
@@ -76,7 +79,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - The workflow is not a check that the merge queue waits for.
 - Each shard's results stay in an artifact for 30 days, the time in which GitHub lets a run's jobs run again. The report's artifact holds every shard's results, `summary.json` and `summary.md` for 90 days, so the workflow's list of runs holds the history.
 
-### How the machine and the rules were chosen
+### How the machine was chosen
 
 On 30 September 2026, jobs compared two builds of identical engine code, so every change they measured was noise.
 
@@ -84,8 +87,24 @@ On 30 September 2026, jobs compared two builds of identical engine code, so ever
 - The Mac machine kept every run at 60 Hz, but its speed changed often. The same scene code took 3.4 to 5.4 ms per frame in runs 20 seconds apart. So the job compares the builds round by round. The builds' plain medians differed by up to 22% on identical builds.
 - Six jobs on the Mac ran 5 rounds of 10 s, 10 rounds of 5 s or 15 rounds of 3 s each. Round by round, the largest slowdowns of identical builds were +4.7% for the busiest thread and +12.0% for own work, both in S1. In S1-static and S2 the largest was 0.012 ms. Shorter runs gave noisier rounds, and 10 rounds of 5 s gave the least noise for the time.
 - Own work is the busiest thread's time less the scene's update: a small difference of two larger times. In S1 it also waits for a job worker, whose timing varies on 3 cores. Both make own work noisier, so its rule is wider.
-- The busiest thread's rule is the smallest tested that none of the six jobs broke: 3% failed three jobs, and 4% failed two. For own work, 10% failed two jobs and 12% one. Its rule of 15% keeps 3 points above the largest slowdown.
+- The first rules came from these six jobs: 5% and 0.01 ms for the busiest thread, and 15% and 0.02 ms for own work. 3% failed three jobs, and 4% failed two.
 - More rounds narrow the noise only slowly. A job of 20 rounds would take about 45 minutes, and its medians would still wander by about 2%.
+
+### How the rules were chosen
+
+The first rules failed nearly half of main's runs: 71 of the 149 that finished by 5 October 2026. The failing pages changed from run to run. So the rules were chosen again by replaying main's recorded runs.
+
+- The replay read the record of every finished run on main from 30 September to 5 October 2026: 148 comparisons. In 18 of them, the commits changed no engine, page or build file, so both builds were identical. The file `bench/lib/fixtures/identical-builds.json` holds their rounds, and the comparison's unit tests replay them. A 19th, the first job, ran another protocol and is left out.
+- The first rules failed 11 of the 18 identical comparisons, on 16 page measures. S1's busiest thread failed 4 times, at up to +7.6%. The short pages failed 12 times, by 0.04 ms at most. The run of #217 flagged S2 on WebGL2 at +6.3%, 0.027 ms, the same kind of noise.
+- In every page, the rounds of identical builds differ by about 5% to 11% (the median absolute deviation, as a standard deviation). This holds for S1's 5 ms frames and for S1-static's 0.15 ms frames alike. Short frames are no noisier in share. Their rule was too tight in time. The median of 10 such rounds wanders by about 2% to 5% between comparisons. A rule of 5% over 24 page measures then fails most runs.
+- Three changes were tested against the replay and against 4000 comparisons drawn at random from the identical runs' rounds:
+  - Judging the sum over rounds failed more identical comparisons, 15 of 18. Its total takes in the slow rounds that the median leaves out.
+  - Measuring more frames per round would not help. Each page draws about 300 frames in a run of 5 s, at 60 Hz, whatever its frame time. The noise comes from the machine's speed between runs, not from the frame count.
+  - A fixed limit of 0.05 ms removed every failure of the short pages. It left S1's 4 failures.
+- S1's noise is in share, so its share had to grow. Alone, 8% for the busiest thread left 2.1% of the random comparisons failing, and 10% left 1.2%. A noise check does better: a change counts only when it is more than twice its noise.
+- The chosen rules (8%, 15%, 0.05 ms and twice the noise) failed none of the 18 identical comparisons, and 0.9% of the random ones. They catch a 15% slowdown of S1 in 97% of the random comparisons, and 0.1 ms on the short pages in all of them. In the recorded comparisons, one run's S1 rounds on WebGL2 ranged from 0.38 to 1.42 times the baseline. There, a 20% slowdown stays within the noise.
+- Of the 129 comparisons that changed engine files, the first rules failed 65 and the chosen ones 37, without trailers. 32 of those 37 compared with one of two old baselines, on which main's runs stayed from 1 to 3 October. Each of those runs held many changes.
+- Without the noise check, a run on a busy machine fails on its noise alone. With it, the summary shows a page with a large change but larger noise as the same. Read such a page as unmeasured, and run the comparison again.
 
 ### Mark an expected slowdown
 

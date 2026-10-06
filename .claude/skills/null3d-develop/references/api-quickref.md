@@ -262,6 +262,7 @@ const mesh = geometry.fromArrays({
   joints, weights,          // (0.2) 4 per vertex each, together; skinning itself comes later in 0.2
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
   morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
+  // morphTargets.colors: color deltas, as many per vertex as colors; morphed colors clamp to 0..1
 });
 mesh.radius;                // the distance from the mesh's origin to its farthest vertex
 mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lists their names
