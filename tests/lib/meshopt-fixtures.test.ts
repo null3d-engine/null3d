@@ -4,7 +4,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { meshoptDecoder } from '../../packages/engine/src/scene/gltf-meshopt.ts';
 import {
 	type MeshoptDecode,
 	parseGltf,
@@ -12,14 +11,14 @@ import {
 	usesMeshopt,
 } from '../../packages/engine/src/scene/gltf-parse.ts';
 import { samplePath } from '../../tools/lib/samples.ts';
-import { referenceDecoder, withRotatedTriangles } from './meshopt-checks.ts';
+import { referenceDecoder, shippedDecoder, withRotatedTriangles } from './meshopt-checks.ts';
 import { buildFixture, MESHOPT_FIXTURES, MODELS_DIR } from './meshopt-fixtures.ts';
 
 let decode: MeshoptDecode;
 let reference: MeshoptDecode;
 
 beforeAll(async () => {
-	decode = await meshoptDecoder();
+	decode = await shippedDecoder();
 	reference = await referenceDecoder();
 });
 

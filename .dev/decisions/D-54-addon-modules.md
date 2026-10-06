@@ -1,6 +1,6 @@
 # D-54: Add-on modules, the on-demand loader and CDN delivery
 
-Status: decided by the owner on 2026-10-04. The add-on rule came at 18:00, CDN delivery at 19:00, and the one loader with the line between core and add-ons at 19:20. Draco's support and the bundler decided the same day. Nothing of it is built yet. Date: 2026-10-04. Task: M2-N1.
+Status: decided by the owner on 2026-10-04. The add-on rule came at 18:00, CDN delivery at 19:00, and the one loader with the line between core and add-ons at 19:20. Draco's support and the bundler decided the same day. The loader, the bootstrap and the CDN checks are built (M2-R18, 5 October 2026; see "Built"); Draco and add-ons build on them. Date: 2026-10-04. Task: M2-N1, M2-R18.
 
 ## Question
 
@@ -73,7 +73,7 @@ Draco:
 ### Bundlers
 
 - null3D requires Vite with the null3D plugin. Other bundlers are not supported, and no test builds with them. The install guide says so, and the plugin warns when a setting builds workers in a format other than ES modules.
-- The engine still loads its workers, its WebAssembly and its other files the standard way, `new URL('<file>', import.meta.url)`, with no feature that only Vite has. Every modern bundler understands that pattern, so other bundlers stay possible. Today the engine's addresses carry Vite's `?no-inline` query. The loader's task (M2-R18) replaces it.
+- The engine still loads its workers, its WebAssembly and its other files the standard way, `new URL('<file>', import.meta.url)`, with no feature that only Vite has. Every modern bundler understands that pattern, so other bundlers stay possible. The engine's addresses no longer carry Vite's `?no-inline` query: the null3D plugin keeps the engine's files from becoming `data:` addresses instead.
 - Reason: one supported toolchain is one to test and to document. The standard loading pattern keeps other bundlers open without that cost. The review's webpack and Rspack test builds (R8-07) are dropped, and no Next.js test project is built.
 
 ### Draco
@@ -84,6 +84,54 @@ Draco:
 - The worker quantizes decoded normals, tangents and UVs into [D-25](D-25-vertex-types.md)'s types, which halves the GPU memory of most Draco meshes.
 - The docs keep advising meshopt: `assets optimize` converts to meshopt by default. Draco suits large static meshes on pages that load several hundred KB of them. For the round trip to Blender 5.1 and older, keep a Draco or plain copy.
 
+## Built
+
+M2-R18 built the loader and the bootstrap on 5 October 2026. [Implementation notes](../implementation-notes.md#the-on-demand-loader) hold the detail.
+
+### The loader
+
+- The function `compileOnce` (`shared/tasks.ts`) compiles each WebAssembly file once per page with `WebAssembly.compileStreaming`. It runs in the thread that runs the sketch. The function `runTask` posts a task with the compiled modules that its worker lacks. Workers only instantiate them.
+- Tasks run in the job workers. A job worker blocks in the core's job loop, where it reads no messages, so the loader first asks the core to call it. The core lets it leave the loop only when no frame chunk is left to claim. It runs its tasks and goes back.
+- Where the engine has no job workers, as in the single-threaded build, the loader starts one task worker with its first task. It replaces the KTX2 transcoder's own worker.
+- The glTF worker stays (coordinator, 5 October 2026). Draco's decoder runs where the file is parsed, as decided above. Moving glTF parsing into the job workers would put long parses beside frame work. So the loader serves the glTF worker too. The worker names the decoders that a file needs, beside its buffers, and the loader sends their compiled modules. The meshopt decoder loads this way now, and Draco adds one entry to the glTF loader's table of decoders. For its decoders the engine starts only the job workers and the glTF worker, or the task worker where it has no job workers.
+- The KTX2 transcoder moved into the job workers. Add-ons will run there too.
+
+### Frames come first
+
+Rule (coordinator, 5 October 2026): a decoder's task never holds up a frame.
+
+- A job worker leaves the job loop only between frame chunks. The sketch thread runs every chunk that no job worker claims, so a frame never waits for a worker that is away.
+- With two or more job workers, the first never takes tasks, so one job worker always serves the frames.
+- Measured on the Mac (M5 Max, Chrome, WebGPU, 12 s of S1 with the `decode` switch). The KTX2 sample model's 19 textures loaded round after round, 893 files per run. The meshopt sample model loaded after each round. With 16 job workers and with 2, every run kept 719 or 720 of 720 frames at 60 Hz. The busiest thread's CPU time per frame at the 99th percentile was:
+
+| Job workers | Without decoding | Transcoder in its own worker | Transcoder in the job workers |
+| --- | --- | --- | --- |
+| 16 | 5.07, 5.04 ms | 5.23, 5.33 ms | 5.51, 5.35 ms |
+| 2 | 4.96, 5.22 ms | 5.13, 5.30 ms | 5.28, 5.24 ms |
+
+Two runs each. The differences are within the Mac's run-to-run spread.
+
+### CDN delivery
+
+- `spawnWorker` (`shared/worker-start.ts`) starts every engine worker: the sketch, render, job, probe, glTF and task workers. For a script of the page's origin it changes nothing. For a script of another origin it starts a `blob:` module that imports the script and holds early messages for it.
+- The engine keeps the form `new Worker(new URL('<file>', import.meta.url), options)` that bundlers read, and `spawnWorker` runs it while the thread's `Worker` is a subclass that adds the bootstrap.
+- Codes: E1422 names the directive when the page's policy blocks a worker's bootstrap or an engine file. E1423 is for an engine file of another origin without a CORS header. E1418 stays for `'wasm-unsafe-eval'`. A page without the isolation headers runs single-threaded, as on any host.
+- `Cross-Origin-Resource-Policy` alone does not serve: module imports and `fetch` of another origin are CORS requests, which need `Access-Control-Allow-Origin`.
+- A `blob:` worker takes the page's policy. The official Basis Universal transcoder makes its bindings with `new Function`. So KTX2 textures failed under any policy without `'unsafe-eval'`. On main they failed too when the host sent its policy on the transcoder's script. The engine now ships its own build of v2.50 without that, which writes the same bytes (implementation notes, KTX2 textures).
+
+### Tests
+
+- A page loads a meshopt glTF file and eight KTX2 files at once, in each thread mode. It downloads each decoder's module once, and starts no worker besides the engine's own (`ktx2.spec.ts`).
+- The production build's KTX2 page with its files on another origin starts threaded and single-threaded under the stated policy, and runs both decoders. Five cases each leave one item out (`cdn.spec.ts`). Without `blob:` in `worker-src` or the CDN in `connect-src`, it gives E1422. Without `'wasm-unsafe-eval'`, it gives E1418. Without CORS on the `.wasm` files or on the workers' scripts, it gives E1423.
+- The same page under the strict policy of one origin runs both decoders (`content-security-policy.spec.ts`). It fails on main.
+
+### Options rejected while building
+
+- Move glTF parsing into the job workers, so that only job workers decode. A long parse would sit beside frame work, and Draco's decoder runs where the file is parsed.
+- Job workers that wait with `Atomics.waitAsync`, so they read messages between frames. Waking through the event loop is slower than a blocking wait's wake, several times per frame ([implementation notes](../implementation-notes.md#threads-and-shared-memory)).
+- Have the plugin rewrite the engine's worker constructors for CDN use. Other bundlers would then lose CDN use, and the plugin skips files in `node_modules`.
+- Patch the official transcoder's script by hand to drop `new Function`. A rebuild from the release's sources with one more flag is reproducible, and its output is checked against the official build's.
+
 ## Options rejected
 
 - Each add-on starts its own workers. A page with two add-ons would start three sets of threads, each with its own memory and start-up cost. Each add-on would solve the CDN problem again.
@@ -93,7 +141,7 @@ Draco:
 
 ## Consequences
 
-- A new task builds the loader and the `blob:` bootstrap. It moves the core's workers, the Basis transcoder and meshopt's decoder onto them. A test starts a fresh project under a strict policy and behind a CDN. Fix group F of the code review (R8-01, R8-05, R8-06, R8-07) goes first, and the per-feature shader files (M2-R11, D-56) are its prerequisite. The same task removes the engine's Vite-only address queries.
+- M2-R18 builds the loader and the `blob:` bootstrap, and moves the core's workers and both decoders onto them. It removes the engine's Vite-only address queries (see "Built").
 - M2-A6 builds Draco on the loader, with the per-file limits of fix group A.
 - One notices file per build, which each add-on extends: Draco and Rapier are Apache-2.0 (R8-03).
 - `docs/getting-started/hosting.md` gives the policy and the headers, and drops the claim that workers may come from another origin.

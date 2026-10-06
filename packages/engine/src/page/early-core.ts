@@ -21,8 +21,8 @@ const threaded =
 		URL_SWITCHES && new URLSearchParams(globalThis.location?.search ?? '').get('threads') === 'off'
 	);
 const url = threaded
-	? new URL('../../dist/wasm/threaded/null3d_bg.wasm?no-inline', import.meta.url)
-	: new URL('../../dist/wasm/single/null3d_bg.wasm?no-inline', import.meta.url);
+	? new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url)
+	: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url);
 const response = fetch(url);
 // A failed download surfaces when the loader takes the response, not as an unhandled rejection now.
 response.catch(() => {});
