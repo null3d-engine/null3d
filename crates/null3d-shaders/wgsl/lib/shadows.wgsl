@@ -290,13 +290,16 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     // an orthographic camera, whose cascades have texels of one size, it comes from its distance
     // along the view.
     let distance = mix(along, length(seen) * length(cascades.forward.xyz), cascades.biases.z);
-    // Both loops below run MAX_CASCADES passes at every pixel, and the cascade count only chooses
-    // the passes that do work. Adreno 830's driver ran a loop the wrong number of times when its
-    // pass count differed between the pixels of a work group, as the fractal noise in
-    // null3d::noise found. The cascades end farther out one after another, so the cascade that
-    // holds the distance comes after each cascade whose end the distance passed.
+    // Both loops below run one pass per cascade at every pixel, and the pixel's distance only
+    // chooses the passes that do work. Adreno 830's driver ran a loop the wrong number of times
+    // when its pass count differed between the pixels of a work group, as the fractal noise in
+    // null3d::noise found. The cascade count comes from the uniforms, so every pixel of a draw runs
+    // the same passes. A fixed MAX_CASCADES passes slowed the scene pass on Apple's GPUs, most of
+    // all at Low, whose light has fewer cascades than that. The cascades end farther out one after
+    // another, so the cascade that holds the distance comes after each cascade whose end the
+    // distance passed.
     var first = 0u;
-    for (var k = 0u; k < MAX_CASCADES; k++) {
+    for (var k = 0u; k < count; k++) {
         if k + 1u < count && distance >= cascades.ends[k] {
             first = k + 1u;
         }
@@ -305,8 +308,8 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     // box is larger.
     var cascade = MAX_CASCADES;
     var clip = vec4f(0.0);
-    for (var k = 0u; k < MAX_CASCADES; k++) {
-        if cascade == MAX_CASCADES && k >= first && k < count {
+    for (var k = 0u; k < count; k++) {
+        if cascade == MAX_CASCADES && k >= first {
             let at = sun_clip(k, relative, normal, to_light);
             if sun_holds(at) {
                 cascade = k;

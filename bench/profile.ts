@@ -12,8 +12,8 @@
 //   bun run bench:profile
 //   bun run bench:profile --scene s2 --gpu webgpu --seconds 10
 //   bun run bench:profile --android --n 300000 --thread sketch
-import { chromium } from '@playwright/test';
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
+import { keepingFocus, launchInWindow, parkChromeWindow } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
 	attachWorkers,
@@ -149,7 +149,12 @@ async function profileScene(
 	const pageSeconds = Math.max(options.warmup, options.seconds + 2 * MARGIN_SECONDS);
 	const switches = `seconds=${pageSeconds}${options.n === null ? '' : `&n=${options.n}`}`;
 	const url = `${serverUrl}${pagePath(scene, `null3d-${options.gpu}`, switches)}`;
-	const { targetId } = await devtools.send<{ targetId: string }>('Target.createTarget', { url });
+	const { targetId } = await keepingFocus(async () => {
+		const target = await devtools.send<{ targetId: string }>('Target.createTarget', { url });
+		if (!options.android)
+			await parkChromeWindow((method, params) => devtools.send(method, params), target.targetId);
+		return target;
+	});
 	try {
 		const thread = THREADS[options.thread];
 		const { page, workers } = await attachWorkers(devtools, targetId, [thread.worker]);
@@ -212,9 +217,8 @@ async function main(): Promise<void> {
 			forwardPort(Number(new URL(server.url).port));
 			devtools = await connectPhoneChrome(DEBUG_PORT);
 		} else {
-			const browser = await chromium.launch({
+			const browser = await launchInWindow({
 				channel: 'chrome',
-				headless: false,
 				args: [`--remote-debugging-port=${DEBUG_PORT}`],
 			});
 			stops.push(() => browser.close());

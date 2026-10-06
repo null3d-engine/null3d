@@ -229,7 +229,41 @@ The same runs on the Mac in Chrome found where it came from. Each commit ran S4 
 | fix/gate-ab-regression, without the ruling | 63 | 1.48 | Surfaces that face away from the sun skip the shadow lookup, and the GPU timer times every phase of the far cascade's turns |
 | fix/gate-ab-regression | 56, and 63 in 1 frame of 4 | 1.32 | Low keeps its far cascade's turns while cars move in it, by the owner's ruling |
 
-The owner ruled on 5 October 2026 ([D-16](decisions/D-16-moving-casters-and-bias.md)). At Low, a far cascade keeps its turns while moving casters touch it. So a far moving shadow can trail its caster by up to 3 frames. Medium and up keep the far cascade drawing in every frame. Later that day, the owner watched the gate's soak on the iPad, where S4 ran at Low. Every car's shadow jerked behind its car, because S4's camera sees nothing near enough for Low's nearest cascade. The owner then ruled that Low follows moving casters too. So S4 at Low draws its far cascade in every frame again, at the cost of the "without the ruling" row above. On the cloud iPad 10th, the far cascade in every frame cost about 0.1 ms: 6.47 ms against 6.36 ms, in sessions with similar waits ([D-16](decisions/D-16-moving-casters-and-bias.md#the-still-caster-cache-built-and-dropped-6-october-2026)). The owner's iPad times it again. The receiver plane stays on every preset, so no surface shows acne. The older commit's figure was also too low. The GPU timer timed one frame in 8, and the far cascade drew once in 4 frames, so no timed frame held it. [Implementation notes](implementation-notes.md#shadows) gives the rule and the test that holds S4's draw calls and passes.
+The owner ruled on 5 October 2026 ([D-16](decisions/D-16-moving-casters-and-bias.md)). At Low, a far cascade keeps its turns while moving casters touch it. So a far moving shadow can trail its caster by up to 3 frames. Medium and up keep the far cascade drawing in every frame. Later that day, the owner watched the gate's soak on the iPad, where S4 ran at Low. Every car's shadow jerked behind its car, because S4's camera sees nothing near enough for Low's nearest cascade. The owner then ruled that Low follows moving casters too. So S4 at Low draws its far cascade in every frame again, at the cost of the "without the ruling" row above. On the cloud iPad 10th, the far cascade in every frame cost about 0.1 ms. It took 6.47 ms against 6.36 ms, in sessions with similar waits ([D-16](decisions/D-16-moving-casters-and-bias.md#the-still-caster-cache-built-and-dropped-6-october-2026)). On the owner's iPad it cost about 0.3 ms: 11.81 ms against 11.53 ms, both at 60 fps, and the owner accepted it ([D-16](decisions/D-16-moving-casters-and-bias.md#the-owners-ipad-check-and-the-cost-ruling-6-october-2026)). The receiver plane stays on every preset, so no surface shows acne. The older commit's figure was also too low. The GPU timer timed one frame in 8, and the far cascade drew once in 4 frames, so no timed frame held it. [Implementation notes](implementation-notes.md#shadows) gives the rule and the test that holds S4's draw calls and passes.
+
+### S4's GPU time at Low: the second comparison
+
+On 6 October 2026 the gate compared S4's GPU time on the owner's iPad (Safari 26.6.2) again, in the order A, B, A, B, with 30 s per run. A was f46c0686 and B the new gate commit fdf14a28. S4 ran on WebGPU at Low, with the governor off. A read 9.91 and 9.92 ms, and B 10.75 and 10.73 ms: 0.83 ms (8%) more, with the same draw calls. The owner ruled that it must be found and fixed before the gate passes.
+
+Part of that gap was the measurement. A has the older GPU timer, which times one frame in 8, so all of its timed frames fall on one frame of the far cascade's 4-frame cycle. On the iPad that day, every timed frame of A held the far cascade ([Benchmarks](benchmarks.md#gpu-time-per-pass)). So the comparison needs A built with the newer timer, A11 below, which changes nothing else.
+
+The Mac reproduced the gap: in Chrome, 1.22 ms for A against 1.33 ms for B. The timer alone took A to 1.28 ms. Each build below then ran with the newer timer. The builds from #227 to before #307 also kept Low's far cascade to its turns, as #307 made it, so every build drew the same work. Each table comes from one run of its builds in rotating turns, 4 rounds of 10 s (S4 at Low, WebGPU, governor off, Chrome 154):
+
+| Build | GPU ms per frame, mean | What changed |
+| --- | --- | --- |
+| A11: f46c0686 with the newer timer | 1.331 | |
+| 5bdea5dc, before #227 | 1.329 | |
+| f980a754, before #257 | 1.323 | |
+| 2ab66e2e (#257) | 1.422 | The receiver plane against acne on flat casters, which the owner kept on 5 October |
+| f06d9f5f | 1.425 | |
+| 1533939f | 1.518 | |
+| 9ae0b5fe, before #307 | 1.528 | |
+| 53ab2803 (#307) | 1.438 | Surfaces that face away from the sun skip the shadow lookup |
+| fdf14a28, B | 1.392 | |
+
+| Build, between f06d9f5f and 1533939f | GPU ms per frame, mean |
+| --- | --- |
+| f06d9f5f | 1.441 |
+| 68263ef0 (#288, ambient occlusion) | 1.460 |
+| 8262726f (#291, morph targets) | 1.436 |
+| 62add54f (#280, outlines) | 1.450 |
+| 84bd67ef, before #295 | 1.442 |
+| 5ab17ec1 (#295) | 1.522 |
+| 1533939f | 1.515 |
+
+#295 added about 0.08 ms. Among its changes, the sun's cascade lookup ran a fixed four passes at every pixel, against a possible Adreno fault. Passes bounded by the light's cascade count, which is the same at every pixel of a draw, keep that rule and cost less ([Implementation notes](implementation-notes.md#shadows)). In 6 rounds in turns, main without #353 read 1.426 ms, and with the bounded passes 1.380 ms. A11 read 1.300 ms in the same run.
+
+Main had also moved on. #343 blends cascades where they meet, which added about 0.02 ms. #353 copies each indirect draw's arguments before each render pass with two or more such draws, against Safari 26's GPU hang ([D-85](decisions/D-85-safari-indirect-arguments.md)). It doubled S4's GPU time at Low on the Mac: 2.71 ms against 1.42 ms for the commit before it, in 3 rounds in turns. The passes took the same time, and 0.64 to 0.78 ms per frame fell between passes. D-85's comparison measured CPU time only.
 
 ### What the gate still needs
 
