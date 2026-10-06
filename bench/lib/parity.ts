@@ -139,6 +139,8 @@ const PAGES = {
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
 	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
 	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
+	'null3d-webgpu-sky': { folder: 'null3d', switches: 'gpu=webgpu&sky', api: 'webgpu' },
+	'null3d-webgl2-sky': { folder: 'null3d', switches: 'gpu=webgl2&sky', api: 'webgl2' },
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
