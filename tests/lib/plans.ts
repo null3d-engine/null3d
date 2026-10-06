@@ -102,6 +102,8 @@ import {
 	type EngineResult,
 	engineProblems,
 	jobWorkersProblem,
+	type SameCanvasResult,
+	sameCanvasProblems,
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
@@ -164,6 +166,11 @@ export type Check =
 	 * that the page removes while they run, more of them than the browser has room for at once.
 	 */
 	| { kind: 'restarts'; mode: EngineMode; start: RestartStart }
+	/**
+	 * The failures page: engines that follow one another on one canvas, as React's StrictMode starts
+	 * them, with the first start destroyed once it resolves (`then`) or cancelled (`abort`).
+	 */
+	| { kind: 'same-canvas'; tier: Tier; mode: EngineMode; pattern: SameCanvasPattern }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
@@ -231,14 +238,17 @@ export interface JudgeContext {
 
 const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
+/** How the failures page ends the first of the engines that it starts on one canvas. */
+const SAME_CANVAS_PATTERNS = ['then', 'abort'] as const;
+type SameCanvasPattern = (typeof SAME_CANVAS_PATTERNS)[number];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
 /**
  * How long the restart page may take: two rounds, each of up to ten starts and stops, which may
  * wait 30 s in all for the browser to free memory, and of the counts of the room, which may wait
- * 31 s for it to come back. The second round runs only when the room did not come back.
+ * 91 s for it to come back. The second round runs only when the room did not come back.
  */
-const RESTARTS_TIMEOUT_SECONDS = 300;
+const RESTARTS_TIMEOUT_SECONDS = 420;
 /**
  * The thread modes whose engines start in frames that the restart page removes while they run.
  * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
@@ -494,6 +504,21 @@ export function checksPlan(): PlanItem<Check>[] {
 				'shared-memory',
 				{ kind: 'restarts', mode, start: 'frame' },
 				{ switches: ['kinds=frame', mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+			),
+		),
+		...TIERS.flatMap((tier) =>
+			ENGINE_MODES.flatMap((mode) =>
+				SAME_CANVAS_PATTERNS.map((pattern) =>
+					pageItem(
+						`same-canvas-${tier}-${slug(mode.name)}-${pattern}`,
+						'failures',
+						{ kind: 'same-canvas', tier, mode, pattern },
+						{
+							switches: ['case=same-canvas', `pattern=${pattern}`, `gpu=${tier}`, mode.query],
+							timeoutSeconds: 60,
+						},
+					),
+				),
 			),
 		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
@@ -951,10 +976,10 @@ export const MEMORY_LOADS = 20;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
 /**
- * How long the shared memory page may take to count its room, and to wait up to 31 s for the room
+ * How long the shared memory page may take to count its room, and to wait up to 91 s for the room
  * to come back after its one cycle.
  */
-const ROOM_TIMEOUT_SECONDS = 90;
+const ROOM_TIMEOUT_SECONDS = 150;
 /** The most memories the shared memory page counts; a browser with room for this many has more. */
 const MOST_COUNTED = 64;
 
@@ -1636,6 +1661,8 @@ export function judge(
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
 			return restartProblems(result as unknown as RestartResult, check.start, context?.note);
+		case 'same-canvas':
+			return sameCanvasProblems(result as unknown as SameCanvasResult, check.mode);
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []
