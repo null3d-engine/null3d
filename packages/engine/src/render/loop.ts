@@ -121,6 +121,40 @@ export function wakeDelayMs(hz: number): number {
 /** The wake-up's timer callback: waking the thread is all it is for. */
 function wakeUp(): void {}
 
+/**
+ * The most animation frame callbacks through which a capture waits for the frame loop to take a
+ * frame. A sketch that stopped after an error publishes no more frames, and a capture then gives
+ * the frame that the loop took last.
+ */
+export const CAPTURE_WAIT_CALLBACKS = 120;
+
+/**
+ * Resolves once the frame loop on this thread has taken a frame after this call. It checks in this
+ * thread's animation frame callbacks, which run after the loop's own, so the loop takes and draws
+ * any frame that is ready before a capture replays the frame taken last. A thread that a blocking
+ * readback holds up, as on a software GPU, would otherwise replay the same frame for each capture
+ * of a series. It resolves at once while the engine is paused or stopped, when no new frame comes,
+ * and after `CAPTURE_WAIT_CALLBACKS` callbacks without one. A hidden page runs no callbacks, so the
+ * wait goes on once the page shows again.
+ */
+export function nextFrameTaken(slots: Int32Array): Promise<void> {
+	const taken = Atomics.load(slots, Slot.FramesTaken);
+	let callbacks = 0;
+	return new Promise((resolve) => {
+		const check = () => {
+			if (
+				Atomics.load(slots, Slot.Paused) !== 0 ||
+				Atomics.load(slots, Slot.Running) === 0 ||
+				Atomics.load(slots, Slot.FramesTaken) !== taken ||
+				callbacks++ === CAPTURE_WAIT_CALLBACKS
+			)
+				resolve();
+			else requestAnimationFrame(check);
+		};
+		check();
+	});
+}
+
 /** A frame input that `emptySceneInput` can fill again each frame. */
 type ReusableInput = { frame: number; background: [number, number, number] };
 
