@@ -11,7 +11,7 @@ use null3d_shaders::{
     ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs,
     literals_safari_refuses, typescript,
 };
-use precision::precision_breaks;
+use precision::{newer_built_in_calls, precision_breaks};
 
 /// A vertex and fragment pair with a flat varying, a uniform block per stage, a data texture read
 /// in the vertex stage and a sampled texture in the fragment stage.
@@ -843,14 +843,14 @@ fn a_depth_array_with_a_comparison_sampler_becomes_a_glsl_array_shadow_sampler()
         source.contains("uniform highp sampler2DArrayShadow _group_0_binding_0_fs;"),
         "{source}"
     );
-    // GLSL ES 3.00 has no textureLod for array shadow samplers, so the comparison at level 0
-    // reads with zero gradients.
-    assert!(
-        source.contains("textureGrad(_group_0_binding_0_fs, vec4("),
-        "{source}"
-    );
-    assert!(
-        source.contains("texture(_group_0_binding_0_fs, vec4("),
+    // GLSL ES 3.00 has no textureLod for array shadow samplers. The comparison at level 0 reads
+    // at the texture's own level instead of with zero gradients, as the map has one level.
+    assert!(!source.contains("textureGrad("), "{source}");
+    assert_eq!(
+        source
+            .matches("texture(_group_0_binding_0_fs, vec4(")
+            .count(),
+        2,
         "{source}"
     );
 }
@@ -1117,7 +1117,7 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 }
 
 #[test]
-fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
+fn every_glsl_shader_keeps_the_rules_of_strict_drivers_and_webgl2() {
     let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let output = build(&Inputs::read(root).unwrap()).unwrap();
     let mut breaks = Vec::new();
@@ -1128,12 +1128,12 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
                 for (stage, fragment) in [(&program.vertex, false), (&program.fragment, true)] {
                     stages += 1;
                     let kind = if fragment { "fragment" } else { "vertex" };
+                    let mut found = precision_breaks(&stage.source, fragment);
+                    found.extend(newer_built_in_calls(&stage.source));
                     breaks.extend(
-                        precision_breaks(&stage.source, fragment)
-                            .into_iter()
-                            .map(|b| {
-                                format!("{shader}.{variant} ({pipeline}, {kind} shader), {b}")
-                            }),
+                        found.into_iter().map(|b| {
+                            format!("{shader}.{variant} ({pipeline}, {kind} shader), {b}")
+                        }),
                     );
                 }
             }
@@ -1142,7 +1142,7 @@ fn every_glsl_shader_keeps_the_precision_rules_of_strict_drivers() {
     assert!(stages > 100, "only {stages} GLSL shaders were built");
     assert!(
         breaks.is_empty(),
-        "GLSL that Mali GPUs reject:\n{}",
+        "GLSL that Mali GPUs or WebGL2 reject:\n{}",
         breaks.join("\n")
     );
 }
@@ -1161,6 +1161,18 @@ fn the_precision_check_finds_each_break() {
     assert!(found[4].starts_with("line 7: an array type with its size"));
     assert!(found[5].starts_with("line 8: a whole number declared without a precision"));
     assert!(found[6].contains("ends at `mediump`"));
+}
+
+#[test]
+fn the_built_in_check_finds_calls_that_webgl2_lacks() {
+    let source = "uint s = (1u + uint(bitCount((word & 7u))));
+float x = myldexp(a);
+int b = findMSB(c);
+";
+    let found = newer_built_in_calls(source);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert!(found[0].starts_with("line 1: `bitCount`"));
+    assert!(found[1].starts_with("line 3: `findMSB`"));
 }
 
 #[test]
@@ -1234,6 +1246,8 @@ fn the_half_builds_keep_roughness_to_the_fourth_power_a_normal_16_bit_float() {
 #[test]
 fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
     // Adreno 830 ran a loop the wrong number of times when its pass count differed between pixels.
+    // The cascade count comes from the uniforms, so it is the same at every pixel of a draw. A
+    // fixed MAX_CASCADES passes slowed S4's scene pass at Low on Apple's GPUs.
     let shadows = library_module("shadows");
     let sun = function_text(&shadows, "sun_shadow");
     let loops: Vec<&str> = sun
@@ -1247,8 +1261,12 @@ fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
         .collect();
     assert_eq!(loops.len(), 2, "{sun}");
     for header in loops {
-        assert_eq!(header, "for (var k = 0u; k < MAX_CASCADES; k++) {");
+        assert_eq!(header, "for (var k = 0u; k < count; k++) {");
     }
+    assert!(
+        sun.contains("let count = u32(cascades.forward.w);"),
+        "{sun}"
+    );
     assert_eq!(number_constant(&shadows, "MAX_CASCADES"), 4.0);
 }
 

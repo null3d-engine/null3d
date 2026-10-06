@@ -89,8 +89,35 @@ export const soakLosses = (report: SoakReport) => report.samples.at(-1)?.gpuLoss
 
 const fps = (value: number) => value.toFixed(1);
 
-/** A row of the soak table: the path, the minutes, the losses, the frame rates and the memory. */
-export function soakRow(tier: string, report: SoakReport): string {
+/** The engine's mode as a soak page reports it: the preset that ran, and the preset check's rounds. */
+export interface SoakMode {
+	preset?: string;
+	presetCheck?: {
+		rounds: { preset: string; presentedFps: number; completedFps: number }[];
+		reused: boolean;
+	} | null;
+}
+
+/**
+ * The preset that a soak ran, with the frame rate at which the preset check measured each preset,
+ * the lower of the presented and completed rates, as the check judges them. A page that names its
+ * preset runs no check.
+ */
+export function soakPreset(mode: SoakMode | undefined): string {
+	if (!mode?.preset) return '-';
+	const check = mode.presetCheck;
+	if (!check || check.rounds.length === 0) return mode.preset;
+	const rounds = check.rounds.map(
+		(round) => `${round.preset} ${fps(Math.min(round.presentedFps, round.completedFps))} fps`,
+	);
+	return `${mode.preset} (${check.reused ? 'stored check' : 'check'}: ${rounds.join(', ')})`;
+}
+
+/**
+ * A row of the soak table: the path, the preset, the minutes, the losses, the frame rates and the
+ * memory.
+ */
+export function soakRow(tier: string, report: SoakReport, mode?: SoakMode): string {
 	const { samples } = report;
 	const lowest = samples.reduce<SoakMinute | undefined>(
 		(low, sample) => (low && low.presentedFps <= sample.presentedFps ? low : sample),
@@ -107,6 +134,7 @@ export function soakRow(tier: string, report: SoakReport): string {
 			: '-';
 	const cells = [
 		tier,
+		soakPreset(mode),
 		`${samples.length} of ${report.minutes}`,
 		`${soakLosses(report)}${lossMinutes.length > 0 ? ` (minutes ${lossMinutes.join(', ')})` : ''}`,
 		fps(median(samples.map((sample) => sample.presentedFps))),
@@ -119,6 +147,6 @@ export function soakRow(tier: string, report: SoakReport): string {
 
 /** The header of the soak table. */
 export const SOAK_TABLE_HEAD = [
-	'| Path | Minutes measured | GPU losses | Median fps | Lowest fps | WebAssembly memory growth | Engine failures |',
-	'| --- | --- | --- | --- | --- | --- | --- |',
+	'| Path | Preset | Minutes measured | GPU losses | Median fps | Lowest fps | WebAssembly memory growth | Engine failures |',
+	'| --- | --- | --- | --- | --- | --- | --- | --- |',
 ];

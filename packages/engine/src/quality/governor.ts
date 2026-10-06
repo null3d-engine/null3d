@@ -20,15 +20,19 @@
 // the frames fall behind instead of swinging across it, while steps up into other settings stay
 // quick. A shadow step happens only where the scene has a light that casts shadows, and only where
 // the step changes what the frame draws: the far cascades need a directional light with two
-// cascades or more, and the filter any light that casts shadows. A bloom step happens only while
+// cascades or more, and the filter any light that casts shadows. The far cascades' step also needs
+// far cascades that draw in every frame while moving casters touch them: where they keep their
+// turns instead, a longer interval would leave moving shadows further behind their casters. A bloom step happens only while
 // the sketch has bloom on, above the smallest base: it halves the base, and the chain drops its
 // narrowest level, so the glow keeps its size. The ambient occlusion step happens only while it
 // draws at half the render size: it draws at a quarter.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
-// times a second, so the browser may never optimize it, and unoptimized code makes a number object
-// for each fraction. So it works in whole numbers alone: clock times in whole ms, and frame times in
-// whole microseconds, in typed arrays of 32-bit integers.
+// times a second, so the browser may never optimize it. Unoptimized code makes a number object for
+// each fraction, for each number it reads from a typed array of floats, and for each whole number
+// past 31 bits. So the governor works in small whole numbers alone, in typed arrays of 32-bit
+// integers: frame times in whole microseconds, and clock times in whole ms from an origin that the
+// frame loop moves forward while the page runs.
 
 import { SHADOW_CASTERS_CASCADE_MASK, SHADOW_CASTERS_TILES } from '../generated/core';
 import {
@@ -111,9 +115,19 @@ export const ROOM_PERCENT = 102;
  * never show room there.
  */
 export const ROOM_DELAY_PERCENT = 125;
+/**
+ * The governor's clock moves its origin forward when it reaches this time, in ms: about 6 days, well
+ * within the 31 bits of a whole number that the browser keeps without a number object.
+ */
+export const CLOCK_LIMIT_MS = 2 ** 29;
+/**
+ * The clock's time after its origin moves, in ms. It is longer than any span that the rules compare,
+ * so a time older than the new origin can take the origin's place and every verdict stays the same.
+ */
+const CLOCK_KEPT_MS = 2 * LONGEST_RAISE_AFTER_MS;
 
 // The figures of one window of frames, by index in `Governor.window`.
-/** The time at the window's end, in whole ms. */
+/** The time at the window's end, in whole ms of the governor's clock. */
 export const WINDOW_END = 0;
 /** The window's frame time: the longer of the mean presented and completed intervals, in µs. */
 export const FRAME_US = 1;
@@ -122,8 +136,8 @@ export const GPU_DELAY_US = 2;
 /** The frame budget: the interval of the target frame rate, in µs. */
 export const BUDGET_US = 3;
 
-// The governor's times, by index in its state, in whole ms of the page's clock. -1 marks one that
-// has not happened. Times stay in 64-bit floats, so a page that runs for weeks never wraps them.
+// The governor's times, by index in its state, in whole ms of its clock. -1 marks one that has not
+// happened.
 const ROOM_SINCE = 0;
 const JUDGE_FROM = 1;
 /** The windows since the room started. */
@@ -174,17 +188,19 @@ export class Governor {
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
 	on = true;
 	/** The figures of the window to judge, by the `WINDOW_END` to `BUDGET_US` indices. */
-	readonly window = new Float64Array(BUDGET_US + 1);
-	private readonly state = new Float64Array(STATE_SIZE);
+	readonly window = new Int32Array(BUDGET_US + 1);
+	private readonly state = new Int32Array(STATE_SIZE);
 	/** The frame times of the last `DROP_WINDOWS` windows, then their GPU delays, in µs. */
 	private readonly recent = new Int32Array(2 * DROP_WINDOWS);
 	/** By level: the time of the step up into it that is still on trial, in whole ms, or -1. */
-	private readonly raisedAt = new Float64Array(LEVELS);
+	private readonly raisedAt = new Int32Array(LEVELS);
 	/** By level: how long the frames keep room before a step up into it, in ms. */
 	private readonly raiseAfter = new Int32Array(LEVELS);
 	/** The settings that the shadow steps start from. */
 	private intervalSetting = 1;
 	private filterSetting: number = LIGHTEST_FILTER;
+	/** True when far cascades draw in every frame while moving casters touch them. */
+	private followMovers = true;
 	/** The cascades of the main directional light's shadows, or 0 for none. */
 	private cascades = 0;
 	/** True when point or spot lights cast shadows, which the filter's step lightens too. */
@@ -213,10 +229,14 @@ export class Governor {
 		this.scale = this.on ? Math.min(high, Math.max(low, this.scale)) : high;
 	}
 
-	/** Sets the shadow settings that the shadow steps start from. */
-	setShadows(filter: number, interval: number): void {
+	/**
+	 * Sets the shadow settings that the shadow steps start from, and whether far cascades draw in
+	 * every frame while moving casters touch them, which the far cascades' step needs.
+	 */
+	setShadows(filter: number, interval: number, followMovers: boolean): void {
 		this.filterSetting = filter;
 		this.intervalSetting = interval;
+		this.followMovers = followMovers;
 		this.applySteps();
 	}
 
@@ -274,13 +294,27 @@ export class Governor {
 	/**
 	 * Forgets the frames before `from`, a time in whole ms: no step before it, and no window over or
 	 * under the budget yet. The frame loop calls it at the first frame, as the grace starts, after a
-	 * pause, and while the scene loads.
+	 * pause, and while the scene loads. It never moves the first judgement earlier: a stall within
+	 * the grace or the wait after a step leaves the rest of it.
 	 */
 	restart(from: number): void {
 		const { state } = this;
 		state[ROOM_SINCE] = -1;
-		state[JUDGE_FROM] = from;
+		state[JUDGE_FROM] = Math.max(from, state[JUDGE_FROM] as number);
 		state[RECENT_WINDOWS] = 0;
+	}
+
+	/**
+	 * Moves the clock's origin `by` ms forward: each time that the governor holds moves back by as
+	 * much. A time from before the new origin takes the origin's place, which the frame loop keeps
+	 * longer ago than any span that the rules compare.
+	 */
+	moveOrigin(by: number): void {
+		const { state, raisedAt } = this;
+		state[ROOM_SINCE] = earlier(state[ROOM_SINCE] as number, by);
+		state[JUDGE_FROM] = earlier(state[JUDGE_FROM] as number, by);
+		for (let level = 0; level < LEVELS; level++)
+			raisedAt[level] = earlier(raisedAt[level] as number, by);
 	}
 
 	/** Judges the window in `window`, and takes one step when the rules say so. */
@@ -422,9 +456,12 @@ export class Governor {
 		this.applySteps();
 	}
 
-	/** The far cascades' steps: none without far cascades. */
+	/**
+	 * The far cascades' steps: none without far cascades, and none while far cascades keep their
+	 * turns around moving casters.
+	 */
 	private intervalSteps(): number {
-		return this.cascades > 1 ? farIntervalSteps(this.intervalSetting) : 0;
+		return this.cascades > 1 && this.followMovers ? farIntervalSteps(this.intervalSetting) : 0;
 	}
 
 	/** The filter's step: one where shadows filter with more than the lightest filter. */
@@ -454,7 +491,7 @@ export class Governor {
 		const bloomSteps = this.bloomSteps();
 		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + this.aoSteps());
 		const doublings = Math.min(this.steps, intervalSteps);
-		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting * 2 ** doublings);
+		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting << doublings);
 		const filter = this.steps > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
 		const aoScale = this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
@@ -496,8 +533,11 @@ export class GovernorLoop {
 	private readonly refresh: RefreshRate;
 	/** The highest frame rate the governor aims for, in hertz: `TARGET_CAP_HZ`, or less under ?fps=. */
 	private readonly targetHz: number;
-	/** The window's start and the last frame's time, in ms, or -1 before the first frame. */
-	private readonly times = new Float64Array([-1, -1]);
+	/**
+	 * The window's start and the last frame's time, in ms, or -1 before the first frame, then the
+	 * origin of the governor's clock on the frame loop's clock.
+	 */
+	private readonly times = new Float64Array([-1, -1, 0]);
 
 	/** `fps` is the frame rate that ?fps= holds, or undefined where the display's rate sets it. */
 	constructor(
@@ -531,7 +571,7 @@ export class GovernorLoop {
 		times[1] = now;
 		if (last < 0 || now - last >= GAP_MS) {
 			// The first frame, or the first after a pause: the windows start again from here.
-			governor.restart(Math.round(now) + (last < 0 ? GRACE_MS : 0));
+			governor.restart(this.clock(now) + (last < 0 ? GRACE_MS : 0));
 		} else {
 			if (now - (times[0] as number) < WINDOW_MS) return;
 			const casters = this.scene.shadowCasters();
@@ -545,7 +585,7 @@ export class GovernorLoop {
 			const done = completed.sums;
 			const shownFrames = shown[SUM_RECORDS] as number;
 			const doneFrames = done[SUM_RECORDS] as number;
-			if (this.scene.loading()) governor.restart(Math.round(now));
+			if (this.scene.loading()) governor.restart(this.clock(now));
 			else if (shownFrames > 0) {
 				const window = governor.window;
 				const shownMs = (shown[SUM_INTERVAL_MS] as number) / shownFrames;
@@ -553,7 +593,7 @@ export class GovernorLoop {
 				const delayMs = doneFrames > 0 ? (done[SUM_BUSY_MS] as number) / doneFrames : 0;
 				const hz = this.refresh.hz;
 				const target = this.targetHz;
-				window[WINDOW_END] = Math.round(now);
+				window[WINDOW_END] = this.clock(now);
 				window[FRAME_US] = Math.round(Math.max(shownMs, doneMs) * 1000);
 				window[GPU_DELAY_US] = Math.round(delayMs * 1000);
 				window[BUDGET_US] = Math.round(1_000_000 / (hz > 0 ? Math.min(hz, target) : target));
@@ -565,4 +605,27 @@ export class GovernorLoop {
 		presented.clear();
 		completed.clear();
 	}
+
+	/**
+	 * The governor's clock at `now`, a reading of the frame loop's clock, in whole ms. When it
+	 * reaches its limit, its origin moves forward, and the clock reads just past the longest span
+	 * that the rules compare.
+	 */
+	private clock(now: number): number {
+		const { times } = this;
+		const clock = Math.round(now - (times[2] as number));
+		if (clock < CLOCK_LIMIT_MS) return clock;
+		const by = clock - CLOCK_KEPT_MS;
+		this.governor.moveOrigin(by);
+		times[2] = (times[2] as number) + by;
+		return CLOCK_KEPT_MS;
+	}
+}
+
+/**
+ * The time `by` ms before `time`, and at least 0. -1, which marks a time that has not happened,
+ * stays.
+ */
+function earlier(time: number, by: number): number {
+	return time < 0 ? time : Math.max(0, time - by);
 }

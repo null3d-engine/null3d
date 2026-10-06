@@ -1142,6 +1142,7 @@ mod tests {
             positions: Some(&positions),
             normals: None,
             tangents: None,
+            colors: None,
         };
         let sparse = targets.sparse(vertices, 0).unwrap();
         for packing in [Packing::SharedBuffers, Packing::Pages] {
@@ -1554,6 +1555,7 @@ mod tests {
             positions: Some(positions),
             normals: None,
             tangents: None,
+            colors: None,
         };
         for packing in [Packing::SharedBuffers, Packing::Pages] {
             let mut storage = MeshStorage::new(packing);

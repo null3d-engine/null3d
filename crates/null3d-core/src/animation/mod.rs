@@ -7,7 +7,8 @@
 //!   matrix.
 //! - A [`Clip`] holds keys at one fixed rate per clip, so the key before any time is a direct
 //!   index. [`resample`] builds one from keys at any times, once at load. Rotations are stored as
-//!   four 16-bit integers each, and a track whose value never changes is stored once.
+//!   four 16-bit integers each, and a track whose value never changes, or moves by under a
+//!   millionth of its size, is stored once.
 //! - A pose is stored by field: ten arrays (translation x, y and z, rotation x, y, z and w, scale
 //!   x, y and z), each with one value per joint and padded to a multiple of four joints. SIMD code
 //!   then reads and writes four joints at once.
@@ -37,11 +38,14 @@ mod system;
 pub use actions::{Action, event_kind, flag};
 pub use clip::Clip;
 pub use pose::Pose;
-pub use resample::{Channel, DEFAULT_RATE, Interpolation, MAX_CLIP_KEYS, SourceTrack, resample};
+pub use resample::{
+    BakedClip, BakedKeys, Channel, DEFAULT_RATE, Interpolation, MAX_CLIP_KEYS, SourceTrack,
+    TRACK_WORDS, as_floats, bake, resample, staged_tracks,
+};
 pub use skeleton::{MAX_JOINTS, NO_PARENT, REST_FLOATS, Skeleton};
 pub use system::{
-    Animations, EVENT_CAPACITY, EVENT_WORDS, INSTANCE_CHUNK, MAX_BLEND, MAX_LAYERS, Play,
-    SampleSlots,
+    Animations, Blend, EVENT_CAPACITY, EVENT_WORDS, INSTANCE_CHUNK, MAX_BLEND, MAX_LAYERS,
+    NO_SOURCE, Play, SampleSlots,
 };
 
 /// Floats per skinning matrix: a row-major 3 × 4 matrix of 48 bytes, as world matrices are.
@@ -189,6 +193,16 @@ fn out_of_memory(bytes: usize) -> AnimationError {
 /// A vector of `len` copies of `value`, or an out-of-memory error when memory cannot grow for it.
 fn filled<T: Clone>(len: usize, value: T) -> Result<Vec<T>, AnimationError> {
     crate::alloc::filled(len, value).map_err(|_| out_of_memory(len.saturating_mul(size_of::<T>())))
+}
+
+/// The `len` items of `items` in a vector, or an out-of-memory error when memory cannot grow for
+/// them.
+fn collected<T>(len: usize, items: impl Iterator<Item = T>) -> Result<Vec<T>, AnimationError> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(len)
+        .map_err(|_| out_of_memory(len.saturating_mul(size_of::<T>())))?;
+    v.extend(items.take(len));
+    Ok(v)
 }
 
 /// The joint count rounded up to a multiple of four, the width of one SIMD operation.

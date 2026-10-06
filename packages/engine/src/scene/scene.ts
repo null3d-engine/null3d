@@ -82,9 +82,17 @@ import {
 	type RaycastOptions,
 	SceneQueries,
 } from './queries';
-import type { Material, MeshGeometry } from './resources';
+import type { AlphaMode, Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
-import type { SpriteBatch, SpriteMakers, SpriteOptions } from './sprites';
+import type {
+	PointBatch,
+	PointChecks,
+	PointOptions,
+	SpriteBatch,
+	SpriteLook,
+	SpriteMakers,
+	SpriteOptions,
+} from './sprites';
 import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
@@ -2017,27 +2025,66 @@ function linePoints(
 		throw bad(`${points} points for segments, which join points in pairs`);
 	if (colors && colors.length !== positions.length)
 		throw bad(`${colors.length} numbers in colors for ${points} points, not ${positions.length}`);
-	if (DEV)
-		for (const [name, values] of [
-			['positions', positions],
-			['colors', colors ?? []],
-		] as const)
-			for (let k = 0; k < values.length; k++)
-				if (!Number.isFinite(values[k])) throw bad(`${values[k]} at index ${k} of ${name}`);
+	checkFinitePoints(call, positions, colors);
 	return points;
+}
+
+/**
+ * The points of `scene.createPoints`'s arrays: 3 numbers per point in `positions`, and 3 or 4 in
+ * `colors`. Throws E1206 for arrays that make no points.
+ */
+function pointCount(
+	call: string,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): number {
+	const points = positions.length / 3;
+	if (!Number.isInteger(points) || points < 1)
+		throw new EngineError(
+			'E1206',
+			`${call}() got ${positions.length} numbers in positions; points take 3 numbers each, and at least 1 point.`,
+		);
+	if (colors && colors.length !== points * 3 && colors.length !== points * 4)
+		throw new EngineError(
+			'E1206',
+			`${call}() got ${colors.length} numbers in colors for ${points} points, not ${points * 3} or ${points * 4}.`,
+		);
+	checkFinitePoints(call, positions, colors);
+	return points;
+}
+
+/** Development builds: throws E1206 for a number of `positions` or `colors` that is not finite. */
+function checkFinitePoints(
+	call: string,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): void {
+	if (!DEV) return;
+	for (const [name, values] of [
+		['positions', positions],
+		['colors', colors ?? []],
+	] as const)
+		for (let k = 0; k < values.length; k++)
+			if (!Number.isFinite(values[k]))
+				throw new EngineError('E1206', `${call}() got ${values[k]} at index ${k} of ${name}.`);
+}
+
+/** Development builds: throws E1203 for a `name` value that is not finite, and E1108 for one not above 0. */
+function checkPositive(call: string, name: string, value: number): void {
+	if (!DEV) return;
+	if (!Number.isFinite(value))
+		throw new EngineError('E1203', `${call}() got ${value} for ${name}.`);
+	if (!(value > 0))
+		throw new EngineError(
+			'E1108',
+			`${call}() got the ${name} ${value}; it takes a number above 0.`,
+		);
 }
 
 /** The checks of line batches' calls, which the line code takes from the scene. */
 const LINE_CHECKS: LineChecks = {
 	width(width: number, call: string): void {
-		if (!DEV) return;
-		if (!Number.isFinite(width))
-			throw new EngineError('E1203', `${call}() got ${width} for width.`);
-		if (!(width > 0))
-			throw new EngineError(
-				'E1108',
-				`${call}() got the width ${width}; it takes a number above 0.`,
-			);
+		checkPositive(call, 'width', width);
 	},
 	values(values: LineValues, call: string): void {
 		if (!DEV) return;
@@ -2049,6 +2096,13 @@ const LINE_CHECKS: LineChecks = {
 			if (key !== 'dashOffset' && value < 0)
 				throw new EngineError('E1108', `${call}() got the ${key} ${value}; it takes 0 or more.`);
 		}
+	},
+};
+
+/** The checks of a point batch's later calls. */
+const POINT_CHECKS: PointChecks = {
+	size(size: number, call: string): void {
+		checkPositive(call, 'size', size);
 	},
 };
 
@@ -2968,9 +3022,6 @@ export class Scene {
 	 */
 	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
 		const call = 'createSprites';
-		const { core, makers } = this;
-		const { count, layers } = options;
-		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const { columns = 1, rows = 1 } = options.atlas ?? {};
 		for (const [name, side] of [
 			['columns', columns],
@@ -2984,10 +3035,55 @@ export class Scene {
 		const { center } = options;
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
+		const [, batch] = await this.spriteBatch(call, options.count, options, columns, rows, 'blend');
+		return batch;
+	}
+
+	/**
+	 * Many points in one batch: squares that face the camera, all of one size, like three.js's
+	 * `Points` with a `PointsMaterial`. Each point is a sprite: typed arrays give each point its
+	 * position and color, as an instance batch's arrays give its rows. Sizes above one pixel work on
+	 * every GPU path. Points are opaque by default, and blended points draw back to front with the
+	 * other blended objects. The first call downloads the sprite code. Throws E1206 for points or
+	 * colors that make no points, E1108 for a size that is not above 0, E1203 for a size that is not
+	 * finite, and E1406 when the sprite code does not download.
+	 */
+	async createPoints(options: PointOptions): Promise<PointBatch> {
+		const call = 'createPoints';
+		const { positions, colors, size = 1 } = options;
+		const count = pointCount(call, positions, colors);
+		POINT_CHECKS.size(size, call);
+		const [sprites, batch] = await this.spriteBatch(call, count, options, 1, 1, 'opaque');
+		return sprites.pointBatch(batch, POINT_CHECKS, positions, colors, size);
+	}
+
+	/**
+	 * Downloads the sprite code on first use, and creates a sprite batch of `count` rows with the
+	 * look, layers and origin of `options`, an atlas of `columns` by `rows` frames, and `alphaMode`
+	 * when the options give none.
+	 */
+	private async spriteBatch(
+		call: string,
+		count: number,
+		options: SpriteLook,
+		columns: number,
+		rows: number,
+		alphaMode: AlphaMode,
+	): Promise<[typeof import('./sprites'), SpriteBatch]> {
+		const { core, makers } = this;
+		const { layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
 		makers.materials.shaders.need('sprites');
 		const sprites = await loadSprites(call);
-		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
+		const parts = sprites.spriteParts(
+			makers,
+			this.spriteQuads,
+			options,
+			[columns, rows],
+			alphaMode,
+			call,
+		);
 		const id = core.checkGrowth(
 			core.glue.createSpriteBatch(
 				count,
@@ -3009,7 +3105,7 @@ export class Scene {
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
 		if (layers !== undefined) batch.setLayers(layers);
-		return batch;
+		return [sprites, batch];
 	}
 
 	/**
@@ -3227,7 +3323,8 @@ export class Scene {
 	 * `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from
 	 * `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth
 	 * and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene
-	 * draws without the environment until its map is on the GPU. It allocates nothing, so a sketch
+	 * draws without a file's environment until its map is on the GPU. The built-in room's map is
+	 * whole in the first frame that uses it. It allocates nothing, so a sketch
 	 * can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for
 	 * a negative intensity, E1213 for a value that is not an environment, and E1101 for an
 	 * environment that was destroyed.

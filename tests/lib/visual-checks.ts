@@ -17,7 +17,13 @@ export interface VisualResult {
 	width: number;
 	height: number;
 	stability: StabilityFigures;
-	edges: { offsetPixels: number; steps?: StairSteps; referenceSteps?: StairSteps };
+	edges: {
+		offsetPixels: number;
+		steps?: StairSteps;
+		referenceSteps?: StairSteps;
+		/** The long edge's seam jump (`seamJump`), where the scene has one. */
+		seamPixels?: number;
+	};
 	/** The contact figures, which runner pages from before the contact check leave out. */
 	contact?: ContactFigures;
 	/** The acne figures, which runner pages from before the acne check leave out. */
@@ -34,6 +40,8 @@ export interface VisualLimits {
 	edgeOffsetPixels: number;
 	/** The stair steps of the scene's long edge, in pixels, where it has one. */
 	stairStepPixels?: number;
+	/** The jump of the long edge's softness from one row to the next, in pixels: a seam line. */
+	seamPixels?: number;
 	/** The mean light between a caster's foot and its shadow, in pixels, where the scene has feet. */
 	contactGapPixels?: number;
 	/** The mean shadow on flat surfaces that the reference lights, in percent. */
@@ -48,12 +56,18 @@ export interface VisualLimits {
  * figures depend on each scene's edges, so each scene has its own: the split that leaned further
  * toward the logarithmic spread fails the shadow scene's stair steps and S4's edge offset. The
  * other edge limits catch only large faults, as that split leaves those figures alone or lowers
- * them. S4's contact limit fails its frame without the casters' offset in CI, and catches only
+ * them. The shadow scene's seam limit fails its frame without the blend between cascades, where the
+ * long edge's softness jumps where the first cascade hands over to the second. S4's contact limit fails its frame without the casters' offset in CI, and catches only
  * larger faults on the Mac's GPU. S4's acne limit fails its frame when the filter's reads compare
  * with the receiver's depth at its point instead of its plane.
  */
 export const VISUAL_LIMITS: Readonly<Record<string, VisualLimits>> = {
-	'shadow-scene': { changedPercent: 0.05, edgeOffsetPixels: 0.15, stairStepPixels: 0.19 },
+	'shadow-scene': {
+		changedPercent: 0.05,
+		edgeOffsetPixels: 0.15,
+		stairStepPixels: 0.19,
+		seamPixels: 1.2,
+	},
 	s2: { changedPercent: 0.05, edgeOffsetPixels: 0.15 },
 	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.114, contactGapPixels: 0.06, acnePercent: 0.2 },
 };
@@ -175,6 +189,9 @@ export function visualProblems(scene: string, result: VisualResult): string[] {
 			),
 		);
 	if (result.acne) problems.push(...acneProblems(result.acne, limits.acnePercent));
+	problems.push(
+		...overLimit("the long edge's seam line", edges.seamPixels ?? 0, limits.seamPixels, 'px'),
+	);
 	const steps = edges.steps?.rmsPixels;
 	if (limits.stairStepPixels !== undefined && steps !== undefined && steps > limits.stairStepPixels)
 		problems.push(

@@ -16,8 +16,10 @@
 //! # Images, data and uploads
 //!
 //! A texture's texels come from an image or from data. An image travels to the thread that draws
-//! on its own, and gets the next image id. That thread counts the images it received, and ids
-//! count in the order they were sent, so every id up to the count has arrived. Data lives in
+//! on its own, and gets the next image id. Ids step and compare as frame numbers do (see
+//! [`null3d_core::frames`]), so they go round after about 4 billion images. That thread notes the
+//! newest id it received, and ids arrive in the order they were sent, so every id up to that one
+//! has arrived. Data lives in
 //! engine memory, in a slot of the store, and is ready at once. Uploads take turns in the order
 //! the textures got their texels. Each frame uploads at most its byte budget: a large texture goes
 //! up a band of rows per frame, or of rows of blocks in a compressed format. Texels that bring
@@ -51,8 +53,10 @@
 //! A cube texture's texels can also come from a generator, which the thread that draws runs on
 //! the GPU, such as the built-in room environment's. A generator takes the next image id and waits
 //! for the thread that draws as an image does: that thread counts it once the generator's code has
-//! loaded, so the generator runs as soon as the list names it. One command fills every level, and
-//! the store keeps the generator, so a new GPU device fills the texture again.
+//! loaded and its pipelines are built, so the generator runs as soon as the list names it. The
+//! first frame after the generator arrives records one command that fills every level, outside
+//! the upload budget and before the frame's passes, so that frame already draws with the texture.
+//! The store keeps the generator, so a new GPU device fills the texture again.
 //!
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
@@ -64,7 +68,7 @@
 //! whose texels are gone keeps its layer and draws as without a map until it gets new texels.
 
 use null3d_core::error::CoreError;
-use null3d_core::frames::frame_after;
+use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, SlotAllocator};
 use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, TEXTURE_3D_SIZE};
 use null3d_gpu::drawlist::{
@@ -188,9 +192,9 @@ enum Source {
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
     /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU in
-    /// `slices` parts of its work, one a frame. The store keeps it until the texture gets other
-    /// texels or is destroyed, so a new GPU device runs it again.
-    Generated { id: u32, slices: u32 },
+    /// one command. The store keeps it until the texture gets other texels or is destroyed, so a
+    /// new GPU device runs it again.
+    Generated { id: u32 },
 }
 
 /// Where a texture is on its way to the GPU.
@@ -413,7 +417,7 @@ struct SamplerSlot {
 }
 
 /// The maps of one map set's bind group, in the order of the material's map slots.
-pub const MAP_SET_SLOTS: usize = 6;
+pub const MAP_SET_SLOTS: usize = crate::materials::MAP_SLOTS;
 
 /// What a bind group binds: one array and its sampler, or a map set of an array and a sampler
 /// for each map slot.
@@ -464,9 +468,9 @@ pub struct TextureStore {
     retired: Vec<u32>,
     /// Each finished upload of the frame being recorded: its array's texture id, and its layer.
     finished: Vec<(u32, u32)>,
-    /// The last image id handed out; ids count from 1.
+    /// The last image id handed out, or 0 before the first.
     last_image: u32,
-    /// The images that the thread that draws received.
+    /// The newest image id that the thread that draws received, or 0 before the first.
     arrived: u32,
     /// The newest frame that the thread that draws took.
     frames_taken: u32,
@@ -782,26 +786,26 @@ impl TextureStore {
             return Err(TextureError::Unsupported);
         }
         let moved = self.resize(texture, width, height)?;
-        self.last_image += 1;
+        self.last_image = next_frame(self.last_image);
         let id = self.last_image;
         self.queue_source(texture, Source::Image { id, flags })?;
         Ok((id, moved))
     }
 
-    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU
-    /// in `slices` parts of its work, one a frame, and returns the generator's id, which it takes
-    /// from the images' ids. The caller sends the generator to the thread that draws under that
-    /// id, in the order of the ids, as it sends images. Texels that were waiting are released
+    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU,
+    /// all in the first frame after the generator arrives, and returns the generator's id, which it
+    /// takes from the images' ids. The caller sends the generator to the thread that draws under
+    /// that id, in the order of the ids, as it sends images. Texels that were waiting are released
     /// unused.
-    pub fn set_generated(&mut self, texture: Handle, slices: u32) -> Result<u32, TextureError> {
+    pub fn set_generated(&mut self, texture: Handle) -> Result<u32, TextureError> {
         let slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
-        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT || slices == 0 {
+        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT {
             return Err(TextureError::Unsupported);
         }
-        self.last_image += 1;
+        self.last_image = next_frame(self.last_image);
         let id = self.last_image;
-        self.queue_source(texture, Source::Generated { id, slices })?;
+        self.queue_source(texture, Source::Generated { id })?;
         Ok(id)
     }
 
@@ -1032,13 +1036,14 @@ impl TextureStore {
         self.max_anisotropy
     }
 
-    /// Notes what the thread that draws has: the images it received, and the newest frame it took.
+    /// Notes what the thread that draws has: the newest image id it received, and the newest frame
+    /// it took.
     pub fn sync(&mut self, images_arrived: u32, frames_taken: u32) {
         self.arrived = images_arrived;
         self.frames_taken = frames_taken;
     }
 
-    /// The last image id handed out, which is the number of images sent so far.
+    /// The last image id handed out, or 0 before the first.
     pub fn images_sent(&self) -> u32 {
         self.last_image
     }
@@ -1173,7 +1178,7 @@ impl TextureStore {
         let (arrived, taken) = (self.arrived, self.frames_taken);
         let due = |r: &Release| match r.source {
             Source::Image { id, .. } | Source::Generated { id, .. } => {
-                id <= arrived && (r.after == 0 || frame_after(frame, r.after))
+                !frame_after(id, arrived) && (r.after == 0 || frame_after(frame, r.after))
             }
             Source::Data { .. } => frame_after(taken, r.after),
         };
@@ -1233,7 +1238,7 @@ impl TextureStore {
                 continue;
             };
             if let Source::Image { id, .. } | Source::Generated { id, .. } = source
-                && id > self.arrived
+                && frame_after(id, self.arrived)
             {
                 continue;
             }
@@ -1242,23 +1247,16 @@ impl TextureStore {
             let levels = slot.source_levels(key);
             let block = format::block_size(key.format);
             let total = match source {
-                Source::Generated { slices, .. } => slices,
+                Source::Generated { .. } => 1,
                 _ => key.rows(levels),
             };
-            if let Source::Generated {
-                id: generator,
-                slices,
-            } = source
-            {
-                // One slice of the generator's work a frame, or every slice that is left in a frame
-                // with no budget, as a held frame is.
-                let last = if budget == u64::MAX { slices } else { rows + 1 };
-                for slice in rows..last {
-                    list.push(Op::GenerateTexture, &[id, generator, slice, slices])?;
-                }
-                rows = last;
+            if let Source::Generated { id: generator } = source {
+                // The generator makes the whole map in one command, outside the upload budget, so
+                // the frame that records it already draws with the map.
+                list.push(Op::GenerateTexture, &[id, generator])?;
+                rows = total;
             }
-            while rows < total && !matches!(source, Source::Generated { .. }) {
+            while rows < total {
                 let band = key.band(rows, levels);
                 let left = budget.saturating_sub(spent);
                 let mut take = u64::from(band.rows_left).min(left / band.row_bytes) as u32;
@@ -1461,7 +1459,7 @@ impl TextureStore {
             let texture = &mut self.textures[slot as usize];
             let held = |source: Source, released_in: u32| match source {
                 // The list that releases the image never ran, so the image is still there.
-                Source::Image { .. } => released_in == 0 || released_in > taken,
+                Source::Image { .. } => released_in == 0 || frame_after(released_in, taken),
                 // The store frees data as it records the release.
                 Source::Data { .. } => released_in == 0,
                 // The store keeps a generator until the texture no longer uses it.
@@ -1614,6 +1612,56 @@ mod tests {
         assert_eq!(h.store.ready_layer(texture), Some(0));
         // The data's texels are freed once a frame after the list that read them was taken.
         assert!(h.store.data.iter().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn after_a_gpu_reset_an_image_whose_release_never_ran_uploads_again_across_the_wrap() {
+        use null3d_core::frames::{FIRST_FRAME, previous_frame};
+        let mut h = Harness::new();
+        let last = previous_frame(FIRST_FRAME);
+        h.frame = previous_frame(last);
+        let texture = h.texture(8, 8);
+        h.image(texture, 8, 8);
+        h.arrive(1);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::UploadImage).len(), 1);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::ReleaseImage), [vec![1]]);
+        assert_eq!(h.frame, FIRST_FRAME);
+        // The thread that draws took the last frame of the count, but not the first, whose list
+        // releases the image, so the thread still holds it.
+        h.store.sync(1, last);
+        h.store.reset_gpu();
+        h.gpu = MockBackend::default();
+        h.gpu.provide_image(1, 8, 8);
+        let (commands, _) = h.frame();
+        let uploads = ops(&commands, Op::UploadImage);
+        assert_eq!(uploads.len(), 1, "the image uploads again");
+        assert_eq!(uploads[0][7], 1);
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+    }
+
+    #[test]
+    fn image_ids_go_round_and_wait_for_their_image_across_the_wrap() {
+        let mut h = Harness::new();
+        h.store.last_image = u32::MAX - 2;
+        let (early, late) = (h.texture(8, 8), h.texture(8, 8));
+        let (before, _) = h.store.set_image(early, 8, 8, 0).unwrap();
+        let (after, _) = h.store.set_image(late, 8, 8, 0).unwrap();
+        assert_eq!((before, after), (u32::MAX - 1, 1), "ids skip the two marks");
+        assert_eq!(h.store.images_sent(), 1);
+        h.gpu.provide_image(before, 8, 8);
+        h.arrived = before;
+        let (commands, _) = h.frame();
+        let uploads = ops(&commands, Op::UploadImage);
+        assert_eq!(uploads.len(), 1, "image 1 has not arrived");
+        assert_eq!(uploads[0][7], before);
+        h.gpu.provide_image(after, 8, 8);
+        h.arrived = after;
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::UploadImage)[0][7], after);
+        assert_eq!(ops(&commands, Op::ReleaseImage), [vec![before]]);
+        assert_eq!(h.store.ready_layer(late), Some(1));
     }
 
     fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {

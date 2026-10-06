@@ -2,12 +2,16 @@
 // and boxes in the sun. The wall runs away from the camera, and the sun throws its shadow to the
 // side, so the shadow's far edge is one long straight line through the near and middle distance,
 // at a slant to the cascades' texels. The edge check measures its steps. The posts and boxes give
-// shorter edges.
+// shorter edges. The edge crosses the seam between the first two cascades, and ?blend= sets the
+// share of each cascade that blends into the next, from the preset's otherwise.
 import { defineSketch } from '@null3d/engine';
 import { SHADOW_SCENE } from '../lib/shadow-check';
 
+const blend = new URL(import.meta.url).searchParams.get('blend');
+
 export default defineSketch(({ scene, materials, geometry, quality }) => {
 	quality.set({ shadowFilter: 3, farCascadeInterval: 1 });
+	if (blend !== null) quality.set({ shadowCascadeBlend: Number(blend) });
 	scene.setBackground('#101418');
 	const { position, target, fov } = SHADOW_SCENE.camera;
 	scene.setActiveCamera(

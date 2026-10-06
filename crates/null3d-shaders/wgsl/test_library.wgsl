@@ -272,6 +272,17 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
 #ifdef COLOR
         case 98u: { return triple(null3d::color::limit_hdr(f[0].xyz)); }
 #endif
+#ifdef LIGHTING
+        case 99u: {
+            let m = null3d::lighting::with_specular(material(f), f[2].x, f[2].yzw, f[3].x);
+            return floats(
+                vec4f(m.base_color, m.specular_grazing),
+                vec4f(m.diffuse, m.roughness),
+                vec4f(m.specular, m.metalness),
+                vec4f(m.specular_blended, 0.0),
+            );
+        }
+#endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.
         default: { return whole(u[0]); }

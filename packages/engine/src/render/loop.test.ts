@@ -3,7 +3,15 @@ import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
-import { HoldLoop, type RenderLoop, runRenderLoop, wakeDelayMs } from './loop';
+import {
+	CAPTURE_WAIT_CALLBACKS,
+	type FramePacing,
+	HoldLoop,
+	nextFrameTaken,
+	type RenderLoop,
+	runRenderLoop,
+	wakeDelayMs,
+} from './loop';
 import type { FrameInput, Renderer } from './renderer';
 
 /** Frame callbacks that the loops asked for, which the test runs in place of a display. */
@@ -87,7 +95,7 @@ describe('the render loop', () => {
 
 	it('draws nothing at a callback that finds no new frame', () => {
 		const { control, metrics, slots, drawn, renderer } = setup();
-		loop = runRenderLoop(renderer, control, metrics, undefined);
+		loop = runRenderLoop(renderer, control, metrics, {});
 		Atomics.store(slots, Slot.FramesPublished, 1);
 		refresh(DISPLAY_HZ, 10);
 		expect(drawn).toEqual([1]);
@@ -100,7 +108,7 @@ describe('the render loop', () => {
 
 	it('holds ?fps= and still measures the display from every callback', () => {
 		const { control, metrics, slots, drawn, renderer, reader } = setup();
-		loop = runRenderLoop(renderer, control, metrics, 30);
+		loop = runRenderLoop(renderer, control, metrics, { fps: 30 });
 		// A sketch fast enough to publish a new frame before every callback.
 		refresh(DISPLAY_HZ, CALLBACKS, (call) => Atomics.store(slots, Slot.FramesPublished, call + 1));
 		expect(drawn).toHaveLength(CALLBACKS / 2);
@@ -110,7 +118,7 @@ describe('the render loop', () => {
 	it('takes and draws the first frame only once its pipelines are built', () => {
 		const { control, metrics, slots, drawn, prepared, builds, renderer, reader } = setup();
 		builds.left = 4;
-		loop = runRenderLoop(renderer, control, metrics, undefined);
+		loop = runRenderLoop(renderer, control, metrics, {});
 		Atomics.store(slots, Slot.FramesPublished, 1);
 		refresh(DISPLAY_HZ, 3);
 		// The sketch may not record the next frame yet, and warm-ups still wait.
@@ -128,7 +136,7 @@ describe('the render loop', () => {
 
 	it('draws later frames at once while their pipelines build, and reports them built after', () => {
 		const { control, metrics, slots, drawn, builds, renderer } = setup();
-		loop = runRenderLoop(renderer, control, metrics, undefined);
+		loop = runRenderLoop(renderer, control, metrics, {});
 		Atomics.store(slots, Slot.FramesPublished, 1);
 		refresh(DISPLAY_HZ, 1);
 		// Frame 2 creates a pipeline, which builds while frames 2 to 4 are checked.
@@ -144,7 +152,7 @@ describe('the render loop', () => {
 		const { control, metrics, slots, drawn, prepared, builds, renderer } = setup();
 		builds.left = 100;
 		Atomics.store(slots, Slot.GpuEpoch, 1);
-		loop = runRenderLoop(renderer, control, metrics, undefined);
+		loop = runRenderLoop(renderer, control, metrics, {});
 		Atomics.store(slots, Slot.FramesPublished, 1);
 		refresh(DISPLAY_HZ, 1);
 		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(1);
@@ -169,13 +177,78 @@ describe('the hold loop', () => {
 	});
 });
 
+describe("a capture's wait for the next frame", () => {
+	let loop: RenderLoop | undefined;
+	afterEach(() => loop?.stop());
+
+	/** Waits for the next frame, and reports whether the wait has ended. */
+	function waitForFrame(slots: Int32Array): { ended: boolean } {
+		const state = { ended: false };
+		void nextFrameTaken(slots).then(() => {
+			state.ended = true;
+		});
+		return state;
+	}
+
+	it('lets the loop take and draw its next frame before it ends', async () => {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
+		refresh(DISPLAY_HZ, 3);
+		const wait = waitForFrame(slots);
+		await Promise.resolve();
+		expect(wait.ended).toBe(false);
+		refresh(DISPLAY_HZ, 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(true);
+		expect(drawn).toEqual([1, 2, 3, 4]);
+		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(4);
+	});
+
+	it('waits on through callbacks that take no frame', async () => {
+		const { control, metrics, slots, renderer } = setup();
+		loop = runRenderLoop(renderer, control, metrics, {});
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		refresh(DISPLAY_HZ, 1);
+		const wait = waitForFrame(slots);
+		refresh(DISPLAY_HZ, 5);
+		await Promise.resolve();
+		expect(wait.ended).toBe(false);
+		Atomics.store(slots, Slot.FramesPublished, 2);
+		refresh(DISPLAY_HZ, 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(true);
+	});
+
+	it('ends at once while the engine is paused or stopped', async () => {
+		const { slots } = setup();
+		Atomics.store(slots, Slot.Paused, 1);
+		const paused = waitForFrame(slots);
+		Atomics.store(slots, Slot.Paused, 0);
+		Atomics.store(slots, Slot.Running, 0);
+		const stopped = waitForFrame(slots);
+		await Promise.resolve();
+		expect([paused.ended, stopped.ended]).toEqual([true, true]);
+	});
+
+	it('gives up when no frame comes, as after a sketch error', async () => {
+		const { slots } = setup();
+		const wait = waitForFrame(slots);
+		refresh(DISPLAY_HZ, CAPTURE_WAIT_CALLBACKS - 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(false);
+		refresh(DISPLAY_HZ, 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(true);
+	});
+});
+
 describe('the direct loop', () => {
 	let loop: RenderLoop | undefined;
 	afterEach(() => loop?.stop());
 
 	it('steps and draws nothing while the page pauses the engine', () => {
 		const { control, metrics, slots, drawn, renderer } = setup();
-		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
 		refresh(DISPLAY_HZ, 5);
 		Atomics.store(slots, Slot.Paused, 1);
 		refresh(DISPLAY_HZ, 5);
@@ -187,7 +260,7 @@ describe('the direct loop', () => {
 
 	it('holds ?fps= and still measures the display from every callback', () => {
 		const { control, metrics, drawn, renderer, reader } = setup();
-		loop = runDirectLoop(countingSketch(), renderer, control, metrics, 30);
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, { fps: 30 });
 		refresh(DISPLAY_HZ, CALLBACKS);
 		expect(drawn).toHaveLength(CALLBACKS / 2);
 		expect(reader.refreshHz).toBe(DISPLAY_HZ);
@@ -196,7 +269,7 @@ describe('the direct loop', () => {
 	it('steps nothing before the setup has run, and draws the frames that its warm-ups publish', () => {
 		const { control, metrics, slots, drawn, builds, renderer } = setup();
 		const sketch = countingSketch(false);
-		loop = runDirectLoop(sketch, renderer, control, metrics, undefined);
+		loop = runDirectLoop(sketch, renderer, control, metrics, {});
 		refresh(DISPLAY_HZ, 3);
 		expect(drawn).toEqual([]);
 		// A warm-up records frame 1 itself; the loop draws it once its pipelines are built.
@@ -215,7 +288,7 @@ describe('the direct loop', () => {
 
 	it("wakes the setup's code that waits for its frame to be taken", async () => {
 		const { control, metrics, slots, renderer } = setup(true);
-		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, undefined);
+		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, {});
 		Atomics.store(slots, Slot.FramesPublished, 1);
 		const wait = Atomics.waitAsync(slots, Slot.FramesTaken, 0, 1000);
 		expect(wait.async).toBe(true);
@@ -226,7 +299,7 @@ describe('the direct loop', () => {
 	it('steps no new frame while the frame it stepped waits for its pipelines', () => {
 		const { control, metrics, drawn, builds, renderer } = setup();
 		builds.left = 3;
-		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
 		refresh(DISPLAY_HZ, 2);
 		expect(drawn).toEqual([]);
 		refresh(DISPLAY_HZ, 2);
@@ -254,7 +327,7 @@ describe('the frames in flight', () => {
 
 	it('takes no new frame while two frames are unfinished on the GPU', () => {
 		const { control, metrics, slots, drawn, renderer, gpu } = slowGpu();
-		loop = runRenderLoop(renderer, control, metrics, undefined);
+		loop = runRenderLoop(renderer, control, metrics, {});
 		// A sketch fast enough to publish a new frame before every callback.
 		const publish = (frame: number) => Atomics.store(slots, Slot.FramesPublished, frame);
 		refresh(DISPLAY_HZ, 4, (call) => publish(call + 1));
@@ -268,7 +341,7 @@ describe('the frames in flight', () => {
 
 	it("takes the setup's frames in the direct loop only when the GPU has room for them", () => {
 		const { control, metrics, slots, drawn, renderer, gpu } = slowGpu();
-		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, undefined);
+		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, {});
 		// The setup publishes each frame once the one before it was taken, as the preset check does.
 		refresh(DISPLAY_HZ, 4, () =>
 			Atomics.store(slots, Slot.FramesPublished, Atomics.load(slots, Slot.FramesTaken) + 1),
@@ -281,7 +354,7 @@ describe('the frames in flight', () => {
 
 	it('steps the sketch of the direct loop only when the GPU has room for its frame', () => {
 		const { control, metrics, drawn, renderer, gpu } = slowGpu();
-		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
 		refresh(DISPLAY_HZ, 4);
 		expect(drawn).toEqual([1, 2]);
 		gpu.unfinished = 0;
@@ -317,7 +390,7 @@ describe('the wake-up before the next frame', () => {
 	it('wakes a worker before each callback, at the rate the refresh meter measured', () => {
 		const { control, metrics, renderer } = setup();
 		const hz = 120;
-		const delays = wakeDelays(hz, () => runRenderLoop(renderer, control, metrics, undefined));
+		const delays = wakeDelays(hz, () => runRenderLoop(renderer, control, metrics, {}));
 		expect(delays).toHaveLength(CALLBACKS);
 		// Until the refresh meter has its first samples, the wake-up assumes a 60 Hz display.
 		expect(delays[0]).toBe(wakeDelayMs(60));
@@ -327,7 +400,7 @@ describe('the wake-up before the next frame', () => {
 	it('wakes the thread of the direct loop too', () => {
 		const { control, metrics, renderer } = setup();
 		const delays = wakeDelays(DISPLAY_HZ, () =>
-			runDirectLoop(countingSketch(), renderer, control, metrics, undefined),
+			runDirectLoop(countingSketch(), renderer, control, metrics, {}),
 		);
 		expect(delays).toHaveLength(CALLBACKS);
 	});
@@ -337,9 +410,7 @@ describe('the wake-up before the next frame', () => {
 		const scope = globalThis as { document?: unknown };
 		scope.document = {};
 		try {
-			const delays = wakeDelays(DISPLAY_HZ, () =>
-				runRenderLoop(renderer, control, metrics, undefined),
-			);
+			const delays = wakeDelays(DISPLAY_HZ, () => runRenderLoop(renderer, control, metrics, {}));
 			expect(delays).toEqual([]);
 		} finally {
 			delete scope.document;
@@ -367,7 +438,7 @@ describe('the hold to the display rate', () => {
 	function runTimed(displayHz: number, callbackHz: number): number[] {
 		const { control, metrics, slots, drawn, renderer } = setup();
 		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / displayHz));
-		loop = runRenderLoop(renderer, control, metrics, undefined);
+		loop = runRenderLoop(renderer, control, metrics, {});
 		refresh(callbackHz, CALLS, (call) => Atomics.store(slots, Slot.FramesPublished, call + 1));
 		return drawn;
 	}
@@ -396,7 +467,7 @@ describe('the hold to the display rate', () => {
 	function recordedRates(displayHz: number, rates: number[]): number[] {
 		const { control, metrics, slots, renderer, reader } = setup();
 		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / displayHz));
-		loop = runRenderLoop(renderer, control, metrics, undefined);
+		loop = runRenderLoop(renderer, control, metrics, {});
 		let time = 0;
 		return rates.map((hz) => {
 			for (let call = 0; call < CALLS; call++) {
@@ -422,7 +493,7 @@ describe('the hold to the display rate', () => {
 	it('holds the direct loop to the display rate too', () => {
 		const { control, metrics, slots, drawn, renderer } = setup();
 		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / 60));
-		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
 		refresh(TIMER_HZ, CALLS);
 		expect(heldRate(drawn, TIMER_HZ)).toBeCloseTo(60, 0);
 	});
@@ -435,5 +506,151 @@ describe('the hold to the display rate', () => {
 		} finally {
 			delete scope.document;
 		}
+	});
+});
+
+describe("the display's rate on the page's thread", () => {
+	let loop: RenderLoop | undefined;
+	const scope = globalThis as { document?: unknown };
+	beforeEach(() => {
+		scope.document = {};
+	});
+	afterEach(() => {
+		loop?.stop();
+		delete scope.document;
+	});
+
+	const DISPLAY_MS = 1000 / 72;
+	/** Callbacks before the sketch publishes its first frame, as while the pipelines build. */
+	const IDLE = 20;
+	const CALLS = 600;
+
+	/**
+	 * Runs the render loop on the page, with callbacks as Safari's page makes them while the GPU
+	 * falls behind: the callback after one that drew a frame comes `drawnMs` later, at no refresh.
+	 * The callback after one that drew nothing comes at the display's next refresh, part of a
+	 * refresh later when the one before it drew, and a whole refresh later when it drew nothing too.
+	 * Each callback after the first `idle` finds a new frame. `run` makes `calls` callbacks and
+	 * returns how many of those that found a frame drew nothing.
+	 */
+	function slowedPage(pacing: FramePacing = {}, idle = IDLE) {
+		const { control, metrics, slots, drawn, renderer, reader } = setup();
+		loop = runRenderLoop(renderer, control, metrics, pacing);
+		let call = 0;
+		let time = 0;
+		let lastDrew = false;
+		const run = (calls: number, drawnMs: number, displayMs = DISPLAY_MS) => {
+			let skipped = 0;
+			for (const end = call + calls; call < end; call++) {
+				const found = call >= idle;
+				if (found) Atomics.store(slots, Slot.FramesPublished, call + 1);
+				const before = drawn.length;
+				const callbacks = pending;
+				pending = [];
+				for (const callback of callbacks) callback(time);
+				const drew = drawn.length > before;
+				if (found && !drew) skipped++;
+				time += drew ? drawnMs : lastDrew ? displayMs / 2 : displayMs;
+				lastDrew = drew;
+			}
+			return skipped;
+		};
+		return { run, drawn, reader };
+	}
+
+	/** Runs `slowedPage` for `CALLS` callbacks whose frames come `drawnMs` apart. */
+	function runSlowed(drawnMs: number, idle = IDLE, pacing: FramePacing = {}) {
+		const page = slowedPage(pacing, idle);
+		const skipped = page.run(CALLS, drawnMs);
+		return { skipped, refreshHz: page.reader.refreshHz };
+	}
+
+	it('records the display rate while slowed callbacks draw every frame', () => {
+		// Safari's page callbacks at 34 a second under the hold's load, on a 72 Hz display.
+		const { skipped, refreshHz } = runSlowed(1000 / 34);
+		expect(refreshHz).toBe(72);
+		// Pairs of callbacks draw nothing now and then, so the interval after them measures the display.
+		expect(skipped).toBeGreaterThan(0);
+		expect(skipped % 2).toBe(0);
+	});
+
+	it('measures the display through such callbacks when every callback found a frame', () => {
+		expect(runSlowed(1000 / 34, 0).refreshHz).toBe(72);
+	});
+
+	it('spaces the checks out while the display keeps its rate', () => {
+		const page = slowedPage();
+		page.run(3000, 1000 / 34);
+		// The stretch between checks has grown to its longest: one pair in about 242 callbacks.
+		const skipped = page.run(2420, 1000 / 34);
+		expect(skipped).toBeGreaterThanOrEqual(18);
+		expect(skipped).toBeLessThanOrEqual(22);
+		expect(page.reader.refreshHz).toBe(72);
+	});
+
+	it('checks often again once the display turns slower', () => {
+		const page = slowedPage();
+		page.run(3000, 1000 / 34);
+		// A window moved to a 30 Hz screen while the frames run at 20 a second. At the longest
+		// stretch, 8 checks would take some 1,900 callbacks.
+		page.run(800, 1000 / 20, 1000 / 30);
+		expect(page.reader.refreshHz).toBe(30);
+	});
+
+	it('makes no checks with ?display-check=off', () => {
+		const { skipped, refreshHz } = runSlowed(1000 / 34, IDLE, { displayChecks: false });
+		expect(skipped).toBe(0);
+		// The callbacks before the first frame drew nothing, and measured the display.
+		expect(refreshHz).toBe(72);
+	});
+
+	it('keeps the rate of callbacks that ran at the display rate once they slow', () => {
+		// The page's thread runs the sketch and draws from the first callback on, so no callback
+		// drew nothing before the load came.
+		const { control, metrics, renderer, reader } = setup();
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
+		let time = 0;
+		const run = (calls: number, ms: number) => {
+			for (let call = 0; call < calls; call++) {
+				const callbacks = pending;
+				pending = [];
+				for (const callback of callbacks) callback(time);
+				time += ms;
+			}
+		};
+		run(CALLBACKS, DISPLAY_MS);
+		expect(reader.refreshHz).toBe(72);
+		// A sketch that spins for two refreshes slows every callback that steps it.
+		run(CALLBACKS, 1000 / 28);
+		expect(reader.refreshHz).toBe(72);
+	});
+
+	it('draws every callback where the callbacks keep the display rate', () => {
+		const { skipped, refreshHz } = runSlowed(DISPLAY_MS);
+		expect(refreshHz).toBe(72);
+		expect(skipped).toBe(0);
+	});
+
+	it('follows a display that turns slower, then draws every callback again', () => {
+		const { control, metrics, slots, drawn, renderer, reader } = setup();
+		loop = runRenderLoop(renderer, control, metrics, {});
+		let time = 0;
+		const run = (calls: number, ms: number, publish: boolean) => {
+			for (let call = 0; call < calls; call++) {
+				if (publish) Atomics.store(slots, Slot.FramesPublished, drawn.length + 1);
+				const callbacks = pending;
+				pending = [];
+				for (const callback of callbacks) callback(time);
+				time += ms;
+			}
+		};
+		run(CALLS, DISPLAY_MS, false);
+		expect(reader.refreshHz).toBe(72);
+		// A window moved to a 30 Hz screen: every callback comes 33 ms after the last.
+		run(CALLS, 1000 / 30, true);
+		expect(reader.refreshHz).toBe(30);
+		const before = drawn.length;
+		run(CALLS, 1000 / 30, true);
+		expect(drawn.length - before).toBe(CALLS);
 	});
 });

@@ -50,13 +50,25 @@ struct Frame {
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every
 /// direction around the scene, in a prefiltered cube map and nine spherical harmonics
-/// coefficients.
+/// coefficients. Its vectors are named fields rather than arrays: shaders copy the struct out of
+/// the frame's uniform block, and Adreno 830's WebGL2 driver copies no array member of a struct
+/// that way (see "Browser faults" in the maintainer notes). The bytes are the same as arrays'.
 struct EnvironmentLight {
-    /// The coefficients of the diffuse light in three.js's order, each in `xyz`.
-    sh: array<vec4f, 9>,
-    /// The rows of the matrix that turns a direction in the world into the map's direction, each
-    /// in `xyz`.
-    rotation: array<vec4f, 3>,
+    /// The coefficients of the diffuse light in three.js's order, from `a`, each in `xyz`.
+    sh_a: vec4f,
+    sh_b: vec4f,
+    sh_c: vec4f,
+    sh_d: vec4f,
+    sh_e: vec4f,
+    sh_f: vec4f,
+    sh_g: vec4f,
+    sh_h: vec4f,
+    sh_i: vec4f,
+    /// The rows of the matrix that turns a direction in the world into the map's direction, which
+    /// give its x, y and z, each in `xyz`.
+    rotation_x: vec4f,
+    rotation_y: vec4f,
+    rotation_z: vec4f,
     /// The map's last mip level, the environment's intensity, 1 while the map draws and 0 while
     /// the scene has none, and a spare.
     params: vec4f,
@@ -77,11 +89,14 @@ struct Material {
     /// The row of the texture coordinate transform that gives u, and the factor of the scene
     /// environment's light.
     uv_u: vec4f,
-    /// The row of the texture coordinate transform that gives v, and a spare.
+    /// The row of the texture coordinate transform that gives v, and the dielectric reflectance at
+    /// normal incidence that the index of refraction gives.
     uv_v: vec4f,
     /// The texture array layers of the base color, metal-rough, normal and occlusion maps. A layer
     /// below 0 means that the map draws nothing.
     maps: vec4f,
-    /// The layers of the emissive and light maps, and two spares.
+    /// The layers of the emissive, light, specular intensity and specular color maps.
     more_maps: vec4f,
+    /// The specular color, which tints the dielectric reflectance, and the specular intensity.
+    specular: vec4f,
 }

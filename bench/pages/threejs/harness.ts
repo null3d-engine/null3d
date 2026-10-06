@@ -67,6 +67,8 @@ export type Three = Pick<
 	| 'PerspectiveCamera'
 	| 'PlaneGeometry'
 	| 'PointLight'
+	| 'Points'
+	| 'PointsMaterial'
 	| 'Quaternion'
 	| 'QuaternionKeyframeTrack'
 	| 'RepeatWrapping'

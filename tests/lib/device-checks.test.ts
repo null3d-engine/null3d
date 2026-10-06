@@ -47,10 +47,13 @@ describe('the smoke plan', () => {
 		expect(images.every(({ test }) => SMOKE_IMAGE_TESTS.has(test))).toBe(true);
 	});
 
-	it('restarts the engine once in each build, and keeps the capability, shader and path pages', () => {
-		const restarts = smoke.flatMap(({ check }) => (check.kind === 'restarts' ? [check.mode] : []));
-		expect(restarts.map(({ build }) => build)).toEqual(['threaded', 'single']);
-		expect(restarts.map(({ name }) => name)).toEqual([ENGINE_MODES[0]?.name, 'single-threaded']);
+	it('restarts the engine once in each build and once in frames, and keeps the capability, shader and path pages', () => {
+		const restarts = smoke.flatMap(({ check }) => (check.kind === 'restarts' ? [check] : []));
+		expect(restarts.map(({ mode, start }) => [mode.name, start])).toEqual([
+			[ENGINE_MODES[0]?.name, 'engine'],
+			['single-threaded', 'engine'],
+			[ENGINE_MODES[0]?.name, 'frame-destroyed'],
+		]);
 		for (const id of [
 			'capabilities',
 			'isolation',
@@ -243,19 +246,31 @@ describe('the soak plan', () => {
 
 	it('tabulates the losses, the frame rates and the memory of each soak', () => {
 		const results: Record<string, ItemResult> = {
-			'soak-s4-webgpu': soak({
-				minutes: 3,
-				samples: [minute(1, 60), minute(2, 52, 1), minute(3, 59, 1)],
-				failures: [],
-			}),
+			'soak-s4-webgpu': {
+				...soak({
+					minutes: 3,
+					samples: [minute(1, 60), minute(2, 52, 1), minute(3, 59, 1)],
+					failures: [],
+				}),
+				mode: {
+					preset: 'low',
+					presetCheck: {
+						rounds: [
+							{ preset: 'medium', presentedFps: 41.7, completedFps: 41.9 },
+							{ preset: 'low', presentedFps: 60.3, completedFps: 60.3 },
+						],
+						reused: false,
+					},
+				},
+			},
 		};
 		expect(
 			soakSummary(items, (id) => results[id])
 				?.split('\n')
 				.slice(2),
 		).toEqual([
-			'| webgpu | 3 of 3 | 1 (minutes 2) | 59.0 | 52.0 (minute 2) | 0.0 MiB | none |',
-			'| webgl2 | no result; the runner stopped before this page | | | | | |',
+			'| webgpu | low (check: medium 41.7 fps, low 60.3 fps) | 3 of 3 | 1 (minutes 2) | 59.0 | 52.0 (minute 2) | 0.0 MiB | none |',
+			'| webgl2 | no result; the runner stopped before this page | | | | | | |',
 		]);
 	});
 });
@@ -347,6 +362,25 @@ describe('the GPU pages of the checks plan', () => {
 		expect(
 			judge(checkOf('shaders'), { ...result, failures: [undeclared] }, NONE_MISSING, context),
 		).toEqual([`${removed.shader} fragment: ${undeclared.log}`]);
+	});
+
+	it("passes a program that linked at the second try after Safari's Metal fault, with a note", () => {
+		notes.length = 0;
+		const shader = 'standard_maps.webgl2_alpha_mask.main';
+		const error =
+			"program_source:2420:18: error: no matching function for call to '_uroughness_level'";
+		const log = `Internal error while linking shader. MSL compilation error:\nprogram_source:99:19: warning: unused variable 'p'\n${error}\n`;
+		const result = {
+			ok: true,
+			glslPrograms: 279,
+			webgpu: true,
+			failures: [],
+			relinked: [{ shader, stage: 'link', log }],
+		};
+		expect(judge(checkOf('shaders'), result, NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			`1 program linked at the second try after Safari's random Metal fault: ${shader} (${error})`,
+		]);
 	});
 
 	it("fails the mip levels page only on the engine's way, and notes the ways that work", () => {

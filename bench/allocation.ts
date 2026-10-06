@@ -14,7 +14,8 @@
 // S4, the phone scene, with its shadows, street lights and quality governor. `--blend` makes
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass.
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
-// and an additive one, and fire events to the sketch's handlers through the animator. `--morphed 64`
+// and an additive one, play phase-synced blends and clips at weights that the sketch moves, and
+// fire events to the sketch's handlers through the animator. `--morphed 64`
 // adds 64 spheres with three morph targets each, whose weights the sketch sets in every frame.
 // `--grading`
 // gives S1 a color grading table and the vignette, and changes both every frame. `--sprites` draws
@@ -54,7 +55,8 @@
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
-import { chromium, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
 	type HeapProfile,
@@ -210,16 +212,15 @@ async function main(): Promise<void> {
 	const dev = args.includes(DEV_OPTION);
 	const noInline = args.includes('--no-inline');
 	const server = await serveBenchPages({ dev });
-	const browser = await chromium.launch({
+	const browser = await launchInWindow({
 		channel: 'chrome',
-		headless: false,
 		args: [
 			`--remote-debugging-port=${DEBUG_PORT}`,
 			...(noInline ? ['--js-flags=--no-turbo-inlining --no-maglev-inlining'] : []),
 		],
 	});
 	try {
-		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
+		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
