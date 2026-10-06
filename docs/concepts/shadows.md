@@ -299,7 +299,7 @@ To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, 
 
 ## On each GPU path
 
-WebGPU and WebGL2 draw the same shadows. Both keep the shadow map and the shadow atlas as depth texture arrays of 32-bit floats. The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once. WebGL2's shading language has no such read, so there it reads each texel on its own, four times as many reads. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
+WebGPU and WebGL2 draw the same shadows. Both keep the shadow map and the shadow atlas as depth texture arrays of 32-bit floats. The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once. WebGL2's shading language has no such read, so there it reads each texel on its own, four times as many reads. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
 
 ## Coming from three.js
 

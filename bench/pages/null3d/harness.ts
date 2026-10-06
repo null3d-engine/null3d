@@ -109,11 +109,14 @@ export function runNull3dPage(
 		}
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
-		// A page that fills the window leaves the pixel ratio's cap to the quality preset.
+		// A page that fills the window leaves the pixel ratio's cap to the quality preset, unless
+		// `?maxPixelRatio=` names one.
 		const engine = await createEngine({
 			canvas,
 			sketch: sketchUrl,
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
+			...(filled && options.maxPixelRatio !== null && { maxPixelRatio: options.maxPixelRatio }),
+			antialias: options.antialias ?? undefined,
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,
 			...(params.has('tileShadows') && { pointLightShadows: true, shadowTiles: 24 }),
@@ -133,7 +136,10 @@ export function runNull3dPage(
 				canvas: {
 					width: canvas.clientWidth,
 					height: canvas.clientHeight,
-					pixelRatio: Math.min(devicePixelRatio, twinSettings(engine.mode.preset).maxPixelRatio),
+					pixelRatio: Math.min(
+						devicePixelRatio,
+						options.maxPixelRatio ?? twinSettings(engine.mode.preset).maxPixelRatio,
+					),
 				},
 			}),
 		};
