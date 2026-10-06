@@ -1,6 +1,6 @@
 # D-58: Failure reporting, canvas reuse and GPU-loss recovery
 
-Status: decided. Date: 2026-10-04. Task: M2-R15.
+Status: decided. Date: 2026-10-04; kept canvases in Safari decided by the owner on 2026-10-06. Task: M2-R15.
 
 ## Question
 
@@ -63,9 +63,14 @@ Long runs:
 - The quality governor kept the page's clock in 32-bit integers. So it stopped raising quality after 24.8 days. Its clock now counts from an origin that the frame loop moves forward every 6 days or so. Its times stay small whole numbers in 32-bit integers. The first fix kept the times in 64-bit floats, which made the governor allocate in each judgement ([Render scale](../implementation-notes.md#render-scale)).
 - A slot's 10-bit generation comes round after 1,023 reuses. Once a scene has used every slot, a freed slot comes back at once, so a stale handle could match a new object within minutes. The highest generation is now never given out, and a destroyed object's wrapper takes a handle with it. A later call on the wrapper then fails as stale however often the slot is reused. Options rejected: a longer wait before a slot comes back, which would cost capacity in a full scene. Wider generations, which would change the handle's layout on both sides.
 
-## Open question for the owner
+## Kept canvases in Safari: the owner's ruling
 
-The worker that kept a canvas stays alive, idle, for as long as the canvas is in the document: one thread per such canvas. It costs no GPU memory. In Safari it keeps the address space of the stopped engine's shared memory until the engine ends it, as above. The coordinator accepted it on 5 October 2026, and puts it to the owner. The alternative is to refuse a canvas that moved to a worker, with E1419. Apps would then make a new canvas element for each engine. React components that render `<canvas ref>` would then fail under StrictMode.
+The worker that kept a canvas stays alive, idle, for as long as the canvas is in the document: one thread per such canvas. It costs no GPU memory. In Safari it keeps the stopped engine's shared memory, 1 GiB by default, until the worker ends. It ends when the canvas leaves the page, when the page goes away, or when the browser refuses the memory of a new engine. In Safari 26.6.2 on a Mac, about 40 starts and stops on kept canvases all passed. They left the room at 24 to 29 of 35 or 36. A large memory that other code on the page asks for, such as another WebAssembly module, does not end the kept workers. Its request can then fail.
+
+Decided by the owner on 6 October 2026: keep the workers as they are, and document the cost. The engine API page tells apps that load other large modules to remove a canvas once they are done with it. Options rejected:
+
+- A time limit on a kept worker, such as a few seconds. A page cannot know how long it has: an app may stop its engine and start another on the same canvas a minute later. That start would then fail with E1419. D-58 rejected a time limit for the same reason when canvas reuse came.
+- No canvas reuse for a canvas that a worker drew on, refused with E1419. Apps would then make a new canvas element for each engine. React components that render `<canvas ref>` would fail under StrictMode, which starts every effect twice.
 
 ## Consequences
 
