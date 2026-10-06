@@ -40,12 +40,16 @@ const SETTLE_MS = 50;
 const READY_TIMEOUT_MS = 5_000;
 const ENGINE_TIMEOUT_MS = 20_000;
 /**
- * The pauses before each count of the room after the cycles, until the room comes back: 31 s in
- * all. Safari frees a memory only after a full collection finds it unused and its sweeper then
- * reaches it. Each count ends with a collection, and the pause gives Safari time to free what it
- * found. The pauses grow, because each collection starts the sweep again.
+ * The pauses before each count of the room after the cycles, until the room comes back. Safari
+ * frees a memory only after a full collection finds it unused and its sweeper then reaches it. Each
+ * count ends with a collection, and the pause gives Safari time to free what it found. The pauses
+ * grow, because each collection starts the sweep again, and then hold at the longest. Safari frees
+ * the memory of engines in removed frames late, at times long after the frames have gone, so the
+ * wait in all is about twice the slowest return of the room seen in Safari, as the implementation
+ * notes record. A shorter wait failed checks whose room came back later. Memory that engines keep
+ * never comes back, so a real leak still fails, only later.
  */
-const ROOM_PAUSES_MS = [1_000, 1_000, 2_000, 4_000, 8_000, 15_000];
+const ROOM_PAUSES_MS = [1_000, 1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000, 15_000];
 /**
  * How long, in all, the starts that the browser refuses may wait for it to free the stopped
  * engines' memory, beyond the engine's own wait of about 10 seconds for each start.

@@ -688,6 +688,21 @@ function inspectMac(run: string, runner: string, count: number, since: number): 
 }
 
 /**
+ * Keeps the Mac's display awake while the runner lasts. Once the screen saver locks the screen,
+ * Safari gives pages no animation frames, so every later page waits for a first frame that never
+ * comes. The screen saver starts only while nothing keeps the display awake.
+ */
+function keepDisplayAwake(): void {
+	if (process.platform !== 'darwin') return;
+	const child = spawn('caffeinate', ['-d', '-i', '-w', String(process.pid)], {
+		stdio: 'ignore',
+		detached: true,
+	});
+	child.on('error', () => {});
+	child.unref();
+}
+
+/**
  * Closes a run's runner page in Safari through AppleScript. Not in CI: there macOS asks whether the
  * tool may control Safari, and nobody can answer.
  */
@@ -1578,6 +1593,7 @@ async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
+	if (options.apps.length > 0) keepDisplayAwake();
 	const launches = new Map(runners.map((runner) => [runner.name, runner.launch]));
 	const cloud = cloudSessions(options);
 	if (options.android.length > 0 || options.lan.length > 0) {

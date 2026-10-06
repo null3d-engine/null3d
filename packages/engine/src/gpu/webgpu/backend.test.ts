@@ -33,8 +33,19 @@ const SHADERS = new Proxy({}, { get: () => SHADER }) as unknown as DeviceShaders
  */
 function fakeDevice() {
 	const log: string[] = [];
-	const buffers: { size: number; destroyed: boolean }[] = [];
-	const pass = { setPipeline() {}, setBindGroup() {}, draw() {}, end() {} };
+	const buffers: { size: number; usage: number; destroyed: boolean }[] = [];
+	const name = (buffer: unknown) => `buffer ${buffers.indexOf(buffer as (typeof buffers)[number])}`;
+	const pass = {
+		setPipeline() {},
+		setBindGroup() {},
+		draw() {},
+		drawIndexedIndirect(buffer: unknown, offset: number) {
+			log.push(`draw from ${name(buffer)} at ${offset}`);
+		},
+		end() {
+			log.push('end pass');
+		},
+	};
 	const pipeline = { getBindGroupLayout: () => ({}) };
 	const device = {
 		createBindGroupLayout: () => ({}),
@@ -59,9 +70,10 @@ function fakeDevice() {
 				destroy() {},
 			};
 		},
-		createBuffer({ size }: GPUBufferDescriptor) {
+		createBuffer({ size, usage }: GPUBufferDescriptor) {
 			const buffer = {
 				size,
+				usage,
 				destroyed: false,
 				destroy() {
 					buffer.destroyed = true;
@@ -72,7 +84,13 @@ function fakeDevice() {
 			return buffer;
 		},
 		createCommandEncoder: () => ({
-			beginRenderPass: () => pass,
+			beginRenderPass() {
+				log.push('begin pass');
+				return pass;
+			},
+			copyBufferToBuffer(source: unknown, offset: number, target: unknown) {
+				log.push(`copy ${name(source)} at ${offset} to ${name(target)}`);
+			},
 			copyTextureToBuffer() {},
 			copyBufferToTexture() {},
 			finish: () => ({}),
@@ -154,5 +172,46 @@ describe('WebGPUBackend', () => {
 		);
 		const events = log.filter((entry) => !entry.startsWith('background'));
 		expect(events).toEqual(['submit', `destroy ${256 * 8}`]);
+	});
+
+	it('copies the arguments of each indirect draw of a pass into a buffer of its own', () => {
+		const { device, log, buffers } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		backend.canvasTarget = { createView: () => ({}) } as unknown as GPUTexture;
+		const indirect = G.BUFFER_USAGE_INDIRECT | G.BUFFER_USAGE_STORAGE;
+		const begin: [number, ...number[]] = [
+			G.OP_BEGIN_RENDER_PASS,
+			...[0, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_CLEAR_COLOR],
+		];
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_BUFFER, 1, 40, indirect],
+				[G.OP_BEGIN_BUNDLE, 5, G.FORMAT_CANVAS, G.FORMAT_NONE, 1],
+				[G.OP_DRAW_INDEXED_INDIRECT, 1, 0],
+				[G.OP_END_BUNDLE],
+				begin,
+				[G.OP_EXECUTE_BUNDLES, 1, 5],
+				[G.OP_DRAW_INDEXED_INDIRECT, 1, 20],
+				[G.OP_END_RENDER_PASS],
+				// A pass with one indirect draw has nothing for it to race with, and copies nothing.
+				begin,
+				[G.OP_DRAW_INDEXED_INDIRECT, 1, 20],
+				[G.OP_END_RENDER_PASS],
+			),
+		);
+		expect(buffers[0]?.usage).toBe(indirect | G.BUFFER_USAGE_COPY_SRC);
+		expect(log.filter((entry) => !entry.startsWith('background'))).toEqual([
+			'copy buffer 0 at 0 to buffer 1',
+			'copy buffer 0 at 20 to buffer 2',
+			'begin pass',
+			'draw from buffer 1 at 0',
+			'draw from buffer 2 at 0',
+			'end pass',
+			'begin pass',
+			'draw from buffer 0 at 20',
+			'end pass',
+			'submit',
+		]);
 	});
 });
