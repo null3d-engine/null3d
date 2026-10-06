@@ -374,7 +374,7 @@ These items ran again on the new gate commit fdf14a28 (#347), by the owner's rul
 
 The gate moves to a newer main commit, by the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). It is fdf14a28, the first main commit that holds #347, the refresh meter's allocation fix, and so also #335, the governor's. Firefox and Safari run again on the later main commit that holds their fixes, and their rows name it. Only these items run again there. Every other item keeps its result from 89a1d6295, or from 03a1ad198 for the iPad runs before T-28.
 
-No item is open. Every item that ran again, and each browser fix that joined the gate, is in [Reruns on the gate commit fdf14a28](#reruns-on-the-gate-commit-fdf14a28). The last of them, the cheaper receiver plane (#371), closes the gate when it merges.
+No item is open. Every item that ran again, and each browser fix that joined the gate, is in [Reruns on the gate commit fdf14a28](#reruns-on-the-gate-commit-fdf14a28). The last of them, the cheaper receiver plane (#371), merged on 7 October 2026 as 74d5f4956, so all 17 items are closed.
 
 After each run, a row goes in [the record of tested devices](tested-devices.md).
 
