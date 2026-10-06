@@ -1,6 +1,6 @@
 # D-76: 16-bit depth for the shadow cascades
 
-Status: decided. Date: 2026-10-06. Task: M2-R8. Pending: the shadow image tests of the build with the depth snap, the Automate S25 and Pixel 9 stability rerun with the snap, the iPad runs, and the S25's shadow image tests with Chrome 149 and an older Chrome.
+Status: decided. Date: 2026-10-06. Task: M2-R8. Pending: the Automate S25 and Pixel 9 stability rerun with the snap, and the iPad runs. The S25's shadow image tests with Chrome 149 and an older Chrome are pending too.
 
 ## Question
 
@@ -88,8 +88,8 @@ How the data was produced: `bun run test:images -g "shadow|depth-bias|debug-view
 ## Decision
 
 - The cascades store `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2, on every preset. The tiles stay `depth32float`.
-- In each cascade, the receiver's bias toward the light is at least 1.5 steps of stored depth, in meters, before the one-texel cap. The receiver plane's margin is at least 1.5 steps of depth. The shader gets the step in the shadow uniform's spare `kernel.w` and the depth per meter from the cascade's matrix, so the block keeps its size. A step of 1.5 covers the half step of rounding on each side with room to spare. In S4's last cascade the floor is 21.6 mm. The one-texel cap there is 23 cm, so the cap never cuts the floor.
-- Each cascade's box snaps along the light to whole 16-bit steps, as it snaps across the light to whole texels. Without the snap, the steps slid with the camera, and S4's stability check failed on the Automate S25 and Pixel 9. The stability figures below come from runs with the snap.
+- In each cascade, the receiver's bias toward the light is at least 1.5 steps of stored depth, in meters, before the one-texel cap. The receiver plane's margin is at least 1.5 steps of depth. The shader gets the step in the shadow uniform's spare `kernel.w` and the depth per meter from the cascade's matrix, so the block keeps its size. Both lookups of a receiver in the band between two cascades take each cascade's own floor. A step of 1.5 covers the half step of rounding on each side with room to spare. In S4's last cascade the floor is 21.6 mm. The one-texel cap there is 23 cm, so the cap never cuts the floor.
+- Each cascade's box snaps along the light to whole 16-bit steps, as it snaps across the light to whole texels. Without the snap, the steps slid with the camera, and S4's stability check failed on the Automate S25 and Pixel 9. The Mac's stability table under Data gives the figures with the snap.
 - `?shadowdepth=32` keeps 32-bit cascades, and the `-depth32` bench pages use it, so a device can time the two in one session.
 - WebGPU reads the cascades with `textureGather` through a plain sampler, not with the comparison sampler. So the Adreno comparison fault of decision 28 touches only the tiles there, and the format change does not widen it. WebGL2 reads the cascades through the comparison sampler, as before.
 
