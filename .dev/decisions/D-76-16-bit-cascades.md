@@ -1,6 +1,6 @@
 # D-76: 16-bit depth for the shadow cascades
 
-Status: decided. Date: 2026-10-05. Task: M2-R8. The cost on the iPad and the Automate S25 and Pixel 9, and the S25's check with a Chrome older than 149, are pending.
+Status: decided. Date: 2026-10-06. Task: M2-R8. Pending: the shadow image tests of the build with the depth snap, the Automate S25 and Pixel 9 stability rerun with the snap, the iPad runs, and the S25's shadow image tests with Chrome 149 and an older Chrome.
 
 ## Question
 
@@ -54,12 +54,42 @@ The contact checks of S4's sun, 16-bit against 32-bit cascades on the Mac's GPU 
 
 The gaps move by at most 0.0025 px, and the acne by at most 0.0005 percentage points. A run of 16-bit cascades with no floor gave the same figures as the floor, to four decimals. The likely reason: no caster in the contact scene lies within 2 cm under a receiver. A floor of 1,000 steps failed the last cascade's check on both paths, with a gap of 0.86 px. So the shader does apply the floor. The floor guards against the rounding that the table of steps above computes. A scene whose casters lie a step or less under their receivers would show it.
 
+The Automate S25 (Chrome 149) and Pixel 9 ran S4 on each page and its `-depth32` twin. They ran at the High preset that the visual page picks, with the governor on. The runs are `20261005-142108-bench` and `20261005-152006-bench`, of commit cd216b832, before the depth snap:
+
+| Phone | WebGPU GPU time, 16-bit | 32-bit | Stability, 16-bit (limit 0.05%) | 32-bit |
+| --- | --- | --- | --- | --- |
+| Galaxy S25 | 7.57 ms | 7.63 ms | WebGPU 0.095%, WebGL2 0.085%: fail | 0.000%, 0.001% |
+| Pixel 9 | 6.36 ms | 6.55 ms | WebGPU 0.092%, WebGL2 0.001% | 0.000%, 0.000% |
+
+WebGL2 reports no GPU time, and its CPU time was the same. The contact gap grew from 0.025 to 0.028 px to 0.030 to 0.032 px, under the limit of 0.06 px. On the S25, 219 of 230,400 pixels changed between the two stability frames. They lay from the nearest rows to the farthest. Most were partial values at edges, such as 235 to 255: single reads of the filter that flipped.
+
+The Mac timed commit cd216b832, before the depth snap. Chrome ran each page 5 times on the Mac's GPU, at 144 frames per second, with the load under 3.5. The records are `bench/results/20261005-174632-bench.json` (S4) and `bench/results/20261005-175841-bench.json` (S2):
+
+| Scene and path | Main thread, 16-bit | 32-bit | GPU, 16-bit | 32-bit |
+| --- | --- | --- | --- | --- |
+| S4, WebGPU | 0.08 ms | 0.12 ms | 1.52 ms | 1.55 ms |
+| S4, WebGL2 | 0.24 ms | 0.26 ms | none | none |
+| S2 with 3 cascades, WebGPU | 0.13 ms | 0.16 ms | 0.61 ms | 0.61 ms |
+| S2 with 3 cascades, WebGL2 | 0.30 ms | 0.34 ms | none | none |
+
+The Mac's GPU gave the same failure, and the depth snap fixed it. The table gives the share of pixels whose shadow changed between frames in each benchmark scene's stability check. The limit is 0.05%. Chrome 154 ran them on 6 October 2026:
+
+| Scene and path | 16-bit, no snap | 16-bit, snap | 32-bit, no snap |
+| --- | --- | --- | --- |
+| S4, WebGPU | 0.095% (fail) | 0.0013% | 0.0043% |
+| S4, WebGL2 | 0.085% (fail) | 0.0004% | 0.0004% |
+| S2 with 3 cascades, WebGPU | 0.0039% | 0% | 0% |
+| S2 with 3 cascades, WebGL2 | 0.0017% | 0% | 0% |
+
+With the snap, S4's edge offset was 0.085 and 0.080 px, and its contact gap 0.030 and 0.033 px. Its acne was 0.032% and 0.009%. All are under their limits. The visual checks ran with `bun run --cwd bench test visual.spec.ts`, and with `NULL3D_SWITCHES=shadowdepth=32` for 32-bit.
+
 How the data was produced: `bun run test:images -g "shadow|depth-bias|debug-view|vertex-types|ao-|grading|material-maps|outline|skinning|s4|s5|s1"`, with `CI=1` for SwiftShader. The contact checks ran with `bunx playwright test shadow-contact.spec.ts`, once as built and once with `NULL3D_SWITCHES=shadowdepth=32`.
 
 ## Decision
 
 - The cascades store `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2, on every preset. The tiles stay `depth32float`.
 - In each cascade, the receiver's bias toward the light is at least 1.5 steps of stored depth, in meters, before the one-texel cap. The receiver plane's margin is at least 1.5 steps of depth. The shader gets the step in the shadow uniform's spare `kernel.w` and the depth per meter from the cascade's matrix, so the block keeps its size. A step of 1.5 covers the half step of rounding on each side with room to spare. In S4's last cascade the floor is 21.6 mm. The one-texel cap there is 23 cm, so the cap never cuts the floor.
+- Each cascade's box snaps along the light to whole 16-bit steps, as it snaps across the light to whole texels. Without the snap, the steps slid with the camera, and S4's stability check failed on the Automate S25 and Pixel 9. The stability figures below come from runs with the snap.
 - `?shadowdepth=32` keeps 32-bit cascades, and the `-depth32` bench pages use it, so a device can time the two in one session.
 - WebGPU reads the cascades with `textureGather` through a plain sampler, not with the comparison sampler. So the Adreno comparison fault of decision 28 touches only the tiles there, and the format change does not widen it. WebGL2 reads the cascades through the comparison sampler, as before.
 

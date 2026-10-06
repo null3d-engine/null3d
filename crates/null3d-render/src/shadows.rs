@@ -17,7 +17,9 @@
 //! the world's origin fixes, along the light's axes. As the camera moves, a box then moves in
 //! whole texels, every caster covers the same texels, and shadow edges stay still instead of
 //! shimmering. The snap works in 64-bit floats from the camera's cell, so it holds far from the
-//! origin.
+//! origin. Along the light, the center snaps to whole steps of the depth that the map stores, so
+//! the steps of 16-bit depth stay fixed in the world too, and each caster's stored depth rounds
+//! the same way in every frame.
 //!
 //! Every matrix takes positions relative to the camera, as every shader works, so cascades keep
 //! their precision far from the origin.
@@ -148,7 +150,7 @@ pub struct CascadeBox {
     /// The light's axes: x and y across its view, and z toward the light.
     pub axes: [[f32; 3]; 3],
     /// The sphere's center along each of the light's axes, from the world's origin, with x and y
-    /// on whole texels.
+    /// on whole texels and z on whole steps of 16-bit depth.
     pub center: [f64; 3],
     /// The sphere's radius: half the box's side.
     pub radius: f32,
@@ -399,22 +401,21 @@ pub fn fit_cascades(
     for (cascade, &end) in out.cascades.iter_mut().zip(&ends).take(count) {
         let ([x, y, along], radius) = slice_sphere(lens, aspect, start, end);
         let radius = round_radius(radius * scale);
+        let margin = (2.0 * radius).max(settings.distance);
         let texel = f64::from(2.0 * radius / map_size);
+        let depth_step = f64::from((2.0 * radius + margin) / DEPTH_STEPS);
         let relative: [f32; 3] =
             std::array::from_fn(|k| x * right[k] + y * up[k] - along * back[k]);
         let center = std::array::from_fn(|k| {
             let center = dot_far(position, axes[k]) + f64::from(dot(relative, axes[k]));
-            if k < 2 {
-                (center / texel).round() * texel
-            } else {
-                center
-            }
+            let step = if k < 2 { texel } else { depth_step };
+            (center / step).round() * step
         });
         let bounds = CascadeBox {
             axes,
             center,
             radius,
-            margin: (2.0 * radius).max(settings.distance),
+            margin,
         };
         *cascade = cascade_in(&bounds, position, end, map_size);
         start = end;
@@ -697,6 +698,9 @@ pub enum CascadeDepth {
     Float32,
 }
 
+/// The steps of 16-bit depth from a cascade's far face to its face toward the light.
+const DEPTH_STEPS: f32 = 65_535.0;
+
 /// The fewest steps of the cascade's stored depth that a receiver's bias toward the light and its
 /// plane's margin cover, so that the rounding of a caster's stored depth never shadows the
 /// receiver that it lies under.
@@ -724,7 +728,7 @@ impl CascadeDepth {
     /// A float stores the depths near receivers finer than the plane's margin needs.
     pub const fn step(self) -> f32 {
         match self {
-            CascadeDepth::Unorm16 => 1.0 / 65_535.0,
+            CascadeDepth::Unorm16 => 1.0 / DEPTH_STEPS,
             CascadeDepth::Float32 => 0.0,
         }
     }
@@ -1362,6 +1366,59 @@ mod tests {
                     .collect();
                 assert_still(point, &frames);
             }
+        }
+    }
+
+    /// The depth of `point` in each cascade that holds it, in steps of 16-bit depth, for a camera
+    /// at `position` turned by `yaw` degrees.
+    fn depth_steps_of(point: [f64; 3], position: [f64; 3], yaw: f32) -> Vec<Option<f64>> {
+        let cascades = fit_cascades(
+            &turned(yaw),
+            position,
+            &LENS,
+            16.0 / 9.0,
+            DOWN_AND_ACROSS,
+            &SETTINGS,
+        );
+        let relative: [f32; 3] = std::array::from_fn(|k| (point[k] - position[k]) as f32);
+        cascades
+            .used()
+            .iter()
+            .map(|cascade| {
+                let [x, y, depth] = project(&cascade.view_proj, relative);
+                (x.abs() < 0.99 && y.abs() < 0.99).then(|| f64::from(depth * DEPTH_STEPS))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_moving_camera_keeps_each_point_s_depth_on_the_same_part_of_a_16_bit_step() {
+        for start in [[0.0; 3], FAR_OUT] {
+            // A point on the ground 30 m ahead, in the second and third cascades.
+            let point = [start[0] + 2.1, start[1] - 5.0, start[2] - 30.0];
+            let frames: Vec<Vec<Option<f64>>> = (0..24)
+                .map(|step| {
+                    let step = f64::from(step);
+                    let position = [start[0] + step * 0.071, start[1], start[2] - step * 0.113];
+                    depth_steps_of(point, position, 10.0 + step as f32 * 0.37)
+                })
+                .collect();
+            let mut compared = 0;
+            for cascade in 0..SETTINGS.cascades as usize {
+                let seen: Vec<f64> = frames.iter().filter_map(|f| f[cascade]).collect();
+                for depth in seen.iter().skip(1) {
+                    // The box moves in whole steps, so the point keeps its place within a step,
+                    // up to the rounding of 32-bit floats near 1.
+                    let shift = (depth - seen[0]).rem_euclid(1.0);
+                    assert!(
+                        shift.min(1.0 - shift) < 0.02,
+                        "cascade {cascade}: {} then {depth}",
+                        seen[0]
+                    );
+                    compared += 1;
+                }
+            }
+            assert!(compared > 0);
         }
     }
 
