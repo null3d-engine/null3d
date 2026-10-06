@@ -1,6 +1,6 @@
 # D-85: Indirect draws on Safari 26: each draw reads its own copy of its arguments
 
-Status: decided. Date: 2026-10-06. Task: fix/safari-gate-1006 (an M1 gate failure).
+Status: decided; since [D-87](D-87-webkit-indirect-arguments.md), the copies run only in Apple's WebKit. Date: 2026-10-06. Task: fix/safari-gate-1006 (an M1 gate failure).
 
 ## Question
 
@@ -46,11 +46,11 @@ Chrome 154.0.8037.98 on the Mac at 144 Hz, load 11.9 at the start and 21.2 at th
 2. Begin a new render pass for each indirect draw. It also passed, but each new pass loads and stores the targets again. That costs a tile-based GPU memory traffic for every bucket, in every view and every frame.
 3. Read instances and vertices from storage buffers, so that Safari does not clamp the draws. Compatibility mode allows no storage buffers in vertex shaders, and every pipeline would change.
 4. Two argument buffers taken in turn. Then only Metal's barriers would end a draw's read of its arguments before a later draw's clamp writes them. WebKit's fix says that no barrier can name that read.
-5. Copies in Safari only. Hard rule 14 forbids choosing by browser, and a feature test would need a GPU hang to see the fault.
+5. Copies in Safari only. Hard rule 14 forbids choosing by browser, and a feature test would need a GPU hang to see the fault. Rejected at first; the owner later chose it as a narrow exception to rule 14 ([D-87](D-87-webkit-indirect-arguments.md)), once the copies proved to double S4's GPU time in Chrome.
 
 ## Decision
 
-Option 1. The backend (`gpu/webgpu/indirect-arguments.ts`) finds the pass's indexed indirect draws when the pass begins, its bundles included. It copies each one's arguments into a buffer of its own, which it makes once and keeps. A buffer that indirect draws read is made as a copy source too. A pass with one indirect draw copies nothing. In Chrome, the copies cost no time that the comparison can measure, so every browser takes them.
+Option 1. The backend (`gpu/webgpu/indirect-arguments.ts`) finds the pass's indexed indirect draws when the pass begins, its bundles included. It copies each one's arguments into a buffer of its own, which it makes once and keeps. A buffer that indirect draws read is made as a copy source too. A pass with one indirect draw copies nothing. In Chrome, the copies cost no CPU time that the comparison can measure. The comparison did not look at GPU time, which the copies doubled in S4: [D-87](D-87-webkit-indirect-arguments.md) has the figures, and limits the copies to Apple's WebKit.
 
 ## Consequences
 

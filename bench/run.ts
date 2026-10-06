@@ -66,7 +66,7 @@ import { basename, join, relative, resolve } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
 import { SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES } from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
-import { keepingFocus, launchInWindow } from '../tests/lib/app-window.ts';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
@@ -270,7 +270,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 
 /**
  * Starts the browser: Chrome or Brave in a window, or Chromium without one on SwiftShader. A browser
- * in a window gives focus back to the app that was in front, and keeps its full window size.
+ * in a window gives focus back to the app that was in front.
  */
 function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	if (name === 'chromium')
@@ -284,11 +284,9 @@ function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	});
 }
 
-/** Opens one benchmark page in a fresh tab and waits for its result. */
+/** Opens one benchmark page in a fresh parked window and waits for its result. */
 async function runPage(browser: Browser, url: string, timeoutMs: number): Promise<BenchResult> {
-	const page = await keepingFocus(() =>
-		browser.newPage({ viewport: { width: 1400, height: 800 } }),
-	);
+	const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 	try {
 		await page.goto(url);
 		return await pageResult<BenchResult>(page, timeoutMs);
@@ -392,9 +390,7 @@ async function runSweep(
 	const timeoutMs = 2 * seconds * 1000 + START_MARGIN_MS;
 	const report: string[] = [];
 	// A window larger than the charts; each picture is of its chart alone.
-	const chartPage = await keepingFocus(() =>
-		browser.newPage({ viewport: { width: 1200, height: 800 } }),
-	);
+	const chartPage = await newParkedPage(browser, { viewport: { width: 1200, height: 800 } });
 	for (const scene of options.scenes ?? BENCH_SCENES) {
 		const points: SweepPoint[] = [];
 		const series: Record<string, { x: number; y: number }[]> = {};

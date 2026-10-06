@@ -662,12 +662,16 @@ export class WebGPUBackend {
 				case G.OP_CREATE_BUFFER: {
 					this.counts.objects++;
 					this.buffers[words[a] as number]?.destroy();
-					// A buffer of indirect draws is also a source of copies: a render pass with several
-					// of its draws copies each one's arguments out (see ./indirect-arguments.ts).
+					// Where draws copy their arguments, a buffer of indirect draws is also a source of
+					// copies: a render pass with several of its draws copies each one's arguments out
+					// (see ./indirect-arguments.ts).
 					const usage = words[a + 2] as number;
 					this.buffers[words[a] as number] = device.createBuffer({
 						size: words[a + 1] as number,
-						usage: usage & G.BUFFER_USAGE_INDIRECT ? usage | G.BUFFER_USAGE_COPY_SRC : usage,
+						usage:
+							this.indirect.copying && usage & G.BUFFER_USAGE_INDIRECT
+								? usage | G.BUFFER_USAGE_COPY_SRC
+								: usage,
 					});
 					break;
 				}
