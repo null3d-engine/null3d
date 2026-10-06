@@ -202,7 +202,7 @@ describe('presetSettings', () => {
 			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
-			followMovingCasters: false,
+			followMovingCasters: true,
 			shadowCascadeBlend: 0.1,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,

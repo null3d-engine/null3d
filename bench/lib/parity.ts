@@ -508,12 +508,29 @@ export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): 
 }
 
 /**
+ * One page switch: a name of letters in words joined by hyphens, such as `display-check`, with a
+ * value or none. A value holds letters, digits, `.`, `-`, `_` and `,`, such as `reversed-gl` or
+ * `bc,etc2`.
+ */
+const PAGE_SWITCH = /^[a-z]+(-[a-z]+)*(=[\w.,-]+)?$/i;
+
+/** The form of page switches, for error messages. */
+const SWITCHES_FORM =
+	'names of letters and hyphens, each with =value or none, joined by &, such as shadows=3 or display-check=off&hold';
+
+/**
  * The page switches of a command's `option`, such as `--switches shadows=3`: names, each with a
  * value or none, joined by `&`. It throws unless the text has that form.
  */
 export function readSwitches(text: string | undefined, option: string): string {
-	if (!text || !/^[a-z]+(=[\w.]+)?(&[a-z]+(=[\w.]+)?)*$/i.test(text))
+	if (!text) throw new Error(`${option}: give page switches: ${SWITCHES_FORM}`);
+	if (text.startsWith('?'))
 		throw new Error(`${option}: give page switches without the ?, such as shadows=3 or a=1&b`);
+	const bad = text.split('&').find((entry) => !PAGE_SWITCH.test(entry));
+	if (bad !== undefined)
+		throw new Error(
+			`${option}: ${bad ? `"${bad}" is not a page switch` : 'a switch is empty'}. Give ${SWITCHES_FORM}`,
+		);
 	return text;
 }
 

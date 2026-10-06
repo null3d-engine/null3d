@@ -32,6 +32,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
+import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
@@ -444,14 +445,23 @@ export interface Engine {
 	/**
 	 * Resolves with an image of the next frame that the engine draws, as a PNG file. The thread
 	 * that draws reads the frame back and encodes it, so the page's thread does no work for it when
-	 * a worker draws. In hold mode, and while the engine is paused, the image shows the frame on the
-	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. Fails
-	 * with E1414 once the engine has stopped.
+	 * a worker draws. In hold mode it is an image of the held frame, whose pixels the page keeps, so
+	 * the GPU draws nothing for it. While the engine is paused, the image shows the frame on the
+	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. When no
+	 * new frame comes within a second or two, as after a sketch error, the image shows the frame
+	 * drawn last. Fails with E1414 once the engine has stopped, or when the thread that draws could
+	 * not read the frame back, with the cause that the GPU gave, such as a lost device or too little
+	 * memory.
 	 */
 	capture(): Promise<Blob>;
 	/**
-	 * Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first, for tests. In
-	 * hold mode, it returns the held frame.
+	 * Resolves with the pixels of the next frame that the engine draws, as RGBA8 rows, top row
+	 * first, for tests. The thread that draws waits until its frame loop has taken a new frame, then
+	 * draws that frame again offscreen and reads it back, so captures back to back give newer frames
+	 * even where each readback holds that thread up. In hold mode, and while the engine is paused,
+	 * it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the
+	 * page shows again. When no new frame comes within a second or two, as after a
+	 * sketch error, it returns the frame drawn last.
 	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
@@ -1657,8 +1667,12 @@ async function startEngine(
 				return { width: reply.width, height: reply.height, pixels: reply.pixels };
 			throw captureFailure(reply);
 		};
-		/** Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. */
+		/**
+		 * Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. Hold
+		 * mode's frame is read back already, so the page encodes that and the GPU draws nothing more.
+		 */
 		const captureImage = async (): Promise<Blob> => {
+			if (held) return encodeFrame({ ...held, pixels: held.pixels.slice() }, device.transparent);
 			if (localDrawing && draw) return draw.captureImage(localDrawing, slots);
 			const reply = await rendererHost?.request({ type: 'capture', image: true });
 			if (reply?.type === 'captured-image') return reply.image;
@@ -1745,7 +1759,6 @@ async function startEngine(
 			},
 			async capture() {
 				try {
-					if (!stopped()) await nextFrame(slots, hold !== undefined);
 					if (stopped()) throw new Error('the engine has stopped');
 					return await captureImage();
 				} catch (error) {
@@ -1788,27 +1801,6 @@ async function startEngine(
 		await stop();
 		throw e;
 	}
-}
-
-/**
- * Resolves once the thread that draws has taken a frame after this call. It resolves at once when
- * no new frame comes: in hold mode, and while the engine is paused or stopped.
- */
-function nextFrame(slots: Int32Array, holding: boolean): Promise<void> {
-	const taken = Atomics.load(slots, Slot.FramesTaken);
-	return new Promise((resolve) => {
-		const check = () => {
-			if (
-				holding ||
-				Atomics.load(slots, Slot.Paused) !== 0 ||
-				Atomics.load(slots, Slot.Running) === 0 ||
-				Atomics.load(slots, Slot.FramesTaken) !== taken
-			)
-				resolve();
-			else requestAnimationFrame(check);
-		};
-		check();
-	});
 }
 
 /**

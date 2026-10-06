@@ -840,7 +840,7 @@ impl InstanceBatch {
         }
         let parity = (frame & 1) as usize;
         if frame != self.frame {
-            if frame != self.frame.wrapping_add(1) {
+            if frame != crate::frames::next_frame(self.frame) {
                 // After a gap the other buffer may be stale: recompute every active row.
                 self.dirty.set_range(0, self.active);
                 self.dirty_any = true;
@@ -2048,6 +2048,26 @@ mod tests {
         }
         // A batch at rest does no work.
         batch.update(&jobs, 4, &mut cells);
+        assert!(batch.changed_ranges().is_empty());
+    }
+
+    #[test]
+    fn a_batch_at_rest_does_no_work_where_the_frame_count_goes_round() {
+        use crate::frames::{FIRST_FRAME, previous_frame};
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut batch = InstanceBatch::new(64, false, false, 0, 0, 1.0);
+        let last = previous_frame(FIRST_FRAME);
+        for frame in [
+            previous_frame(previous_frame(last)),
+            previous_frame(last),
+            last,
+        ] {
+            batch.update(&jobs, frame, &mut cells);
+        }
+        assert!(batch.changed_ranges().is_empty());
+        // The first frame follows the last one: no gap, so no row is recomputed.
+        batch.update(&jobs, FIRST_FRAME, &mut cells);
         assert!(batch.changed_ranges().is_empty());
     }
 
