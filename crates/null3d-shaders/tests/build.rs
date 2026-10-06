@@ -843,14 +843,14 @@ fn a_depth_array_with_a_comparison_sampler_becomes_a_glsl_array_shadow_sampler()
         source.contains("uniform highp sampler2DArrayShadow _group_0_binding_0_fs;"),
         "{source}"
     );
-    // GLSL ES 3.00 has no textureLod for array shadow samplers, so the comparison at level 0
-    // reads with zero gradients.
-    assert!(
-        source.contains("textureGrad(_group_0_binding_0_fs, vec4("),
-        "{source}"
-    );
-    assert!(
-        source.contains("texture(_group_0_binding_0_fs, vec4("),
+    // GLSL ES 3.00 has no textureLod for array shadow samplers. The comparison at level 0 reads
+    // at the texture's own level instead of with zero gradients, as the map has one level.
+    assert!(!source.contains("textureGrad("), "{source}");
+    assert_eq!(
+        source
+            .matches("texture(_group_0_binding_0_fs, vec4(")
+            .count(),
+        2,
         "{source}"
     );
 }
