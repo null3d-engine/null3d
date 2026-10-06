@@ -72,11 +72,20 @@ export class RefreshMeter {
 		return this.matched;
 	}
 
-	/** Adds a frame callback's timestamp; returns the refresh rate each time the samples fill up. */
+	/**
+	 * Adds a frame callback's timestamp; returns the refresh rate each time the samples fill up. It
+	 * runs every frame, so it stores the interval itself: a fraction passed to a call that the
+	 * browser does not inline becomes a number object.
+	 */
 	tick(timestamp: number): number | undefined {
 		const last = this.last[0] as number;
 		this.last[0] = timestamp;
-		return last >= 0 && timestamp > last ? this.add(timestamp - last) : undefined;
+		if (last < 0 || timestamp <= last) return undefined;
+		this.intervals[this.count++ % this.samples] = Math.min(
+			Math.round((timestamp - last) * 1000),
+			LONGEST_INTERVAL,
+		);
+		return this.measure();
 	}
 
 	/**
@@ -84,8 +93,13 @@ export class RefreshMeter {
 	 * samples fill up.
 	 */
 	add(ms: number): number | undefined {
+		this.intervals[this.count++ % this.samples] = Math.min(Math.round(ms * 1000), LONGEST_INTERVAL);
+		return this.measure();
+	}
+
+	/** The refresh rate of the samples once they fill up, or undefined until then. */
+	private measure(): number | undefined {
 		const { samples } = this;
-		this.intervals[this.count++ % samples] = Math.min(Math.round(ms * 1000), LONGEST_INTERVAL);
 		if (this.count % samples !== 0) return undefined;
 		this.sorted.set(this.intervals);
 		this.sorted.sort();
