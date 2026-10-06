@@ -52,6 +52,7 @@ impl<B: FrameBuilder> World<B> {
             positions: Some(&deltas),
             normals: None,
             tangents: None,
+            colors: None,
         };
         let settings = self.renderer.settings_mut();
         let mesh = settings.meshes_mut().add_morphed(&g, &targets).unwrap() + 1;

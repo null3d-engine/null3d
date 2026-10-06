@@ -290,6 +290,7 @@ export const MESH_ARRAYS_WEIGHTS = 1024;
 export const MORPH_POSITIONS = 1;
 export const MORPH_NORMALS = 2;
 export const MORPH_TANGENTS = 4;
+export const MORPH_COLORS = 8;
 export const MORPH_MAX_WEIGHTS = 65536;
 export const MORPH_MAX_TARGETS = 256;
 export const MORPH_WEIGHTS_PER_JOINT = 3;
