@@ -68,6 +68,11 @@ const COUNT_ROOM = params.get('room') !== 'off';
 const COUNT_EACH = params.get('room') === 'each';
 /** The cap of each count of the room. */
 const CAP = params.get('room') === 'full' ? FULL_COUNT : ROOM_CAP;
+/**
+ * True when the engine's threads share its memory. The single-threaded build takes no shared
+ * memory, so its starts never go past the room: they would only split the address space.
+ */
+const THREADED = params.get('threads') !== 'off';
 
 /** One round of starts and stops, and the counts of the room after it. */
 interface RoundResult {
@@ -382,8 +387,10 @@ run('shared-memory', async () => {
 	// such memory never stops one. A count that the browser refused below its cap is the whole room;
 	// one that reached the cap is not, so the starts then go past the most room seen.
 	const room = before?.error === undefined ? MOST_ROOM_SEEN : before.room;
+	const past = Math.max(MIN_CYCLES, room + EXTRA_CYCLES);
 	const cycles = Number(
-		params.get('cycles') ?? (before ? Math.max(MIN_CYCLES, room + EXTRA_CYCLES) : UNCOUNTED_CYCLES),
+		params.get('cycles') ??
+			(before ? (THREADED ? past : Math.min(past, UNCOUNTED_CYCLES)) : UNCOUNTED_CYCLES),
 	);
 	const kinds: Partial<Record<Kind, KindResult>> = {};
 	for (const kind of KINDS) {

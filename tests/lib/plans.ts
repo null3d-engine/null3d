@@ -1572,14 +1572,16 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
  * memory that the browser did not get back from the stopped engines. A little room that the first
  * round lost and the second round kept is lost address space, not memory that the engines hold, so
- * it gets a note through `note` instead; more than that fails. Room that engines on kept canvases
- * left held gets a note too: their starts go past the room, so a start fails when that memory stops
- * it.
+ * it gets a note through `note` instead; more than that fails where the engines are `threaded`. The
+ * single-threaded build takes no shared memory, so any room it loses is address space. Room that
+ * engines on kept canvases left held gets a note too: their starts go past the room, so a start
+ * fails when that memory stops it.
  */
 export function restartProblems(
 	result: RestartResult,
 	start: RestartStart,
 	note?: (text: string) => void,
+	threaded = true,
 ): string[] {
 	const engine = result.kinds[start];
 	if (!engine) return ['the page started no engine'];
@@ -1606,7 +1608,7 @@ export function restartProblems(
 		problems.push(
 			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
 		);
-	else if ((result.room ?? 0) - again.room > ROOM_LOST_ONCE)
+	else if (threaded && (result.room ?? 0) - again.room > ROOM_LOST_ONCE)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}: ${lostText}, and for ${again.roomLater} after ${again.cycles} more, more than the ${ROOM_LOST_ONCE} that lost address space explains`,
 		);
@@ -1718,7 +1720,12 @@ export function judge(
 		case 'stats':
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
-			return restartProblems(result as unknown as RestartResult, check.start, context?.note);
+			return restartProblems(
+				result as unknown as RestartResult,
+				check.start,
+				context?.note,
+				check.mode.build === 'threaded',
+			);
 		case 'same-canvas':
 			return sameCanvasProblems(result as unknown as SameCanvasResult, check.mode);
 		case 'memory':

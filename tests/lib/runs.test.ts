@@ -962,6 +962,14 @@ describe('the checks plan', () => {
 		expect(judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING)).toEqual([
 			'the browser did not get back the memory of stopped engines: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more, more than the 2 that lost address space explains',
 		]);
+		const singleThreaded = items.find((item) => item.id === 'restarts-single-threaded');
+		if (!singleThreaded) throw new Error('the plan lacks the single-threaded restart page');
+		expect(
+			judge(singleThreaded.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+		).toEqual([]);
+		expect(notes.at(-1)).toBe(
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+		);
 		expect(judge(restart.check, lostOnce({ room: 4, roomLater: 1 }), NONE_MISSING)).toEqual([
 			'the browser did not get back the memory of stopped engines in two rounds: it had room for 6 shared memories before 10 starts and stops, and for 2 after, then for 1 after 10 more within 31 s',
 		]);
