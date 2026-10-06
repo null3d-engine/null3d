@@ -7,7 +7,7 @@
 import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
-import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
+import { captureWebGPU, readbackWebGL2 } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
@@ -249,20 +249,15 @@ export class WebGPUSceneRenderer implements Renderer {
 	async capture(): Promise<{ width: number; height: number; pixels: Uint8Array }> {
 		const frame = await this.frames.builtTaken();
 		const { width, height } = this.canvas;
-		const texture = this.device.createTexture({
-			size: [width, height],
-			format: this.format,
-			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+		const pixels = await captureWebGPU(this.device, width, height, this.format, (texture) => {
+			this.backend.canvasTarget = texture;
+			try {
+				this.frames.replay(frame);
+			} finally {
+				this.backend.canvasTarget = undefined;
+				this.backend.resetCounts();
+			}
 		});
-		this.backend.canvasTarget = texture;
-		try {
-			this.frames.replay(frame);
-		} finally {
-			this.backend.canvasTarget = undefined;
-			this.backend.resetCounts();
-		}
-		const pixels = await readbackWebGPU(this.device, texture);
-		texture.destroy();
 		return { width, height, pixels };
 	}
 
