@@ -4,7 +4,7 @@ Status: decided by the owner on 2026-10-06, in the morning, Singapore time. Date
 
 ## Question
 
-The M1 gate ran on the night of 5 to 6 October 2026, on the gate commit 89a1d6295 (#321). Most items passed. One check failed on a known cause, and some device runs gave no valid result. The S24+'s cold start missed its target by 32 and 57 ms. Must every item run again on a commit with the fix? Does the cold start fail item 5?
+The M1 gate ran on the night of 5 to 6 October 2026, on the gate commit 89a1d6295 (#321). Most items passed. One check failed on a known cause, and some device runs gave no valid result. The S24+'s cold start missed its target by 32 and 57 ms. Must every item run again on a commit with the fix? Does the cold start fail item 5? The owner also saw the shadows trail the cars in S4 at Low. Does that hold back the gate?
 
 ## Rule
 
@@ -27,6 +27,7 @@ The owner decides. [Releases](../releases.md#m1-exit-gate) says that every item 
 | --- | --- | --- |
 | 1 | The gate commit moves to a newer main commit that holds the governor's allocation fix (#335). Only the items that failed, or that gave no valid result, run again there. The items that passed keep their results from 89a1d6295. The iPad items that ran before the cold-load fix keep theirs from 03a1ad198, which differs from 89a1d6295 only in how the start's download begins | [Releases](../releases.md#the-owners-rulings-of-6-october-2026) |
 | 2 | T-28's cold-start target on the S24+ in Chrome on Slow 4G is 5.5 s, up from 4.5 s. The warm target stays at 1 s. So the gate commit's 4,532 and 4,557 ms pass | [D-06](D-06-success-targets.md#addendum-2026-09-30-time-to-first-frame-t-28), [Releases](../releases.md#the-owners-rulings-of-6-october-2026) |
+| 3 | The shadows that trail the cars in S4 at Low do not hold back the gate. They are a known finding. At Low, the far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, on fix/shadow-trail (944bb64ef), and lands in M2 | [Releases](../releases.md#results-on-the-gate-commit-89a1d6295) |
 
 The items that run again on the new gate commit:
 
