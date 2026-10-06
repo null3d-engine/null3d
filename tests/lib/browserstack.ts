@@ -75,6 +75,8 @@ export interface SessionNames {
 	session: string;
 	/** The tunnel's identifier, when BrowserStack Local runs with one. */
 	localIdentifier?: string;
+	/** Whether the cloud keeps the session's network log, as a HAR file. */
+	networkLogs?: boolean;
 }
 
 /**
@@ -100,6 +102,7 @@ export function capabilities(device: CloudDevice, names: SessionNames): Record<s
 			idleTimeout: IDLE_TIMEOUT_SECONDS,
 			video: 'true',
 			consoleLogs: 'info',
+			...(names.networkLogs && { networkLogs: 'true' }),
 			acceptInsecureCerts: 'true',
 		},
 	};
@@ -293,7 +296,7 @@ export function deviceProblems(
 export function browserStackSessions(
 	devices: readonly CloudDevice[],
 	credentials: Credentials,
-	{ build, localIdentifier }: Omit<SessionNames, 'session'>,
+	names: Omit<SessionNames, 'session'>,
 	log: (line: string) => void = console.log,
 ): CloudSessions {
 	const api = automateApi(credentials);
@@ -302,8 +305,7 @@ export function browserStackSessions(
 		new Map(devices.map((device) => [device.runner, device])),
 		driver,
 		{
-			capabilities: (device, session) =>
-				capabilities(device, { build, session, ...(localIdentifier && { localIdentifier }) }),
+			capabilities: (device, session) => capabilities(device, { ...names, session }),
 			needsAcceptSsl,
 			acceptSslScript: ACCEPT_SSL_SCRIPT,
 			link: async (id) => (await api.session(id)).browser_url,
