@@ -543,7 +543,7 @@ class EngineWorker {
 
 	constructor(
 		readonly worker: Worker,
-		role: string,
+		readonly role: string,
 		events: WorkerEvents,
 	) {
 		this.readyPromise = new Promise((resolve, reject) => {
@@ -636,6 +636,10 @@ class EngineWorker {
  */
 async function stopWorkers(workers: readonly EngineWorker[], waitFor: readonly EngineWorker[]) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	const t0 = performance.now();
+	const trace: { role: string; ms: number | null }[] = waitFor.map((w) => ({ role: w.role, ms: null }));
+	(globalThis as { __null3dStopTrace?: unknown }).__null3dStopTrace = trace;
+	waitFor.forEach((w, i) => void w.stopped().then(() => { trace[i]!.ms = Math.round(performance.now() - t0); }));
 	await Promise.race([
 		Promise.all(waitFor.map((worker) => worker.stopped())),
 		new Promise((resolve) => {
