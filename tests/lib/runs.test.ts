@@ -951,14 +951,27 @@ describe('the checks plan', () => {
 		]);
 		const notes: string[] = [];
 		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
-		const lostOnce = (again: object) =>
-			result({ kinds: { engine: { ...engine, roomLater: 2, again: { ...engine, ...again } } } });
+		const lostOnce = (again: object, roomLater = 2) =>
+			result({ kinds: { engine: { ...engine, roomLater, again: { ...engine, ...again } } } });
 		expect(
-			judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+			judge(restart.check, lostOnce({ room: 4, roomLater: 4 }, 4), NONE_MISSING, context),
 		).toEqual([]);
 		expect(notes).toEqual([
-			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 4 after, and for 4 after 10 more',
 		]);
+		expect(judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING)).toEqual([
+			'the browser did not get back the memory of stopped engines: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more, more than the 2 that lost address space explains',
+		]);
+		// Room that the second round gets back was late, not lost.
+		expect(judge(restart.check, lostOnce({ room: 2, roomLater: 5 }), NONE_MISSING)).toEqual([]);
+		const singleThreaded = items.find((item) => item.id === 'restarts-single-threaded');
+		if (!singleThreaded) throw new Error('the plan lacks the single-threaded restart page');
+		expect(
+			judge(singleThreaded.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+		).toEqual([]);
+		expect(notes.at(-1)).toBe(
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+		);
 		expect(judge(restart.check, lostOnce({ room: 4, roomLater: 1 }), NONE_MISSING)).toEqual([
 			'the browser did not get back the memory of stopped engines in two rounds: it had room for 6 shared memories before 10 starts and stops, and for 2 after, then for 1 after 10 more within 31 s',
 		]);
@@ -1472,7 +1485,7 @@ describe('the memory plan', () => {
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
 		expect(items[0]).toEqual({
 			id: 'room-256',
-			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&maximum=4096',
+			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&room=full&maximum=4096',
 			timeoutSeconds: 150,
 			check: { kind: 'room', maximumMiB: 256 },
 		});
