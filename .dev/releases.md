@@ -311,6 +311,7 @@ These items ran again on the new gate commit fdf14a28 (#347), by the owner's rul
 | --- | --- | --- | --- | --- |
 | 4 | Mac, Chrome | Allocation, S4 on WebGPU and on WebGL2 (gate steps `allocation-s4-webgpu` and `allocation-s4-webgl2`, record 20261006-021354-gate), at a 1-minute load of about 4 | WebGL2: sketch worker 241.6 bytes per frame, render worker 149.6. The governor's judge step, 4.1 of 4 before, no longer allocates. WebGPU: sketch worker 244.1, render worker 633.9, with the replay at 298.7 of 320 against 296.9 on 89a1d6295 | Pass |
 | Note | iPad Pro 11-inch, Safari 26.6.2 | A heat check before the soak: S4 at Low on WebGPU with the governor off, 60 seconds (run 20261006-021836-bench). Safari first refused memory (E1109) and was restarted | 60.0 fps in 60 of 60 seconds, 10.65 ms of GPU time per frame, 56 draw calls. The iPad was cool again | Recorded |
+| 4 | iPad Pro 11-inch, Safari 26.6.2 | The soak plan on S4: the GPU-loss pages and two 30-minute soaks, at the preset the engine chose, charging, with Limit Frame Rate on (run 20261006-022207-soak) | 12 of 12 passed. The 10 GPU-loss pages each counted 1 GPU loss, drew again and matched their references. WebGPU: 30 of 30 minutes, no GPU loss, median 59.3 fps, lowest 58.5 in minute 3, 10.2 to 13.1 ms of GPU time per frame, WebAssembly memory flat at 19.2 MiB. WebGL2: 30 of 30 minutes, no GPU loss, median 50.0 fps, lowest 44.1 in minute 1, memory flat at 21.1 MiB. No engine failure. The screen ran at 59 Hz. A soak records no governor steps, so it cannot show whether the 34 steps of 03a1ad198 return | Pass. It replaces the invalid soak on 89a1d6295 |
 | All | GitHub | The test switches' names (#354, merge commit 493b175a0, merged by the owner) | The device runner, the bench tools and the image tests accept switch names with hyphens, such as `display-check=off`. No device run is needed | Done |
 
 ### What the gate still needs
@@ -321,8 +322,7 @@ The open items, with the helper that owns each one. This list changes as each it
 
 | Item | What runs | Commit | Owner | State |
 | --- | --- | --- | --- | --- |
-| 4 | The iPad's soak plan on S4, on a cool iPad | fdf14a28 | ipad-runner-b | Running since 10:22 local time, about 65 minutes |
-| 3 | The iPad's GPU time comparison of S4 at Low against f46c0686, A, B, A, B. A run that drops to 30 fps does not count | fdf14a28 | ipad-runner-b | Next, after the soak |
+| 3 | The iPad's GPU time comparison of S4 at Low against f46c0686, A, B, A, B. A run that drops to 30 fps does not count | fdf14a28 | ipad-runner-b | Running, after a 5-minute rest |
 | 1 | Firefox on the Mac through the device runner, after the fix for the room and GPU times (#350) merges | 156c0621, the first main commit with #350 | ff-room | #350 merged; the rerun is starting |
 | 1 | Safari on the Mac, the 2 pages of the 100,000-sprite scene, after the fix for WebKit bug 321876 merges. Its 4 restart pages passed again with the display awake | The first main commit with the fix | safari-gate | Fix in progress on fix/safari-gate-1006 |
 | 1, 4 | The fix for the memory that piles up in Safari on the iPhone and the iPad (#352). Once it merges: the cloud iPhone 16 runs the 12 engine pages that failed before, and the owner's iPad runs its test pages without a Safari restart. This morning's heat check on the iPad met the same pile-up (E1109) | 55ab8d73, the merge of #352 | cloud-runner-e (iPhone 16), ipad-runner-b (iPad) | Merged by the owner as 55ab8d73. The iPhone 16 and iPad runs come next |
