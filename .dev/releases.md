@@ -337,7 +337,7 @@ The open items, with the helper that owns each one. This list changes as each it
 
 After each run, a row goes in [the record of tested devices](tested-devices.md).
 
-The final pass starts with a full CI run of the final main commit, started by hand with `gh workflow run ci.yml --ref main`. The gate's `workflows` step reads that run, because the fixes merge by hand and do not pass through the merge queue.
+The final pass starts with a full CI run of the final main commit, started by hand with `gh workflow run ci.yml --ref main` before anything else merges. The CI change of #355 (7630ddb5d) changed what the gate's `workflows` step counts. It counts only a full CI run of the gate commit: the merge queue's run, or one started by hand. Main's own run after a merge keeps only the caches warm, so it does not count ([D-86](decisions/D-86-ci-runs-per-event.md)). The fixes merge by hand today, so they get no queue run.
 
 ### The owner's changes of 4 October 2026
 
