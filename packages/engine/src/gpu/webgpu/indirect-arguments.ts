@@ -5,13 +5,36 @@
 // race: a draw can run with the next draw's counts, or a mix of the two, and a large draw followed
 // by another stalls the GPU until macOS resets it. Before such a pass begins, the backend copies
 // each draw's arguments into a small buffer of its own, so every draw gets its own slot.
+//
+// It does so only in Apple's WebKit. Chrome checks each indexed indirect draw on the GPU before
+// its render pass, with one small compute pass for each buffer that the pass's draws read. A buffer
+// for each draw then costs a compute pass for each draw, and the render passes no longer overlap:
+// in Chrome on the Mac that doubled the GPU time of a scene with shadow cascades. No feature test
+// can show the fault without hanging the GPU, so the user agent decides.
 
 import * as G from '../../generated/gpu';
+import { isAppleWebKit, webKitVersion } from '../../shared/webkit';
 
 /** Bytes of one indexed indirect draw's arguments: five 32-bit words. */
 const ARGUMENT_BYTES = 20;
 /** The id of a draw whose buffer did not exist when the pass began, which draws from its own buffer. */
 const NO_SOURCE = 0xffffffff;
+/**
+ * The first Safari version, as WebKit's user agents number it, whose WebKit has the fix. No
+ * release had it in October 2026, so every version copies.
+ */
+const FIRST_FIXED_WEBKIT = Number.POSITIVE_INFINITY;
+
+/**
+ * Whether a browser with `userAgent` runs Apple's WebKit from before the fix, which needs each
+ * indirect draw's own copy. A WebKit that gives no version is taken to need it. Browsers on iOS
+ * that freeze the version they give at 18 then keep copying after the fix, which costs only time.
+ */
+export function needsOwnArguments(userAgent: string): boolean {
+	if (!isAppleWebKit(userAgent)) return false;
+	const version = webKitVersion(userAgent);
+	return version === undefined || version < FIRST_FIXED_WEBKIT;
+}
 
 export class IndirectArguments {
 	/** The buffers of copied arguments, one for each indirect draw of the largest pass so far. */
@@ -22,7 +45,14 @@ export class IndirectArguments {
 	private count = 0;
 	private next = 0;
 
-	constructor(private readonly device: GPUDevice) {}
+	/**
+	 * Copies when `copying` is true, as Apple's WebKit from before the fix needs. Otherwise each
+	 * draw reads the buffer that the draw list names.
+	 */
+	constructor(
+		private readonly device: GPUDevice,
+		readonly copying = needsOwnArguments(globalThis.navigator?.userAgent ?? ''),
+	) {}
 
 	/**
 	 * Finds the indirect draws of the render pass whose commands start at word `from` of `words`,
@@ -39,6 +69,7 @@ export class IndirectArguments {
 	): void {
 		this.count = 0;
 		this.next = 0;
+		if (!this.copying) return;
 		for (let i = from; i < end; ) {
 			const header = words[i] as number;
 			const op = header & 0xff;
