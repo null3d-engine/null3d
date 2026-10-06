@@ -33,6 +33,8 @@ The owner decides. [Releases](../releases.md#m1-exit-gate) says that every item 
 | 6 | The fix for the shadows that trail the cars in S4 at Low is part of the gate, and it replaces ruling 3. At Low, the far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, on fix/shadow-trail. The gate needs its pull request merged, then a check on the owner's iPad after the gate's soak and GPU time comparison: S4 by eye, then a timing of main against the cache | [Releases](../releases.md#what-the-gate-still-needs) |
 | 7 | The gate holds on the iPad's GPU time of S4 at Low on WebGPU. On fdf14a28 it is 0.83 ms (8%) above the older commit f46c0686, with the same 56 draw calls per frame. That rise must be found and fixed before the gate passes | [Releases](../releases.md#what-the-gate-still-needs) |
 | 8 | The shadow fix's cost on the owner's iPad is accepted: S4 at Low on WebGPU takes about 0.3 ms more per frame with #359 (11.70 to 11.73 ms against main's 11.42 ms), with 63 draw calls against 56. This cost stays apart from the rise of ruling 7 | [Releases](../releases.md#what-the-gate-still-needs) |
+| 9 | To win back the iPad's GPU time, the cascade blend may become cheaper, as long as it looks the same | [Releases](../releases.md#what-the-gate-still-needs) |
+| 10 | The coordinator may finish the gate without the owner. It starts a full CI run on the final main commit, then merges the gate's records and marks M1 done. If anything fails or needs judgement, it stops and leaves a summary for the owner | [Releases](../releases.md#what-the-gate-still-needs) |
 
 The items that run again on the new gate commit:
 

@@ -366,4 +366,6 @@ The owner ruled on the gate's results on 6 October 2026 ([D-83](decisions/D-83-g
 - The fix for the shadows that trail the cars in S4 at Low is part of the gate. An earlier ruling that day had left it for M2.
 - The fix for the memory that piles up in Safari on the iPhone and the iPad (#352) joins the gate. It needs evidence on the merged main from the cloud iPhone 16 and the owner's iPad.
 - The gate holds on the iPad's GPU time of S4 at Low. The 8% rise on fdf14a28 must be found and fixed before the gate passes.
+- To win back that GPU time, the cascade blend may become cheaper, as long as it looks the same.
+- The coordinator may finish the gate without the owner. It starts a full CI run on the final main commit, then merges the gate's records and marks M1 done. If anything fails or needs judgement, the coordinator stops and leaves a summary for the owner.
 - The browser fixes for memory, speed and faults in progress on 6 October join the gate, and new features wait for the next week. The gate's final pass runs on the main commit of the last of these fixes to merge.
