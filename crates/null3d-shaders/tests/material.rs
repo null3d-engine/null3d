@@ -620,7 +620,8 @@ fn custom_materials_build_arrays_without_sized_array_types_in_glsl() {
         for program in variant.glsl.iter().flat_map(|programs| programs.values()) {
             checked += 1;
             for (stage, fragment) in [(&program.vertex, false), (&program.fragment, true)] {
-                let breaks = precision::precision_breaks(&stage.source, fragment);
+                let mut breaks = precision::precision_breaks(&stage.source, fragment);
+                breaks.extend(precision::newer_built_in_calls(&stage.source));
                 assert!(breaks.is_empty(), "{name}: {breaks:#?}\n{}", stage.source);
             }
         }

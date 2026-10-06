@@ -121,8 +121,10 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -prepass, the depth prepass, for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
- * wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * end in -prepass, the depth prepass, for those that end in -blend-off, S4's shadow cascades with
+ * no band between them, for those that end in -timed, the time of each WebGL call, and for those
+ * that end in -synced, that time with a wait for the browser's GPU process after each call, and the
+ * GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -138,6 +140,16 @@ const PAGES = {
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
 	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
 	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
+	'null3d-webgpu-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowCascadeBlend=0',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowCascadeBlend=0',
+		api: 'webgl2',
+	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
@@ -253,9 +265,14 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 /**
  * The glTF model scenes that three.js's WebGPURenderer draws wrong, so its WebGLRenderer's frame is
  * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
- * attributes black, and its WebGLRenderer draws them as null3D does.
+ * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
+ * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
+ * and the normals' deltas.
  */
-const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['meshopt-khr']);
+const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
+	'meshopt-khr',
+	'morph-colors',
+]);
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types

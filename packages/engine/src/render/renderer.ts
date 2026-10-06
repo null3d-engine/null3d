@@ -179,7 +179,7 @@ class WebGPURenderer implements Renderer {
 		pass.setColor(view, undefined, true, true, color, 0);
 		pass.setTimestampWrites(this.timer?.passWrites(true));
 		encoder.beginRenderPass(pass.descriptor).end();
-		this.timer?.resolve(encoder);
+		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
 		this.timer?.afterSubmit();
 	}

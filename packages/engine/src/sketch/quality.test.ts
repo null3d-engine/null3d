@@ -233,6 +233,7 @@ describe('SketchQuality.lower', () => {
 			shadowFilter: low.shadowFilter,
 			farCascadeInterval: low.farCascadeInterval,
 			followMovingCasters: low.followMovingCasters,
+			shadowCascadeBlend: low.shadowCascadeBlend,
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
 			softwareOcclusion: low.softwareOcclusion,
@@ -272,9 +273,9 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale and governor, and Low and Medium the same
-		// ambient occlusion scale.
-		const same = ['maxRenderScale', 'aoScale', 'governor'];
+		// Every preset has the same highest render scale, cascade blend and governor, and Low and
+		// Medium the same ambient occlusion scale.
+		const same = ['maxRenderScale', 'shadowCascadeBlend', 'aoScale', 'governor'];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);
 		// The next frame holds for its pipelines, and its handlers hear of a new preset.

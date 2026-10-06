@@ -9,7 +9,7 @@ import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
-import { Pipelines, type RenderTemplate } from './pipelines';
+import { Pipelines, type RenderTemplate, SKIN_BUILDS } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
 import { StagingRing } from './staging';
 import { UploadRoutes } from './upload-routes';
@@ -423,7 +423,7 @@ export class WebGPUBackend {
 	private submit(): void {
 		if (!this.encoder && !this.staging.pending) return;
 		const encoder = this.commandEncoder();
-		this.timer?.resolve(encoder);
+		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;
@@ -498,7 +498,7 @@ export class WebGPUBackend {
 	 */
 	precompile(feature: string, module: FirstUseShaders): void {
 		if (feature === 'skinning') {
-			for (const bits of [0, G.PERMUTATION_VERTEX_TANGENT])
+			for (const bits of SKIN_BUILDS)
 				this.device
 					.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN, bits))
 					.catch(() => undefined);
