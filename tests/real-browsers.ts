@@ -93,7 +93,8 @@
 //   --parallel <n>      at most n runners at once, as a device cloud plan's parallel sessions
 //                       allow; 1 by default with --cloud, and no limit without it
 //   --cloud-build <name> the build that groups the run's sessions on the cloud's dashboard
-//   --attended          someone is at the devices of --lan, so a plan whose pages end their tab,
+//   --network-logs      the cloud keeps each session's network log, which the dashboard shows
+//   --attended         someone is at the devices of --lan, so a plan whose pages end their tab,
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
@@ -251,6 +252,8 @@ export interface Options {
 	parallel?: number;
 	/** The build that groups a cloud run's sessions on the cloud's dashboard, when given. */
 	cloudBuild?: string;
+	/** The cloud keeps each session's network log, which slows the session's loads a little. */
+	networkLogs?: boolean;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -260,7 +263,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--attended] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -321,6 +324,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--cloud') options.cloud = list(args[++i]);
 		else if (arg === '--parallel') options.parallel = wholeNumber(arg, args[++i]);
 		else if (arg === '--cloud-build') options.cloudBuild = args[++i];
+		else if (arg === '--network-logs') options.networkLogs = true;
 		else if (arg === '--attended') options.attended = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
 		else options.mac.push(arg);
@@ -1476,7 +1480,11 @@ function cloudSessions(options: Options): CloudSessions | undefined {
 	return browserStackSessions(
 		options.cloud.map((name) => cloudDevice(name)!),
 		readCredentials(),
-		{ build, ...(localIdentifier && { localIdentifier }) },
+		{
+			build,
+			...(localIdentifier && { localIdentifier }),
+			...(options.networkLogs && { networkLogs: true }),
+		},
 	);
 }
 
