@@ -486,8 +486,10 @@ jobs:
     if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
-    # each time the runner replaces it. The limit leaves room for that, and for a plan that grows.
-    timeout-minutes: 20
+    # each time the runner replaces it. The restart pages wait for Safari to give back the memory
+    # of stopped engines, and at their slowest each one takes 7 minutes; a shard holds 4 of them.
+    # The limit leaves room for all of that at once, and for a plan that grows.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
