@@ -42,6 +42,13 @@
 //! moving caster ([`MovingCasters`]) touches its box, or touched the box when its layer drew. Only
 //! far cascades whose boxes hold still casters alone keep their layers.
 //!
+//! With the cache ([`ShadowQuality::cache`]), each far cascade also has a cache layer, a depth
+//! layer of its own size. In its turn, the cascade draws its still casters into the cache. Each
+//! frame that draws its layer copies the cache into it and draws only the moving casters over it,
+//! in the box that the cache holds. So a moving caster's shadow follows it in every frame, and the
+//! still casters, most of a scene, still draw only in turns. The copy is a draw of one triangle
+//! over the layer that writes each texel's depth from the cache, which works on every GPU path.
+//!
 //! # Receivers
 //!
 //! Behind a perspective camera, a receiver finds its cascade by its distance from the camera, which
@@ -122,6 +129,12 @@ pub struct ShadowQuality {
     /// shadows follow their casters. False keeps every far cascade to its turns, and a moving
     /// caster's shadow there stays where the layer last drew it until the next turn.
     pub follow_movers: bool,
+    /// True when each far cascade keeps the depth of its still casters in a cache layer of its
+    /// own. A far cascade then draws its still casters only in its turns, into the cache, and in
+    /// each frame that it draws, it copies the cache into its layer and draws its moving casters
+    /// over it. A frame builder that cannot tell still casters from moving ones draws such a
+    /// cascade whole instead.
+    pub cache: bool,
 }
 
 impl Default for ShadowQuality {
@@ -130,6 +143,7 @@ impl Default for ShadowQuality {
             filter: 3,
             far_interval: 1,
             follow_movers: true,
+            cache: false,
         }
     }
 }
@@ -480,16 +494,34 @@ const _: () = assert!(MAX_INTERVAL == 8 && CYCLE.is_multiple_of(3 * 5 * 7 * 8));
 /// cascade count or the map size changes, and when the GPU objects are made again. A far cascade
 /// also draws in every frame where a moving caster touches the box its layer holds, or touched it
 /// when the layer drew, so moving shadows follow their casters.
+///
+/// With the cache, a far cascade's turn draws its still casters into its cache layer, and every
+/// draw of its layer copies the cache in and adds the moving casters. So between turns, a moving
+/// caster costs the draw of the moving casters alone.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CascadeSchedule {
     /// The box that each cascade's layer holds, or `None` before it draws.
     drawn: [Option<CascadeBox>; MAX_CASCADES],
     /// True for each layer that drew with a moving caster in its box.
     moving: [bool; MAX_CASCADES],
-    /// The cascade count and the map size that the layers hold.
-    shape: (usize, u32),
+    /// True for each cascade whose cache layer holds its still casters in the box its layer holds.
+    cached: [bool; MAX_CASCADES],
+    /// The cascade count and the map size that the layers hold, and whether far cascades cache.
+    shape: (usize, u32, bool),
     /// The frame's place in the schedule's cycle.
     frame: u32,
+}
+
+/// The cascades that one frame draws, as masks with one bit per cascade, the nearest in bit 0.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CascadeDraws {
+    /// The cascades that draw their layer. The others keep what their layers hold.
+    pub drawn: u32,
+    /// The far cascades that draw their still casters into their cache layer.
+    pub cached: u32,
+    /// The far cascades whose layer copies their cache layer and draws only their moving casters.
+    /// Each other cascade that draws, draws all its casters.
+    pub restored: u32,
 }
 
 impl CascadeSchedule {
@@ -501,19 +533,23 @@ impl CascadeSchedule {
 
     /// Picks the cascades of `cascades` that draw in this frame, for a camera at `position` from
     /// the world's origin, with `map_size` texels on each side of each layer and far cascades that
-    /// draw every `interval` frames. `moving` tells whether a moving caster touches a box. Returns
-    /// the cascades that draw as a mask with one bit per cascade, the nearest in bit 0. Each
-    /// cascade that does not draw takes the box that its layer holds, relative to the camera, so
-    /// receivers read the layer as it was drawn.
+    /// draw every `interval` frames. `moving` tells whether a moving caster touches a box. With
+    /// `cache`, far cascades draw through their cache layers. Each cascade that does not take its
+    /// turn takes the box that its layer holds, relative to the camera, so receivers read the
+    /// layer as it was drawn, and a draw between turns draws in that box.
     pub fn plan(
         &mut self,
         cascades: &mut Cascades,
         position: [f64; 3],
         map_size: u32,
         interval: u32,
+        cache: bool,
         moving: impl Fn(&CascadeBox) -> bool,
-    ) -> u32 {
-        let shape = (cascades.count, map_size);
+    ) -> CascadeDraws {
+        let interval = interval.clamp(1, MAX_INTERVAL);
+        // Far cascades that draw in every frame anyway would only draw their cache too.
+        let cache = cache && interval > 1;
+        let shape = (cascades.count, map_size, cache);
         if shape != self.shape {
             *self = Self {
                 shape,
@@ -522,25 +558,39 @@ impl CascadeSchedule {
         }
         let frame = self.frame;
         self.frame = (frame + 1) % CYCLE;
-        let interval = interval.clamp(1, MAX_INTERVAL);
         let map_size = map_size.max(1) as f32;
-        let mut drawn = 0;
+        let mut draws = CascadeDraws::default();
         for (k, cascade) in cascades.cascades[..cascades.count].iter_mut().enumerate() {
-            match self.drawn[k] {
-                Some(bounds)
-                    if !Self::due(frame, k, interval) && !self.moving[k] && !moving(&bounds) =>
-                {
+            let bit = 1 << k;
+            // The nearest cascade draws whole in every frame, so it needs no cache.
+            let cached = cache && k > 0;
+            if let Some(bounds) = self.drawn[k].filter(|_| !Self::due(frame, k, interval)) {
+                let touched = moving(&bounds);
+                if !self.moving[k] && !touched {
                     *cascade = cascade_in(&bounds, position, cascade.end, map_size);
+                    continue;
                 }
-                _ => {
-                    self.drawn[k] = Some(cascade.bounds);
-                    // A layer that draws in every frame anyway needs no test.
-                    self.moving[k] = k > 0 && interval > 1 && moving(&cascade.bounds);
-                    drawn |= 1 << k;
+                if cached && self.cached[k] {
+                    // The cache holds the still casters in the layer's box, and the moving
+                    // casters draw over them in that box.
+                    *cascade = cascade_in(&bounds, position, cascade.end, map_size);
+                    self.moving[k] = touched;
+                    draws.restored |= bit;
+                    draws.drawn |= bit;
+                    continue;
                 }
             }
+            self.drawn[k] = Some(cascade.bounds);
+            // A layer that draws in every frame anyway needs no test.
+            self.moving[k] = k > 0 && interval > 1 && moving(&cascade.bounds);
+            if cached {
+                self.cached[k] = true;
+                draws.cached |= bit;
+                draws.restored |= bit;
+            }
+            draws.drawn |= bit;
         }
-        drawn
+        draws
     }
 
     /// Forgets what the layers hold, so every cascade draws in the next frame.
@@ -632,15 +682,29 @@ pub struct ShadowFrame {
     pub camera: CellPosition,
     /// The light's layer mask, which selects the casters.
     pub layers: u32,
-    /// The cascades that draw in this frame, one bit each, the nearest in bit 0. The others keep
-    /// what their layers hold.
-    pub drawn: u32,
+    /// The cascades that draw in this frame, which of them draw their cache, and which draw
+    /// through it. The others keep what their layers hold.
+    pub draws: CascadeDraws,
+    /// True when far cascades keep their still casters in cache layers: the frame builder's
+    /// passes then hold a cache layer for each far cascade.
+    pub cache: bool,
 }
 
 impl ShadowFrame {
     /// True when `cascade` draws its layer in this frame.
     pub fn draws(&self, cascade: usize) -> bool {
-        cascade < self.cascades.count && self.drawn & (1 << cascade) != 0
+        cascade < self.cascades.count && self.draws.drawn & (1 << cascade) != 0
+    }
+
+    /// True when `cascade` draws its still casters into its cache layer in this frame.
+    pub fn caches(&self, cascade: usize) -> bool {
+        cascade < self.cascades.count && self.draws.cached & (1 << cascade) != 0
+    }
+
+    /// True when `cascade` draws its layer in this frame from its cache layer and its moving
+    /// casters, and false when it draws all its casters, or none.
+    pub fn restores(&self, cascade: usize) -> bool {
+        cascade < self.cascades.count && self.draws.restored & (1 << cascade) != 0
     }
 
     /// The values of a cascade's view: its matrix, its culling frustum, which has no plane on the
@@ -1142,7 +1206,11 @@ mod tests {
             settings: SETTINGS,
             camera: CellPosition::default(),
             layers: 1,
-            drawn: 0b111,
+            draws: CascadeDraws {
+                drawn: 0b111,
+                ..CascadeDraws::default()
+            },
+            cache: false,
         };
         let size = SETTINGS.map_size as f32;
         for (k, cascade) in frame.cascades.used().iter().enumerate() {
@@ -1316,13 +1384,23 @@ mod tests {
         // The first frame draws every cascade, as no layer holds anything yet.
         let mut first = fit_at(FAR_OUT, 0.0);
         let fresh = first;
-        assert_eq!(schedule.plan(&mut first, FAR_OUT, 2048, 4, still), 0b1111);
+        assert_eq!(
+            schedule
+                .plan(&mut first, FAR_OUT, 2048, 4, false, still)
+                .drawn,
+            0b1111
+        );
         assert_eq!(first, fresh);
         // The camera moves and turns: only the near cascade and the next in turn draw.
         let moved = [FAR_OUT[0] + 3.7, FAR_OUT[1], FAR_OUT[2] - 2.9];
         let mut second = fit_at(moved, 25.0);
         let fresh = second;
-        assert_eq!(schedule.plan(&mut second, moved, 2048, 4, still), 0b0101);
+        assert_eq!(
+            schedule
+                .plan(&mut second, moved, 2048, 4, false, still)
+                .drawn,
+            0b0101
+        );
         assert_eq!(second.cascades[0], fresh.cascades[0]);
         assert_eq!(second.cascades[2], fresh.cascades[2]);
         // The others keep the boxes of the first frame, with their own slices' ends, and map each
@@ -1345,12 +1423,16 @@ mod tests {
         }
         // A new map size draws every cascade again, and so does a reset.
         assert_eq!(
-            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4, still),
+            schedule
+                .plan(&mut fit_at(moved, 25.0), moved, 1024, 4, false, still)
+                .drawn,
             0b1111
         );
         schedule.reset();
         assert_eq!(
-            schedule.plan(&mut fit_at(moved, 25.0), moved, 1024, 4, still),
+            schedule
+                .plan(&mut fit_at(moved, 25.0), moved, 1024, 4, false, still)
+                .drawn,
             0b1111
         );
     }
@@ -1381,7 +1463,11 @@ mod tests {
         let touching = std::cell::Cell::new(true);
         let moving = |bounds: &CascadeBox| touching.get() && *bounds == second;
         let mut schedule = CascadeSchedule::default();
-        let mut plan = || schedule.plan(&mut fit(), FAR_OUT, 2048, 4, moving);
+        let mut plan = || {
+            schedule
+                .plan(&mut fit(), FAR_OUT, 2048, 4, false, moving)
+                .drawn
+        };
         assert_eq!(plan(), 0b1111);
         // The second cascade draws out of turn, beside the third, whose turn it is.
         assert_eq!(plan(), 0b0111);
@@ -1391,6 +1477,58 @@ mod tests {
         // With still casters alone, the far cascades keep their layers again.
         assert_eq!(plan(), 0b0001);
         assert_eq!(plan(), 0b0011);
+    }
+
+    #[test]
+    fn with_the_cache_a_far_cascade_draws_its_still_casters_only_in_its_turns() {
+        let settings = ShadowSettings {
+            cascades: 4,
+            ..SETTINGS
+        };
+        let fit_at = |position: [f64; 3]| {
+            fit_cascades(
+                &turned(0.0),
+                position,
+                &LENS,
+                1.5,
+                DOWN_AND_ACROSS,
+                &settings,
+            )
+        };
+        // A moving caster in the second cascade's first box alone.
+        let second = fit_at(FAR_OUT).cascades[1].bounds;
+        let touching = std::cell::Cell::new(true);
+        let moving = |bounds: &CascadeBox| touching.get() && *bounds == second;
+        let mut schedule = CascadeSchedule::default();
+        let mut plan = |position: [f64; 3]| {
+            let mut cascades = fit_at(position);
+            let draws = schedule.plan(&mut cascades, position, 2048, 4, true, moving);
+            (draws, cascades.cascades[1].bounds)
+        };
+        let draws = |drawn, cached, restored| CascadeDraws {
+            drawn,
+            cached,
+            restored,
+        };
+        // The first frame draws every cascade, and each far one draws its cache too.
+        assert_eq!(plan(FAR_OUT).0, draws(0b1111, 0b1110, 0b1110));
+        // The camera moves. The second cascade draws out of turn from its cache, in the box it
+        // drew in, and the third takes its turn.
+        let moved = [FAR_OUT[0] + 3.7, FAR_OUT[1], FAR_OUT[2] - 2.9];
+        assert_ne!(fit_at(moved).cascades[1].bounds, second);
+        assert_eq!(plan(moved), (draws(0b0111, 0b0100, 0b0110), second));
+        // The caster leaves: the layer draws from its cache once more, to lose its shadow.
+        touching.set(false);
+        assert_eq!(plan(moved), (draws(0b1011, 0b1000, 0b1010), second));
+        // With still casters alone, it keeps its layer, until its turn draws its cache again.
+        assert_eq!(plan(moved).0, draws(0b0001, 0, 0));
+        let (turn, bounds) = plan(moved);
+        assert_eq!(turn, draws(0b0011, 0b0010, 0b0010));
+        assert_eq!(bounds, fit_at(moved).cascades[1].bounds);
+        // Far cascades that draw in every frame draw whole, with no cache.
+        let mut every = || schedule.plan(&mut fit_at(moved), moved, 2048, 1, true, moving);
+        assert_eq!(every(), draws(0b1111, 0, 0));
+        assert_eq!(every(), draws(0b1111, 0, 0));
     }
 
     #[test]

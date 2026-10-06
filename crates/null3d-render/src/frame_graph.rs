@@ -21,6 +21,12 @@
 //! pass of its own before it. Without shadows the array is one texel of one layer, which no pass
 //! draws, so the scene's bindings stay the same.
 //!
+//! While far cascades keep their still casters in a cache, the builder keeps a second depth
+//! texture array, with a layer for each far cascade, and each far cascade has a cache pass, with
+//! its own culling pass on WebGPU, that draws its still casters into its cache layer. The far
+//! cascade's shadow pass reads the cache: it copies its cache layer into its own layer before it
+//! draws the moving casters.
+//!
 //! The same builder keeps a second texture array, the shadow atlas of point and spot lights (see
 //! [`crate::shadow_tiles`]), which every opaque pass samples too. Each layer of the atlas is a
 //! tile, with a shadow pass and on WebGPU a culling pass of its own. A tile keeps its depth from
@@ -143,6 +149,9 @@ const SCENE_COLOR: &str = "sceneColor";
 const SCENE_DEPTH: &str = "sceneDepth";
 /// The shadow map: a depth texture array with one layer per cascade, kept between frames.
 const SHADOW_MAP: &str = "shadowMap";
+/// The still casters' depth of each far cascade: a depth texture array with one layer per far
+/// cascade, kept between frames, while far cascades cache.
+const SHADOW_CACHE: &str = "shadowCache";
 /// The buffer of skinned vertices, which the skinning pass writes and the passes that draw skinned
 /// meshes read.
 const SKINNED: &str = "skinnedVertices";
@@ -221,12 +230,14 @@ const LAYER_VIEWS: u32 = 128;
 const NO_VIEWS: u32 = u32::MAX;
 
 /// The shadow passes of a directional light: its cascades, the texels on each side of each
-/// cascade's layer, and the light's layer mask, which selects the casters.
+/// cascade's layer, the light's layer mask, which selects the casters, and whether far cascades
+/// keep their still casters in cache layers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ShadowPasses {
     pub(crate) cascades: u32,
     pub(crate) map_size: u32,
     pub(crate) layers: u32,
+    pub(crate) cache: bool,
 }
 
 impl ShadowPasses {
@@ -236,6 +247,7 @@ impl ShadowPasses {
             cascades: shadow.cascades.count as u32,
             map_size: shadow.settings.map_size,
             layers: shadow.layers,
+            cache: shadow.cache,
         }
     }
 }
@@ -571,17 +583,18 @@ impl FrameGraph {
         self.ao.is_some() && self.ao_built
     }
 
-    /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
-    /// or map size declares the passes again, which makes the shadow map again. A new layer mask
-    /// only changes the passes' masks, and new cascades to draw change only which passes run. A
-    /// builder that binds no shadow map draws no shadows.
+    /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count,
+    /// map size or cache declares the passes again, which makes the shadow map and the cache
+    /// again. A new layer mask only changes the passes' masks, and new cascades to draw change
+    /// only which passes run. A builder that binds no shadow map draws no shadows.
     pub(crate) fn set_shadows(&mut self, shadows: Option<ShadowPasses>) {
         let shadows = shadows.filter(|_| self.shadow_map).map(|s| ShadowPasses {
             cascades: s.cascades.clamp(1, MAX_CASCADES as u32),
             map_size: s.map_size.max(1),
+            cache: s.cache && s.cascades > 1,
             ..s
         });
-        let shape = |s: Option<ShadowPasses>| s.map(|s| (s.cascades, s.map_size));
+        let shape = |s: Option<ShadowPasses>| s.map(|s| (s.cascades, s.map_size, s.cache));
         if shape(shadows) != shape(self.shadows) {
             self.declared = false;
         } else if let Some(shadows) = shadows {
@@ -818,6 +831,12 @@ impl FrameGraph {
                 height: size,
             };
             self.graph.keep(SHADOW_MAP, map, size);
+            if let Some(shadows) = self.shadows.filter(|s| s.cache) {
+                let cache = Target::depth(DEPTH_FORMAT)
+                    .layers(shadows.cascades - 1)
+                    .array();
+                self.graph.keep(SHADOW_CACHE, cache, size);
+            }
             let (tiles, size) = self.tiles.map_or((1, 1), |t| (t.tiles, t.size));
             let atlas = Target::depth(DEPTH_FORMAT).layers(tiles).array();
             let size = Size::Fixed {
@@ -1025,18 +1044,43 @@ impl FrameGraph {
     }
 
     /// Declares each cascade's culling pass on WebGPU, and its shadow pass, which draws into the
-    /// cascade's layer of the shadow map.
+    /// cascade's layer of the shadow map. With the cache, each far cascade's cache pass and its
+    /// culling pass come first, and its shadow pass reads the cache.
     fn declare_shadows(&mut self, shadows: ShadowPasses) {
         let size = Size::Fixed {
             width: shadows.map_size,
             height: shadows.map_size,
         };
         for cascade in 0..shadows.cascades as usize {
+            let cached = shadows.cache && cascade > 0;
+            if cached {
+                let view = ViewId::cascade_cache(cascade);
+                let mut pass = Pass::new(numbered("ShadowCache", cascade), PassKind::Shadow)
+                    .size(size)
+                    .layers(shadows.layers)
+                    .writes_layer(SHADOW_CACHE, cascade as u32 - 1);
+                if self.gpu_culling {
+                    let visible = numbered("cacheVisible", cascade);
+                    let culling = Pass::new(numbered("CacheCulling", cascade), PassKind::Compute)
+                        .reads(OBJECTS)
+                        .creates_buffer(visible.clone());
+                    self.add(culling, Role::Cull(view));
+                    pass = pass.reads(visible);
+                }
+                if self.skins() {
+                    pass = pass.reads(SKINNED);
+                }
+                let pass = self.add(pass, Role::Shadow(view));
+                self.shadow_passes.push(pass);
+            }
             let view = ViewId::cascade(cascade);
             let mut pass = Pass::new(SHADOW_CASCADES[cascade], PassKind::Shadow)
                 .size(size)
                 .layers(shadows.layers)
                 .writes_layer(SHADOW_MAP, cascade as u32);
+            if cached {
+                pass = pass.reads(SHADOW_CACHE);
+            }
             if self.gpu_culling {
                 let culling = Pass::new(SHADOW_CULLING[cascade], PassKind::Compute)
                     .reads(OBJECTS)
@@ -1525,6 +1569,16 @@ impl FrameGraph {
         }
         let plan = self.graph.plan()?;
         let surface = plan.texture_of(self.graph.find_resource(SHADOW_MAP)?)?;
+        Some(self.texture_id(surface))
+    }
+
+    /// The draw list's id of the far cascades' cache, which the restore's bind group names, or
+    /// `None` while far cascades keep no cache. Valid once the frame's [`FrameGraph::prepare`]
+    /// made the plan's textures.
+    pub(crate) fn shadow_cache(&self) -> Option<u32> {
+        self.shadows.filter(|s| s.cache)?;
+        let plan = self.graph.plan()?;
+        let surface = plan.texture_of(self.graph.find_resource(SHADOW_CACHE)?)?;
         Some(self.texture_id(surface))
     }
 

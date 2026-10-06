@@ -51,6 +51,11 @@ export interface Setting {
 	presets: readonly [unknown, unknown, unknown, unknown];
 	changes: SettingChange;
 	values: SettingValues;
+	/**
+	 * True for a flag that costs less GPU time when on, as a cache does, which trades memory for
+	 * it. Every other flag costs more when on.
+	 */
+	lighterWhenOn?: boolean;
 }
 
 /**
@@ -112,6 +117,17 @@ export const QUALITY_SETTINGS = {
 		presets: [true, true, true, true],
 		changes: 'live',
 		values: 'flag',
+	},
+	// Whether each far cascade keeps the depth of its still casters in a cache layer, so that
+	// between its turns it copies the cache and draws only its moving casters. It keeps the saving
+	// of the turns where moving casters fill the far cascades, as S4's cars do, for a cache layer
+	// of the shadow map's size per far cascade: 4 MiB on Low. The heavier presets keep the memory
+	// and draw such a cascade whole. D-16 gives the figures.
+	farCascadeCache: {
+		presets: [true, false, false, false],
+		changes: 'live',
+		values: 'flag',
+		lighterWhenOn: true,
 	},
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
@@ -286,6 +302,15 @@ export interface QualitySettings {
 	 * it on. It changes during play.
 	 */
 	followMovingCasters: boolean;
+	/**
+	 * True when each far shadow cascade keeps the depth of its still casters in a cache layer of
+	 * its own. A far cascade then draws its still casters only in its turns of
+	 * `farCascadeInterval` frames, into the cache, and in a frame where a moving caster touches it,
+	 * it copies the cache and draws only its moving casters. Each cache layer takes the memory of
+	 * a layer of the shadow map: 4 MiB for each far cascade of 1,024 texels. False draws such a
+	 * cascade whole. Low turns it on. It changes during play.
+	 */
+	farCascadeCache: boolean;
 	/**
 	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
 	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes

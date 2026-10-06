@@ -1201,9 +1201,15 @@ impl SceneSettings {
     /// The main directional light's shadows in the next frame, whose targets have the canvas's
     /// size: its cascades, fitted to the camera's view, with the cascades that draw in this frame,
     /// or `None` when the light casts no shadows or the camera has nothing to draw from. Call it
-    /// once per frame, as it moves the cascades' update schedule on.
-    pub fn shadow_frame(&mut self, input: &FrameInput<'_>) -> Option<ShadowFrame> {
-        let frame = self.fit_shadows(input);
+    /// once per frame, as it moves the cascades' update schedule on. A builder whose culling can
+    /// tell still casters from moving ones (`splits_casters`) draws far cascades through their
+    /// cache while the shadow quality asks for it.
+    pub fn shadow_frame(
+        &mut self,
+        input: &FrameInput<'_>,
+        splits_casters: bool,
+    ) -> Option<ShadowFrame> {
+        let frame = self.fit_shadows(input, splits_casters);
         if frame.is_none() {
             self.shadow_schedule.reset();
             self.moving_casters.forget();
@@ -1211,7 +1217,7 @@ impl SceneSettings {
         frame
     }
 
-    fn fit_shadows(&mut self, input: &FrameInput<'_>) -> Option<ShadowFrame> {
+    fn fit_shadows(&mut self, input: &FrameInput<'_>, splits_casters: bool) -> Option<ShadowFrame> {
         let (scene, parity, canvas) = (input.scene, input.parity(), input.canvas);
         let shadow = self.lighting.sun_shadow?;
         let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
@@ -1241,11 +1247,13 @@ impl SceneSettings {
         }
         self.moving_casters.update(scene, input.structure_changed);
         let moving = &self.moving_casters;
-        let drawn = self.shadow_schedule.plan(
+        let cache = quality.cache && splits_casters && cascades.count > 1;
+        let draws = self.shadow_schedule.plan(
             &mut cascades,
             absolute,
             shadow.map_size,
             quality.far_interval,
+            cache,
             |bounds| quality.follow_movers && moving.touch(scene, parity, shadow.layers, bounds),
         );
         Some(ShadowFrame {
@@ -1253,7 +1261,8 @@ impl SceneSettings {
             settings,
             camera: position,
             layers: shadow.layers,
-            drawn,
+            draws,
+            cache,
         })
     }
 

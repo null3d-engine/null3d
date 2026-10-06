@@ -73,6 +73,7 @@ export const SETTING_DOCS: {
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
 	followMovingCasters: { label: 'Far cascades follow moving casters', print: yesNo },
+	farCascadeCache: { label: 'Far cascades cache still casters', print: yesNo },
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },

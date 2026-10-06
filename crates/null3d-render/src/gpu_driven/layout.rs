@@ -23,7 +23,7 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
-use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
+use crate::cells::{CellCulling, CellMask, CellOrder, MOVING, Sources};
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
@@ -369,7 +369,7 @@ impl Layout {
         cells: &CellCulling,
         input: &FrameInput<'_>,
     ) -> Result<(), RecordError> {
-        if !cells.active() {
+        if !cells.ordered() {
             return Ok(());
         }
         if self.order_build != Some(cells.builds()) {
@@ -404,22 +404,28 @@ impl Layout {
     }
 
     /// The runs of the cell order that a view culls, as the culling shader reads them: the runs
-    /// of the cells in `visible` and the moving sources' run, with runs that follow each other
-    /// joined. Each is its first position, its end, and its first workgroup, which follow from
-    /// the runs before it. Returns the runs and the workgroups they need.
-    pub(super) fn ranges(&self, visible: &CellMask, out: &mut [[u32; 4]]) -> (usize, u32) {
+    /// of the cells in `visible` and the moving sources' run, or only the ones of the `kinds` it
+    /// culls, with runs that follow each other joined. Each is its first position, its end, and
+    /// its first workgroup, which follow from the runs before it. Returns the runs and the
+    /// workgroups they need.
+    pub(super) fn ranges(
+        &self,
+        visible: &CellMask,
+        kinds: Sources,
+        out: &mut [[u32; 4]],
+    ) -> (usize, u32) {
         let (mut count, mut groups) = (0, 0);
         let mut close = |out: &mut [[u32; 4]], count: usize| {
             let [start, end, first, _] = &mut out[count - 1];
             *first = groups;
             groups += (*end - *start).div_ceil(sizes::CULL_WORKGROUP_SIZE);
         };
-        for run in visible
+        let still = visible
             .iter()
-            .map(|cell| self.order.run(cell))
-            .chain(std::iter::once(self.order.run(MOVING)))
-            .filter(|run| !run.is_empty())
-        {
+            .filter(|_| kinds != Sources::Moving)
+            .map(|cell| self.order.run(cell));
+        let moving = std::iter::once(self.order.run(MOVING)).filter(|_| kinds != Sources::Still);
+        for run in still.chain(moving).filter(|run| !run.is_empty()) {
             if count > 0 && out[count - 1][1] == run.start {
                 out[count - 1][1] = run.end;
                 continue;

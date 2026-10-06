@@ -287,6 +287,16 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["SKIN", "PREPASS", "CASTER_OFFSET"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "CASTER_OFFSET", "SKIN", "MORPH"], targets = ["glsl"] }
 
+# The copy of a far shadow cascade's cache layer into its layer of the shadow map: one triangle
+# that writes each texel's depth from the same texel of the cache. It loads by device with the
+# shadow depth template that draws the casters around it.
+[shaders.shadow_restore]
+file = "shadow_restore.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
 file = "cull.wgsl"

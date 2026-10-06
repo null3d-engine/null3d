@@ -358,6 +358,7 @@ fn far_cascades_draw_in_turn_and_keep_their_layers_in_between() {
             filter: 5,
             far_interval: 2,
             follow_movers: true,
+            cache: false,
         };
         world.renderer.settings_mut().set_shadow_quality(quality);
         let mut mock = MockBackend::default();
@@ -403,4 +404,119 @@ fn far_cascades_draw_in_turn_and_keep_their_layers_in_between() {
         let commands = world.step(&mut mock, false);
         assert_eq!(depth_passes(&commands).len(), 3);
     }
+}
+
+#[test]
+fn far_cascades_with_a_cache_draw_still_casters_in_turns_and_moving_ones_over_a_copy() {
+    for multi_draw in [true, false] {
+        let mut world = shadowed(SUN, multi_draw);
+        let ball = world.objects[2];
+        let dynamic = [Command::set_dynamic(ball, true)];
+        world.scene.apply_commands(&dynamic, world.frame).unwrap();
+        let quality = ShadowQuality {
+            filter: 3,
+            far_interval: 2,
+            follow_movers: true,
+            cache: true,
+        };
+        world.renderer.settings_mut().set_shadow_quality(quality);
+        let mut mock = MockBackend::default();
+        let first = world.step(&mut mock, true);
+        // The shadow map holds a layer for each cascade, and the cache one for each far cascade.
+        let textures = shadow_maps(&first);
+        let texture_with = |layers: u32| {
+            textures
+                .iter()
+                .find(|t| t[3] == layers)
+                .map(|t| t[0])
+                .expect("a depth array of that many layers")
+        };
+        let (map, cache) = (texture_with(3), texture_with(2));
+        let views = operands(&first, Op::CreateTextureView);
+        // Each frame's depth passes, in order: the texture each draws into, its layer, and the
+        // first vertex of the copy that it draws first, if any. The casters draw indexed.
+        let passes = |commands: &[(Op, Vec<u32>)]| -> Vec<(u32, u32, Option<u32>)> {
+            let mut passes = Vec::new();
+            let mut open: Option<(u32, u32, Option<u32>)> = None;
+            for (op, o) in commands {
+                match op {
+                    Op::BeginRenderPass if o[0] == NO_TARGET => {
+                        let view = views.iter().find(|v| v[0] == o[2]).expect("a layer's view");
+                        open = Some((view[1], view[3], None));
+                    }
+                    Op::Draw => {
+                        if let Some(pass) = open.as_mut().filter(|p| p.2.is_none()) {
+                            pass.2 = Some(o[2]);
+                        }
+                    }
+                    Op::EndRenderPass => passes.extend(open.take()),
+                    _ => {}
+                }
+            }
+            passes
+        };
+        assert_eq!(
+            in_order(passes(&first), cache),
+            [
+                (map, 0, None),
+                (cache, 0, None),
+                (map, 1, Some(0)),
+                (cache, 1, None),
+                (map, 2, Some(3)),
+            ]
+        );
+        // The ball moves in every box. Between turns a far cascade copies its cache and draws the
+        // ball alone; in its turn it draws its cache first.
+        for (frame, turn) in [(1, 2), (2, 1), (3, 2)] {
+            let commands = world.step(&mut mock, false);
+            let mut expected = vec![(map, 0, None)];
+            for cascade in 1..3u32 {
+                if cascade == turn {
+                    expected.push((cache, cascade - 1, None));
+                }
+                expected.push((map, cascade, Some((cascade - 1) * 3)));
+            }
+            assert_eq!(
+                in_order(passes(&commands), cache),
+                expected,
+                "frame {frame}"
+            );
+            let caches: Vec<bool> = (1..3)
+                .map(|k| {
+                    world
+                        .renderer
+                        .view_frame(ViewId::cascade_cache(k))
+                        .is_some()
+                })
+                .collect();
+            assert_eq!(caches, [turn == 1, turn == 2], "frame {frame}");
+        }
+    }
+}
+
+/// Depth passes, each its texture, its layer and the first vertex of its copy, sorted by cascade
+/// with each cascade's cache pass first, once each cache pass is checked to come before the pass
+/// of its cascade, which copies it. The graph may order the other passes as it likes.
+fn in_order(passes: Vec<(u32, u32, Option<u32>)>, cache: u32) -> Vec<(u32, u32, Option<u32>)> {
+    let cascade = |&(texture, layer, _): &(u32, u32, Option<u32>)| {
+        if texture == cache {
+            (layer + 1, 0)
+        } else {
+            (layer, 1)
+        }
+    };
+    for (k, pass) in passes.iter().enumerate() {
+        if pass.0 == cache {
+            let copier = passes[k..]
+                .iter()
+                .any(|p| p.0 != cache && cascade(p).0 == cascade(pass).0);
+            assert!(
+                copier,
+                "the cache pass {pass:?} comes before its cascade's pass"
+            );
+        }
+    }
+    let mut sorted = passes;
+    sorted.sort_by_key(cascade);
+    sorted
 }

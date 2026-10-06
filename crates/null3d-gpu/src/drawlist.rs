@@ -645,6 +645,10 @@ pub mod layout {
     /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
     /// textures that the step reads with `textureLoad`.
     pub const AO: u32 = 18;
+    /// Group 0 of the copy of a far shadow cascade's cache layer into its layer: the cache, a
+    /// depth texture array that the copy reads as unfilterable floats with `textureLoad`, as
+    /// [`AO_DEPTH`] reads its depth target.
+    pub const SHADOW_RESTORE: u32 = 19;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1280,6 +1284,10 @@ pub mod template {
     /// Ambient occlusion's edge-aware blur, three.js's Poisson denoise: it writes the occlusion
     /// that the opaque pass reads, beside the depth it blurred at.
     pub const AO_DENOISE: u32 = 34;
+    /// The copy of a far shadow cascade's cache layer into its layer of the shadow map: one
+    /// triangle over the layer, with no vertex buffer, that writes each texel's depth from the
+    /// same texel of the cache. The draw's first vertex is the cache layer times three.
+    pub const SHADOW_RESTORE: u32 = 35;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1555,6 +1563,7 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
+                ("SHADOW_RESTORE", layout::SHADOW_RESTORE),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1631,6 +1640,7 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH_MS", template::AO_DEPTH_MS),
                 ("AO", template::AO),
                 ("AO_DENOISE", template::AO_DENOISE),
+                ("SHADOW_RESTORE", template::SHADOW_RESTORE),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

@@ -120,6 +120,7 @@ export const LAYOUT_SKIN = 12;
 export const LAYOUT_AO_DEPTH = 16;
 export const LAYOUT_AO_DEPTH_MS = 17;
 export const LAYOUT_AO = 18;
+export const LAYOUT_SHADOW_RESTORE = 19;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -197,6 +198,7 @@ export const TEMPLATE_AO_DEPTH = 31;
 export const TEMPLATE_AO_DEPTH_MS = 32;
 export const TEMPLATE_AO = 33;
 export const TEMPLATE_AO_DENOISE = 34;
+export const TEMPLATE_SHADOW_RESTORE = 35;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

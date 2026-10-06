@@ -493,6 +493,7 @@ quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at th
 quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
+quality.set({ farCascadeCache: true });     // far cascades cache still casters and redraw only dynamic ones between turns (on by default on Low)
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set

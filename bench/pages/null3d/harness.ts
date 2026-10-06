@@ -45,8 +45,9 @@ export interface Null3dPageOptions {
  * as dashed line segments, `ao` turns ambient occlusion on in S1, `bloom` turns bloom on in S1,
  * `outline` adds outlined boxes to S1, `labels` adds that many labeled objects to S1, whose
  * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
- * point light shadows on, and `environment` lights S1 with the built-in room, which turns every
- * frame.
+ * point light shadows on, `environment` lights S1 with the built-in room, which turns every
+ * frame, and `farCascadeCache=on|off` turns S4's cache of still casters on or off against its
+ * preset.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -61,6 +62,7 @@ const SKETCH_SWITCHES = [
 	'labels',
 	'tileShadows',
 	'environment',
+	'farCascadeCache',
 ] as const;
 
 /**

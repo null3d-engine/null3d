@@ -275,16 +275,22 @@ for (const kind of [
  * iPad runs it. On WebGPU the GPU culls, so the draw calls do not depend on the view: the camera's
  * opaque pass and each shadow cascade draw S4's buckets, and the final pass draws one triangle.
  * S4's cars drive through Low's far cascade, and far cascades follow moving casters on every
- * preset (D-16), so every frame draws both cascades. A new pass or draw in these frames costs
- * every phone that runs S4, so a change to this figure needs its reason in
- * .dev/implementation-notes.md.
+ * preset (D-16). On Low the far cascade draws through its cache of still casters: in every frame
+ * it draws one triangle that copies the cache, then the buckets for its cars, and one frame in 4
+ * also draws the buckets into the cache. A new pass or draw in these frames costs every phone that
+ * runs S4, so a change to these figures needs its reason in .dev/implementation-notes.md.
  */
-const S4_LOW_DRAW_CALLS = 63;
-/** The passes of S4's frames at Low: the culling, the cascades, the scene and the final pass. */
-const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
+const S4_LOW_DRAW_CALLS = { betweenTurns: 64, inTurns: 71 };
+/**
+ * The passes of S4's frames at Low: the culling, the cascades, the far cascade's cache in its
+ * turns, the scene and the final pass.
+ */
+const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4', 'render 5'];
+/** Enough measured frames to hold a frame that draws the far cascade's cache, which draws 1 in 4. */
+const S4_LOW_FRAMES_WITH_TURNS = 8;
 
 function s4LowPassesTest(): void {
-	test('s4 on null3d-webgpu at Low draws both cascades in every frame and no other pass', async ({
+	test('s4 on null3d-webgpu at Low draws its far cascade through its cache and no other pass', async ({
 		page,
 	}) => {
 		await page.setViewportSize(PHONE_VIEWPORT);
@@ -298,15 +304,17 @@ function s4LowPassesTest(): void {
 		);
 		expect(result.frames).toBeGreaterThan(0);
 		const { drawCalls, gpuPassMs } = result.stats;
-		expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS);
-		expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS);
+		expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS.betweenTurns);
+		if (result.frames >= S4_LOW_FRAMES_WITH_TURNS)
+			expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS.inTurns);
+		else expect(drawCalls.p99).toBeLessThanOrEqual(S4_LOW_DRAW_CALLS.inTurns);
 		// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
 		if (gpuPassMs) {
 			const passes = gpuPassMs
 				.map((part) => part.name)
 				.filter((name) => name !== 'copies' && name !== 'between passes');
 			expect(S4_LOW_PASSES).toEqual(expect.arrayContaining(passes));
-			expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES));
+			expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES.slice(0, 5)));
 		}
 	});
 }

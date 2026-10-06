@@ -54,8 +54,13 @@ export default defineSketch((context) => {
 	const far = readFarInterval(import.meta.url);
 	if (far !== undefined) context.quality.set({ farCascadeInterval: far });
 	// The page's ?shadowFilter= switch tries another filter than the preset's.
-	const filter = new URL(import.meta.url).searchParams.get('shadowFilter');
+	const params = new URL(import.meta.url).searchParams;
+	const filter = params.get('shadowFilter');
 	if (filter) context.quality.set({ shadowFilter: Number(filter) as 3 | 5 });
+	// ?farCascadeCache=on or off times the far cascades' cache of still casters against drawing
+	// them whole, in one build.
+	const cache = params.get('farCascadeCache');
+	if (cache) context.quality.set({ farCascadeCache: cache === 'on' });
 	const reportQuality = watchQuality(context);
 
 	scene.setFog({ type: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });

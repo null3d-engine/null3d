@@ -54,7 +54,7 @@ use null3d_gpu::drawlist::DrawList;
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
 use super::layout::{Clusters, CullRoom, Layout};
-use crate::cells::{CellCulling, CellMask, MOVING};
+use crate::cells::{CellCulling, CellMask, MOVING, Sources};
 use crate::frame::{
     CellOffsets, FrameInput, RecordError, RunCells, address, push_runs, words_as_bytes,
 };
@@ -121,7 +121,11 @@ pub(super) struct Culling {
 /// Pushes the runs that one view culls. With cells in use, the still scene objects of each cell in
 /// `visible` come from the scene's cell order, then every moving scene object, and a clustered
 /// batch culls the clusters of the visible cells alone. Otherwise every scene slot is culled in
-/// place, and `visible` holds every cell. A batch that culls by row culls every active row.
+/// place, and `visible` holds every cell. A batch that culls by row culls every active row. A view
+/// that culls only the still or the moving sources (`kinds`) takes the runs that hold them, from
+/// the cell order that `cells` keeps while far cascades cache, and only the static or the dynamic
+/// batches.
+#[allow(clippy::too_many_arguments)]
 fn push_view_runs(
     runs: &mut Vec<CullRun>,
     input: &FrameInput<'_>,
@@ -130,25 +134,34 @@ fn push_view_runs(
     cells: &CellCulling,
     visible: &CellMask,
     clustered: &[bool],
+    kinds: Sources,
 ) -> Result<(), TryReserveError> {
     let (parity, scene) = (input.parity(), input.scene);
-    if cells.active() {
+    if cells.active() || kinds != Sources::All {
+        debug_assert!(
+            cells.ordered(),
+            "a view culls still or moving sources by cell order"
+        );
         let order = cells.scene_order();
-        for cell in visible.iter() {
-            push_runs(
-                runs,
-                STILL_SET,
-                order.run(cell),
-                BY_ROW,
-                0,
-                RunCells::One(cell),
-            )?;
+        if kinds != Sources::Moving {
+            for cell in visible.iter() {
+                push_runs(
+                    runs,
+                    STILL_SET,
+                    order.run(cell),
+                    BY_ROW,
+                    0,
+                    RunCells::One(cell),
+                )?;
+            }
         }
-        let moving = RunCells::Listed {
-            rows: order.sources(),
-            cells: scene.cells(),
-        };
-        push_runs(runs, MOVING_SET, order.run(MOVING), BY_ROW, 0, moving)?;
+        if kinds != Sources::Still {
+            let moving = RunCells::Listed {
+                rows: order.sources(),
+                cells: scene.cells(),
+            };
+            push_runs(runs, MOVING_SET, order.run(MOVING), BY_ROW, 0, moving)?;
+        }
     } else {
         // Slots past the highest one ever used hold no object.
         let scene_cells = if scene.cell_table().origin_only() {
@@ -163,6 +176,15 @@ fn push_view_runs(
     for (k, slot) in layout.batches.iter().enumerate() {
         if slot.bucket == NO_BUCKET {
             continue;
+        }
+        if kinds != Sources::All {
+            let dynamic = input
+                .batches
+                .get(slot.id)
+                .is_ok_and(|batch| batch.is_dynamic());
+            if dynamic != (kinds == Sources::Moving) {
+                continue;
+            }
         }
         if clustered[k] {
             let set = first_cluster_set + k as u32;
@@ -347,8 +369,10 @@ impl Culling {
 
     /// Finds each view's visible sources of `layout` for the frame, on the calling thread and the
     /// job workers. `frame_of` gives each view's values, or `None` for a view that the frame does
-    /// not draw. With `sorted`, each view also sorts the blended rows back to front. With
-    /// `occlusion`, the first view draws the scene's blockers and hides what lies behind them.
+    /// not draw. Each view culls the sources that `kinds_of` gives it: all of them, or the still
+    /// or the moving ones alone. With `sorted`, each view also sorts the blended rows back to
+    /// front. With `occlusion`, the first view draws the scene's blockers and hides what lies
+    /// behind them.
     /// The clusters that come to rest are the same for every view, so they are built once; each
     /// view then culls runs of its own, which skip the cells it cannot see. Fails only when memory
     /// cannot grow for a view that sees more cells than any view did before, or for more blockers
@@ -361,6 +385,7 @@ impl Culling {
         clusters: &mut Clusters,
         cells: &CellCulling,
         frame_of: &dyn Fn(ViewId) -> Option<ViewFrame>,
+        kinds_of: &dyn Fn(ViewId) -> Sources,
         sorted: Option<&SortedLayout>,
         mut occlusion: Option<Occlusion<'_>>,
     ) -> Result<(), TryReserveError> {
@@ -474,6 +499,7 @@ impl Culling {
                 cells,
                 &visible,
                 &self.clustered,
+                kinds_of(ViewId::from_index(first + k)),
             )?;
             view.tested = self.runs.iter().map(|run| run.end - run.start).sum();
             // Room for the view's runs, which the cells in view decide; it grows only when a view

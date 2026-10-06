@@ -458,7 +458,12 @@ export interface CoreGlue extends CoreErrors {
 	 * shadow cascade, from 1 to 8, and whether a far cascade draws in every frame while a moving
 	 * caster touches it, from the next frame on.
 	 */
-	setShadowQuality(filter: number, farInterval: number, followMovers: boolean): number;
+	setShadowQuality(
+		filter: number,
+		farInterval: number,
+		followMovers: boolean,
+		cache: boolean,
+	): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights

@@ -29,11 +29,15 @@ pub const MAX_VIEWS: usize = 32;
 
 /// The most views of every kind: the views of cameras, then the cascades of the directional
 /// light's shadows, then the tiles of the point and spot lights' shadow atlas, which cull and draw
-/// as views do, then the view of the outline effect's mask.
-pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES + MAX_TILES + 1;
+/// as views do, then the view of the outline effect's mask, then the views of the cascades' cache
+/// layers.
+pub const MAX_VIEW_IDS: usize = FIRST_CACHE + MAX_CASCADES;
 
 /// The first id of the shadow atlas's tiles.
 const FIRST_TILE: usize = MAX_VIEWS + MAX_CASCADES;
+
+/// The first id of the cascades' cache layers, after the outline effect's view.
+const FIRST_CACHE: usize = FIRST_TILE + MAX_TILES + 1;
 
 /// A view, by its place in the scene settings' list of views.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -81,6 +85,22 @@ impl ViewId {
         let index = self.0 as usize;
         if index >= FIRST_TILE && index < FIRST_TILE + MAX_TILES {
             Some(index - FIRST_TILE)
+        } else {
+            None
+        }
+    }
+
+    /// The view that draws the still casters of a shadow cascade into its cache layer, from 0 for
+    /// the nearest cascade, which has none, after the outline effect's view.
+    pub const fn cascade_cache(cascade: usize) -> Self {
+        Self((FIRST_CACHE + cascade) as u16)
+    }
+
+    /// The cascade of a cascade's cache view, or `None` for another view.
+    pub const fn cache_index(self) -> Option<usize> {
+        let index = self.0 as usize;
+        if index >= FIRST_CACHE && index < MAX_VIEW_IDS {
+            Some(index - FIRST_CACHE)
         } else {
             None
         }

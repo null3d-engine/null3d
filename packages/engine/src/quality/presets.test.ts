@@ -17,7 +17,7 @@ import {
 	QUALITY_SETTINGS,
 	type QualitySettingName,
 	type QualitySettings,
-	type SettingValues,
+	type Setting,
 	SKETCH_SETTINGS,
 	takesValue,
 } from './presets';
@@ -29,8 +29,8 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
 const ROWS = settingRows();
 
 /** A value's place in its setting's order of cost: a higher number costs more. */
-function cost(values: SettingValues, value: unknown): number {
-	if (values === 'flag') return value ? 1 : 0;
+function cost({ values, lighterWhenOn }: Setting, value: unknown): number {
+	if (values === 'flag') return Boolean(value) === !lighterWhenOn ? 1 : 0;
 	if ('min' in values) return values.heavierBelow ? -(value as number) : (value as number);
 	return (values as readonly unknown[]).indexOf(value);
 }
@@ -58,9 +58,9 @@ describe('the preset table', () => {
 
 	it('makes each preset as light as the next one up, or lighter, in every setting', () => {
 		for (const { name, setting } of ROWS) {
-			const { presets, values } = setting;
+			const { presets } = setting;
 			for (let k = 1; k < presets.length; k++) {
-				const lighterOrSame = cost(values, presets[k - 1]) <= cost(values, presets[k]);
+				const lighterOrSame = cost(setting, presets[k - 1]) <= cost(setting, presets[k]);
 				expect([name, QUALITY_PRESETS[k - 1], lighterOrSame]).toEqual([
 					name,
 					QUALITY_PRESETS[k - 1],
@@ -101,6 +101,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'followMovingCasters',
+			'farCascadeCache',
 			'shadowTiles',
 			'shadowTileSize',
 			'pointLightShadows',
@@ -137,6 +138,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'followMovingCasters',
+			'farCascadeCache',
 			'bloomSize',
 			'aoScale',
 			'softwareOcclusion',
@@ -159,6 +161,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'followMovingCasters',
+			'farCascadeCache',
 			'bloomSize',
 			'aoScale',
 			'softwareOcclusion',
@@ -200,6 +203,7 @@ describe('presetSettings', () => {
 			shadowFilter: 3,
 			farCascadeInterval: 4,
 			followMovingCasters: true,
+			farCascadeCache: true,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
 			antialias: 'fxaa',
@@ -220,6 +224,7 @@ describe('presetSettings', () => {
 			shadowFilter: 5,
 			farCascadeInterval: 3,
 			followMovingCasters: true,
+			farCascadeCache: false,
 			maxAnisotropy: 4,
 			uploadBytesPerFrame: 4 * MIB,
 			antialias: 'msaa',
@@ -240,6 +245,7 @@ describe('presetSettings', () => {
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			followMovingCasters: true,
+			farCascadeCache: false,
 			maxAnisotropy: 8,
 			uploadBytesPerFrame: 8 * MIB,
 			antialias: 'msaa',
@@ -260,6 +266,7 @@ describe('presetSettings', () => {
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			followMovingCasters: true,
+			farCascadeCache: false,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: 16 * MIB,
 			antialias: 'msaa',
@@ -328,7 +335,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, bloomSize, aoScale, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farCascadeCache, bloomSize, aoScale, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(
