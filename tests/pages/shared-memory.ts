@@ -59,11 +59,11 @@ const LATE_STARTS_MS = 30_000;
 const LATE_START_PAUSE_MS = 1_000;
 
 /**
- * The ways of holding a memory: the engine's start and stop on this page, the engine's start in a
- * frame that the page removes while the engine runs or after the engine stops, or one of the smaller
- * tests.
+ * The ways of holding a memory: the engine's start and stop on this page, on a canvas that the page
+ * removes after the stop or that stays in the page, the engine's start in a frame that the page
+ * removes while the engine runs or after the engine stops, or one of the smaller tests.
  */
-type Kind = 'engine' | 'frame' | 'frame-destroyed' | 'dropped' | 'probe' | HoldKind;
+type Kind = 'engine' | 'canvas-kept' | 'frame' | 'frame-destroyed' | 'dropped' | 'probe' | HoldKind;
 const KINDS = (params.get('kinds')?.split(',') ?? ['engine']) as Kind[];
 const COUNT_ROOM = params.get('room') !== 'off';
 const COUNT_EACH = params.get('room') === 'each';
@@ -208,8 +208,12 @@ const jobsWith = (steps: readonly string[], reply: string) =>
 	new Set(steps.flatMap((s) => s.match(new RegExp(`(null3d-job-\\d+): ${reply}$`))?.[1] ?? []))
 		.size;
 
-/** Starts the engine on a new canvas, waits for its first frame, and stops it. */
-async function startAndStopEngine(): Promise<void> {
+/**
+ * Starts the engine on a new canvas, waits for its first frame, and stops it. With `keepCanvas`,
+ * the canvas stays in the page, as an app may keep it for its next engine. A worker that drew on
+ * it then stays with it, and must not keep the stopped engine's memory.
+ */
+async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 	const canvas = document.createElement('canvas');
 	canvases.push(canvas);
 	document.body.append(canvas);
@@ -244,7 +248,7 @@ async function startAndStopEngine(): Promise<void> {
 			});
 		}
 	} finally {
-		canvas.remove();
+		if (!keepCanvas) canvas.remove();
 	}
 	if (COUNT_EACH) {
 		const last = starts.at(-1);
@@ -324,7 +328,8 @@ async function startAndStopEngineOnceFree(start: () => Promise<void>): Promise<v
 }
 
 async function cycle(kind: Kind): Promise<void> {
-	if (kind === 'engine') await startAndStopEngineOnceFree(startAndStopEngine);
+	if (kind === 'engine') await startAndStopEngineOnceFree(() => startAndStopEngine(false));
+	else if (kind === 'canvas-kept') await startAndStopEngineOnceFree(() => startAndStopEngine(true));
 	else if (kind === 'frame') await startAndStopEngineOnceFree(() => startEngineInFrame(false));
 	else if (kind === 'frame-destroyed')
 		await startAndStopEngineOnceFree(() => startEngineInFrame(true));
@@ -413,8 +418,12 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 run('shared-memory', async () => {
 	const before = COUNT_ROOM ? await countRoomAndRelease() : undefined;
 	const room = before?.room ?? MOST_HELD;
+	// Stopped engines on kept canvases may hold their memory until a new engine needs it, so where
+	// the browser limits the room, those starts go past it, to show that such memory never stops a
+	// start.
+	const most = KINDS.includes('canvas-kept') && room < MOST_HELD ? room + EXTRA_CYCLES : MAX_CYCLES;
 	const cycles = Number(
-		params.get('cycles') ?? Math.min(MAX_CYCLES, Math.max(MIN_CYCLES, room + EXTRA_CYCLES)),
+		params.get('cycles') ?? Math.min(most, Math.max(MIN_CYCLES, room + EXTRA_CYCLES)),
 	);
 	const kinds: Partial<Record<Kind, KindResult>> = {};
 	for (const kind of KINDS) {
