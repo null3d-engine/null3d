@@ -312,8 +312,8 @@ jobs:
     # splits them by count, in its order of the tests, and the weights below give each shard its
     # share, so that the shards take about the same time. The tests that run alone check frame
     # rates, times and allocations, which a heavy test beside them can upset, so they run one at a
-    # time in a job of their own (tests/lib/alone.ts). .dev/image-tests.md says how to set the
-    # weights, and when to add a shard.
+    # time in a job of their own (tests/lib/alone.ts). `bun run test:browser-weights` works out the
+    # weights, and .dev/image-tests.md says when to retune them and when to add a shard.
     name: browser (${{ matrix.part }})
     needs: build
     runs-on: ubuntu-latest
@@ -347,7 +347,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "187:349:154:118:170:84:250"
+          PWTEST_SHARD_WEIGHTS: "219:313:166:113:203:128:175"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.

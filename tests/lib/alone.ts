@@ -9,5 +9,7 @@
 export const ALONE_TAG = '@alone';
 /** The test details of a test that runs alone. */
 export const ALONE = { tag: ALONE_TAG };
+/** The end of the name of each Playwright project that takes the tests that run alone. */
+export const ALONE_PROJECT_SUFFIX = ', alone';
 /** Matches the tests that run alone, by their tag. */
 export const RUNS_ALONE = new RegExp(ALONE_TAG);

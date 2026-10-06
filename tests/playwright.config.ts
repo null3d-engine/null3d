@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
-import { RUNS_ALONE } from './lib/alone.ts';
+import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
 import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT } from './lib/server.ts';
 
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
@@ -94,7 +94,17 @@ export default defineConfig({
 		// The tests that run alone (`tests/lib/alone.ts`), one at a time in each project. CI runs
 		// them in a job of their own, so that no other test runs beside them, and the shards leave
 		// them out. The other projects never run them.
-		{ name: `${environment}, alone`, ...MAIN_PROJECT, grep: RUNS_ALONE, workers: 1 },
-		{ name: 'production build, alone', ...PRODUCTION_BUILD, grep: RUNS_ALONE, workers: 1 },
+		{
+			name: `${environment}${ALONE_PROJECT_SUFFIX}`,
+			...MAIN_PROJECT,
+			grep: RUNS_ALONE,
+			workers: 1,
+		},
+		{
+			name: `production build${ALONE_PROJECT_SUFFIX}`,
+			...PRODUCTION_BUILD,
+			grep: RUNS_ALONE,
+			workers: 1,
+		},
 	],
 });
