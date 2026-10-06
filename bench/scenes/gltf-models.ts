@@ -1,10 +1,11 @@
 // The glTF model scenes, defined once for null3D's image tests and for their three.js twin, which
 // the parity test compares them with. It is plain data with no engine imports. Each scene loads one
-// Khronos sample model from the sample content (.dev/sample-content.md), and frames it with a
+// Khronos sample model from the sample content (.dev/sample-content.md), or a small file that the
+// tests make in code (tests/pages/lib/gltf-files.ts), and frames it with a
 // camera that both engines place from the model's bounds: on +Z of the bounds' center, at the
 // distance that fits the bounding sphere in the view. Scenes of models with lights of their own
 // add only a dim ambient light; the others take the benchmark scenes' sun and ambient light.
-import { iorBuilder, specularBuilder } from '../../tests/pages/lib/gltf-files';
+import { colorMorphBuilder, iorBuilder, specularBuilder } from '../../tests/pages/lib/gltf-files';
 import { PARITY_CANVAS } from './spec';
 
 export { AMBIENT, SUN } from './spec';
@@ -57,10 +58,11 @@ export interface ModelScene {
  * own, unlit materials, emissive strength, lights, a node with instancing of its own, KTX2 textures
  * in a .gltf file, alpha modes, vertex colors, the second texture coordinates, meshopt
  * compression under each of its two names, and morph targets: weights that a clip animates, eight
- * targets on two primitives, and a file's default weight on primitives that share targets. Two
- * scenes make their files in code, as small equivalents of Khronos test models whose originals
- * need an environment map or transmission: KHR_materials_specular's factors and textures, and
- * KHR_materials_ior's indices with the specular values. Their own lights light them. The vendor name's file is the instancing model as
+ * targets on two primitives, a file's default weight on primitives that share targets, and targets
+ * that move vertex colors. Three scenes make their files in code: the color targets, and two small
+ * equivalents of Khronos test models whose originals need an environment map or transmission:
+ * KHR_materials_specular's factors and textures, and KHR_materials_ior's indices with the specular
+ * values. The specular and IOR scenes' own lights light them. The vendor name's file is the instancing model as
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter.
  */
@@ -123,6 +125,11 @@ export const MODEL_SCENES = {
 		url: sampleUrl('sources/khronos/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb'),
 		frame: { center: [0, 0.1, 0], radius: 0.8 },
 		view: [0, 1, 1],
+	},
+	'morph-colors': {
+		file: () => colorMorphBuilder().glb(),
+		frame: { center: [0, 0.05, 0.1], radius: 1.05 },
+		view: [0.3, 0.35, 1],
 	},
 } as const satisfies Record<string, ModelScene>;
 
