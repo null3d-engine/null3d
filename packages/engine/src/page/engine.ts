@@ -32,6 +32,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
+import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
@@ -1669,10 +1670,7 @@ async function startEngine(
 		 * mode's frame is read back already, so the page encodes that and the GPU draws nothing more.
 		 */
 		const captureImage = async (): Promise<Blob> => {
-			if (held) {
-				const { encodeFrame } = await import('../shared/frame-image');
-				return encodeFrame({ ...held, pixels: held.pixels.slice() }, device.transparent);
-			}
+			if (held) return encodeFrame({ ...held, pixels: held.pixels.slice() }, device.transparent);
 			if (localDrawing && draw) return draw.captureImage(localDrawing, slots);
 			const reply = await rendererHost?.request({ type: 'capture', image: true });
 			if (reply?.type === 'captured-image') return reply.image;
