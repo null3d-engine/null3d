@@ -4,7 +4,10 @@
 // a page that never stops its engine. Opened on its own, the page publishes the same message on
 // window, and its trail notes each worker's replies. The page that holds the frame can read the
 // engine's control slots, to learn which thread a start that never ends waits for, and it hears how
-// many job workers were still inside the job loop when the frame's page left.
+// many job workers were still inside the job loop when the frame's page left. For the frame memory
+// probe, ?pagehide=terminate ends every worker of the frame as its page leaves, ?pagehide=lose also
+// gives up the WebGL2 context of a canvas that the page draws on, and ?stopdelay= waits that many
+// ms after a stop before the frame tells the page.
 import { createEngine, EngineError } from '@null3d/engine';
 import * as Slot from '../../packages/engine/src/shared/slot';
 import { progress } from './lib/result';
@@ -35,6 +38,31 @@ window.__engineFrameSlots = () => {
 		.join(', ');
 };
 
+const switches = new URLSearchParams(location.search);
+const onLeave = switches.get('pagehide');
+/** Every worker that the frame starts, so that ?pagehide=terminate can end them. */
+const frameWorkers: Worker[] = [];
+if (onLeave) {
+	const FrameWorker = globalThis.Worker;
+	globalThis.Worker = class extends FrameWorker {
+		constructor(url: string | URL, options?: WorkerOptions) {
+			super(url, options);
+			frameWorkers.push(this);
+		}
+	};
+	addEventListener('pagehide', () => {
+		if (onLeave === 'lose')
+			try {
+				const gl = document.querySelector('canvas')?.getContext('webgl2');
+				gl?.getExtension('WEBGL_lose_context')?.loseContext();
+			} catch {
+				// A canvas that a worker draws on has no context on the page.
+			}
+		for (const worker of frameWorkers) worker.terminate();
+	});
+}
+window.__probeHeld = { sentinel: {} };
+
 /** The message that the frame sends the page that holds it. */
 export interface EngineFrameMessage {
 	engineFrame: 'running' | 'stopped' | 'failed';
@@ -57,8 +85,10 @@ try {
 	});
 	await engine.firstFrame;
 	progress('first frame');
-	if (new URLSearchParams(location.search).get('stop') === 'destroy') {
+	if (switches.get('stop') === 'destroy') {
 		await engine.destroy();
+		const delay = Number(switches.get('stopdelay') ?? 0);
+		if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
 		tell({ engineFrame: 'stopped' });
 	} else {
 		// Runs after the engine's own handler, which ends the job workers' loops and waits a moment.

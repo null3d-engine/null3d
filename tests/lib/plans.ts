@@ -196,6 +196,8 @@ export type Check =
 	| { kind: 'environment'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
+	/** A probe page whose result is read by hand: it fails only when the page fails. */
+	| { kind: 'probe' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -510,6 +512,26 @@ export function checksPlan(): PlanItem<Check>[] {
 					{ kind: 'restarts', mode, start },
 					{ switches: [`kinds=${start}`, mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
 				),
+			),
+		),
+		...(
+			[
+				[
+					'frame-memory-synthetic',
+					'holds=page,worker-released,worker,worker-waitasync,page-webgl-released,page-webgl,worker-webgl-released,worker-webgl',
+				],
+				[
+					'frame-memory-engine-pipelined',
+					'holds=engine-terminate,engine-destroyed-late,engine-destroyed,engine',
+				],
+				['frame-memory-engine-main', 'holds=engine-lose,engine-terminate,engine&render=main'],
+			] as const
+		).map(([id, switches]) =>
+			pageItem(
+				id,
+				'frame-memory',
+				{ kind: 'probe' },
+				{ switches: [switches], timeoutSeconds: 300 },
 			),
 		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
@@ -1597,6 +1619,7 @@ export function judge(
 	}
 	switch (check.kind) {
 		case 'capabilities':
+		case 'probe':
 			return [];
 		case 'capabilities-reload':
 			return reloadProblems(check, result, context);
