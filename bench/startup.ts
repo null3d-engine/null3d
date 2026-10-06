@@ -45,6 +45,7 @@ import {
 	limitWorkerNetworks,
 	pageResultOf,
 } from './lib/devtools';
+import { readSwitches } from './lib/parity';
 import {
 	groupSamples,
 	judgeLoad,
@@ -143,7 +144,7 @@ export function parseArgs(args: readonly string[]): Options {
 		modes,
 		loads: list('--loads', LOAD_KINDS, android ? LOAD_KINDS : ['cold']),
 		networks: list('--network', NETWORK_NAMES, android ? NETWORK_NAMES : ['slow-4g']),
-		switches: values.get('--switches') ?? '',
+		switches: values.has('--switches') ? readSwitches(values.get('--switches'), '--switches') : '',
 		android,
 	};
 }

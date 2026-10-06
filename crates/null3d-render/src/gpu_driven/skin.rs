@@ -61,7 +61,7 @@ use crate::frame::{
 };
 use crate::meshes::MeshStorage;
 use crate::morph::{MORPH_LOCATION, MorphTexture, morph_of};
-use crate::pipelines::{DrawKey, PipelineCache};
+use crate::pipelines::{DrawKey, PipelineCache, built_by};
 use crate::skinning::{
     COLOR_LOCATION, JointTexture, SkinnedGate, skin_of, skinned_format, skinned_in_vertex_shader,
 };
@@ -393,8 +393,8 @@ impl Skinning {
         pipelines_built: u32,
     ) -> bool {
         let skinned = self.active();
-        let pass_built =
-            !self.dispatches() || (self.has_pipelines() && self.pipeline_frame <= pipelines_built);
+        let pass_built = !self.dispatches()
+            || (self.has_pipelines() && built_by(self.pipeline_frame, pipelines_built));
         self.gate.open_when_built(skinned, pipelines_built, || {
             pass_built && pipelines.all_built(waiting, pipelines_built)
         })

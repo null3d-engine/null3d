@@ -13,7 +13,7 @@ import {
 import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { DeviceShaderSet } from '../gpu/device-shaders';
-import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
+import { captureWebGPU, readbackWebGL2 } from '../gpu/readback';
 import {
 	contextFinished,
 	releaseContext,
@@ -179,7 +179,7 @@ class WebGPURenderer implements Renderer {
 		pass.setColor(view, undefined, true, true, color, 0);
 		pass.setTimestampWrites(this.timer?.passWrites(true));
 		encoder.beginRenderPass(pass.descriptor).end();
-		this.timer?.resolve(encoder);
+		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
 		this.timer?.afterSubmit();
 	}
@@ -200,14 +200,9 @@ class WebGPURenderer implements Renderer {
 
 	async capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }> {
 		const { width, height } = this.canvas;
-		const texture = this.device.createTexture({
-			size: [width, height],
-			format: 'rgba8unorm',
-			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-		});
-		this.clear(texture.createView(), input.background);
-		const pixels = await readbackWebGPU(this.device, texture);
-		texture.destroy();
+		const pixels = await captureWebGPU(this.device, width, height, 'rgba8unorm', (texture) =>
+			this.clear(texture.createView(), input.background),
+		);
 		return { width, height, pixels };
 	}
 
