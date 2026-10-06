@@ -6,8 +6,6 @@ import {
 	ENGINE_MODES,
 	type EngineResult,
 	engineProblems,
-	type SameCanvasResult,
-	sameCanvasRoomNote,
 } from './engine-checks.ts';
 
 const SWIFTSHADER =
@@ -77,23 +75,5 @@ describe('the frame-rate checks of the engine page', () => {
 		]);
 		expect(paceProblems(slowResult(SWIFTSHADER, 100))).toEqual([]);
 		expect(paceProblems(slowResult(MAC_GPU, 16))).toEqual(['measured a refresh rate of null Hz']);
-	});
-});
-
-describe('the note of a same-canvas page that waited for room', () => {
-	it('gives the wait and each count of the room', () => {
-		const result: SameCanvasResult = {
-			workersOfOne: 4,
-			workersOfSecond: 4,
-			workersAfter: 1,
-			workersAfterRemoval: 0,
-			reuse: 'E1419',
-			frames: 30,
-			roomCounts: [2, 2, 35],
-			roomWaitMs: 2_140,
-		};
-		expect(sameCanvasRoomNote(result)).toBe(
-			"the page waited 2.1 s for room for its engines' memories, as the browser freed the memory of earlier pages: room for 2, then 2, then 35",
-		);
 	});
 });

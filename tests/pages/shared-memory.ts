@@ -1,12 +1,15 @@
 // Checks that the browser gets back the memory of a stopped engine, so a page can start the engine
 // again and again. It counts how many shared memories with the engine's default maximum the page
-// can hold at once: its room. It then starts and stops the engine, in the mode the page's switches
-// ask for, more times than that where the room is small, and counts the room again once they stop.
-// An engine whose memory the browser never gets back takes room that a later one needs, so a later
-// start fails or the room after is smaller. Safari gives a stopped engine's memory back only seconds
-// later on a slow machine, so a start that Safari refuses waits and tries again, and the page waits
-// for the room to come back, each within a bound, before it reports. The page also reports how many
-// of the memories it gave to workers, and how many of those workers, it can still reach.
+// can hold at once, its room, up to a cap: a count holds what it counts until the browser frees it,
+// and Safari frees it late, so a count of a large room left the pages after it none. The page then
+// starts and stops the engine, in the mode the page's switches ask for, more times than the room
+// holds, and counts the room again once they stop. Where the count reached its cap, the starts go
+// past the most room that Safari on a Mac has had. An engine whose memory the browser never gets
+// back takes room that a later one needs, so a later start fails or the room after is smaller.
+// Safari gives a stopped engine's memory back only seconds later on a slow machine, so a start that
+// Safari refuses waits and tries again, and the page waits for the room to come back, each within a
+// bound, before it reports. The page also reports how many of the memories it gave to workers, and
+// how many of those workers, it can still reach.
 //
 // Safari can also lose room once without holding any memory: the room is a count of free 1 GiB
 // address ranges, and small buffers that land in freed ranges split them for good. So when the room
@@ -15,7 +18,8 @@
 //
 // ?kinds= tests other ways a thread holds a shared memory, such as a worker stopped inside a
 // blocking wait (see ./lib/memory-holder.ts). ?cycles= sets the number of starts and stops in each
-// round, ?room=off skips the counts of the room, and ?room=each also counts it after each start.
+// round, ?room=off skips the counts of the room, ?room=each also counts it after each start, and
+// ?room=full counts the whole room, as the memory plan does.
 import { createEngine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import type { EngineFrameMessage } from './engine-frame';
@@ -23,9 +27,11 @@ import { CORE_KINDS, type HoldKind, type HoldMessage, WOKEN_KINDS } from './lib/
 import { progress, run } from './lib/result';
 import {
 	allocateMemory,
-	countRoomAndRelease,
+	countRoom,
 	DEFAULT_MAXIMUM_PAGES,
-	MOST_HELD,
+	FULL_COUNT,
+	MOST_ROOM_SEEN,
+	ROOM_CAP,
 	ROOM_KEPT,
 	roomAfterPauses,
 } from './lib/room';
@@ -35,9 +41,9 @@ const params = new URLSearchParams(location.search);
 const MAXIMUM_PAGES = Number(params.get('maximum') ?? DEFAULT_MAXIMUM_PAGES);
 /** Cycles beyond the room: enough that memories the browser never gets back use it up. */
 const EXTRA_CYCLES = 4;
-/** The fewest and the most cycles: where the room is large, the counts after show a leak instead. */
+/** The fewest cycles, and the cycles of a page that counts no room. */
 const MIN_CYCLES = 3;
-const MAX_CYCLES = 10;
+const UNCOUNTED_CYCLES = 10;
 /** How long the page waits after a worker is ready, so that a blocking worker is inside its wait. */
 const SETTLE_MS = 50;
 /** How long a worker may take to get ready, and the engine to start and to draw its first frame. */
@@ -60,6 +66,8 @@ type Kind = 'engine' | 'canvas-kept' | 'frame' | 'frame-destroyed' | 'dropped' |
 const KINDS = (params.get('kinds')?.split(',') ?? ['engine']) as Kind[];
 const COUNT_ROOM = params.get('room') !== 'off';
 const COUNT_EACH = params.get('room') === 'each';
+/** The cap of each count of the room. */
+const CAP = params.get('room') === 'full' ? FULL_COUNT : ROOM_CAP;
 
 /** One round of starts and stops, and the counts of the room after it. */
 interface RoundResult {
@@ -213,7 +221,7 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 	}
 	if (COUNT_EACH) {
 		const last = starts.at(-1);
-		if (last) last.roomAfter = (await countRoomAndRelease(MAXIMUM_PAGES)).room;
+		if (last) last.roomAfter = (await countRoom(CAP, MAXIMUM_PAGES)).room;
 	}
 }
 
@@ -354,7 +362,7 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 	const wait =
 		roomBefore === undefined
 			? undefined
-			: await roomAfterPauses(roomBefore - ROOM_KEPT, MAXIMUM_PAGES);
+			: await roomAfterPauses(roomBefore - ROOM_KEPT, CAP, MAXIMUM_PAGES);
 	return {
 		cycles: done,
 		...failure,
@@ -368,14 +376,14 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 }
 
 run('shared-memory', async () => {
-	const before = COUNT_ROOM ? await countRoomAndRelease(MAXIMUM_PAGES) : undefined;
-	const room = before?.room ?? MOST_HELD;
-	// Stopped engines on kept canvases may hold their memory until a new engine needs it, so where
-	// the browser limits the room, those starts go past it, to show that such memory never stops a
-	// start.
-	const most = KINDS.includes('canvas-kept') && room < MOST_HELD ? room + EXTRA_CYCLES : MAX_CYCLES;
+	const before = COUNT_ROOM ? await countRoom(CAP, MAXIMUM_PAGES) : undefined;
+	// The starts go past the room, so memory that engines keep stops a later start. Stopped engines
+	// on kept canvases may hold their memory until a new engine needs it, and those starts show that
+	// such memory never stops one. A count that the browser refused below its cap is the whole room;
+	// one that reached the cap is not, so the starts then go past the most room seen.
+	const room = before?.error === undefined ? MOST_ROOM_SEEN : before.room;
 	const cycles = Number(
-		params.get('cycles') ?? Math.min(most, Math.max(MIN_CYCLES, room + EXTRA_CYCLES)),
+		params.get('cycles') ?? (before ? Math.max(MIN_CYCLES, room + EXTRA_CYCLES) : UNCOUNTED_CYCLES),
 	);
 	const kinds: Partial<Record<Kind, KindResult>> = {};
 	for (const kind of KINDS) {

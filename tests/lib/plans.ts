@@ -77,7 +77,7 @@ import {
 	type OverloadStep,
 	ratesParted,
 } from '../pages/lib/overload.ts';
-import { ROOM_KEPT } from '../pages/lib/room.ts';
+import { ROOM_KEPT, ROOM_LOST_ONCE } from '../pages/lib/room.ts';
 import { glslProgramsOf } from '../pages/lib/shader-list.ts';
 import {
 	frameSaving,
@@ -105,7 +105,6 @@ import {
 	jobWorkersProblem,
 	type SameCanvasResult,
 	sameCanvasProblems,
-	sameCanvasRoomNote,
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
@@ -249,16 +248,12 @@ type SameCanvasPattern = (typeof SAME_CANVAS_PATTERNS)[number];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
 /**
- * How long the restart page may take: two rounds, each of up to ten starts and stops, which may
- * wait 30 s in all for the browser to free memory, and of the counts of the room, which may wait
- * 91 s for it to come back. The second round runs only when the room did not come back.
+ * How long the restart page may take: two rounds, each of starts and stops past the most room seen,
+ * which took up to 4 minutes with their waits in Safari on CI's Mac. A round's starts may wait 30 s
+ * in all for the browser to free memory, and its counts of the room 91 s for it to come back. The
+ * second round runs only when the room did not come back.
  */
-const RESTARTS_TIMEOUT_SECONDS = 420;
-/**
- * How long a same-canvas page may take: its starts and stops take seconds, and before them it may
- * wait 91 s for the room for their memories to come back.
- */
-const SAME_CANVAS_TIMEOUT_SECONDS = 150;
+const RESTARTS_TIMEOUT_SECONDS = 600;
 /**
  * The thread modes whose engines start in frames that the restart page removes while they run.
  * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
@@ -539,7 +534,7 @@ export function checksPlan(): PlanItem<Check>[] {
 						{ kind: 'same-canvas', tier, mode, pattern },
 						{
 							switches: ['case=same-canvas', `pattern=${pattern}`, `gpu=${tier}`, mode.query],
-							timeoutSeconds: SAME_CANVAS_TIMEOUT_SECONDS,
+							timeoutSeconds: 60,
 						},
 					),
 				),
@@ -1032,7 +1027,12 @@ export function memoryPlan({ runs = MEMORY_LOADS }: PlanSettings = {}): PlanItem
 			'shared-memory',
 			{ kind: 'room', maximumMiB },
 			{
-				switches: ['kinds=dropped', 'cycles=1', `maximum=${maximumMiB * PAGES_PER_MIB}`],
+				switches: [
+					'kinds=dropped',
+					'cycles=1',
+					'room=full',
+					`maximum=${maximumMiB * PAGES_PER_MIB}`,
+				],
 				timeoutSeconds: ROOM_TIMEOUT_SECONDS,
 			},
 		),
@@ -1570,10 +1570,11 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
 
 /**
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
- * memory that the browser did not get back from the stopped engines. Room that the first round lost
- * and the second round kept is lost address space, not memory that the engines hold, so it gets a
- * note through `note` instead. So does room that engines on kept canvases left held: their starts go
- * past the room, so a start fails when that memory stops it.
+ * memory that the browser did not get back from the stopped engines. A little room that the first
+ * round lost and the second round kept is lost address space, not memory that the engines hold, so
+ * it gets a note through `note` instead; more than that fails. Room that engines on kept canvases
+ * left held gets a note too: their starts go past the room, so a start fails when that memory stops
+ * it.
  */
 export function restartProblems(
 	result: RestartResult,
@@ -1604,6 +1605,10 @@ export function restartProblems(
 	else if (roomLost(again.room, again))
 		problems.push(
 			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
+		);
+	else if ((result.room ?? 0) - again.room > ROOM_LOST_ONCE)
+		problems.push(
+			`the browser did not get back the memory of ${words.engines}: ${lostText}, and for ${again.roomLater} after ${again.cycles} more, more than the ${ROOM_LOST_ONCE} that lost address space explains`,
 		);
 	else
 		note?.(
@@ -1714,11 +1719,8 @@ export function judge(
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
 			return restartProblems(result as unknown as RestartResult, check.start, context?.note);
-		case 'same-canvas': {
-			const sameCanvas = result as unknown as SameCanvasResult;
-			if (sameCanvas.roomWaitMs > 0) context?.note?.(sameCanvasRoomNote(sameCanvas));
-			return sameCanvasProblems(sameCanvas, check.mode);
-		}
+		case 'same-canvas':
+			return sameCanvasProblems(result as unknown as SameCanvasResult, check.mode);
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []

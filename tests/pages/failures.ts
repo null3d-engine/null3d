@@ -8,15 +8,12 @@
 //   same canvas, as React's StrictMode does. A third start follows at once. With &pattern=then, the first start is destroyed once
 //   it resolves; with &pattern=abort, it is cancelled. The second must draw, with no more workers
 //   than one engine has. Once the canvas leaves the page, no worker stays, and in the modes where a
-//   worker drew, a later engine on the canvas fails with E1419. Before the first start, the page
-//   waits for room for the memories of all its starts: Safari frees the memory of the test pages
-//   before this one late, at times so late that every start of this page would find none.
+//   worker drew, a later engine on the canvas fails with E1419.
 // - two-live: a second engine on the canvas of a running one fails with E1419.
 // - after-destroy: a sketch on the page's thread calls the engine after destroy(), and again once
 //   a second engine runs: both calls fail with E1420.
 import { createEngine, type Engine, type EngineError } from '@null3d/engine';
 import { liveWorkers, progress, run } from './lib/result';
-import { countRoomAndRelease, roomAfterPauses } from './lib/room';
 import type { FailuresSketch } from './sketches/failures-sketch';
 
 const params = new URLSearchParams(location.search);
@@ -24,11 +21,6 @@ const sketch = new URL('./sketches/failures-sketch.ts', import.meta.url);
 /** How long the page waits for a failure, and how often its own timer ticks meanwhile. */
 const REPORT_MS = 15_000;
 const TICK_MS = 50;
-/**
- * The engines that the same-canvas case starts. Safari may free the memory of none of them before
- * the last start, so the page waits for room for each.
- */
-const SAME_CANVAS_STARTS = 4;
 
 const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 
@@ -93,11 +85,6 @@ run('failures', async () => {
 		return { codes: [engine.code], messages: [engine.message.split(' See ')[0]], ticks: 1 };
 	}
 	if (which === 'same-canvas') {
-		const before = await countRoomAndRelease();
-		const wait =
-			before.room < SAME_CANVAS_STARTS ? await roomAfterPauses(SAME_CANVAS_STARTS) : undefined;
-		const roomCounts = [before.room, ...(wait?.counts ?? [])];
-		progress(`room for ${roomCounts.join(', then ')} engines' memories`);
 		const first = await started();
 		const workersOfOne = liveWorkers();
 		// Not waited for: the next start waits for it.
@@ -127,16 +114,7 @@ run('failures', async () => {
 			(engine) => engine.destroy().then(() => 'started'),
 			(error: EngineError) => error.code,
 		);
-		return {
-			workersOfOne,
-			workersOfSecond,
-			frames,
-			workersAfter,
-			workersAfterRemoval,
-			reuse,
-			roomCounts,
-			roomWaitMs: wait?.waitMs ?? 0,
-		};
+		return { workersOfOne, workersOfSecond, frames, workersAfter, workersAfterRemoval, reuse };
 	}
 	if (which === 'two-live') {
 		const first = await started();
