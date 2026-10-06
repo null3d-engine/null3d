@@ -122,9 +122,10 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
  * end in -prepass, the depth prepass, for the one that ends in -index, vertex shaders that read
- * instance data by index, for those that end in -timed, the time of each WebGL call, and for those
- * that end in -synced, that time with a wait for the browser's GPU process after each call, and
- * the GPU interface it draws with.
+ * instance data by index, for those that end in -blend-off, S4's shadow cascades with no band
+ * between them, for those that end in -timed, the time of each WebGL call, and for those that
+ * end in -synced, that time with a wait for the browser's GPU process after each call, and the
+ * GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -144,6 +145,16 @@ const PAGES = {
 		folder: 'null3d',
 		switches: 'gpu=webgpu&instances=index',
 		api: 'webgpu',
+	},
+	'null3d-webgpu-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowCascadeBlend=0',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowCascadeBlend=0',
+		api: 'webgl2',
 	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
@@ -483,12 +494,29 @@ export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): 
 }
 
 /**
+ * One page switch: a name of letters in words joined by hyphens, such as `display-check`, with a
+ * value or none. A value holds letters, digits, `.`, `-`, `_` and `,`, such as `reversed-gl` or
+ * `bc,etc2`.
+ */
+const PAGE_SWITCH = /^[a-z]+(-[a-z]+)*(=[\w.,-]+)?$/i;
+
+/** The form of page switches, for error messages. */
+const SWITCHES_FORM =
+	'names of letters and hyphens, each with =value or none, joined by &, such as shadows=3 or display-check=off&hold';
+
+/**
  * The page switches of a command's `option`, such as `--switches shadows=3`: names, each with a
  * value or none, joined by `&`. It throws unless the text has that form.
  */
 export function readSwitches(text: string | undefined, option: string): string {
-	if (!text || !/^[a-z]+(=[\w.]+)?(&[a-z]+(=[\w.]+)?)*$/i.test(text))
+	if (!text) throw new Error(`${option}: give page switches: ${SWITCHES_FORM}`);
+	if (text.startsWith('?'))
 		throw new Error(`${option}: give page switches without the ?, such as shadows=3 or a=1&b`);
+	const bad = text.split('&').find((entry) => !PAGE_SWITCH.test(entry));
+	if (bad !== undefined)
+		throw new Error(
+			`${option}: ${bad ? `"${bad}" is not a page switch` : 'a switch is empty'}. Give ${SWITCHES_FORM}`,
+		);
 	return text;
 }
 

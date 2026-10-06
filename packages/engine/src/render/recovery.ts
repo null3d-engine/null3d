@@ -7,6 +7,7 @@
 import { messageOf } from '../errors/message';
 import { type CanvasHolder, releaseCanvas } from '../gpu/canvas-release';
 import { Slot } from '../shared/control';
+import { nextFrameTaken } from './loop';
 
 /**
  * What recovery needs of a renderer: its loss signal, a simulated loss, and its canvas and GPU
@@ -107,11 +108,11 @@ export class Drawing<R extends Recoverable> {
 	}
 
 	/**
-	 * In hold mode, draws the held frame on the canvas unless it is there already, and resolves once
-	 * it is. With a live loop it resolves at once.
+	 * Resolves once the frame to capture is on the canvas. In hold mode, that is the held frame,
+	 * which the loop draws when first asked. A live loop first takes a frame after this call.
 	 */
-	async drawHeld(): Promise<void> {
-		await this.loop.drawHeld?.();
+	async nextFrame(): Promise<void> {
+		await (this.loop.drawHeld?.() ?? nextFrameTaken(this.slots));
 	}
 
 	/** Acts out a loss of the GPU, which the engine then recovers from as from a real one. */

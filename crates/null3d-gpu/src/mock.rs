@@ -111,6 +111,15 @@ enum Resource {
     Texture(u32),
 }
 
+/// What a bundle's command uses: a resource, or a bind group by id. The backends replay a bundle's
+/// commands and look its bind groups up by id when it runs, so a group made again after the bundle
+/// was recorded binds its new resources there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BundleUse {
+    Resource(Resource),
+    Group(u32),
+}
+
 /// Where a copy or a write starts: a texture, a mip level, and the first texel and layer.
 #[derive(Clone, Copy, Debug)]
 struct Location {
@@ -162,7 +171,7 @@ pub struct MockBackend {
     /// The buffers and textures of each bind group.
     bind_groups: HashMap<u32, Vec<Resource>>,
     /// The buffers and textures that each bundle's commands use, and the formats it draws into.
-    bundles: HashMap<u32, (Vec<Resource>, Formats)>,
+    bundles: HashMap<u32, (Vec<BundleUse>, Formats)>,
     /// The formats of the bundle being recorded.
     bundle_formats: Option<Formats>,
     /// The open render pass, or `None` outside one. A pass into the canvas before any
@@ -170,7 +179,7 @@ pub struct MockBackend {
     pass: Option<Pass>,
     in_compute_pass: bool,
     /// The bundle being recorded, and what its commands use.
-    recording: Option<(u32, Vec<Resource>)>,
+    recording: Option<(u32, Vec<BundleUse>)>,
     canvas: Option<(u32, u32)>,
     pipeline_set: bool,
     vertex_buffer_set: bool,
@@ -259,7 +268,7 @@ impl MockBackend {
     /// Notes that a command used a resource: at once, or when its bundle runs.
     fn use_resource(&mut self, resource: Resource) {
         match &mut self.recording {
-            Some((_, uses)) => uses.push(resource),
+            Some((_, uses)) => uses.push(BundleUse::Resource(resource)),
             None => {
                 self.used.insert(resource);
             }
@@ -1060,8 +1069,13 @@ impl MockBackend {
                 {
                     return Err(MockError::Unaligned { op, offset });
                 }
-                for resource in resources {
-                    self.read_resource(op, resource)?;
+                match &mut self.recording {
+                    Some((_, uses)) => uses.push(BundleUse::Group(o[1])),
+                    None => {
+                        for resource in resources {
+                            self.read_resource(op, resource)?;
+                        }
+                    }
                 }
             }
             Op::SetVertexBuffer => {
@@ -1140,8 +1154,20 @@ impl MockBackend {
                         op,
                         "a bundle draws into the formats and sample count of its pass",
                     )?;
-                    for resource in uses {
-                        self.read_resource(op, resource)?;
+                    for used in uses {
+                        match used {
+                            BundleUse::Resource(resource) => self.read_resource(op, resource)?,
+                            BundleUse::Group(group) => {
+                                let resources = self
+                                    .bind_groups
+                                    .get(&group)
+                                    .cloned()
+                                    .ok_or(missing(op, "bind group", group))?;
+                                for resource in resources {
+                                    self.read_resource(op, resource)?;
+                                }
+                            }
+                        }
                     }
                 }
                 // WebGPU clears the pass's pipeline and buffers after it replays bundles, so a

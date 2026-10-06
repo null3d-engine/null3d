@@ -2,13 +2,16 @@
 // ?far=<n> frames, and reads several frames back while the box drives. For each frame it reports
 // how far the box's shadow lies from the box along the image's x axis, in pixels: the mean x of the
 // shadow's pixels minus the mean x of the box's. A shadow that follows its caster keeps one offset
-// in every frame.
+// in every frame. With ?preset=<name>, the engine runs that preset, and the sketch keeps the
+// preset's own `followMovingCasters`. ?reads=<n> and ?gap=<n> set the frames read back and the
+// animation frames before each read.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
-/** Frames read back, and animation frames between two reads. */
-const READS = 8;
-const GAP_FRAMES = 3;
+const params = new URLSearchParams(location.search);
+/** Frames read back, and animation frames before each read. */
+const READS = Number(params.get('reads') ?? 8);
+const GAP_FRAMES = Number(params.get('gap') ?? 3);
 /** Rows above the box that its shadow can reach in the image. */
 const SHADOW_ROWS = 16;
 /** Gray ground darker than this share of the lit ground's brightness counts as shadow. */
@@ -56,7 +59,8 @@ run('moving-shadow', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/shadow-contact-sketch.ts', import.meta.url);
 	sketch.searchParams.set('moving', '');
-	sketch.searchParams.set('far', new URLSearchParams(location.search).get('far') ?? '1');
+	sketch.searchParams.set('far', params.get('far') ?? '1');
+	if (params.has('preset')) sketch.searchParams.set('follow', 'preset');
 	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 	await engine.firstFrame;
 	const offsets: (number | null)[] = [];
@@ -66,5 +70,5 @@ run('moving-shadow', async () => {
 		offsets.push(shadowOffset(width, height, pixels));
 	}
 	await engine.destroy();
-	return { tier: engine.capabilities.tier, offsets };
+	return { tier: engine.capabilities.tier, preset: engine.mode.preset, offsets };
 });

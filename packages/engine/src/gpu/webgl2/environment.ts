@@ -5,6 +5,8 @@
 // the level of an RGB9_E5 cube texture: WebGL2 renders into no shared-exponent format, and the copy
 // stays on the GPU. This path needs no float render target, so every device takes it (D-66). One
 // call runs every step, before the frame's passes, so the map is whole before any frame reads it.
+// Each step waits for the GPU between the pack and the unpack: Firefox on the Mac fills the pixel
+// pack buffer late, and an unpack that does not wait reads the bytes that the buffer held before.
 // The GL objects of a map go at the end of the call; the programs and the sampler stay for the
 // next map in the context.
 
@@ -155,6 +157,7 @@ export function roomGenerator(shader: ShaderVariant<Pipeline>): CubeGenerator {
 			gl.drawArrays(gl.TRIANGLES, 0, 3);
 			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, texels);
 			gl.readPixels(0, 0, width, step.size, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+			gl.finish();
 			if (read && step.into.includes('target')) read(step.level, step.size);
 			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
 			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, texels);
