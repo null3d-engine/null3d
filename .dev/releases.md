@@ -300,7 +300,7 @@ The gate moved to 89a1d6295 (#321), the cold-load fix, and ran on the night of 5
 Notes on the figures:
 
 - The iPad slowed during the night, whichever commit it served. In the first GPU time round, its frame rate fell from 60 to 30 fps. From the soak on, it held 15 fps on WebGPU. The rate fell in exact halves of the 60 Hz screen, and GPU time per frame barely moved. The older commit ran as slowly as the gate commit. So the iPad capped its own frame rate, most likely from heat after hours of charging and load. It does not point to the engine. Its soak and GPU time comparison run again on a cool iPad.
-- The owner watched the soak's S4 page on 03a1ad198, in run 20261005-143144-soak. That run stopped after its GPU-loss pages, for the Mac's quiet window. The shadows jerkily trail the cars, very obviously. At Low, a far cascade draws once in 4 frames and keeps its turns while cars move in it ([D-16](decisions/D-16-moving-casters-and-bias.md)). So a far shadow can trail by up to 3 frames. Each shadow step of the governor makes the far cascade's turns longer, up to every 8th frame. S4's 10-minute WebGPU run took 34 quality steps, against 8 on 5309dba5. S4 does not report the far cascade's interval, so how far the governor took it is not known. By the owner's ruling of 6 October 2026, this finding does not hold back the gate ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). The cause is known: at Low, the far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, on fix/shadow-trail (944bb64ef), and lands in M2.
+- The owner watched the soak's S4 page on 03a1ad198, in run 20261005-143144-soak. That run stopped after its GPU-loss pages, for the Mac's quiet window. The shadows jerkily trail the cars, very obviously. At Low, a far cascade draws once in 4 frames and keeps its turns while cars move in it ([D-16](decisions/D-16-moving-casters-and-bias.md)). So a far shadow can trail by up to 3 frames. Each shadow step of the governor makes the far cascade's turns longer, up to every 8th frame. S4's 10-minute WebGPU run took 34 quality steps, against 8 on 5309dba5. S4 does not report the far cascade's interval, so how far the governor took it is not known. The cause is known: at Low, the far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, on fix/shadow-trail. By the owner's ruling of 6 October 2026, the fix is part of the gate ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)).
 - On the Mac, the GPU image step ran while the jitter branch built, and the Mac's 1-minute load reached about 40. The SwiftShader images, the parity scenes, Safari and Firefox then ran one at a time, each at a load below 18.
 
 ### Reruns on the gate commit fdf14a28
@@ -330,6 +330,7 @@ The open items, with the helper that owns each one. This list changes as each it
 | All | Timing tests kept apart from other work in CI. It sends its merge commit for the record | Its merge commit | m1-timing-isolation | In progress |
 | All | The test switches' names. It sends its merge commit for the record | Its merge commit | m1-switch-names | In progress |
 | All | The speed of WebGL2 at Medium on Apple GPUs. It sends its merge commit for the record | Its merge commit | m1-webgl2-medium | In progress |
+| 3 | The fix for the shadows that trail the cars in S4 at Low, on fix/shadow-trail: its pull request merged, then a check on the owner's iPad after the gate's soak and GPU time comparison. S4 by eye, then a timing of main against the cache | Its merge commit | m1-shadow-trail | Fix built, in its final tests |
 
 After each run, a row goes in [the record of tested devices](tested-devices.md).
 
@@ -351,6 +352,6 @@ The owner ruled on the gate's results on 6 October 2026 ([D-83](decisions/D-83-g
 
 - The gate commit moves to the first main commit that holds #347 and #335, the allocation fixes. Only the items that failed, or that gave no valid result, run again there. [What the gate still needs](#what-the-gate-still-needs) lists them.
 - T-28's cold-start target on the S24+ in Chrome on Slow 4G is 5.5 s, up from 4.5 s. The warm target stays at 1 s. So the gate commit's 4,532 and 4,557 ms pass.
-- The shadows that trail the cars in S4 at Low are a known finding, and they do not hold back the gate. The fix lands in M2.
+- The fix for the shadows that trail the cars in S4 at Low is part of the gate. An earlier ruling that day had left it for M2.
 - The fix for the memory that piles up in Safari on the iPhone and the iPad (#352) joins the gate. It needs evidence on the merged main from the cloud iPhone 16 and the owner's iPad.
 - The browser fixes for memory, speed and faults in progress on 6 October join the gate, and new features wait for the next week. The gate's final pass runs on the main commit of the last of these fixes to merge.
