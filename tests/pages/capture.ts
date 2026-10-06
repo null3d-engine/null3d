@@ -1,7 +1,9 @@
 // Starts the engine with the boxes sketch, a still scene, in the thread mode and on the GPU tier
 // that the URL's switches ask for, and reads a frame back both ways: its pixels with captureFrame,
-// and a PNG file with capture. With ?hold=, both give the held frame. Then it stops the engine, and
-// reports the error code of a capture after the stop.
+// and a PNG file with capture. With ?hold=, both give the held frame. With ?lose as well, the GPU is
+// lost before capture, which still gives the held frame, since the page keeps it, and the page
+// reports the loss's error code. Then it stops the engine, and reports the error code of a capture
+// after the stop.
 import { createEngine, EngineError } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
@@ -15,6 +17,12 @@ run('capture', async () => {
 	});
 	if (engine.mode.hold === null) await engine.firstFrame;
 	const frame = await engine.captureFrame();
+	let lost: string | undefined;
+	if (new URLSearchParams(location.search).has('lose')) {
+		const failure = new Promise<string>((resolve) => engine.onFailure(({ code }) => resolve(code)));
+		engine.simulateGpuLoss();
+		lost = await failure;
+	}
 	const image = await engine.capture();
 	await engine.destroy();
 	const afterStop = await engine.capture().then(
@@ -30,5 +38,6 @@ run('capture', async () => {
 		image: toBase64(new Uint8Array(await image.arrayBuffer())),
 		imageType: image.type,
 		afterStop,
+		lost,
 	};
 });

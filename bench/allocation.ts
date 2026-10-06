@@ -57,7 +57,8 @@
 //   bun run bench:allocation --environment --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
-import { chromium, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
 	type HeapProfile,
@@ -219,16 +220,15 @@ async function main(): Promise<void> {
 	const dev = args.includes(DEV_OPTION);
 	const noInline = args.includes('--no-inline');
 	const server = await serveBenchPages({ dev });
-	const browser = await chromium.launch({
+	const browser = await launchInWindow({
 		channel: 'chrome',
-		headless: false,
 		args: [
 			`--remote-debugging-port=${DEBUG_PORT}`,
 			...(noInline ? ['--js-flags=--no-turbo-inlining --no-maglev-inlining'] : []),
 		],
 	});
 	try {
-		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
+		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';

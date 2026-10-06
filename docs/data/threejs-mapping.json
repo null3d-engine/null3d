@@ -605,7 +605,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "Built in: shadow: { cascades } on the directional light",
-      "notes": "Delete the addon. Its cascades, maxFar and shadowMapSize become the cascades, distance and mapSize settings. The cascades keep still edges as the camera turns, and far cascades draw every few frames, as the farCascadeInterval quality setting says. The mode setting has no equivalent: the engine's split leans a little more toward the camera than the addon's practical mode, so its near cascade is shorter.",
+      "notes": "Delete the addon. Its cascades, maxFar and shadowMapSize become the cascades, distance and mapSize settings. The cascades keep still edges as the camera turns, and far cascades draw every few frames, as the farCascadeInterval quality setting says. The fade option is on by default: neighboring cascades blend over a band, which the shadowCascadeBlend quality setting sizes, and fade: false maps to shadowCascadeBlend: 0. The mode setting has no equivalent: the engine's split leans a little more toward the camera than the addon's practical mode, so its near cascade is shorter.",
       "docs": "concepts/shadows",
       "detect": "\\bCSM\\b|csm/CSM"
     },

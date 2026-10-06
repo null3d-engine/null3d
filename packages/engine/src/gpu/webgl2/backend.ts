@@ -1878,7 +1878,23 @@ export class WebGL2Backend {
 		this.setScissorTest(false);
 		if (this.passToCanvas) return;
 		const framebuffer = this.passFramebuffer;
-		if (this.passResolve !== G.NO_TARGET) {
+		// Tile-based GPUs skip writing a target that the pass discards back to memory. A discard
+		// comes while the pass's framebuffer is still the one drawn into, as ANGLE on Metal ends the
+		// pass, with its stores, at a resolve's blit, which it draws as a pass of its own. The blit
+		// reads the color, so a pass that resolves discards its color after the blit.
+		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
+		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
+		const resolves = this.passResolve !== G.NO_TARGET;
+		const keepsColor = storeColor || resolves;
+		const discard = storeDepth
+			? keepsColor
+				? undefined
+				: DISCARD_COLOR
+			: keepsColor
+				? DISCARD_DEPTH
+				: DISCARD_BOTH;
+		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		if (resolves) {
 			const into =
 				this.passResolve === 0
 					? (this.canvasTarget?.framebuffer ?? null)
@@ -1890,21 +1906,11 @@ export class WebGL2Backend {
 			const height = this.passHeight;
 			gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 		}
-		// Tile-based GPUs then skip writing the multisampled targets back to memory.
-		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
-		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const depth = this.passDepth;
 		if (storeDepth && depth?.renderbuffer && depth.texture) this.copyDepth(framebuffer, depth);
-		const discard = storeColor
-			? storeDepth
-				? undefined
-				: DISCARD_DEPTH
-			: storeDepth
-				? DISCARD_COLOR
-				: DISCARD_BOTH;
-		if (discard) {
+		if (resolves && !storeColor) {
 			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
-			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, discard);
+			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, DISCARD_COLOR);
 		}
 	}
 

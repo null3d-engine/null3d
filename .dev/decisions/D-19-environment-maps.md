@@ -165,7 +165,7 @@ The whole map in one go, from the call until the GPU had finished it, in Chrome.
 | Galaxy S25, Pixel 9, 10 and 11, WebGPU | 92.7 to 128.7 ms | 47.8 to 99.7 ms | 16.6 to 95.0 ms |
 | The same phones, WebGL2 | 100.3 to 225.5 ms | 57.7 to 107.3 ms | 42.8 to 111.6 ms |
 
-The thread that draws spends under 1 ms of its own time in the call on the Mac; the rest is the GPU's. The engine makes no such one-texel draws. On the Mac its first map on WebGL2 showed no wait for the driver, since the pipelines build in the background first. SwiftShader on the Mac took 0.8 to 0.9 s for the whole room.
+The thread that draws spends under 1 ms of its own time in the call on the Mac; the rest is the GPU's. Since 6 October 2026, the WebGL2 generator waits for the GPU after each step's pack. Firefox fills the pack buffer late ([implementation notes](../implementation-notes.md#browser-faults)). The thread that draws then waits in the call for most of the map. In Firefox on the Mac it waited 15.4 ms of the 20.8 ms map. The table's WebGL2 times above were taken before that wait. The engine makes no such one-texel draws. On the Mac its first map on WebGL2 showed no wait for the driver, since the pipelines build in the background first. SwiftShader on the Mac took 0.8 to 0.9 s for the whole room.
 
 Before M2-E9, M2-E2 made the room in 32 slices, one a frame. The Mac timed each slice from its call until the GPU had finished it:
 

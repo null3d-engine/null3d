@@ -544,7 +544,7 @@ impl ShadowTiles {
         if created_pipelines {
             self.last_new_pipeline = frame;
         }
-        if null3d_core::frames::frame_after(self.last_new_pipeline, pipelines_built) {
+        if !crate::pipelines::built_by(self.last_new_pipeline, pipelines_built) {
             return;
         }
         for (slot, drawn) in self.slots.iter_mut().zip(&self.frames) {

@@ -103,7 +103,7 @@ export const ERROR_FIXES = {
 	E1418:
 		"Add 'wasm-unsafe-eval' to the script-src of the page's Content-Security-Policy, for example script-src 'self' 'wasm-unsafe-eval'. It allows WebAssembly and no JavaScript eval. The hosting page of the docs gives the whole policy that the engine needs.",
 	E1419:
-		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says the canvas's drawing thread failed, put a new canvas element in its place.",
+		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says that no engine can draw on the canvas again, put a new canvas element in its place.",
 	E1420:
 		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
 	E1421:
