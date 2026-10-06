@@ -438,3 +438,37 @@ The `fetch` reads would also need the shader to know WebGL2's `standard` depth m
 - `implicit_comparison_levels` in `crates/null3d-shaders/src/glsl.rs` rewrites the reads in each GLSL stage. A test in `crates/null3d-shaders/tests/build.rs` checks that no zero-gradient read is left.
 - A shadow map that gets more than one level would need another read on WebGL2, as `texture()` would then pick a level from the screen's gradients.
 - WebGL2's slower pixels on Apple GPUs remain. The [implementation notes](../implementation-notes.md#safaris-webgl2-path) keep the figures.
+
+## Addendum, 2026-10-07: the receiver plane's cost on the iPad, and a cheaper form
+
+The gate compared S4's GPU time on the owner's iPad again on 6 October 2026, at Low on WebGPU with the governor off. Each build ran 30 s twice, in the order A, B, D, E, F, G, H ([Releases](../releases.md#s4s-gpu-time-at-low-the-second-comparison)). Every build had the newer GPU timer, the cascade loops of #364, and no copies of #353's argument buffers, unless its row says otherwise. Every run drew 60 fps with 56 draw calls in most frames.
+
+### Data
+
+| Build | GPU ms per frame, median, the two runs | Against B |
+| --- | --- | --- |
+| A: f46c0686, the older commit | 9.74, 9.89 | -1.08 ms |
+| B: main 8699fab4 | 10.95, 10.84 | |
+| D: the gate commit fdf14a28 | 10.30, 10.24 | -0.62 ms: every change merged after the gate commit |
+| E: B without #343's cascade blend and box fitting | 10.46, 10.33 | -0.50 ms |
+| F: B with the sun's receiver plane off | 9.70, 9.70 | -1.19 ms |
+| G: B without #350's later timestamp reads | 11.09, 10.91 | +0.11 ms, within the runs' spread |
+| H: B with #353's argument copies, as Safari makes them | 10.91, 10.80 | -0.04 ms |
+
+So the receiver plane of [Acne on flat casters](#acne-on-flat-casters) costs 1.19 ms of the iPad's frame at Low, 11% of it. That is more than the whole gap of 1.08 ms to the older commit: without the plane, S4 took 0.12 ms less than that commit. Both runs of F failed the shadow check, with 0.870% of open lit ground in shadow against a limit of 0.2%, as the plane's acne fix predicts. #343's band reads a second layer, plane and all, so its share overlaps the plane's. On the Mac in Chrome, the plane cost 0.10 ms of about 1.33 ms, 7.5%.
+
+### Options
+
+1. Turn the plane off at Low. Low's slabs would show the stripes and acne again. Rejected: the owner kept the plane on every preset on 5 October 2026.
+2. Work out the same plane with less arithmetic. Chosen.
+
+### Decision
+
+The owner ruled on 6 October 2026, at about 23:55 (rulings 11 and 12). The plane's arithmetic may change if the image does not. Whatever cost the cheaper form leaves is accepted as this record's cost, and the gate's GPU item closes.
+
+`receiver_plane` worked out the plane from two directions along the surface. That took two cross products, a normalize, three matrix products and a determinant. Each cascade's projection is orthographic, so each of its matrix's first three rows is one of the light's axes, scaled. So the depth's change per texel along each axis is the normal's share along that axis over its share toward the light, scaled by the rows' squared sizes. That takes one matrix product of the normal and three dot products. In double precision, 20,000 random normals and cascade boxes gave the same slope to within 7.6e-15 of its size. The plane in the band of [D-73](D-73-cascade-blend.md) gets cheaper the same way.
+
+### Consequences
+
+- The image tests of the sun's shadows, S2, S4, the lit materials and the cascade seam passed against the existing references, with none changed: 92 of 92 on the Mac's GPU and 92 of 92 on SwiftShader. The shadow checks, contact, turn and moving shadow specs passed too: 96 of 96 on the Mac's GPU, and 93 with 3 skipped on SwiftShader.
+- The iPad's figures for the cheaper form follow in this record once the iPad has run it.
