@@ -1,6 +1,6 @@
 # D-71: Custom effects and the tone-curve hook
 
-Status: decided. Date: 2026-10-05; the device timings are pending. Task: M2-F5.
+Status: decided. Date: 2026-10-05; the Mac's timings 2026-10-06, the iPad's pending. Task: M2-F5.
 
 ## Question
 
@@ -49,12 +49,25 @@ How do a sketch's own full-screen effects and its own tone curve join the post-p
 
 - `?gltiming` wraps every WebGL call, which adds about 0.15 to 0.3 ms per frame, so the table compares runs that both had it. After the fix, 4 effects add 0.02 and 0.15 ms of CPU time per frame. WebGPU's 4 effects add 0.04 ms. The framebuffer checks fell from 2 per frame to 0.01, which is the frames that add the effects.
 
-### Pending timings
+### Timings on the Mac
 
-These two figures were asked for on the Mac. The Mac was not quiet enough to time them before this record, so they run on devices, as the other effect costs do:
+The Mac ran both figures on 6 October 2026, in headless Chrome 154 on its GPU, at 1920 x 1080 and a render scale of 1. The load was 7.64 at the start and 3.69 at the end. Each page ran 3 rounds from the branch, and every page held 16.665 ms frames (60 Hz). WebGL2 has no GPU timer, so these are WebGPU figures.
 
-1. The cost of one more full-screen pass at 1920 x 1080: the `effects` plan (`.dev/devices.md`, the effect cost plans). It adds 4 effects that each read their own pixel, so a quarter of the difference is one pass. Run it on the Mac in Chrome when its load is below 8, and on the iPad and the phone.
-2. The GPU cost of the move to HDR color in compatibility mode. Compatibility mode is a Chrome mode on desktops, so the Mac measures it. The effect cost page takes `antialias`: load `tests/pages/effect-cost.html?gpu=compat&effect=effects&count=0&antialias=msaa`, which stays on the 8-bit path with MSAA, and the same with `antialias=fxaa`, which draws HDR color with FXAA. With no effects both sides of each load draw the same, so the difference between the two loads is the move's cost. Add `&preset=low` for Low's figure.
+1. One more full-screen pass costs about 0.05 ms of GPU time. The `effects` plan's page adds 4 effects that each read their own pixel, so a quarter of the difference is one pass.
+
+| GPU path | No effects | 4 effects | One pass |
+| --- | --- | --- | --- |
+| WebGPU | 0.405 ms | 0.601 ms | 0.049 ms |
+| Compatibility mode | 0.506 ms | 0.706 ms | 0.050 ms |
+
+2. The move to HDR color in compatibility mode costs about 0.27 ms of GPU time. The page loads `?gpu=compat&effect=effects&count=0`, once with `antialias=msaa`, which stays on the 8-bit path with MSAA, and once with `antialias=fxaa`, which draws HDR color with FXAA. Both sides of each load draw the same, so the difference between the loads is the move's cost.
+
+| Preset | 8-bit with MSAA | HDR with FXAA | The move |
+| --- | --- | --- | --- |
+| Default | 0.242 ms | 0.510 ms | 0.268 ms |
+| Low | 0.229 ms | 0.508 ms | 0.279 ms |
+
+Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 ms. On the cloud Pixel 10's WebGPU (5 October 2026), 4 effects raised GPU time from 2.10 to 3.41 ms, about 0.33 ms a pass. The iPad's run of the `effects` plan is still pending: `bun tests/real-browsers.ts --plan effects --lan ipad-safari`.
 
 ## Decision
 
@@ -79,7 +92,7 @@ The move to HDR costs less. Compatibility mode with MSAA is the only 8-bit path 
 ## Options rejected
 
 - Effects after the tone curve, on display color, as three.js's `ShaderPass` after `OutputPass` sees it. Bloom would not see what the effects add, the 8-bit color would band in dark effects, and the October review placed effects in HDR. A port of a three.js pass that assumes display color adjusts its numbers instead (porting docs).
-- Merging per-pixel effects into the final pass now. Each set of effects would need a final pass built with their functions together. The plugin builds each WGSL alone, at build time, so the build cannot know which effects a sketch runs at once. A run-time merge needs the engine to join WGSL at run time on both paths. That is a larger change, and the per-pass cost decides whether it pays (pending timings).
+- Merging per-pixel effects into the final pass now. Each set of effects would need a final pass built with their functions together. The plugin builds each WGSL alone, at build time, so the build cannot know which effects a sketch runs at once. A run-time merge needs the engine to join WGSL at run time on both paths. That is a larger change. A pass costs about 0.05 ms of GPU time on the Mac and about 0.33 ms on the Pixel 10 (Timings on the Mac), which decide whether it pays.
 - An effect `stage` option (`'hdr'` or `'final'`), as the early docs drew it. One stage keeps one model: every effect sees HDR color, and the tone curve hook covers what a `'final'` effect would map.
 - A `name` option. The returned `Effect` is the handle, so a name added nothing.
 - A curve with uniforms. Its build joins the final pass, whose uniform block is fixed. Curves that three.js offers need no uniforms beyond the exposure, which the engine applies earlier.
