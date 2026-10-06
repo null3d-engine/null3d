@@ -311,6 +311,7 @@ These items ran again on the new gate commit fdf14a28 (#347), by the owner's rul
 | --- | --- | --- | --- | --- |
 | 4 | Mac, Chrome | Allocation, S4 on WebGPU and on WebGL2 (gate steps `allocation-s4-webgpu` and `allocation-s4-webgl2`, record 20261006-021354-gate), at a 1-minute load of about 4 | WebGL2: sketch worker 241.6 bytes per frame, render worker 149.6. The governor's judge step, 4.1 of 4 before, no longer allocates. WebGPU: sketch worker 244.1, render worker 633.9, with the replay at 298.7 of 320 against 296.9 on 89a1d6295 | Pass |
 | Note | iPad Pro 11-inch, Safari 26.6.2 | A heat check before the soak: S4 at Low on WebGPU with the governor off, 60 seconds (run 20261006-021836-bench). Safari first refused memory (E1109) and was restarted | 60.0 fps in 60 of 60 seconds, 10.65 ms of GPU time per frame, 56 draw calls. The iPad was cool again | Recorded |
+| All | GitHub | The test switches' names (#354, merge commit 493b175a0, merged by the owner) | The device runner, the bench tools and the image tests accept switch names with hyphens, such as `display-check=off`. No device run is needed | Done |
 
 ### What the gate still needs
 
@@ -329,7 +330,6 @@ The open items, with the helper that owns each one. This list changes as each it
 | All | The capture fix, on fix/capture-yield. It sends its merge commit for the record | Its merge commit | m1-capture | In progress |
 | All | The fix for the frame count's wrap. It sends its merge commit for the record | Its merge commit | m1-frame-wrap | In progress |
 | All | Timing tests kept apart from other work in CI. It sends its merge commit for the record | Its merge commit | m1-timing-isolation | In progress |
-| All | The test switches' names. It sends its merge commit for the record | Its merge commit | m1-switch-names | In progress |
 | All | The speed of WebGL2 at Medium on Apple GPUs. It sends its merge commit for the record | Its merge commit | m1-webgl2-medium | In progress |
 | 3 | The fix for the shadows that trail the cars in S4 at Low, on fix/shadow-trail: its pull request merged, then a check on the owner's iPad after the gate's soak and GPU time comparison. S4 by eye, then a timing of main against the cache | Its merge commit | m1-shadow-trail | Fix built, in its final tests |
 
