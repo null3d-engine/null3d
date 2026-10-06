@@ -455,13 +455,16 @@ export interface CoreGlue extends CoreErrors {
 	setPixelRatio(ratio: number): number;
 	/**
 	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
-	 * shadow cascade, from 1 to 8, and whether a far cascade draws in every frame while a moving
-	 * caster touches it, from the next frame on.
+	 * shadow cascade, from 1 to 8, whether a far cascade draws in every frame while a moving
+	 * caster touches it, the share of each cascade's length over which it blends into the next,
+	 * from 0 to 0.5, and whether far cascades keep their still casters in cache layers, from the
+	 * next frame on.
 	 */
 	setShadowQuality(
 		filter: number,
 		farInterval: number,
 		followMovers: boolean,
+		cascadeBlend: number,
 		cache: boolean,
 	): number;
 	/**
@@ -518,6 +521,11 @@ export interface CoreGlue extends CoreErrors {
 	 * clip itself.
 	 */
 	clipReady(ticket: number): number;
+	/**
+	 * The clips so far that the core resampled at each frame, plus one. The others held keys on
+	 * their frames already, as the asset tool writes them, and were copied.
+	 */
+	resampledClips(): number;
 	/** Adds an animated instance of a skeleton. */
 	createAnimatedInstance(skeleton: number): number;
 	/** Removes an animated instance; later instances take its id and joints. */
@@ -545,17 +553,15 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	animatedInstanceJoints(instance: number): number;
 	/**
-	 * Plays a clip on an instance's layer, fading over `fade` seconds at `speed`, with
-	 * `ANIMATION_PLAY_*` flags.
+	 * Plays a clip on an instance's layer with `ANIMATION_PLAY_*` flags, and the fade, speed, time
+	 * and weight written into the play numbers (`ANIMATION_FIELD_PLAY_ARGS`).
 	 */
-	animatorPlay(
-		instance: number,
-		clip: number,
-		layer: number,
-		fade: number,
-		speed: number,
-		flags: number,
-	): number;
+	animatorPlay(instance: number, clip: number, layer: number, flags: number): number;
+	/**
+	 * Plays a 1D blend on an instance's layer, of `count` clips staged as their ids plus one, then
+	 * their points as floats, with the fade, speed and phase written into the play numbers.
+	 */
+	animatorPlayBlend(instance: number, count: number, layer: number, flags: number): number;
 	/** Stops a clip on an instance, or every clip when `clip` is 0, fading over `fade` seconds. */
 	animatorStop(instance: number, clip: number, fade: number): number;
 	/** Creates a joint mask of a skeleton from the staging words: one weight from 0 to 1 per joint. */
@@ -681,6 +687,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createClip',
 	'createClipLater',
 	'clipReady',
+	'resampledClips',
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
@@ -692,6 +699,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMorphTargets',
 	'animationArrays',
 	'animatorPlay',
+	'animatorPlayBlend',
 	'animatorStop',
 	'createJointMask',
 	'setLayerMask',

@@ -30,6 +30,7 @@ import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
+import { POINT_IMAGE } from '../../bench/scenes/points.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -783,6 +784,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The still shadow scene, whose wall throws one long shadow edge across the seam between the
+	// first two cascades. Over the band at the first cascade's far end, its shadow blends into the
+	// second cascade's, so the edge shows no line where they meet.
+	{
+		name: 'shadows-seam',
+		sketch: 'tests/pages/sketches/shadow-scene-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
 	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
 	// between them.
@@ -1226,6 +1238,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/sprites-sketch.ts',
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
+	},
+	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
+	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
+	// PointsMaterial.
+	{
+		name: 'points',
+		sketch: 'tests/pages/sketches/points-sketch.ts',
+		hold: 0,
+		size: [POINT_IMAGE.width, POINT_IMAGE.height],
 	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes

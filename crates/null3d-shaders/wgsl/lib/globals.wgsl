@@ -89,11 +89,14 @@ struct Material {
     /// The row of the texture coordinate transform that gives u, and the factor of the scene
     /// environment's light.
     uv_u: vec4f,
-    /// The row of the texture coordinate transform that gives v, and a spare.
+    /// The row of the texture coordinate transform that gives v, and the dielectric reflectance at
+    /// normal incidence that the index of refraction gives.
     uv_v: vec4f,
     /// The texture array layers of the base color, metal-rough, normal and occlusion maps. A layer
     /// below 0 means that the map draws nothing.
     maps: vec4f,
-    /// The layers of the emissive and light maps, and two spares.
+    /// The layers of the emissive, light, specular intensity and specular color maps.
     more_maps: vec4f,
+    /// The specular color, which tints the dielectric reflectance, and the specular intensity.
+    specular: vec4f,
 }

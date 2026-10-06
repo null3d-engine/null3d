@@ -129,6 +129,14 @@ export const QUALITY_SETTINGS = {
 		values: 'flag',
 		lighterWhenOn: true,
 	},
+	// The share of each shadow cascade's length, at its far end, over which its shadow blends into
+	// the next cascade's, so no line shows where they meet. Only the band's pixels read a second
+	// layer of the shadow map. D-73 gives the figures.
+	shadowCascadeBlend: {
+		presets: [0.1, 0.1, 0.1, 0.1],
+		changes: 'live',
+		values: { min: 0, max: 0.5 },
+	},
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
 	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
@@ -311,6 +319,13 @@ export interface QualitySettings {
 	 * cascade whole. Low turns it on. It changes during play.
 	 */
 	farCascadeCache: boolean;
+	/**
+	 * The share of each shadow cascade's length, at its far end, over which its shadow blends into
+	 * the next cascade's, from 0 to 0.5. The blend hides the line where a near cascade's sharper
+	 * shadows hand over to a far cascade's softer ones. Pixels in the band read both cascades, so a
+	 * wider band costs a little more. 0 hands over at once. It changes during play.
+	 */
+	shadowCascadeBlend: number;
 	/**
 	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
 	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes

@@ -46,10 +46,16 @@ async function workersCannotDraw(page: Page): Promise<void> {
  * The engine checks without their frame-rate checks, for the tests whose job is not the pace of the
  * frame loop. The engine must still run after its start, at whatever rate the machine draws. A busy
  * runner can slow every frame of a short measurement, which says nothing about what these tests
- * check. The tests that run each thread mode, and those that wake the threads with messages, check
- * the pace.
+ * check. The tests that run each thread mode check the pace, and so do those that wake the threads
+ * with messages. On a software GPU no test checks it, as the GPU sets the pace there.
  */
 const notPacing: EngineChecks = { pacing: false };
+
+/**
+ * The fewest frames that the tests without Atomics.waitAsync count after the pause, to show that
+ * its end woke the threads. The page counts until they come, however slowly the GPU draws them.
+ */
+const RESUMED_FRAMES = 11;
 
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
@@ -399,13 +405,16 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 for (const mode of THREADED_MODES) {
 	test(`the engine runs without Atomics.waitAsync, ${mode.name}`, async ({ page }) => {
 		await withoutWaitAsync(page);
-		await page.goto(`engine.html?gpu=webgl2&seconds=1&pause&${mode.query}`);
+		const switches = `gpu=webgl2&seconds=1&pause&resumed-frames=${RESUMED_FRAMES}&${mode.query}`;
+		await page.goto(`engine.html?${switches}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		await restoreWaitAsync(page);
 		expect(result.error).toBeUndefined();
 		expect(result.report.atomicsWaitAsync).toBe(false);
 		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
 		expect(result.pause?.paused.frames, 'frames computed during the pause').toBe(0);
-		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThan(10);
+		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThanOrEqual(
+			RESUMED_FRAMES,
+		);
 	});
 }

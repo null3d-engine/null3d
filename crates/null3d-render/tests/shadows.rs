@@ -542,7 +542,7 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
         filter: 3,
         far_interval: 2,
         follow_movers: true,
-        cache: false,
+        ..ShadowQuality::default()
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
     let mut mock = MockBackend::default();
@@ -630,6 +630,7 @@ fn far_cascades_with_a_cache_draw_still_casters_in_turns_and_moving_ones_over_a_
         far_interval: 2,
         follow_movers: true,
         cache: true,
+        ..ShadowQuality::default()
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
     let mut mock = MockBackend::default();

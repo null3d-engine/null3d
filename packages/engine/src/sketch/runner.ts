@@ -228,6 +228,8 @@ export class SketchRunner {
 	private followMovers = true;
 	/** The `farCascadeCache` setting, which the governor's shadow steps keep. */
 	private farCascadeCache = false;
+	/** The `shadowCascadeBlend` setting, which the governor's shadow steps keep. */
+	private cascadeBlend = 0;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -629,6 +631,7 @@ export class SketchRunner {
 		governor.setRange(low, high);
 		this.followMovers = settings.followMovingCasters;
 		this.farCascadeCache = settings.farCascadeCache;
+		this.cascadeBlend = settings.shadowCascadeBlend;
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
@@ -648,8 +651,8 @@ export class SketchRunner {
 
 	/**
 	 * Gives the core the shadow filter and the far cascades' interval after the governor's steps,
-	 * and whether far cascades follow moving casters and cache their still casters. Returns the
-	 * core's result: 0 when it took them.
+	 * whether far cascades follow moving casters, the blend between cascades, and whether far
+	 * cascades cache their still casters. Returns the core's result: 0 when it took them.
 	 */
 	private setShadowQuality(): number {
 		const { governor } = this;
@@ -657,6 +660,7 @@ export class SketchRunner {
 			governor.filter,
 			governor.farInterval,
 			this.followMovers,
+			this.cascadeBlend,
 			this.farCascadeCache,
 		);
 	}
