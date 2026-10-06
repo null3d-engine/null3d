@@ -325,7 +325,7 @@ The open items, with the helper that owns each one. This list changes as each it
 | 3 | The iPad's GPU time comparison of S4 at Low against f46c0686, A, B, A, B. A run that drops to 30 fps does not count | fdf14a28 | ipad-runner-b | Next, after the soak |
 | 1 | Firefox on the Mac through the device runner, after the fix for the room and GPU times (#350) merges | 156c0621, the first main commit with #350 | ff-room | #350 merged; the rerun is starting |
 | 1 | Safari on the Mac, the 2 pages of the 100,000-sprite scene, after the fix for WebKit bug 321876 merges. Its 4 restart pages passed again with the display awake | The first main commit with the fix | safari-gate | Fix in progress on fix/safari-gate-1006 |
-| 1, 4 | The fix for the memory that piles up in Safari on the iPhone and the iPad (#352). Once it merges: the cloud iPhone 16 runs the 12 engine pages that failed before, and the owner's iPad runs its test pages without a Safari restart. This morning's heat check on the iPad met the same pile-up (E1109) | 55ab8d73, the merge of #352 | m1-ios-memory | Merged by the owner as 55ab8d73. The iPhone 16 and iPad runs come next |
+| 1, 4 | The fix for the memory that piles up in Safari on the iPhone and the iPad (#352). Once it merges: the cloud iPhone 16 runs the 12 engine pages that failed before, and the owner's iPad runs its test pages without a Safari restart. This morning's heat check on the iPad met the same pile-up (E1109) | 55ab8d73, the merge of #352 | cloud-runner-e (iPhone 16), ipad-runner-b (iPad) | Merged by the owner as 55ab8d73. The iPhone 16 and iPad runs come next |
 | All | A new engine on the canvas of a destroyed one, on WebGL2 (#336). It sends its merge commit for the record | Its merge commit | m1-canvas-reuse | In progress |
 | All | The capture fix, on fix/capture-yield. It sends its merge commit for the record | Its merge commit | m1-capture | In progress |
 | All | The fix for the frame count's wrap. It sends its merge commit for the record | Its merge commit | m1-frame-wrap | In progress |
@@ -334,6 +334,8 @@ The open items, with the helper that owns each one. This list changes as each it
 | 3 | The fix for the shadows that trail the cars in S4 at Low, on fix/shadow-trail: its pull request merged, then a check on the owner's iPad after the gate's soak and GPU time comparison. S4 by eye, then a timing of main against the cache | Its merge commit | m1-shadow-trail | Fix built, in its final tests |
 
 After each run, a row goes in [the record of tested devices](tested-devices.md).
+
+The final pass starts with a full CI run of the final main commit, started by hand with `gh workflow run ci.yml --ref main`. The gate's `workflows` step reads that run, because the fixes merge by hand and do not pass through the merge queue.
 
 ### The owner's changes of 4 October 2026
 
