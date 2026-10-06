@@ -323,6 +323,7 @@ The open items, with the helper that owns each one. This list changes as each it
 | 3 | The iPad's GPU time comparison of S4 at Low against f46c0686, A, B, A, B. A run that drops to 30 fps does not count | fdf14a28 | ipad-runner-b | Started |
 | 1 | Firefox on the Mac through the device runner, after the fix for the room and GPU times (#350) merges | 156c0621, the first main commit with #350 | ff-room | #350 merged; the rerun is starting |
 | 1 | Safari on the Mac, the 2 pages of the 100,000-sprite scene, after the fix for WebKit bug 321876 merges. Its 4 restart pages passed again with the display awake | The first main commit with the fix | safari-gate | Fix in progress on fix/safari-gate-1006 |
+| 1, 4 | The fix for the memory that piles up in Safari on the iPhone and the iPad (#352). Once it merges: the cloud iPhone 16 runs the 12 engine pages that failed before, and the owner's iPad runs its test pages without a Safari restart. This morning's heat check on the iPad met the same pile-up (E1109) | The first main commit with #352 | m1-ios-memory | #352 open |
 
 After each run, a row goes in [the record of tested devices](tested-devices.md).
 
@@ -345,3 +346,4 @@ The owner ruled on the gate's results on 6 October 2026 ([D-83](decisions/D-83-g
 - The gate commit moves to the first main commit that holds #347 and #335, the allocation fixes. Only the items that failed, or that gave no valid result, run again there. [What the gate still needs](#what-the-gate-still-needs) lists them.
 - T-28's cold-start target on the S24+ in Chrome on Slow 4G is 5.5 s, up from 4.5 s. The warm target stays at 1 s. So the gate commit's 4,532 and 4,557 ms pass.
 - The shadows that trail the cars in S4 at Low are a known finding, and they do not hold back the gate. The fix lands in M2.
+- The fix for the memory that piles up in Safari on the iPhone and the iPad (#352) joins the gate. It needs evidence on the merged main from the cloud iPhone 16 and the owner's iPad.
