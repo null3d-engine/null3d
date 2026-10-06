@@ -117,6 +117,12 @@ interface ImageTestSettings {
 	devices?: readonly string[];
 	/** How long a page may take to publish its image, in seconds; 30 unless the entry gives another. */
 	timeoutSeconds?: number;
+	/**
+	 * Page switches that only the runs on SwiftShader add, after the others: a lighter load for a
+	 * scene that the software GPU draws too slowly in full on CI's machines. The SwiftShader references
+	 * show the scene with these switches, and every other place draws it in full.
+	 */
+	swiftShaderSwitches?: readonly string[];
 }
 
 /** A sketch that the image page draws in the engine's hold mode. */
@@ -170,6 +176,8 @@ export interface ImageRun {
 	deviceTolerance: Tolerance;
 	/** The run of the test's first mode on the same tier, whose pixels every other mode must match. */
 	sameAs?: string;
+	/** The switches that the run adds on SwiftShader alone, as `runIn` adds them. */
+	swiftShaderSwitches?: readonly string[];
 }
 
 /** The tiers a test draws on. */
@@ -241,10 +249,17 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 				tolerance: { ...TOLERANCE, ...test.tolerance },
 				deviceTolerance: { ...DEVICE_TOLERANCE, ...test.deviceTolerance },
 				...(index > 0 && { sameAs: idOf(modes[0]) }),
+				...(test.swiftShaderSwitches && { swiftShaderSwitches: test.swiftShaderSwitches }),
 			}));
 		});
 	});
 }
+
+/** A run as an environment draws it: on SwiftShader, with its SwiftShader switches after the others. */
+export const runIn = (run: ImageRun, environment: Environment): ImageRun =>
+	environment === 'chromium-swiftshader' && run.swiftShaderSwitches
+		? { ...run, path: `${run.path}&${run.swiftShaderSwitches.join('&')}` }
+		: run;
 
 /** Names that become folders and files: lowercase words joined by dashes. */
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
