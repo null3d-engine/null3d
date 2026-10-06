@@ -316,7 +316,7 @@ The open items, with the helper that owns each one. This list changes as each it
 | 3 | The iPad's GPU time comparison of S4 at Low against f46c0686, A, B, A, B. A run that drops to 30 fps does not count | fdf14a28 | ipad-runner-b | Waiting for the iPad to cool |
 | 1 | Firefox on the Mac through the device runner, after the fix for the room and GPU times (#350) merges | The first main commit with #350 | ff-room | #350 open |
 | 1 | Safari on the Mac, the 2 pages of the 100,000-sprite scene, after the fix for WebKit bug 321876 merges. Its 4 restart pages passed again with the display awake | The first main commit with the fix | safari-gate | Fix on a branch, not merged |
-| Finding | The shadows that trail the cars in S4 at Low | Main | shadow-trail | Looking for the cause |
+| Finding | The shadows that trail the cars in S4 at Low. The far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, with option 1 as the fallback | Branch fix/shadow-trail, then main | shadow-trail | Fix built, in its final tests, and taking main's cascade blend change. Then a pull request and a check on the owner's iPad |
 
 After each run, a row goes in [the record of tested devices](tested-devices.md).
 
