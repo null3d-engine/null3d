@@ -6,7 +6,8 @@
 // texture array per cascade. Far cascades draw only every few frames, and keep the box they drew
 // with in between. A receiver picks the cascade that holds its distance along the camera's view,
 // or the next one whose box holds it, and compares its depth from the light with the depth that
-// the cascade stored.
+// the cascade stored. Over a band at the far end of each cascade but the last, it blends that
+// shadow with the next cascade's, so no line shows where the cascades meet.
 //
 // Depth is reversed, as everywhere in the engine: 1 on the light's side of a cascade and 0 on the
 // far side. A point is lit where its depth is at least the stored depth. The filter reads the
@@ -44,6 +45,10 @@ struct ShadowCascades {
     /// pick each receiver's cascade: 0 unless another camera fitted them, as the debug API's
     /// shadow camera does.
     origin: vec4f,
+    /// Where each cascade's band starts, as receivers measure their distance to pick a cascade.
+    /// From there to the cascade's end, a receiver blends its shadow with the next cascade's. The
+    /// last cascade's band starts at its end.
+    bands: vec4f,
 }
 
 /// The tiles of the shadow atlas, as the core writes them each frame.
@@ -297,16 +302,13 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
         }
     }
     // A box that kept its place while the camera turned can miss the point; the next cascade's
-    // box is larger. The filter reads up to three texels beyond the point, which must stay inside
-    // the layer.
-    let inside = 0.5 - 3.0 * cascades.kernel.y;
+    // box is larger.
     var cascade = MAX_CASCADES;
     var clip = vec4f(0.0);
     for (var k = 0u; k < MAX_CASCADES; k++) {
         if cascade == MAX_CASCADES && k >= first && k < count {
-            let offset = bias_offset(normal, to_light, cascades.biases.xy, cascades.texels[k]);
-            let at = cascades.view_proj[k] * vec4f(relative + offset, 1.0);
-            if !any(abs(at.xy) > vec2f(2.0 * inside)) {
+            let at = sun_clip(k, relative, normal, to_light);
+            if sun_holds(at) {
                 cascade = k;
                 clip = at;
             }
@@ -315,6 +317,41 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     if cascade == MAX_CASCADES {
         return 1.0;
     }
+    var lit = sun_layer(cascade, clip, relative, normal, to_light);
+    // In the band at the cascade's far end, the shadow fades linearly into the next cascade's, which
+    // the next box holds there. Only the band's receivers read a second layer.
+    let band = cascades.bands[cascade];
+    if cascade == first && cascade + 1u < count && distance > band {
+        let next = cascade + 1u;
+        let at = sun_clip(next, relative, normal, to_light);
+        if sun_holds(at) {
+            let weight = (distance - band) / max(cascades.ends[cascade] - band, 1e-6);
+            lit = mix(lit, sun_layer(next, at, relative, normal, to_light), min(weight, 1.0));
+        }
+    }
+    return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
+}
+
+/// The clip position in cascade `cascade` of a receiver at `relative`, with unit normal `normal`
+/// and unit direction `to_light` toward the light, after the light's biases at that cascade's
+/// texels move it.
+fn sun_clip(cascade: u32, relative: vec3f, normal: vec3f, to_light: vec3f) -> vec4f {
+    let texel = cascades.texels[cascade];
+    let offset = bias_offset(normal, to_light, cascades.biases.xy, texel);
+    return cascades.view_proj[cascade] * vec4f(relative + offset, 1.0);
+}
+
+/// True when a cascade's box holds the clip position `clip`, with the texels that the filter reads
+/// beyond the point, up to three, inside its layer.
+fn sun_holds(clip: vec4f) -> bool {
+    let inside = 1.0 - 6.0 * cascades.kernel.y;
+    return !any(abs(clip.xy) > vec2f(inside));
+}
+
+/// How much of the main directional light reaches a receiver through cascade `cascade`, where the
+/// receiver lies at `clip` in the cascade's clip space (`sun_clip`), blended over the filter's
+/// square of texels.
+fn sun_layer(cascade: u32, clip: vec4f, relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     var uv = clip.xy * vec2f(0.5, -0.5) + 0.5;
 #ifdef WEBGL2
     // WebGL2 keeps the rows of a drawn texture bottom first.
@@ -322,8 +359,7 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
 #endif
     let m = cascades.view_proj[cascade];
     let plane = receiver_plane(m, relative, normal, to_light, cascades.kernel.x);
-    let lit = sun_filtered(cascades.kernel, uv, cascade, clip.z, plane);
-    return mix(lit, 1.0, smoothstep(end * (1.0 - FADE_SHARE), end, along));
+    return sun_filtered(cascades.kernel, uv, cascade, clip.z, plane);
 }
 
 /// The comparison of `depth` with layer `layer` of the shadow atlas around `uv`, blended over the

@@ -3,7 +3,7 @@ id: concepts/shadows
 title: Shadows
 status: experimental
 since: "0.1"
-summary: "Cascades that stay still as the camera turns; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings."
+summary: "Cascades that stay still as the camera turns and blend where they meet; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings."
 ---
 
 # Shadows
@@ -140,7 +140,7 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 | --- | --- | --- |
 | `cascades` | The preset's `shadowCascades` | The cascades, from 1 to 4. More cascades keep shadows sharp further from the camera, and each draws the casters once more. |
 | `mapSize` | The preset's `shadowMapSize` | Texels on each side of each cascade's layer: 256, 512, 1,024, 2,048 or 4,096. |
-| `distance` | 200 | How far from the camera, in meters along its view, shadows fall. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. |
+| `distance` | 200 | How far from the camera, in meters along its view, shadows fall. The camera's far plane ends them sooner. Shadows fade out over the last tenth of the distance. A camera under a scaled parent keeps the distance in meters. |
 | `bias` | 0.01 | How far each receiving surface moves toward the light before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 | `normalBias` | 0.02 | How far each receiving surface moves along its normal before its test, in meters, up to one texel of its cascade, scaled by its angle to the light. |
 
@@ -179,6 +179,31 @@ The sphere wastes some of each layer's texels, so these shadows are a little sof
 
 A surface picks its cascade by its distance from the camera, which a turn on the spot does not change. So a surface keeps its cascade while the camera turns, and its shadow keeps the same texels. A surface near the side of a wide view can then read a coarser cascade, so its shadow is a little softer. Behind an orthographic camera, whose cascades all have texels of one size, a surface uses its distance along the camera's view instead.
 
+A surface near the side of the view is further from the camera than along its view. So each cascade's box holds every surface whose distance from the camera falls in the cascade, at the sides of the view too. Each box starts along the view where the view's corners reach that distance. Narrow views need this most: their boxes are long and thin.
+
+## Blending between cascades
+
+```mermaid
+flowchart LR
+    near["Near cascade:<br/>fine texels"] --> band["Band at the near cascade's<br/>far end: both cascades,<br/>blended by distance"]
+    band --> far["Next cascade:<br/>coarser texels"]
+```
+
+Each cascade's texels are larger than those of the cascade before it, so its shadows are softer. Where one cascade hands over to the next, a shadow's edge would change its softness at once, and a line could show across the ground. So over a band at the far end of each cascade but the last, a surface blends the shadows of both cascades. At the band's start the surface takes its own cascade's shadow, and at the cascade's end the next cascade's. Between them the blend changes linearly with the distance from the camera.
+
+The `shadowCascadeBlend` quality setting gives the band as a share of each cascade's length: 0.1 on every preset. With the default settings, the first cascade blends into the second from about 21.6 m to 24 m. 0 hands over at once. Only the band's pixels read a second cascade, so a wider band costs a little more. It changes during play:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ quality }) => {
+  // A wider band, for a view that sees much ground across a hand-over.
+  quality.set({ shadowCascadeBlend: 0.2 });
+});
+```
+
+Each cascade's box starts at the band of the cascade before it, so it holds the band's surfaces as well as its own slice. The last cascade has no band: its shadows fade out over the last tenth of `distance` instead.
+
 ## Update rates
 
 The nearest cascade draws in every frame. The far cascades draw once every few frames, in turn, and keep their layers of the shadow map in between. Each frame then draws fewer casters. In S4 on a MacBook Pro, with far cascades every 2nd frame, that saves 0.19 ms of GPU time per frame.
@@ -209,7 +234,7 @@ export default defineSketch(({ quality }) => {
 });
 ```
 
-A cascade that waits keeps the box it drew with. When the camera turns quickly, part of the view can leave that box for a frame or two. Those surfaces then read the next cascade, whose box is larger.
+A cascade that waits keeps the box it drew with. When the camera moves or turns, its view can leave that box. Then the cascade draws at once, out of its turn, so no surface is left without a cascade. This happens after a camera cut, such as a respawn or a switch to another camera, and after a quick turn. A camera that moves smoothly, as S4's does, keeps the far cascades to their turns: the boxes hold its view until their next turns.
 
 ## Filtering
 
@@ -266,7 +291,7 @@ Each cascade that draws in a frame has a render pass that draws its casters' dep
 - On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
-Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says. On WebGL2 they read each texel on its own: 16 or 36 reads.
+Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says. On WebGL2 they read each texel on its own: 16 or 36 reads. Surfaces in a band between two cascades read both cascades, so twice as many.
 
 A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws the tiles of the faces that a moving caster touches, and at most 12 tiles draw again in a frame. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
 
@@ -286,6 +311,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map and the shadow
 - `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
 - `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
 - The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.
+- The CSM addon's `fade` option blends the cascades where they meet. null3D blends them by default, over the `shadowCascadeBlend` band. `fade: false` hands over at once, as `shadowCascadeBlend: 0` does.
 - A spot or point light's `shadow.mapSize` has no equivalent. The quality preset sets the size of every tile. `shadow.camera` has none either, as the tiles fit the light by themselves.
 - three.js draws a spot or point light's shadow map in every frame. null3D draws a tile only when its light or a caster in its range moves.
 
@@ -295,4 +321,4 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map and the shadow
 - [Objects and transforms](../api/objects.md): `setCastShadows` and `setReceiveShadows`.
 - [Lighting and environment](lighting.md): how lights reach surfaces.
 - [Render graph](render-graph.md): the passes that draw each frame.
-- [Quality presets](quality-presets.md): `shadowCascades`, `shadowMapSize`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters` and their values on each preset.
+- [Quality presets](quality-presets.md): `shadowCascades`, `shadowMapSize`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and their values on each preset.
