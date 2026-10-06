@@ -55,7 +55,7 @@ use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::MeshError;
-use null3d_render::morph::{MAX_DELTA_TEXELS, MorphError, MorphTargets};
+use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
@@ -1207,8 +1207,17 @@ pub fn create_mesh_from_arrays(
     value_with_engine(|e| {
         let jobs = JOBS.get().ok_or_else(|| fail(codes::NOT_READY, [0, 0]))?;
         let staging = std::mem::take(&mut e.staging);
-        let per_array = (targets as usize).saturating_mul(vertices as usize * 3);
-        let morph_words = per_array.saturating_mul(morph.count_ones() as usize);
+        let bits = [
+            morph_arrays::POSITIONS,
+            morph_arrays::NORMALS,
+            morph_arrays::TANGENTS,
+            morph_arrays::COLORS,
+        ];
+        let per_vertex = (targets as usize).saturating_mul(vertices as usize);
+        let words_of = |k: usize| per_vertex.saturating_mul(ARRAY_VALUES[k]);
+        let morph_words = (0..bits.len())
+            .filter(|&k| morph & bits[k] != 0)
+            .fold(0usize, |sum, k| sum.saturating_add(words_of(k)));
         let base = staging.len().checked_sub(morph_words);
         let short = || arrays_failure(ArraysError::Length(ArrayName::Positions));
         let geometry = {
@@ -1218,19 +1227,20 @@ pub fn create_mesh_from_arrays(
             from_arrays(&arrays, jobs).map_err(arrays_failure)?
         };
         let mut at = base.unwrap_or(0);
-        let mut array = |bit: u32| {
-            (morph & bit != 0).then(|| {
-                let words = &staging[at..at + per_array];
-                at += per_array;
+        let mut array = |k: usize| {
+            (morph & bits[k] != 0).then(|| {
+                let words = &staging[at..at + words_of(k)];
+                at += words.len();
                 // SAFETY: the words are initialized and aligned, and every bit pattern is a float.
                 unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<f32>(), words.len()) }
             })
         };
         let targets = MorphTargets {
             targets,
-            positions: array(morph_arrays::POSITIONS),
-            normals: array(morph_arrays::NORMALS),
-            tangents: array(morph_arrays::TANGENTS),
+            positions: array(0),
+            normals: array(1),
+            tangents: array(2),
+            colors: array(3),
         };
         let added = if morph == 0 {
             add_mesh(e, &geometry)
