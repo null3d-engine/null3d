@@ -126,6 +126,12 @@ describe('the gate steps', () => {
 			figure: 'CI: no run, Benchmarks: success',
 			verdict: 'fail',
 		});
+		// A full run started by hand counts for a commit that reached main without the queue.
+		const byHand = { ...ci, event: 'workflow_dispatch' };
+		expect(workflowResult(runs([mainRun, byHand, bench])).verdict).toBe('pass');
+		expect(workflowResult(runs([{ ...byHand, conclusion: 'failure' }, ci, bench])).verdict).toBe(
+			'fail',
+		);
 		expect(workflowResult('not json').verdict).toBe('fail');
 	});
 

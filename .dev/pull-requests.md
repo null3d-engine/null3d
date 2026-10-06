@@ -48,8 +48,11 @@ Each event runs its own share of CI's jobs, by the owner's decision of 6 October
 | Pull request | The quick checks: `build`, `docs-and-tools`, `rust-lint`, `rust-tests`, `size-base`, `wasm-checks`, `shader-compiler` and `packages` |
 | Merge queue | Every job: the quick checks, the 7 `browser` shards, the 2 `bench` shards and the `real-browsers` shards in Safari and Firefox |
 | Push to main | Only what later runs restore from main. `build` and `main-keep` keep the commit's sizes and the caches. The Rust jobs keep their Rust caches, and skip their checks when the cache is current |
+| Started by hand | Every job, as in the queue, on the branch that the run names: `gh workflow run ci.yml --ref main` |
 
 - Main gets the exact commit that the queue tested, so a run on main would only repeat the queue's checks.
+- The owner may merge a pull request by hand when it is urgent, its checks are green, and it is up to date with main. Nothing else may be merging then. Main's run does not test it again. Before such a commit serves as a gate or release commit, start a full run on main with `gh workflow run ci.yml --ref main`, before anything else merges. The exit gate and the Release workflow accept that run as they accept the queue's.
+- This split holds until the 1.0 release. After 1.0, pull requests run the browser tests on each push again ([D-86](decisions/D-86-ci-runs-per-event.md#until-10)).
 - A pull request's run no longer shows whether the browser tests pass. So before you turn on automatic merge, run the browser and image tests of the areas that your change touches, on both GPU sets. Run `bun run test:browser` with Playwright's `--grep` or a spec file. Run `bun run test:images` and `CI=1 bun run test:images` with `--grep`. A change that Safari or Firefox may treat differently also runs `bun run test:real-browsers Safari Firefox` ([Device sessions](devices.md)). A failure in the queue removes the pull request and makes every pull request behind it build again.
 - Before 6 October 2026, every pull request and every push to main ran the full suite, about 100 runner minutes each. GitHub Free runs 20 Linux jobs at once, so the queue's runs waited for runners for about half of their 32 minutes.
 

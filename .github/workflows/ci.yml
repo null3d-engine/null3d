@@ -1,14 +1,17 @@
 name: CI
 
-# Each event runs its own share of the jobs, and .dev/pull-requests.md lists them. A pull request
-# runs the quick checks. The merge queue runs every job on each pull request on top of main and the
-# pull requests ahead of it, and main then gets the exact commit that the queue tested. So a push to
-# main runs only what later runs restore from main: its caches, and its sizes for the size check.
+# Each event runs its own share of the jobs, as D-86 (.dev/decisions) decides until the 1.0 release,
+# and .dev/pull-requests.md lists them. A pull request runs the quick checks. The merge queue runs
+# every job on each pull request on top of main and the pull requests ahead of it, and main then gets
+# the exact commit that the queue tested. So a push to main runs only what later runs restore from
+# main: its caches, and its sizes for the size check. A run started by hand runs every job on its
+# branch, for a commit that reached main without the queue: gh workflow run ci.yml --ref main
 on:
   push:
     branches: [main]
   pull_request:
   merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -372,9 +375,10 @@ jobs:
     # set them, and when to add a shard.
     name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
-    # Only in the merge queue, as the bench and real-browsers jobs. Before a pull request joins the
-    # queue, its author runs the browser tests of the areas that it changes (.dev/pull-requests.md).
-    if: github.event_name == 'merge_group'
+    # Until 1.0, only in the merge queue and in a run started by hand, as the bench and real-browsers
+    # jobs (D-86). Before a pull request joins the queue, its author runs the browser tests of the
+    # areas that it changes (.dev/pull-requests.md). After 1.0, pull requests run them again.
+    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -420,7 +424,8 @@ jobs:
     # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
-    if: github.event_name == 'merge_group'
+    # Until 1.0, only in the merge queue and in a run started by hand (D-86).
+    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -464,10 +469,11 @@ jobs:
     # a missing adapter is reported as a skip. .dev/devices.md says when to add a shard:
     # add it to the list, and raise the count in the name and the command.
     # Until 1.0, the browsers run only in the merge queue, once for each pull request before it
-    # merges. Elsewhere the jobs are skipped, and ci-passed accepts that.
+    # merges, and in a run started by hand (D-86). Elsewhere the jobs are skipped, and ci-passed
+    # accepts that.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
     needs: build
-    if: github.event_name == 'merge_group'
+    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
     # each time the runner replaces it. The limit leaves room for that, and for a plan that grows.
@@ -503,9 +509,9 @@ jobs:
   ci-passed:
     # The one check of this workflow that main's merge queue requires, so that the jobs above can
     # split into shards and change their names with no change to the queue's rules. It runs after
-    # every other job, also after a failure or a cancel, and fails unless each job passed. Outside
-    # the merge queue a job may be skipped by its own condition; in the queue every job must pass.
-    # main-keep runs only on main, so it stays out of the list.
+    # every other job, also after a failure or a cancel, and fails unless each job passed. On a pull
+    # request or main a job may be skipped by its own condition. In the queue and in a run started
+    # by hand, every job must pass. main-keep runs only on main, so it stays out of the list.
     if: always()
     needs:
       - docs-and-tools
@@ -525,9 +531,9 @@ jobs:
       - name: Every job passed
         env:
           NEEDS: ${{ toJSON(needs) }}
-          IN_QUEUE: ${{ github.event_name == 'merge_group' }}
+          FULL_RUN: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
         run: |
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
-          jq -e --argjson queue "$IN_QUEUE" \
-            'length > 0 and all(.[]; .result == "success" or (.result == "skipped" and ($queue | not)))' \
+          jq -e --argjson full "$FULL_RUN" \
+            'length > 0 and all(.[]; .result == "success" or (.result == "skipped" and ($full | not)))' \
             <<< "$NEEDS" > /dev/null

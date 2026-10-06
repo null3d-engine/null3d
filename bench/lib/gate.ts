@@ -139,12 +139,13 @@ export function releaseVersion(output: string): string | null {
 export const GATE_VERSION = '0.1.0';
 
 /**
- * The workflows that must pass on the gate commit, each with the event whose runs count. Main gets
- * the exact commit that the merge queue tested, and only the queue's CI run holds every job: main's
- * own CI run keeps caches. Any run of the benchmarks counts.
+ * The workflows that must pass on the gate commit, each with the events whose runs count. Only a
+ * full CI run holds every job: the merge queue's, or a run started by hand for a commit that
+ * reached main without the queue. Main's own CI run keeps caches (D-86). Any run of the
+ * benchmarks counts.
  */
-export const GATE_WORKFLOWS: readonly { name: string; event?: string }[] = [
-	{ name: 'CI', event: 'merge_group' },
+export const GATE_WORKFLOWS: readonly { name: string; events?: readonly string[] }[] = [
+	{ name: 'CI', events: ['merge_group', 'workflow_dispatch'] },
 	{ name: 'Benchmarks' },
 ];
 
@@ -165,8 +166,8 @@ export function workflowResult(output: string): StepResult {
 		return { figure: 'no workflow runs in the output', verdict: 'fail' };
 	}
 	// gh lists the newest run first.
-	const states = GATE_WORKFLOWS.map(({ name, event }) => {
-		const run = runs.find((r) => r.workflowName === name && (!event || r.event === event));
+	const states = GATE_WORKFLOWS.map(({ name, events }) => {
+		const run = runs.find((r) => r.workflowName === name && (!events || events.includes(r.event)));
 		const state = !run ? 'no run' : run.status === 'completed' ? run.conclusion : run.status;
 		return { name, state };
 	});

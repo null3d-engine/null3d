@@ -1,6 +1,6 @@
 # D-86: Which CI jobs run on a pull request, in the merge queue and on main
 
-Status: decided by the owner on 2026-10-06. Date: 2026-10-06.
+Status: decided by the owner on 2026-10-06, until the 1.0 release. Date: 2026-10-06.
 
 ## Question
 
@@ -29,17 +29,33 @@ GitHub's cache rules decide where caches can be saved. A run restores the caches
 | --- | --- |
 | Pull request | `build`, `docs-and-tools` (lint, type check, docs and skills checks, unit tests, commit messages and trailers), `rust-lint`, `rust-tests`, `size-base`, `wasm-checks` (the size check), `shader-compiler`, `packages` |
 | Merge queue | Every job: those above, the 7 `browser` shards, the 2 `bench` shards and the 4 `real-browsers` shards |
+| Started by hand (`workflow_dispatch`) | Every job, as in the merge queue, on the branch that the run names |
 | Push to main | `build` and `main-keep`, which keeps the commit's sizes and the caches of the packages, Playwright's Chromium and the sample content. `rust-lint`, `rust-tests`, `shader-compiler` and `size-base` only keep their Rust caches. They stop after the cache step when its key matches exactly, which is the case unless the Rust inputs changed |
 
 - The queue already tests the exact commit that lands on main, so main's run repeated the queue's checks. A run on main now takes about 9 runner minutes in 7 jobs, against about 100 in 18.
 - A pull request's run drops the browser and benchmark page shards, about 79 of its 103 runner minutes. The Rust tests stay: they take about 8.5 minutes.
-- `ci-passed` already accepts a job that its own condition skipped outside the queue, and requires every job to pass in the queue. The queue's rule requires only `ci-passed` and `squash-title`, so it needs no change.
+- `ci-passed` accepts a job that its own condition skipped on a pull request or on main. In the queue and in a run started by hand, every job must pass. The queue's rule requires only `ci-passed` and `squash-title`, so it needs no change.
 - Before a pull request joins the queue, its author runs the browser and image tests of the areas that it changes. They run on both GPU sets ([Pull requests](../pull-requests.md#what-ci-runs-where)). The queue still runs every test. But a failure there removes the pull request, and the queue's next run starts again.
+
+### Merges by hand
+
+The owner asked whether to drop the merge queue, and kept it, with this split. The owner may merge a pull request by hand when it is urgent, its checks are green, and it is up to date with main. Nothing else may be merging then. Main's run does not test such a commit again. So before it serves as a gate or release commit, it gets a full run started by hand:
+
+```sh
+gh workflow run ci.yml --ref main
+```
+
+The run tests main's newest commit, so start it before anything else merges. The exit gate and the Release workflow accept that run as they accept the queue's.
+
+### Until 1.0
+
+This split holds until the 1.0 release. After 1.0, pull requests run the browser tests on each push again. To switch back, set the condition of the `browser` and `bench` jobs in `.github/workflows/ci.yml` to `github.event_name != 'push'`. They then run on pull requests too. Then drop the rule that authors run the browser tests before the queue from [Pull requests](../pull-requests.md#what-ci-runs-where). The `real-browsers` jobs were queue-only before this decision, and they stay so. Main's slim run and the run by hand stay. [Releases](../releases.md#versions) lists the switch among the steps of 1.0.
 
 ## Consequences
 
 - `.github/workflows/ci.yml` gives each job its events. The new `main-keep` job measures the `build` job's files and keeps their sizes. Before, `wasm-checks` checked main's sizes against the commit before, which the queue had already checked. The size check's base no longer has a case for a push to main.
 - `.github/actions/playwright-chromium` and `.github/actions/samples` take `cache-only`. `main-keep` uses it, so it downloads nothing when the cache already holds the version.
-- The Release workflow reads the merge queue's CI run of main's newest commit, not main's own run. That run is complete before the commit lands, so the workflow no longer waits for CI.
-- The exit gate's `workflows` step reads the merge queue's CI run of the gate commit. Main's own run no longer runs the image test manifest. A gate commit that did not come through the queue has no such run, and the step fails.
+- CI can be started by hand, and such a run runs every job.
+- The Release workflow reads the newest full CI run of main's newest commit: the queue's or one started by hand, not main's own run. The queue's run is complete before the commit lands, so the workflow no longer waits for CI.
+- The exit gate's `workflows` step reads the same full run of the gate commit. Main's own run no longer runs the image test manifest. A gate commit with no full run fails the step, until a run started by hand passes.
 - [Pull requests](../pull-requests.md#what-ci-runs-where) lists what runs where.
