@@ -368,6 +368,7 @@ The page kinds that end in `-timed` start null3D on WebGL2 with `?gl-timing`. Th
 
 - On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.
 - In Chrome, the time between the culling pass and the main pass is Chrome's own check of the indirect draws. At 240,000 boxes it takes about 0.1 to 0.3 ms.
+- The timer copies a frame's timestamps out only after the GPU has finished the frame, in a submit of its own. Firefox writes them late, so a copy in the frame's own commands read an earlier frame's values ([implementation notes](implementation-notes.md#browser-faults)). A pass without timestamps is left out of `gpuPassMs`, and its frame keeps its other parts.
 - The timestamps cover only the GPU passes. Work that the browser does outside them shows in `gpuLatencyMs` and in the frame rate, as [Safari's frame path](implementation-notes.md#safaris-frame-path) describes.
 - The timer times one frame in 11, a prime above the longest far cascade interval of 8. Until 5 October 2026 it timed one frame in 8. Low's far cascade drew once in 4 frames, so every timed frame fell between its turns. A build whose far cascade drew in turns then read about a quarter of that pass too low, and the pass never showed in its `gpuPassMs`. A unit test holds the count against every interval from 1 to 8. The draw call counts never had this fault: they count every frame.
 
