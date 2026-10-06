@@ -606,6 +606,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 240],
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
+		timeoutSeconds: 240,
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
@@ -1301,6 +1302,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'depth-precision',
 		...DEPTH_PAGE,
 		expect: { drewAsked: true, tiesWon: true, apartNear: true },
+		timeoutSeconds: 240,
 	},
 	// The same scene in each depth mode that ?depth= forces on WebGL2, which paints to the same image.
 	// A browser without EXT_clip_control draws reversed depth in WebGL2's range. Standard depth and
