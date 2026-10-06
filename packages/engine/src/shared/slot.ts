@@ -59,8 +59,9 @@ export const CanvasCssHeight = 21;
  */
 export const DisplayInterval = 22;
 /**
- * The images that the thread that draws received for texture uploads. The sketch thread sends
- * them in the order of their ids, which count from 1, so every id up to this count arrived.
+ * The newest id of an image that the thread that draws received for texture uploads, or 0 before
+ * the first. The sketch thread sends images in the order of their ids, which step and compare as
+ * frame numbers do, so every id up to this one arrived.
  */
 export const ImagesArrived = 23;
 /**
