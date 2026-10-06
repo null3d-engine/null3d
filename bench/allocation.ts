@@ -56,7 +56,7 @@
 //   bun run bench:allocation --environment --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
-import { keepingFocus, launchInWindow } from '../tests/lib/app-window.ts';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
 	type HeapProfile,
@@ -220,9 +220,7 @@ async function main(): Promise<void> {
 		],
 	});
 	try {
-		const page = await keepingFocus(() =>
-			browser.newPage({ viewport: { width: 1400, height: 800 } }),
-		);
+		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';

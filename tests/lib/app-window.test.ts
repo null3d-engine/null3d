@@ -4,7 +4,9 @@ import {
 	appWindow,
 	frontApp,
 	keepingFocus,
+	mainScreen,
 	PARKED_STRIP,
+	parkChromeWindow,
 	parkedPlace,
 	parkScript,
 	RUNNER_TITLE,
@@ -13,6 +15,21 @@ import {
 
 /** A laptop display of 1512 by 982 points, with a 33-point menu bar and a 43-point Dock. */
 const laptop = { height: 982, x: 0, y: 43 };
+
+/** Whether this machine is a Mac with a person at it, where tools move windows. */
+const personsMac = process.platform === 'darwin' && !process.env.CI;
+
+/** Runs `step` as in CI, then restores the environment. */
+async function asInCI<T>(step: () => T | Promise<T>): Promise<T> {
+	const ci = process.env.CI;
+	process.env.CI = '1';
+	try {
+		return await step();
+	} finally {
+		if (ci === undefined) delete process.env.CI;
+		else process.env.CI = ci;
+	}
+}
 
 describe('appWindow', () => {
 	it('opens apps in the background, parked at the small size, by default', () => {
@@ -72,14 +89,41 @@ describe('keepingFocus', () => {
 		expect(frontApp()?.pid).toBe(before?.pid);
 	});
 
-	it('reads no app in front in CI', () => {
-		const ci = process.env.CI;
-		process.env.CI = '1';
-		try {
-			expect(frontApp()).toBeUndefined();
-		} finally {
-			if (ci === undefined) delete process.env.CI;
-			else process.env.CI = ci;
-		}
+	it('reads no app in front in CI', async () => {
+		expect(await asInCI(frontApp)).toBeUndefined();
+	});
+});
+
+describe('parkChromeWindow', () => {
+	/** A DevTools connection to a Chrome page whose window is 1400 points wide; it records each call. */
+	const chrome = () => {
+		const calls: [string, object][] = [];
+		const call = async (method: string, params: object) => {
+			calls.push([method, params]);
+			return method === 'Browser.getWindowForTarget'
+				? { windowId: 7, bounds: { left: 100, top: 100, width: 1400, height: 880 } }
+				: {};
+		};
+		return { calls, call };
+	};
+
+	it.skipIf(!personsMac)("moves the page's window past the main display's left edge", async () => {
+		const { calls, call } = chrome();
+		await parkChromeWindow(call, 't1');
+		const { right, top } = parkedPlace(mainScreen());
+		expect(calls).toEqual([
+			['Browser.getWindowForTarget', { targetId: 't1' }],
+			['Browser.setWindowBounds', { windowId: 7, bounds: { left: right - 1400, top } }],
+		]);
+	});
+
+	it('leaves the window where Chrome put it in CI', async () => {
+		const { calls, call } = chrome();
+		await asInCI(() => parkChromeWindow(call));
+		expect(calls).toEqual([]);
+	});
+
+	it.skipIf(!personsMac)('goes on when the window cannot move', async () => {
+		await parkChromeWindow(() => Promise.reject(new Error('no window')));
 	});
 });

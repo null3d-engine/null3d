@@ -1,15 +1,21 @@
-// How the runner tool shows a browser app's runner page on a Mac without disturbing the person who
-// works there. The app opens in the background, so it takes no focus. Safari's and Firefox's runner
-// windows then move almost wholly past the left edge of the main display, where they cover nothing:
-// macOS keeps a strip of the title bar on the screen. A new window of an app in the background opens
-// above every app's windows but the front app's, and macOS lets no other process push it lower, so
-// the tool moves it out of the way instead. Both browsers draw at full speed there, and under other
-// windows. Neither draws once the app hides, and Safari drew at half speed on a second display, so
-// the tool does neither. Plans that time frames keep the window's own size, since a page that fills
-// the window draws fewer pixels in a small one.
+// How the runner tool and the tools that run Chrome show a browser's page on a Mac without disturbing
+// the person who works there. The browser opens in the background, or gives focus back, so it takes
+// no focus. Its window then moves almost wholly past the left edge of the main display, where it
+// covers nothing: macOS keeps a strip of the title bar on the screen. A new window of an app in the
+// background opens above every app's windows but the front app's, and macOS lets no other process
+// push it lower, so the tools move it out of the way instead. Safari, Firefox and Chrome draw at full
+// speed there, and under other windows. None draws once the app hides, and Safari drew at half speed
+// on a second display, so the tools do neither. Plans that time frames keep the window's own size,
+// since a page that fills the window draws fewer pixels in a small one.
 
 import { execFileSync } from 'node:child_process';
-import { type Browser, chromium, type LaunchOptions } from '@playwright/test';
+import {
+	type Browser,
+	type BrowserContextOptions,
+	chromium,
+	type LaunchOptions,
+	type Page,
+} from '@playwright/test';
 
 /** How the runner tool opens a browser app's window on a Mac. */
 export interface AppWindow {
@@ -98,7 +104,7 @@ export function parkScript(
 export const PARKED_APPS: ReadonlySet<string> = new Set(['Safari', 'Firefox']);
 
 /** Reads the main display's size and free part through AppKit, which needs no permission. */
-function mainScreen(): MainScreen {
+export function mainScreen(): MainScreen {
 	const script =
 		'ObjC.import("AppKit"); const s = $.NSScreen.screens.objectAtIndex(0); const f = s.visibleFrame;' +
 		' JSON.stringify({ height: s.frame.size.height, x: f.origin.x, y: f.origin.y })';
@@ -149,12 +155,15 @@ const jxa = (script: string) =>
 		timeout: 10_000,
 	}).trim();
 
+/** Whether this machine is a Mac with a person at it: CI's Mac has nobody to disturb. */
+const personsMac = () => process.platform === 'darwin' && !process.env.CI;
+
 /**
  * The app in front on this Mac, or undefined on other machines, in CI, or when macOS does not say.
  * Reading it needs no permission.
  */
 export function frontApp(): MacApp | undefined {
-	if (process.platform !== 'darwin' || process.env.CI) return undefined;
+	if (!personsMac()) return undefined;
 	try {
 		return JSON.parse(
 			jxa(
@@ -207,16 +216,80 @@ export const KEEP_DRAWING_ARGS = [
 ];
 
 /**
+ * Chrome's switch that opens each new window on the main display, toward the parked place, or none on
+ * other machines, in CI, or when macOS does not say where the display is. Chrome moves such a window
+ * wholly onto the display, so the switch cannot park it. Without the switch, Chrome opened windows on
+ * the second display, which cut their size to fit that smaller screen.
+ */
+function mainDisplaySwitch(): string[] {
+	if (!personsMac()) return [];
+	try {
+		const { right, top } = parkedPlace(mainScreen());
+		return [`--window-position=${right},${top}`];
+	} catch {
+		return [];
+	}
+}
+
+/**
  * Starts Chrome, or another Chromium browser, in a window through Playwright, with the switches that
- * keep it drawing at full speed behind other windows. Focus then goes back to the app in front
- * before. The window keeps its full size, since the tools that use it time frames or capture them.
+ * keep it drawing at full speed behind other windows. On a person's Mac, each window opens on the
+ * main display. Focus then goes back to the app in front before. Each page then opens through
+ * `newParkedPage`, or `parkChromeWindow` parks its window.
  */
 export function launchInWindow(options: LaunchOptions = {}): Promise<Browser> {
 	return keepingFocus(() =>
 		chromium.launch({
 			...options,
 			headless: false,
-			args: [...(options.args ?? []), ...KEEP_DRAWING_ARGS],
+			args: [...(options.args ?? []), ...KEEP_DRAWING_ARGS, ...mainDisplaySwitch()],
 		}),
 	);
+}
+
+/** Sends one DevTools call to Chrome and returns its result. */
+export type DevToolsCall = (method: string, params: object) => Promise<unknown>;
+
+let chromeUnparked = false;
+
+/**
+ * Parks the Chrome window that holds a page almost wholly past the main display's left edge, at its
+ * own size, since the tools that use Chrome time frames or capture them. DevTools moves the window,
+ * so macOS asks for no permission. `targetId` names the page on a connection to the whole browser.
+ * In CI, and when the move fails, the window stays where Chrome put it.
+ */
+export async function parkChromeWindow(call: DevToolsCall, targetId?: string): Promise<void> {
+	if (!personsMac()) return;
+	try {
+		const { windowId, bounds } = (await call(
+			'Browser.getWindowForTarget',
+			targetId ? { targetId } : {},
+		)) as { windowId: number; bounds: { width: number } };
+		const { right, top } = parkedPlace(mainScreen());
+		await call('Browser.setWindowBounds', {
+			windowId,
+			bounds: { left: right - bounds.width, top },
+		});
+	} catch (e) {
+		if (!chromeUnparked)
+			console.warn(`Chrome's window stays where Chrome put it: ${(e as Error).message}`);
+		chromeUnparked = true;
+	}
+}
+
+/**
+ * Opens a page in a new window of a browser from `launchInWindow`, parks the window, and gives focus
+ * back to the app in front before. Playwright sizes the window to the page's viewport as the page
+ * opens, so the window parks at that size.
+ */
+export function newParkedPage(browser: Browser, options?: BrowserContextOptions): Promise<Page> {
+	return keepingFocus(async () => {
+		const page = await browser.newPage(options);
+		const session = await page.context().newCDPSession(page);
+		await parkChromeWindow((method, params) =>
+			session.send(method as 'Browser.setWindowBounds', params as never),
+		);
+		await session.detach();
+		return page;
+	});
 }
