@@ -99,6 +99,15 @@ export interface SameCanvasResult {
 	reuse: string;
 	/** The frames that the later engine drew in half a second. */
 	frames: number;
+	/** The room for memories that the page counted before its first start, until it had enough. */
+	roomCounts: number[];
+	/** How long the page waited for that room. */
+	roomWaitMs: number;
+}
+
+/** A note of the room that a same-canvas page waited for before its first start. */
+export function sameCanvasRoomNote(result: SameCanvasResult): string {
+	return `the page waited ${(result.roomWaitMs / 1000).toFixed(1)} s for room for its engines' memories, as the browser freed the memory of earlier pages: room for ${result.roomCounts.join(', then ')}`;
 }
 
 /**

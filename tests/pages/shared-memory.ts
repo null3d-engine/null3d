@@ -21,14 +21,18 @@ import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import type { EngineFrameMessage } from './engine-frame';
 import { CORE_KINDS, type HoldKind, type HoldMessage, WOKEN_KINDS } from './lib/memory-holder';
 import { progress, run } from './lib/result';
-import { ROOM_KEPT } from './lib/room';
+import {
+	allocateMemory,
+	countRoomAndRelease,
+	DEFAULT_MAXIMUM_PAGES,
+	MOST_HELD,
+	ROOM_KEPT,
+	roomAfterPauses,
+} from './lib/room';
 
 const params = new URLSearchParams(location.search);
 /** The memories' maximum in 64 KiB pages: 1 GiB, the engine's default, unless ?maximum sets it. */
-const MAXIMUM_PAGES = Number(params.get('maximum') ?? 16_384);
-const INITIAL_PAGES = 18;
-/** The most memories a count holds at once: a browser with room for this many has room to spare. */
-const MOST_HELD = 64;
+const MAXIMUM_PAGES = Number(params.get('maximum') ?? DEFAULT_MAXIMUM_PAGES);
 /** Cycles beyond the room: enough that memories the browser never gets back use it up. */
 const EXTRA_CYCLES = 4;
 /** The fewest and the most cycles: where the room is large, the counts after show a leak instead. */
@@ -39,17 +43,6 @@ const SETTLE_MS = 50;
 /** How long a worker may take to get ready, and the engine to start and to draw its first frame. */
 const READY_TIMEOUT_MS = 5_000;
 const ENGINE_TIMEOUT_MS = 20_000;
-/**
- * The pauses before each count of the room after the cycles, until the room comes back. Safari
- * frees a memory only after a full collection finds it unused and its sweeper then reaches it. Each
- * count ends with a collection, and the pause gives Safari time to free what it found. The pauses
- * grow, because each collection starts the sweep again, and then hold at the longest. Safari frees
- * the memory of engines in removed frames late, at times long after the frames have gone, so the
- * wait in all is about twice the slowest return of the room seen in Safari, as the implementation
- * notes record. A shorter wait failed checks whose room came back later. Memory that engines keep
- * never comes back, so a real leak still fails, only later.
- */
-const ROOM_PAUSES_MS = [1_000, 1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000, 15_000];
 /**
  * How long, in all, the starts that the browser refuses may wait for it to free the stopped
  * engines' memory, beyond the engine's own wait of about 10 seconds for each start.
@@ -118,43 +111,11 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Pr
 	}
 }
 
-function allocate(): WebAssembly.Memory {
-	return new WebAssembly.Memory({ initial: INITIAL_PAGES, maximum: MAXIMUM_PAGES, shared: true });
-}
-
-/** How many memories the page can hold at once, and the error that ended the count. */
-function countRoom(): { room: number; error?: string } {
-	const memories: WebAssembly.Memory[] = [];
-	try {
-		while (memories.length < MOST_HELD) memories.push(allocate());
-		return { room: memories.length };
-	} catch (e) {
-		return { room: memories.length, error: (e as Error).message };
-	}
-}
-
-/**
- * Counts the room, then lets the browser find the counted memories unused. Once they are garbage,
- * the page asks for one more memory. The count filled the room, so Safari refuses it and runs a full
- * collection, which finds them. Otherwise Safari can keep them until a later refusal, and the next
- * count finds less room.
- */
-async function countRoomAndRelease(): Promise<{ room: number; error?: string }> {
-	const counted = countRoom();
-	await sleep(0);
-	try {
-		allocate();
-	} catch {
-		// The refusal is the point: it makes the browser collect.
-	}
-	return counted;
-}
-
 let coreModule: Promise<WebAssembly.Module> | undefined;
 
 /** Gives a new memory to a worker that holds it the way `kind` says, then stops the worker. */
 async function holdAndStop(kind: HoldKind): Promise<void> {
-	const memory = allocate();
+	const memory = allocateMemory(MAXIMUM_PAGES);
 	const flags = new Int32Array(new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT));
 	coreModule ??= WebAssembly.compileStreaming(fetch(coreUrls('threaded').wasm));
 	const message: HoldMessage = {
@@ -252,7 +213,7 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 	}
 	if (COUNT_EACH) {
 		const last = starts.at(-1);
-		if (last) last.roomAfter = (await countRoomAndRelease()).room;
+		if (last) last.roomAfter = (await countRoomAndRelease(MAXIMUM_PAGES)).room;
 	}
 }
 
@@ -333,7 +294,7 @@ async function cycle(kind: Kind): Promise<void> {
 	else if (kind === 'frame') await startAndStopEngineOnceFree(() => startEngineInFrame(false));
 	else if (kind === 'frame-destroyed')
 		await startAndStopEngineOnceFree(() => startEngineInFrame(true));
-	else if (kind === 'dropped') allocate();
+	else if (kind === 'dropped') allocateMemory(MAXIMUM_PAGES);
 	else if (kind === 'probe') await probeCapabilities('high-performance');
 	else await holdAndStop(kind);
 }
@@ -390,33 +351,24 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 	} catch (e) {
 		failure = { error: (e as Error).message, trail: window.__null3dProgress?.slice(cycleStart) };
 	}
-	let roomCounts: number[] | undefined;
-	let roomWaitMs: number | undefined;
-	if (roomBefore !== undefined) {
-		const waitStart = performance.now();
-		roomCounts = [];
-		for (const pause of ROOM_PAUSES_MS) {
-			await sleep(pause);
-			const { room } = await countRoomAndRelease();
-			roomCounts.push(room);
-			if (room >= roomBefore - ROOM_KEPT) break;
-		}
-		roomWaitMs = Math.round(performance.now() - waitStart);
-	}
+	const wait =
+		roomBefore === undefined
+			? undefined
+			: await roomAfterPauses(roomBefore - ROOM_KEPT, MAXIMUM_PAGES);
 	return {
 		cycles: done,
 		...failure,
 		lateStarts: late.starts,
 		lateStartsMs: Math.round(late.ms),
-		roomCounts,
-		roomLater: roomCounts?.at(-1),
-		roomWaitMs,
+		roomCounts: wait?.counts,
+		roomLater: wait?.counts.at(-1),
+		roomWaitMs: wait?.waitMs,
 		starts: starts.splice(0),
 	};
 }
 
 run('shared-memory', async () => {
-	const before = COUNT_ROOM ? await countRoomAndRelease() : undefined;
+	const before = COUNT_ROOM ? await countRoomAndRelease(MAXIMUM_PAGES) : undefined;
 	const room = before?.room ?? MOST_HELD;
 	// Stopped engines on kept canvases may hold their memory until a new engine needs it, so where
 	// the browser limits the room, those starts go past it, to show that such memory never stops a

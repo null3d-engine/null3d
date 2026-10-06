@@ -104,6 +104,7 @@ import {
 	jobWorkersProblem,
 	type SameCanvasResult,
 	sameCanvasProblems,
+	sameCanvasRoomNote,
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
@@ -252,6 +253,11 @@ const HOLD_TIMEOUT_SECONDS = 60;
  * 91 s for it to come back. The second round runs only when the room did not come back.
  */
 const RESTARTS_TIMEOUT_SECONDS = 420;
+/**
+ * How long a same-canvas page may take: its starts and stops take seconds, and before them it may
+ * wait 91 s for the room for their memories to come back.
+ */
+const SAME_CANVAS_TIMEOUT_SECONDS = 150;
 /**
  * The thread modes whose engines start in frames that the restart page removes while they run.
  * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
@@ -532,7 +538,7 @@ export function checksPlan(): PlanItem<Check>[] {
 						{ kind: 'same-canvas', tier, mode, pattern },
 						{
 							switches: ['case=same-canvas', `pattern=${pattern}`, `gpu=${tier}`, mode.query],
-							timeoutSeconds: 60,
+							timeoutSeconds: SAME_CANVAS_TIMEOUT_SECONDS,
 						},
 					),
 				),
@@ -1707,8 +1713,11 @@ export function judge(
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
 			return restartProblems(result as unknown as RestartResult, check.start, context?.note);
-		case 'same-canvas':
-			return sameCanvasProblems(result as unknown as SameCanvasResult, check.mode);
+		case 'same-canvas': {
+			const sameCanvas = result as unknown as SameCanvasResult;
+			if (sameCanvas.roomWaitMs > 0) context?.note?.(sameCanvasRoomNote(sameCanvas));
+			return sameCanvasProblems(sameCanvas, check.mode);
+		}
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []
