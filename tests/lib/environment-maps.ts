@@ -157,3 +157,60 @@ export function threePmremRoughness(roughness: number): number {
 	const blend = at - low;
 	return (table[low] as number) * (1 - blend) + (table[low + 1] as number) * blend;
 }
+
+/** How far a level of a map lies from the same level of another, after tone mapping. */
+export interface LevelDifference {
+	/** The mean and the 99th percentile of the steps of 1/255 between their channels. */
+	mean: number;
+	p99: number;
+	/** The total light of the level over the other's. */
+	ratio: number;
+}
+
+/**
+ * Compares each level of a map that a page made, as shared-exponent texels, with the same level of
+ * the asset tool's map, after `tone` turns each channel's light into steps of 1/255.
+ */
+export function compareLevels(
+	levels: readonly Uint32Array[],
+	tool: Uint8Array,
+	env: EnvironmentFile,
+	tone: (light: number) => number,
+): LevelDifference[] {
+	return levels.map((ours, level) => {
+		const { offset, length } = env.levels[level] as { offset: number; length: number };
+		const bytes = tool.slice(offset, offset + length);
+		const theirs = new Uint32Array(bytes.buffer);
+		if (ours.length !== theirs.length)
+			throw new Error(`level ${level} holds ${ours.length} texels, not ${theirs.length}`);
+		const steps = new Float64Array(3 * ours.length);
+		let [sumOurs, sumTheirs] = [0, 0];
+		for (let k = 0; k < ours.length; k++) {
+			const a = fromRgb9e5(ours[k] as number);
+			const b = fromRgb9e5(theirs[k] as number);
+			for (let c = 0; c < 3; c++) {
+				steps[3 * k + c] = Math.abs(tone(a[c] as number) - tone(b[c] as number));
+				sumOurs += a[c] as number;
+				sumTheirs += b[c] as number;
+			}
+		}
+		const mean = steps.reduce((s, v) => s + v, 0) / steps.length;
+		const p99 = steps.sort()[Math.floor(0.99 * (steps.length - 1))] as number;
+		return { mean, p99, ratio: sumOurs / sumTheirs };
+	});
+}
+
+/**
+ * Reinhard's operator at an exposure that puts the average light of the nine coefficients at a
+ * third of white, in steps of 1/255: tone mapping first makes a sun count as much as it shows.
+ */
+export function reinhardSteps(sh: readonly number[]): (light: number) => number {
+	const exposure = 0.5 / averageLight(sh);
+	return (x) => (255 * x * exposure) / (1 + x * exposure);
+}
+
+/** The shared-exponent texels of a level that a page sent as base64. */
+export function words(base64: string): Uint32Array {
+	const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
+	return new Uint32Array(bytes.buffer);
+}

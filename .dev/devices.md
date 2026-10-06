@@ -213,6 +213,14 @@ To collect the numbers, rest each device first and close its other tabs:
 - The plan runs the page on each GPU path: 3 pages. `?layers=` and `?scale=` change the layers and the render scale.
 - Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan environment --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. The iPad gives GPU time. The phone gives none, so its figure is the frame interval. Raise `?layers=` until the frames miss the display's rate without the room: the GPU then sets the pace.
 
+## The environment load plan
+
+- The `environment-load` plan times an environment that a sketch asks for during play, for [D-19](decisions/D-19-environment-maps.md). Its page (`tests/pages/room-light.html`) draws a metal sphere with no light. The sketch then asks for the built-in room, or with `?source=` loads an HDR file, and sets it with a blue background in the same step.
+- The page captures frame after frame until 30 frames use the environment. Each must match the steady frame at the end, so no frame draws the sphere without the light.
+- It reports `setMs`, the time until the environment resolved: the download, the reading and the shaders. It also reports `lightMs`, the time until the first captured frame that uses it, which includes the map's GPU time.
+- The plan runs the room, Venice Sunset's Radiance file and the studio's OpenEXR file on each GPU path: 9 pages.
+- Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan environment-load --android chrome --lan ipad-safari`. The browser tests run the same page on the Mac (`tests/image/room-light.spec.ts`).
+
 ## The occlusion plan
 
 - The `occlusion` plan measures what software occlusion culling costs and saves on WebGL2, for [D-41](decisions/D-41-software-occlusion.md). Its page is `tests/pages/occlusion-cost.html`.
