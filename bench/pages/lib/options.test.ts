@@ -5,7 +5,7 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode and the pixel ratio', () => {
+	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode, the pixel ratio and the S4 shading switches', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
@@ -20,6 +20,9 @@ describe('readRunOptions', () => {
 			shadowCascadeBlend: null,
 			antialias: null,
 			maxPixelRatio: null,
+			material: null,
+			sunShadows: true,
+			pointLights: true,
 			governor: true,
 		});
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
@@ -36,6 +39,9 @@ describe('readRunOptions', () => {
 			shadowCascadeBlend: null,
 			antialias: null,
 			maxPixelRatio: null,
+			material: null,
+			sunShadows: true,
+			pointLights: true,
 			governor: true,
 		});
 		expect(read('?shadowCascades=2&shadowMapSize=1024&shadowFilter=5')).toMatchObject({
@@ -53,10 +59,31 @@ describe('readRunOptions', () => {
 		expect(read('?hold=0').hold).toBe(0);
 		expect(read('?demo').demo).toBe(true);
 		expect(read('?governor=off').governor).toBe(false);
+		expect(read('?material=unlit&sunShadows=off&pointLights=off')).toMatchObject({
+			material: 'unlit',
+			sunShadows: false,
+			pointLights: false,
+		});
+		expect(read('?material=plain').material).toBe('plain');
 	});
 
 	test('takes only off for the governor', () => {
 		expect(() => read('governor=on')).toThrow('"on" is not a valid governor. Use ?governor=off.');
+	});
+
+	test('takes only off for the sun shadows and the point lights', () => {
+		expect(() => read('sunShadows=on')).toThrow(
+			'"on" is not a valid sunShadows. Use ?sunShadows=off.',
+		);
+		expect(() => read('pointLights=')).toThrow(
+			'"" is not a valid pointLights. Use ?pointLights=off.',
+		);
+	});
+
+	test('takes only the shading probes for material', () => {
+		expect(() => read('material=debug')).toThrow(
+			'"debug" is not a valid material. Use ?material=unlit or ?material=plain.',
+		);
 	});
 
 	test("takes only the engine's modes for antialias", () => {

@@ -55,6 +55,16 @@ export interface RunOptions {
 	 */
 	maxPixelRatio: number | null;
 	/**
+	 * `?material=`: what S4 draws its objects with, in place of its textured standard materials, to
+	 * measure what each part of their shading costs per pixel: `unlit` keeps each color and texture
+	 * but takes no light, and `plain` keeps the lit shading but drops the textures. Null for S4's own.
+	 */
+	material: 'unlit' | 'plain' | null;
+	/** False with `?sunShadows=off`, which makes S4's sun cast no shadows. */
+	sunShadows: boolean;
+	/** False with `?pointLights=off`, which leaves out S4's street lights, so only the sun lights it. */
+	pointLights: boolean;
+	/**
 	 * False with `?governor=off`, which keeps the quality governor off in a null3D scene that turns
 	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
 	 */
@@ -102,12 +112,17 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 	return params.has('soak') ? 'soak' : 'bench';
 }
 
+/** False for `?<name>=off`, true without the switch. Any other value fails. */
+function readOff(params: URLSearchParams, name: string): boolean {
+	return !params.has(name) || readChoice(params, name, ['off']) !== 'off';
+}
+
 /** A whole number that the engine checks itself. */
 const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
  * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=`, the shadow
- * quality settings, `?antialias=` and `?maxPixelRatio=`.
+ * quality settings, `?antialias=`, `?maxPixelRatio=` and S4's shading switches.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
@@ -169,6 +184,11 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			(v) => Number.isFinite(v) && v >= 0.5,
 			'a pixel ratio of 0.5 or more',
 		),
-		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
+		material: params.has('material')
+			? readChoice(params, 'material', ['unlit', 'plain'] as const)
+			: null,
+		sunShadows: readOff(params, 'sunShadows'),
+		pointLights: readOff(params, 'pointLights'),
+		governor: readOff(params, 'governor'),
 	};
 }

@@ -44,8 +44,16 @@ export default defineSketch((context) => {
 	// the preset's render scale range, and the quality governor lowers the render scale and then
 	// the shadows when frames take too long. A comparison of two builds turns the governor off, so
 	// that a step in one run cannot change what it draws.
+	// The page's ?material=, ?sunShadows=off and ?pointLights=off switches take one part of the
+	// shading away at a time, to measure what each part costs per pixel.
+	const switches = new URL(import.meta.url).searchParams;
+	const probe = switches.get('material');
+	const lights =
+		switches.get('sunShadows') === 'off'
+			? { ...S4_VIEW_LIGHTS, sun: { ...S4_VIEW_LIGHTS.sun, castShadows: false } }
+			: S4_VIEW_LIGHTS;
 	const moveCamera = followPath(
-		setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color, { dynamicResolution: true }),
+		setUpView(context, lights, S4_FOG.color, { dynamicResolution: true }),
 		s4Camera,
 	);
 	context.quality.set({ governor: readGovernor(import.meta.url) });
@@ -54,10 +62,10 @@ export default defineSketch((context) => {
 	const far = readFarInterval(import.meta.url);
 	if (far !== undefined) context.quality.set({ farCascadeInterval: far });
 	// The page's ?shadowFilter= switch tries another filter than the preset's.
-	const filter = new URL(import.meta.url).searchParams.get('shadowFilter');
+	const filter = switches.get('shadowFilter');
 	if (filter) context.quality.set({ shadowFilter: Number(filter) as 3 | 5 });
 	// The page's ?shadowCascadeBlend= switch measures the band between cascades against none.
-	const blend = new URL(import.meta.url).searchParams.get('shadowCascadeBlend');
+	const blend = switches.get('shadowCascadeBlend');
 	if (blend) context.quality.set({ shadowCascadeBlend: Number(blend) });
 	const reportQuality = watchQuality(context);
 
@@ -97,7 +105,18 @@ export default defineSketch((context) => {
 		S4MaterialName,
 		(typeof S4_MATERIALS)[S4MaterialName],
 	][]) {
-		looks.set(name, materials.standard({ color, roughness, metalness, map: maps.get(texture) }));
+		const map = maps.get(texture);
+		looks.set(
+			name,
+			probe === 'unlit'
+				? materials.unlit({ color, map })
+				: materials.standard({
+						color,
+						roughness,
+						metalness,
+						map: probe === 'plain' ? undefined : map,
+					}),
+		);
 	}
 
 	const data = createS4();
@@ -147,7 +166,8 @@ export default defineSketch((context) => {
 
 	// The street lights are point lights, which the engine shades through its grid of view
 	// clusters.
-	for (let i = 0; i < data.lights.length / 3; i++)
+	const streetLights = switches.get('pointLights') === 'off' ? 0 : data.lights.length / 3;
+	for (let i = 0; i < streetLights; i++)
 		scene.createPointLight({
 			color: S4_STREET_LIGHT.color,
 			intensity: S4_STREET_LIGHT.intensity,

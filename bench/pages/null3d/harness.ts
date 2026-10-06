@@ -100,6 +100,10 @@ export function runNull3dPage(
 		if (options.shadowCascadeBlend !== null)
 			sketchUrl.searchParams.set('shadowCascadeBlend', String(options.shadowCascadeBlend));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
+		// S4's shading switches, which measure what each part of its shading costs per pixel.
+		if (options.material !== null) sketchUrl.searchParams.set('material', options.material);
+		if (!options.sunShadows) sketchUrl.searchParams.set('sunShadows', 'off');
+		if (!options.pointLights) sketchUrl.searchParams.set('pointLights', 'off');
 		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
 		if (options.demo) sketchUrl.searchParams.set('demo', '');
 		// The allocation check's switches, which only some sketches read.
