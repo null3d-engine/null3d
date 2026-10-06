@@ -13,8 +13,8 @@
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
 
 /** The bytes that one frame may upload: half of one image. */
-const UPLOAD_BUDGET = 2 * 1024;
-const COUNT = 50;
+let UPLOAD_BUDGET = 2 * 1024;
+let COUNT = 50;
 const SIZE = 32;
 const WAVE = 10;
 /** Frames between two waves. */
@@ -63,8 +63,15 @@ export default defineSketch(async (ctx) => {
 	let started = -1;
 	let lastWave = -1;
 	let loaded = false;
-	page.onMessage((name) => {
-		if (name === 'start') started = time.frame;
+	page.onMessage((name, data) => {
+		if (name !== 'start') return;
+		const probe = data as { count?: number; budget?: number } | undefined;
+		if (probe?.count !== undefined) COUNT = probe.count;
+		if (probe?.budget !== undefined) {
+			UPLOAD_BUDGET = probe.budget;
+			textures.setUploadBudget(UPLOAD_BUDGET);
+		}
+		started = time.frame;
 	});
 
 	return {
@@ -73,7 +80,7 @@ export default defineSketch(async (ctx) => {
 			const frames = time.frame - started;
 			if (frames % WAVE_FRAMES === 0 && made.length < COUNT) {
 				const first = made.length;
-				for (let k = first; k < first + WAVE; k++) {
+				for (let k = first; k < Math.min(first + WAVE, COUNT); k++) {
 					const texture = textures.fromImageBitmap(images[k] as ImageBitmap);
 					const position: [number, number, number] = [(k % 10) - 4.5, 2 - Math.floor(k / 10), 0];
 					scene.createMesh({
@@ -83,12 +90,12 @@ export default defineSketch(async (ctx) => {
 					});
 					made.push(texture);
 				}
-				if (made.length === COUNT) lastWave = frames;
+				if (made.length >= COUNT) lastWave = frames;
 			}
 			if (lastWave >= 0 && frames === lastWave + SETTLE_FRAMES) page.post('waves', frames);
 			const uploads = textures.uploads();
 			page.post('frame', [frames, made.length, uploads.waiting, uploads.lastFrameBytes]);
-			if (made.length === COUNT && uploads.waiting === 0) {
+			if (made.length >= COUNT && uploads.waiting === 0) {
 				loaded = true;
 				page.post('loaded', {
 					budget: UPLOAD_BUDGET,
