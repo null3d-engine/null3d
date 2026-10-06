@@ -241,15 +241,35 @@ The cloud iPad 10th then timed three builds in turns, in Safari 27.0. S4 ran on 
 | Wait of about 12 ms | 6.36 ms | 6.47 ms | no run |
 | Wait of about 45 ms | 13.18 ms | 13.65 ms | 13.76 and 13.13 ms |
 
-So option 1 costs about 0.1 ms of GPU time per frame on the cloud iPad, far less than the 1 ms that the gate's comparison suggested. The slow sessions doubled every time, and no build differed there by more than 0.6 ms. The cache could save at most that 0.1 ms. For it, Low paid 4 MiB, a second shadow pass in its turns, a depth copy and a split of still and moving casters in both frame builders.
+So option 1 costs about 0.1 ms of GPU time per frame on the cloud iPad. The gate's comparison suggested 1 ms. The slow sessions doubled every time, and no build differed there by more than 0.6 ms. The cache could save at most that 0.1 ms. For it, Low paid 4 MiB, a second shadow pass in its turns and a depth copy. Both frame builders also split still and moving casters.
 
 The owner dropped the cache on 6 October 2026 and kept option 1 on every preset, with the governor's rule above. Option 2 stays open, and option 3 too, if a scene with far more moving casters than S4 shows a real cost.
 
 Why the tests missed it: the moving shadow test set `followMovingCasters` itself, so it never ran a preset's own value. The Rust test and the bench page test held Low's turns as the expected result. Image tests draw one frame in hold mode, in which every cascade draws. The Mac runs High. The gate's device runs of S4 judge frame rates and GPU time, and no device check measured a moving shadow.
 
+### The owner's iPad check and the cost ruling, 6 October 2026
+
+The owner's iPad Pro 11-inch (iPadOS 26.7, Safari 26.6.2, Limit Frame Rate on, 60 Hz) checked the fix in three parts. The fix's build was 21fbae72c, and main's build was 8699fab4e, the main that the fix merged. The two differ only by the fix.
+
+1. By eye. The soak opened S4 with no preset, as the gate's soak did, and the engine's check picked Low (Medium 35.3 fps, Low 57.6 fps). It ran 5 minutes at a median of 59.6 fps, with no GPU loss and flat memory. The owner watched the cars and said: "ok shadows are looking much better now".
+2. The moving shadow page, on the fix's build. It ran Low and Medium on both GPU paths, with far cascades every 8th frame and in every frame. Each run read 60 frames. The largest gaps between the two were 3.24 px (WebGPU, Low), 4.11 px (WebGPU, Medium), 3.02 px (WebGL2, Low) and 3.27 px (WebGL2, Medium). The limit is 5 px.
+3. GPU time. S4 ran on WebGPU at Low, with the governor off, for 30 s per run, the two builds in turns. A first run of main held only 55.5 fps, so a further pair replaced it.
+
+| Run | GPU ms per frame: median, p95, p99 | Draw calls: median, p99 | Frame rate |
+| --- | --- | --- | --- |
+| Main | 11.42, 12.48, 12.68 | 56, 63 | 60.0 fps |
+| Main | 11.64, 12.95, 13.28 | 56, 63 | 60.1 fps |
+| The fix | 11.73, 12.93, 13.06 | 63, 63 | 59.9 fps |
+| The fix | 11.70, 13.00, 13.14 | 63, 63 | 59.9 fps |
+| The fix | 11.99, 13.19, 13.33 | 63, 63 | 59.9 fps |
+
+Main's medians average 11.53 ms, and the fix's 11.81 ms. So the fix costs about 0.3 ms of GPU time per frame (2.4%) on this iPad, and every run held 60 fps. With the governor on, for 300 s, main took 22 quality steps and the fix 21. Both held 60 fps in 98% of the seconds, and neither went below a render scale of 0.7.
+
+The owner ruled on 6 October 2026: "Accept 0.3ms cost".
+
 ## Decision
 
-Option (b) holds on every preset. A far cascade draws in every frame while a moving caster touches its box, or touched the box its layer holds. Low kept each far cascade to its turns after the owner's first ruling of 5 October 2026. It follows moving casters again after the second ruling of the same day ([The iPad soak and the second ruling](#the-ipad-soak-and-the-second-ruling-5-october-2026)). A cache of Low's still casters was built and dropped: following costs about 0.1 ms of GPU time per frame on the cloud iPad ([The still-caster cache](#the-still-caster-cache-built-and-dropped-6-october-2026)). The `followMovingCasters` quality setting holds the choice: on for every preset, and live, so a sketch can turn it off. While it is off, the governor takes no far cascade step. It is the only option that adds no memory, no pass and no shader read, and it costs a cascade's draw only where a moving caster needs it. Option (c) would save at most about half of that draw on the Mac, for 32 to 192 MiB of memory and a new depth path on WebGL2. Option (a) would double the filter's reads on most of S4's pixels.
+Option (b) holds on every preset. A far cascade draws in every frame while a moving caster touches its box, or touched the box its layer holds. Low kept each far cascade to its turns after the owner's first ruling of 5 October 2026. It follows moving casters again after the second ruling of the same day ([The iPad soak and the second ruling](#the-ipad-soak-and-the-second-ruling-5-october-2026)). A cache of Low's still casters was built and dropped. Following costs about 0.1 ms of GPU time per frame on the cloud iPad ([The still-caster cache](#the-still-caster-cache-built-and-dropped-6-october-2026)). On the owner's iPad it costs about 0.3 ms, which the owner accepted ([The owner's iPad check](#the-owners-ipad-check-and-the-cost-ruling-6-october-2026)). The `followMovingCasters` quality setting holds the choice: on for every preset, and live, so a sketch can turn it off. While it is off, the governor takes no far cascade step. It is the only option that adds no memory, no pass and no shader read, and it costs a cascade's draw only where a moving caster needs it. Option (c) would save at most about half of that draw on the Mac, for 32 to 192 MiB of memory and a new depth path on WebGL2. Option (a) would double the filter's reads on most of S4's pixels.
 
 The receivers scale their biases by their angle to the light. After the iPad's second check, options 1 and 4 of the bias options apply together. The biases are in meters, capped at one texel of the point's cascade or tile. A receiver behind a perspective camera picks its cascade by its distance from the camera. The defaults become 0.01 m for `bias` and 0.02 m for `normalBias`. Spot and point lights take the same biases in meters, capped at one texel of their tile at the point's distance from the light.
 
