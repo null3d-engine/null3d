@@ -5,8 +5,9 @@
 //   bun run readme-media
 import { writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { chromium, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { applyPalette, GIFEncoder, quantize } from 'gifenc';
+import { keepingFocus, launchInWindow } from '../tests/lib/app-window.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import { pagePath } from './lib/parity';
@@ -103,10 +104,10 @@ function shrink(frame: Frame, width: number): Frame {
 
 async function main(): Promise<void> {
 	const server = await startServer();
-	const browser = await chromium.launch({ channel: 'chrome', headless: false });
+	const browser = await launchInWindow({ channel: 'chrome' });
 	const frames: Frame[] = [];
 	try {
-		const page = await browser.newPage();
+		const page = await keepingFocus(() => browser.newPage());
 		for (let i = 0; i < FRAMES; i++) {
 			const t = START_SECONDS + (i * FRAME_MS) / 1000;
 			frames.push(shrink(await renderAt(page, server.url, t), WIDTH));
