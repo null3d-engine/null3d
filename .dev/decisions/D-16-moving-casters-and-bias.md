@@ -324,3 +324,60 @@ Option 1. The directional light's filter compares each texel with the receiver's
 - `CONTACT_LIMITS` in `tests/lib/visual-checks.ts` holds acne limits of 1.5% for the casting ground and every slab view, and the new `far-slabs-low` view. Each limit sits between the figures after the fix and before it.
 - `concepts/shadows` describes the reads, and their cost on WebGL2.
 - The written-out blocks add 0.6 to 1.7 KB after Brotli to each file of shader modules, 2.0% to 5.4%. A loop over blocks would keep the files smaller, but it cost GPU time on the Mac.
+
+## Addendum, 2026-10-06: the shadow reads on WebGL2 on Apple GPUs
+
+The owner's iPad Pro 11 (Safari 26.6.2) drew S4 at Medium with the governor off. WebGPU drew 59.3 fps and WebGL2 17.2 fps (run `20261006-010647-bench`). WebGL2 waited 56.4 ms per frame for the GPU, and its CPU time was 4.1 ms.
+
+### What was suspected
+
+Since [one depth per texel](#addendum-2026-10-05-one-depth-per-texel), WebGL2 reads each texel of the sun's shadow map on its own. Medium's 5 x 5 filter then makes 36 reads per pixel on WebGL2 against 9 on WebGPU. GLSL ES 3.00 has no `textureLod` for an array comparison sampler. So naga writes each read at level 0 as `textureGrad` with zero gradients. ANGLE on Metal turns that into a Metal comparison with explicit gradients. Apple's GPUs may run such reads more slowly. The addendum measured the 36 reads only on the S24+ at Low, where the display's 60 Hz hid their cost. Chrome on the Mac reports no WebGL2 GPU time.
+
+### Options
+
+A switch that only the measurements used picked one of four ways to read the sun's map on WebGL2:
+
+1. `grad`: the build's reads, with zero gradients.
+2. `implicit`: the same comparisons with `texture()`, at the texture's own level.
+3. `nearest`: the build's reads through a comparison sampler that does not filter.
+4. `fetch`: `texelFetch` of each depth, compared in the shader, as WebGPU compares the depths that it gathers.
+
+In Chrome on the Mac, all four drew the same image in the 5 image tests of the sun's shadows. That held on the Mac's GPU and on SwiftShader. 0.0000% of pixels differed.
+
+### Data
+
+S4 at Medium, governor off, drawing on the page's main thread, one setting changed per run. 20 s per run, in two rounds, the second in reverse order. Each cell gives frames per second and the median GPU delay in ms, round 1 then round 2.
+
+| Run | Mac, Chrome 154 (M5 Max, 120 Hz) | iPad Pro 11, Safari 26.6.2 (60 Hz) |
+| --- | --- | --- |
+| WebGPU | 120.0 / 4.6, 120.0 / 5.0 | 58.5 / 24.2, 55.5 / 26.7 |
+| WebGL2 | 98.4 / 17.1, 103.8 / 16.7 | 15.8 / 61.8, 15.6 / 62.2 |
+| `implicit` reads | 120.0 / 8.2, 120.0 / 8.2 | 17.0 / 57.9, 16.9 / 58.2 |
+| `nearest` reads | 108.5 / 16.7, 120.0 / 9.7 | 15.7 / 62.0, 15.7 / 62.5 |
+| `fetch` reads | 120.0 / 8.2, 120.0 / 8.2 | 16.2 / 60.1, 16.1 / 60.6 |
+| Filter of 3 x 3 | 117.8 / 16.2, 120.0 / 8.2 | 18.1 / 54.0, 18.0 / 54.5 |
+| FXAA instead of 4x multisampling | 92.9 / 23.7, 110.2 / 16.7 | 17.8 / 54.6, 17.6 / 54.8 |
+| Pixel ratio capped at 1.5 | 120.0 / 8.9, 120.0 / 8.2 | 26.6 / 36.9, 26.5 / 37.1 |
+| 2 cascades of 1,024 texels | 106.8 / 16.7, 116.7 / 16.6 | 16.1 / 60.4, 16.2 / 60.1 |
+| Far cascade every 4th frame | 104.1 / 16.7, 117.6 / 16.5 | 15.8 / 61.9, 15.8 / 61.6 |
+| No cascade blend | 108.9 / 16.7, 120.0 / 15.0 | 16.1 / 61.0, 16.0 / 61.1 |
+| No software occlusion culling | 107.8 / 16.7, 120.0 / 9.6 | 15.7 / 62.1, 15.7 / 62.1 |
+| Low preset | 120.0 / 8.2, 120.0 / 8.2 | 36.3 / 26.7, 36.2 / 26.7 |
+
+The Mac ran from 11:07 to 11:30, at a 1-minute load of 11.7 at the start and 2.8 at the end. The iPad ran from 12:28 to 12:55 (runs `20261006-042859-bench` to `20261006-045519-bench`), on power. On the iPad, WebGPU's GPU time was 18.0 and 19.0 ms. Every WebGL2 run on the iPad was GPU-bound: the GPU delay matched the frame interval, and the CPU took 1.3 to 4.8 ms.
+
+On the Mac, the `implicit` and `fetch` reads halved WebGL2's GPU delay, to Low's. On the iPad, `implicit` was the fastest read. Its frames took 59 ms against 62 to 63 ms, in both rounds. `fetch` saved 1 to 2 ms, and `nearest` nothing.
+
+The shadow reads therefore explain only about 3 ms of the iPad's 62 ms. The frame time follows the pixel count: 1.78 times fewer pixels took 37 ms. Low, at the same pixel count as that run, took 27 ms. WebGPU at Medium took 18 to 19 ms for 1.78 times as many pixels. So on the iPad, WebGL2 costs about three times WebGPU's GPU time per pixel at every preset. Earlier iPad runs agree: S4 at Low drew about 30 fps on WebGL2 ([D-09](D-09-half-precision.md)). The cost lies outside the shadow reads, and this addendum does not find it.
+
+### Decision
+
+WebGL2 reads every comparison sampler at level 0 with `texture()`, at the texture's own level, where naga writes `textureGrad` with zero gradients. That covers the sun's shadow map and the atlas of spot and point lights. Each shadow map has one level, so the reads give the same result. The filter keeps its 4 comparisons per block of 2 x 2 texels on WebGL2.
+
+The `fetch` reads would also need the shader to know WebGL2's `standard` depth mode, where the map holds depths the other way round. They were slower on the iPad, so they were not kept.
+
+### Consequences
+
+- `implicit_comparison_levels` in `crates/null3d-shaders/src/glsl.rs` rewrites the reads in each GLSL stage. A test in `crates/null3d-shaders/tests/build.rs` checks that no zero-gradient read is left.
+- A shadow map that gets more than one level would need another read on WebGL2, as `texture()` would then pick a level from the screen's gradients.
+- WebGL2's slower pixels on Apple GPUs remain. The [implementation notes](../implementation-notes.md#safaris-webgl2-path) keep the figures.
