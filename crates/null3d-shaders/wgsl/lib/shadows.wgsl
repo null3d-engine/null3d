@@ -128,9 +128,10 @@ fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec
 
 /// The plane of a receiver at `relative`, with unit normal `normal` and unit direction `to_light`
 /// toward the light, in the texels of a cascade whose matrix is `view_proj` and whose layers have
-/// `size` texels on each side. The cascade's projection is orthographic, so the plane stays a plane
-/// in the map. Two directions along the surface give how its texel and its depth change, and the
-/// depth's change per texel follows from them.
+/// `size` texels on each side. The cascade's projection is orthographic: each row of the matrix's
+/// upper 3 x 3 part is one of the light's axes, scaled. So the plane stays a plane in the map, and
+/// the depth's change per texel comes straight from the normal in the light's axes: along each
+/// axis, the normal's share there over its share toward the light, scaled by the rows' sizes.
 fn receiver_plane(
     view_proj: mat4x4f,
     relative: vec3f,
@@ -142,29 +143,29 @@ fn receiver_plane(
     if cosine <= 0.0 {
         return no_plane();
     }
-    let clip = view_proj * vec4f(relative, 1.0);
-    let helper = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(normal.x) > 0.9);
-    let along = normalize(cross(normal, helper));
-    let a = view_proj * vec4f(along, 0.0);
-    let b = view_proj * vec4f(cross(normal, along), 0.0);
+    // The normal in clip space's axes: each component is the normal's share along that axis, times
+    // the row's size.
+    let n = (view_proj * vec4f(normal, 0.0)).xyz;
+    if abs(n.z) < 1e-12 {
+        return no_plane();
+    }
+    let row_x = vec3f(view_proj[0].x, view_proj[1].x, view_proj[2].x);
+    let row_y = vec3f(view_proj[0].y, view_proj[1].y, view_proj[2].y);
+    let row_z = vec3f(view_proj[0].z, view_proj[1].z, view_proj[2].z);
     var flip = vec2f(0.5, -0.5);
 #ifdef WEBGL2
     // WebGL2 keeps the rows of a drawn texture bottom first.
     flip.y = 0.5;
 #endif
-    let ta = a.xy * flip * size;
-    let tb = b.xy * flip * size;
+    let clip = view_proj * vec4f(relative, 1.0);
     let at = (clip.xy * flip + 0.5) * size;
-    let det = ta.x * tb.y - ta.y * tb.x;
-    if abs(det) < 1e-12 {
-        return no_plane();
-    }
     // A surface nearly edge-on to the light rises steeply across each texel. It takes the steepest
     // slope that the filter follows, as a smaller rise only leaves more of the old comparison.
     let sine = sqrt(max(1.0 - cosine * cosine, 0.0));
     let steepness = min(1.0, MAX_PLANE_SLOPE * cosine / max(sine, 1e-4));
-    let slope = vec2f(a.z * tb.y - b.z * ta.y, b.z * ta.x - a.z * tb.x) / det * steepness;
-    let margin = PLANE_MARGIN * (view_proj * vec4f(to_light, 0.0)).z;
+    let scales = vec2f(dot(row_x, row_x), dot(row_y, row_y)) * flip * size;
+    let slope = -(dot(row_z, row_z) / n.z) * n.xy / scales * steepness;
+    let margin = PLANE_MARGIN * dot(row_z, to_light);
     return ReceiverPlane(at, clip.z - margin, slope);
 }
 
