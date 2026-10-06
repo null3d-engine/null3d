@@ -1,7 +1,7 @@
 // Works out the shard weights of CI's browser job from the test times of recent CI runs, and prints
 // each shard's modelled time with the weights in the workflow and with the best weights:
-//   bun run test:browser-weights                 take each test's median time in the last CI runs on
-//                                                main that passed
+//   bun run test:browser-weights                 take each test's median time in the last merge queue
+//                                                runs that passed, where the browser job runs
 //   bun run test:browser-weights --runs <n>      take the median of that many runs
 //   bun run test:browser-weights --run <id>      take the times from that CI run; give it more than once
 //                                                for the median of several
@@ -83,8 +83,8 @@ if (runIds.length === 0) {
 			'list',
 			'--workflow',
 			'ci.yml',
-			'--branch',
-			'main',
+			'--event',
+			'merge_group',
 			'--status',
 			'success',
 			'--limit',
