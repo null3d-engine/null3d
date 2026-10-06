@@ -303,6 +303,14 @@ Notes on the figures:
 - The owner watched the soak's S4 page on 03a1ad198, in run 20261005-143144-soak. That run stopped after its GPU-loss pages, for the Mac's quiet window. The shadows jerkily trail the cars, very obviously. At Low, a far cascade draws once in 4 frames and keeps its turns while cars move in it ([D-16](decisions/D-16-moving-casters-and-bias.md)). So a far shadow can trail by up to 3 frames. Each shadow step of the governor makes the far cascade's turns longer, up to every 8th frame. S4's 10-minute WebGPU run took 34 quality steps, against 8 on 5309dba5. S4 does not report the far cascade's interval, so how far the governor took it is not known. By the owner's ruling of 6 October 2026, this finding does not hold back the gate ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). The cause is known: at Low, the far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, on fix/shadow-trail (944bb64ef), and lands in M2.
 - On the Mac, the GPU image step ran while the jitter branch built, and the Mac's 1-minute load reached about 40. The SwiftShader images, the parity scenes, Safari and Firefox then ran one at a time, each at a load below 18.
 
+### Reruns on the gate commit fdf14a28
+
+These items ran again on the new gate commit fdf14a28 (#347), by the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). Each replaces its row on 89a1d6295.
+
+| Item | Device and browser | Check | Figure | Result |
+| --- | --- | --- | --- | --- |
+| 4 | Mac, Chrome | Allocation, S4 on WebGPU and on WebGL2 (gate steps `allocation-s4-webgpu` and `allocation-s4-webgl2`, record 20261006-021354-gate), at a 1-minute load of about 4 | WebGL2: sketch worker 241.6 bytes per frame, render worker 149.6. The governor's judge step, 4.1 of 4 before, no longer allocates. WebGPU: sketch worker 244.1, render worker 633.9, with the replay at 298.7 of 320 against 296.9 on 89a1d6295 | Pass |
+
 ### What the gate still needs
 
 The gate moves to a newer main commit, by the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). It is fdf14a28, the first main commit that holds #347, the refresh meter's allocation fix, and so also #335, the governor's. Firefox and Safari run again on the later main commit that holds their fixes, and their rows name it. Only these items run again there. Every other item keeps its result from 89a1d6295, or from 03a1ad198 for the iPad runs before T-28.
@@ -311,7 +319,6 @@ The open items, with the helper that owns each one. This list changes as each it
 
 | Item | What runs | Commit | Owner | State |
 | --- | --- | --- | --- | --- |
-| 4 | Allocation of S4 on WebGPU and WebGL2, in Chrome on the Mac (gate steps `allocation-s4-webgpu` and `allocation-s4-webgl2`) | fdf14a28 | gate-rerun-mac | Running |
 | 4 | The iPad's soak plan on S4, on a cool iPad | fdf14a28 | ipad-runner-b | Started |
 | 3 | The iPad's GPU time comparison of S4 at Low against f46c0686, A, B, A, B. A run that drops to 30 fps does not count | fdf14a28 | ipad-runner-b | Started |
 | 1 | Firefox on the Mac through the device runner, after the fix for the room and GPU times (#350) merges | 156c0621, the first main commit with #350 | ff-room | #350 merged; the rerun is starting |
