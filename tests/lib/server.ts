@@ -33,7 +33,8 @@ export function devServerPort(value: string | undefined): number {
 	return port;
 }
 
-const START_TIMEOUT_MS = 30_000;
+/** How long a new dev server may take to answer: a cold start on a busy Mac took 44 s. */
+const START_TIMEOUT_MS = 90_000;
 
 export interface DevServer {
 	/** The address browsers use: localhost for HTTP, the Mac's .local name for HTTPS. */
