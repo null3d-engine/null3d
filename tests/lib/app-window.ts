@@ -6,6 +6,7 @@
 // page that fills the window draws fewer pixels in a small one.
 
 import { execFileSync } from 'node:child_process';
+import { type Browser, chromium, type LaunchOptions } from '@playwright/test';
 
 /** How the runner tool opens a browser app's window on a Mac. */
 export interface AppWindow {
@@ -190,4 +191,29 @@ export async function keepingFocus<T>(step: () => Promise<T>): Promise<T> {
 	} finally {
 		giveFocusBack(before);
 	}
+}
+
+/**
+ * Switches that keep a window in the background, or covered by other windows, drawing at full speed,
+ * so timings hold while the person at the Mac works in front of it. Playwright passes them too.
+ */
+export const KEEP_DRAWING_ARGS = [
+	'--disable-backgrounding-occluded-windows',
+	'--disable-renderer-backgrounding',
+	'--disable-background-timer-throttling',
+];
+
+/**
+ * Starts Chrome, or another Chromium browser, in a window through Playwright, with the switches that
+ * keep it drawing at full speed behind other windows. Focus then goes back to the app in front
+ * before. The window keeps its full size, since the tools that use it time frames or capture them.
+ */
+export function launchInWindow(options: LaunchOptions = {}): Promise<Browser> {
+	return keepingFocus(() =>
+		chromium.launch({
+			...options,
+			headless: false,
+			args: [...(options.args ?? []), ...KEEP_DRAWING_ARGS],
+		}),
+	);
 }
