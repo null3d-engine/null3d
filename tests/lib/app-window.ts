@@ -131,3 +131,63 @@ export function placeInCorner(app: string, url: string): string | undefined {
 		return (stderr?.trim() || message.split('\n')[0]) ?? 'failed';
 	}
 }
+
+/** An app on this Mac: its process and its bundle's path. */
+export interface MacApp {
+	pid: number;
+	path: string;
+}
+
+/** Runs a JavaScript for Automation script through osascript and returns its output. */
+const jxa = (script: string) =>
+	execFileSync('osascript', ['-l', 'JavaScript', '-e', script], {
+		encoding: 'utf8',
+		timeout: 10_000,
+	}).trim();
+
+/**
+ * The app in front on this Mac, or undefined on other machines, in CI, or when macOS does not say.
+ * Reading it needs no permission.
+ */
+export function frontApp(): MacApp | undefined {
+	if (process.platform !== 'darwin' || process.env.CI) return undefined;
+	try {
+		return JSON.parse(
+			jxa(
+				'ObjC.import("AppKit"); const a = $.NSWorkspace.sharedWorkspace.frontmostApplication; JSON.stringify({ pid: a.processIdentifier, path: a.bundleURL.path.js })',
+			),
+		) as MacApp;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Brings `app` back to the front when another app took it, as a browser that opens a window does.
+ * It asks the app's process first. macOS may refuse that to a process in the background, so then it
+ * opens the app's bundle, which always brings an app that is running to the front.
+ */
+export function giveFocusBack(app: MacApp | undefined): void {
+	if (!app) return;
+	const front = () => frontApp()?.pid;
+	try {
+		if (front() === app.pid) return;
+		jxa(
+			`ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${app.pid}).activateWithOptions(0)`,
+		);
+		if (front() !== app.pid && frontApp()?.path !== app.path)
+			execFileSync('open', ['-a', app.path], { timeout: 10_000 });
+	} catch {
+		// Focus that cannot come back stays with the browser; the run goes on.
+	}
+}
+
+/** Runs `step`, such as a browser's launch or a new window, then gives focus back to the app in front before it. */
+export async function keepingFocus<T>(step: () => Promise<T>): Promise<T> {
+	const before = frontApp();
+	try {
+		return await step();
+	} finally {
+		giveFocusBack(before);
+	}
+}

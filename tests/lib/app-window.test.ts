@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 import { parseArgs } from '../real-browsers.ts';
-import { appWindow, CORNER_SIZE, cornerBounds, placeScript, RUNNER_TITLE } from './app-window.ts';
+import {
+	appWindow,
+	CORNER_SIZE,
+	cornerBounds,
+	frontApp,
+	keepingFocus,
+	placeScript,
+	RUNNER_TITLE,
+} from './app-window.ts';
 
 /** A laptop display of 1512 by 982 points, with a 33-point menu bar and a 43-point Dock. */
 const laptop = { height: 982, x: 0, y: 43, width: 1512, freeHeight: 906 };
@@ -55,5 +63,24 @@ describe('placeScript', () => {
 		const script = placeScript('Firefox', 'run=r1&runner=mac-firefox', bounds);
 		expect(script).toContain(`name of w contains "${RUNNER_TITLE}"`);
 		expect(script).not.toContain('URL');
+	});
+});
+
+describe('keepingFocus', () => {
+	it('returns what the step returns, and leaves the app in front where it was', async () => {
+		const before = frontApp();
+		expect(await keepingFocus(async () => 42)).toBe(42);
+		expect(frontApp()?.pid).toBe(before?.pid);
+	});
+
+	it('reads no app in front in CI', () => {
+		const ci = process.env.CI;
+		process.env.CI = '1';
+		try {
+			expect(frontApp()).toBeUndefined();
+		} finally {
+			if (ci === undefined) delete process.env.CI;
+			else process.env.CI = ci;
+		}
 	});
 });
