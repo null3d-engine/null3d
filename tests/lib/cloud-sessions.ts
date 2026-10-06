@@ -142,18 +142,21 @@ export class CloudSessions {
 		return this.sessions.get(runner)?.lost !== undefined;
 	}
 
-	/** Ends a runner's session, if it has one that is still open. */
+	/**
+	 * Ends a runner's session, if the driver has not closed it yet. A lost session gets the command
+	 * too: the cloud can keep a session open that stopped answering, and it holds one of the plan's
+	 * parallel sessions until it ends.
+	 */
 	async close(runner: string): Promise<void> {
 		const session = this.sessions.get(runner);
 		if (!session || session.closed) return;
 		session.closed = true;
 		clearInterval(session.timer);
-		if (session.lost) return;
 		try {
 			await this.driver.deleteSession(session.id);
 			this.log(`${runner}: session ended`);
 		} catch (e) {
-			this.log(`${runner}: ending the session failed: ${(e as Error).message}`);
+			if (!session.lost) this.log(`${runner}: ending the session failed: ${(e as Error).message}`);
 		}
 	}
 
