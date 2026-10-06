@@ -105,6 +105,7 @@ run('engine', async () => {
 		count,
 		pause,
 		stopMs,
+		stopTrace: (globalThis as { __null3dStopTrace?: unknown }).__null3dStopTrace,
 		seconds,
 		sharedMemoryMiB,
 		downloads: params.has('downloads')
