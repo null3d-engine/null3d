@@ -4,7 +4,7 @@ Status: decided by the owner on 2026-10-06, in the morning, Singapore time. Date
 
 ## Question
 
-The M1 gate ran on the night of 5 to 6 October 2026, on the gate commit 89a1d6295 (#321). Most items passed. One check failed on a known cause, and some device runs gave no valid result. The S24+'s cold start missed its target by 32 and 57 ms. Must every item run again on a commit with the fix? Does the cold start fail item 5? The owner also saw the shadows trail the cars in S4 at Low. Does that hold back the gate? Last, Safari on the iPhone and the iPad kept the memory of old engines until new engines met E1109. Is its fix part of the gate?
+The M1 gate ran on the night of 5 to 6 October 2026, on the gate commit 89a1d6295 (#321). Most items passed. One check failed on a known cause, and some device runs gave no valid result. The S24+'s cold start missed its target by 32 and 57 ms. Must every item run again on a commit with the fix? Does the cold start fail item 5? The owner also saw the shadows trail the cars in S4 at Low. Does that hold back the gate? Last, Safari on the iPhone and the iPad kept the memory of old engines until new engines met E1109. Is its fix part of the gate? And do the other browser fixes in progress that day join it?
 
 ## Rule
 
@@ -29,6 +29,7 @@ The owner decides. [Releases](../releases.md#m1-exit-gate) says that every item 
 | 2 | T-28's cold-start target on the S24+ in Chrome on Slow 4G is 5.5 s, up from 4.5 s. The warm target stays at 1 s. So the gate commit's 4,532 and 4,557 ms pass | [D-06](D-06-success-targets.md#addendum-2026-09-30-time-to-first-frame-t-28), [Releases](../releases.md#the-owners-rulings-of-6-october-2026) |
 | 3 | The shadows that trail the cars in S4 at Low do not hold back the gate. They are a known finding. At Low, the far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, on fix/shadow-trail (944bb64ef), and lands in M2 | [Releases](../releases.md#results-on-the-gate-commit-89a1d6295) |
 | 4 | The fix for the memory that piles up in Safari on the iPhone and the iPad (#352) is part of the gate. Safari kept the memory of engines whose drawing worker stays with the canvas, so new engines met E1109. The gate needs #352 merged, then device evidence on that main: the cloud iPhone 16 runs the 12 engine pages that failed before, and the owner's iPad runs its test pages without a Safari restart | [Releases](../releases.md#what-the-gate-still-needs) |
+| 5 | The browser fixes for memory, speed and faults that are in progress on 6 October join the gate. New features wait for the next week. The gate's final pass runs on the main commit of the last of these merges | [Releases](../releases.md#what-the-gate-still-needs) |
 
 The items that run again on the new gate commit:
 
@@ -49,3 +50,4 @@ The coordinator chose the new gate commit on 6 October 2026: fdf14a28. It is the
 - [Releases](../releases.md#the-owners-rulings-of-6-october-2026) lists the items that run again, and the gate passes when they pass on the new commit.
 - D-06's T-28 target points to this record.
 - The S24+'s T-28 rows on the gate commit read as a pass.
+- The gate's final pass runs on the main commit of the last browser fix to merge.

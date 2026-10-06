@@ -315,7 +315,7 @@ These items ran again on the new gate commit fdf14a28 (#347), by the owner's rul
 
 The gate moves to a newer main commit, by the owner's ruling of 6 October 2026 ([D-83](decisions/D-83-gate-rulings-2026-10-06.md)). It is fdf14a28, the first main commit that holds #347, the refresh meter's allocation fix, and so also #335, the governor's. Firefox and Safari run again on the later main commit that holds their fixes, and their rows name it. Only these items run again there. Every other item keeps its result from 89a1d6295, or from 03a1ad198 for the iPad runs before T-28.
 
-The open items, with the helper that owns each one. This list changes as each item ends:
+The open items, with the helper that owns each one. This list changes as each item ends. By the owner's ruling of 6 October 2026, the browser fixes for memory, speed and faults in progress that day join the gate. The gate's final pass runs on the main commit of the last of them to merge:
 
 | Item | What runs | Commit | Owner | State |
 | --- | --- | --- | --- | --- |
@@ -324,6 +324,12 @@ The open items, with the helper that owns each one. This list changes as each it
 | 1 | Firefox on the Mac through the device runner, after the fix for the room and GPU times (#350) merges | 156c0621, the first main commit with #350 | ff-room | #350 merged; the rerun is starting |
 | 1 | Safari on the Mac, the 2 pages of the 100,000-sprite scene, after the fix for WebKit bug 321876 merges. Its 4 restart pages passed again with the display awake | The first main commit with the fix | safari-gate | Fix in progress on fix/safari-gate-1006 |
 | 1, 4 | The fix for the memory that piles up in Safari on the iPhone and the iPad (#352). Once it merges: the cloud iPhone 16 runs the 12 engine pages that failed before, and the owner's iPad runs its test pages without a Safari restart. This morning's heat check on the iPad met the same pile-up (E1109) | The first main commit with #352 | m1-ios-memory | #352 open |
+| All | A new engine on the canvas of a destroyed one, on WebGL2 (#336). It sends its merge commit for the record | Its merge commit | m1-canvas-reuse | In progress |
+| All | The capture fix, on fix/capture-yield. It sends its merge commit for the record | Its merge commit | m1-capture | In progress |
+| All | The fix for the frame count's wrap. It sends its merge commit for the record | Its merge commit | m1-frame-wrap | In progress |
+| All | Timing tests kept apart from other work in CI. It sends its merge commit for the record | Its merge commit | m1-timing-isolation | In progress |
+| All | The test switches' names. It sends its merge commit for the record | Its merge commit | m1-switch-names | In progress |
+| All | The speed of WebGL2 at Medium on Apple GPUs. It sends its merge commit for the record | Its merge commit | m1-webgl2-medium | In progress |
 
 After each run, a row goes in [the record of tested devices](tested-devices.md).
 
@@ -347,3 +353,4 @@ The owner ruled on the gate's results on 6 October 2026 ([D-83](decisions/D-83-g
 - T-28's cold-start target on the S24+ in Chrome on Slow 4G is 5.5 s, up from 4.5 s. The warm target stays at 1 s. So the gate commit's 4,532 and 4,557 ms pass.
 - The shadows that trail the cars in S4 at Low are a known finding, and they do not hold back the gate. The fix lands in M2.
 - The fix for the memory that piles up in Safari on the iPhone and the iPad (#352) joins the gate. It needs evidence on the merged main from the cloud iPhone 16 and the owner's iPad.
+- The browser fixes for memory, speed and faults in progress on 6 October join the gate, and new features wait for the next week. The gate's final pass runs on the main commit of the last of these fixes to merge.
