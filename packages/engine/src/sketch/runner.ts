@@ -627,9 +627,9 @@ export class SketchRunner {
 		const { governor } = this;
 		governor.setOn(settings.governor);
 		governor.setRange(low, high);
-		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
 		this.followMovers = settings.followMovingCasters;
 		this.cascadeBlend = settings.shadowCascadeBlend;
+		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
@@ -638,17 +638,27 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
-			glue.setShadowQuality(
-				governor.filter,
-				governor.farInterval,
-				this.followMovers,
-				this.cascadeBlend,
-			) !== 0 ||
+			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
+	}
+
+	/**
+	 * Gives the core the shadow filter and the far cascades' interval after the governor's steps,
+	 * whether far cascades follow moving casters, and the blend between cascades. Returns the
+	 * core's result: 0 when it took them.
+	 */
+	private setShadowQuality(): number {
+		const { governor } = this;
+		return this.sketch.glue.setShadowQuality(
+			governor.filter,
+			governor.farInterval,
+			this.followMovers,
+			this.cascadeBlend,
+		);
 	}
 
 	/**
@@ -660,12 +670,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		this.stepChanges = governor.stepChanges;
 		if (
-			glue.setShadowQuality(
-				governor.filter,
-				governor.farInterval,
-				this.followMovers,
-				this.cascadeBlend,
-			) !== 0 ||
+			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0
 		)

@@ -246,19 +246,31 @@ describe('the soak plan', () => {
 
 	it('tabulates the losses, the frame rates and the memory of each soak', () => {
 		const results: Record<string, ItemResult> = {
-			'soak-s4-webgpu': soak({
-				minutes: 3,
-				samples: [minute(1, 60), minute(2, 52, 1), minute(3, 59, 1)],
-				failures: [],
-			}),
+			'soak-s4-webgpu': {
+				...soak({
+					minutes: 3,
+					samples: [minute(1, 60), minute(2, 52, 1), minute(3, 59, 1)],
+					failures: [],
+				}),
+				mode: {
+					preset: 'low',
+					presetCheck: {
+						rounds: [
+							{ preset: 'medium', presentedFps: 41.7, completedFps: 41.9 },
+							{ preset: 'low', presentedFps: 60.3, completedFps: 60.3 },
+						],
+						reused: false,
+					},
+				},
+			},
 		};
 		expect(
 			soakSummary(items, (id) => results[id])
 				?.split('\n')
 				.slice(2),
 		).toEqual([
-			'| webgpu | 3 of 3 | 1 (minutes 2) | 59.0 | 52.0 (minute 2) | 0.0 MiB | none |',
-			'| webgl2 | no result; the runner stopped before this page | | | | | |',
+			'| webgpu | low (check: medium 41.7 fps, low 60.3 fps) | 3 of 3 | 1 (minutes 2) | 59.0 | 52.0 (minute 2) | 0.0 MiB | none |',
+			'| webgl2 | no result; the runner stopped before this page | | | | | | |',
 		]);
 	});
 });

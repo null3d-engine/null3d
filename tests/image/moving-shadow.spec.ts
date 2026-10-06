@@ -6,12 +6,18 @@
 // frames, it must match: a layer kept from an earlier frame would show the shadow where the box
 // stood then, up to 7 frames of driving behind it. Hold mode cannot show this, as it draws one
 // frame, in which every cascade draws. On both GPU paths.
+//
+// The sketch first sets `followMovingCasters` itself. Then each preset runs with its own setting,
+// far cascades every 8th frame (the governor's longest interval), and 60 frames read one after
+// another, so a preset whose far cascades kept their turns around moving casters fails. The box
+// drives in the last of the sketch's three cascades, past any preset's nearest one.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
 interface Result {
 	error?: string;
 	tier: string;
+	preset: string;
 	offsets: (number | null)[];
 }
 
@@ -23,10 +29,28 @@ interface Result {
  */
 const MAX_STRAY = 5;
 
-async function offsets(page: Page, gpu: string, far: number): Promise<number[]> {
-	await page.goto(`moving-shadow.html?gpu=${gpu}&far=${far}`);
-	const result = await pageResult<Result>(page, 60_000);
+/** The presets that each GPU path runs: WebGL2 runs none above Medium. */
+const PRESETS = {
+	webgpu: ['low', 'medium', 'high', 'ultra'],
+	webgl2: ['low', 'medium'],
+} as const;
+
+/** Frames that a preset's run reads back, one after another, and how long the page may take. */
+const PRESET_READS = 60;
+const PRESET_RUN_MS = 100_000;
+
+async function offsets(
+	page: Page,
+	gpu: string,
+	far: number,
+	switches = '',
+	timeoutMs = 60_000,
+): Promise<number[]> {
+	await page.goto(`moving-shadow.html?gpu=${gpu}&far=${far}${switches}`);
+	const result = await pageResult<Result>(page, timeoutMs);
 	expect(result.error).toBeUndefined();
+	const preset = new URLSearchParams(switches).get('preset');
+	if (preset) expect(result.preset, 'the page runs the preset it asks for').toBe(preset);
 	const found = result.offsets.filter((offset): offset is number => offset !== null);
 	expect(found, 'every frame shows the box and its shadow').toHaveLength(result.offsets.length);
 	return found;
@@ -47,3 +71,18 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				MAX_STRAY,
 			);
 	});
+
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	for (const preset of PRESETS[gpu])
+		test(`a moving caster's shadow follows it at ${preset} with its own setting on ${gpu}`, async ({
+			page,
+		}) => {
+			test.setTimeout(240_000);
+			const switches = `&preset=${preset}&reads=${PRESET_READS}&gap=1`;
+			const expected = median(await offsets(page, gpu, 1, switches, PRESET_RUN_MS));
+			const kept = await offsets(page, gpu, 8, switches, PRESET_RUN_MS);
+			for (const offset of kept)
+				expect(Math.abs(offset - expected), `offsets at ${preset}: ${kept}`).toBeLessThan(
+					MAX_STRAY,
+				);
+		});
