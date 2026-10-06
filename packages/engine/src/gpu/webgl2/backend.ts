@@ -45,7 +45,6 @@ import {
 	type ProgramHost,
 	prepareProgram,
 	programHost,
-	SUN_SHADOW_READS,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -307,9 +306,6 @@ function glTexture(
 	};
 }
 
-/** The slot of the sun's shadow map in the frame group. */
-const SUN_MAP_SLOT = slotOf(0, 4);
-
 export class WebGL2Backend {
 	private readonly buffers: (GlBuffer | undefined)[] = [];
 	private readonly textures: (GlTexture | undefined)[] = [];
@@ -361,9 +357,6 @@ export class WebGL2Backend {
 	private readonly depth: DepthSetup;
 	/** A vertex array with no attributes, for draws whose vertex shaders make their vertices. */
 	private shaderVertices: WebGLVertexArrayObject | null = null;
-	/** Measurement only: the sampler that `nearestOf` copied, and its copy. */
-	private nearestSource: WebGLSampler | null = null;
-	private nearestSampler: WebGLSampler | null = null;
 	/** The framebuffer through which copies read their source. */
 	private copyFramebuffer: WebGLFramebuffer | null = null;
 	/** The ring of pixel unpack buffers that texture rewrites go through, and their sizes in bytes. */
@@ -2252,35 +2245,9 @@ export class WebGL2Backend {
 			const sampler = units[k + 2] as number;
 			const texture = this.slotTextures[slot] ?? null;
 			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
-			const bound = sampler < 0 ? null : (this.slotSamplers[sampler] ?? null);
-			this.bindUnitSampler(
-				unit,
-				SUN_SHADOW_READS === 'nearest' && slot === SUN_MAP_SLOT && bound
-					? this.nearestOf(bound)
-					: bound,
-			);
+			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
 		}
 		this.unitsChanged = false;
-	}
-
-	/** Measurement only: a copy of comparison sampler `sampler` that does not filter, made once. */
-	private nearestOf(sampler: WebGLSampler): WebGLSampler {
-		const gl = this.gl;
-		if (this.nearestSource === sampler && this.nearestSampler) return this.nearestSampler;
-		const copy = gl.createSampler() as WebGLSampler;
-		for (const name of [
-			gl.TEXTURE_WRAP_S,
-			gl.TEXTURE_WRAP_T,
-			gl.TEXTURE_WRAP_R,
-			gl.TEXTURE_COMPARE_MODE,
-			gl.TEXTURE_COMPARE_FUNC,
-		])
-			gl.samplerParameteri(copy, name, gl.getSamplerParameter(sampler, name) as number);
-		gl.samplerParameteri(copy, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-		gl.samplerParameteri(copy, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		this.nearestSource = sampler;
-		this.nearestSampler = copy;
-		return copy;
 	}
 
 	/** Binds a sampler to a texture unit, or none. */
