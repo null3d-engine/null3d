@@ -8,6 +8,7 @@ import * as math from '../../packages/engine/src/math/math.ts';
 import * as quat from '../../packages/engine/src/math/quat.ts';
 import * as vec3 from '../../packages/engine/src/math/vec3.ts';
 import { allocatingPlaces } from '../lib/allocations.ts';
+import { ALONE } from '../lib/alone.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 /** Every helper that writes into an array or returns a number: all but the ones that create arrays. */
@@ -19,7 +20,7 @@ const HELPERS = Object.entries({ color, mat4, math, quat, vec3 })
 	)
 	.sort();
 
-test('each math helper allocates nothing in a loop of calls', async ({ page }) => {
+test('each math helper allocates nothing in a loop of calls', ALONE, async ({ page }) => {
 	await page.goto('math.html');
 	const { cases } = await pageResult<{ cases: string[] }>(page, 30_000);
 	expect([...cases].sort()).toEqual(HELPERS);

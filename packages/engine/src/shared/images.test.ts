@@ -64,7 +64,7 @@ function deliver(port: MessagePort, data: unknown): void {
 }
 
 describe('images on their way to the thread that draws', () => {
-	test('reach a table on this thread at once, each counted as it arrives', async () => {
+	test('reach a table on this thread at once, each noted as it arrives', async () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		const table = new ImageTable();
 		const send = sendToTable(table, slots);
@@ -74,6 +74,25 @@ describe('images on their way to the thread that draws', () => {
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(2);
 		expect(table.get(2)).toBe(second);
 		await imagesArrived(slots, 2);
+	});
+
+	test('count on past the last 32-bit id, where ids go round', async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const send = sendToTable(table, slots);
+		// The core hands out ids as unsigned numbers: the last before the wrap, then the first.
+		const [last, first] = [2 ** 32 - 2, 1];
+		send(last, image());
+		let done = false;
+		const waiting = imagesArrived(slots, first).then(() => {
+			done = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(done).toBe(false);
+		send(first, image());
+		await waiting;
+		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(first);
+		await imagesArrived(slots, last);
 	});
 
 	test('wait until the thread that draws receives, then cross the port in order', async () => {
