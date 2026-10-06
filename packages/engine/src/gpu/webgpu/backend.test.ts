@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import { WebGPUBackend } from './backend';
+import { needsOwnArguments } from './indirect-arguments';
 
 const scope = globalThis as Record<string, unknown>;
 const GLOBALS = {
@@ -26,6 +27,11 @@ const SHADER = {
 	},
 };
 const SHADERS = new Proxy({}, { get: () => SHADER }) as unknown as DeviceShaders;
+const INDIRECT = G.BUFFER_USAGE_INDIRECT | G.BUFFER_USAGE_STORAGE;
+const SAFARI_26 =
+	'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.2 Safari/605.1.15';
+const MAC_CHROME =
+	'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36';
 
 /**
  * A device that records the pipelines it builds, at once or in the background, and the buffers it
@@ -174,11 +180,18 @@ describe('WebGPUBackend', () => {
 		expect(events).toEqual(['submit', `destroy ${256 * 8}`]);
 	});
 
-	it('copies the arguments of each indirect draw of a pass into a buffer of its own', () => {
+	/** A backend in a browser with `userAgent`, which replays a list of indirect draws. */
+	function drawIndirect(userAgent: string) {
+		const real = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+		Object.defineProperty(globalThis, 'navigator', { value: { userAgent }, configurable: true });
 		const { device, log, buffers } = fakeDevice();
-		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		let backend: WebGPUBackend;
+		try {
+			backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		} finally {
+			if (real) Object.defineProperty(globalThis, 'navigator', real);
+		}
 		backend.canvasTarget = { createView: () => ({}) } as unknown as GPUTexture;
-		const indirect = G.BUFFER_USAGE_INDIRECT | G.BUFFER_USAGE_STORAGE;
 		const begin: [number, ...number[]] = [
 			G.OP_BEGIN_RENDER_PASS,
 			...[0, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_CLEAR_COLOR],
@@ -186,7 +199,7 @@ describe('WebGPUBackend', () => {
 		replay(
 			backend,
 			drawList(
-				[G.OP_CREATE_BUFFER, 1, 40, indirect],
+				[G.OP_CREATE_BUFFER, 1, 40, INDIRECT],
 				[G.OP_BEGIN_BUNDLE, 5, G.FORMAT_CANVAS, G.FORMAT_NONE, 1],
 				[G.OP_DRAW_INDEXED_INDIRECT, 1, 0],
 				[G.OP_END_BUNDLE],
@@ -200,8 +213,16 @@ describe('WebGPUBackend', () => {
 				[G.OP_END_RENDER_PASS],
 			),
 		);
-		expect(buffers[0]?.usage).toBe(indirect | G.BUFFER_USAGE_COPY_SRC);
-		expect(log.filter((entry) => !entry.startsWith('background'))).toEqual([
+		return {
+			usage: buffers[0]?.usage,
+			log: log.filter((entry) => !entry.startsWith('background')),
+		};
+	}
+
+	it('copies the arguments of each indirect draw of a pass into a buffer of its own in Safari 26', () => {
+		const { usage, log } = drawIndirect(SAFARI_26);
+		expect(usage).toBe(INDIRECT | G.BUFFER_USAGE_COPY_SRC);
+		expect(log).toEqual([
 			'copy buffer 0 at 0 to buffer 1',
 			'copy buffer 0 at 20 to buffer 2',
 			'begin pass',
@@ -213,5 +234,33 @@ describe('WebGPUBackend', () => {
 			'end pass',
 			'submit',
 		]);
+	});
+
+	it('draws straight from the shared buffer of arguments in other browsers', () => {
+		const { usage, log } = drawIndirect(MAC_CHROME);
+		expect(usage).toBe(INDIRECT);
+		expect(log).toEqual([
+			'begin pass',
+			'draw from buffer 0 at 0',
+			'draw from buffer 0 at 20',
+			'end pass',
+			'begin pass',
+			'draw from buffer 0 at 20',
+			'end pass',
+			'submit',
+		]);
+	});
+
+	it("gives each draw its own arguments in every browser on Apple's WebKit, and in no other", () => {
+		const iPhoneChrome =
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.7339.122 Mobile/15E148 Safari/604.1';
+		const macFirefox =
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:156.0) Gecko/20100101 Firefox/156.0';
+		const androidChrome =
+			'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36';
+		expect(needsOwnArguments(SAFARI_26)).toBe(true);
+		expect(needsOwnArguments(iPhoneChrome)).toBe(true);
+		for (const userAgent of [MAC_CHROME, macFirefox, androidChrome, ''])
+			expect(needsOwnArguments(userAgent), userAgent).toBe(false);
 	});
 });
