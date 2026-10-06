@@ -226,6 +226,8 @@ export class SketchRunner {
 	private bloomSetting = 0;
 	/** The `followMovingCasters` setting, which the governor's shadow steps keep. */
 	private followMovers = true;
+	/** The `shadowCascadeBlend` setting, which the governor's shadow steps keep. */
+	private cascadeBlend = 0;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -627,6 +629,7 @@ export class SketchRunner {
 		governor.setRange(low, high);
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval);
 		this.followMovers = settings.followMovingCasters;
+		this.cascadeBlend = settings.shadowCascadeBlend;
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
@@ -635,7 +638,12 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
-			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
+			glue.setShadowQuality(
+				governor.filter,
+				governor.farInterval,
+				this.followMovers,
+				this.cascadeBlend,
+			) !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
@@ -652,7 +660,12 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		this.stepChanges = governor.stepChanges;
 		if (
-			glue.setShadowQuality(governor.filter, governor.farInterval, this.followMovers) !== 0 ||
+			glue.setShadowQuality(
+				governor.filter,
+				governor.farInterval,
+				this.followMovers,
+				this.cascadeBlend,
+			) !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0
 		)

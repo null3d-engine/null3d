@@ -438,6 +438,8 @@ describe('the pages', () => {
 			'null3d-webgl2-two-pass',
 			'null3d-webgpu-hash',
 			'null3d-webgl2-hash',
+			'null3d-webgpu-blend-off',
+			'null3d-webgl2-blend-off',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -484,6 +486,15 @@ describe('the pages', () => {
 		);
 	});
 
+	test('runs the pages without the cascade band on the pipelined pages with the band at 0', () => {
+		expect(pagePath('s4', 'null3d-webgpu-blend-off', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowCascadeBlend=0&seconds=2',
+		);
+		expect(pagePath('s4', 'null3d-webgl2-blend-off')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgl2&shadowCascadeBlend=0',
+		);
+	});
+
 	test('sweeps job worker counts on the null3D pages only', () => {
 		expect(JOBS_PAGES).toEqual(['null3d-webgpu', 'null3d-webgl2']);
 		expect(PAGE_KINDS.filter(isNull3dPage)).toEqual([
@@ -504,6 +515,8 @@ describe('the pages', () => {
 			'null3d-webgl2-two-pass',
 			'null3d-webgpu-hash',
 			'null3d-webgl2-hash',
+			'null3d-webgpu-blend-off',
+			'null3d-webgl2-blend-off',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -514,6 +527,8 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgpu',
+			'webgpu',
+			'webgl2',
 			'webgpu',
 			'webgl2',
 			'webgpu',

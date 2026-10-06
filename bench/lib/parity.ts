@@ -123,9 +123,10 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
  * end in -prepass, the depth prepass, for those that end in -one-pass and -two-pass, S2's boxes
  * see-through and double-sided in one draw or in two, for those that end in -hash, S2's boxes with
- * the alpha hash, for those that end in -timed, the time of each WebGL call, and for those that end
- * in -synced, that time with a wait for the browser's GPU process after each call, and the GPU
- * interface it draws with.
+ * the alpha hash, for those that end in -blend-off, S4's shadow cascades with no band between them,
+ * for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that
+ * time with a wait for the browser's GPU process after each call, and the GPU interface it draws
+ * with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -147,6 +148,16 @@ const PAGES = {
 	'null3d-webgl2-two-pass': { folder: 'null3d', switches: 'gpu=webgl2&sides=two', api: 'webgl2' },
 	'null3d-webgpu-hash': { folder: 'null3d', switches: 'gpu=webgpu&alpha=hash', api: 'webgpu' },
 	'null3d-webgl2-hash': { folder: 'null3d', switches: 'gpu=webgl2&alpha=hash', api: 'webgl2' },
+	'null3d-webgpu-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowCascadeBlend=0',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowCascadeBlend=0',
+		api: 'webgl2',
+	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
 		folder: 'null3d',

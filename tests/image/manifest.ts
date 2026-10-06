@@ -784,6 +784,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The still shadow scene, whose wall throws one long shadow edge across the seam between the
+	// first two cascades. Over the band at the first cascade's far end, its shadow blends into the
+	// second cascade's, so the edge shows no line where they meet.
+	{
+		name: 'shadows-seam',
+		sketch: 'tests/pages/sketches/shadow-scene-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
 	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
 	// between them.

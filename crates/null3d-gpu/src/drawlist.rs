@@ -1256,8 +1256,8 @@ pub mod sizes {
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
     /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
-    /// six vectors.
-    pub const SHADOW_UNIFORM_BYTES: u32 = 352;
+    /// seven vectors.
+    pub const SHADOW_UNIFORM_BYTES: u32 = 368;
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
