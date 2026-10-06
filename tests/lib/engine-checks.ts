@@ -1,5 +1,7 @@
 // Checks of the engine test page's result, shared by the Playwright tests and the real-browser runner.
 
+import { SOFTWARE_RENDERER } from './gpu-paths.ts';
+
 export interface EngineMode {
 	name: string;
 	/** URL switches that select the mode. */
@@ -96,7 +98,13 @@ export interface FrameCounts {
 export interface EngineResult {
 	mode: ReportedMode & { jobWorkers: number };
 	capabilities: { tier: string; threaded: boolean; features: string[] };
-	report: { crossOriginIsolated: boolean; atomicsWaitAsync: boolean };
+	report: {
+		crossOriginIsolated: boolean;
+		atomicsWaitAsync: boolean;
+		/** The GPU's names, from the engine's probe: absent in results of older runs. */
+		webgl2?: { renderer: string | null };
+		webgpu?: { adapterInfo: { vendor: string; architecture: string; device: string } | null };
+	};
 	stats: {
 		frames: number;
 		cpuMs: Spread;
@@ -181,8 +189,16 @@ export interface EngineChecks {
 	 * and a refresh rate it measured must still be a display's. A test whose job is not the loop's
 	 * pace sets it, such as a test of the start's downloads or of a start option: a busy runner can
 	 * slow every frame of its short measurement, which says nothing about what that test checks.
+	 * A software GPU leaves them out too, whatever this says: there the GPU sets the pace.
 	 */
 	pacing?: boolean;
+}
+
+/** True when the engine's probe names a software GPU, which draws on the CPU. */
+export function drewOnSoftwareGpu({ webgl2, webgpu }: EngineResult['report']): boolean {
+	const adapter = webgpu?.adapterInfo;
+	const names = [webgl2?.renderer, adapter?.vendor, adapter?.architecture, adapter?.device];
+	return SOFTWARE_RENDERER.test(names.filter(Boolean).join(' '));
 }
 
 /** What is wrong with a result of the engine page, run in a mode on a GPU tier; empty when nothing is. */
@@ -193,7 +209,8 @@ export function engineProblems(
 	{ pacing = true }: EngineChecks = {},
 ): string[] {
 	const { stats } = result;
-	const minFrames = pacing
+	const paced = pacing && !drewOnSoftwareGpu(result.report);
+	const minFrames = paced
 		? ((result.seconds * 1000) / MAX_MEDIAN_INTERVAL_MS) * MIN_FRAME_SHARE
 		: 1;
 	const problems = modeProblems(result.mode, mode);
@@ -203,7 +220,7 @@ export function engineProblems(
 	if (jobs) problems.push(jobs);
 	if (!result.capabilities.tier.startsWith(tier)) problems.push(`used ${result.capabilities.tier}`);
 	if (stats.frames < minFrames) problems.push(`measured only ${stats.frames} frames`);
-	if (pacing && stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
+	if (paced && stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
 		problems.push(`median frame interval ${stats.intervalMs.median} ms`);
 	// A page without cross-origin isolation gets a coarse timer (0.1 ms steps in Chrome), and an
 	// empty frame can take less than one step.
@@ -227,7 +244,7 @@ export function engineProblems(
 	if (stats.completionSignal !== signal)
 		problems.push(`completions came from a ${stats.completionSignal}, expected a ${signal}`);
 	const hz = stats.refreshHz ?? 0;
-	const checkRefresh = pacing || stats.refreshHz !== null;
+	const checkRefresh = paced || stats.refreshHz !== null;
 	if (checkRefresh && (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1]))
 		problems.push(`measured a refresh rate of ${stats.refreshHz} Hz`);
 	// With the sketch and the drawing in workers, the page's thread must stay free (design
