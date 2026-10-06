@@ -246,9 +246,9 @@ const HOLD_TIMEOUT_SECONDS = 60;
 /**
  * How long the restart page may take: two rounds, each of up to ten starts and stops, which may
  * wait 30 s in all for the browser to free memory, and of the counts of the room, which may wait
- * 31 s for it to come back. The second round runs only when the room did not come back.
+ * 91 s for it to come back. The second round runs only when the room did not come back.
  */
-const RESTARTS_TIMEOUT_SECONDS = 300;
+const RESTARTS_TIMEOUT_SECONDS = 420;
 /**
  * The thread modes whose engines start in frames that the restart page removes while they run.
  * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
@@ -976,10 +976,10 @@ export const MEMORY_LOADS = 20;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
 /**
- * How long the shared memory page may take to count its room, and to wait up to 31 s for the room
+ * How long the shared memory page may take to count its room, and to wait up to 91 s for the room
  * to come back after its one cycle.
  */
-const ROOM_TIMEOUT_SECONDS = 90;
+const ROOM_TIMEOUT_SECONDS = 150;
 /** The most memories the shared memory page counts; a browser with room for this many has more. */
 const MOST_COUNTED = 64;
 

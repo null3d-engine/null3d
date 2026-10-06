@@ -1431,7 +1431,7 @@ describe('the memory plan', () => {
 		expect(items[0]).toEqual({
 			id: 'room-256',
 			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&maximum=4096',
-			timeoutSeconds: 90,
+			timeoutSeconds: 150,
 			check: { kind: 'room', maximumMiB: 256 },
 		});
 		expect(items[1]).toEqual({
