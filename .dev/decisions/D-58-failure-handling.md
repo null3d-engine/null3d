@@ -72,6 +72,8 @@ Decided by the owner on 6 October 2026: keep the workers as they are, and docume
 - A time limit on a kept worker, such as a few seconds. A page cannot know how long it has: an app may stop its engine and start another on the same canvas a minute later. That start would then fail with E1419. D-58 rejected a time limit for the same reason when canvas reuse came.
 - No canvas reuse for a canvas that a worker drew on, refused with E1419. Apps would then make a new canvas element for each engine. React components that render `<canvas ref>` would fail under StrictMode, which starts every effect twice.
 
+The fix holds for the runner's pages on the cloud iPhone 16: the 12 engine pages that failed on main all pass. A different fault remains there. A frame that a live page removes keeps its engine's memory there, with or without a kept worker. So the frame restart checks fail on that iPhone. The [device guide](../devices.md#where-automate-differs-from-live) gives the runs. It is not part of this decision, and a separate investigation follows.
+
 ## Consequences
 
 - The engine package's page, worker, runner and render code changed; the error table gained E1304, E1305, E1419 and E1420. `api/engine`, `api/sketch` and `guides/debugging` describe the paths.
