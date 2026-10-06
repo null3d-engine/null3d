@@ -62,10 +62,18 @@ export default defineSketch(async (context) => {
 	const lighting = { intensity: 1, rotation: turn };
 	let room: Environment | undefined;
 	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
-	const sky = switches.has('sky');
+	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
+	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel.
+	const skyMode = switches.get('sky');
+	const sky = skyMode !== null && skyMode !== 'room';
 	const sun: [number, number, number] = [0, 0.2, -1];
-	const skySettings = { sunPosition: sun, time: 0 };
+	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
 	const skyBackground = { sky: skySettings };
+	if (sky) context.scene.setBackground(skyBackground);
+	if (skyMode === 'room')
+		void context.assets.builtinEnvironment('room').then((loaded) => {
+			context.scene.setBackground(loaded);
+		});
 	if (switches.has('environment'))
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
@@ -85,7 +93,7 @@ export default defineSketch(async (context) => {
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.scene.setEnvironment(room, lighting);
 		}
-		if (sky) {
+		if (sky && skyMode !== 'still') {
 			sun[1] = 0.2 + 0.15 * Math.sin(t);
 			skySettings.time = t;
 			context.scene.setBackground(skyBackground);

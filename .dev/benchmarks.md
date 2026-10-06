@@ -267,6 +267,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 ## The sky
 
 - S1's page switch `?sky` draws three.js's sky behind the swarm, with its sun and clouds moving in every frame. The page kinds that end in `-sky` start null3D with it, so a bench run takes turns between a page and its sky twin: `bun run bench:run --scenes s1 --pages null3d-webgpu,null3d-webgpu-sky,null3d-webgl2,null3d-webgl2-sky --switches governor=off`. The difference is the sky's cost in the pixels that the swarm leaves open ([D-68](decisions/D-68-backgrounds.md)).
+- `?sky=clear` draws the sky without clouds, `?sky=still` keeps its sun and clouds still, and `?sky=room` draws the built-in room as the background, which reads one texel a pixel. The page kinds `null3d-webgpu-sky-clear` and `null3d-webgpu-sky-room` take turns with the others, so one phone session splits the sky's cost between its air, its clouds and the box it draws.
 
 ## Sweeps for the open defaults
 

@@ -432,6 +432,8 @@ describe('the pages', () => {
 			'null3d-webgl2-prepass',
 			'null3d-webgpu-sky',
 			'null3d-webgl2-sky',
+			'null3d-webgpu-sky-clear',
+			'null3d-webgpu-sky-room',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -483,6 +485,9 @@ describe('the pages', () => {
 			'/bench/pages/null3d/s1.html?gpu=webgpu&sky&seconds=2',
 		);
 		expect(pagePath('s1', 'null3d-webgl2-sky')).toBe('/bench/pages/null3d/s1.html?gpu=webgl2&sky');
+		expect(pagePath('s1', 'null3d-webgpu-sky-clear')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=clear',
+		);
 	});
 
 	test('sweeps job worker counts on the null3D pages only', () => {
@@ -501,6 +506,8 @@ describe('the pages', () => {
 			'null3d-webgl2-prepass',
 			'null3d-webgpu-sky',
 			'null3d-webgl2-sky',
+			'null3d-webgpu-sky-clear',
+			'null3d-webgpu-sky-room',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -521,6 +528,8 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgpu',
 			'webgl2',
 			'webgl2',
 		]);
