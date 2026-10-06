@@ -899,7 +899,7 @@ describe('the checks plan', () => {
 		).toEqual(['the page is not cross-origin isolated', 'the threaded build did not load']);
 	});
 
-	it('starts and stops the engine again and again in every mode, and in frames', () => {
+	it('starts and stops the engine again and again in every mode, on kept canvases, and in frames', () => {
 		const restarts = items.filter((item) => item.check.kind === 'restarts');
 		expect(restarts.map((item) => item.path)).toEqual([
 			'/tests/pages/shared-memory.html',
@@ -910,6 +910,12 @@ describe('the checks plan', () => {
 			'/tests/pages/shared-memory.html?kinds=frame',
 			'/tests/pages/shared-memory.html?kinds=frame&latency=low',
 			'/tests/pages/shared-memory.html?kinds=frame&render=main',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept&latency=low',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed&latency=low',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept&sketch-thread=main',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed&sketch-thread=main',
 		]);
 	});
 
@@ -973,6 +979,42 @@ describe('the checks plan', () => {
 			'the browser did not get back the memory of engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts in frames, and for 0 after',
 		]);
 		expect(judge(inFrames.check, result({}), NONE_MISSING)).toEqual(['the page started no engine']);
+		const kept = items.find((item) => item.id === 'canvas-kept-restarts-pipelined');
+		const destroyedInFrames = items.find(
+			(item) => item.id === 'frame-destroyed-restarts-pipelined',
+		);
+		if (!kept || !destroyedInFrames)
+			throw new Error('the plan lacks the restart pages that keep a worker');
+		const keptNotes: string[] = [];
+		expect(
+			judge(
+				kept.check,
+				result({ kinds: { 'canvas-kept': { ...engine, roomLater: 1 } } }),
+				NONE_MISSING,
+				{ ...context, note: (t: string) => keptNotes.push(t) },
+			),
+		).toEqual([]);
+		expect(keptNotes).toEqual([
+			'the workers that stayed with the canvases held memory: it had room for 6 shared memories before 10 starts and stops on kept canvases, and for 1 after',
+		]);
+		expect(
+			judge(
+				kept.check,
+				result({ kinds: { 'canvas-kept': { ...failed, error: 'E1109: refused' } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop on a kept canvas 3 of 10 failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
+		expect(
+			judge(
+				destroyedInFrames.check,
+				result({ kinds: { 'frame-destroyed': { ...failed, error: 'E1109: refused' } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop in a frame 3 of 10 failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
 	});
 
 	it('quotes the last steps of a page that gave no result', () => {
