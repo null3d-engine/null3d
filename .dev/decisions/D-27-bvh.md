@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03. Task: M2-D1.
 
+Summary: Four-child nodes tested four boxes at a time. Mesh trees and the static objects use the SAH build, which answers rays twice as fast in a city block; dynamic objects use the Morton build in each frame that queries. One subtree per grid cell keeps rays precise 6,378 km out. Builds cost 0.20 to 0.30 µs per triangle in WebAssembly.
+
 ## Question
 
 Raycasts, overlap queries, pointer events and picking need to find the objects and triangles a ray or a volume meets, without testing each one. How should the engine build and store those trees?

@@ -2,6 +2,8 @@
 
 Status: decided for the desktop target's measure; the phone target and the size target wait for the M0.2 phone runs. Date: 2026-09-27.
 
+Summary: The desktop target measures each engine's own CPU work on its busiest thread, apart from the game's code. Addenda keep the 600 KB budget and add the phone runs.
+
 ## Question
 
 Do the 50%, 100% and 600 KB targets stand as written, now that M0 has data? This record settles the first question the data raised: what "CPU frame time" means for the desktop target when both engines run the same scene code on the thread that limits the frame rate.

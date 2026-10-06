@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-H1.
 
+Summary: `largeWorld: true` stores whole cells beside each 32-bit position, so setters keep 64-bit precision: the cells scene at the Earth's radius draws the origin's image within 5 of 57,600 pixels, and raycasts there match three.js. Batches take an origin in both modes. 512 cells stay: a scene as dense as S6 fills its object budget first.
+
 ## Question
 
 Grid cells keep world matrices precise far from the origin ([Large worlds and precision](../../docs/concepts/large-worlds.md)). But sketch code writes positions into the core's arrays of 32-bit floats. So a position rounds before any cell sees it: in steps of 6 cm at 1,000 km and 0.5 m at the Earth's radius. The question has three parts:

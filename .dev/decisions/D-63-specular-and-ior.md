@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-05. Task: M2-J5.
 
+Summary: `KHR_materials_ior` and `KHR_materials_specular` become `ior`, `specularIntensity`, `specularColor` and two maps of the standard material, as three.js's `MeshPhysicalMaterial` takes them, with no new lobe. The material row grows to nine `vec4f` and the map slots to eight. Each WebGL2 program numbers its own texture units. Parity with three.js: 0.004% to 0.043% of the pixels differ, and files without the extensions draw bit for bit as before.
+
 ## Question
 
 glTF's `KHR_materials_specular` and `KHR_materials_ior` change how strongly a non-metal reflects light. Under [D-52](D-52-intent-parity.md), materials are strict: a file must draw as its author meant, with three.js as the reference. The extensions give five values: an index of refraction, a specular intensity and color, and their two maps. How does the standard material take them with no new lighting lobe, and where do they live in the material table?

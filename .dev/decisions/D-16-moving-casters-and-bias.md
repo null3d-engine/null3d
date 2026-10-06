@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03, with the owner's ruling for Low of 2026-10-05. Tasks: M1-F3 and M1-K5.
 
+Summary: A far cascade draws in every frame while a moving caster touches its box, which adds no memory. Low keeps its far cascade's turns (`followMovingCasters`), after the gate's iPad comparison. The biases are in meters (0.01 and 0.02 m), scaled by each surface's angle to the light and capped at one texel, and receivers pick their cascade by their distance from the camera, so the lit lines at casters' bases are thinner and change less as the view turns.
+
 ## Question
 
 Two faults showed in S4 on the iPad (WebGPU, Medium):
