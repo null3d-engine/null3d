@@ -121,9 +121,11 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -prepass, the depth prepass, for those that end in -depth32, shadow cascades in 32-bit float
- * depth, for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
- * wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * end in -prepass, the depth prepass, for those that end in -depth32, shadow cascades in 32-bit
+ * float depth, for those that end in -blend-off, S4's shadow cascades with no band between them,
+ * for those that end in -timed, the time of each WebGL call, and for those that end in -synced,
+ * that time with a wait for the browser's GPU process after each call, and the GPU interface it
+ * draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -147,6 +149,16 @@ const PAGES = {
 	'null3d-webgl2-depth32': {
 		folder: 'null3d',
 		switches: 'gpu=webgl2&shadowdepth=32',
+		api: 'webgl2',
+	},
+	'null3d-webgpu-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowCascadeBlend=0',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowCascadeBlend=0',
 		api: 'webgl2',
 	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
@@ -264,9 +276,14 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 /**
  * The glTF model scenes that three.js's WebGPURenderer draws wrong, so its WebGLRenderer's frame is
  * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
- * attributes black, and its WebGLRenderer draws them as null3D does.
+ * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
+ * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
+ * and the normals' deltas.
  */
-const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['meshopt-khr']);
+const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
+	'meshopt-khr',
+	'morph-colors',
+]);
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
@@ -294,6 +311,14 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
+	// Points against three.js's Points and PointsMaterial, whose WebGPURenderer draws them one pixel
+	// wide, so WebGLRenderer's frame is the reference on every tier. WebGPU's samples within a pixel
+	// lie mirrored top to bottom against WebGL's. So where a point's top or bottom edge crosses a row
+	// of pixels, WebGPU covers other samples: 0.079% of the pixels differ on SwiftShader, and 0.056%
+	// on the Mac's GPU. Compatibility mode's 8-bit path also averages edge samples after it encodes
+	// them, at the edges of bright points on the wall: 0.119% differ on SwiftShader, and 0.110% on
+	// the Mac's GPU. D-37 gives the detail.
+	{ test: 'points', twin: `${TWINS}/points.html`, webglOnly: true, limit: 0.2 },
 	{ test: 'lines', twin: `${TWINS}/lines.html` },
 	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
@@ -474,12 +499,29 @@ export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): 
 }
 
 /**
+ * One page switch: a name of letters in words joined by hyphens, such as `display-check`, with a
+ * value or none. A value holds letters, digits, `.`, `-`, `_` and `,`, such as `reversed-gl` or
+ * `bc,etc2`.
+ */
+const PAGE_SWITCH = /^[a-z]+(-[a-z]+)*(=[\w.,-]+)?$/i;
+
+/** The form of page switches, for error messages. */
+const SWITCHES_FORM =
+	'names of letters and hyphens, each with =value or none, joined by &, such as shadows=3 or display-check=off&hold';
+
+/**
  * The page switches of a command's `option`, such as `--switches shadows=3`: names, each with a
  * value or none, joined by `&`. It throws unless the text has that form.
  */
 export function readSwitches(text: string | undefined, option: string): string {
-	if (!text || !/^[a-z]+(=[\w.]+)?(&[a-z]+(=[\w.]+)?)*$/i.test(text))
+	if (!text) throw new Error(`${option}: give page switches: ${SWITCHES_FORM}`);
+	if (text.startsWith('?'))
 		throw new Error(`${option}: give page switches without the ?, such as shadows=3 or a=1&b`);
+	const bad = text.split('&').find((entry) => !PAGE_SWITCH.test(entry));
+	if (bad !== undefined)
+		throw new Error(
+			`${option}: ${bad ? `"${bad}" is not a page switch` : 'a switch is empty'}. Give ${SWITCHES_FORM}`,
+		);
 	return text;
 }
 

@@ -30,6 +30,7 @@ import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
+import { POINT_IMAGE } from '../../bench/scenes/points.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -408,6 +409,14 @@ const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.s
  */
 const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 
+/**
+ * S5's characters on SwiftShader. Its time grows with the crowd, and the software GPU on CI's
+ * slowest machines took nearly all of the run's limit for the full crowd. A smaller crowd still
+ * skins, blends and shadows every character in rings that fill the frame. The real GPU, Safari and
+ * Firefox draw the full crowd. .dev/decisions/D-88-software-gpu-loads.md gives the figures.
+ */
+const S5_SWIFTSHADER_COUNT = 100;
+
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
@@ -778,6 +787,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'shadows-filter-5',
 		sketch: 'tests/pages/sketches/shadows-sketch.ts?filter=5',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The still shadow scene, whose wall throws one long shadow edge across the seam between the
+	// first two cascades. Over the band at the first cascade's far end, its shadow blends into the
+	// second cascade's, so the edge shows no line where they meet.
+	{
+		name: 'shadows-seam',
+		sketch: 'tests/pages/sketches/shadow-scene-sketch.ts',
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
@@ -1227,6 +1247,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
+	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
+	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
+	// PointsMaterial.
+	{
+		name: 'points',
+		sketch: 'tests/pages/sketches/points-sketch.ts',
+		hold: 0,
+		size: [POINT_IMAGE.width, POINT_IMAGE.height],
+	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
 	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
@@ -1320,7 +1349,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
-	// their frame, so other devices may differ in fewer of their pixels.
+	// their frame, so other devices may differ in fewer of their pixels. S5 draws a smaller crowd on
+	// SwiftShader.
 	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
@@ -1329,6 +1359,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: ['pipelined', 'low latency'],
 			timeoutSeconds: 90,
+			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),

@@ -113,6 +113,8 @@ The core resamples each clip as a background task on the job workers. The job sy
 | Resample in the glTF worker | No | The worker would need a second copy of the core's WebAssembly, 550 KB, or a resampler in TypeScript beside the core's |
 | Background tasks on the job workers (chosen) | No | The resampler that D-26 tested runs as it is |
 
+The resampler copies a track that holds one key, or one linear or step key at each frame's time, and evaluates only the others. The asset tool writes every track so, and its files load with copies alone ([D-18](D-18-asset-tool.md#clips)). The Knight's 76 clips then took 7.9 ms on two job workers, against 16.5 ms from its source file.
+
 ### The correction between rotation keys
 
 Sampling corrects rotations between keys for tracks that turn more than 0.2 radians between frames, and only there. Accuracy against three.js is the point of loading a file's clips, so the correction stays on. It costs about 5% of the frame step in `bench_animation_crowd`, whose second clip turns joints up to 0.32 radians between keys ("Faults the comparison found").

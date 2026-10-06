@@ -5,6 +5,7 @@ import {
 	LATER_PARTS,
 	TRANSCODER_FILES,
 } from '../../tools/lib/size-report.ts';
+import { ALONE } from '../lib/alone.ts';
 import {
 	ENGINE_MODES,
 	type EngineChecks,
@@ -46,10 +47,16 @@ async function workersCannotDraw(page: Page): Promise<void> {
  * The engine checks without their frame-rate checks, for the tests whose job is not the pace of the
  * frame loop. The engine must still run after its start, at whatever rate the machine draws. A busy
  * runner can slow every frame of a short measurement, which says nothing about what these tests
- * check. The tests that run each thread mode, and those that wake the threads with messages, check
- * the pace.
+ * check. The tests that run each thread mode check the pace, and so do those that wake the threads
+ * with messages. On a software GPU no test checks it, as the GPU sets the pace there.
  */
 const notPacing: EngineChecks = { pacing: false };
+
+/**
+ * The fewest frames that the tests without Atomics.waitAsync count after the pause, to show that
+ * its end woke the threads. The page counts until they come, however slowly the GPU draws them.
+ */
+const RESUMED_FRAMES = 11;
 
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
@@ -309,7 +316,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
-		test(`the engine runs ${mode.name} on ${gpu}`, async ({ page }) => {
+		test(`the engine runs ${mode.name} on ${gpu}`, ALONE, async ({ page }) => {
 			await page.goto(`engine.html?gpu=${gpu}&seconds=2&${mode.query}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
@@ -319,22 +326,24 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 	// A page that runs the sketch and draws steps the sketch right before each draw, which is low
 	// latency, whether the page asked for low latency or for drawing on the main thread.
 	for (const query of ['sketch-thread=main&latency=low', 'sketch-thread=main&render=main']) {
-		test(`the engine runs the sketch and draws on the main thread with ?${query} on ${gpu}`, async ({
-			page,
-		}) => {
-			const mode: EngineMode = {
-				name: 'sketch and drawing on the main thread',
-				query,
-				build: 'threaded',
-				latency: 'low',
-				sketchThread: 'main',
-				renderThread: 'main',
-			};
-			await page.goto(`engine.html?gpu=${gpu}&seconds=2&${query}`);
-			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
-			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, gpu)).toEqual([]);
-		});
+		test(
+			`the engine runs the sketch and draws on the main thread with ?${query} on ${gpu}`,
+			ALONE,
+			async ({ page }) => {
+				const mode: EngineMode = {
+					name: 'sketch and drawing on the main thread',
+					query,
+					build: 'threaded',
+					latency: 'low',
+					sketchThread: 'main',
+					renderThread: 'main',
+				};
+				await page.goto(`engine.html?gpu=${gpu}&seconds=2&${query}`);
+				const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+				expect(result.error).toBeUndefined();
+				expect(engineProblems(result, mode, gpu)).toEqual([]);
+			},
+		);
 	}
 	const [pipelined] = ENGINE_MODES;
 	if (!pipelined) throw new Error('no engine modes');
@@ -397,15 +406,18 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 // threads wake each other with messages instead: for each frame, for a pause and its end, and for
 // the stop, which must end the job workers' loops.
 for (const mode of THREADED_MODES) {
-	test(`the engine runs without Atomics.waitAsync, ${mode.name}`, async ({ page }) => {
+	test(`the engine runs without Atomics.waitAsync, ${mode.name}`, ALONE, async ({ page }) => {
 		await withoutWaitAsync(page);
-		await page.goto(`engine.html?gpu=webgl2&seconds=1&pause&${mode.query}`);
+		const switches = `gpu=webgl2&seconds=1&pause&resumed-frames=${RESUMED_FRAMES}&${mode.query}`;
+		await page.goto(`engine.html?${switches}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		await restoreWaitAsync(page);
 		expect(result.error).toBeUndefined();
 		expect(result.report.atomicsWaitAsync).toBe(false);
 		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
 		expect(result.pause?.paused.frames, 'frames computed during the pause').toBe(0);
-		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThan(10);
+		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThanOrEqual(
+			RESUMED_FRAMES,
+		);
 	});
 }

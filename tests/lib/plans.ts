@@ -47,6 +47,7 @@ import { SCENE_COUNTS, visualPagePath } from '../../bench/lib/visual.ts';
 import {
 	SOAK_SAMPLE_SECONDS,
 	SOAK_TABLE_HEAD,
+	type SoakMode,
 	type SoakReport,
 	soakProblems,
 	soakRow,
@@ -76,7 +77,7 @@ import {
 	type OverloadStep,
 	ratesParted,
 } from '../pages/lib/overload.ts';
-import { ROOM_KEPT } from '../pages/lib/room.ts';
+import { ROOM_KEPT, ROOM_LOST_ONCE } from '../pages/lib/room.ts';
 import { glslProgramsOf } from '../pages/lib/shader-list.ts';
 import {
 	frameSaving,
@@ -102,8 +103,11 @@ import {
 	type EngineResult,
 	engineProblems,
 	jobWorkersProblem,
+	type SameCanvasResult,
+	sameCanvasProblems,
 	THREADED_MODES,
 } from './engine-checks.ts';
+import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
@@ -127,6 +131,7 @@ import {
 	type PlanItem,
 	slug,
 } from './runs.ts';
+import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import {
@@ -163,11 +168,20 @@ export type Check =
 	 * that the page removes while they run, more of them than the browser has room for at once.
 	 */
 	| { kind: 'restarts'; mode: EngineMode; start: RestartStart }
+	/**
+	 * The failures page: engines that follow one another on one canvas, as React's StrictMode starts
+	 * them, with the first start destroyed once it resolves (`then`) or cancelled (`abort`).
+	 */
+	| { kind: 'same-canvas'; tier: Tier; mode: EngineMode; pattern: SameCanvasPattern }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/** The environment generator page: the built-in room made on the GPU, read back level by level. */
+	| { kind: 'environment-generator'; tier: Tier }
+	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
+	| { kind: 'skin-pass'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -228,20 +242,30 @@ export interface JudgeContext {
 
 const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
+/** How the failures page ends the first of the engines that it starts on one canvas. */
+const SAME_CANVAS_PATTERNS = ['then', 'abort'] as const;
+type SameCanvasPattern = (typeof SAME_CANVAS_PATTERNS)[number];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
 /**
- * How long the restart page may take: two rounds, each of up to ten starts and stops, which may
- * wait 30 s in all for the browser to free memory, and of the counts of the room, which may wait
- * 31 s for it to come back. The second round runs only when the room did not come back.
+ * How long the restart page may take: two rounds, each of starts and stops past the most room seen,
+ * which took up to 4 minutes with their waits in Safari on CI's Mac. A round's starts may wait 30 s
+ * in all for the browser to free memory, and its counts of the room 91 s for it to come back. The
+ * second round runs only when the room did not come back.
  */
-const RESTARTS_TIMEOUT_SECONDS = 300;
+const RESTARTS_TIMEOUT_SECONDS = 600;
 /**
  * The thread modes whose engines start in frames that the restart page removes while they run.
  * With the sketch on the main thread, Safari on a Mac still lost 1 or 2 places for shared memory in
  * some runs of 100 such frames, so that mode stays out until the cause is known.
  */
 const FRAME_RESTART_MODES = THREADED_MODES.filter((mode) => mode.sketchThread === 'worker');
+/**
+ * The thread modes where a worker draws. When the engine stops, that worker stays with the canvas
+ * for the next engine, so the restart page also stops engines whose canvas stays in the page, or
+ * whose frame the page removes only after the stop, as the runner page does with every test page.
+ */
+const KEPT_WORKER_MODES = THREADED_MODES.filter((mode) => mode.renderThread !== 'main');
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -399,6 +423,22 @@ export function checksPlan(): PlanItem<Check>[] {
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
+		...(['webgpu', 'compat', 'webgl2'] as const).map((path) =>
+			pageItem(
+				`environment-generator-${path}`,
+				'environment-generator',
+				{ kind: 'environment-generator', tier: path === 'webgl2' ? 'webgl2' : 'webgpu' },
+				{ switches: [`gpu=${path}`], timeoutSeconds: 120 },
+			),
+		),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`skin-pass-${path}`,
+				'skin-pass',
+				{ kind: 'skin-pass', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
 		// The device's own check each run, never one that an earlier run stored.
 		pageItem('quality', 'quality', { kind: 'quality' }, { switches: ['check=fresh'] }),
 		...TIERS.map((tier) =>
@@ -485,6 +525,31 @@ export function checksPlan(): PlanItem<Check>[] {
 				{ switches: ['kinds=frame', mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
 			),
 		),
+		...TIERS.flatMap((tier) =>
+			ENGINE_MODES.flatMap((mode) =>
+				SAME_CANVAS_PATTERNS.map((pattern) =>
+					pageItem(
+						`same-canvas-${tier}-${slug(mode.name)}-${pattern}`,
+						'failures',
+						{ kind: 'same-canvas', tier, mode, pattern },
+						{
+							switches: ['case=same-canvas', `pattern=${pattern}`, `gpu=${tier}`, mode.query],
+							timeoutSeconds: 60,
+						},
+					),
+				),
+			),
+		),
+		...KEPT_WORKER_MODES.flatMap((mode) =>
+			(['canvas-kept', 'frame-destroyed'] as const).map((start) =>
+				pageItem(
+					`${start}-restarts-${slug(mode.name)}`,
+					'shared-memory',
+					{ kind: 'restarts', mode, start },
+					{ switches: [`kinds=${start}`, mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+				),
+			),
+		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
 			kind: 'capabilities-reload',
 			first: CAPABILITIES,
@@ -532,10 +597,11 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
 		case 'warm-up':
 			return id === `warm-up-${check.tier}`;
 		// Starts on the page in one thread mode of each build: the threaded build's first mode, and the
-		// single-threaded build.
+		// single-threaded build. Starts and stops in frames in the threaded build's first mode, as the
+		// runner page runs every test page.
 		case 'restarts':
 			return (
-				check.start === 'engine' &&
+				(check.start === 'engine' || check.start === 'frame-destroyed') &&
 				ENGINE_MODES.find(({ build }) => build === check.mode.build) === check.mode
 			);
 		default:
@@ -547,8 +613,9 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
  * A short version of the checks plan, about a tenth of its pages, for a device in a cloud session
  * of limited time. It keeps the pages that find a device's faults soonest: the capability report,
  * isolation, every shader's compile, the shader library, uploads, presets, warm-up and stats on
- * each GPU path, the main features' image tests, and the restarts of each build. New GPU tiers and
- * thread modes join by the same rules.
+ * each GPU path, the main features' image tests, the restarts of each build, and starts and stops
+ * in frames, as the runner page runs every page. New GPU tiers and thread modes join by the same
+ * rules.
  */
 export const smokePlan = (): PlanItem<Check>[] => checksPlan().filter(inSmokePlan);
 
@@ -940,10 +1007,10 @@ export const MEMORY_LOADS = 20;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
 /**
- * How long the shared memory page may take to count its room, and to wait up to 31 s for the room
+ * How long the shared memory page may take to count its room, and to wait up to 91 s for the room
  * to come back after its one cycle.
  */
-const ROOM_TIMEOUT_SECONDS = 90;
+const ROOM_TIMEOUT_SECONDS = 150;
 /** The most memories the shared memory page counts; a browser with room for this many has more. */
 const MOST_COUNTED = 64;
 
@@ -960,7 +1027,12 @@ export function memoryPlan({ runs = MEMORY_LOADS }: PlanSettings = {}): PlanItem
 			'shared-memory',
 			{ kind: 'room', maximumMiB },
 			{
-				switches: ['kinds=dropped', 'cycles=1', `maximum=${maximumMiB * PAGES_PER_MIB}`],
+				switches: [
+					'kinds=dropped',
+					'cycles=1',
+					'room=full',
+					`maximum=${maximumMiB * PAGES_PER_MIB}`,
+				],
 				timeoutSeconds: ROOM_TIMEOUT_SECONDS,
 			},
 		),
@@ -1437,10 +1509,10 @@ function imageRunProblems(
 }
 
 /**
- * How the shared memory page starts each engine: on the page, which stops it, or in a frame, which
- * the page removes while the engine runs.
+ * How the shared memory page starts each engine: on the page, which stops it and removes its canvas
+ * or keeps it, or in a frame, which the page removes while the engine runs or after it stopped.
  */
-export type RestartStart = 'engine' | 'frame';
+export type RestartStart = 'engine' | 'canvas-kept' | 'frame' | 'frame-destroyed';
 
 /** One round of the restart page's starts and stops. */
 interface RestartRound {
@@ -1471,10 +1543,20 @@ export interface RestartResult {
 /** Each way of starting engines, as the restart problems name it. */
 const RESTART_WORDS: Record<RestartStart, { cycle: string; cycles: string; engines: string }> = {
 	engine: { cycle: 'start and stop', cycles: 'starts and stops', engines: 'stopped engines' },
+	'canvas-kept': {
+		cycle: 'start and stop on a kept canvas',
+		cycles: 'starts and stops on kept canvases',
+		engines: 'stopped engines whose canvases stayed',
+	},
 	frame: {
 		cycle: 'start in a frame',
 		cycles: 'starts in frames',
 		engines: 'engines in removed frames',
+	},
+	'frame-destroyed': {
+		cycle: 'start and stop in a frame',
+		cycles: 'starts and stops in frames',
+		engines: 'stopped engines in removed frames',
 	},
 };
 
@@ -1488,14 +1570,18 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
 
 /**
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
- * memory that the browser did not get back from the stopped engines. Room that the first round lost
- * and the second round kept is lost address space, not memory that the engines hold, so it gets a
- * note through `note` instead.
+ * memory that the browser did not get back from the stopped engines. A little room that the first
+ * round lost and the second round kept is lost address space, not memory that the engines hold, so
+ * it gets a note through `note` instead; more than that fails where the engines are `threaded`. The
+ * single-threaded build takes no shared memory, so any room it loses is address space. Room that
+ * engines on kept canvases left held gets a note too: their starts go past the room, so a start
+ * fails when that memory stops it.
  */
 export function restartProblems(
 	result: RestartResult,
 	start: RestartStart,
 	note?: (text: string) => void,
+	threaded = true,
 ): string[] {
 	const engine = result.kinds[start];
 	if (!engine) return ['the page started no engine'];
@@ -1506,6 +1592,12 @@ export function restartProblems(
 	if (engine.error) problems.push(failed(engine, ''));
 	if (!roomLost(result.room, engine)) return problems;
 	const lostText = `it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`;
+	// The workers that stay with kept canvases may hold memory until a start needs it, which the
+	// starts past the room check.
+	if (start === 'canvas-kept') {
+		note?.(`the workers that stayed with the canvases held memory: ${lostText}`);
+		return problems;
+	}
 	const { again } = engine;
 	if (!again)
 		problems.push(
@@ -1516,11 +1608,21 @@ export function restartProblems(
 		problems.push(
 			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
 		);
+	else if (threaded && (result.room ?? 0) - (again.roomLater ?? again.room) > ROOM_LOST_ONCE)
+		problems.push(
+			`the browser did not get back the memory of ${words.engines}: ${lostText}, and for ${again.roomLater} after ${again.cycles} more, more than the ${ROOM_LOST_ONCE} that lost address space explains`,
+		);
 	else
 		note?.(
 			`the room fell once and then held, so the browser lost address space, not memory that ${words.engines} hold: ${lostText}, and for ${again.roomLater} after ${again.cycles} more`,
 		);
 	return problems;
+}
+
+/** The first line of a Metal compile log that names an error at a place in the source, or its first line. */
+function metalFaultLine(log: string): string {
+	const lines = log.split('\n');
+	return (lines.find((line) => /:\d+:\d+: error:/.test(line)) ?? lines[0] ?? '').trim();
 }
 
 /**
@@ -1563,6 +1665,11 @@ export function judge(
 			if (removed.length > 0)
 				context?.note?.(
 					`the GPU's driver removed ${removed.length} shader inputs that their programs never read: ${[...new Set(removed.map(({ name }) => name))].join(', ')}`,
+				);
+			const relinked = (result.relinked ?? []) as { shader: string; log: string }[];
+			if (relinked.length > 0)
+				context?.note?.(
+					`${relinked.length} ${relinked.length === 1 ? 'program' : 'programs'} linked at the second try after Safari's random Metal fault: ${relinked.map(({ shader, log }) => `${shader} (${metalFaultLine(log)})`).join('; ')}`,
 				);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
@@ -1613,7 +1720,14 @@ export function judge(
 		case 'stats':
 			return statsProblems(result as unknown as StatsResult);
 		case 'restarts':
-			return restartProblems(result as unknown as RestartResult, check.start, context?.note);
+			return restartProblems(
+				result as unknown as RestartResult,
+				check.start,
+				context?.note,
+				check.mode.build === 'threaded',
+			);
+		case 'same-canvas':
+			return sameCanvasProblems(result as unknown as SameCanvasResult, check.mode);
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []
@@ -1624,6 +1738,16 @@ export function judge(
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));
 			return mipLevelsProblems(mips);
+		}
+		case 'environment-generator': {
+			const { lines, problems } = generatorReport(result as unknown as GeneratorResult);
+			if (problems.length === 0) context?.note?.(`the built-in room: ${lines.join('; ')}`);
+			return problems;
+		}
+		case 'skin-pass': {
+			const skin = result as unknown as SkinPassResult;
+			context?.note?.(skinPassNote(skin));
+			return skinPassProblems(skin);
 		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
@@ -2182,9 +2306,10 @@ export function tabMemorySummary(
 }
 
 /**
- * The soaks as a Markdown table: for each GPU path, the minutes measured, the GPU losses that the
- * engine recovered from and when, the median and lowest frame rates of a minute, the growth of the
- * WebAssembly memory, and the engine's failures. Undefined when the plan has no soaks.
+ * The soaks as a Markdown table: for each GPU path, the preset that ran and what the preset check
+ * measured, the minutes measured, the GPU losses that the engine recovered from and when, the
+ * median and lowest frame rates of a minute, the growth of the WebAssembly memory, and the
+ * engine's failures. Undefined when the plan has no soaks.
  */
 export function soakSummary(
 	items: readonly PlanItem<Check>[],
@@ -2195,8 +2320,8 @@ export function soakSummary(
 		const result = resultOf(id);
 		const report = result?.soak as SoakReport | undefined;
 		if (!report)
-			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | | | |`];
-		return [soakRow(check.tier, report)];
+			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | | | | |`];
+		return [soakRow(check.tier, report, result?.mode as SoakMode | undefined)];
 	});
 	return rows.length === 0 ? undefined : [...SOAK_TABLE_HEAD, ...rows].join('\n');
 }

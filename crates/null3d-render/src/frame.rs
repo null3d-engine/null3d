@@ -1241,6 +1241,7 @@ impl SceneSettings {
             normal_bias: shadow.normal_bias,
             distance: shadow.distance,
             filter: quality.filter,
+            blend: quality.blend,
         };
         let [x, y, z, _] = self.lighting.sun_direction;
         let position = scene.cell_position(slot, parity);

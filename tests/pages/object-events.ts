@@ -6,6 +6,7 @@
 // `?setup`, the page starts a sketch whose setup waits with one of its frames on screen. The page
 // sets `objectEventsSetup` on the window once the setup waits, and `objectEventsSetup.go()` lets
 // it go on. They talk through a broadcast channel, since the engine's start waits for the setup.
+// `__null3dSetPaused(paused)` pauses the engine, so no frame runs while the test samples the loop.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -13,6 +14,7 @@ declare global {
 	interface Window {
 		objectEvents?: (message: string) => Promise<unknown>;
 		objectEventsSetup?: { go: () => void };
+		__null3dSetPaused?: (paused: boolean) => void;
 	}
 }
 
@@ -43,5 +45,6 @@ run('object-events', async () => {
 			});
 			engine.postToSketch(message);
 		});
+	window.__null3dSetPaused = (paused) => engine.setPaused(paused);
 	return { mode: engine.mode };
 });

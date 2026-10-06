@@ -59,11 +59,13 @@ export const ERROR_FIXES = {
 	E1302:
 		'Listen with engine.onFailure. Destroy the engine, put a new canvas element in place of the old one, and start the engine again on it. If losses keep coming, lower the quality preset.',
 	E1303:
-		'Update the browser. Chrome 91, Firefox 89, Safari 16.4 and later versions run the engine.',
+		'Update the browser. Chrome and Edge 91, Firefox 89, Safari 18 and later versions run the engine.',
 	E1304:
 		'Lower the quality preset, use smaller or compressed textures, and share meshes and textures between objects. Destroy objects and textures that the scene no longer shows.',
 	E1305:
 		"Read the message: it quotes the GPU path. A buffer or texture past the device's limits names the limit: make the scene smaller there. Otherwise this is an engine bug: report it with the message and the browser.",
+	E1306:
+		'Update Safari to version 18 or later. On iPhone and iPad, update iOS or iPadOS to 18 or later, which updates the engine of every browser there.',
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:
@@ -101,7 +103,7 @@ export const ERROR_FIXES = {
 	E1418:
 		"Add 'wasm-unsafe-eval' to the script-src of the page's Content-Security-Policy, for example script-src 'self' 'wasm-unsafe-eval'. It allows WebAssembly and no JavaScript eval. The hosting page of the docs gives the whole policy that the engine needs.",
 	E1419:
-		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says the canvas's drawing thread failed, put a new canvas element in its place.",
+		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says that no engine can draw on the canvas again, put a new canvas element in its place.",
 	E1420:
 		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
 	E1421:

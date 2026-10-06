@@ -358,6 +358,7 @@ fn far_cascades_draw_in_turn_and_keep_their_layers_in_between() {
             filter: 5,
             far_interval: 2,
             follow_movers: true,
+            ..ShadowQuality::default()
         };
         world.renderer.settings_mut().set_shadow_quality(quality);
         let mut mock = MockBackend::default();

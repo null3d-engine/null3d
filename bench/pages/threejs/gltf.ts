@@ -19,6 +19,7 @@ import {
 	type ModelName,
 	type ModelScene,
 	modelCamera,
+	modelUrl,
 	SUN,
 } from '../../scenes/gltf-models';
 import { showPageName } from '../lib/fit';
@@ -44,7 +45,7 @@ run('hold', async () => {
 	if (rendererName === 'webgpu') await ktx2.detectSupportAsync(renderer as never);
 	else ktx2.detectSupport(renderer as never);
 	const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
-	const gltf = await loader.loadAsync(model.url);
+	const gltf = await loader.loadAsync(modelUrl(model));
 	scene.add(gltf.scene);
 	if (model.clip) {
 		const clip = three.AnimationClip.findByName(gltf.animations, model.clip.name);
