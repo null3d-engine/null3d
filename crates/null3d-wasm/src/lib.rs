@@ -1793,8 +1793,8 @@ pub fn destroy_texture(texture: u32, frame: u32) -> u32 {
     })
 }
 
-// Tells the texture store what the thread that draws has: the images it received, in id order,
-// and the newest frame it took. The sketch thread calls it before it records each frame.
+// Tells the texture store what the thread that draws has: the newest image id it received, which
+// says that every earlier id arrived too, and the newest frame it took. The sketch thread calls it before it records each frame.
 /// Tells the texture store what the thread that draws has.
 #[wasm_bindgen(js_name = syncTextures)]
 pub fn sync_textures(images_arrived: u32, frames_taken: u32) {

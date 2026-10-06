@@ -47,10 +47,13 @@ describe('the smoke plan', () => {
 		expect(images.every(({ test }) => SMOKE_IMAGE_TESTS.has(test))).toBe(true);
 	});
 
-	it('restarts the engine once in each build, and keeps the capability, shader and path pages', () => {
-		const restarts = smoke.flatMap(({ check }) => (check.kind === 'restarts' ? [check.mode] : []));
-		expect(restarts.map(({ build }) => build)).toEqual(['threaded', 'single']);
-		expect(restarts.map(({ name }) => name)).toEqual([ENGINE_MODES[0]?.name, 'single-threaded']);
+	it('restarts the engine once in each build and once in frames, and keeps the capability, shader and path pages', () => {
+		const restarts = smoke.flatMap(({ check }) => (check.kind === 'restarts' ? [check] : []));
+		expect(restarts.map(({ mode, start }) => [mode.name, start])).toEqual([
+			[ENGINE_MODES[0]?.name, 'engine'],
+			['single-threaded', 'engine'],
+			[ENGINE_MODES[0]?.name, 'frame-destroyed'],
+		]);
 		for (const id of [
 			'capabilities',
 			'isolation',

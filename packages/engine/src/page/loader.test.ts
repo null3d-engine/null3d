@@ -447,6 +447,19 @@ describe('createSharedMemory', () => {
 		expect(busy.pauses).toEqual([50, 100, 200]);
 	});
 
+	it('frees room once, at the first refusal, and not when the browser has room', async () => {
+		let freed = 0;
+		const freeRoom = () => {
+			freed++;
+		};
+		const room = browser(0);
+		await createSharedMemory(DESCRIPTOR, room.create, room.pause, freeRoom);
+		expect(freed).toBe(0);
+		const busy = browser(3);
+		await createSharedMemory(DESCRIPTOR, busy.create, busy.pause, freeRoom);
+		expect(freed).toBe(1);
+	});
+
 	it('fails with E1109 after about 10 seconds of refusals', async () => {
 		const full = browser(Number.POSITIVE_INFINITY);
 		let error: EngineError | undefined;
