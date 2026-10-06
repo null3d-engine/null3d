@@ -369,11 +369,13 @@ jobs:
         run: bun run test:packages
 
   browser:
-    # The browser tests, the image test manifest among them, split into shards that run at once.
-    # Playwright splits them by count, in its order of the tests, and the weights below give each
-    # shard its share, so that the shards take about the same time. .dev/image-tests.md says how to
-    # set them, and when to add a shard.
-    name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+    # The browser tests, the image test manifest among them. Most run in shards at once. Playwright
+    # splits them by count, in its order of the tests, and the weights below give each shard its
+    # share, so that the shards take about the same time. The tests that run alone check frame
+    # rates, times and allocations, which a heavy test beside them can upset, so they run one at a
+    # time in a job of their own (tests/lib/alone.ts). `bun run test:browser-weights` works out the
+    # weights, and .dev/image-tests.md says when to retune them and when to add a shard.
+    name: browser (${{ matrix.part }})
     needs: build
     # Until 1.0, only in the merge queue and in a run started by hand, as the bench and real-browsers
     # jobs (D-86). Before a pull request joins the queue, its author runs the browser tests of the
@@ -384,7 +386,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        include:
+          - { part: shard 1 of 7, id: 1, tests: --grep-invert @alone --shard=1/7 }
+          - { part: shard 2 of 7, id: 2, tests: --grep-invert @alone --shard=2/7 }
+          - { part: shard 3 of 7, id: 3, tests: --grep-invert @alone --shard=3/7 }
+          - { part: shard 4 of 7, id: 4, tests: --grep-invert @alone --shard=4/7 }
+          - { part: shard 5 of 7, id: 5, tests: --grep-invert @alone --shard=5/7 }
+          - { part: shard 6 of 7, id: 6, tests: --grep-invert @alone --shard=6/7 }
+          - { part: shard 7 of 7, id: 7, tests: --grep-invert @alone --shard=7/7 }
+          - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
     steps:
@@ -402,14 +412,14 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "233:310:174:109:150:118:175"
-        run: bun run test:browser --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          PWTEST_SHARD_WEIGHTS: "219:313:166:113:203:128:175"
+        run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results-${{ matrix.shard }}
+          name: browser-test-results-${{ matrix.id }}
           path: test-results/
           if-no-files-found: ignore
 
