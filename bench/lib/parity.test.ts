@@ -38,6 +38,7 @@ import {
 	passesWithBaseline,
 	type RgbaImage,
 	readJobCounts,
+	readSwitches,
 	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIER_PAIRS,
 	TIERS,
@@ -612,6 +613,26 @@ describe('parseParityArgs', () => {
 		);
 		expect(() => parseParityArgs(['--switches', 'shadows=3', '--save-baselines'])).toThrow(
 			'use --save-baselines without --switches',
+		);
+	});
+
+	test('takes switch names with hyphens and values with hyphens or commas', () => {
+		const text = 'display-check=off&depth=reversed-gl&compression=bc,etc2&hold=2.5&bench';
+		expect(readSwitches(text, '--switches')).toBe(text);
+	});
+
+	test('names the switch that does not have the form, or says the switches are missing', () => {
+		expect(() => readSwitches('?display-check=off', '--switches')).toThrow(
+			'--switches: give page switches without the ?',
+		);
+		expect(() => readSwitches('preset=low&display_check=off', '--switches')).toThrow(
+			'--switches: "display_check=off" is not a page switch. Give names of letters and hyphens',
+		);
+		expect(() => readSwitches('-check=off', '--switches')).toThrow('"-check=off" is not');
+		expect(() => readSwitches('shadows=3&', '--switches')).toThrow('a switch is empty');
+		expect(() => readSwitches('shadows=a b', '--switches')).toThrow('"shadows=a b" is not');
+		expect(() => readSwitches(undefined, 'NULL3D_SWITCHES')).toThrow(
+			'NULL3D_SWITCHES: give page switches: names of letters and hyphens',
 		);
 	});
 

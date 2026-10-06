@@ -181,6 +181,10 @@ describe('bench:startup', () => {
 		expect(() => parseArgs(['--loads', 'hot'])).toThrow('--loads: use some of cold, warm');
 		expect(() => parseArgs(['--network', '3g'])).toThrow('--network: use some of slow-4g, full');
 		expect(() => parseArgs(['--modes', 'fast'])).toThrow('--modes: use some of pipelined');
+		expect(parseArgs(['--switches', 'display-check=off']).switches).toBe('display-check=off');
+		expect(() => parseArgs(['--switches', '?jobs=4'])).toThrow(
+			'--switches: give page switches without the ?',
+		);
 		expect(() => parseArgs(['--runs'])).toThrow('--runs needs a value');
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
 	});
