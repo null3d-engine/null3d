@@ -1,6 +1,6 @@
 # D-16: Moving casters in far cascades, and where shadows meet their casters
 
-Status: decided. Date: 2026-10-03, with the owner's ruling for Low of 2026-10-05. Tasks: M1-F3 and M1-K5.
+Status: decided. Date: 2026-10-03, with the owner's two rulings for Low of 2026-10-05; the second supersedes the first. Tasks: M1-F3 and M1-K5.
 
 ## Question
 
@@ -212,9 +212,44 @@ The owner chose option 2 on 5 October 2026, and kept the receiver plane on every
 
 The fix also skips the shadow lookup on surfaces that face away from the sun. With both, S4 at Low on the Mac drew 56 calls in most frames and 63 in 1 frame of 4. The older commit drew the same. Its GPU time fell from 1.55 ms on main to 1.32 and 1.33 ms (2 runs of 10 s each). The timer now times one frame in 11, so these figures include the far cascade's frames. The iPads judge the change.
 
+### The iPad soak and the second ruling, 5 October 2026
+
+The same evening, the owner watched the gate's soak of S4 on the iPad, on main 03a1ad198, which held the first ruling. It ran Safari 26.6.2 on WebGPU, with Limit Frame Rate on, at 60 Hz. Every car's shadow jerked behind its car, and the owner called it very obvious.
+
+The soak opens S4 with no preset, so the engine picks one. A tablet starts at Medium, and the preset check lowers it when Medium misses 90% of the target. Every earlier S4 page on this iPad with the engine's own preset measured Medium at 30 to 46 fps. The check lowered it to Low each time. The cloud iPad's soak of 4 October also ran Low. So the soak ran S4 at Low, where far cascades kept their turns.
+
+The first ruling expected a trail only on shadows far from the camera. In S4 it reached every shadow on screen. Low has two cascades, and the nearest ends 37.9 m from the camera. S4's camera flies 42 m up and sees no ground nearer than about 40 m ([D-15](D-15-cascade-split.md)). Receivers pick their cascade by their distance from the camera, so every receiver read the far cascade. Its layer drew once in 4 frames. Each car's shadow held still for 3 frames, then jumped 4 frames of driving: 0.4 to 0.9 m for S4's cars at 6 to 14 m/s, 15 times a second. The governor's far cascade step could double the interval to 8, which would make the trail 7 frames (up to 1.6 m). In the gate's 10-minute run at Low, the governor took 34 steps. All of them moved the render scale between 0.75 and 0.9, so the interval stayed at 4.
+
+The options were:
+
+1. Follow moving casters at Low too, as Medium and up do: no trail. It costs what the first ruling saved. On the Mac, S4 at Low took 1.48 ms against 1.32 ms (the table in [Releases](../releases.md)). On the iPads the gate's comparison read about 1 ms (10%).
+2. Draw a held far cascade early once a moving caster in it has moved more than one texel. Low's far cascade has texels of 0.28 to 0.39 m in S4 on the iPad. The fastest cars cross one in under 2 frames, so the cascade would draw about every 2nd frame. The shadow lags by up to a texel and steps at 30 Hz.
+3. Option (c) at Low alone: copy a cache of the still casters into the far layer between turns, and draw only the moving casters over it. At Low's 1,024 texels the cache takes 4 MiB. It keeps most of the saving, and needs a depth copy on WebGL2.
+
+The owner chose option 1 on 5 October 2026: no lag is better than lag. It supersedes the first ruling's trail at Low. Options 2 and 3 stay open if Low's GPU time must come down again.
+
+The governor's far cascade step also changes. While `followMovingCasters` is off, the governor takes no far cascade step. A far cascade then keeps its turns around moving casters, and a longer interval would only make their shadows trail further. So the trail never passes the interval that the sketch set, as the docs say.
+
+### The still-caster cache, built and dropped, 6 October 2026
+
+Option 3 was built next, to win back option 1's cost at Low. A far cascade drew its still casters into a cache layer of 4 MiB in its turns. Every other frame copied that layer in and drew only the cars over it. Its draw calls matched the design: 64 between turns and 71 in them, against option 1's 63 in every frame.
+
+The cloud iPad 10th then timed three builds in turns, in Safari 27.0. S4 ran on WebGPU at Low, with the governor off, for 30 s per run. The builds were main with Low's far cascade in turns (56 draw calls, and 63 in 1 frame of 4), option 1, and option 3. The cloud session streams the screen, and that sets how long each frame waits for the GPU. The wait differed between sessions, so only GPU times from sessions with a similar wait compare. The figures are each run's median GPU time per frame:
+
+| Sessions | Main, turns at Low | Option 1 | Option 3 |
+| --- | --- | --- | --- |
+| Wait of about 12 ms | 6.36 ms | 6.47 ms | no run |
+| Wait of about 45 ms | 13.18 ms | 13.65 ms | 13.76 and 13.13 ms |
+
+So option 1 costs about 0.1 ms of GPU time per frame on the cloud iPad, far less than the 1 ms that the gate's comparison suggested. The slow sessions doubled every time, and no build differed there by more than 0.6 ms. The cache could save at most that 0.1 ms. For it, Low paid 4 MiB, a second shadow pass in its turns, a depth copy and a split of still and moving casters in both frame builders.
+
+The owner dropped the cache on 6 October 2026 and kept option 1 on every preset, with the governor's rule above. Option 2 stays open, and option 3 too, if a scene with far more moving casters than S4 shows a real cost.
+
+Why the tests missed it: the moving shadow test set `followMovingCasters` itself, so it never ran a preset's own value. The Rust test and the bench page test held Low's turns as the expected result. Image tests draw one frame in hold mode, in which every cascade draws. The Mac runs High. The gate's device runs of S4 judge frame rates and GPU time, and no device check measured a moving shadow.
+
 ## Decision
 
-Option (b) holds on Medium, High and Ultra. There a far cascade draws in every frame while a moving caster touches its box, or touched the box its layer holds. Low keeps each far cascade to its turns, by the owner's ruling of 5 October 2026. The `followMovingCasters` quality setting holds the choice: off on Low, on above it, and live on every preset. It is the only option that adds no memory, no pass and no shader read, and it costs a cascade's draw only where a moving caster needs it. Option (c) would save at most about half of that draw on the Mac, for 32 to 192 MiB of memory and a new depth path on WebGL2. Option (a) would double the filter's reads on most of S4's pixels.
+Option (b) holds on every preset. A far cascade draws in every frame while a moving caster touches its box, or touched the box its layer holds. Low kept each far cascade to its turns after the owner's first ruling of 5 October 2026. It follows moving casters again after the second ruling of the same day ([The iPad soak and the second ruling](#the-ipad-soak-and-the-second-ruling-5-october-2026)). A cache of Low's still casters was built and dropped: following costs about 0.1 ms of GPU time per frame on the cloud iPad ([The still-caster cache](#the-still-caster-cache-built-and-dropped-6-october-2026)). The `followMovingCasters` quality setting holds the choice: on for every preset, and live, so a sketch can turn it off. While it is off, the governor takes no far cascade step. It is the only option that adds no memory, no pass and no shader read, and it costs a cascade's draw only where a moving caster needs it. Option (c) would save at most about half of that draw on the Mac, for 32 to 192 MiB of memory and a new depth path on WebGL2. Option (a) would double the filter's reads on most of S4's pixels.
 
 The receivers scale their biases by their angle to the light. After the iPad's second check, options 1 and 4 of the bias options apply together. The biases are in meters, capped at one texel of the point's cascade or tile. A receiver behind a perspective camera picks its cascade by its distance from the camera. The defaults become 0.01 m for `bias` and 0.02 m for `normalBias`. Spot and point lights take the same biases in meters, capped at one texel of their tile at the point's distance from the light.
 
@@ -230,7 +265,9 @@ After the acne on S4's pavements, option 1 of the flat caster options applies. E
 - The box in that test moves a fixed step in each frame: 1/6 m, which is 10 m/s at 60 frames a second. It first moved by the clock. The test then failed now and then on SwiftShader, at 5.31 and 5.36 pixels on 3 October 2026. The failure at 5.31 pixels came in the run with every cascade drawn in every frame, so the cascade schedule was not its cause. The offset depends on where the box is on the image. The box's top stands 1.5 m nearer the camera than the ground under its shadow. The perspective spreads the two apart, and more so toward the image's sides. The shadow's edges also step across the texels. On the Mac's GPU, 8 reads 3 frames apart covered about 4 m of the drive. On SwiftShader, at a few frames a second, they covered all 16 m, from one side of the image to the other. In ten runs of each GPU path by the clock, the offsets spread over about 7 pixels. One read strayed 4.6 pixels from its run's median. With a fixed step per frame, every GPU reads the box at about the same places. In ten runs of each GPU path, the offsets then spread over 4.9 pixels. No read strayed more than 3.1 pixels. The test passed 20 of 20 runs alone, and 20 of 20 with two at once while the Mac ran other work. With the moving caster's draw turned off, it failed 10 of 10 runs, with reads 7 to 130 pixels off. At 1/6 m per frame, a shadow 2 frames behind is about 5 pixels off.
 - The `shadows-contact`, `shadows-contact-near` and `shadows-contact-far` image tests hold the contact at the base. The `shadows-contact-turn` browser test holds it while the camera turns.
 - The benchmark pages take `?far=<n>`, which S4 applies as its `farCascadeInterval`.
-- `ShadowQuality::follow_movers` in `crates/null3d-render/src/shadows.rs` carries `followMovingCasters` to the schedule. Without it, the schedule tests no moving caster. A Rust test checks that the far cascades keep their turns around a dynamic caster then. The bench page test of S4 at Low holds its draw calls: 56 in most frames and 63 when the far cascade draws. The moving shadow test sets `followMovingCasters` itself, so it tests option (b) on whatever preset its browser gets.
+- `ShadowQuality::follow_movers` in `crates/null3d-render/src/shadows.rs` carries `followMovingCasters` to the schedule. Without it, the schedule tests no moving caster. A Rust test checks that the far cascades keep their turns around a dynamic caster then. The bench page test of S4 at Low holds its draw calls: 63 in every frame, as the cars keep the far cascade drawing. The moving shadow test runs twice. First it sets `followMovingCasters` itself, so it tests option (b) on whatever preset its browser gets. Then it runs each preset with that preset's own setting, its far cascades every 8th frame (the governor's longest), and reads 60 frames: every offset must stay within 5 pixels of the run with every cascade in every frame. The box drives in the last cascade, past any preset's nearest one.
+- The governor's `setShadows` takes `followMovingCasters`, and its far cascade steps are none while it is off (`packages/engine/src/quality/governor.ts`). A unit test holds that ladder.
+- The device soak's report gives each GPU path's preset and the preset check's rounds, so a soak tells which preset ran.
 - `concepts/shadows` describes the changes, and the API notes give the biases in meters and their defaults.
 - A user's bias above one texel acts as one texel. The cap binds the defaults only where a texel is under 2 cm. A 2,048 map's first cascade has 2.8 cm texels with the default distance, so the defaults act in full there.
 - The owner checked S4 on the iPad (WebGPU, Medium) on 3 October 2026 and approved the change. The cars' shadows stay on the cars, and the shadows at the edges of the screen are soft and hold still. Thin lit lines where objects meet their shadows are rarer and thinner than before, but some remain. They also shift as the camera turns. [Lit lines at the base, after the iPad's check](#lit-lines-at-the-base-after-the-ipads-check) gives their cause and fix.

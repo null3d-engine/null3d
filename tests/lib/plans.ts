@@ -47,6 +47,7 @@ import { SCENE_COUNTS, visualPagePath } from '../../bench/lib/visual.ts';
 import {
 	SOAK_SAMPLE_SECONDS,
 	SOAK_TABLE_HEAD,
+	type SoakMode,
 	type SoakReport,
 	soakProblems,
 	soakRow,
@@ -2287,9 +2288,10 @@ export function tabMemorySummary(
 }
 
 /**
- * The soaks as a Markdown table: for each GPU path, the minutes measured, the GPU losses that the
- * engine recovered from and when, the median and lowest frame rates of a minute, the growth of the
- * WebAssembly memory, and the engine's failures. Undefined when the plan has no soaks.
+ * The soaks as a Markdown table: for each GPU path, the preset that ran and what the preset check
+ * measured, the minutes measured, the GPU losses that the engine recovered from and when, the
+ * median and lowest frame rates of a minute, the growth of the WebAssembly memory, and the
+ * engine's failures. Undefined when the plan has no soaks.
  */
 export function soakSummary(
 	items: readonly PlanItem<Check>[],
@@ -2300,8 +2302,8 @@ export function soakSummary(
 		const result = resultOf(id);
 		const report = result?.soak as SoakReport | undefined;
 		if (!report)
-			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | | | |`];
-		return [soakRow(check.tier, report)];
+			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | | | | |`];
+		return [soakRow(check.tier, report, result?.mode as SoakMode | undefined)];
 	});
 	return rows.length === 0 ? undefined : [...SOAK_TABLE_HEAD, ...rows].join('\n');
 }
