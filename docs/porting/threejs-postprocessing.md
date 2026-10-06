@@ -217,7 +217,7 @@ For `CustomToneMapping`, copy the body of the app's `CustomToneMapping` function
 - Display color math: thresholds, film grain and color math made for display color look different on HDR color. Clamp the color, convert it with `linear_to_srgb` and `srgb_to_linear` from `null3d::color`, or tune the numbers by eye.
 - The exposure: null3D applies the exposure before the effects. three.js applies `toneMappingExposure` in `OutputPass`, after its passes. With an exposure other than 1, scale the thresholds of ported effects by it.
 - The y axis: `input.uv` and `input.pixel` start at the top left. three.js's `vUv` and `gl_FragCoord` start at the bottom left. Flip the y axis wherever direction matters, such as in gradients and offsets.
-- Passes: three.js runs each `ShaderPass` as a pass of its own. null3D joins an effect that reads only its own pixel into the pass of the effect before it, so a chain of per-pixel looks costs one pass, or none when it folds into the final pass. An effect that reads other pixels, such as a blur, starts a new pass.
+- Passes: three.js runs each `ShaderPass` as a pass of its own. null3D joins an effect that reads only its own pixel into the pass of the effect before it. A chain of per-pixel looks then costs one pass, or none when it folds into the final pass. An effect that reads other pixels, such as a blur, starts a new pass.
 - At most 8 effects run at once. A ninth throws [E1213](../errors/E1213.md).
 - The order: effects run before bloom and the tone curve. A three.js pass that ran after `UnrealBloomPass` now runs before bloom, so bloom spreads its result.
 - Alpha: `input.color` holds color multiplied by its coverage, which alpha holds. Return the alpha, and multiply any color you add by it.
