@@ -35,6 +35,8 @@ The owner decides. [Releases](../releases.md#m1-exit-gate) says that every item 
 | 8 | The shadow fix's cost on the owner's iPad is accepted: S4 at Low on WebGPU takes about 0.3 ms more per frame with #359 (11.70 to 11.73 ms against main's 11.42 ms), with 63 draw calls against 56. This cost stays apart from the rise of ruling 7 | [Releases](../releases.md#what-the-gate-still-needs) |
 | 9 | To win back the iPad's GPU time, the cascade blend may become cheaper, as long as it looks the same | [Releases](../releases.md#what-the-gate-still-needs) |
 | 10 | The coordinator may finish the gate without the owner. It starts a full CI run on the final main commit, then merges the gate's records and marks M1 done. If anything fails or needs judgement, it stops and leaves a summary for the owner | [Releases](../releases.md#what-the-gate-still-needs) |
+| 11 | The receiver plane of #257 may get a rewrite of its math, as long as it looks the same. On the iPad the plane costs 1.19 ms per frame in S4 at Low, which is more than the whole rise | [Releases](../releases.md#what-the-gate-still-needs) |
+| 12 | If that rewrite wins back most of the cost but not all, the rest is accepted as #257's cost, and the gate's GPU time item closes after the rewrite's iPad run | [Releases](../releases.md#what-the-gate-still-needs) |
 
 The items that run again on the new gate commit:
 
