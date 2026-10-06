@@ -111,6 +111,15 @@ export const CLOUD_DEVICES: readonly CloudDevice[] = [
 		browser: 'chrome',
 	},
 	{
+		runner: 'bspixel6-chrome',
+		tier: 'B',
+		device: 'Google Pixel 6',
+		os: 'android',
+		osVersion: '12.0',
+		browser: 'chrome',
+		allowNoWebgpu: true,
+	},
+	{
 		runner: 'bsgalaxytaba9plus-chrome',
 		tier: 'A',
 		device: 'Samsung Galaxy Tab A9 Plus',
