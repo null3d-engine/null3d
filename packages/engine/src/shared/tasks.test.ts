@@ -1,5 +1,5 @@
-// The on-demand loader's tasks when the engine on the thread stops: tasks that wait fail, and the
-// next engine's tasks go to its own job workers.
+// The on-demand loader's tasks when the engine on the thread stops: tasks that wait fail, the
+// stopped engine's ports lose their handlers, and the next engine's tasks go to its own job workers.
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { TaskAnswer, TaskRequest } from '../workers/tasks';
 import { stopHelperWorkers } from './helper-workers';
@@ -30,9 +30,10 @@ afterEach(() => {
 });
 
 describe('runTask', () => {
-	test('fails a task that waits when the engine stops, and sends later tasks to the next engine', async () => {
+	test('fails a task that waits when the engine stops, lets go of its ports, and sends later tasks to the next engine', async () => {
 		const calls: number[] = [];
-		setJobTasks({ ports: [jobPort()], call: (index) => calls.push(index) });
+		const stoppedPort = jobPort();
+		setJobTasks({ ports: [stoppedPort], call: (index) => calls.push(index) });
 		const waiting = runTask({ name: 'ktx2' }, 1, [], error);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		stopHelperWorkers();
@@ -40,6 +41,7 @@ describe('runTask', () => {
 		expect(failure).toBeInstanceOf(TaskFailure);
 		expect((failure as TaskFailure).stage).toBe('stopped');
 		expect(calls).toEqual([0]);
+		expect(stoppedPort.onmessage).toBeNull();
 
 		setJobTasks({ ports: [jobPort('next engine')], call: () => {} });
 		expect(await runTask<string>({ name: 'ktx2' }, 2, [], error)).toBe('next engine');

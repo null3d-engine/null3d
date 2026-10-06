@@ -212,6 +212,14 @@ class Runners {
 	stop(): void {
 		this.ended = true;
 		this.worker?.terminate();
+		// A port that still has a handler can keep these runners, and through them the core's call
+		// and its memory, in a browser that is slow to see that the job worker has gone.
+		for (const port of this.host?.ports ?? []) {
+			port.onmessage = null;
+			port.close();
+		}
+		this.host = undefined;
+		this.runners = undefined;
 		this.end(new TaskFailure('stopped', 'the engine stopped'));
 	}
 
