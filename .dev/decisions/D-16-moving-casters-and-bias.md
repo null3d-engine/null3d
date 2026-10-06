@@ -242,6 +242,23 @@ So Low caches, and option 1 stays: it is the fallback and the switch.
 - A frame builder made without cell culling has no such order. It draws a far cascade whole in each frame where a moving caster touches it, as option 1 does.
 - The `farCascadeCache` quality setting holds the choice: on at Low, off on the heavier presets, whose 2,048 and 4,096 texel maps would take 16 to 64 MiB per far cascade. Turning it off gives option 1 on any preset.
 
+The cloud iPad 10th timed the three builds on 6 October 2026, in Safari 27.0. S4 ran on WebGPU at Low, with the governor off, for 30 s per run. The builds were main before the change (cbdeeffb5), the change with `farCascadeCache` off (option 1), and the change with the cache. Their draw calls matched the design:
+
+| Build | Draw calls per frame |
+| --- | --- |
+| Main, far cascade in turns | 56, and 63 in 1 frame of 4 |
+| Option 1 | 63 |
+| The cache | 64, and 71 in 1 frame of 4 |
+
+The cloud session streams the screen, and the stream sets how long each frame waits for the GPU. That wait differed between sessions, so only GPU time compares, and only between sessions with a similar wait. The figures are each run's median GPU time per frame:
+
+| Sessions | Main | Option 1 | The cache |
+| --- | --- | --- | --- |
+| Wait of about 12 ms | 6.36 ms | 6.47 ms | no run |
+| Wait of about 45 ms | 13.18 ms | 13.65 ms | 13.76 and 13.13 ms |
+
+So option 1 costs about 0.1 ms per frame on the cloud iPad, far below the estimate of about 1 ms above. The slow sessions doubled every GPU time, and no build differed there by more than 0.6 ms. No run of the cache fell in a fast session, so the cloud iPad cannot separate the cache's cost from the other two builds. The owner's iPad times the three builds in turns to settle it.
+
 Why the tests missed it: the moving shadow test set `followMovingCasters` itself, so it never ran a preset's own value. The Rust test and the bench page test held Low's turns as the expected result. Image tests draw one frame in hold mode, in which every cascade draws. The Mac runs High. The gate's device runs of S4 judge frame rates and GPU time, and no device check measured a moving shadow.
 
 ## Decision
