@@ -116,3 +116,20 @@ The D-20 timing page now writes what the engine writes for the Knight: positions
 - BrowserStack's Galaxy S25 (Adreno), Pixel 9 (Mali) and Pixel 11 (PowerVR): the same plan with `--cloud`, as the coordinator's commands give.
 
 The rule stays: keep the compute pass if it saves at least 10% of S5's frame time with two or more cascades, with identical images.
+
+### A1 on the Mac, Chrome
+
+The Mac ran S5's 500 knights at High (3 cascades), with the governor off, on 6 October 2026. Each page had 3 runs of 10 seconds' warm-up and 10 measured, in turns (`target/bench/20261005-183445-bench` and `20261005-184001-bench`, commit 807e6ea9c). The first set started at a load of 4.1 and ended at 6.4. The second started at 6.4 and ended at 9.4, above the limit of 8 for timing, so its figures are rougher.
+
+| Page | GPU ms, every knight walks | CPU ms | GPU ms, half the knights still | CPU ms |
+| --- | --- | --- | --- | --- |
+| Lean pass (default) | 3.60 | 1.81 | 3.99 | 2.23 |
+| `full`: neither saving | 3.70 | 2.00 | 4.22 | 2.41 |
+| `skip`: pose skip only | 3.58 | 1.78 | 4.22 | 2.39 |
+| `narrow`: 8-bit directions only | 3.63 | 1.82 | 4.01 | 2.64 |
+| `vertex`: the vertex shaders skin | 3.63 | 1.54 | 4.10 | 2.14 |
+
+- The lean pass takes 3% less GPU time than the full one with every knight walking, and 5% less with half of them still. Both differences lie near the runs' spread.
+- On the Mac, the compute pass saves nothing against the vertex shaders: 3.60 against 3.63 ms of GPU time, far from D-20's 10%. The vertex shaders' frames cost 0.27 ms less CPU time, since they record no skinning dispatch and upload no table.
+- The skinning itself is a small part of S5's GPU frame on the Mac. The 20,002 draw calls, one per skinned object in each pass, cost more. So the Mac alone cannot settle the rule; the iPad and the Android phones, whose GPUs repeat vertex work, decide it.
+- Safari's run gave no figures: the Mac's screen was locked, so its runner page stopped on the first page. It runs again once the screen is unlocked.
