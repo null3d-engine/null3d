@@ -10,7 +10,9 @@
 // default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
 // three.js's default. ?textured draws the characters with a custom material that samples a texture
 // of stripes along their height, at texture coordinates from their positions, so custom materials'
-// textures must follow each way to skin. ?still holds every character in the clip's first pose,
+// textures must follow each way to skin. ?normalmap gives the characters tangents and the standard
+// material a normal map of grooves around their bodies, so the tangents that each way skins must
+// light the grooves alike: the skinning pass stores them in 8 bits. ?still holds every character in the clip's first pose,
 // and the render scale at the whole canvas with the governor off, so frames of play compare pixel
 // for pixel whenever they come: on a slow GPU the governor lowers the scale once its grace ends.
 // ?late adds the characters during play, on the page's 'characters' message, and posts 'added'
@@ -41,6 +43,7 @@ const QUANTIZED = params.has('quantized');
 const BLEND = params.has('blend');
 const OUTLINE = params.has('outline');
 const TEXTURED = params.has('textured');
+const NORMAL_MAPPED = params.has('normalmap');
 const STILL = params.has('still');
 const LATE = params.has('late');
 const EXTRAS = params.has('extras');
@@ -50,14 +53,22 @@ const MM = 1000;
 /** The character's arrays, stored as the ?quantized switch asks. */
 function characterArrays() {
 	const { positions, normals, joints, weights, indices } = characterMesh();
-	if (TEXTURED) {
-		// Texture coordinates from the front: x across, and y up the character.
-		const uvs = Array.from({ length: (positions.length / 3) * 2 }, (_, k) =>
-			k % 2 === 0
-				? (positions[(k >> 1) * 3] as number) + 0.5
-				: (positions[(k >> 1) * 3 + 1] as number) / 2,
-		);
-		return { positions, normals, joints, weights, indices, uvs };
+	// Texture coordinates from the front: x across, and y up the character.
+	const uvs = Array.from({ length: (positions.length / 3) * 2 }, (_, k) =>
+		k % 2 === 0
+			? (positions[(k >> 1) * 3] as number) + 0.5
+			: (positions[(k >> 1) * 3 + 1] as number) / 2,
+	);
+	if (TEXTURED) return { positions, normals, joints, weights, indices, uvs };
+	if (NORMAL_MAPPED) {
+		// Each tangent runs around the body, square to its normal, with a handedness of 1.
+		const tangents = Array.from({ length: (positions.length / 3) * 4 }, (_, k) => {
+			const v = k >> 2;
+			const [x, z] = [normals[v * 3] as number, normals[v * 3 + 2] as number];
+			const length = Math.hypot(x, z) || 1;
+			return [-z / length, 0, x / length, 1][k % 4] as number;
+		});
+		return { positions, normals, joints, weights, indices, uvs, tangents };
 	}
 	if (!QUANTIZED) return { positions, normals, joints, weights, indices };
 	return {
@@ -142,6 +153,21 @@ export default defineSketch(({ scene, materials, geometry, post, textures, page,
 				filter: 'nearest',
 			})
 		: undefined;
+	// Grooves across the texture's width: normals that lean left and right in tangent space.
+	const grooves = NORMAL_MAPPED
+		? textures.fromData({
+				width: 8,
+				height: 1,
+				data: Uint8Array.from({ length: 32 }, (_, k) => {
+					const lean = 0.6 * Math.sin(((k >> 2) / 8) * 2 * Math.PI);
+					const n = [lean, 0, Math.sqrt(1 - lean * lean), 1][k % 4] as number;
+					return k % 4 === 3 ? 255 : Math.round((n * 0.5 + 0.5) * 255);
+				}),
+				colorSpace: 'linear',
+				wrap: 'repeat',
+				filter: 'linear',
+			})
+		: undefined;
 	const addCharacters = () => {
 		for (const [k, character] of CHARACTERS.entries()) {
 			const seeThrough = BLEND && k === 1 ? { alphaMode: 'blend' as const, opacity: 0.6 } : {};
@@ -149,7 +175,11 @@ export default defineSketch(({ scene, materials, geometry, post, textures, page,
 				mesh,
 				material: stripes
 					? materials.shader({ wgsl: STRIPED, color: character.color, textures: { stripes } })
-					: materials.standard({ color: character.color, ...seeThrough }),
+					: materials.standard({
+							color: character.color,
+							...seeThrough,
+							...(grooves && { normalMap: grooves, roughness: 0.4 }),
+						}),
 				position: [...character.position],
 				castShadows: SHADOWS,
 				receiveShadows: SHADOWS,
