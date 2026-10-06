@@ -1,10 +1,13 @@
 name: CI
 
+# Each event runs its own share of the jobs, and .dev/pull-requests.md lists them. A pull request
+# runs the quick checks. The merge queue runs every job on each pull request on top of main and the
+# pull requests ahead of it, and main then gets the exact commit that the queue tested. So a push to
+# main runs only what later runs restore from main: its caches, and its sizes for the size check.
 on:
   push:
     branches: [main]
   pull_request:
-  # The merge queue tests each pull request on top of main and the pull requests ahead of it.
   merge_group:
 
 permissions:
@@ -24,11 +27,15 @@ env:
   # run's cache serves only that pull request or queue branch, and their saves filled GitHub's cache
   # limit for the repository, so that GitHub dropped main's caches.
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
+  # On main, the Rust jobs only keep their caches. After an exact match of the cache's key there is
+  # nothing to save, so they skip their checks. A miss runs them, and the job then saves the cache.
+  MAIN_PUSH: ${{ github.event_name == 'push' }}
 
 jobs:
   docs-and-tools:
     # The type check and the unit tests read the shader modules, which the build job makes.
     needs: build
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -88,12 +95,16 @@ jobs:
       # profile change would keep restoring a cache built with the old profile. The cache also
       # names the job, so each job restores what it built itself.
       - uses: Swatinem/rust-cache@v2
+        id: rust
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - run: cargo fmt --all --check
+        if: env.MAIN_PUSH != 'true'
       - run: cargo clippy --workspace --all-targets -- -D warnings
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
       - name: Clippy rejects a call to the system clock
+        if: env.MAIN_PUSH != 'true'
         run: |
           if cargo clippy --manifest-path tools/fixtures/disallowed-clock/Cargo.toml --target-dir target/lint-fixture 2> clippy.log; then
             echo "Clippy accepted a call to SystemTime::now"
@@ -111,15 +122,20 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        id: rust
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: taiki-e/install-action@v2
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --workspace
+      # On main the tests only build, so that a slow or flaky test cannot stop the cache's save.
+      - run: cargo nextest run --workspace ${{ env.MAIN_PUSH == 'true' && '--no-run' || '' }}
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
       # nextest runs no documentation tests.
       - run: cargo test --workspace --doc
+        if: env.MAIN_PUSH != 'true'
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
@@ -165,10 +181,11 @@ jobs:
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
     # packages and build script, as the check builds a base in a worktree. Many runs share a base:
-    # pull requests build on main's newest commit, whose own run keeps its sizes (wasm-checks below).
+    # pull requests build on main's newest commit, whose own run keeps its sizes (main-keep below).
     # So the sizes stay in the Actions cache by commit, and a run that finds them builds nothing. A
     # merge queue run builds on the pull request ahead of it, which has no kept sizes, so this job
-    # builds the base beside the build job, and the size check waits for both.
+    # builds the base beside the build job, and the size check waits for both. On main the job
+    # keeps only its Rust cache, built at main's own commit.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -186,9 +203,10 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Find the size check's base
         id: base
-        run: echo "sha=$(bun tools/build-wasm.ts --print-base)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(bun tools/build-wasm.ts --print-base ${{ env.MAIN_PUSH == 'true' && '--base HEAD' || '' }})" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         id: kept
+        if: env.MAIN_PUSH != 'true'
         with:
           path: target/.size-base/${{ steps.base.outputs.sha }}.json
           key: size-base-${{ steps.base.outputs.sha }}
@@ -199,12 +217,13 @@ jobs:
         if: steps.kept.outputs.cache-hit != 'true'
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        id: rust
         if: steps.kept.outputs.cache-hit != 'true'
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - name: Build the base and keep its sizes
-        if: steps.kept.outputs.cache-hit != 'true'
+        if: steps.kept.outputs.cache-hit != 'true' && (env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true')
         env:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
@@ -213,6 +232,7 @@ jobs:
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$BASE.json"
       - uses: actions/upload-artifact@v4
+        if: env.MAIN_PUSH != 'true'
         with:
           name: size-base
           path: target/.size-base/${{ steps.base.outputs.sha }}.json
@@ -224,6 +244,7 @@ jobs:
     # base's sizes from the size-base job. The build job builds the same files with the same flags,
     # so the check builds no WebAssembly.
     needs: [build, size-base]
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -246,17 +267,48 @@ jobs:
           path: target/.size-base
       - name: Check the sizes of the build job's files against the base's build
         run: bun tools/build-wasm.ts --check-size --prebuilt
-      # Main's sizes are the base of the pull requests that build on it.
+
+  main-keep:
+    # What later runs restore from main and that no other job on main saves: this commit's sizes,
+    # the base of the size check of the pull requests that build on it, and the caches of the
+    # packages, Playwright's Chromium and the sample content. Main's Rust jobs keep their own caches.
+    # The merge queue checked this commit's sizes against the commit before, so this job only
+    # measures them.
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - name: Measure the build job's files
+        run: bun tools/build-wasm.ts --prebuilt
       - name: Keep the sizes of this commit of main
-        if: env.SAVE_CACHES == 'true' && !cancelled() && hashFiles('target/size-report.json') != ''
+        if: "!cancelled() && hashFiles('target/size-report.json') != ''"
         run: |
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$GITHUB_SHA.json"
       - uses: actions/cache/save@v4
-        if: env.SAVE_CACHES == 'true' && !cancelled() && hashFiles('target/size-report.json') != ''
+        if: "!cancelled() && hashFiles('target/size-report.json') != ''"
         with:
           path: target/.size-base/${{ github.sha }}.json
           key: size-base-${{ github.sha }}
+      - uses: ./.github/actions/playwright-chromium
+        if: "!cancelled()"
+        with:
+          cache-only: "true"
+      - uses: ./.github/actions/samples
+        if: "!cancelled()"
+        with:
+          cache-only: "true"
 
   shader-compiler:
     # The shader crate's build tests again through the build job's shader compiler, which must give
@@ -271,17 +323,22 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        id: rust
         with:
           key: ${{ hashFiles('Cargo.toml') }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: oven-sh/setup-bun@v2
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
       - uses: actions/download-artifact@v4
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
         with:
           name: page-wasm
       - name: The shader compiler gives the native shader build's results
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
         run: bun run test:shader-compiler
 
   packages:
@@ -290,6 +347,7 @@ jobs:
     # the command-line tool's test command type checks the project and draws its sketch on every
     # GPU tier, and Vite builds it for production.
     needs: build
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -314,6 +372,9 @@ jobs:
     # set them, and when to add a shard.
     name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
+    # Only in the merge queue, as the bench and real-browsers jobs. Before a pull request joins the
+    # queue, its author runs the browser tests of the areas that it changes (.dev/pull-requests.md).
+    if: github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -359,6 +420,7 @@ jobs:
     # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
+    if: github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -443,6 +505,7 @@ jobs:
     # split into shards and change their names with no change to the queue's rules. It runs after
     # every other job, also after a failure or a cancel, and fails unless each job passed. Outside
     # the merge queue a job may be skipped by its own condition; in the queue every job must pass.
+    # main-keep runs only on main, so it stays out of the list.
     if: always()
     needs:
       - docs-and-tools

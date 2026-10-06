@@ -138,17 +138,25 @@ export function releaseVersion(output: string): string | null {
 /** The version that M1's release must be. */
 export const GATE_VERSION = '0.1.0';
 
-/** The workflows that must pass on the gate commit. */
-export const GATE_WORKFLOWS = ['CI', 'Benchmarks'] as const;
+/**
+ * The workflows that must pass on the gate commit, each with the event whose runs count. Main gets
+ * the exact commit that the merge queue tested, and only the queue's CI run holds every job: main's
+ * own CI run keeps caches. Any run of the benchmarks counts.
+ */
+export const GATE_WORKFLOWS: readonly { name: string; event?: string }[] = [
+	{ name: 'CI', event: 'merge_group' },
+	{ name: 'Benchmarks' },
+];
 
 /** One workflow run of a commit, as `gh run list --json` gives it. */
 interface WorkflowRun {
 	workflowName: string;
+	event: string;
 	status: string;
 	conclusion: string;
 }
 
-/** Judges the newest run of each gate workflow on the commit. */
+/** Judges the newest counted run of each gate workflow on the commit. */
 export function workflowResult(output: string): StepResult {
 	let runs: WorkflowRun[];
 	try {
@@ -157,8 +165,8 @@ export function workflowResult(output: string): StepResult {
 		return { figure: 'no workflow runs in the output', verdict: 'fail' };
 	}
 	// gh lists the newest run first.
-	const states = GATE_WORKFLOWS.map((name) => {
-		const run = runs.find((r) => r.workflowName === name);
+	const states = GATE_WORKFLOWS.map(({ name, event }) => {
+		const run = runs.find((r) => r.workflowName === name && (!event || r.event === event));
 		const state = !run ? 'no run' : run.status === 'completed' ? run.conclusion : run.status;
 		return { name, state };
 	});
@@ -204,7 +212,7 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 				'--commit',
 				commit,
 				'--json',
-				'workflowName,status,conclusion',
+				'workflowName,event,status,conclusion',
 			],
 			timed: false,
 			read: (out) =>

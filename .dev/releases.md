@@ -6,7 +6,7 @@ This guide covers how a release is made. [AGENTS.md](../AGENTS.md) holds the rul
 
 The first release is 1.0, as [Versions](#versions) says. Until then, no step below runs. To release, run the Release workflow from the Actions tab and pick a release type. The workflow:
 
-1. Waits for CI to pass on main's latest commit.
+1. Checks that the merge queue's CI run of main's latest commit passed. Main gets the exact commit that the queue tested, and only the queue's run holds every job ([D-86](decisions/D-86-ci-runs-per-event.md)).
 2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md` and regenerates the docs.
 3. Opens a pull request. Review the changelog there, and edit `CHANGELOG.md` on that branch if a line needs it.
 
