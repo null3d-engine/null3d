@@ -54,32 +54,5 @@ fn corner_texel(place: vec2f, size: vec2f) -> vec2i {
 
 @fragment
 fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let size = vec2f(textureDimensions(scene_color));
-    let packed = settings.render_size;
-    let render = vec2f(f32(packed & 0xffffu), f32(packed >> 16u));
-    if all(render == size) {
-        return display_texel(vec2i(position.xy), position.xy);
-    }
-#ifdef WEBGL2
-    let from_top = vec2f(position.x, size.y - position.y);
-#else
-    let from_top = position.xy;
-#endif
-    // The pixel's place in the corner, in texels from the center of its top-left texel. It stays
-    // within the corner's texel centers, so no tap reads past the corner.
-    let place = clamp(from_top / size * render - 0.5, vec2f(0.0), render - 1.0);
-    let first = floor(place);
-    let share = place - first;
-    let last = min(first + 1.0, render - 1.0);
-    let top = mix(
-        display_texel(corner_texel(first, size), position.xy),
-        display_texel(corner_texel(vec2f(last.x, first.y), size), position.xy),
-        share.x,
-    );
-    let bottom = mix(
-        display_texel(corner_texel(vec2f(first.x, last.y), size), position.xy),
-        display_texel(corner_texel(last, size), position.xy),
-        share.x,
-    );
-    return mix(top, bottom, share.y);
+    return display_texel(vec2i(position.xy), position.xy);
 }

@@ -120,10 +120,6 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     return (_e7 + vec3(dither));
 }
 
-ivec2 corner_texel(vec2 place, vec2 size) {
-    return ivec2(int(place.x), int(((size.y - 1.0) - place.y)));
-}
-
 void main() {
     uint vertex = uint(gl_VertexID);
     float x_2 = ((float(((vertex << 1u) & 2u)) * 2.0) - 1.0);
@@ -264,36 +260,10 @@ vec4 display_texel(ivec2 texel, vec2 pixel_2) {
     return vec4((encoded * coverage), coverage);
 }
 
-ivec2 corner_texel(vec2 place, vec2 size) {
-    return ivec2(int(place.x), int(((size.y - 1.0) - place.y)));
-}
-
 void main() {
     vec4 position = gl_FragCoord;
-    vec2 size_1 = vec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy));
-    uint packed_ = _group_0_binding_0_fs.render_size;
-    vec2 render = vec2(float((packed_ & 65535u)), float((packed_ >> 16u)));
-    if (all(equal(render, size_1))) {
-        vec4 _e19 = display_texel(ivec2(position.xy), position.xy);
-        _fs2p_location0 = _e19;
-        return;
-    }
-    vec2 from_top = vec2(position.x, (size_1.y - position.y));
-    vec2 place_1 = clamp((((from_top / size_1) * render) - vec2(0.5)), vec2(0.0), (render - vec2(1.0)));
-    vec2 first = floor(place_1);
-    vec2 share = (place_1 - first);
-    vec2 last = min((first + vec2(1.0)), (render - vec2(1.0)));
-    ivec2 _e45 = corner_texel(first, size_1);
-    vec4 _e47 = display_texel(_e45, position.xy);
-    ivec2 _e51 = corner_texel(vec2(last.x, first.y), size_1);
-    vec4 _e53 = display_texel(_e51, position.xy);
-    vec4 top = mix(_e47, _e53, share.x);
-    ivec2 _e59 = corner_texel(vec2(first.x, last.y), size_1);
-    vec4 _e61 = display_texel(_e59, position.xy);
-    ivec2 _e62 = corner_texel(last, size_1);
-    vec4 _e64 = display_texel(_e62, position.xy);
-    vec4 bottom = mix(_e61, _e64, share.x);
-    _fs2p_location0 = mix(top, bottom, share.y);
+    vec4 _e4 = display_texel(ivec2(position.xy), position.xy);
+    _fs2p_location0 = _e4;
     return;
 }
 `,
