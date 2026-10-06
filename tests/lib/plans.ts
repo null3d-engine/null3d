@@ -106,6 +106,7 @@ import {
 	sameCanvasProblems,
 	THREADED_MODES,
 } from './engine-checks.ts';
+import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
@@ -176,6 +177,8 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	/** The mip levels page: each way of making mip levels on WebGL2, read back level by level. */
 	| { kind: 'mip-levels' }
+	/** The environment generator page: the built-in room made on the GPU, read back level by level. */
+	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
 	| { kind: 'skin-pass'; tier: Tier }
 	| { kind: 'quality' }
@@ -412,6 +415,14 @@ export function checksPlan(): PlanItem<Check>[] {
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('mip-levels', 'mip-levels', { kind: 'mip-levels' }),
+		...(['webgpu', 'compat', 'webgl2'] as const).map((path) =>
+			pageItem(
+				`environment-generator-${path}`,
+				'environment-generator',
+				{ kind: 'environment-generator', tier: path === 'webgl2' ? 'webgl2' : 'webgpu' },
+				{ switches: [`gpu=${path}`], timeoutSeconds: 120 },
+			),
+		),
 		...(['webgpu', 'compat'] as const).map((path) =>
 			pageItem(
 				`skin-pass-${path}`,
@@ -1673,6 +1684,11 @@ export function judge(
 			const mips = result as unknown as MipLevelsResult;
 			context?.note?.(mipLevelsNote(mips));
 			return mipLevelsProblems(mips);
+		}
+		case 'environment-generator': {
+			const { lines, problems } = generatorReport(result as unknown as GeneratorResult);
+			if (problems.length === 0) context?.note?.(`the built-in room: ${lines.join('; ')}`);
+			return problems;
 		}
 		case 'skin-pass': {
 			const skin = result as unknown as SkinPassResult;

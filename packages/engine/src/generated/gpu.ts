@@ -235,7 +235,7 @@ export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_LINE_VERTEX_BYTES = 16;
-export const SIZE_SHADOW_UNIFORM_BYTES = 352;
+export const SIZE_SHADOW_UNIFORM_BYTES = 368;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */

@@ -423,7 +423,7 @@ export class WebGPUBackend {
 	private submit(): void {
 		if (!this.encoder && !this.staging.pending) return;
 		const encoder = this.commandEncoder();
-		this.timer?.resolve(encoder);
+		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;

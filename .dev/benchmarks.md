@@ -255,6 +255,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 - `bun run parity --scene s2 --switches shadows=3` compares the hold frames on each tier. On 30 September 2026 on the Mac, 0.147% of the pixels differed on both WebGPU tiers, and three.js's two renderers differed by 0.270%. WebGL2 drew no shadows then, so it has no figure yet.
 - Each cascade adds a culling dispatch and a depth pass on the GPU. On the CPU it adds the recording of both, and its uniforms: about the same work whatever the number of casters.
 - `?far=<n>` on S4's null3D pages sets `farCascadeInterval`, from 1 to 8. `--switches far=1` draws every cascade in every frame. Its difference from the preset's run is what drawing the far cascades in turn saves. S4's cars drive through every cascade. Since [D-16](decisions/D-16-moving-casters-and-bias.md), its far cascades therefore draw in every frame anyway, and both runs draw the same passes.
+- `?shadowCascadeBlend=<share>` on S4's null3D pages sets the band where each cascade blends into the next, from 0 to 0.5. The page kinds that end in `-blend-off` start S4 with the band at 0. A bench run then takes turns between a page and its twin in one browser session: `bun run bench:run --scenes s4 --pages null3d-webgpu,null3d-webgpu-blend-off --switches "preset=low&governor=off"`. [D-73](decisions/D-73-cascade-blend.md) gives the results.
 
 ## The depth prepass
 
@@ -367,6 +368,7 @@ The page kinds that end in `-timed` start null3D on WebGL2 with `?gl-timing`. Th
 
 - On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.
 - In Chrome, the time between the culling pass and the main pass is Chrome's own check of the indirect draws. At 240,000 boxes it takes about 0.1 to 0.3 ms.
+- The timer copies a frame's timestamps out only after the GPU has finished the frame, in a submit of its own. Firefox writes them late, so a copy in the frame's own commands read an earlier frame's values ([implementation notes](implementation-notes.md#browser-faults)). A pass without timestamps is left out of `gpuPassMs`, and its frame keeps its other parts.
 - The timestamps cover only the GPU passes. Work that the browser does outside them shows in `gpuLatencyMs` and in the frame rate, as [Safari's frame path](implementation-notes.md#safaris-frame-path) describes.
 - The timer times one frame in 11, a prime above the longest far cascade interval of 8. Until 5 October 2026 it timed one frame in 8. Low's far cascade drew once in 4 frames, so every timed frame fell between its turns. A build whose far cascade drew in turns then read about a quarter of that pass too low, and the pass never showed in its `gpuPassMs`. A unit test holds the count against every interval from 1 to 8. The draw call counts never had this fault: they count every frame.
 
