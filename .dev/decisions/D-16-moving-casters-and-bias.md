@@ -366,9 +366,9 @@ S4 at Medium, governor off, drawing on the page's main thread, one setting chang
 
 The Mac ran from 11:07 to 11:30, at a 1-minute load of 11.7 at the start and 2.8 at the end. The iPad ran from 12:28 to 12:55 (runs `20261006-042859-bench` to `20261006-045519-bench`), on power. On the iPad, WebGPU's GPU time was 18.0 and 19.0 ms. Every WebGL2 run on the iPad was GPU-bound: the GPU delay matched the frame interval, and the CPU took 1.3 to 4.8 ms.
 
-On the Mac, the `implicit` and `fetch` reads halved WebGL2's GPU delay, to Low's. On the iPad, `implicit` was the fastest read. Its frames took 59 ms against 62 to 63 ms, in both rounds. `fetch` saved 1 to 2 ms, and `nearest` nothing.
+On the Mac, the `implicit` and `fetch` reads halved WebGL2's GPU delay, to Low's. On the iPad, `implicit` was the fastest read. Its frames took 59 ms against 62 to 63 ms, in both rounds: about 5% more frames. `fetch` saved 1 to 2 ms, and `nearest` nothing.
 
-The shadow reads therefore explain only about 3 ms of the iPad's 62 ms. The frame time follows the pixel count: 1.78 times fewer pixels took 37 ms. Low, at the same pixel count as that run, took 27 ms. WebGPU at Medium took 18 to 19 ms for 1.78 times as many pixels. So on the iPad, WebGL2 costs about three times WebGPU's GPU time per pixel at every preset. Earlier iPad runs agree: S4 at Low drew about 30 fps on WebGL2 ([D-09](D-09-half-precision.md)). The cost lies outside the shadow reads, and this addendum does not find it.
+The shadow reads therefore explain only about 3 ms of the iPad's 62 ms. The frame time follows the pixel count: 1.78 times fewer pixels took 37 ms. Low, at the same pixel count as that run, took 27 ms. WebGPU at Medium took 18 to 19 ms for 1.78 times as many pixels. So on the iPad, WebGL2 costs about three times WebGPU's GPU time per pixel at every preset. Earlier iPad runs agree: S4 at Low drew about 30 fps on WebGL2 ([D-09](D-09-half-precision.md)). That per-pixel cost is the real cause of the gap between WebGL2 and WebGPU on the iPad. It lies outside the shadow reads, and it is still open.
 
 ### Decision
 
