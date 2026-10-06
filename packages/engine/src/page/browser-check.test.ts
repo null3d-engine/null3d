@@ -3,7 +3,8 @@
 // memory, workers or files.
 import { afterEach, describe, expect, it } from 'bun:test';
 import { EngineError } from '../errors/engine-error';
-import { checkBrowser, webKitVersion } from './browser-check';
+import { webKitVersion } from '../shared/webkit';
+import { checkBrowser } from './browser-check';
 import { createEngine } from './engine';
 
 const UA = {

@@ -176,7 +176,7 @@ pub mod texture_stat {
     pub const LARGEST_FRAME_BYTES: u32 = 3;
     /// Textures with an image that is not on the GPU yet.
     pub const WAITING: u32 = 4;
-    /// Images sent so far, which is the last image id handed out.
+    /// The last image id handed out, or 0 before the first.
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
@@ -233,11 +233,13 @@ pub mod mesh_arrays {
 
 /// The morph target arrays that `createMeshFromArrays` finds in the staging words after the
 /// indices: the deltas of the positions, the normals and the tangents, each three 32-bit floats
-/// per vertex of each target, target after target, in this order.
+/// per vertex of each target, then of the colors, four 32-bit floats per vertex of each target,
+/// target after target, in this order.
 pub mod morph_arrays {
     pub const POSITIONS: u32 = 1;
     pub const NORMALS: u32 = 2;
     pub const TANGENTS: u32 = 4;
+    pub const COLORS: u32 = 8;
 }
 
 /// The first detail of an E1206 failure: what is wrong with the arrays. The second detail is the
@@ -255,8 +257,8 @@ pub mod arrays_problem {
     /// The morph targets move one vertex more than 255 times, or every mesh's morph targets
     /// together pass what the engine holds. The second detail is that limit in texels.
     pub const MORPH_TOO_LARGE: u32 = 8;
-    /// A morph target array does not hold three values per vertex of each target. The second
-    /// detail is the array: 0 for positions, 1 for normals and 2 for tangents.
+    /// A morph target array does not hold its values per vertex of each target. The second
+    /// detail is the array: 0 for positions, 1 for normals, 2 for tangents and 3 for colors.
     pub const MORPH_LENGTH: u32 = 9;
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
@@ -866,6 +868,7 @@ pub fn typescript() -> String {
                 ("POSITIONS", morph_arrays::POSITIONS),
                 ("NORMALS", morph_arrays::NORMALS),
                 ("TANGENTS", morph_arrays::TANGENTS),
+                ("COLORS", morph_arrays::COLORS),
                 ("MAX_WEIGHTS", null3d_core::morph::MAX_WEIGHTS),
                 ("MAX_TARGETS", null3d_core::morph::MAX_TARGETS),
                 ("WEIGHTS_PER_JOINT", null3d_core::morph::WEIGHTS_PER_JOINT),

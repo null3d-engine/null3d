@@ -7,6 +7,7 @@
 // without a load, so the stages run on real GPUs alone: in Chrome on the Mac and through the
 // runner's governor plan on phones and tablets.
 import { expect, test } from '@playwright/test';
+import { ALONE } from '../lib/alone.ts';
 import { pageResult } from '../lib/page-result.ts';
 import {
 	GOVERNOR_STAGES,
@@ -28,7 +29,7 @@ const STAGE_MS = 150_000;
 
 for (const tier of TIERS)
 	for (const stage of GOVERNOR_STAGES)
-		test(`the governor ${STAGE_TITLES[stage]} on ${tier}`, async ({ page }) => {
+		test(`the governor ${STAGE_TITLES[stage]} on ${tier}`, ALONE, async ({ page }) => {
 			test.skip(!!process.env.CI, "CI's software GPU cannot hold a frame rate");
 			test.setTimeout(STAGE_MS + 30_000);
 			await page.goto(`governor.html?gpu=${tier}&stage=${stage}`);

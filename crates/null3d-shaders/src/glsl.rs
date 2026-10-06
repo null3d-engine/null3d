@@ -122,6 +122,7 @@ fn write_stage(
     source = lower_arrays(&source);
     source = drop_unused_constants(&source);
     source = highp_integers(&source);
+    source = implicit_comparison_levels(&source);
 
     let entry = module
         .entry_points
@@ -654,6 +655,60 @@ pub(crate) fn highp_integers(source: &str) -> String {
     out
 }
 
+/// The call that naga writes for a comparison read at level 0 of an array or cube comparison
+/// sampler, for which GLSL ES 3.00 has no `textureLod`.
+const GRADIENT_READ: &str = "textureGrad";
+
+/// Reads each comparison sampler at its texture's own level where naga reads it at level 0 through
+/// `textureGrad` with zero gradients. ANGLE on Metal, which runs WebGL2 in Safari and in Chrome on
+/// macOS, turns such a read into a comparison with explicit gradients. Apple's GPUs run those far
+/// slower than a comparison at the texture's own level: on an iPad, the 5 x 5 shadow filter's reads
+/// took most of a 57 ms frame. The engine's comparison samplers read shadow maps of one level, so
+/// both reads give the same result.
+pub(crate) fn implicit_comparison_levels(source: &str) -> String {
+    let samplers: Vec<&str> = source
+        .lines()
+        .filter_map(|line| {
+            let declaration = line.trim().strip_prefix("uniform ")?.strip_suffix(';')?;
+            let mut words = declaration.split_whitespace().rev();
+            let name = words.next()?;
+            words
+                .next()
+                .is_some_and(|ty| ty.starts_with("sampler") && ty.ends_with("Shadow"))
+                .then_some(name)
+        })
+        .collect();
+    if samplers.is_empty() {
+        return source.to_owned();
+    }
+    let zero = |gradient: &str| matches!(gradient, "vec2(0.0)" | "vec3(0.0)");
+    let mut out = String::with_capacity(source.len());
+    let mut copied = 0;
+    let mut from = 0;
+    while let Some(found) = source[from..].find(GRADIENT_READ) {
+        let at = from + found;
+        from = at + GRADIENT_READ.len();
+        if !source[from..].starts_with('(') || !is_whole_word(source, at, GRADIENT_READ.len()) {
+            continue;
+        }
+        let open = from + 1;
+        let Some(length) = closing_parenthesis(&source[open..]) else {
+            continue;
+        };
+        let read = split_arguments(&source[open..open + length]).filter(|args| {
+            args.len() == 4 && samplers.contains(&args[0]) && zero(args[2]) && zero(args[3])
+        });
+        if let Some(args) = read {
+            out.push_str(&source[copied..at]);
+            out.push_str(&format!("texture({}, {})", args[0], args[1]));
+            copied = open + length + 1;
+            from = copied;
+        }
+    }
+    out.push_str(&source[copied..]);
+    out
+}
+
 /// True for a GLSL identifier.
 fn is_identifier(word: &str) -> bool {
     word.bytes()
@@ -805,6 +860,15 @@ mod tests {
             "{block}fn g(l: Light) -> vec4f {{ return l.params; }}\n@fragment fn main() -> @location(0) vec4f {{ return g(u.light); }}\n"
         );
         assert_eq!(uniform_array_copy(&passed), Some("main".to_owned()));
+    }
+
+    #[test]
+    fn comparison_reads_at_level_zero_read_at_the_texture_level() {
+        let source = "uniform highp sampler2DArrayShadow _map;\nuniform highp samplerCubeShadow _cube;\nuniform highp sampler2DArray _colors;\nvoid main() {\n    float a = textureGrad(_map, vec4((c + n), l, r.x), vec2(0.0), vec2(0.0));\n    float b = textureGrad(_cube, vec4(d, r.y), vec3(0.0), vec3(0.0));\n    float c = textureGrad(_map, vec4(c, l, r.z), dx, dy);\n    vec4 d = textureGrad(_colors, vec3(uv, l), vec2(0.0), vec2(0.0));\n    float e = mytextureGrad(_map, vec4(c, l, r.w), vec2(0.0), vec2(0.0));\n}\n";
+        let expected = "uniform highp sampler2DArrayShadow _map;\nuniform highp samplerCubeShadow _cube;\nuniform highp sampler2DArray _colors;\nvoid main() {\n    float a = texture(_map, vec4((c + n), l, r.x));\n    float b = texture(_cube, vec4(d, r.y));\n    float c = textureGrad(_map, vec4(c, l, r.z), dx, dy);\n    vec4 d = textureGrad(_colors, vec3(uv, l), vec2(0.0), vec2(0.0));\n    float e = mytextureGrad(_map, vec4(c, l, r.w), vec2(0.0), vec2(0.0));\n}\n";
+        assert_eq!(implicit_comparison_levels(source), expected);
+        let plain = "uniform highp sampler2D _t;\nvoid main() {}\n";
+        assert_eq!(implicit_comparison_levels(plain), plain);
     }
 
     #[test]
