@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from './control';
 import {
 	type CustomShader,
+	GENERATORS_PRELOAD,
 	ImageTable,
 	imagesArrived,
 	RECEIVING,
@@ -181,8 +182,26 @@ describe('texture generators on their way to the thread that draws', () => {
 		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
 		await imagesArrived(slots, 1);
 		expect(() => table.generator(1)).toThrow(
-			'the code of the room generator did not download: offline',
+			'the code of the environment generator did not download: offline',
 		);
+	});
+
+	test("move a panorama's texels across a port, and keep them until the texture goes", async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const panorama = { width: 2, height: 1, texels: Uint32Array.of(1, 2), gain: 4 };
+		sendThrough(sketchEnd).sendImage(3, panorama);
+		deliver(sketchEnd, RECEIVING);
+		expect(sketchEnd.posted).toEqual([[{ id: 3, generator: panorama }, [panorama.texels.buffer]]]);
+		receiveImages(drawingEnd, table, slots);
+		const code = { run: () => {} };
+		table.loadGeneratorsWith(() => Promise.resolve(code));
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
+		await imagesArrived(slots, 1);
+		expect(table.generator(3)).toEqual([panorama, code]);
+		table.release(3);
+		expect(() => table.generator(3)).toThrow('draw list names generator 3, which does not exist');
 	});
 });
 
@@ -223,5 +242,26 @@ describe('features whose shader files the sketch asks for early', () => {
 		// a listener that stayed would keep the stopped renderer and the engine's memory.
 		table.clear();
 		expect(table.onPreload).toBeUndefined();
+	});
+
+	test("start the generators' code and pipelines under their reserved name, before any generator", async () => {
+		const table = new ImageTable();
+		const heard: string[] = [];
+		table.onPreload = (feature) => heard.push(feature);
+		let loads = 0;
+		const warmed: unknown[] = [];
+		const code = { run: () => {} };
+		table.loadGeneratorsWith(async () => {
+			loads++;
+			return code;
+		});
+		table.warmGeneratorsWith(async (loaded) => warmed.push(loaded));
+		table.preload([GENERATORS_PRELOAD]);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect([loads, warmed]).toEqual([1, [code]]);
+		expect([heard, [...table.preloads]]).toEqual([[], []]);
+		await table.addGenerator(1, 'room');
+		expect(loads).toBe(1);
+		expect(table.generator(1)).toEqual(['room', code]);
 	});
 });

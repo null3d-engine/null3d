@@ -111,6 +111,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'scene/builtin-environments.ts',
 		loadedBy: 'page-sketch-runner.js',
 	},
+	{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
 	{
@@ -148,6 +149,16 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		name: 'sketch-worker-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
 		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-panorama.js',
+		module: 'scene/panorama.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'panorama-worker.js',
+		module: 'workers/panorama-worker.ts',
+		loadedBy: 'sketch-worker-panorama.js',
 	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-lines.js', module: 'scene/lines.ts', loadedBy: 'sketch-worker.js' },
