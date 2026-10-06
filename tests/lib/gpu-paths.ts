@@ -5,6 +5,9 @@
 import type { Tier } from '../../packages/cli/src/page.js';
 import type { ItemResult } from './runs.ts';
 
+/** GPU names that mark drawing on the CPU, as on a machine or a virtual machine without a GPU. */
+export const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|basic render driver/i;
+
 /** A GPU path that a page can force with `?gpu=`: core WebGPU, WebGPU's compatibility mode, or WebGL2. */
 export type GpuPath = Tier;
 

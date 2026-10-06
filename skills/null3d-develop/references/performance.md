@@ -97,7 +97,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - The preset check measures the scene that the setup built, then lowers the preset where the GPU misses the frame rate. Build the first view and load its textures in the setup, or the check measures an empty scene. `engine.mode.presetCheck` shows what it measured (`concepts/quality-presets`). A repeat visit in the same browser takes the stored result and skips the check, unless the page has `?check=fresh`.
 - A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
-- Shadows: leave `cascades` and `mapSize` out of a light's `shadow` options, so the preset sets them: two cascades of 1,024 texels on Low, for phones. Keep `distance` no longer than the scene needs. Far cascades draw every few frames by preset. On Medium and up they draw every frame while a dynamic object touches them. Low keeps their turns, so far moving shadows can trail by up to 3 frames. Set `followMovingCasters: true` when far moving shadows must stay exact on phones. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. A shadowed spot light draws its casters into one tile of the shadow atlas, and a point light into six. Low and Medium turn point light shadows off and give the atlas fewer tiles, so avoid shadowed point lights on phones.
+- Shadows: leave `cascades` and `mapSize` out of a light's `shadow` options, so the preset sets them: two cascades of 1,024 texels on Low, for phones. Keep `distance` no longer than the scene needs. Far cascades draw every few frames by preset. On every preset they draw every frame while a dynamic object touches them, so moving shadows never trail. Set `followMovingCasters: false` to keep their turns where moving objects stay far and small; their shadows then trail by up to the interval less one frame. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. A shadowed spot light draws its casters into one tile of the shadow atlas, and a point light into six. Low and Medium turn point light shadows off and give the atlas fewer tiles, so avoid shadowed point lights on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
 - Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. Prefabs to free with `destroy()` come in 0.2.
 - For comparison runs, fix the refresh rate at 60 Hz and start with a cool, charged device (engine docs `guides/phones`).
@@ -128,7 +128,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | --- | --- | --- |
 | Pixels | `maxPixelRatio`, `minRenderScale`, `maxRenderScale` | During play |
 | Textures | `maxAnisotropy`, `uploadBytesPerFrame` | During play |
-| Directional light shadows | `shadowFilter`, `farCascadeInterval`, `followMovingCasters` | During play |
+| Directional light shadows | `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` | During play |
 | Directional light shadow maps | `shadowCascades`, `shadowMapSize` | At the start |
 | Frame budget | `governor` | During play |
 | Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
@@ -139,7 +139,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 The table marks its other rows as planned, such as the light caps and the texture memory budget. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades` and `depthPrepass`.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades` and `depthPrepass`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 ### The governor

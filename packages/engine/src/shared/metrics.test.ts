@@ -397,6 +397,23 @@ describe('gpuPassStats', () => {
 		expect(parts?.[2]?.ms.median).toBeCloseTo(0.5, 9);
 	});
 
+	it('leaves out a pass that the GPU left untimed, and the time between passes of its frame', () => {
+		const parts = gpuPassStats(
+			gpuRecords([
+				{ copies: 0, passes: [0.5, UNTIMED], render: [false, true], frameMs: 2 },
+				{ copies: 0, passes: [0.5, 1], render: [false, true], frameMs: 2 },
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'compute 1',
+			'render 1',
+			'between passes',
+		]);
+		expect(parts?.[2]?.ms).toMatchObject({ count: 1, median: 1 });
+		expect(parts?.[3]?.ms).toMatchObject({ count: 1 });
+	});
+
 	it('names only the passes timed alone, and gives null without GPU records', () => {
 		const many = Array.from({ length: GPU_TIMED_PASSES + 2 }, () => 1);
 		const parts = gpuPassStats(

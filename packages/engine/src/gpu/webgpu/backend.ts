@@ -9,6 +9,7 @@ import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
+import { IndirectArguments } from './indirect-arguments';
 import { Pipelines, type RenderTemplate, SKIN_BUILDS } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
 import { StagingRing } from './staging';
@@ -114,6 +115,10 @@ export class WebGPUBackend {
 	 * an indirect draw again at every execution, which costs its GPU process milliseconds per frame.
 	 */
 	private readonly bundles: (Uint32Array | undefined)[] = [];
+	/** Each indirect draw's own copy of its arguments, for the render passes that hold several. */
+	private readonly indirect: IndirectArguments;
+	/** `commandEncoder` as a function made once, for helpers that record commands outside a pass. */
+	private readonly openEncoder = () => this.commandEncoder();
 	private readonly pipelines: Pipelines;
 	/** Staging buffers for the uploads that writeBuffer copies slowly. */
 	private readonly staging: StagingRing;
@@ -167,6 +172,7 @@ export class WebGPUBackend {
 		this.pipelines = new Pipelines(device, shaders);
 		this.pipelines.prebuildMipmaps();
 		this.staging = new StagingRing(device);
+		this.indirect = new IndirectArguments(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.images.warmGeneratorsWith((code) =>
@@ -423,7 +429,7 @@ export class WebGPUBackend {
 	private submit(): void {
 		if (!this.encoder && !this.staging.pending) return;
 		const encoder = this.commandEncoder();
-		this.timer?.resolve(encoder);
+		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;
@@ -653,14 +659,22 @@ export class WebGPUBackend {
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
 			switch (op) {
-				case G.OP_CREATE_BUFFER:
+				case G.OP_CREATE_BUFFER: {
 					this.counts.objects++;
 					this.buffers[words[a] as number]?.destroy();
+					// Where draws copy their arguments, a buffer of indirect draws is also a source of
+					// copies: a render pass with several of its draws copies each one's arguments out
+					// (see ./indirect-arguments.ts).
+					const usage = words[a + 2] as number;
 					this.buffers[words[a] as number] = device.createBuffer({
 						size: words[a + 1] as number,
-						usage: words[a + 2] as number,
+						usage:
+							this.indirect.copying && usage & G.BUFFER_USAGE_INDIRECT
+								? usage | G.BUFFER_USAGE_COPY_SRC
+								: usage,
 					});
 					break;
+				}
 				case G.OP_WRITE_BUFFER: {
 					const target = this.need(this.buffers, words[a] as number, 'buffer');
 					const offset = words[a + 1] as number;
@@ -820,6 +834,7 @@ export class WebGPUBackend {
 						a + 7,
 					);
 					setup.setTimestampWrites(this.timer?.passWrites(true));
+					this.indirect.begin(words, i + length, end, this.bundles, this.buffers, this.openEncoder);
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					this.skipDraws = false;
 					break;
@@ -994,14 +1009,16 @@ export class WebGPUBackend {
 					words[a + 4] as number,
 				);
 				return true;
-			case G.OP_DRAW_INDEXED_INDIRECT:
+			case G.OP_DRAW_INDEXED_INDIRECT: {
+				const id = words[a] as number;
+				const offset = words[a + 1] as number;
+				const copy = this.indirect.take(id, offset);
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
-				pass.drawIndexedIndirect(
-					this.need(this.buffers, words[a] as number, 'buffer'),
-					words[a + 1] as number,
-				);
+				if (copy) pass.drawIndexedIndirect(copy, 0);
+				else pass.drawIndexedIndirect(this.need(this.buffers, id, 'buffer'), offset);
 				return true;
+			}
 			default:
 				return false;
 		}
@@ -1033,6 +1050,7 @@ export class WebGPUBackend {
 		for (const texture of this.textures) texture?.destroy();
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
+		this.indirect.destroy();
 		this.copyBuffer?.destroy();
 		this.destroyRetired();
 	}
