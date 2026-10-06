@@ -67,15 +67,18 @@ export interface FrameSummary {
 	/**
 	 * GPU time per frame, where the device has timestamp queries: from the frame's first command to
 	 * the end of its last pass. Where the browser cannot time the commands before the first pass,
-	 * the time starts at the first pass. The engine times one frame in eleven, which keeps the cost
-	 * of measuring small and takes in every turn of the far shadow cascades.
+	 * the time starts at the first pass. On WebGL2 it needs the timer queries of
+	 * `EXT_disjoint_timer_query_webgl2`, which most desktop browsers offer and most phones do not,
+	 * and covers the frame's commands as a whole. The engine times one frame in eleven, which keeps
+	 * the cost of measuring small and takes in every turn of the far shadow cascades.
 	 */
 	gpuMs: Percentiles | null;
 	/**
 	 * The parts of the GPU time per frame, in the order the frame runs them: the copies before the
 	 * first pass, where the browser times them, each pass, and the time between passes. In a frame
 	 * with more passes than the engine times one by one, the last pass it times also counts the
-	 * passes after it. Null where `gpuMs` is.
+	 * passes after it. Null where `gpuMs` is. On WebGL2 the frame has no parts, so the list is
+	 * empty.
 	 */
 	gpuPassMs: GpuPassStats[] | null;
 	/**

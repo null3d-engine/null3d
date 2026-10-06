@@ -26,6 +26,7 @@ mod manifest;
 mod material;
 mod names;
 mod output;
+mod pieces;
 mod position;
 mod problem;
 mod scan;
@@ -43,7 +44,7 @@ use naga_oil::compose::{NagaModuleDescriptor, ShaderDefValue};
 use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
-pub use effect::{EffectOutput, EffectSource, PostTemplates};
+pub use effect::{EffectOutput, EffectPieces, EffectSource, PostTemplates};
 pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
@@ -52,6 +53,7 @@ pub use output::{
     Binding, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output,
     Response, VariantOutput, WgslOutput,
 };
+pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
 pub use problem::{BuildError, Problem};
 pub use textures::Texture;
@@ -70,6 +72,9 @@ pub const OUTPUT_DIR: &str = "packages/engine/src/generated";
 pub const OUTPUT_PATH: &str = "packages/engine/src/generated/shaders.ts";
 /// The command that regenerates the output, as error messages name it.
 pub const COMMAND: &str = "bun run shaders";
+
+/// The shader def of every variant of a host of effects' pieces, and of each piece's builds.
+const EFFECT_HOST: &str = "EFFECT_HOST";
 
 /// What WebGPU allows every shader without optional features: multisampled shading, cube map
 /// arrays, the half-float packing functions and external textures. Validation grants nothing
@@ -240,6 +245,8 @@ pub struct Compiler {
     library: Library,
     preprocessor: Preprocessor,
     composers: Composers,
+    /// The builds of the hosts that effects' pieces join, without a piece, by host and variant.
+    hosts: HashMap<String, VariantOutput>,
 }
 
 impl Compiler {
@@ -250,6 +257,7 @@ impl Compiler {
             library: Library::load(files).map_err(BuildError::from_iter)?,
             preprocessor: Preprocessor::default(),
             composers: Composers::default(),
+            hosts: HashMap::new(),
         })
     }
 
@@ -304,6 +312,39 @@ impl Compiler {
             }
         }
         built
+    }
+
+    /// The build of variant `name` of a host of pieces without a piece and without permutation
+    /// bits, which a piece's items are taken against. `key` names the host; the compiler keeps
+    /// each build it made.
+    fn host_build(
+        &mut self,
+        host: &MaterialTemplate,
+        key: &str,
+        name: &str,
+    ) -> Result<VariantOutput, BuildError> {
+        let id = format!("{key}/{name}");
+        if let Some(found) = self.hosts.get(&id) {
+            return Ok(found.clone());
+        }
+        let Some(variant) = host.variants().get(name) else {
+            return Err(Problem::general(format!("a host has no variant `{name}`")).into());
+        };
+        let base = Variant {
+            defs: variant.defs.clone(),
+            permutations: Vec::new(),
+            targets: variant.targets.clone(),
+        };
+        let Some(build) = base.builds(name).into_iter().next() else {
+            return Err(
+                Problem::general(format!("the host's variant `{name}` has no build")).into(),
+            );
+        };
+        let output = self
+            .variant(key, host.source(), host.pipelines(), &base, &build)
+            .map_err(BuildError::from_iter)?;
+        self.hosts.insert(id, output.clone());
+        Ok(output)
     }
 
     /// Builds one build of a variant of an entry shader: checks its source, composes and
@@ -365,6 +406,9 @@ impl Compiler {
         naga::compact::compact(&mut module, naga::compact::KeepUnused::No);
         let half_items = self.library.half_items(&module);
         names::undecorate(&mut module, &self.library);
+        if build.defs.iter().any(|def| def == EFFECT_HOST) {
+            names::tie_locals_to_functions(&mut module);
+        }
         let mediump = half_items.names(&module);
         let info = validate(&module, capabilities)?;
         let wgsl = if variant.has(Target::Wgsl) {

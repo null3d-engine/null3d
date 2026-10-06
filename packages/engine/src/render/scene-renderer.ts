@@ -7,9 +7,11 @@
 import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
+import type { JoinedBuilds } from '../gpu/effect-join';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
+import { WebGL2GpuTimer } from '../gpu/webgl2/gpu-timer';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
@@ -46,6 +48,8 @@ interface SceneBackend {
 		objects: number;
 	};
 	resetCounts(): void;
+	/** The backend's builds of joined effects' shaders. */
+	readonly joins: JoinedBuilds;
 }
 
 /** Adds what the backend did since its last reset to a frame's record, then resets its counts. */
@@ -93,6 +97,7 @@ export class FrameReplay {
 		control: ArrayBufferLike,
 	) {
 		this.slots = controlViews(control).slots;
+		backend.joins.onFailed = (template) => Atomics.store(this.slots, Slot.JoinFailed, template);
 	}
 
 	/** Starts the builds of a frame's pipelines, once, and returns true when the frame may draw. */
@@ -294,6 +299,8 @@ export class WebGL2SceneRenderer implements Renderer {
 	readonly transparent: boolean;
 	readonly lost: Promise<string>;
 	readonly completions: FenceCompletion | undefined;
+	/** GPU time per frame, where the context has timer queries and the page measures. */
+	private readonly timer: WebGL2GpuTimer | undefined;
 	private readonly backend: WebGL2Backend;
 	private readonly frames: FrameReplay;
 	private readonly release = new AbortController();
@@ -334,6 +341,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);
+		this.timer = metrics && WebGL2GpuTimer.create(gl, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
 	}
 
@@ -376,7 +384,9 @@ export class WebGL2SceneRenderer implements Renderer {
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
 		try {
+			this.timer?.beginFrame(input.frame);
 			this.frames.replay(input.frame);
+			this.timer?.endFrame();
 		} catch (error) {
 			this.lostDuring(error);
 		}
@@ -433,6 +443,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	destroy(): void {
 		this.frames.abandon();
 		this.release.abort();
+		if (!this.gl.isContextLost()) this.timer?.destroy();
 		this.backend.destroy();
 		releaseContext(this.gl);
 	}

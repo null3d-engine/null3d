@@ -436,7 +436,7 @@ const blocks = post.addEffect({ wgsl: pixelate, uniforms: { size: 4 } });
 post.setEffectUniform(blocks, 'size', 8);
 ```
 
-The effect runs on HDR color before bloom and the tone curve, in a full-screen pass of its own. Each effect adds one pass, so put several per-pixel looks in one function. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
+The effect runs on HDR color before bloom and the tone curve. The engine joins an effect that reads only its own pixel into the pass of the effect before it, and folds the last pass into the final pass when bloom and FXAA are off, so per-pixel looks can stay separate effects. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
 ## 16. Very large worlds (0.2)
 

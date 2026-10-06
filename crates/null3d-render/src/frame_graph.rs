@@ -111,8 +111,8 @@ use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
-use crate::effects::{self, Effect, EffectIds, EffectPass, MAX_EFFECTS, Sources};
-use crate::final_pass::{BloomInputs, FinalIds, FinalPass, OutlineInputs};
+use crate::effects::{self, Effect, EffectIds, EffectJoins, EffectPass, MAX_EFFECTS, Unit};
+use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::graph::{
@@ -306,7 +306,8 @@ pub(crate) enum Role {
     OutlineMask,
     /// A step of ambient occlusion, by its place. The graph records it itself.
     Ao(u8),
-    /// A custom effect, by its place in the chain. The graph records it itself.
+    /// A pass of the custom effects, a lone effect or a group, by its place among the effects'
+    /// passes. The graph records it itself.
     Effect(u8),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
@@ -420,9 +421,17 @@ pub(crate) struct FrameGraph {
     effect_count: usize,
     /// A bit for each effect that reads the scene's depth, by its place.
     effect_depths: u32,
-    /// The textures that each effect reads, found once for each compile of the graph, which the
-    /// count says.
-    effect_textures: Option<(u32, [Sources; MAX_EFFECTS])>,
+    /// How the sketch joins its effects into groups and folds them into the final pass.
+    effect_joins: EffectJoins,
+    /// The effects' passes, as the graph declares them: each a lone effect, or a group whose
+    /// pipeline is built. The first `unit_count` hold units.
+    effect_units: [Unit; MAX_EFFECTS],
+    unit_count: usize,
+    /// The place of the first effect that folds into the final pass, while effects fold.
+    folded: Option<usize>,
+    /// The color that each unit reads and the scene depth's texture, or 0 while no effect reads
+    /// depth, found once for each compile of the graph, which the count says.
+    effect_textures: Option<(u32, [u32; MAX_EFFECTS], u32)>,
     /// The sketch time and the seconds since the frame before, which effects read.
     effect_clock: [f32; 2],
     /// The inverse of the camera's projection, which effects that read depth use, or `None`
@@ -525,6 +534,10 @@ impl FrameGraph {
             effects: [NO_EFFECT; MAX_EFFECTS],
             effect_count: 0,
             effect_depths: 0,
+            effect_joins: EffectJoins::default(),
+            effect_units: [Unit::default(); MAX_EFFECTS],
+            unit_count: 0,
+            folded: None,
             effect_textures: None,
             effect_clock: [0.0; 2],
             inverse_projection: None,
@@ -574,6 +587,8 @@ impl FrameGraph {
             .then(|| EffectPass::new(self.effect_ids, self.gpu_culling && self.samples > 1));
         self.effect_count = 0;
         self.effect_depths = 0;
+        self.unit_count = 0;
+        self.folded = None;
         self.effect_textures = None;
         // The depth step reads the depth's samples, which the new mode may change.
         self.ao_pass = None;
@@ -803,14 +818,16 @@ impl FrameGraph {
         }
     }
 
-    /// Sets the custom effects that run, in order, from the next frame on, with the sketch time and
-    /// the seconds since the frame before, and the camera's projection and its inverse. Effects run
-    /// only on the HDR path, at most [`MAX_EFFECTS`] of them. The passes are declared again only
-    /// when the number of effects or their depth reads change; new templates or uniforms change
-    /// only what the frames draw.
+    /// Sets the custom effects that run, in order, from the next frame on, joined by `joins`, with
+    /// the sketch time and the seconds since the frame before, and the camera's projection and its
+    /// inverse. Effects run only on the HDR path, at most [`MAX_EFFECTS`] of them. The passes are
+    /// declared again when the number of effects, their depth reads or their joins change, each
+    /// effect then alone until [`FrameGraph::request_pipelines`] finds its group's pipeline built;
+    /// new templates or uniforms change only what the frames draw.
     pub(crate) fn set_effects(
         &mut self,
         effects: &[Effect],
+        joins: &EffectJoins,
         clock: [f32; 2],
         projection: Option<(Mat4, Mat4)>,
     ) {
@@ -825,11 +842,12 @@ impl FrameGraph {
             .fold(0, |bits, (index, effect)| {
                 bits | (u32::from(effect.depth) << index)
             });
-        if count != self.effect_count || depths != self.effect_depths {
+        if count != self.effect_count || depths != self.effect_depths || *joins != self.effect_joins
+        {
             self.effect_count = count;
             self.effect_depths = depths;
-            self.effect_textures = None;
-            self.declared = false;
+            self.effect_joins = *joins;
+            self.plan_effects(|_| false, None);
         }
         self.effects[..count].copy_from_slice(&effects[..count]);
         self.effect_clock = clock;
@@ -842,13 +860,49 @@ impl FrameGraph {
         self.final_pass.set_tone_curve(template);
     }
 
-    /// The resource that holds the scene's color after the custom effects: the last effect's
-    /// target, or the scene color without effects. Bloom and the final pass read it.
+    /// The resource that holds the scene's color after the custom effects' passes: the last unit's
+    /// target, or the scene color without one. Bloom and the final pass read it, and the effects
+    /// that fold into the final pass.
     fn color_output(&self) -> &'static str {
-        match self.effect_count {
+        match self.unit_count {
             0 => SCENE_COLOR,
             count => EFFECT_TARGETS[count - 1],
         }
+    }
+
+    /// Plans the effects' passes: the units of the effects before `fold`, with each group whose
+    /// pipeline `built` says is built as one. When the plan changes, the passes are declared again.
+    fn plan_effects(&mut self, built: impl Fn(usize) -> bool, fold: Option<usize>) {
+        let mut units = [Unit::default(); MAX_EFFECTS];
+        let count = effects::plan_units(
+            self.effect_count,
+            &self.effect_joins,
+            built,
+            fold,
+            &mut units,
+        );
+        if count != self.unit_count || units != self.effect_units || fold != self.folded {
+            self.effect_units = units;
+            self.unit_count = count;
+            self.folded = fold;
+            self.effect_textures = None;
+            self.declared = false;
+        }
+    }
+
+    /// True when the effects from `first` on can fold into the final pass now: no bloom or FXAA
+    /// reads the image between them, and the final pass reads one texel for each pixel.
+    fn may_fold(&self) -> bool {
+        !self.bloom_wanted()
+            && !self.final_pass.fxaa()
+            && Size::Full.viewport(self.canvas, self.scale) == self.canvas
+    }
+
+    /// True when an effect from place `first` on reads the scene's depth.
+    fn folded_depth(&self, first: usize) -> bool {
+        self.effects[first..self.effect_count]
+            .iter()
+            .any(|effect| effect.depth)
     }
 
     /// Makes bloom's steps for the chain's base size on the HDR path. Its GPU objects keep their
@@ -1040,10 +1094,13 @@ impl FrameGraph {
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let resolve = self.add(resolve, Role::Resolve);
-        let final_pass = Pass::new("Final", PassKind::Fullscreen)
+        let mut final_pass = Pass::new("Final", PassKind::Fullscreen)
             .size(Size::Canvas)
             .reads(self.color_output())
             .writes(CANVAS);
+        if self.folded.is_some_and(|first| self.folded_depth(first)) {
+            final_pass = final_pass.reads(SCENE_DEPTH);
+        }
         let final_outline = with_outline(final_pass.clone()).named("FinalOutline");
         let final_pass = self.add(final_pass, Role::Final);
         let final_outline = self.add(final_outline, Role::Final);
@@ -1084,16 +1141,20 @@ impl FrameGraph {
         self.outline_passes.push(pass);
     }
 
-    /// Declares the custom effects' passes: each reads the color that the pass before it left, and
-    /// the scene's depth as every pass leaves it when it reads depth, and creates a target of its
-    /// own.
+    /// Declares the custom effects' passes, one for each unit: each reads the color that the pass
+    /// before it left, and the scene's depth as every pass leaves it when one of its effects reads
+    /// depth, and creates a target of its own.
     fn declare_effects(&mut self) {
         let mut input = SCENE_COLOR;
-        for index in 0..self.effect_count {
+        for index in 0..self.unit_count {
+            let unit = self.effect_units[index];
             let mut pass = Pass::new(EFFECT_PASSES[index], PassKind::Fullscreen)
                 .reads(input)
                 .creates(EFFECT_TARGETS[index], Target::color(effects::FORMAT));
-            if self.effects[index].depth {
+            if self.effects[unit.places()]
+                .iter()
+                .any(|effect| effect.depth)
+            {
                 pass = pass.reads(SCENE_DEPTH);
             }
             self.add(pass, Role::Effect(index as u8));
@@ -1258,8 +1319,14 @@ impl FrameGraph {
         let wanted = self.bloom_wanted();
         let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
         if let Some(pass) = self.effect_pass.as_mut() {
-            pass.request_pipelines(pipelines, &self.effects[..self.effect_count]);
+            pass.request_pipelines(
+                pipelines,
+                &self.effects[..self.effect_count],
+                &self.effect_joins,
+                pipelines_built,
+            );
         }
+        self.request_effect_joins(pipelines, pipelines_built);
         let built = match (wanted, final_bloom, self.bloom_pass.as_mut()) {
             (true, Some(final_bloom), Some(bloom)) => {
                 let (down, up) = bloom.request_pipelines(pipelines);
@@ -1288,6 +1355,34 @@ impl FrameGraph {
                 self.enable_outputs();
             }
         }
+    }
+
+    /// Asks for the pipeline of the final pass's fold build while the sketch folds effects, once
+    /// the folded effects draw alone, as a group waits (see [`EffectPass::request_pipelines`]), and
+    /// plans the effects' passes with each group and the fold whose pipeline is built.
+    fn request_effect_joins(&mut self, pipelines: &mut PipelineCache, pipelines_built: u32) {
+        let count = self.effect_count;
+        let alone = |first: usize, pipelines: &PipelineCache| {
+            self.effect_pass
+                .as_ref()
+                .is_some_and(|pass| pass.alone_built(first..count, pipelines, pipelines_built))
+        };
+        let fold = match self.effect_joins.fold_of(count) {
+            Some((first, template)) if alone(first, pipelines) => {
+                let multisampled = self.gpu_culling && self.samples > 1 && self.folded_depth(first);
+                let id = self
+                    .final_pass
+                    .request_fold(pipelines, template, multisampled);
+                (self.may_fold() && pipelines.built(id, pipelines_built)).then_some(first)
+            }
+            _ => None,
+        };
+        let pass = self.effect_pass.as_ref();
+        let built: [bool; MAX_EFFECTS] = std::array::from_fn(|place| {
+            pass.and_then(|pass| pass.group_pipeline(place))
+                .is_some_and(|id| place < count && pipelines.built(id, pipelines_built))
+        });
+        self.plan_effects(|place| built[place], fold);
     }
 
     /// Records what the graph's own passes need before the frame's passes, from copies in the
@@ -1339,6 +1434,19 @@ impl FrameGraph {
             }),
             _ => None,
         };
+        let fold = match self.folded {
+            Some(first) => Some(FoldInputs {
+                buffer: self.effect_ids.buffer,
+                depth: if self.folded_depth(first) {
+                    self.sampled_id(SCENE_DEPTH)
+                        .expect("an effect that reads depth reads the scene depth")
+                } else {
+                    self.effect_ids.blank_depth
+                },
+                multisampled: self.gpu_culling && self.samples > 1 && self.folded_depth(first),
+            }),
+            None => None,
+        };
         self.final_pass.prepare(
             list,
             arena,
@@ -1348,6 +1456,7 @@ impl FrameGraph {
             bloom,
             grading,
             outline,
+            fold,
             self.textures_made,
         )
     }
@@ -1393,7 +1502,9 @@ impl FrameGraph {
         if count == 0 {
             return Ok(());
         }
-        let sources = self.effect_textures();
+        let (colors, depth) = self.effect_textures();
+        let units = self.effect_units;
+        let unit_count = self.unit_count;
         let frame = (self.canvas, self.scale);
         let (clock, inverse, made) = (
             self.effect_clock,
@@ -1408,7 +1519,7 @@ impl FrameGraph {
             list,
             arena,
             &self.effects[..count],
-            &sources[..count],
+            (&units[..unit_count], &colors[..unit_count], depth),
             frame,
             clock,
             inverse,
@@ -1416,13 +1527,14 @@ impl FrameGraph {
         )
     }
 
-    /// The textures that each effect reads, found by name once for each compile of the graph.
-    fn effect_textures(&mut self) -> [Sources; MAX_EFFECTS] {
+    /// The color that each unit reads, and the scene depth's texture, or 0 while no effect reads
+    /// depth, found by name once for each compile of the graph.
+    fn effect_textures(&mut self) -> ([u32; MAX_EFFECTS], u32) {
         let compiles = self.graph.compiles();
-        if let Some((at, sources)) = self.effect_textures
+        if let Some((at, colors, depth)) = self.effect_textures
             && at == compiles
         {
-            return sources;
+            return (colors, depth);
         }
         let depth = if self.effect_depths != 0 {
             self.sampled_id(SCENE_DEPTH)
@@ -1430,22 +1542,19 @@ impl FrameGraph {
         } else {
             0
         };
-        let mut sources = [Sources::default(); MAX_EFFECTS];
-        for (index, slot) in sources.iter_mut().enumerate().take(self.effect_count) {
+        let mut colors = [0; MAX_EFFECTS];
+        for (index, color) in colors.iter_mut().enumerate().take(self.unit_count) {
             let input = if index == 0 {
                 SCENE_COLOR
             } else {
                 EFFECT_TARGETS[index - 1]
             };
-            *slot = Sources {
-                color: self
-                    .sampled_id(input)
-                    .expect("each effect reads a planned texture"),
-                depth,
-            };
+            *color = self
+                .sampled_id(input)
+                .expect("each effect reads a planned texture");
         }
-        self.effect_textures = Some((compiles, sources));
-        sources
+        self.effect_textures = Some((compiles, colors, depth));
+        (colors, depth)
     }
 
     /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
@@ -1605,7 +1714,7 @@ impl FrameGraph {
                                 .effect_pass
                                 .as_ref()
                                 .expect("effects run only on the HDR path")
-                                .record(list, usize::from(index))?,
+                                .record(list, self.effect_units[usize::from(index)])?,
                             role => record(list, role)?,
                         }
                     }
@@ -2440,7 +2549,7 @@ mod tests {
             values: [0.0; effects::EFFECT_FLOATS],
         };
         let chain = [effect(64, false), effect(65, true), effect(66, false)];
-        frames.set_effects(&chain, [0.0; 2], None);
+        frames.set_effects(&chain, &EffectJoins::default(), [0.0; 2], None);
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         frames.sync_views(&[View::default()]);
         let mut pipelines = PipelineCache::default();
@@ -2492,7 +2601,7 @@ mod tests {
         );
 
         // Fewer effects declare the chain again; none leave the plan as it was.
-        frames.set_effects(&[], [0.0; 2], None);
+        frames.set_effects(&[], &EffectJoins::default(), [0.0; 2], None);
         frames.set_bloom(None, ChainFrame::default());
         frames.sync_views(&[View::default()]);
         frames
@@ -2503,6 +2612,111 @@ mod tests {
     }
 
     #[test]
+    fn effects_join_once_their_group_is_built_and_fold_into_the_final_pass() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let effect = |template, depth| Effect {
+            template,
+            depth,
+            values: [0.0; effects::EFFECT_FLOATS],
+        };
+        let chain = [effect(64, false), effect(65, false), effect(66, true)];
+        let mut joins = EffectJoins::default();
+        joins.groups[1] = (2, 90);
+        let mut pipelines = PipelineCache::default();
+        // Frames after the first: a pipeline draws once a frame drew with it built.
+        let frame = |frames: &mut FrameGraph,
+                     pipelines: &mut PipelineCache,
+                     joins: &EffectJoins,
+                     built: u32,
+                     list: &mut DrawList| {
+            frames.set_effects(&chain, joins, [0.0; 2], None);
+            frames.request_pipelines(pipelines, built);
+            pipelines.create_new(list, built + 1).unwrap();
+            frames.sync_views(&[View::default()]);
+            frames.prepare(list, canvas, RenderScale::FULL).unwrap();
+            steps(frames).into_iter().flatten().collect::<Vec<String>>()
+        };
+        let effect_passes = |names: &[String]| {
+            names
+                .iter()
+                .filter(|name| name.starts_with("Effect"))
+                .count()
+        };
+        // The effects draw alone while they build, and while their group's pipeline builds after
+        // them, and then as one.
+        let names = frame(&mut frames, &mut pipelines, &joins, 5, &mut list);
+        assert_eq!(effect_passes(&names), 3);
+        assert!(pipelines.keys().iter().all(|key| key.template != 90));
+        let names = frame(&mut frames, &mut pipelines, &joins, 6, &mut list);
+        assert_eq!(effect_passes(&names), 3);
+        let names = frame(&mut frames, &mut pipelines, &joins, 7, &mut list);
+        assert_eq!(effect_passes(&names), 2);
+        let group = pipelines
+            .keys()
+            .iter()
+            .find(|key| key.template == 90)
+            .expect("the group asked for its pipeline");
+        assert_eq!(group.permutation, permutation::DEPTH_MULTISAMPLED);
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let bound: Vec<Vec<u32>> = operands(&list, Op::CreateBindGroup)
+            .into_iter()
+            .filter(|group| group[0] == 30 + MAX_EFFECTS as u32 + 1)
+            .collect();
+        assert_eq!(bound.len(), 1, "the group binds once");
+        assert_eq!(bound[0][3 + 4], effects::BUFFER_BYTES as u32);
+
+        // Folded, the group's effects leave their passes, and the final pass reads the first
+        // effect's target with its fold build, once that build's pipeline is built.
+        joins.fold = Some((1, 91));
+        let names = frame(&mut frames, &mut pipelines, &joins, 8, &mut list);
+        assert_eq!(effect_passes(&names), 2, "the fold waits for its pipeline");
+        let names = frame(&mut frames, &mut pipelines, &joins, 9, &mut list);
+        assert_eq!(effect_passes(&names), 1);
+        let fold = pipelines
+            .keys()
+            .iter()
+            .position(|key| key.template == 91)
+            .expect("the final pass asked for its fold build") as u32
+            + 1;
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+            .iter()
+            .map(|group| group[1])
+            .collect();
+        assert!(layouts.contains(&bind_layout::FINAL_EFFECTS_DEPTH_MS));
+        list.clear();
+        frames
+            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .unwrap();
+        assert!(
+            operands(&list, Op::SetPipeline)
+                .iter()
+                .any(|set| set[0] == fold)
+        );
+
+        // Bloom reads the effects' image, so nothing folds while it is on.
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        let names = frame(&mut frames, &mut pipelines, &joins, 10, &mut list);
+        assert_eq!(effect_passes(&names), 2);
+    }
+
+    #[test]
     fn the_8_bit_path_runs_no_effects() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         let effect = Effect {
@@ -2510,7 +2724,7 @@ mod tests {
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
         };
-        frames.set_effects(&[effect], [0.0; 2], None);
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
         frames.sync_views(&[View::default()]);
         assert!(frames.graph().find_pass(EFFECT_PASSES[0]).is_none());
     }

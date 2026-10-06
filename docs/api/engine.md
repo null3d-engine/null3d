@@ -438,6 +438,7 @@ type ShaderFeature =
 	| 'ao'
 	| 'background'
 	| 'bloom'
+	| 'effect_groups'
 	| 'lines'
 	| 'morph'
 	| 'skinning'

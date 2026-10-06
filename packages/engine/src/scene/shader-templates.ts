@@ -10,6 +10,8 @@ import type { CustomShader, ShaderSender } from '../shared/images';
 export class ShaderTemplates {
 	/** The first template of each compiled WGSL that the sketch used. */
 	private readonly firsts = new WeakMap<object, number>();
+	/** The template of each shader that the engine joins, by its key. */
+	private readonly joined = new Map<string, number>();
 	private next = SHADING_CUSTOM_FIRST;
 
 	/** `send` gives each template's shader to the thread that draws. */
@@ -29,5 +31,20 @@ export class ShaderTemplates {
 			this.firsts.set(compiled, first);
 		}
 		return first;
+	}
+
+	/**
+	 * The template of a shader that the thread that draws joins from compiled WGSL, such as a
+	 * group of effects, by a key that names what it joins. The first call for a key takes a
+	 * template and sends `shader` to the thread that draws.
+	 */
+	ofKey(key: string, shader: () => CustomShader): number {
+		let template = this.joined.get(key);
+		if (template === undefined) {
+			template = this.next++;
+			this.send(template, shader());
+			this.joined.set(key, template);
+		}
+		return template;
 	}
 }

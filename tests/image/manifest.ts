@@ -167,6 +167,12 @@ const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
  * no HDR target runs no effects: the page's switch that turns HDR off stands in for one, and must
  * draw the scene without them. At half the render scale the effects draw into the corners of the
  * same targets.
+ *
+ * The effects join (D-71): the fog reads only its own pixel, so it joins the color split's pass,
+ * and the group folds into the final pass, or draws as a group where bloom reads it. Each `-separate`
+ * test turns joining off with ?join=off and must draw its joined twin's image. With the fog first,
+ * the split reads the pixels beside each pixel of the fog's output, so it must not join the fog:
+ * `effects-fog-first` draws separate passes, and `effects-fog-first-joined` must draw its image.
  */
 function effectsTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -182,6 +188,22 @@ function effectsTests(): ImageTest[] {
 		test('effects-curve', '?curve'),
 		test('effects-bloom-curve', '?effects&bloom&curve'),
 		test('effects-scale-50', '?scale=0.5&effects'),
+		...(
+			[
+				['effects', '?effects'],
+				['effects-bloom-curve', '?effects&bloom&curve'],
+				['effects-scale-50', '?scale=0.5&effects'],
+			] as const
+		).map(
+			([name, query]): ImageTest => ({
+				...test(`${name}-separate`, query),
+				switches: ['join=off'],
+				reference: name,
+			}),
+		),
+		// The separate passes make this reference, and the joined effects must draw it.
+		{ ...test('effects-fog-first', '?effects&fogfirst'), switches: ['join=off'] },
+		{ ...test('effects-fog-first-joined', '?effects&fogfirst'), reference: 'effects-fog-first' },
 		{
 			...test('effects-8-bit', '?effects&curve'),
 			tiers: ['webgpu', 'webgl2'],

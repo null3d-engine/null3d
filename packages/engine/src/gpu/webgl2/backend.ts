@@ -24,6 +24,7 @@ import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../gener
 import type { DepthMode } from '../../page/switches';
 import { type GeneratorName, ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
+import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
 import {
 	forEachFallbackAttribute,
@@ -344,6 +345,10 @@ export class WebGL2Backend {
 	private readonly parallel: KHR_parallel_shader_compile | null;
 	/** Programs that may still be compiling in the background. */
 	private readonly compiling: Program[] = [];
+	/** The builds of joined effects' shaders, which never stop the engine when they fail. */
+	readonly joins: JoinedBuilds;
+	/** True once a list has replayed, after which no frame waits for a joined shader's compile. */
+	private replayed = false;
 	/**
 	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
 	 * this thread yet, by pipeline id. Each is created once its shader arrives; until then, its
@@ -488,6 +493,7 @@ export class WebGL2Backend {
 		this.copyTemplate = mipmapTemplate(shaders, 'copy');
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
+		this.joins = new JoinedBuilds(this.images.shaders);
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
 		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
 		// Float render targets, for HDR color, where the device draws them: WebGL turns them on only
@@ -574,7 +580,9 @@ export class WebGL2Backend {
 		if (this.parked.size > 0) this.unpark();
 		const compiling = this.compiling;
 		for (let k = compiling.length - 1; k >= 0; k--) {
-			if (this.compiled(compiling[k] as Program)) {
+			const program = compiling[k] as Program;
+			if (this.compiled(program)) {
+				if (program.joined) this.joinCompiled(program);
 				compiling[k] = compiling[compiling.length - 1] as Program;
 				compiling.pop();
 			}
@@ -585,13 +593,15 @@ export class WebGL2Backend {
 	/**
 	 * True when a render pipeline template can create a program of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use.
+	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
+	 * file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		let defined = this.templates[template];
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
-			if (!shader) return false;
+			if (!shader || !joinedReady(shader, this.images.shaders, this.moreShaders, 'glsl'))
+				return false;
 			// A custom material's prepass draws with its own vertex shader, as every mesh's does. A
 			// custom effect's or tone curve's template draws one triangle, as the final pass does.
 			defined =
@@ -894,6 +904,7 @@ export class WebGL2Backend {
 			}
 			i += length;
 		}
+		this.replayed = true;
 	}
 
 	/**
@@ -972,12 +983,38 @@ export class WebGL2Backend {
 			const glsl = this.need(this.templates, template, 'render pipeline template');
 			program = createProgram(this.gl, glsl, permutation);
 			this.programs.set(key, program);
-			if (background && this.parallel) {
+			const joined = this.joins.joined(template);
+			if (joined) program.joined = { template, start: performance.now(), failed: false };
+			if ((background || joined) && this.parallel) {
 				program.background = true;
 				this.compiling.push(program);
+			} else if (joined && this.replayed) {
+				// Without background compiles, the first draw would wait for the compile, so the
+				// effects stay one pass each after the first frame, which waits for every program.
+				this.joinFailed(program, 'this device compiles programs only while a draw waits');
 			}
 		}
 		return program;
+	}
+
+	/**
+	 * Notes a joined shader's program whose background compile finished: its time, or its failure
+	 * to link, which sends its effects back to a pass each.
+	 */
+	private joinCompiled(program: Program): void {
+		const joined = program.joined;
+		if (!joined || joined.failed) return;
+		if (this.gl.getProgramParameter(program.program, this.gl.LINK_STATUS) !== true)
+			this.joinFailed(program, this.gl.getProgramInfoLog(program.program) ?? 'its link failed');
+		else this.joins.built(joined.template, performance.now() - joined.start);
+	}
+
+	/** Marks a joined shader's program as failed, so its draws draw nothing, and reports it. */
+	private joinFailed(program: Program, reason: string): void {
+		const joined = program.joined;
+		if (!joined || joined.failed) return;
+		joined.failed = true;
+		this.joins.failed(joined.template, reason);
 	}
 
 	/** Makes the staging buffer hold at least `bytes`. */
@@ -2013,9 +2050,17 @@ export class WebGL2Backend {
 
 	private setPipeline(p: Pipeline): void {
 		const program = p.program;
-		this.skipDraws = !this.compiled(program);
+		this.skipDraws = program.joined?.failed === true || !this.compiled(program);
 		if (this.skipDraws) return;
-		this.useProgram(program);
+		if (program.joined) {
+			try {
+				this.useProgram(program);
+			} catch (error) {
+				this.joinFailed(program, error instanceof Error ? error.message : String(error));
+				this.skipDraws = true;
+				return;
+			}
+		} else this.useProgram(program);
 		if (this.current?.program !== program && program.textureUnits.length > 0)
 			this.unitsChanged = true;
 		this.current = p;

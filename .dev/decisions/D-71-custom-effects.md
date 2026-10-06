@@ -72,7 +72,7 @@ Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 
 ## Decision
 
 1. Effects run on HDR color after the scene passes, and before bloom and the final pass. Each effect reads the color that the pass before it left, multiplied by its coverage. It writes the same kind of color into a target of its own. Bloom and the final pass read the last effect's target. An effect that brightens a pixel therefore makes it glow, as a camera would show it.
-2. One pass per effect, in the sketch's `order`, at most 8 (`MAX_EFFECTS`). The render graph shares memory between the effects' targets. An effect's target lives until the next effect has read it, so two `rgba16float` textures serve any number of effects. A merge of per-pixel effects into one pass waits for a later change of the run-time build (see Options rejected).
+2. Effects run in the sketch's `order`, at most 8 (`MAX_EFFECTS`). An effect that reads only its own pixel joins the pass of the effect before it, and the last pass folds into the final pass when nothing reads the image between them (Joining effects into fewer passes). The render graph shares memory between the passes' targets. A pass's target lives until the next pass has read it, so two `rgba16float` textures serve any number of effects.
 3. An effect reads its own pixel (`input.color`), any other pixel (`effectPixel`, `effectColor`), and the scene's depth (`effectDepth`, `effectViewPosition`, `effectDistance`). A call to a depth function makes the build bind the depth. Effects that read no depth bind a blank texture, so the scene's render pass need not store its depth.
    - Core WebGPU with MSAA reads sample 0 of the multisampled depth, through a build with the `DEPTH_MULTISAMPLED` permutation bit (262144) and the layout `EFFECT_DEPTH_MS` (22).
    - Compatibility mode reads depth as unfilterable floats with `textureLoad`, through the layout `EFFECT` (21).
@@ -83,6 +83,48 @@ Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 
 7. Errors reuse the custom material codes. E1215 is for WGSL that the plugin did not compile as an effect or a curve, and E1216 for a wrong uniform. A ninth effect throws E1213. An order that is not a number throws E1203, and a uniform set on a removed effect E1101.
 8. The frame that adds an effect or changes the curve holds the screen until its pipelines are built (`Slot.PipelineHold`), as a preset change does. A pass whose pipeline still builds draws nothing. An effect's pass that drew nothing would leave its target blank, and the final pass would show it. Bloom and ambient occlusion instead join the frame once their pipelines are built. That suits a pass that adds to the image, but an effect replaces the image, and the curve replaces the final pass's own pipeline.
 
+### Joining effects into fewer passes
+
+The owner asked for this after the Pixel 10 figures (5 October 2026): on its WebGPU path, each extra effect pass cost about 0.33 ms of GPU time. Each pass reads and writes the whole image at 8 bytes per pixel each way. Joining effects removes that traffic. It does not change the work that the effects' own code does.
+
+What joins:
+
+- An effect joins the pass of the effect before it unless it reads its input image at other pixels, through `effectPixel` or `effectColor`. The build finds those calls as it finds the depth calls (`joins` in the compiled effect), so the sketch declares nothing. A call through a helper function counts too.
+- An effect that reads depth joins. The scene's depth does not change between effects, so it reads the same at any pixel.
+- A group starts with any effect, and the effects after it join while they read only their own pixel. So an effect that reads its neighbors starts a group, and the per-pixel effects after it join it.
+- What never joins: a per-pixel effect before an effect that reads its neighbors. Joined, the per-pixel effect would run again for every neighbor that the next effect reads. Its cost would grow with the reads instead of shrinking. The image test `effects-fog-first-joined` puts the fog before the split and must draw the separate passes' image.
+- The last group folds into the final pass when nothing reads the image between them: bloom off and FXAA off. Bloom reads the effects' image, and FXAA reads the pixels around each pixel. One per-pixel effect before the final pass is the common case, so folding saves that whole pass.
+- Folding also needs a render scale of 1. Below it, the final pass blends four texels for each pixel, so the effects would run four times per pixel. The core stops folding once it sees the scale drop. A frame that still folds there runs the effects on each texel it blends, so its image stays right.
+- Built-in passes do not join. Exposure, the tone curve, color grading and the vignette share the final pass already. Bloom, ambient occlusion, FXAA and the outline read neighbors.
+
+How the shaders are made:
+
+- The engine has no shader compiler at run time; shipping one would add about 866 KB after Brotli. So the build gives each effect a piece for each host and each build of it (`pieces.rs` in the shader crate). A piece holds the top-level items that the effect adds to the host's own build, as naga wrote them: its functions, structs and globals under a prefix of its own, its uniform loader, the library functions it calls, and the host's helpers that it calls.
+- The hosts are engine shaders that load on first use, in the feature `effect_groups`: `effect_group.wgsl`, the group's template, and `final.wgsl`'s EFFECT_CHAIN build, the fold's. Each has a chain function, and the final pass a tone curve hook. A tone curve gets a fold piece too, so a fold holds the custom curve.
+- A host binds every effect's block, an array of 8 blocks padded to 256 bytes each, the distance between blocks in the buffer. Each piece's run function takes its block's slot, the effect's place.
+- At run time the thread that draws joins a host, the pieces in order with each shared item once, and a chain that calls each piece's run function (`effect-joiner.ts`). Only text moves. The joiner loads on first use, like the hosts, so pages without joined effects download neither. The sketch thread gives each group and fold a template, keyed by its effects' templates and places.
+- naga makes names unique across a whole module, in order, so a function's argument names would depend on the functions before it. The text of a helper that two pieces share would then differ, and the joined shader would define it twice. The hosts' builds, and so the pieces', name each argument and local after its function (EFFECT_HOST). The GLSL uniform block of the blocks takes its name from a named struct, as a block named after a type's number would change with the types before it.
+
+When a join draws:
+
+- A group's or a fold's pipeline is asked for only once every effect in it draws alone. A frame that adds an effect during play waits for every pipeline that builds; a group that asked in that frame would hold it for the group's build too. Asked later, it builds in the background while its effects draw alone, and the core swaps it in once it is built (`PipelineCache::built`). No frame waits for it.
+- Before the first frame, which waits for every pipeline, a group asks at once, so the first frame draws it. Hold mode and the image tests draw that frame.
+- WebGL2 without `KHR_parallel_shader_compile` would wait for a joined program's compile at its first draw. So after the first frame such a device keeps the effects in separate passes.
+- Uniform changes need no new shader. Adding, removing or reordering effects makes a new one.
+
+Limits:
+
+- A group's size has a cap, so no joined shader grows past what drivers are known to build: the WGSL that its pieces add, 22 KB for a group and 8 KB for a fold. The group's host is about 1.7 KB and the final pass about 15.3 KB, so a joined shader stays within 24 KB. A Pixel 11's PowerVR driver failed a 50 KB shader and built its 17 KB parts, and the final pass draws on every device the engine was tested on ([implementation notes](../implementation-notes.md#browser-faults)). A driver's failure can show as a lost context rather than an error, so the cap holds before any build. A larger group splits.
+- If a joined shader still fails to build, the engine does not stop. The thread that draws writes its template to the control slot `JoinFailed`, and the sketch thread draws those effects one pass each from then on. Development builds warn.
+- Between joined effects, color stays at 32-bit float precision instead of a 16-bit target's. The images can differ very slightly from separate passes. The effect image tests pass within the usual tolerance on all three tiers and both reference sets, with joining on and with `?join=off`.
+
+Measurement:
+
+- The `?join=off` switch keeps every effect in a pass of its own. The `effects` plan uses it, so its quarter of the difference stays one pass's cost.
+- The `effects-joined` plan runs the effect cost page with 4 effects joined and with `join=off`, at render scales of 1 and 0.5 on each GPU path. At 1 they fold into the final pass; at 0.5 they draw as one group.
+- GPU time comes from WebGPU's timestamps and, new here, from `EXT_disjoint_timer_query_webgl2` on WebGL2, which most desktop browsers offer and phones mostly do not. Without a timer, the plan's heavy pair on WebGL2 draws 8 effects at the display's whole pixel ratio, so the GPU limits the frame rate, and compares frame intervals.
+- Each joined page reports how long each joined shader took to build (`joinBuilds`), which development builds keep. On WebGL2 the time ends at the frame that finds the compile done, so it counts up to a frame more.
+
 ### Why the curve does not reach the 8-bit scene shaders
 
 On the 8-bit path, each scene shader maps its own color with the `TONE_MAP` permutation bit. A custom curve there would need a build of every scene shader with the sketch's curve, in each of its permutations. That set holds the standard material, the unlit and instanced templates, skinning, morphs and every custom material. The engine has no shader compiler at run time, so the plugin would have to ship that whole set again for each curve. One WebGL2 set with morphs already takes 21 to 24 KB after Brotli. Custom materials would also need to know the sketch's curve when the plugin builds them, and they are built one WGSL at a time. A curve change during play would build every scene pipeline again.
@@ -92,7 +134,10 @@ The move to HDR costs less. Compatibility mode with MSAA is the only 8-bit path 
 ## Options rejected
 
 - Effects after the tone curve, on display color, as three.js's `ShaderPass` after `OutputPass` sees it. Bloom would not see what the effects add, the 8-bit color would band in dark effects, and the October review placed effects in HDR. A port of a three.js pass that assumes display color adjusts its numbers instead (porting docs).
-- Merging per-pixel effects into the final pass now. Each set of effects would need a final pass built with their functions together. The plugin builds each WGSL alone, at build time, so the build cannot know which effects a sketch runs at once. A run-time merge needs the engine to join WGSL at run time on both paths. That is a larger change. A pass costs about 0.05 ms of GPU time on the Mac and about 0.33 ms on the Pixel 10 (Timings on the Mac), which decide whether it pays.
+- The shader compiler at run time, to join effects' WGSL and write GLSL there. It would add about 866 KB after Brotli, for a saving that text joining gives.
+- One shader for all of a sketch's effects, with a loop over the effects that a uniform lists and a switch on each. It needs no build per order, but every pixel pays the loop and the switch, and the plugin builds each WGSL alone, so it cannot know a sketch's effects.
+- Joining a per-pixel effect into the pass of a neighbor reader after it. The per-pixel effect would run once for every pixel that the reader samples.
+- Only a fallback after a failed build, without a cap. Some drivers report a shader that is too large as a lost context, not as an error.
 - An effect `stage` option (`'hdr'` or `'final'`), as the early docs drew it. One stage keeps one model: every effect sees HDR color, and the tone curve hook covers what a `'final'` effect would map.
 - A `name` option. The returned `Effect` is the handle, so a name added nothing.
 - A curve with uniforms. Its build joins the final pass, whose uniform block is fixed. Curves that three.js offers need no uniforms beyond the exposure, which the engine applies earlier.

@@ -42,6 +42,15 @@
 #   custom_tone_curves  True for the one shader that custom tone curves build with, the final
 #              pass: the shader compiler adds a curve's WGSL after its last line, and builds every
 #              variant but its HALF builds with the shader def CUSTOM_TONE_CURVE.
+#   effect_group_host  True for the one shader that hosts joined custom effects. The shader
+#              compiler builds each effect's piece with it: the effect's WGSL after its last line,
+#              with the shader def EFFECT_PIECE. The engine joins pieces into its builds at run
+#              time. Every variant of a host has the shader def EFFECT_HOST, which makes the build
+#              name each function's arguments and locals after the function, so that a piece's
+#              text reads the same in every build that holds it.
+#   effect_fold_host  True for the one shader that hosts custom effects and a custom tone curve
+#              folded into the final pass, which the shader compiler builds pieces with as for
+#              `effect_group_host`. A curve's piece builds with EFFECT_PIECE_CURVE.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -220,6 +229,33 @@ custom_effects = true
 pipelines.main = { vertex = "effect_vs", fragment = "effect_fs" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+# The host of joined custom effects: one triangle over a group's target, which runs the group's
+# effects one after another for each pixel. The engine joins the effects' pieces into its builds
+# at run time. It builds for WebGPU and WebGL2; an effect's piece that reads depth builds with
+# DEPTH_MULTISAMPLED too, on WebGPU.
+[shaders.effect_group]
+file = "effect_group.wgsl"
+by_device = true
+effect_group_host = true
+pipelines.main = { vertex = "effect_vs", fragment = "effect_fs" }
+variants.webgpu = { defs = ["EFFECT_HOST"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "EFFECT_HOST"], targets = ["glsl"] }
+
+# The final pass that hosts folded custom effects and a folded custom tone curve, from the final
+# pass's file. The engine folds only without FXAA, bloom and the HALF builds, so it has no
+# permutations.
+[shaders.final_effects]
+file = "final.wgsl"
+by_device = true
+effect_fold_host = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["EFFECT_CHAIN", "EFFECT_HOST"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "EFFECT_CHAIN", "EFFECT_HOST"], targets = ["glsl"] }
+
+# A page downloads both hosts the first time effects join or fold.
+[first_use.effect_groups]
+shaders = ["effect_group", "final_effects"]
 
 # One step of bloom's mip chain: a 13-tap step down or a tent step up, as its uniform block says.
 # Each step reads its source with a linear filter. A step up blends over its own level.

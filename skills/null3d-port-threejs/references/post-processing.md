@@ -1,6 +1,6 @@
 # Porting post-processing
 
-three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, ambient occlusion at half size before the opaque pass, and mip-chain bloom. Custom effects (0.2) run after the scene and before bloom, a full-screen pass each, on HDR color. One final pass then merges bloom, tone mapping, FXAA, dithering, outlines, color grading and the vignette. You port settings, and custom shaders as effects. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
+three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, ambient occlusion at half size before the opaque pass, and mip-chain bloom. Custom effects (0.2) run after the scene and before bloom, on HDR color; the engine joins per-pixel effects into few passes. One final pass then merges bloom, tone mapping, FXAA, dithering, outlines, color grading and the vignette. You port settings, and custom shaders as effects. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
 Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. So are `bloom`, `ao`, `outline`, `lut`, `vignette`, custom effects with `post.addEffect` and custom tone curves (0.2). Custom passes (`render.addPass`) come later in 0.2. The port's report lists each effect it dropped.
 
@@ -58,7 +58,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `VignetteEffect` (`offset`, `darkness`) | `vignette: { offset, darkness }` (0.2): the `ESKIL` technique's meanings; tune the numbers for the default technique |
 | `SSAOEffect`, N8AO | `ao` (0.2) |
 | `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
-| `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2), section 6. Each effect is a pass of its own, so put the per-pixel ones of a chain in one effect |
+| `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2), section 6. Effects that read only their own pixel join into one pass, so each can stay an effect of its own |
 | `DepthOfFieldEffect`, `GodRaysEffect` | A custom effect (0.2) that reads `effectDepth`, where essential |
 | `SSREffect` | Not in 1.0 |
 | `OutlineEffect` (`visibleEdgeColor`, `hiddenEdgeColor`, `xRay`, `resolutionScale`, `blur`, `pulseSpeed`) | `outline: { color, hiddenColor, width }` (0.2): a crisp line. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`; `xRay: false` becomes `hiddenColor: false`. The edge is one texel of the effect's mask, so `width` is about 1 / `resolutionScale` (2 at the default 0.5). `blur` and `pulseSpeed` have no setting: list them as visible differences |
@@ -117,7 +117,7 @@ For the `bloom()` node, take `UnrealBloomPass`'s row and divide the intensity by
 
 ## 6. Custom effects (0.2)
 
-A custom effect is WGSL that declares `fn effect(input: EffectInput) -> vec4f`. The engine runs it once for each pixel, in a full-screen pass of its own. Engine docs `porting/threejs-postprocessing` hold a worked `RGBShiftShader` port and a depth fog. Port a `ShaderPass` in these steps:
+A custom effect is WGSL that declares `fn effect(input: EffectInput) -> vec4f`. The engine runs it once for each pixel, in a full-screen pass that it shares with the per-pixel effects after it. Engine docs `porting/threejs-postprocessing` hold a worked `RGBShiftShader` port and a depth fog. Port a `ShaderPass` in these steps:
 
 1. Translate the fragment shader (`references/shaders.md`). `texture2D(tDiffuse, vUv)` becomes `input.color`. A read at another place becomes `effectColor(uv)`, and an exact texel `effectPixel(vec2i(p))`. `resolution` and `time` uniforms become `input.size` and `input.time`.
 2. Depth reads become `effectDepth(uv)`, which is reversed: 1 at the near plane, 0 at the far plane and where nothing drew. `perspectiveDepthToViewZ(...)` becomes `effectViewPosition(uv).z`, and `-viewZ` becomes `effectDistance(uv)`.
@@ -126,7 +126,7 @@ A custom effect is WGSL that declares `fn effect(input: EffectInput) -> vec4f`. 
 5. Pass the WGSL to `post.addEffect({ wgsl, uniforms, order })`. It must be a template literal after `/* wgsl */`, or a `.wgsl` import; plain text throws E1215. A wrong uniform name fails the type check, and throws E1216 at run time.
 6. `pass.uniforms.x.value = v` becomes `post.setEffectUniform(fx, 'x', v)`, which allocates nothing. `pass.enabled = false` becomes `post.removeEffect(fx)`.
 7. Keep the chain's order with `order`: effects run from the lowest to the highest, and ties in the order they were added. At most 8 run at once; a ninth throws E1213.
-8. Merge the per-pixel effects of one chain into one `effect` function. Each effect costs a full read and write of the image.
+8. Keep each look an effect of its own: the engine joins the ones that read only their own pixel. Put an effect that reads other pixels, such as a blur, first in its chain, since it starts a new pass.
 
 ```ts
 // three.js ShaderPass: uniform float amount; tDiffuse; vUv

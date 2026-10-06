@@ -6,11 +6,19 @@
 // The chain keeps the effects in run order and gives the core the effects from the first place
 // that changed. A uniform's new value goes to the core with its effect's other uniforms, through
 // the core's block of effect values, so setting a uniform every frame allocates nothing.
+//
+// The chain also joins effects (D-71). An effect that reads its input image at its own pixel alone
+// joins the group of the effect before it, so the group draws in one pass, and the last group
+// folds into the final pass. The chain gives each group and the fold a template of its own, whose
+// shader the thread that draws joins from the effects' pieces, and tells the core. A group's size
+// has a cap, the WGSL that its pieces add to their host, so no joined shader grows past the size
+// that drivers are known to build; a larger group splits.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { EFFECT_DEPTH, EFFECT_FLOATS, EFFECT_MAX } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
+import type { EffectPieces, PieceBuilds } from '../gpu/effect-join';
 import { fromHex } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
 import type { CoreMemory } from './memory';
@@ -68,6 +76,10 @@ export class Effect<Values = UniformValues<string>> {
 		readonly template: number,
 		/** @internal True when it reads the scene's depth. */
 		readonly depth: boolean,
+		/** @internal True when it joins the effect before it: it reads its own pixel alone. */
+		readonly joins: boolean,
+		/** @internal The WGSL that its pieces add to a group's host and to the final pass's. */
+		readonly pieceSizes: PieceSizes,
 		/** @internal Its uniforms by name. */
 		readonly uniforms: ReadonlyMap<string, EffectUniform>,
 		/** @internal Its order value. */
@@ -94,13 +106,49 @@ interface CompiledEffect extends CompiledWgsl {
 	readonly kind: 'effect';
 	readonly uniforms: readonly EffectUniform[];
 	readonly depth: boolean;
+	readonly joins: boolean;
 	readonly variants: ShaderVariants;
+	readonly pieces: EffectPieces;
 }
 
 /** A custom tone curve's WGSL as the plugin compiles it. */
 interface CompiledToneCurve extends CompiledWgsl {
 	readonly kind: 'toneCurve';
 	readonly variants: ShaderVariants;
+	readonly pieces: EffectPieces;
+}
+
+/** The characters of WGSL that a shader's pieces add to each host, at most over its builds. */
+interface PieceSizes {
+	readonly group: number;
+	readonly fold: number;
+}
+
+/**
+ * The most WGSL that the pieces of one group may add to its host, in characters, and the most that
+ * the pieces of a fold, effects and tone curve, may add to the final pass. A joined shader then
+ * stays within 24 KB: the group's host takes about 1.7 KB and the final pass about 15.3 KB. The
+ * shader that failed to build on a Pixel 11's PowerVR driver held 50 KB, and its 17 KB parts built
+ * there; the final pass draws on every device that the engine was tested on. A driver's failure
+ * can show as a lost context rather than an error, so the cap holds before any build.
+ */
+export const GROUP_PIECES_CAP = 22 * 1024;
+export const FOLD_PIECES_CAP = 8 * 1024;
+
+/** The characters of WGSL that `builds` add, at most over the builds. */
+function piecesSize(builds: PieceBuilds): number {
+	let most = 0;
+	for (const build of Object.values(builds)) {
+		let size = 0;
+		for (const item of build.wgsl?.items ?? build.glsl?.items ?? []) size += item.length;
+		most = Math.max(most, size);
+	}
+	return most;
+}
+
+/** The characters of WGSL that pieces add to each host. */
+function sizesOf(pieces: EffectPieces): PieceSizes {
+	return { group: piecesSize(pieces.group), fold: piecesSize(pieces.fold) };
 }
 
 /** The numbers each type of uniform takes. */
@@ -193,10 +241,18 @@ export class EffectChain {
 	/** The core's block of one effect's uniforms, through a view made again after memory grew. */
 	private block: Float32Array | undefined;
 	private generation = -1;
+	/** The custom tone curve, which a fold holds: its first template and its pieces' size. */
+	private curve: { readonly template: number; readonly sizes: PieceSizes } | undefined;
+	/** The size of each compiled effect's or curve's pieces, found once. */
+	private readonly sizes = new WeakMap<object, PieceSizes>();
+	/** The joined shaders whose pipelines failed to build, whose effects draw alone. */
+	private readonly failed = new Set<number>();
 
 	constructor(
 		private readonly core: CoreMemory,
 		private readonly templates: ShaderTemplates,
+		/** False when each effect draws in a pass of its own, as ?join=off asks. */
+		private readonly join = true,
 	) {}
 
 	/** True while at least one effect runs. */
@@ -221,9 +277,23 @@ export class EffectChain {
 			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		const template = this.templates.of(compiled, () => [
-			{ kind: 'effect', variants: compiled.variants, locations: [], textures: 0 },
+			{
+				kind: 'effect',
+				variants: compiled.variants,
+				locations: [],
+				textures: 0,
+				pieces: compiled.pieces,
+			},
 		]);
-		const effect = new Effect(template, compiled.depth, uniforms, order, this.added);
+		const effect = new Effect(
+			template,
+			compiled.depth,
+			compiled.joins,
+			this.sizesOf(compiled, compiled.pieces),
+			uniforms,
+			order,
+			this.added,
+		);
 		const first = options.uniforms ?? {};
 		for (const name in first) {
 			const value = (first as Record<string, UniformValue | undefined>)[name];
@@ -270,6 +340,8 @@ export class EffectChain {
 		const { core } = this;
 		if (wgsl === undefined) {
 			core.check(core.glue.setToneCurve(0), call, undefined, true);
+			this.curve = undefined;
+			this.sendJoins(call);
 			return;
 		}
 		if (typeof wgsl !== 'object' || wgsl?.kind !== 'toneCurve')
@@ -281,10 +353,95 @@ export class EffectChain {
 			);
 		const curve = wgsl as CompiledToneCurve;
 		const template = this.templates.of(curve, () => [
-			{ kind: 'final', variants: curve.variants, locations: [], textures: 0 },
+			{
+				kind: 'final',
+				variants: curve.variants,
+				locations: [],
+				textures: 0,
+				pieces: curve.pieces,
+			},
 			{ kind: 'finalBloom', variants: curve.variants, locations: [], textures: 0 },
 		]);
 		core.check(core.glue.setToneCurve(template), call, undefined, true);
+		this.curve = { template, sizes: this.sizesOf(curve, curve.pieces) };
+		this.sendJoins(call);
+	}
+
+	/**
+	 * Draws the effects of the joined shader of template `template` alone from now on, after its
+	 * pipeline failed to build.
+	 */
+	dropJoin(template: number): void {
+		if (this.failed.has(template)) return;
+		this.failed.add(template);
+		this.sendJoins('the joined effects');
+	}
+
+	/** The size of a compiled shader's pieces, found once. */
+	private sizesOf(compiled: object, pieces: EffectPieces): PieceSizes {
+		let sizes = this.sizes.get(compiled);
+		if (!sizes) {
+			sizes = sizesOf(pieces);
+			this.sizes.set(compiled, sizes);
+		}
+		return sizes;
+	}
+
+	/**
+	 * Tells the core how the effects join: each group, which starts with any effect and takes the
+	 * effects after it that join while its pieces stay within the cap, and the last group's fold
+	 * into the final pass, with the tone curve, while its pieces stay within the fold's cap. Each
+	 * group and fold gets the template of its joined shader.
+	 */
+	private sendJoins(call: string): void {
+		const { chain, core } = this;
+		let place = 0;
+		let last = 0;
+		while (place < chain.length) {
+			let end = place + 1;
+			let size = (chain[place] as Effect).pieceSizes.group;
+			while (this.join && end < chain.length) {
+				const next = chain[end] as Effect;
+				if (!next.joins || size + next.pieceSizes.group > GROUP_PIECES_CAP) break;
+				size += next.pieceSizes.group;
+				end++;
+			}
+			const template = end - place >= 2 ? this.joinedTemplate('effectGroup', place, end) : 0;
+			core.check(core.glue.setEffectGroup(place, end - place, template), call, undefined, true);
+			for (let inside = place + 1; inside < end; inside++)
+				core.check(core.glue.setEffectGroup(inside, 0, 0), call, undefined, true);
+			last = place;
+			place = end;
+		}
+		let fold = 0;
+		if (this.join && chain.length > 0) {
+			let size = this.curve?.sizes.fold ?? 0;
+			for (let k = last; k < chain.length; k++) size += (chain[k] as Effect).pieceSizes.fold;
+			if (size <= FOLD_PIECES_CAP) fold = this.joinedTemplate('effectFold', last, chain.length);
+		}
+		core.check(core.glue.setEffectFold(last, fold), call, undefined, true);
+	}
+
+	/**
+	 * The template of the shader that joins the effects from place `from` up to `to`, in a group
+	 * or, with the tone curve, in a fold. Its key names each effect's template at its place, which
+	 * is its block's slot.
+	 */
+	private joinedTemplate(kind: 'effectGroup' | 'effectFold', from: number, to: number): number {
+		const members = this.chain
+			.slice(from, to)
+			.map((effect, k) => ({ template: effect.template, slot: from + k }));
+		const curve = kind === 'effectFold' ? this.curve?.template : undefined;
+		const key = `${kind} ${members.map((m) => `${m.template}@${m.slot}`).join(' ')} ${curve ?? ''}`;
+		const template = this.templates.ofKey(key, () => ({
+			kind,
+			variants: {},
+			locations: [],
+			textures: 0,
+			members,
+			curve,
+		}));
+		return this.failed.has(template) ? 0 : template;
 	}
 
 	/** Gives the core every effect from place `from` on, and drops the places after the last. */
@@ -297,6 +454,7 @@ export class EffectChain {
 		}
 		const { core } = this;
 		core.check(core.glue.setEffect(chain.length, 0, 0), call, undefined, true);
+		this.sendJoins(call);
 	}
 
 	/** Gives the core one effect at its place, with its uniforms. */

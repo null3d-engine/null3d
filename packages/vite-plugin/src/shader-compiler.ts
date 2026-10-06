@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import type {
 	CompiledTexture,
 	CompiledUniform,
+	EffectPieces,
 	ShaderVariant,
 	WgslPipeline,
 } from './shader-types.ts';
@@ -133,8 +134,12 @@ export interface EffectBuild {
 	readonly uniforms: readonly CompiledUniform[];
 	/** True when the effect reads the scene's depth. */
 	readonly depth: boolean;
+	/** True when the effect joins the effect before it. */
+	readonly joins: boolean;
 	/** The template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/** The pieces that the engine joins into its hosts. */
+	readonly pieces: EffectPieces;
 }
 
 /** The result of a custom effect's or tone curve's compile. */

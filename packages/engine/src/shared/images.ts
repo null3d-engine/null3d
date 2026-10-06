@@ -20,8 +20,15 @@
 
 import { messageOf } from '../errors/message';
 import type { ShaderVariants } from '../generated/shaders';
+import type { EffectPieces } from '../gpu/effect-join';
 import { Slot } from './control';
 import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
+
+/** An effect of a group or a fold: the template of its own shader, and the slot of its block. */
+export interface JoinedEffect {
+	readonly template: number;
+	readonly slot: number;
+}
 
 /**
  * A shader of the sketch's compiled WGSL, as the thread that draws builds its pipelines: its
@@ -31,14 +38,25 @@ import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from '.
 export interface CustomShader {
 	/**
 	 * What the shader draws: a custom effect's pass, or the final pass with a custom tone curve,
-	 * which binds as the final pass does, or as its bloom build does. A shader without a kind
-	 * draws a custom material's meshes.
+	 * which binds as the final pass does, or as its bloom build does. A group of joined effects
+	 * binds as an effect does, and the final pass with effects folded into it binds the effects'
+	 * buffer and the scene's depth too. A shader without a kind draws a custom material's meshes.
 	 */
-	readonly kind?: 'effect' | 'final' | 'finalBloom';
+	readonly kind?: 'effect' | 'final' | 'finalBloom' | 'effectGroup' | 'effectFold';
+	/**
+	 * The shader's builds. A group's or a fold's are empty until the thread that draws joins them
+	 * from its effects' pieces, at its first pipeline.
+	 */
 	readonly variants: ShaderVariants;
 	readonly locations: readonly number[];
 	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */
 	readonly textures: number;
+	/** An effect's or a tone curve's pieces, which groups and folds join. */
+	readonly pieces?: EffectPieces;
+	/** A group's or a fold's effects, in the order they run. */
+	readonly members?: readonly JoinedEffect[];
+	/** The template of the custom tone curve that a fold holds, if any. */
+	readonly curve?: number;
 }
 
 /** The names of the generators that fill textures on the GPU: `room`, the built-in room. */

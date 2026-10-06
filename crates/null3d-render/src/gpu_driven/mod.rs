@@ -190,7 +190,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 mod ids {
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
-    use crate::effects::MAX_EFFECTS;
+    use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
@@ -337,10 +337,11 @@ mod ids {
     pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_SEGMENTS;
     /// The bind group of each step of ambient occlusion, after the joint texture's.
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
-    /// The bind group of each custom effect, after ambient occlusion's.
+    /// The bind group of each custom effect, and of each group of joined effects, after ambient
+    /// occlusion's.
     pub const EFFECT_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
     /// The bind groups of materials' maps, after the effects'.
-    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -754,6 +755,7 @@ impl GpuDrivenRenderer {
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
         self.graph.set_effects(
             self.settings.effects(),
+            self.settings.effect_joins(),
             self.settings.clock_seconds(),
             self.settings.camera_projection(input.canvas),
         );

@@ -1485,7 +1485,7 @@
       "status": "manual",
       "since": "0.2",
       "target": "post.addEffect({ wgsl, uniforms, order })",
-      "notes": "Rewrite the fragment shader in WGSL as fn effect(input: EffectInput) -> vec4f. texture2D(tDiffuse, vUv) becomes effectColor(input.uv), and pass.uniforms.x.value = v becomes post.setEffectUniform(effect, 'x', v). Each effect is a full-screen pass of its own, so put several per-pixel looks in one effect. Effects run on linear HDR color before the tone curve. A ShaderPass after OutputPass sees display color, so retune its numbers. The uv's y axis is flipped: replace vUv.y with 1.0 - input.uv.y where direction matters.",
+      "notes": "Rewrite the fragment shader in WGSL as fn effect(input: EffectInput) -> vec4f. texture2D(tDiffuse, vUv) becomes effectColor(input.uv), and pass.uniforms.x.value = v becomes post.setEffectUniform(effect, 'x', v). The engine joins effects that read only their own pixel into one pass. Effects run on linear HDR color before the tone curve. A ShaderPass after OutputPass sees display color, so retune its numbers. The uv's y axis is flipped: replace vUv.y with 1.0 - input.uv.y where direction matters.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bShaderPass\\b"
     },

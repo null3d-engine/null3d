@@ -140,6 +140,39 @@ export interface CompiledMaterial<
 	readonly baseColor: boolean;
 }
 
+/** The top-level items that a custom effect's or tone curve's piece adds to a WGSL host. */
+export interface WgslPiece {
+	readonly items: readonly string[];
+	/** The function that the engine's chain or hook calls. */
+	readonly run: string;
+}
+
+/**
+ * The top-level items that a piece adds to a GLSL fragment shader of a host, and the uniform
+ * blocks and textures that it adds or reads differently.
+ */
+export interface GlslPiece extends WgslPiece {
+	readonly uniformBlocks: readonly GlslUniformBlock[];
+	readonly textures: readonly GlslTexture[];
+}
+
+/** One build of a piece, for each backend that the host's build targets. */
+export interface ShaderPiece {
+	/** The permutation bits of the host's build that the piece joins. */
+	readonly permutation: number;
+	readonly wgsl: WgslPiece | null;
+	readonly glsl: GlslPiece | null;
+}
+
+/**
+ * The pieces that the engine joins into its hosts at run time, by the name of the host's build:
+ * for the host of joined effects, and for the final pass that effects and a tone curve fold into.
+ */
+export interface EffectPieces {
+	readonly group: Readonly<Record<string, ShaderPiece>>;
+	readonly fold: Readonly<Record<string, ShaderPiece>>;
+}
+
 /**
  * A custom effect from a project's modules, which `post.addEffect` draws with: WGSL that declares
  * `fn effect(input: EffectInput) -> vec4f`, built into every variant of the engine's effect
@@ -158,8 +191,13 @@ export interface CompiledEffect<
 	}[keyof Uniforms & string][];
 	/** True when the effect reads the scene's depth. */
 	readonly depth: boolean;
+	/** True when the effect reads its input image at its own pixel alone, so it joins the effect
+	 * before it. */
+	readonly joins: boolean;
 	/** The effect template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/** The pieces that the engine joins into its hosts. */
+	readonly pieces: EffectPieces;
 }
 
 /**
@@ -172,4 +210,6 @@ export interface CompiledToneCurve {
 	readonly kind: 'toneCurve';
 	/** The final pass's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/** The pieces that the engine folds into the final pass. */
+	readonly pieces: EffectPieces;
 }

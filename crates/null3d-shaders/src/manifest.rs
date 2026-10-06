@@ -86,6 +86,13 @@ pub struct Shader {
     /// pass.
     #[serde(default)]
     pub custom_tone_curves: bool,
+    /// True for the shader that hosts joined custom effects, which effects' pieces build with.
+    #[serde(default)]
+    pub effect_group_host: bool,
+    /// True for the shader that hosts custom effects and a custom tone curve folded into the final
+    /// pass, which their pieces build with.
+    #[serde(default)]
+    pub effect_fold_host: bool,
 }
 
 /// The entry points of one render pipeline.

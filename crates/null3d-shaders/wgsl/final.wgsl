@@ -30,6 +30,15 @@
 // `fn toneCurve(color: vec3f) -> vec3f`, after this file's last line, and builds every variant with
 // the shader def CUSTOM_TONE_CURVE. The pass clamps what the curve returns to 0 to 1.
 //
+// The EFFECT_CHAIN builds host the custom effects that fold into the final pass: the last group of
+// effects, when nothing reads the image between them and the final pass (see `effect_group.wgsl`).
+// The engine makes a fold's shader at run time from such a build and the effects' pieces: it puts
+// the pieces before `effect_chain` and writes in its place a chain that calls them in order. Each
+// pixel then reads its scene color through the chain before the tone mapping. A custom tone curve
+// folds the same way, through `tone_curve_hook`. The engine folds only without FXAA and bloom, and
+// at the whole canvas's scale, where each pixel reads the one texel it covers; below it, the chain
+// would run on each of the four texels that a pixel blends.
+//
 // Last, the pass grades each pixel's display color, as three.js's LUTPass and VignetteShader do
 // after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
 // table is a 3D texture that maps a display color to its graded color, read with a linear filter.
@@ -166,6 +175,149 @@ fn with_glow(texel: vec4f, light: vec4f) -> vec4f {
 }
 #endif
 
+#ifdef EFFECT_CHAIN
+/// What the engine writes for each effect, as `effect_group.wgsl` lays it out.
+struct EffectBlock {
+    size: vec4f,
+    clock: vec4f,
+    inverse_projection: mat4x4f,
+    u0: vec4f,
+    u1: vec4f,
+    u2: vec4f,
+    u3: vec4f,
+    u4: vec4f,
+    u5: vec4f,
+    u6: vec4f,
+    u7: vec4f,
+    spare0: vec4f,
+    spare1: vec4f,
+}
+
+/// Every effect's block, as `effect_group.wgsl` holds them.
+struct EffectBlocks {
+    blocks: array<EffectBlock, 8>,
+}
+
+@group(0) @binding(4) var<uniform> effect_blocks: EffectBlocks;
+#ifdef EFFECT_DEPTH
+#ifdef DEPTH_MULTISAMPLED
+@group(0) @binding(5) var effect_depth_texture: texture_multisampled_2d<f32>;
+#else
+@group(0) @binding(5) var effect_depth_texture: texture_2d<f32>;
+#endif
+#endif
+
+/// What an effect reads for each pixel, as `effect_group.wgsl` declares it.
+struct EffectInput {
+    color: vec4f,
+    uv: vec2f,
+    pixel: vec2f,
+    size: vec2f,
+    time: f32,
+}
+
+/// Vector `part` of the uniforms in the block at `slot`.
+fn effect_value_at(slot: u32, part: u32) -> vec4f {
+    let block = effect_blocks.blocks[slot];
+    switch part {
+        case 0u: { return block.u0; }
+        case 1u: { return block.u1; }
+        case 2u: { return block.u2; }
+        case 3u: { return block.u3; }
+        case 4u: { return block.u4; }
+        case 5u: { return block.u5; }
+        case 6u: { return block.u6; }
+        default: { return block.u7; }
+    }
+}
+
+/// The texel of the scene color that holds the image's pixel `pixel`, counted from the top left.
+fn effect_texel(pixel: vec2i) -> vec2i {
+    let last = vec2i(effect_blocks.blocks[0].size.xy) - 1;
+    let inside = clamp(pixel, vec2i(0), last);
+#ifdef WEBGL2
+    return vec2i(inside.x, i32(effect_blocks.blocks[0].size.w) - 1 - inside.y);
+#else
+    return inside;
+#endif
+}
+
+/// The scene color of the image's pixel `pixel`, counted from the top left.
+fn effectPixel(pixel: vec2i) -> vec4f {
+    return textureLoad(scene_color, effect_texel(pixel), 0);
+}
+
+/// The scene color at `uv` on the image, read with a linear filter.
+fn effectColor(uv: vec2f) -> vec4f {
+    let render = effect_blocks.blocks[0].size.xy;
+    var at = clamp(uv * render, vec2f(0.5), render - 0.5);
+#ifdef WEBGL2
+    at.y = effect_blocks.blocks[0].size.w - at.y;
+#endif
+    return textureSampleLevel(scene_color, lut_sampler, at / effect_blocks.blocks[0].size.zw, 0.0);
+}
+
+#ifdef EFFECT_DEPTH
+/// The scene's depth at `uv`, as `effect_group.wgsl` reads it.
+fn effectDepth(uv: vec2f) -> f32 {
+    let pixel = vec2i(floor(uv * effect_blocks.blocks[0].size.xy));
+    return textureLoad(effect_depth_texture, effect_texel(pixel), 0).x;
+}
+
+/// The view-space position of the surface at `uv`.
+fn effectViewPosition(uv: vec2f) -> vec3f {
+    let clip = vec4f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, effectDepth(uv), 1.0);
+    let p = effect_blocks.blocks[0].inverse_projection * clip;
+    return p.xyz / p.w;
+}
+
+/// The distance in front of the camera of the surface at `uv`, in world units.
+fn effectDistance(uv: vec2f) -> f32 {
+    return -effectViewPosition(uv).z;
+}
+#endif
+
+/// The folded effects, one after another. The engine writes its own chain in this function's
+/// place; a piece's build calls the piece once, from the first block.
+fn effect_chain(input: EffectInput) -> vec4f {
+#ifdef EFFECT_PIECE
+    return effect_piece_run(input, 0u);
+#else
+    return input.color;
+#endif
+}
+
+/// The tone curve. The engine writes a folded custom curve in this function's place; without one,
+/// it is the built-in curve.
+fn tone_curve_hook(color: vec3f) -> vec3f {
+#ifdef EFFECT_PIECE_CURVE
+    return saturate(effect_piece_curve(color));
+#else
+    return null3d::tonemap::tone_map(color, settings.output);
+#endif
+}
+
+/// The scene color's texel at `texel` after the folded effects, no brighter than a 16-bit float
+/// holds, as `scene_texel` reads it.
+fn effected_texel(texel: vec2i) -> vec4f {
+    let first = effect_blocks.blocks[0];
+    let position = vec2f(texel) + 0.5;
+#ifdef WEBGL2
+    let from_top = vec2f(position.x, first.size.w - position.y);
+#else
+    let from_top = position;
+#endif
+    var input: EffectInput;
+    input.color = textureLoad(scene_color, texel, 0);
+    input.size = first.size.xy;
+    input.pixel = from_top;
+    input.uv = from_top / first.size.xy;
+    input.time = first.clock.x;
+    let color = effect_chain(input);
+    return vec4f(limit_hdr(color.rgb), color.a);
+}
+#endif
+
 /// The scene color's texel at `pixel`, no brighter than a 16-bit float holds. The scene shaders
 /// write no brighter color, but additive blending can add past it, and some GPUs store the sum as
 /// infinity, which the tone mapping curves would turn into black.
@@ -276,9 +428,13 @@ fn pixel_color(position: vec2f) -> vec4f {
     return unsqueeze(select(outer, inner, outer_luma < lowest || outer_luma > highest));
 }
 #else
-/// The scene color of the pixel at `position`.
+/// The scene color of the pixel at `position`, after the folded effects.
 fn pixel_color(position: vec2f) -> vec4f {
+#ifdef EFFECT_CHAIN
+    return effected_texel(vec2i(position));
+#else
     return scene_texel(vec2i(position));
+#endif
 }
 #endif
 
@@ -296,7 +452,11 @@ fn display(texel: vec4f, pixel: vec2f) -> vec4f {
 #ifdef CUSTOM_TONE_CURVE
     let mapped = saturate(toneCurve(texel.rgb / coverage));
 #else
+#ifdef EFFECT_CHAIN
+    let mapped = tone_curve_hook(texel.rgb / coverage);
+#else
     let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings.output);
+#endif
 #endif
     let encoded = saturate(null3d::tonemap::encode(mapped, pixel));
     return vec4f(encoded * coverage, coverage);
@@ -366,7 +526,13 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let corner = vec2f(f32(tap & 1u), f32(tap >> 1u));
         let weights = mix(1.0 - share, share, corner);
         let texel = corner_texel(min(first + corner, render - 1.0), size);
+#ifdef EFFECT_CHAIN
+        // The engine folds effects at the whole canvas's scale. A frame below it, before the
+        // engine stops folding, still runs the effects on each texel that the pixel blends.
+        let texel_color = with_glow(effected_texel(texel), light);
+#else
         let texel_color = with_glow(scene_texel(texel), light);
+#endif
         color += weights.x * weights.y * display(texel_color, position.xy);
     }
     return grade(outlined(color, uv, size, render), position.xy, size);

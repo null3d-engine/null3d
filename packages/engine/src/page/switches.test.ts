@@ -26,6 +26,7 @@ describe('parseSwitches', () => {
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
+			join: true,
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,

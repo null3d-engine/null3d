@@ -385,6 +385,7 @@ export class SketchRunner {
 			device.occlusionTargets,
 			materials.shaders,
 			templates,
+			device.joinEffects,
 		);
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
@@ -913,6 +914,8 @@ export class SketchRunner {
 			this.gpuEpoch = epoch;
 		}
 		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
+		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
 		if (glue.cullFrame(frame, width, height, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);

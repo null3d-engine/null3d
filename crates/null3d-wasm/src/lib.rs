@@ -530,6 +530,32 @@ pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
     })
 }
 
+/// Draws the `length` custom effects from place `index` on as one group, with the joined shader
+/// of render pipeline template `template`, from the next frame on, once its pipeline is built.
+/// Template 0 ends the group that starts at `index`.
+#[wasm_bindgen(js_name = setEffectGroup)]
+pub fn set_effect_group(index: u32, length: u32, template: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_effect_group(index as usize, length as usize, template);
+        0
+    })
+}
+
+/// Folds the custom effects from place `index` on into the final pass, with the final pass's
+/// build of render pipeline template `template`, from the next frame on, while nothing reads the
+/// image between them. Template 0 folds none.
+#[wasm_bindgen(js_name = setEffectFold)]
+pub fn set_effect_fold(index: u32, template: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_effect_fold(index as usize, template);
+        0
+    })
+}
+
 /// Makes the final pass map HDR color with the custom tone curve whose compiled WGSL has render
 /// pipeline templates from `template` on, from the next frame on: the pass's build at `template`
 /// and its bloom build at the next. Template 0 returns to the tone mapping that `setOutput` sets.

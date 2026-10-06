@@ -8,7 +8,7 @@ import { type LabelRegion, labelBytes, labelRegion } from './labels';
 /** Int32 slots of the control block, read as `Slot.Running`. */
 export * as Slot from './slot';
 
-const SLOT_COUNT = 31;
+const SLOT_COUNT = 32;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

@@ -1,10 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Eight more set what the
+// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Nine more set what the
 // benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
 // shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
 // without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for occlusion
-// culling, and ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU. ?hold
+// culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU, and
+// ?join=off for custom effects in a pass each, none joined. ?hold
 // starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
 // running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
 
@@ -118,6 +119,11 @@ export interface Switches {
 	 * cells skipped first, for benchmarks that measure what cell culling saves.
 	 */
 	cells: boolean;
+	/**
+	 * False when ?join=off keeps each custom effect in a pass of its own, with none joined into a
+	 * group or folded into the final pass, for pages that measure what joining saves.
+	 */
+	join: boolean;
 	/**
 	 * True when ?prepass=on turns the depth prepass on, false when ?prepass=off turns it off, and
 	 * undefined to leave it to the page's option and the quality preset.
@@ -244,6 +250,7 @@ export function parseSwitches(search: string): Switches {
 		hdr: params.get('hdr') !== 'off',
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
+		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
 		vertexSkinning: params.get('skinning') === 'vertex',
