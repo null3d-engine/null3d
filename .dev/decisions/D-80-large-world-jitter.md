@@ -38,7 +38,13 @@ Each range covers WebGPU, compatibility mode and WebGL2. `bun run --cwd tests te
 | Mac, Safari 26.6.2 | WebGPU | under 0.0001 px (own 0.2007) | 3.4993 px at 1,000 km, 7.7509 px at 6,378 km | 2026-10-05 |
 | Mac, Safari 26.6.2 | WebGL2 | under 0.0001 px (own 0.1996) | 3.4998 px at 1,000 km, 7.7503 px at 6,378 km | 2026-10-05 |
 | iPad, Safari | | | | |
+| Galaxy S25, Chrome 149 (Adreno 830) | WebGPU and WebGL2 | under 0.0001 px (own 0.2007 and 0.1996) | 3.4993 and 3.4998 px at 1,000 km, 7.7509 and 7.7503 px at 6,378 km | 2026-10-06 |
+| Galaxy Tab A9 Plus, Chrome 149 (Adreno 619) | WebGPU and WebGL2 | under 0.0001 px (own 0.2007 and 0.1996) | as the S25 | 2026-10-06 |
+| Pixel 9, Chrome 149 (Mali-G715) | WebGPU and WebGL2 | under 0.0001 px (own 0.2007 and 0.1996) | as the S25 | 2026-10-06 |
+| Galaxy M32, Chrome 149 (Mali-G57 MC3) | WebGL2; its WebGPU adapter offers compatibility mode only | under 0.0001 px (own 0.1996) | 3.4998 px at 1,000 km, 7.7503 px at 6,378 km | 2026-10-06 |
 | Galaxy S24+, Chrome 154 (Xclipse 940, ANGLE on Vulkan) | WebGL2; the phone has no WebGPU adapter | under 0.0001 px (own 0.2001) | 3.5002 px at 1,000 km, 7.7508 px at 6,378 km | 2026-10-05 |
+
+The phones on BrowserStack Automate ran the runner's `jitter` plan, runs 20261006-005305-jitter and 20261006-005648-jitter. Each phone gave the Mac's figures to four decimals on each GPU path. Each GPU path still gave its own frames: the squares' first centers differ between WebGPU and WebGL2 by a thousandth of a pixel. The squares face the camera, and the GPUs draw 4 samples per pixel at the standard sample places. So every GPU covers the same share of each pixel. SwiftShader places its samples elsewhere, and gives its own figures.
 
 ## Decision
 
