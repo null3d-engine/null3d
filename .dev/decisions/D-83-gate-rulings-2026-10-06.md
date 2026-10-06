@@ -37,6 +37,7 @@ The owner decides. [Releases](../releases.md#m1-exit-gate) says that every item 
 | 10 | The coordinator may finish the gate without the owner. It starts a full CI run on the final main commit, then merges the gate's records and marks M1 done. If anything fails or needs judgement, it stops and leaves a summary for the owner | [Releases](../releases.md#what-the-gate-still-needs) |
 | 11 | The receiver plane of #257 may get a rewrite of its math, as long as it looks the same. On the iPad the plane costs 1.19 ms per frame in S4 at Low, which is more than the whole rise | [Releases](../releases.md#what-the-gate-still-needs) |
 | 12 | If that rewrite wins back most of the cost but not all, the rest is accepted as #257's cost, and the gate's GPU time item closes after the rewrite's iPad run | [Releases](../releases.md#what-the-gate-still-needs) |
+| 13 | The gate accepts the iPad's GPU time and closes the item. The rewrite of the receiver plane (#371) won back only about 0.1 ms. With #371, main takes 1.42 ms (15%) more than the gate's older build on the iPad: about 1.1 ms for #257's receiver plane, which the owner keeps, and about 0.3 ms for #359 (ruling 8). S4 at Low still holds 60 fps with about a third of the frame spare. A new M2 task, proposed as M2-R25 for the owner to confirm, finds why the receiver plane costs so much on Apple GPUs, and a cheaper method | [Releases](../releases.md#reruns-on-the-gate-commit-fdf14a28) |
 
 The items that run again on the new gate commit:
 
@@ -58,3 +59,4 @@ The coordinator chose the new gate commit on 6 October 2026: fdf14a28. It is the
 - D-06's T-28 target points to this record.
 - The S24+'s T-28 rows on the gate commit read as a pass.
 - The gate's final pass runs on the main commit of the last browser fix to merge.
+- A new M2 task is proposed as M2-R25, for the owner to confirm. It finds why the receiver plane of #257 costs about 1.1 ms on Apple GPUs, and a cheaper method.
