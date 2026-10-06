@@ -121,7 +121,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
 #endif
     let found = find_instance(i);
 #ifdef MORPH
-    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, vec3f(0.0), vec4f(1.0)));
+    var source = Morphed(mesh_position(v.position), v.normal, vec3f(0.0), vec4f(1.0));
+#ifdef VERTEX_COLOR
+    source.color = v.vertex_color;
+#endif
+    let rest = morph_vertex(found, v.morph, source);
     let rest_position = rest.position;
     let rest_normal = rest.normal;
 #else
@@ -163,7 +167,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
 #endif
 #ifdef VERTEX_COLOR
+#ifdef MORPH
+    out.vertex_alpha = rest.color.a;
+#else
     out.vertex_alpha = v.vertex_color.a;
+#endif
 #endif
 #ifdef ALPHA_HASH
     out.mesh_place = mesh_position(v.position);
