@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>indirect hang</title>
+<canvas width="320" height="180"></canvas>
+<script type="module">
+// Minimal WebGPU page: one render pass with a large instanced draw, then a small one that reads
+// its instances from the same buffer further on. Switches: n (instances of the large draw),
+// mode (indirect, direct), order (big-first, small-first), split (1 = a new pass for the second draw).
+const q = new URLSearchParams(location.search);
+const n = Number(q.get('n') ?? 100000);
+const mode = q.get('mode') ?? 'indirect';
+const order = q.get('order') ?? 'big-first';
+const split = q.get('split') === '1';
+const sep = q.get('sep') === '1';
+const report = async (r) => {
+	document.title = JSON.stringify(r);
+	await fetch('/__null3d/report?name=indirect-hang', { method: 'POST', body: JSON.stringify({ ...r, n, mode, order, split, sep, url: location.href }) });
+};
+try {
+	const adapter = await navigator.gpu.requestAdapter();
+	const device = await adapter.requestDevice();
+	let lost = null;
+	device.lost.then((info) => { lost = info.message || info.reason; });
+	const format = 'rgba8unorm';
+	const target = device.createTexture({ size: [320, 180], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+	const module = device.createShaderModule({ code: `
+struct Out {
+  @builtin(position) clip: vec4f,
+  @location(0) a: vec4f,
+  @location(1) b: vec4f,
+  @location(2) c: vec4f,
+  @location(3) @interpolate(flat) d: u32,
+}
+@vertex fn vs(@location(0) corner: vec2f, @location(1) place: vec4f, @location(2) color: vec4f) -> Out {
+  var o: Out;
+  o.clip = vec4f(place.xy + corner * place.zw, 0.5, 1.0);
+  o.a = color; o.b = place; o.c = vec4f(corner, 0.0, 1.0); o.d = 1u;
+  return o;
+}
+@fragment fn fs(i: Out) -> @location(0) vec4f { return i.a * f32(i.d) + i.b * 0.0 + i.c * 0.0; }
+` });
+	const pipeline = device.createRenderPipeline({
+		layout: 'auto',
+		vertex: { module, entryPoint: 'vs', buffers: [
+			{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
+			{ arrayStride: 64, stepMode: 'instance', attributes: [
+				{ shaderLocation: 1, offset: 0, format: 'float32x4' },
+				{ shaderLocation: 2, offset: 16, format: 'float32x4' },
+			] },
+		] },
+		fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+		primitive: { topology: 'triangle-list' },
+	});
+	const make = (data, usage) => {
+		const b = device.createBuffer({ size: Math.ceil(data.byteLength / 4) * 4, usage: usage | GPUBufferUsage.COPY_DST });
+		device.queue.writeBuffer(b, 0, data);
+		return b;
+	};
+	const corners = make(new Float32Array([-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5]), GPUBufferUsage.VERTEX);
+	const indices = make(new Uint16Array([0, 1, 2, 0, 2, 3]), GPUBufferUsage.INDEX);
+	// The large draw's instances, then one more for the small draw: 16 floats each.
+	const rows = new Float32Array((n + 1) * 16);
+	let seed = 7;
+	const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+	for (let k = 0; k <= n; k++) {
+		const big = k < n;
+		rows.set([rnd() * 2 - 1, rnd() * 1.6 - 0.8, big ? 0.01 : 0.3, big ? 0.01 : 0.2, rnd(), rnd(), rnd(), 1], k * 16);
+	}
+	const instances = make(rows, GPUBufferUsage.VERTEX);
+	const indirect = make(new Uint32Array([6, n, 0, 0, 0, 6, 1, 0, 0, 0]), GPUBufferUsage.INDIRECT);
+	const smallIndirect = make(new Uint32Array([6, 1, 0, 0, 0]), GPUBufferUsage.INDIRECT);
+	device.pushErrorScope('validation');
+	const encoder = device.createCommandEncoder();
+	const draws = order === 'big-first' ? ['big', 'small'] : ['small', 'big'];
+	let pass;
+	const begin = (load) => {
+		pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: load, clearValue: [0.06, 0.08, 0.1, 1], storeOp: 'store' }] });
+		pass.setPipeline(pipeline);
+		pass.setVertexBuffer(0, corners);
+		pass.setIndexBuffer(indices, 'uint16');
+	};
+	begin('clear');
+	draws.forEach((which, k) => {
+		if (k > 0 && split) { pass.end(); begin('load'); }
+		const big = which === 'big';
+		pass.setVertexBuffer(1, instances, big ? 0 : n * 64, big ? n * 64 : 64);
+		const viaIndirect = mode === 'indirect' || (mode === 'big-indirect' && big) || (mode === 'small-indirect' && !big);
+		if (viaIndirect) pass.drawIndexedIndirect(sep && !big ? smallIndirect : indirect, big ? 0 : sep ? 0 : 20);
+		else pass.drawIndexed(6, big ? n : 1);
+	});
+	pass.end();
+	const readback = device.createBuffer({ size: 1280 * 180, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+	encoder.copyTextureToBuffer({ texture: target }, { buffer: readback, bytesPerRow: 1280 }, [320, 180]);
+	const start = performance.now();
+	device.queue.submit([encoder.finish()]);
+	const invalid = await device.popErrorScope();
+	const done = await Promise.race([
+		device.queue.onSubmittedWorkDone().then(() => 'done'),
+		new Promise((r) => setTimeout(() => r('timeout'), 25000)),
+	]);
+	const ms = Math.round(performance.now() - start);
+	let nonzero = null;
+	if (done === 'done') {
+		try {
+			await readback.mapAsync(GPUMapMode.READ);
+			const bytes = new Uint8Array(readback.getMappedRange());
+			nonzero = bytes.reduce((s, b) => s + (b ? 1 : 0), 0);
+		} catch (e) { nonzero = String(e); }
+	}
+	await report({ ok: done === 'done' && !lost && !invalid, done, ms, lost, nonzero, invalid: invalid?.message });
+} catch (e) {
+	await report({ ok: false, error: String(e) });
+}
+</script>
