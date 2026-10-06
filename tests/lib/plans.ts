@@ -1608,7 +1608,7 @@ export function restartProblems(
 		problems.push(
 			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
 		);
-	else if (threaded && (result.room ?? 0) - again.room > ROOM_LOST_ONCE)
+	else if (threaded && (result.room ?? 0) - (again.roomLater ?? again.room) > ROOM_LOST_ONCE)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}: ${lostText}, and for ${again.roomLater} after ${again.cycles} more, more than the ${ROOM_LOST_ONCE} that lost address space explains`,
 		);
