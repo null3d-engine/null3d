@@ -11,6 +11,7 @@ import {
 	environmentNamed,
 	type ImageRun,
 	imageProblems,
+	runIn,
 	tiersOf,
 } from '../lib/images.ts';
 import { loadResult } from '../lib/page-result.ts';
@@ -27,8 +28,8 @@ const timeoutOf = (runs: readonly ImageRun[]) =>
 	runs.reduce((sum, run) => sum + run.timeoutSeconds + LOAD_SECONDS, 0) * 1000;
 
 /**
- * Opens the page of each run in turn, and returns what is wrong with their images, each problem
- * with the mode or tier of its run. The runs of a test on a tier share one candidate, so an earlier
+ * Opens the page of each run in turn, as the environment draws it, and returns what is wrong with
+ * their images, each problem with the mode or tier of its run. The runs of a test on a tier share one candidate, so an earlier
  * run's goes before any runs.
  */
 async function runProblems(
@@ -42,7 +43,11 @@ async function runProblems(
 	const results = new Map<string, ItemResult>();
 	const problems: string[] = [];
 	for (const run of runs) {
-		const result = await loadResult(page, run.path, run.timeoutSeconds * 1000);
+		const result = await loadResult(
+			page,
+			runIn(run, place.environment).path,
+			run.timeoutSeconds * 1000,
+		);
 		results.set(run.id, result);
 		const first = run.sameAs === undefined ? undefined : results.get(run.sameAs);
 		const found = result.ok

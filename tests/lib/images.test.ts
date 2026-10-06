@@ -23,6 +23,7 @@ import {
 	readPng,
 	referenceFileProblems,
 	referenceOf,
+	runIn,
 	TOLERANCE,
 	writePng,
 } from './images.ts';
@@ -56,6 +57,7 @@ const TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		devices: ['ipad'],
 		expect: { visible: [1, 2] },
+		swiftShaderSwitches: ['n=2', 'far=on'],
 	},
 ];
 const RUNS = imageRuns(TESTS);
@@ -194,6 +196,18 @@ describe('the runs of a test', () => {
 		// A test that names its own preset draws with it alone.
 		expect(run('grid-compat').path).toBe('/pages/grid.html?gpu=compat&preset=low');
 		expect(run('grid-compat').mode).toBeUndefined();
+	});
+
+	it("adds a test's SwiftShader switches only where SwiftShader draws", () => {
+		expect(runIn(run('grid-compat'), 'chromium-swiftshader').path).toBe(
+			'/pages/grid.html?gpu=compat&preset=low&n=2&far=on',
+		);
+		expect(runIn(run('grid-compat'), 'chrome-real-gpu').path).toBe(
+			'/pages/grid.html?gpu=compat&preset=low',
+		);
+		expect(runIn(run('boxes-webgpu-pipelined'), 'chromium-swiftshader')).toBe(
+			run('boxes-webgpu-pipelined'),
+		);
 	});
 
 	it('names the first mode, which every later mode on the tier must match', () => {
