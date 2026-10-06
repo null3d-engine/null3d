@@ -67,7 +67,20 @@ The Mac ran both figures on 6 October 2026, in headless Chrome 154 on its GPU, a
 | Default | 0.242 ms | 0.510 ms | 0.268 ms |
 | Low | 0.229 ms | 0.508 ms | 0.279 ms |
 
-Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 ms. On the cloud Pixel 10's WebGPU (5 October 2026), 4 effects raised GPU time from 2.10 to 3.41 ms, about 0.33 ms a pass. The iPad's run of the `effects` plan is still pending: `bun tests/real-browsers.ts --plan effects --lan ipad-safari`.
+Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 ms. The iPad's run of the `effects` plan is still pending: `bun tests/real-browsers.ts --plan effects --lan ipad-safari`.
+
+### Timings on the cloud Pixel 10
+
+The cloud Pixel 10 (PowerVR, Chrome 149) ran the `effects` plan on the branch's final build on 6 October 2026 (run `20261006-002702-effects`, 4 of 4 pages passed). WebGL2 has no GPU timer there.
+
+| Page | GPU time, no effects | 4 effects | One pass | CPU time, no effects | 4 effects |
+| --- | --- | --- | --- | --- | --- |
+| WebGPU, scale 1 | 2.10 ms | 3.34 ms | 0.31 ms | 0.60 ms | 0.66 ms |
+| WebGPU, scale 0.5 | 2.82 ms | 3.80 ms | 0.25 ms | 0.57 ms | 0.61 ms |
+| WebGL2, scale 1 | | | | 0.49 ms | 0.48 ms |
+| WebGL2, scale 0.5 | | | | 0.51 ms | 0.49 ms |
+
+With the framebuffer fix (CPU time on WebGL2, above), 4 effects add no CPU time on WebGL2. The run of 5 October 2026 had found 0.33 ms a pass on WebGPU.
 
 ## Decision
 
