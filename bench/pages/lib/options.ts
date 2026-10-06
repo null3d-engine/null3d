@@ -40,6 +40,11 @@ export interface RunOptions {
 	shadowMapSize: number | null;
 	shadowFilter: number | null;
 	/**
+	 * `?shadowCascadeBlend=`: the share of each shadow cascade that blends into the next, from 0 to
+	 * 0.5, to measure what the band costs, or null for the preset's.
+	 */
+	shadowCascadeBlend: number | null;
+	/**
 	 * False with `?governor=off`, which keeps the quality governor off in a null3D scene that turns
 	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
 	 */
@@ -139,6 +144,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 		shadowCascades: readNumber(params, 'shadowCascades', whole, 'a cascade count from 1 to 4'),
 		shadowMapSize: readNumber(params, 'shadowMapSize', whole, 'a size such as 2048'),
 		shadowFilter: readNumber(params, 'shadowFilter', whole, 'a filter size of 3 or 5'),
+		shadowCascadeBlend: readNumber(
+			params,
+			'shadowCascadeBlend',
+			(v) => Number.isFinite(v) && v >= 0 && v <= 0.5,
+			'a share from 0 to 0.5',
+		),
 		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
 	};
 }

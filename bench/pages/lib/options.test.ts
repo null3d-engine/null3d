@@ -17,6 +17,7 @@ describe('readRunOptions', () => {
 			shadowCascades: null,
 			shadowMapSize: null,
 			shadowFilter: null,
+			shadowCascadeBlend: null,
 			governor: true,
 		});
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
@@ -30,6 +31,7 @@ describe('readRunOptions', () => {
 			shadowCascades: null,
 			shadowMapSize: null,
 			shadowFilter: null,
+			shadowCascadeBlend: null,
 			governor: true,
 		});
 		expect(read('?shadowCascades=2&shadowMapSize=1024&shadowFilter=5')).toMatchObject({
@@ -37,6 +39,7 @@ describe('readRunOptions', () => {
 			shadowMapSize: 1024,
 			shadowFilter: 5,
 		});
+		expect(read('?shadowCascadeBlend=0').shadowCascadeBlend).toBe(0);
 		expect(read('?soak=30').soak).toBe(30);
 		expect(read('?hold=3.25').hold).toBe(3.25);
 		expect(read('?hold=0').hold).toBe(0);
