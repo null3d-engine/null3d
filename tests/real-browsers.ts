@@ -101,7 +101,8 @@
 //                       crashes again soon after the last crash, and only a person can reopen it
 //   --front             browser apps on a Mac open in front, at the window size they choose. Without
 //                       it, they open in the background, and Safari's and Firefox's runner windows
-//                       move to a small window in the main display's corner, except in timed plans
+//                       move almost wholly past the main display's left edge, at a small size, or at
+//                       their own size in timed plans
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
 // results depend on. After a fixed plan, it prints each browser's row for the record of tested
 // devices, from what the runner page found about its browser, device and GPU. A runner whose name
@@ -130,7 +131,14 @@ import {
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
-import { type AppWindow, appWindow, PLACED_APPS, placeInCorner } from './lib/app-window.ts';
+import {
+	type AppWindow,
+	appWindow,
+	frontApp,
+	giveFocusBack,
+	PARKED_APPS,
+	parkWindow,
+} from './lib/app-window.ts';
 import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
 import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
 import type { CloudSessions } from './lib/cloud-sessions.ts';
@@ -560,27 +568,31 @@ const imageDevice = (runner: LaunchedRunner) =>
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
 
-/** The apps whose runner window did not move to the corner in this run, which the tool told once. */
-const unplaced = new Set<string>();
+/** The apps whose runner window did not move in this run, which the tool told once. */
+const unparked = new Set<string>();
 
 /**
  * Opens the runner page in a browser app and says whether it did. On a Mac, a launch that hangs,
  * as behind a first-launch prompt on a machine that nobody watches, fails after a minute instead
  * of stopping the whole run. There the app opens in the background unless the run asks for the
- * front, and the runner window of an app that the tool can move goes to the main display's corner.
+ * front, and the runner window of an app that the tool can move goes almost wholly past the main
+ * display's left edge. Should the app take focus all the same, the app in front before gets it back.
  * On Linux, the app's command by its name in lowercase opens the page: the first call starts the
  * browser, which keeps running, and a later call hands the page to it.
  */
 function openApp({ app, window }: AppLaunch, url: string): boolean {
 	try {
 		if (process.platform === 'darwin') {
+			const before = window?.background ? frontApp() : undefined;
 			const background = window?.background ? ['-g'] : [];
 			execFileSync('open', [...background, '-a', app, url], { timeout: OPEN_TIMEOUT_MS });
-			const why = window?.corner && PLACED_APPS.has(app) ? placeInCorner(app, url) : undefined;
-			if (why && !unplaced.has(app)) {
-				unplaced.add(app);
+			const why =
+				window?.park && PARKED_APPS.has(app) ? parkWindow(app, url, window.small) : undefined;
+			if (why && !unparked.has(app)) {
+				unparked.add(app);
 				console.log(`${app}: its runner window stays where the app put it: ${why}`);
 			}
+			giveFocusBack(before);
 		} else {
 			const command = execFileSync('which', [slug(app)], { encoding: 'utf8' }).trim();
 			spawn(command, [url], { detached: true, stdio: 'ignore' })
