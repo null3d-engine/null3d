@@ -1,5 +1,4 @@
 import { expect, type Page, test } from '@playwright/test';
-import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
 import {
 	isFirstUseShaderPart,
@@ -48,16 +47,10 @@ async function workersCannotDraw(page: Page): Promise<void> {
  * frame loop. The engine must still run after its start, at whatever rate the machine draws. A busy
  * runner can slow every frame of a short measurement, which says nothing about what these tests
  * check. The tests that run each thread mode check the pace, and so do those that wake the threads
- * with messages, on a real GPU.
+ * with messages. On a software GPU no test checks it, as the GPU sets the pace there.
  */
 const notPacing: EngineChecks = { pacing: false };
 
-/**
- * The engine checks of the tests without Atomics.waitAsync, whose threads wake each other with a
- * message for each frame. On a real GPU they check the pace too. On CI's software GPU the GPU sets
- * the pace, not the messages: a busy runner drew those frames at medians of 42 to 50 ms.
- */
-const wakeChecks: EngineChecks = { pacing: defaultEnvironment() === 'chrome-real-gpu' };
 /**
  * The fewest frames that the tests without Atomics.waitAsync count after the pause, to show that
  * its end woke the threads. The page counts until they come, however slowly the GPU draws them.
@@ -418,7 +411,7 @@ for (const mode of THREADED_MODES) {
 		await restoreWaitAsync(page);
 		expect(result.error).toBeUndefined();
 		expect(result.report.atomicsWaitAsync).toBe(false);
-		expect(engineProblems(result, mode, 'webgl2', wakeChecks)).toEqual([]);
+		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
 		expect(result.pause?.paused.frames, 'frames computed during the pause').toBe(0);
 		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThanOrEqual(
 			RESUMED_FRAMES,
