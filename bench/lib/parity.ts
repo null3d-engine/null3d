@@ -121,8 +121,11 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -prepass, the depth prepass, for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
- * wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * end in -prepass, the depth prepass, for those that end in -one-pass and -two-pass, S2's boxes
+ * see-through and double-sided in one draw or in two, for those that end in -hash, S2's boxes with
+ * the alpha hash, for those that end in -timed, the time of each WebGL call, and for those that end
+ * in -synced, that time with a wait for the browser's GPU process after each call, and the GPU
+ * interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -138,6 +141,12 @@ const PAGES = {
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
 	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
 	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
+	'null3d-webgpu-one-pass': { folder: 'null3d', switches: 'gpu=webgpu&sides=one', api: 'webgpu' },
+	'null3d-webgl2-one-pass': { folder: 'null3d', switches: 'gpu=webgl2&sides=one', api: 'webgl2' },
+	'null3d-webgpu-two-pass': { folder: 'null3d', switches: 'gpu=webgpu&sides=two', api: 'webgpu' },
+	'null3d-webgl2-two-pass': { folder: 'null3d', switches: 'gpu=webgl2&sides=two', api: 'webgl2' },
+	'null3d-webgpu-hash': { folder: 'null3d', switches: 'gpu=webgpu&alpha=hash', api: 'webgpu' },
+	'null3d-webgl2-hash': { folder: 'null3d', switches: 'gpu=webgl2&alpha=hash', api: 'webgl2' },
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
 		folder: 'null3d',

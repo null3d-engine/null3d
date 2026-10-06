@@ -62,9 +62,17 @@ So `rg11b10ufloat` cannot turn alpha into coverage. PlayCanvas reads the specifi
 
 WebGPU builds a pipeline that draws depth only with no fragment stage, which the depth template never needed. The cutout templates need theirs to discard, so their templates keep it (`depthFragment`). Before that, every masked caster on WebGPU cast its whole shape, with no error.
 
+### Shader builds and compile time
+
+The new files hold 1,648 builds: alpha to coverage's, the hash's and the cutout's, across every module of every device. The engine's shader builds grew from about 1,570 to 3,217. A page builds only the pipelines its materials use: one per masked material kind and one per masked caster kind.
+
+- The Mac ran the image pages in Chrome one at a time, three runs each, at a load of about 6. A whole page with the new pipelines took 0.42 to 0.48 s from its start to its held frame. The same page with the plain mask, as on main, took 0.41 to 0.48 s. The new pipelines add no time that the Mac shows.
+- The shaders test page compiles every build, in parts of at most 150 GLSL programs, so its parts went from 8 to 15. On CI's software GPU each part takes 13 to 19 s. The browser job's shard weights move so that the shard that holds them stays at about main's longest shard: `PWTEST_SHARD_WEIGHTS` from `233:310:174:109:150:118:175` to `233:310:174:109:145:105:193`. From main's CI times of 5 October 2026, the longest shard estimates at 9.7 minutes of tests, against 10.3 on main. The job's limit is 15 minutes.
+- Phones compile more slowly. The cold start of a page with masked materials on the cloud phones and the iPad is one of the device runs below.
+
 ### Cost
 
-The S2 timing of the second draw waits for a quiet window: `?sides=two` against `?sides=one` (Benchmarks, "Double-sided see-through objects"). The iPad and the cloud Galaxy S25 time it on the GPU, with the alpha hash's `discard` on the iPad.
+The S2 timing of the second draw waits for a quiet window: the pages `-two-pass` against `-one-pass` take turns in one run (Benchmarks, "Double-sided see-through objects"). The iPad and the cloud Galaxy S25 time it on the GPU, with the alpha hash's `discard` (`-hash` against S2 as it is) on the iPad.
 
 ## Options
 
