@@ -20,8 +20,10 @@ How do `mesh.destroy()` and `prefab.destroy()` free a mesh whose vertices share 
 | GPU bytes of meshes after 10 and after 100 rounds of the memory test (a fox, a morphed face and a scene with stored trees, each round loaded, copied, drawn and destroyed) | 1,488,896 and 1,488,896 | 1,488,896 and 19,504,896 | M5 Max, Chrome, WebGPU |
 | Texture GPU bytes and WebAssembly memory, round 10 and round 100 | The same at both | Not measured: the run stopped at the mesh bytes | M5 Max, Chrome, WebGPU and WebGL2; SwiftShader |
 | The picture of a scene whose plain, morphed and skinned meshes stay after others are destroyed, against the same scene made without them | Identical, every pixel | | M5 Max and SwiftShader, Chrome: WebGPU, compatibility mode, WebGL2 |
+| Time of a removal from 2,000 meshes of 1,089 vertices (70 MB of vertices), WebGPU's layout of one shared buffer per format: the first mesh, the first 50 meshes | 4.0 ms and 6.2 ms; 68 MB to 70 MB to upload again | Nothing moves or uploads | M5 Max, native release build |
+| The same removals, WebGL2's layout of pages of 65,535 vertices | 0.3 ms and 0.07 ms; 2.1 MB and 0.35 MB to upload again | Nothing moves or uploads | M5 Max, native release build |
 
-How the data was produced: `tests/image/destroy-memory.spec.ts` and `tests/image/destroy.spec.ts` on 2026-10-05, on the Mac's GPU and with `CI=1` on SwiftShader. The "not freed" column is the memory test with `prefab.destroy()` changed to skip the meshes for one run.
+How the data was produced: `tests/image/destroy-memory.spec.ts` and `tests/image/destroy.spec.ts` on 2026-10-05, on the Mac's GPU and with `CI=1` on SwiftShader. The "not freed" column is the memory test with `prefab.destroy()` changed to skip the meshes for one run. The removal times come from the `removal_timings` test of `crates/null3d-render/src/meshes.rs` in a release build, on 2026-10-06. Other work shared the Mac, with its load between 6 and 20, so the times are rough. On WebGL2 the pages bound the cost: a removal moves only the meshes after it in its own page. In the shared buffer, every mesh after the removed one moves, so destroys belong between levels.
 
 ## Options
 
@@ -44,6 +46,5 @@ Option 1. It is the only option that meets the first rule for any order of loads
 ## Consequences
 
 - Engine: `MeshGeometry.destroy`, `Prefab.destroy`, `geometry.memoryBytes`, error E1111. A failed glTF load also frees its meshes and its rig.
-- Core: `MeshStorage::remove`, `FrameBuilder::remove_meshes`, `SceneQueries::forget_meshes`, `Occluders::forget`, `Animations::remove_skeleton`, and the glue calls `destroyMesh`, `destroySkeleton` and `meshMemoryBytes`.
+- Core: `MeshStorage::remove`, `FrameBuilder::remove_meshes`, `SceneQueries::forget_meshes`, `Occluders::forget`, `Animations::remove_skeleton`, and the glue calls `destroyMeshes`, `destroySkeleton` and `meshMemoryBytes`.
 - Docs: `api/geometry` (Destroying a mesh), `api/assets` (Freeing a model), `concepts/assets`, E1111, the `dispose` mapping entry. Skills: the develop skill's quick reference and performance notes.
-- Known gap, outside this record: a new engine on the canvas of a destroyed WebGL2 engine does not start (E1405). So the destroy test page draws its two engines on two canvases.
