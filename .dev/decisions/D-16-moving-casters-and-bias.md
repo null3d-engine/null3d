@@ -472,4 +472,15 @@ The owner ruled on 6 October 2026, at about 23:55 (rulings 11 and 12). The plane
 ### Consequences
 
 - The image tests of the sun's shadows, S2, S4, the lit materials and the cascade seam passed against the existing references, with none changed: 92 of 92 on the Mac's GPU and 92 of 92 on SwiftShader. The shadow checks, contact, turn and moving shadow specs passed too: 96 of 96 on the Mac's GPU, and 93 with 3 skipped on SwiftShader.
-- The iPad's figures for the cheaper form follow in this record once the iPad has run it.
+- On the owner's iPad Pro 11-inch (Safari 26.6.2), S4 at Low on WebGPU with the governor off, the cheaper form wins back about 0.1 ms. Five builds ran in turns, 30 s each, 2 rounds, all at 60 fps, and every run passed the shadow image check. GPU time per frame, the mean of the 2 rounds:
+
+  | Build | GPU ms per frame |
+  | --- | --- |
+  | gr-a11: the older commit f46c0686, with the new GPU timer | 9.68 |
+  | gr-q3: main at 8699fab4e without #353, with the cascade loop fix | 10.79 |
+  | gr-q3p: gr-q3 with the cheaper form | 10.71 |
+  | gr-m0: main at 90729ce39 | 11.20 |
+  | gr-m: gr-m0 with the cheaper form | 11.10 |
+
+  Main with the cheaper form takes 1.42 ms (15%) more than the older commit. The plane takes about 1.1 ms of that, and #359's far layers about 0.3 ms. S4 at Low still holds 60 fps, with about a third of the frame spare. The runs are 20261006-160634-bench to 20261006-163236-bench.
+- The owner ruled on 7 October 2026, at about 00:40 ([D-83](D-83-gate-rulings-2026-10-06.md), ruling 13): the cost is accepted, and the gate's GPU item closes. A new task, proposed as M2-R25, finds why the plane costs this much on Apple GPUs, and a cheaper method.
