@@ -102,6 +102,10 @@
 //   --attended         someone is at the devices of --lan, so a plan whose pages end their tab,
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
+//   --front             browser apps on a Mac open in front, at the window size they choose. Without
+//                       it, they open in the background, and Safari's and Firefox's runner windows
+//                       move almost wholly past the main display's left edge, at a small size, or at
+//                       their own size in timed plans
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
 // results depend on. After a fixed plan, it prints each browser's row for the record of tested
 // devices, from what the runner page found about its browser, device and GPU. A runner whose name
@@ -130,6 +134,14 @@ import {
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
+import {
+	type AppWindow,
+	appWindow,
+	frontApp,
+	giveFocusBack,
+	PARKED_APPS,
+	parkWindow,
+} from './lib/app-window.ts';
 import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
 import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
 import type { CloudSessions } from './lib/cloud-sessions.ts';
@@ -263,6 +275,8 @@ export interface Options {
 	cloudBuild?: string;
 	/** The cloud keeps each session's network log, which slows the session's loads a little. */
 	networkLogs?: boolean;
+	/** Browser apps on a Mac open in front, at their own window size. */
+	front?: boolean;
 	/** Browser apps on this machine: macOS app names, such as Safari, or Linux commands' names, such as Firefox. */
 	apps: string[];
 	android: string[];
@@ -272,7 +286,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -335,6 +349,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--cloud-build') options.cloudBuild = args[++i];
 		else if (arg === '--network-logs') options.networkLogs = true;
 		else if (arg === '--attended') options.attended = true;
+		else if (arg === '--front') options.front = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
 		else options.apps.push(arg);
 	}
@@ -497,7 +512,7 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
  * waits on the network, or a session on a device cloud that opens a waiting page.
  */
 type Launch =
-	| { kind: AppMachine; app: string }
+	| AppLaunch
 	| { kind: 'android'; browser: string }
 	| { kind: 'lan' }
 	| { kind: 'cloud'; device: CloudDevice };
@@ -509,6 +524,9 @@ type Launches = ReadonlyMap<string, Launch>;
 /** The kind of machine whose browser apps a run opens: a Mac, or a Linux machine such as CI's. */
 type AppMachine = 'mac' | 'linux';
 
+/** A browser app on this machine, and how its window opens on a Mac. */
+type AppLaunch = { kind: AppMachine; app: string; window?: AppWindow };
+
 /** The machine that this tool runs on, which opens its browser apps. */
 function appMachine(): AppMachine {
 	if (process.platform === 'darwin') return 'mac';
@@ -517,15 +535,17 @@ function appMachine(): AppMachine {
 }
 
 /** True for a runner that is a browser app on this machine. */
-const isApp = (launch: Launch | undefined): launch is { kind: AppMachine; app: string } =>
+const isApp = (launch: Launch | undefined): launch is AppLaunch =>
 	launch?.kind === 'mac' || launch?.kind === 'linux';
 
 function runnersOf(options: Options): LaunchedRunner[] {
 	const machine = options.apps.length > 0 ? appMachine() : 'mac';
+	const timed = TIMED_PLANS.has(options.plan) || options.plan === SCALE_PLAN;
+	const window = appWindow(options.front === true, Boolean(process.env.CI), timed);
 	const runners: LaunchedRunner[] = options.apps.map((app) => ({
 		name: `${machine}-${slug(app)}`,
 		device: machine,
-		launch: { kind: machine, app },
+		launch: { kind: machine, app, ...(machine === 'mac' && { window }) },
 	}));
 	if (options.android.length > 0) {
 		const phone = slug(phoneModel());
@@ -552,17 +572,32 @@ const imageDevice = (runner: LaunchedRunner) =>
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
 
+/** The apps whose runner window did not move in this run, which the tool told once. */
+const unparked = new Set<string>();
+
 /**
  * Opens the runner page in a browser app and says whether it did. On a Mac, a launch that hangs,
  * as behind a first-launch prompt on a machine that nobody watches, fails after a minute instead
- * of stopping the whole run. On Linux, the app's command by its name in lowercase opens the page:
- * the first call starts the browser, which keeps running, and a later call hands the page to it.
+ * of stopping the whole run. There the app opens in the background unless the run asks for the
+ * front, and the runner window of an app that the tool can move goes almost wholly past the main
+ * display's left edge. Should the app take focus all the same, the app in front before gets it back.
+ * On Linux, the app's command by its name in lowercase opens the page: the first call starts the
+ * browser, which keeps running, and a later call hands the page to it.
  */
-function openApp(app: string, url: string): boolean {
+function openApp({ app, window }: AppLaunch, url: string): boolean {
 	try {
-		if (process.platform === 'darwin')
-			execFileSync('open', ['-a', app, url], { timeout: OPEN_TIMEOUT_MS });
-		else {
+		if (process.platform === 'darwin') {
+			const before = window?.background ? frontApp() : undefined;
+			const background = window?.background ? ['-g'] : [];
+			execFileSync('open', [...background, '-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+			const why =
+				window?.park && PARKED_APPS.has(app) ? parkWindow(app, url, window.small) : undefined;
+			if (why && !unparked.has(app)) {
+				unparked.add(app);
+				console.log(`${app}: its runner window stays where the app put it: ${why}`);
+			}
+			giveFocusBack(before);
+		} else {
 			const command = execFileSync('which', [slug(app)], { encoding: 'utf8' }).trim();
 			spawn(command, [url], { detached: true, stdio: 'ignore' })
 				.on('error', (e) => console.log(`${app} stopped: ${e.message}`))
@@ -605,7 +640,7 @@ async function openRunners(
 		const launch = launches.get(name) as Launch;
 		const url = runnerUrl(baseUrl, run, name);
 		if (isApp(launch)) {
-			if (openApp(launch.app, url)) opened.push(name);
+			if (openApp(launch, url)) opened.push(name);
 		} else if (launch.kind === 'cloud') {
 			if (await cloud?.open(name, cloudRunnerUrl(name))) opened.push(name);
 		} else {
@@ -689,6 +724,21 @@ function inspectMac(run: string, runner: string, count: number, since: number): 
 			// Reports that the tool cannot read stay where they are.
 		}
 	return `screen ${locked ? 'locked' : 'not locked'}; ${pressure}; web content processes: ${webContent.join(', ') || 'none'}; crash reports: ${crashes.join(', ') || 'none'}; evidence in ${prefix}*`;
+}
+
+/**
+ * Keeps the Mac's display awake while the runner lasts. Once the screen saver locks the screen,
+ * Safari gives pages no animation frames, so every later page waits for a first frame that never
+ * comes. The screen saver starts only while nothing keeps the display awake.
+ */
+function keepDisplayAwake(): void {
+	if (process.platform !== 'darwin') return;
+	const child = spawn('caffeinate', ['-d', '-i', '-w', String(process.pid)], {
+		stdio: 'ignore',
+		detached: true,
+	});
+	child.on('error', () => {});
+	child.unref();
 }
 
 /**
@@ -824,7 +874,7 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 			}
 			if (!isApp(launch)) return false;
 			if (launch.app === 'Safari') closeSafariRunner(run, runner);
-			return openApp(launch.app, url);
+			return openApp(launch, url);
 		},
 	};
 }
@@ -1583,6 +1633,7 @@ async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
+	if (options.apps.length > 0) keepDisplayAwake();
 	const launches = new Map(runners.map((runner) => [runner.name, runner.launch]));
 	const cloud = cloudSessions(options);
 	if (options.android.length > 0 || options.lan.length > 0) {

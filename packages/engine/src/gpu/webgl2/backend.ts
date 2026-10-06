@@ -407,15 +407,17 @@ export class WebGL2Backend {
 	private activeUnit = -1;
 	private readonly unitTextures: (WebGLTexture | null)[] = [];
 	private readonly unitSamplers: (WebGLSampler | null)[] = [];
+	/** The texture that bind groups set at each slot, which the program's unit for the slot gets. */
+	private readonly slotTextures: (WebGLTexture | null)[] = [];
+	/** The target of each slot's texture. */
+	private readonly slotTargets: number[] = [];
 	/** The sampler that bind groups set at each slot, which the units that read it get. */
 	private readonly slotSamplers: (WebGLSampler | null)[] = [];
-	/** True when the program or the bind groups' samplers changed since the units' samplers were set. */
-	private samplersChanged = true;
 	/**
-	 * The units that have a sampler bound. While none has, a program that samples no texture finds
-	 * every unit as it needs it, so switching to it leaves the units alone.
+	 * True when the program, the bind groups' textures or samplers, or a unit that a spare program
+	 * borrowed changed since the program's units were set.
 	 */
-	private boundSamplers = 0;
+	private unitsChanged = true;
 	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
@@ -1222,6 +1224,8 @@ export class WebGL2Backend {
 			gl.deleteTexture(old.texture);
 			for (let unit = 0; unit < this.unitTextures.length; unit++)
 				if (this.unitTextures[unit] === old.texture) this.unitTextures[unit] = null;
+			for (let slot = 0; slot < this.slotTextures.length; slot++)
+				if (this.slotTextures[slot] === old.texture) this.slotTextures[slot] = null;
 		}
 		if (old.renderbuffer) gl.deleteRenderbuffer(old.renderbuffer);
 	}
@@ -1482,7 +1486,7 @@ export class WebGL2Backend {
 		this.unitTextures.length = 0;
 		this.blockBuffers.length = 0;
 		this.viewport.fill(-1);
-		this.samplersChanged = true;
+		this.unitsChanged = true;
 	}
 
 	/**
@@ -1517,7 +1521,7 @@ export class WebGL2Backend {
 		if (this.blend) this.setBlend(0);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
-		this.samplersChanged = true;
+		this.unitsChanged = true;
 		return program;
 	}
 
@@ -1737,11 +1741,8 @@ export class WebGL2Backend {
 		for (let slot = 0; slot < this.slotSamplers.length; slot++)
 			if (this.slotSamplers[slot] === old) this.slotSamplers[slot] = null;
 		for (let unit = 0; unit < this.unitSamplers.length; unit++)
-			if (this.unitSamplers[unit] === old) {
-				this.unitSamplers[unit] = null;
-				this.boundSamplers--;
-			}
-		this.samplersChanged = true;
+			if (this.unitSamplers[unit] === old) this.unitSamplers[unit] = null;
+		this.unitsChanged = true;
 	}
 
 	/** Attaches a render target to the bound framebuffer. */
@@ -1860,7 +1861,23 @@ export class WebGL2Backend {
 		this.setScissorTest(false);
 		if (this.passToCanvas) return;
 		const framebuffer = this.passFramebuffer;
-		if (this.passResolve !== G.NO_TARGET) {
+		// Tile-based GPUs skip writing a target that the pass discards back to memory. A discard
+		// comes while the pass's framebuffer is still the one drawn into, as ANGLE on Metal ends the
+		// pass, with its stores, at a resolve's blit, which it draws as a pass of its own. The blit
+		// reads the color, so a pass that resolves discards its color after the blit.
+		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
+		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
+		const resolves = this.passResolve !== G.NO_TARGET;
+		const keepsColor = storeColor || resolves;
+		const discard = storeDepth
+			? keepsColor
+				? undefined
+				: DISCARD_COLOR
+			: keepsColor
+				? DISCARD_DEPTH
+				: DISCARD_BOTH;
+		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		if (resolves) {
 			const into =
 				this.passResolve === 0
 					? (this.canvasTarget?.framebuffer ?? null)
@@ -1872,21 +1889,11 @@ export class WebGL2Backend {
 			const height = this.passHeight;
 			gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 		}
-		// Tile-based GPUs then skip writing the multisampled targets back to memory.
-		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
-		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const depth = this.passDepth;
 		if (storeDepth && depth?.renderbuffer && depth.texture) this.copyDepth(framebuffer, depth);
-		const discard = storeColor
-			? storeDepth
-				? undefined
-				: DISCARD_DEPTH
-			: storeDepth
-				? DISCARD_COLOR
-				: DISCARD_BOTH;
-		if (discard) {
+		if (resolves && !storeColor) {
 			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
-			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, discard);
+			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, DISCARD_COLOR);
 		}
 	}
 
@@ -1998,8 +2005,8 @@ export class WebGL2Backend {
 		this.skipDraws = !this.compiled(program);
 		if (this.skipDraws) return;
 		this.useProgram(program);
-		if (this.current?.program !== program && (program.sampled || this.boundSamplers > 0))
-			this.samplersChanged = true;
+		if (this.current?.program !== program && program.textureUnits.length > 0)
+			this.unitsChanged = true;
 		this.current = p;
 		this.setCullFace(p.cull);
 		this.setDepthTest(p.depth);
@@ -2098,12 +2105,16 @@ export class WebGL2Backend {
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
 				const texture = this.textureOf(entry.resource);
-				this.bindTexture(slot, texture.target, texture.texture);
+				if (this.slotTextures[slot] !== texture.texture) {
+					this.slotTextures[slot] = texture.texture;
+					this.slotTargets[slot] = texture.target;
+					this.unitsChanged = true;
+				}
 			} else if (entry.kind === G.RESOURCE_SAMPLER) {
 				const sampler = this.need(this.samplers, entry.resource, 'sampler');
 				if (this.slotSamplers[slot] !== sampler) {
 					this.slotSamplers[slot] = sampler;
-					this.samplersChanged = true;
+					this.unitsChanged = true;
 				}
 			}
 		}
@@ -2223,25 +2234,27 @@ export class WebGL2Backend {
 			gl.uniform1ui(p.firstInstance, firstInstance);
 			p.firstInstanceValue = firstInstance;
 		}
-		if (!this.samplersChanged) return;
-		// Each unit that the program reads gets the sampler that its texture's pair names, or none
-		// for texelFetch, which a comparison sampler left on the unit would break.
-		const pairs = p.samplerUnits;
-		for (let k = 0; k < pairs.length; k += 2) {
-			const unit = pairs[k] as number;
-			const slot = pairs[k + 1] as number;
-			this.bindUnitSampler(unit, slot < 0 ? null : (this.slotSamplers[slot] ?? null));
+		if (!this.unitsChanged) return;
+		// Each unit that the program reads gets the texture of its slot, and the sampler that its
+		// triple names, or none for texelFetch, which a comparison sampler left on the unit would
+		// break.
+		const units = p.textureUnits;
+		for (let k = 0; k < units.length; k += 3) {
+			const unit = units[k] as number;
+			const slot = units[k + 1] as number;
+			const sampler = units[k + 2] as number;
+			const texture = this.slotTextures[slot] ?? null;
+			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
+			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
 		}
-		this.samplersChanged = false;
+		this.unitsChanged = false;
 	}
 
-	/** Binds a sampler to a texture unit, or none, and keeps the count of units that have one. */
+	/** Binds a sampler to a texture unit, or none. */
 	private bindUnitSampler(unit: number, sampler: WebGLSampler | null): void {
-		const bound = this.unitSamplers[unit] ?? null;
-		if (bound === sampler) return;
+		if ((this.unitSamplers[unit] ?? null) === sampler) return;
 		this.gl.bindSampler(unit, sampler);
 		this.unitSamplers[unit] = sampler;
-		this.boundSamplers += (sampler ? 1 : 0) - (bound ? 1 : 0);
 	}
 
 	/**

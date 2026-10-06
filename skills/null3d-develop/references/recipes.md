@@ -71,23 +71,23 @@ const heroPrefab = await assets.loadGltf('/models/hero.glb');  // parsed in a wo
 const hero = scene.instantiate(heroPrefab, { position: [0, 0, 0], dynamic: true, castShadows: true });
 const sword = hero.find('Sword');           // this copy's mesh named Sword, which follows its bone
 const anim = hero.animator();               // the copy's group plays the file's clips: heroPrefab.clips
-anim.play('idle', { loop: true });
+anim.playBlend({ idle: 0, walk: 1.4, run: 4 }); // clips at speeds in m/s; their steps stay in time
 
-let moving = false;
+let speed = 0;
 return {
   onUpdate(dt) {
-    const wantMove = input.isDown('KeyW');
-    if (wantMove !== moving) {
-      anim.crossFade(wantMove ? 'run' : 'idle', 0.25);
-      moving = wantMove;
-    }
-    if (moving) hero.translate(0, 0, -4 * dt);
+    const target = input.isDown('KeyW') ? (input.isDown('ShiftLeft') ? 4 : 1.4) : 0;
+    speed += (target - speed) * Math.min(1, 6 * dt);  // ease toward the speed the keys ask for
+    anim.setBlend(speed);                   // engine memory: free to set every frame
+    hero.translate(0, 0, -speed * dt);
     debug.skeleton(hero);                   // development builds draw the joints
   },
 };
 ```
 
-The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers resample every clip while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices and KTX2 textures in a `textures` folder beside each `.glb`. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade on state changes only; calling `play` every frame restarts blending work. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`.
+
+The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -274,7 +274,7 @@ try {
 
 - Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
 - Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
-- `createEngine` rejects when the browser cannot run the engine, for example without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
+- `createEngine` rejects when the browser cannot run the engine. Examples are Safari before 18 and every iPhone or iPad browser before iOS 18 (E1306), and a browser without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
 - `warmUp` resolves once every pipeline that the scene needs is built, hidden objects included. For a later loading stage, create its objects hidden, await it, then show them, so nothing appears late or stalls a frame. The Godot browser port measured seconds of such stalls.
 
 Docs: `guides/loading-screens`, `api/engine`.

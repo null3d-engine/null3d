@@ -16,8 +16,8 @@ use std::cell::{Cell, UnsafeCell};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
-    AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
-    REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
+    AnimationError, Animations, Blend, Clip, MATRIX_FLOATS, MAX_BLEND, MAX_JOINTS, Play,
+    REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
 };
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
@@ -39,7 +39,7 @@ use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
-use null3d_render::bloom::{self, Blend, Bloom};
+use null3d_render::bloom::{self, Blend as BloomBlend, Bloom};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
@@ -55,7 +55,7 @@ use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::MeshError;
-use null3d_render::morph::{MAX_DELTA_TEXELS, MorphError, MorphTargets};
+use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
@@ -69,8 +69,8 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
-    camera_target, debug_line_field, mesh_arrays, morph_arrays, play_flag, query, ring_field,
+    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
+    debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
     scene_field, shading, texture_option, texture_stat,
 };
 
@@ -144,6 +144,9 @@ struct Engine {
     rebuilt: bool,
     /// The words that TypeScript writes a mesh's arrays into, for `createMeshFromArrays`.
     staging: Vec<u32>,
+    /// The numbers of the next play of a clip or a blend (`constants::play_arg`), which
+    /// TypeScript writes.
+    play_args: [f32; play_arg::COUNT],
     /// The debug lines of the next frame, which only development builds of the engine write.
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
@@ -476,6 +479,7 @@ pub fn init_engine(
         rebuilt: false,
         world_matrix: [0.0; 12],
         staging: Vec::new(),
+        play_args: [0.0; play_arg::COUNT],
         lines: LineStore::default(),
         animations: None,
         morphs: MorphWeights::new(),
@@ -1210,8 +1214,17 @@ pub fn create_mesh_from_arrays(
     value_with_engine(|e| {
         let jobs = JOBS.get().ok_or_else(|| fail(codes::NOT_READY, [0, 0]))?;
         let staging = std::mem::take(&mut e.staging);
-        let per_array = (targets as usize).saturating_mul(vertices as usize * 3);
-        let morph_words = per_array.saturating_mul(morph.count_ones() as usize);
+        let bits = [
+            morph_arrays::POSITIONS,
+            morph_arrays::NORMALS,
+            morph_arrays::TANGENTS,
+            morph_arrays::COLORS,
+        ];
+        let per_vertex = (targets as usize).saturating_mul(vertices as usize);
+        let words_of = |k: usize| per_vertex.saturating_mul(ARRAY_VALUES[k]);
+        let morph_words = (0..bits.len())
+            .filter(|&k| morph & bits[k] != 0)
+            .fold(0usize, |sum, k| sum.saturating_add(words_of(k)));
         let base = staging.len().checked_sub(morph_words);
         let short = || arrays_failure(ArraysError::Length(ArrayName::Positions));
         let geometry = {
@@ -1221,19 +1234,20 @@ pub fn create_mesh_from_arrays(
             from_arrays(&arrays, jobs).map_err(arrays_failure)?
         };
         let mut at = base.unwrap_or(0);
-        let mut array = |bit: u32| {
-            (morph & bit != 0).then(|| {
-                let words = &staging[at..at + per_array];
-                at += per_array;
+        let mut array = |k: usize| {
+            (morph & bits[k] != 0).then(|| {
+                let words = &staging[at..at + words_of(k)];
+                at += words.len();
                 // SAFETY: the words are initialized and aligned, and every bit pattern is a float.
                 unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<f32>(), words.len()) }
             })
         };
         let targets = MorphTargets {
             targets,
-            positions: array(morph_arrays::POSITIONS),
-            normals: array(morph_arrays::NORMALS),
-            tangents: array(morph_arrays::TANGENTS),
+            positions: array(0),
+            normals: array(1),
+            tangents: array(2),
+            colors: array(3),
         };
         let added = if morph == 0 {
             add_mesh(e, &geometry)
@@ -1786,8 +1800,8 @@ pub fn destroy_texture(texture: u32, frame: u32) -> u32 {
     })
 }
 
-// Tells the texture store what the thread that draws has: the images it received, in id order,
-// and the newest frame it took. The sketch thread calls it before it records each frame.
+// Tells the texture store what the thread that draws has: the newest image id it received, which
+// says that every earlier id arrived too, and the newest frame it took. The sketch thread calls it before it records each frame.
 /// Tells the texture store what the thread that draws has.
 #[wasm_bindgen(js_name = syncTextures)]
 pub fn sync_textures(images_arrived: u32, frames_taken: u32) {
@@ -2047,15 +2061,17 @@ pub fn shadow_casters() -> u32 {
 }
 
 /// The shadow settings that the quality settings give every light: the texels on each side of the
-/// shadow filter, how many frames pass between two draws of a far cascade, and whether a far
-/// cascade draws in every frame while a moving caster touches it. The TypeScript API checks them.
+/// shadow filter, how many frames pass between two draws of a far cascade, whether a far cascade
+/// draws in every frame while a moving caster touches it, and the share of each cascade's length
+/// over which it blends into the next. The TypeScript API checks them.
 #[wasm_bindgen(js_name = setShadowQuality)]
-pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool) -> u32 {
+pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool, blend: f32) -> u32 {
     with_engine(|e| {
         let quality = ShadowQuality {
             filter,
             far_interval,
             follow_movers,
+            blend,
         };
         e.renderer.settings_mut().set_shadow_quality(quality);
         0
@@ -2090,7 +2106,8 @@ pub fn set_bloom(on: bool) -> u32 {
             intensity,
             threshold,
             knee,
-            blend: Blend::from_code(e.post_value(place::BLOOM_BLEND) as u32).unwrap_or_default(),
+            blend: BloomBlend::from_code(e.post_value(place::BLOOM_BLEND) as u32)
+                .unwrap_or_default(),
             weights: std::array::from_fn(|level| e.post_value(place::BLOOM_WEIGHTS + level as u32)),
         });
         e.renderer.settings_mut().set_bloom(bloom);
@@ -2343,6 +2360,17 @@ fn with_animations(f: impl FnOnce(&mut Animations, &mut Vec<u32>) -> Result<u32,
     })
 }
 
+/// Runs `f` as `with_animations` does, with the engine's numbers for the next play
+/// (`PLAY_ARGS`).
+fn with_play_args(
+    f: impl FnOnce(&mut Animations, &mut Vec<u32>, &[f32; play_arg::COUNT]) -> Result<u32, u32>,
+) -> u32 {
+    value_with_engine(|e| match e.animations.as_mut() {
+        Some(animations) => f(animations, &mut e.staging, &e.play_args),
+        None => Err(fail(codes::NOT_READY, [2, 0])),
+    })
+}
+
 /// Creates the animation table for `instances` animated objects with `joints` joints in all, at
 /// most as many as the joint texture's rows hold on every WebGL2 device.
 #[wasm_bindgen(js_name = initAnimations)]
@@ -2396,56 +2424,6 @@ pub fn create_skeleton(joints: u32) -> u32 {
             .map_err(animation_failure)?;
         Ok(id + 1)
     })
-}
-
-/// The tracks that the staging words hold for `createClip`.
-fn staged_tracks(words: &[u32], tracks: usize) -> Result<Vec<SourceTrack<'_>>, AnimationError> {
-    let header = TRACK_WORDS as usize;
-    if tracks.saturating_mul(header) > words.len() {
-        return Err(AnimationError::Track {
-            track: (words.len() / header) as u32,
-            problem: TrackProblem::Keys,
-        });
-    }
-    let floats = as_floats(words);
-    let mut at = tracks * header;
-    let mut out = Vec::with_capacity(tracks);
-    for track in 0..tracks {
-        let problem = |problem| AnimationError::Track {
-            track: track as u32,
-            problem,
-        };
-        let head = &words[track * header..track * header + header];
-        let channel = Channel::from_u32(head[1]).ok_or(problem(TrackProblem::Kind))?;
-        let interpolation = Interpolation::from_u32(head[2]).ok_or(problem(TrackProblem::Kind))?;
-        let keys = head[3] as usize;
-        let per_key = match interpolation {
-            Interpolation::CubicSpline => 3 * channel.components(),
-            Interpolation::Linear | Interpolation::Step => channel.components(),
-        };
-        let end = keys
-            .checked_mul(1 + per_key)
-            .and_then(|n| n.checked_add(at))
-            .filter(|&end| end <= floats.len());
-        let Some(end) = end else {
-            return Err(problem(TrackProblem::Keys));
-        };
-        out.push(SourceTrack {
-            joint: head[0],
-            channel,
-            interpolation,
-            times: &floats[at..at + keys],
-            values: &floats[at + keys..end],
-        });
-        at = end;
-    }
-    Ok(out)
-}
-
-/// The staging words as 32-bit floats, which have the same size and alignment.
-fn as_floats(words: &[u32]) -> &[f32] {
-    // SAFETY: `u32` and `f32` have the same size and alignment, and every bit pattern is a float.
-    unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len()) }
 }
 
 // The staging words hold `tracks` headers of `TRACK_WORDS` words (joint, channel, interpolation,
@@ -2604,6 +2582,13 @@ pub fn remove_animated_instance(instance: u32) -> u32 {
     })
 }
 
+/// The clips that loading resampled at each frame, plus one: the others held keys on their frames
+/// already, as the asset tool writes them, and were copied.
+#[wasm_bindgen(js_name = resampledClips)]
+pub fn resampled_clips() -> u32 {
+    with_animations(|animations, _| Ok(animations.resampled_clips() + 1))
+}
+
 /// The first joint of animated instance `instance` in the skinning matrices, plus one, or 0 when
 /// no live instance has that id.
 #[wasm_bindgen(js_name = animatedInstanceJoints)]
@@ -2622,8 +2607,9 @@ pub fn animated_instance_joints(instance: u32) -> u32 {
 /// The address of an animation table array (`constants::animation_field`).
 #[wasm_bindgen(js_name = animationArrays)]
 pub fn animation_arrays(field: u32) -> u32 {
-    with_animations(|animations, _| {
+    with_play_args(|animations, _, args| {
         Ok(match field {
+            animation_field::PLAY_ARGS => address(&args[..]),
             animation_field::SLOT_CLIPS => address(&animations.slots().clip),
             animation_field::SLOT_TIMES => address(&animations.slots().time),
             animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
@@ -2631,32 +2617,66 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::LAYER_WEIGHTS => address(animations.layer_weights()),
             animation_field::EVENTS => address(animations.event_buffer()),
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
+            animation_field::SLOT_SOURCES => address(&animations.slots().source),
+            animation_field::BLEND_VALUES => address(animations.blend_values()),
             _ => address(animations.matrices()),
         })
     })
 }
 
-/// Plays clip `clip` on instance `instance`, on layer `layer`, fading over `fade` seconds at
-/// `speed`, with `flags` (`constants::play_flag`): `Animations::play`.
+/// Plays clip `clip` on instance `instance`, on layer `layer`, with `flags`
+/// (`constants::play_flag`) and the numbers in `PLAY_ARGS`: `Animations::play`.
 #[wasm_bindgen(js_name = animatorPlay)]
-pub fn animator_play(
-    instance: u32,
-    clip: u32,
-    layer: u32,
-    fade: f32,
-    speed: f32,
-    flags: u32,
-) -> u32 {
-    with_animations(|animations, _| {
+pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
+    with_play_args(|animations, _, args| {
         let play = Play {
             layer,
-            fade,
-            speed,
+            fade: args[play_arg::FADE],
+            speed: args[play_arg::SPEED],
             looping: flags & play_flag::LOOP != 0,
             additive: flags & play_flag::ADDITIVE != 0,
+            time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
+            weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
+            join: flags & play_flag::JOIN != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
+// The staging words hold `count` clip ids plus one, then `count` blend points as floats.
+/// Plays a 1D blend of the staged clips on instance `instance`, on layer `layer`, with `flags`
+/// and the numbers in `PLAY_ARGS`: `Animations::play_blend`.
+#[wasm_bindgen(js_name = animatorPlayBlend)]
+pub fn animator_play_blend(instance: u32, count: u32, layer: u32, flags: u32) -> u32 {
+    // The staging words stay with the engine, so switching blends reuses them.
+    with_play_args(|animations, staging, args| {
+        let staged = staging.as_slice();
+        let n = (count as usize).min(staged.len() / 2);
+        let mut clips = [0u32; MAX_BLEND];
+        let named = n.min(MAX_BLEND);
+        for (to, from) in clips.iter_mut().zip(&staged[..named]) {
+            *to = from.wrapping_sub(1);
+        }
+        let points = &as_floats(&staged[n..])[..n];
+        let blend = Blend {
+            layer,
+            fade: args[play_arg::FADE],
+            speed: args[play_arg::SPEED],
+            looping: flags & play_flag::LOOP != 0,
+            phase: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
+            value: (flags & play_flag::VALUE != 0).then_some(args[play_arg::VALUE]),
+        };
+        // More clips than slots reach the core's check through the point count.
+        let clips = if n > MAX_BLEND {
+            &clips[..]
+        } else {
+            &clips[..n]
+        };
+        animations
+            .play_blend(instance.wrapping_sub(1), clips, points, blend)
             .map_err(animation_failure)?;
         Ok(0)
     })

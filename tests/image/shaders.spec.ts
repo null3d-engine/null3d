@@ -1,6 +1,7 @@
 // Compiles every generated shader in Chrome, in parts that run in parallel. A software GPU compiles
 // one GLSL program at a time, so each part holds a bounded number of programs, and more shader
-// variants make more parts.
+// variants make more parts. A last test fakes Safari's Metal fault in one link, which the page
+// links again.
 import { expect, test } from '@playwright/test';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -17,6 +18,7 @@ interface ShaderResult {
 	wgslModules: number;
 	wgslSkipped: number;
 	failures: { shader: string; stage: string; log: string }[];
+	relinked: { shader: string; stage: string; log: string }[];
 }
 
 /** Real-GPU runs (every run outside CI) refuse a software GPU, which would hide driver bugs. */
@@ -54,3 +56,50 @@ for (let part = 1; part <= PARTS; part++)
 			expect(result.renderer.toLowerCase()).not.toContain('swiftshader');
 		}
 	});
+
+/** Safari's words for the fault in a link log. A page that does not know them fails the program. */
+const METAL_FAULT = 'MSL compilation error';
+
+/**
+ * Runs in the page before its scripts: the first program's link reads as failed, with Safari's
+ * fault in its log.
+ */
+function fakeMetalFault(fault: string): void {
+	type Program = object | null;
+	interface Gl {
+		LINK_STATUS: number;
+		createProgram(): Program;
+		getProgramParameter(program: Program, name: number): unknown;
+		getProgramInfoLog(program: Program): string | null;
+	}
+	// The page's globals, which this file's types do not describe.
+	const proto = (globalThis as unknown as { WebGL2RenderingContext: { prototype: Gl } })
+		.WebGL2RenderingContext.prototype;
+	const { createProgram, getProgramParameter, getProgramInfoLog } = proto;
+	let faulty: Program | undefined;
+	proto.createProgram = function (this: Gl) {
+		const program = createProgram.call(this);
+		faulty ??= program;
+		return program;
+	};
+	proto.getProgramParameter = function (this: Gl, program, name) {
+		if (program === faulty && name === this.LINK_STATUS) return false;
+		return getProgramParameter.call(this, program, name);
+	};
+	proto.getProgramInfoLog = function (this: Gl, program) {
+		if (program === faulty) return `Internal error while linking shader. ${fault}: a test`;
+		return getProgramInfoLog.call(this, program);
+	};
+}
+
+test("the shaders page links a program again after Safari's Metal fault, and lists it", async ({
+	page,
+}) => {
+	await page.addInitScript(fakeMetalFault, METAL_FAULT);
+	await page.goto(`shaders.html?part=1&parts=${PARTS}`);
+	const result = await pageResult<ShaderResult>(page, 30_000);
+	expect(result.error).toBeUndefined();
+	expect(result.failures).toEqual([]);
+	expect(result.relinked).toHaveLength(1);
+	expect(result.relinked[0]?.log).toContain(METAL_FAULT);
+});

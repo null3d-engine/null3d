@@ -1,13 +1,13 @@
 // Images for texture uploads, on their way from the sketch thread to the thread that draws. The
-// engine core gives each image an id, counting from 1, and the sketch thread sends the images in
-// id order. The thread that draws keeps them in a table and counts each one it receives in the
-// control block, so the core knows which uploads can run. The table outlives each GPU device, so
+// engine core gives each image an id, which steps as frame numbers do, and the sketch thread sends
+// the images in id order. The thread that draws keeps them in a table and notes the id of each one
+// it receives in the control block, so the core knows which uploads can run. The table outlives each GPU device, so
 // a new device can upload the images that it still holds.
 //
 // A texture generator, which fills a texture on the GPU, takes an image id and the same way too:
 // the sketch thread sends its name. The thread that draws loads the generators' code for its GPU
-// path with the first one, and counts the generator only then, so a draw list that names it runs
-// it at once. Arrivals count in id order, so an image that comes while the code loads counts
+// path with the first one, and notes the generator only then, so a draw list that names it runs
+// it at once. Arrivals are noted in id order, so an image that comes while the code loads is noted
 // after the generator.
 //
 // Custom materials' shaders take the same way, each under its render pipeline template. A backend
@@ -20,7 +20,7 @@
 
 import { messageOf } from '../errors/message';
 import type { ShaderVariants } from '../generated/shaders';
-import { Slot } from './control';
+import { frameAfter, Slot } from './control';
 import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
 
 /**
@@ -193,11 +193,11 @@ type DrawingMessage =
 	| { preload: readonly string[] };
 
 /**
- * Counts an image that the thread that draws received, and wakes a thread that waits for it, through
- * `to` where another thread runs the sketch.
+ * Notes the id of an image that the thread that draws received, and wakes a thread that waits for
+ * it, through `to` where another thread runs the sketch.
  */
-function countArrival(slots: Int32Array, to?: WakeTarget): void {
-	Atomics.add(slots, Slot.ImagesArrived, 1);
+function noteArrival(slots: Int32Array, id: number, to?: WakeTarget): void {
+	Atomics.store(slots, Slot.ImagesArrived, id);
 	notifySlot(slots, Slot.ImagesArrived, to);
 }
 
@@ -245,9 +245,9 @@ export function shadersToTable(table: ImageTable): ShaderSender {
 }
 
 /**
- * Keeps images and generators in the table and counts each, through `to` where another thread
- * runs the sketch. An image counts at once and a generator once its code has loaded, but each
- * only after every earlier one, so the count says that every id up to it arrived.
+ * Keeps images and generators in the table and notes the id of each, through `to` where another
+ * thread runs the sketch. An image is noted at once and a generator once its code has loaded, but
+ * each only after every earlier one, so the noted id says that every id up to it arrived.
  */
 function arrivals(table: ImageTable, slots: Int32Array, to?: WakeTarget): ImageSender {
 	let waiting: Promise<void> | undefined;
@@ -261,7 +261,7 @@ function arrivals(table: ImageTable, slots: Int32Array, to?: WakeTarget): ImageS
 	return (id, image) => {
 		const arrive = () => {
 			if (typeof image !== 'string') table.set(id, image);
-			countArrival(slots, to);
+			noteArrival(slots, id, to);
 		};
 		if (typeof image === 'string')
 			after(waiting ?? Promise.resolve(), () => table.addGenerator(id, image).then(arrive));
@@ -304,8 +304,8 @@ export function drawingSenders(
 }
 
 /**
- * Keeps the images, generators and shaders that arrive through a port in the table, and counts each
- * image and generator. The sketch thread at the port's other end sends nothing until the returned
+ * Keeps the images, generators and shaders that arrive through a port in the table, and notes the id
+ * of each image and generator. The sketch thread at the port's other end sends nothing until the returned
  * function tells it that this thread receives. That thread hears of each arrival through the same
  * port, where it waits for wake messages. A message that the browser cannot read stops this thread
  * with an error, because the sketch's wait for that image would never end.
@@ -324,12 +324,15 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 	return () => port.postMessage(RECEIVING);
 }
 
-/** Resolves once the thread that draws holds every image up to id `sent`. */
+/**
+ * Resolves once the thread that draws holds every image up to id `sent`. Ids go round as frame
+ * numbers do, so they compare by their distance.
+ */
 export async function imagesArrived(slots: Int32Array, sent: number): Promise<void> {
-	let count = Atomics.load(slots, Slot.ImagesArrived);
-	while (count < sent) {
-		const change = slotChangeOrRecheck(slots, Slot.ImagesArrived, count);
+	let arrived = Atomics.load(slots, Slot.ImagesArrived);
+	while (frameAfter(sent, arrived)) {
+		const change = slotChangeOrRecheck(slots, Slot.ImagesArrived, arrived);
 		if (change) await change;
-		count = Atomics.load(slots, Slot.ImagesArrived);
+		arrived = Atomics.load(slots, Slot.ImagesArrived);
 	}
 }

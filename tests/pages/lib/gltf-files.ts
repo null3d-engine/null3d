@@ -594,3 +594,406 @@ export function blenderMorphBuilder(): GltfBuilder {
 	];
 	return b;
 }
+
+/** The quads per side of each panel of `colorMorphBuilder`. */
+const PANEL_SIDE = 6;
+
+/**
+ * A flat panel of `PANEL_SIDE` × `PANEL_SIDE` quads, one unit wide, centered on `x` and facing +Z,
+ * with each vertex's place across it from 0 to 1.
+ */
+function panel(x: number) {
+	const positions: number[] = [];
+	const places: [number, number][] = [];
+	const indices: number[] = [];
+	const n = PANEL_SIDE + 1;
+	for (let row = 0; row < n; row++)
+		for (let column = 0; column < n; column++) {
+			const [u, v] = [column / PANEL_SIDE, row / PANEL_SIDE];
+			positions.push(x + u - 0.5, v - 0.5, 0);
+			places.push([u, v]);
+			if (row > 0 && column > 0) {
+				const at = row * n + column;
+				indices.push(at - n - 1, at - n, at, at - n - 1, at, at - 1);
+			}
+		}
+	const normals = new Float32Array(positions.length).map((_, k) => (k % 3 === 2 ? 1 : 0));
+	return {
+		positions: new Float32Array(positions),
+		normals,
+		places,
+		indices: new Uint16Array(indices),
+	};
+}
+
+/** The CRC-32 of `bytes`, as PNG chunks carry it. */
+function crc32(bytes: Uint8Array): number {
+	let crc = ~0;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let k = 0; k < 8; k++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+	}
+	return ~crc >>> 0;
+}
+
+/**
+ * A PNG image of `width` x `height` RGBA pixels, row by row, with no color profile. Its data goes
+ * into stored deflate blocks, so the bytes need no compressor and are the same on every machine.
+ */
+export function pngBytes(width: number, height: number, rgba: Uint8Array): Uint8Array {
+	const stride = 1 + width * 4;
+	const rows = new Uint8Array(height * stride);
+	for (let y = 0; y < height; y++)
+		rows.set(rgba.subarray(y * width * 4, (y + 1) * width * 4), y * stride + 1);
+	// A zlib stream of stored blocks of at most 65,535 bytes, then its Adler-32 checksum.
+	const blocks = Math.max(1, Math.ceil(rows.length / 65535));
+	const zlib = new Uint8Array(2 + rows.length + blocks * 5 + 4);
+	zlib.set([0x78, 0x01]);
+	let at = 2;
+	for (let k = 0; k < blocks; k++) {
+		const part = rows.subarray(k * 65535, (k + 1) * 65535);
+		const n = part.length;
+		zlib.set([k === blocks - 1 ? 1 : 0, n & 255, n >> 8, ~n & 255, (~n >> 8) & 255], at);
+		zlib.set(part, at + 5);
+		at += 5 + n;
+	}
+	let a = 1;
+	let b = 0;
+	for (const byte of rows) {
+		a = (a + byte) % 65521;
+		b = (b + a) % 65521;
+	}
+	new DataView(zlib.buffer).setUint32(at, ((b << 16) | a) >>> 0);
+	const chunk = (type: string, data: Uint8Array) => {
+		const out = new Uint8Array(12 + data.length);
+		const view = new DataView(out.buffer);
+		view.setUint32(0, data.length);
+		out.set(new TextEncoder().encode(type), 4);
+		out.set(data, 8);
+		view.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
+		return out;
+	};
+	const header = new Uint8Array(13);
+	const view = new DataView(header.buffer);
+	view.setUint32(0, width);
+	view.setUint32(4, height);
+	header.set([8, 6, 0, 0, 0], 8);
+	const parts = [
+		new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+		chunk('IHDR', header),
+		chunk('IDAT', zlib),
+		chunk('IEND', new Uint8Array()),
+	];
+	const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0));
+	let offset = 0;
+	for (const part of parts) {
+		out.set(part, offset);
+		offset += part.length;
+	}
+	return out;
+}
+
+/** The sRGB byte of a linear value from 0 to 1. */
+function srgbByte(linear: number): number {
+	const s = linear <= 0.0031308 ? linear * 12.92 : 1.055 * linear ** (1 / 2.4) - 0.055;
+	return Math.round(s * 255);
+}
+
+/**
+ * A sphere of `radius` around the origin, as three.js's SphereGeometry builds it with 32 segments
+ * around and 16 from pole to pole: positions, normals and indices.
+ */
+function sphereArrays(radius: number) {
+	const across = 32;
+	const down = 16;
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const indices: number[] = [];
+	for (let i = 0; i <= down; i++) {
+		const v = i / down;
+		for (let j = 0; j <= across; j++) {
+			const u = j / across;
+			const x = -Math.cos(u * 2 * Math.PI) * Math.sin(v * Math.PI);
+			const y = Math.cos(v * Math.PI);
+			const z = Math.sin(u * 2 * Math.PI) * Math.sin(v * Math.PI);
+			positions.push(x * radius, y * radius, z * radius);
+			normals.push(x, y, z);
+		}
+	}
+	const row = across + 1;
+	for (let i = 0; i < down; i++)
+		for (let j = 0; j < across; j++) {
+			const a = i * row + j + 1;
+			const b = i * row + j;
+			const c = (i + 1) * row + j;
+			const d = (i + 1) * row + j + 1;
+			if (i !== 0) indices.push(a, b, d);
+			if (i !== down - 1) indices.push(b, c, d);
+		}
+	return {
+		positions: new Float32Array(positions),
+		normals: new Float32Array(normals),
+		indices: new Uint16Array(indices),
+	};
+}
+
+/** For each vertex at `places`, the first `components` values that `channels` gives. */
+function perVertex(
+	places: readonly [number, number][],
+	components: number,
+	channels: (u: number, v: number) => readonly number[],
+): Float32Array {
+	return Float32Array.from(places.flatMap(([u, v]) => channels(u, v).slice(0, components)));
+}
+
+/** The weights of `colorMorphBuilder`'s two targets. */
+export const COLOR_MORPH_WEIGHTS = [0.75, 0.4] as const;
+
+/**
+ * Three panels side by side: one mesh of three primitives with two morph targets, which move
+ * vertex colors as glTF's COLOR_0 targets do, at the mesh's weights `COLOR_MORPH_WEIGHTS`. The
+ * left panel has 8-bit colors, and targets of three values, without alpha. Its first target
+ * bulges the panel toward the camera and warms its colors, and its second, a sparse accessor as
+ * Blender writes one, blues its right half. The middle panel blends, with float colors and alpha: its first target's deltas are
+ * normalized 16-bit integers that fade the alpha upward, and its second target's are floats that
+ * fade it to the right. The right panel's 16-bit colors stay as they are, as its targets move only
+ * its positions. Every morphed color stays between 0 and 1, where three.js, which does not clamp,
+ * draws what the glTF specification asks. Every target that moves a panel's colors gives their
+ * deltas, as three.js reads a left-out color delta as the base color. Every panel's colors have
+ * alpha, as three.js r186's WebGLRenderer cannot compile color targets of colors without it.
+ */
+export function colorMorphBuilder(): GltfBuilder {
+	const b = new GltfBuilder();
+	const matte = (fields: GltfJson = {}) =>
+		b.material({
+			pbrMetallicRoughness: {
+				baseColorFactor: [1, 1, 1, 1],
+				metallicFactor: 0,
+				roughnessFactor: 0.8,
+			},
+			...fields,
+		});
+	const bulge = (places: readonly [number, number][]) =>
+		perVertex(places, 3, (u, v) => [
+			0,
+			0,
+			0.35 * Math.max(0, 1 - 2 * Math.hypot(u - 0.5, v - 0.5)),
+		]);
+	const lift = (places: readonly [number, number][]) =>
+		perVertex(places, 3, (u) => [0, 0.15 * u, 0]);
+	const primitive = (x: number, material: number, color: number, targets: GltfJson[]) => {
+		const shape = panel(x);
+		return {
+			attributes: {
+				POSITION: b.positions(shape.positions),
+				NORMAL: b.accessor(shape.normals, 3),
+				COLOR_0: color,
+			},
+			indices: b.accessor(shape.indices, 1),
+			material,
+			targets: targets.map((target, k) => ({
+				...target,
+				POSITION: b.positions((k === 0 ? bulge : lift)(shape.places)),
+			})),
+		};
+	};
+
+	const left = panel(-1.1).places;
+	const leftColors = perVertex(left, 4, (u, v) => [0.15 + 0.2 * u, 0.6 - 0.2 * v, 0.2, 1]);
+	const warm = perVertex(left, 3, (u, v) => [0.8 * v, -0.5 * u, 0]);
+	const blue = perVertex(left, 3, (u) => (u > 0.5 ? [-0.2, 0, 1.6 * (u - 0.5)] : [0, 0, 0]));
+	const bytes = Uint8Array.from(leftColors, (c) => Math.round(c * 255));
+	const leftPanel = primitive(-1.1, matte(), b.accessor(bytes, 4, { normalized: true }), [
+		{ COLOR_0: b.accessor(warm, 3) },
+		{ COLOR_0: b.sparse(blue, 3) },
+	]);
+
+	const middle = panel(0).places;
+	const middleColors = perVertex(middle, 4, (u, v) => [0.8, 0.2 + 0.3 * u, 0.2 + 0.3 * v, 1]);
+	const fadeUp = perVertex(middle, 4, (u, v) => [-0.8 * u, 0.6, 0, -0.5 * v]);
+	const fadeRight = perVertex(middle, 4, (u) => [0, 0, 0.9 * u, -0.3 * u]);
+	const shorts = Int16Array.from(fadeUp, (d) => Math.round(d * 32767));
+	const middlePanel = primitive(0, matte({ alphaMode: 'BLEND' }), b.accessor(middleColors, 4), [
+		{ COLOR_0: b.accessor(shorts, 4, { normalized: true }) },
+		{ COLOR_0: b.accessor(fadeRight, 4) },
+	]);
+
+	const right = panel(1.1).places;
+	const rightColors = perVertex(right, 4, (u, v) => [0.2 + 0.5 * v, 0.5, 0.7 - 0.4 * u, 1]);
+	const wide = Uint16Array.from(rightColors, (c) => Math.round(c * 65535));
+	const rightPanel = primitive(1.1, matte(), b.accessor(wide, 4, { normalized: true }), [{}, {}]);
+
+	const mesh = b.mesh([leftPanel, middlePanel, rightPanel], 'Swatches');
+	b.json.meshes[mesh].weights = [...COLOR_MORPH_WEIGHTS];
+	b.json.meshes[mesh].extras = { targetNames: ['Warm', 'Cool'] };
+	b.node({ name: 'Swatches', mesh });
+	return b;
+}
+
+/** The rotation, as a glTF quaternion, that turns -Z, where a glTF light shines, to `direction`. */
+function shineAlong(direction: readonly [number, number, number]): number[] {
+	const length = Math.hypot(...direction);
+	const [x, y, z] = direction.map((d) => d / length) as [number, number, number];
+	// The half-way quaternion from (0, 0, -1): the cross product as its axis, and 1 + cos as w.
+	const w = 1 - z;
+	if (w < 1e-6) return [0, 1, 0, 0];
+	const size = Math.hypot(y, x, w);
+	return [y / size, -x / size, 0, w / size];
+}
+
+/** A sphere of a test grid: its material, and the u that every vertex of a textured sphere reads. */
+interface GridSphere {
+	material: GltfJson;
+	uv?: number;
+}
+
+/**
+ * A grid of spheres for a material extension's test: one row per entry of `rows`, one sphere per
+ * entry of a row, 1 m apart, the first row on top. A sphere with `uv` reads the texture
+ * coordinates (u, 0.5) at every vertex, so it shows one texel of its maps. A directional key
+ * light from the front right and a point light behind the grid light it, so the reflection shows
+ * head on and at grazing angles. The engine's surfaces show one directional light, so the light
+ * from behind is a point light.
+ */
+function sphereGrid(b: GltfBuilder, rows: readonly (readonly GridSphere[])[]): GltfBuilder {
+	const sphere = sphereArrays(0.4);
+	const position = b.positions(sphere.positions);
+	const normal = b.accessor(sphere.normals, 3);
+	const indices = b.accessor(sphere.indices, 1);
+	const uvAccessors = new Map<number, number>();
+	const uvOf = (u: number) => {
+		let accessor = uvAccessors.get(u);
+		if (accessor === undefined) {
+			const uvs = new Float32Array((sphere.positions.length / 3) * 2);
+			for (let k = 0; k < uvs.length; k += 2) uvs.set([u, 0.5], k);
+			accessor = b.accessor(uvs, 2);
+			uvAccessors.set(u, accessor);
+		}
+		return accessor;
+	};
+	rows.forEach((row, r) => {
+		row.forEach(({ material, uv }, c) => {
+			const attributes: GltfJson = { POSITION: position, NORMAL: normal };
+			if (uv !== undefined) attributes.TEXCOORD_0 = uvOf(uv);
+			const mesh = b.mesh([{ attributes, indices, material: b.material(material) }]);
+			const x = c - (row.length - 1) / 2;
+			const y = (rows.length - 1) / 2 - r;
+			b.node({ name: material.name, mesh, translation: [x, y, 0] });
+		});
+	});
+	b.uses('KHR_lights_punctual');
+	b.json.extensions = {
+		KHR_lights_punctual: {
+			lights: [
+				{ type: 'directional', intensity: 2.5 },
+				{ type: 'point', intensity: 80, color: [1, 0.95, 0.9] },
+			],
+		},
+	};
+	b.node({
+		name: 'Key',
+		rotation: shineAlong([-1, -1.5, -2]),
+		extensions: { KHR_lights_punctual: { light: 0 } },
+	});
+	b.node({
+		name: 'Rim',
+		translation: [-2, 4, -5],
+		extensions: { KHR_lights_punctual: { light: 1 } },
+	});
+	return b;
+}
+
+/** The ramp of SpecularTest's factors, from none to all. */
+const SPECULAR_RAMP = [0, 0.051269, 0.212231, 0.520996, 1] as const;
+
+/**
+ * A small equivalent of the Khronos SpecularTest model for KHR_materials_specular, lit by lights
+ * instead of an environment. Its seven rows of five spheres take, in order: the specular factor;
+ * the same values in a specular texture's alpha, whose purple color must not show; a gray specular
+ * color factor; the same grays in a specular color texture; a yellow factor; a yellow texture; and
+ * color factors above 1, which the reflectance caps at 1. The spheres are dark and fairly smooth,
+ * so their specular reflection shows.
+ */
+export function specularBuilder(): GltfBuilder {
+	const b = new GltfBuilder().uses('KHR_materials_specular');
+	b.json.images = [];
+	b.json.textures = [];
+	b.json.samplers = [{ magFilter: 9728, minFilter: 9728, wrapS: 33071, wrapT: 33071 }];
+	const texture = (pixels: readonly (readonly number[])[]) => {
+		const image = b.view(pngBytes(pixels.length, 1, new Uint8Array(pixels.flat())));
+		b.json.images.push({ bufferView: image, mimeType: 'image/png' });
+		return b.json.textures.push({ source: b.json.images.length - 1, sampler: 0 }) - 1;
+	};
+	const intensities = texture(SPECULAR_RAMP.map((v) => [255, 0, 255, Math.round(v * 255)]));
+	const grays = texture(SPECULAR_RAMP.map((v) => [srgbByte(v), srgbByte(v), srgbByte(v), 255]));
+	const yellows = texture(SPECULAR_RAMP.map((v) => [srgbByte(v), srgbByte(v), 0, 255]));
+	const material = (name: string, specular: GltfJson): GltfJson => ({
+		name,
+		pbrMetallicRoughness: {
+			baseColorFactor: [0.04, 0.05, 0.07, 1],
+			metallicFactor: 0,
+			roughnessFactor: 0.3,
+		},
+		extensions: { KHR_materials_specular: specular },
+	});
+	const uv = (c: number) => (c + 0.5) / SPECULAR_RAMP.length;
+	const factors = (name: string, specular: (v: number) => GltfJson) =>
+		SPECULAR_RAMP.map((v, c): GridSphere => ({ material: material(`${name} ${c}`, specular(v)) }));
+	const textured = (name: string, specular: GltfJson) =>
+		SPECULAR_RAMP.map(
+			(_, c): GridSphere => ({ material: material(`${name} ${c}`, specular), uv: uv(c) }),
+		);
+	return sphereGrid(b, [
+		factors('factor', (v) => ({ specularFactor: v })),
+		textured('texture', { specularTexture: { index: intensities } }),
+		factors('gray', (v) => ({ specularColorFactor: [v, v, v] })),
+		textured('gray texture', { specularColorTexture: { index: grays } }),
+		factors('yellow', (v) => ({ specularColorFactor: [v, v, 0] })),
+		textured('yellow texture', { specularColorTexture: { index: yellows } }),
+		[0, 1.184, 5.441, 13.276, 25].map(
+			(v, c): GridSphere => ({
+				material: material(`bright ${c}`, { specularColorFactor: [v, v, v] }),
+			}),
+		),
+	]);
+}
+
+/**
+ * A small equivalent of the Khronos IORTestGrid model for KHR_materials_ior, without its
+ * transmission and volume. Its columns take the indices of refraction 1, 1.25, 1.5, 2 and 3, and
+ * 0, which stands for a very large index. Its first three rows are a red dielectric of three
+ * roughnesses. The fourth is half metal, with KHR_materials_specular's factor and color, and the
+ * fifth has a specular color above 1, which the reflectance caps at 1.
+ */
+export function iorBuilder(): GltfBuilder {
+	const b = new GltfBuilder().uses('KHR_materials_ior').uses('KHR_materials_specular');
+	const iors = [1, 1.25, 1.5, 2, 3, 0];
+	const row = (name: string, pbr: GltfJson, specular?: GltfJson) =>
+		iors.map(
+			(ior): GridSphere => ({
+				material: {
+					name: `${name} ior ${ior}`,
+					pbrMetallicRoughness: {
+						baseColorFactor: [0.5, 0.06, 0.04, 1],
+						metallicFactor: 0,
+						...pbr,
+					},
+					extensions: {
+						KHR_materials_ior: { ior },
+						...(specular && { KHR_materials_specular: specular }),
+					},
+				},
+			}),
+		);
+	return sphereGrid(b, [
+		row('smooth', { roughnessFactor: 0.15 }),
+		row('satin', { roughnessFactor: 0.45 }),
+		row('rough', { roughnessFactor: 0.8 }),
+		row(
+			'half metal',
+			{ metallicFactor: 0.5, roughnessFactor: 0.3 },
+			{ specularFactor: 0.6, specularColorFactor: [1, 0.6, 0.3] },
+		),
+		row('bright', { roughnessFactor: 0.3 }, { specularColorFactor: [2, 2, 2] }),
+	]);
+}

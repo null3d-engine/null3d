@@ -238,3 +238,42 @@ At the decision the 414 KB file took 2.2 ms. A phone takes several times as long
 [D-56](D-56-first-use-shader-files.md) takes out of this record's files the builds of features that most pages do not use. Those are sprites, lines, skinning with every SKIN build, bloom's steps and the final pass's BLOOM builds, the texture background and the engine's test template. Each feature has files of its own, by the same fixed bits. A page downloads one the first time it uses the feature. A start shader file now holds 17.7 to 19.4 KB after Brotli and 0.85 to 1.37 MB uncompressed. On main it held 27.6 to 30.0 KB and 1.8 to 3.6 MB. So a page parses about half the shader text of before at its start. A permutation bit that a feature's table names adds nothing to the start files. Another material bit still doubles each one.
 
 Device modules are now plain JavaScript files, `generated/shaders-<target>-<bits>.js`, which the main module imports by address. So one copy of each serves the page's bundle and every worker's.
+
+## Addendum, 2026-10-05: paragraphs that sources share
+
+### Question
+
+M2-J5 (specular and ior) merged main. After that, two WebGL2 skinning files passed the 1,536 KB uncompressed limit of a first-use file ([D-56](D-56-first-use-shader-files.md)). `shaders-skinning-glsl-draw-index-tone-map-half.js` was 1,557.8 KB and `shaders-skinning-glsl-tone-map-half.js` 1,554.8 KB. After gzip and Brotli they used 86% and 65% of their limits. Can the files shrink without a higher limit?
+
+### Data
+
+Stage sources that differ still share most of their text: the same structs, uniforms and functions, with a few that change with the build's bits. In `shaders-skinning-glsl-tone-map-half.js`, the 60 distinct sources held 1,346 KB, but only 108 KB of distinct lines. Split at blank lines, they held 3,049 paragraphs, 335 of them distinct, in 295 KB.
+
+So each device module now writes once each paragraph that several of its sources hold. Each is a constant (`PART_0`, `PART_1` and so on) before the shared sources. Each source's template literal names those constants in place of their text, and the page joins them when it evaluates the module. Every one of the 60 device modules gives the same builds as before, string for string.
+
+Sizes from `bun run build:check-size` at the J5 merge commit, before and after. Each start file is one of four rows, and each page downloads one:
+
+| File | Uncompressed | gzip 9 | Brotli 11 |
+| --- | --- | --- | --- |
+| `shaders-skinning-glsl-draw-index-tone-map-half.js`, the largest | 1,557.8 to 538.9 KB | 275.3 to 46.1 KB | 20.8 to 21.4 KB (+2.9%) |
+| `shaders-skinning-wgsl-tone-map-half.js` | 1,256.2 to 242.7 KB | 286.6 to 39.0 KB | 18.9 to 19.9 KB (+5.3%) |
+| `shaders-glsl-draw-index-tone-map-half.js`, a WebGL2 start file | 1,305.4 to 375.7 KB | 268.1 to 44.6 KB | 20.9 to 21.6 KB (+3.3%) |
+| `shaders-wgsl-tone-map-half.js`, a WebGPU start file | 1,222.8 to 265.2 KB | 273.7 to 42.7 KB | 22.6 to 23.6 KB (+4.4%) |
+| A pipelined page's start | 1,622.3 to 692.6 KB | 381.7 to 152.6 KB | 117.1 to 118.2 KB |
+
+The largest file that loads on first use now takes 35% of the uncompressed limit and 14% of the gzip limit. Brotli already found the repeats, so it gains nothing. Each reference costs it a little. The 62 shader files grew 0 to 7.7%, 22 KB in all. A page's start grew 1.1 KB, to 84.4% of its 140 KB budget.
+
+### Options
+
+| Option | Uncompressed | gzip | Brotli | Cost |
+| --- | --- | --- | --- | --- |
+| A: raise the limit | unchanged | unchanged | unchanged | The files keep growing with each material bit |
+| B: split the skinning files by one more bit | about half for skinning only, estimated | about half, estimated | about the same per build | Twice the skinning files, and a page with both values downloads two |
+| C: write each shared paragraph once (chosen) | 65 to 81% less in the large files | 83 to 86% less | +2 to 5% in the large files | A template literal per source with its references |
+| D: also drop each line's indentation | a further 26 to 34 KB less | a further 4 to 8 KB less | 0.4 to 0.6 KB less, which takes back most of C's growth | Sources are harder to read in a browser's tools; line numbers stay the same |
+
+D is not done here: it changes how the shader text reads, which is the owner's choice.
+
+### Main module
+
+The main module shares whole sources only. A bundle keeps only the exports of `shaders.ts` that it imports. But the minifier keeps a template literal that names a constant, even where nothing reads it. In a trial build with paragraphs there, `page-renderer.js` grew from 27.9 to 39.1 KB after Brotli, with the paragraphs of the test shaders it never imports.

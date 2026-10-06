@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
+import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
 import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT } from './lib/server.ts';
 
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
@@ -16,6 +17,21 @@ const environment = defaultEnvironment();
 const launchOptions = browserOptions(environment);
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
+/** The main project's tests: every test file but those that only the other projects run. */
+const MAIN_PROJECT = { testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts'] };
+/** The production build project's tests, and the server that serves its pages. */
+const PRODUCTION_BUILD = {
+	testMatch: [
+		'content-security-policy.spec.ts',
+		'engine.spec.ts',
+		'errors.spec.ts',
+		'sketch-shaders.spec.ts',
+		'ktx2.spec.ts',
+		'gltf.spec.ts',
+		'stats.spec.ts',
+	],
+	use: { baseURL: `http://localhost:${PREVIEW_PORT}/tests/pages/` },
+};
 
 /** The dev server, which serves every page of the repository from its source. */
 export const DEV_SERVER = {
@@ -49,10 +65,7 @@ export default defineConfig({
 		},
 	],
 	projects: [
-		{
-			name: environment,
-			testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts'],
-		},
+		{ name: environment, ...MAIN_PROJECT, grepInvert: RUNS_ALONE },
 		// The engine and errors tests again, on the production build. The sketch module and the engine
 		// core must survive bundling on both GPU paths and in every thread mode. So must the engine's
 		// errors in a sketch, whose bundle holds its own copy of the engine's error code, the WGSL
@@ -60,19 +73,7 @@ export default defineConfig({
 		// loader and its worker, the stats overlay and the frame figures, which the build ships as
 		// files of their own. The start under a strict Content-Security-Policy runs only here, since
 		// only a bundler turns small files into the inline addresses that such a policy blocks.
-		{
-			name: 'production build',
-			testMatch: [
-				'content-security-policy.spec.ts',
-				'engine.spec.ts',
-				'errors.spec.ts',
-				'sketch-shaders.spec.ts',
-				'ktx2.spec.ts',
-				'gltf.spec.ts',
-				'stats.spec.ts',
-			],
-			use: { baseURL: `http://localhost:${PREVIEW_PORT}/tests/pages/` },
-		},
+		{ name: 'production build', ...PRODUCTION_BUILD, grepInvert: RUNS_ALONE },
 		// The resize tests, on a high-density screen. Playwright's emulated pixel ratio does not reach
 		// the size in device pixels that the browser reports for an element (Playwright issue 18591),
 		// so the browser itself also starts at that ratio.
@@ -89,6 +90,21 @@ export default defineConfig({
 					],
 				},
 			},
+		},
+		// The tests that run alone (`tests/lib/alone.ts`), one at a time in each project. CI runs
+		// them in a job of their own, so that no other test runs beside them, and the shards leave
+		// them out. The other projects never run them.
+		{
+			name: `${environment}${ALONE_PROJECT_SUFFIX}`,
+			...MAIN_PROJECT,
+			grep: RUNS_ALONE,
+			workers: 1,
+		},
+		{
+			name: `production build${ALONE_PROJECT_SUFFIX}`,
+			...PRODUCTION_BUILD,
+			grep: RUNS_ALONE,
+			workers: 1,
 		},
 	],
 });

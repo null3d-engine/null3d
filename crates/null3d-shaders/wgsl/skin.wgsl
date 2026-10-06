@@ -12,28 +12,40 @@
 // - entries 1 to 3: the format: the strides of a source and a skinned vertex in 32-bit words, and
 //   where each attribute sits, each a word offset in the low byte and the type code above it, or
 //   every bit set for an attribute that the format lacks; the tangent's skinned offset in the
-//   third byte; then the joints, the weights and the morph attribute; and two runs
-//   of words that the pass copies unchanged (the texture coordinates, then the color), each its
-//   source offset, its skinned offset and its length in words, a byte each;
+//   third byte; then the joints, the weights and the morph attribute; two runs of words that the
+//   pass copies unchanged (the texture coordinates, then the color of a mesh without morph
+//   targets), each its source offset, its skinned offset and its length in words, a byte each;
+//   then the color of a morphed mesh, with its skinned offset in the third byte;
 // - two entries per part: its first workgroup, its vertex count, its first vertex in the page and
 //   its first word in the skinned vertex buffer; then the first joint of its animated instance in
 //   the joint texture, or every bit set for a mesh that no joint skins, the first texel of its
 //   object's morph weights in the morph texture, and padding.
 //
-// A skinned vertex has its position, then its normal, as 32-bit floats, then the source's other
-// attributes in their order, with a tangent as 32-bit floats. Each attribute takes whole words, so
-// the skinned vertex is the mesh's vertex format without joints and weights.
+// The VERTEX_TANGENT builds skin the formats that have a tangent, and the others those that have
+// none. The VERTEX_COLOR builds skin the formats of morphed meshes with a color, which they morph,
+// and the others the formats whose color, if any, the pass copies. A build without a bit holds no
+// code that reads or writes that attribute, so no thread can write its words, which lie past the
+// vertex's own words in a format without it. Adreno 830's driver runs the tangent's write behind a
+// runtime check even where the check is false, and takes the wrong branch by type in a reader with
+// a return in each branch ("Browser faults" in .dev/implementation-notes.md). So the format picks
+// the build, and `component` has no branch.
 //
-// Morphing and skinning follow three.js's: each morph target moves the position, the normal and
-// the tangent by its deltas times its weight, before skinning. The joint weights are used as they
+// A skinned vertex has its position, then its normal, as 32-bit floats, then the source's other
+// attributes in their order, with a tangent, and a morphed mesh's color, as 32-bit floats. Each
+// attribute takes whole words, so the skinned vertex is the mesh's vertex format without joints
+// and weights.
+//
+// Morphing and skinning follow three.js's: each morph target moves the position, the normal, the
+// tangent and the color by its deltas times its weight, before skinning. A morphed color is
+// clamped to the range 0 to 1, as the glTF specification asks. The joint weights are used as they
 // are, and the normal and the tangent's direction turn by each joint's matrix without its
 // translation.
 //
 // The morph attribute names the vertex's entries in the morph texture (see the renderer's morph
-// module): its first entry's texel, then its entry count times four plus 1 when entries hold a
-// normal's delta and 2 when they hold a tangent's. An entry is the position's delta with the
-// target's number, then the normal's and the tangent's deltas, in half floats. The weights sit in
-// a texture of their own, four to a texel.
+// module): its first entry's texel, then its entry count times eight plus 1 when entries hold a
+// normal's delta, 2 when they hold a tangent's and 4 when they hold a color's. An entry is the
+// position's delta with the target's number, then the normal's, the tangent's and the color's
+// deltas, in half floats. The weights sit in a texture of their own, four to a texel.
 //
 // A dispatch whose workgroups pass one axis's limit spreads them over rows, and a workgroup's
 // number is its place in its row plus the workgroups of the rows before it. Each workgroup finds
@@ -61,27 +73,24 @@ const NONE: u32 = 0xffffffffu;
 
 /// Component `c` of the attribute that `field` places, in the source vertex at word `vertex`, as
 /// a vertex shader reads it: a float, a normalized integer as a fraction, or a plain integer as
-/// its whole value. The type codes are those of the engine's vertex types.
+/// its whole value. The type codes are those of the engine's vertex types. Every type reads one
+/// word and picks its value with `select`, with no branch (see the notes at the top).
 fn component(vertex: u32, field: u32, c: u32) -> f32 {
-    let at = vertex + (field & 0xffu);
     let kind = (field >> 8u) & 0xffu;
-    if kind == 0u {
-        return bitcast<f32>(source[at + c]);
-    }
-    if kind == 1u || kind == 2u || kind == 5u || kind == 6u {
-        let byte = (source[at + c / 4u] >> (8u * (c % 4u))) & 0xffu;
-        if kind == 1u || kind == 5u {
-            return select(f32(byte), f32(byte) / 255.0, kind == 1u);
-        }
-        let signed = f32(bitcast<i32>(byte << 24u) >> 24u);
-        return select(signed, max(signed / 127.0, -1.0), kind == 2u);
-    }
-    let half = (source[at + c / 2u] >> (16u * (c % 2u))) & 0xffffu;
-    if kind == 3u || kind == 7u {
-        return select(f32(half), f32(half) / 65535.0, kind == 3u);
-    }
-    let signed = f32(bitcast<i32>(half << 16u) >> 16u);
-    return select(signed, max(signed / 32767.0, -1.0), kind == 4u);
+    let bytes = kind == 1u || kind == 2u || kind == 5u || kind == 6u;
+    let halves = kind == 3u || kind == 4u || kind == 7u || kind == 8u;
+    let signed = kind == 2u || kind == 4u || kind == 6u || kind == 8u;
+    let normalized = kind >= 1u && kind <= 4u;
+    let index = select(select(c, c / 2u, halves), c / 4u, bytes);
+    let word = source[vertex + (field & 0xffu) + index];
+    // An integer's bits moved to the top of the word, so that a shift back down extends its sign.
+    let width = select(select(32u, 16u, halves), 8u, bytes);
+    let shift = select(select(0u, 16u * (c % 2u), halves), 8u * (c % 4u), bytes);
+    let bits = (word >> shift) << (32u - width);
+    let whole = select(f32(bits >> (32u - width)), f32(bitcast<i32>(bits) >> (32u - width)), signed);
+    let largest = select(select(65535.0, 32767.0, signed), select(255.0, 127.0, signed), bytes);
+    let integer = select(whole, max(whole / largest, -1.0), normalized);
+    return select(integer, bitcast<f32>(word), kind == 0u);
 }
 
 /// The three components of the attribute that `field` places.
@@ -105,11 +114,14 @@ fn morph_weight_texel(k: u32) -> vec4f {
     return textureLoad(morph_weights, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
 }
 
-/// A vertex's position, normal and tangent direction.
+/// A vertex's position, normal, tangent direction and, in the VERTEX_COLOR builds, color.
 struct Morphed {
     position: vec3f,
     normal: vec3f,
     tangent: vec3f,
+#ifdef VERTEX_COLOR
+    color: vec4f,
+#endif
 }
 
 /// `rest` moved by the entries that `range` names, each by its target's weight among the texels
@@ -118,8 +130,8 @@ fn morphed(rest: Morphed, range: vec2f, weights: u32) -> Morphed {
     var out = rest;
     let first = u32(range.x);
     let word = u32(range.y);
-    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u);
-    let count = word >> 2u;
+    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u) + ((word >> 2u) & 1u);
+    let count = word >> 3u;
     for (var k = 0u; k < count; k++) {
         let at = first + k * stride;
         let entry = morph_texel(at);
@@ -136,8 +148,19 @@ fn morphed(rest: Morphed, range: vec2f, weights: u32) -> Morphed {
         }
         if (word & 2u) != 0u {
             out.tangent += w * morph_texel(next).xyz;
+            next += 1u;
         }
+#ifdef VERTEX_COLOR
+        if (word & 4u) != 0u {
+            out.color += w * morph_texel(next);
+        }
+#endif
     }
+#ifdef VERTEX_COLOR
+    if (word & 4u) != 0u {
+        out.color = saturate(out.color);
+    }
+#endif
     return out;
 }
 
@@ -189,10 +212,15 @@ fn main(
     let vertex = (part.z + v) * strides.x;
     let out = part.w + v * strides.y;
 
+#ifdef VERTEX_COLOR
+    let color = vec4f(vector(vertex, runs.z), component(vertex, runs.z, 3u));
+    var rest = Morphed(vector(vertex, strides.z), vector(vertex, strides.w), vec3f(0.0), color);
+#else
     var rest = Morphed(vector(vertex, strides.z), vector(vertex, strides.w), vec3f(0.0));
-    if more.x != NONE {
-        rest.tangent = vector(vertex, more.x);
-    }
+#endif
+#ifdef VERTEX_TANGENT
+    rest.tangent = vector(vertex, more.x);
+#endif
     if more.w != NONE && object.y != NONE {
         let range = vec2f(component(vertex, more.w, 0u), component(vertex, more.w, 1u));
         rest = morphed(rest, range, object.y);
@@ -219,12 +247,17 @@ fn main(
     store(out, vec3f(dot(row_x, p), dot(row_y, p), dot(row_z, p)));
     let n = rest.normal;
     store(out + 3u, vec3f(dot(row_x.xyz, n), dot(row_y.xyz, n), dot(row_z.xyz, n)));
-    if more.x != NONE {
-        let t = rest.tangent;
-        let at = out + ((more.x >> 16u) & 0xffu);
-        store(at, vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t)));
-        skinned[at + 3u] = bitcast<u32>(component(vertex, more.x, 3u));
-    }
+#ifdef VERTEX_TANGENT
+    let t = rest.tangent;
+    let at = out + ((more.x >> 16u) & 0xffu);
+    store(at, vec3f(dot(row_x.xyz, t), dot(row_y.xyz, t), dot(row_z.xyz, t)));
+    skinned[at + 3u] = bitcast<u32>(component(vertex, more.x, 3u));
+#endif
+#ifdef VERTEX_COLOR
+    let color_at = out + ((runs.z >> 16u) & 0xffu);
+    store(color_at, rest.color.xyz);
+    skinned[color_at + 3u] = bitcast<u32>(rest.color.w);
+#endif
     copy_run(vertex, out, runs.x);
     copy_run(vertex, out, runs.y);
 }

@@ -116,7 +116,7 @@ const DOCS = {
 	E1206: {
 		title: 'Invalid mesh arrays',
 		cause:
-			'geometry.fromArrays() received arrays that make no mesh, or scene.createLines() received points that make no line. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A line needs at least 2 points, and pairs of points need an even number.',
+			'geometry.fromArrays() received arrays that make no mesh, scene.createLines() received points that make no line, or scene.createPoints() received arrays that make no points. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A line needs at least 2 points, and pairs of points need an even number. Points need at least 1 point, with 3 or 4 numbers of color each.',
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
@@ -221,6 +221,14 @@ const DOCS = {
 			"E1305: the render worker's GPU rejected a command: Buffer size (377487360) exceeds the max buffer size limit (268435456).",
 		since: '0.2',
 	},
+	E1306: {
+		title: 'Safari before 18',
+		cause:
+			'The browser runs the WebKit engine of a Safari before 18, which null3D does not support. Every browser on iPhone and iPad runs WebKit, so Chrome, Edge and Firefox there count too.',
+		example:
+			'E1306: this browser runs the WebKit engine of Safari 17, and the engine needs Safari 18 or later.',
+		since: '0.2',
+	},
 	E1401: {
 		title: 'Not a sketch module',
 		cause:
@@ -259,7 +267,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first environment its reader, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
@@ -361,7 +369,7 @@ const DOCS = {
 	E1419: {
 		title: 'Canvas held by another engine',
 		cause:
-			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread failed, so no engine can draw on it again. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
+			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread ended, so no engine can draw on it again. That thread ends when it fails, or when the canvas leaves the page. It also ends when the page goes away, or when the browser refuses memory for a new engine. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
 		example:
 			'E1419: createEngine() got a canvas that another engine draws on, which has not stopped.',
 		since: '0.2',

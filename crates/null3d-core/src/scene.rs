@@ -1612,7 +1612,7 @@ impl UpdateContext<'_> {
         for i in dynamic {
             self.compute(self.order[(level.start + i) as usize], root);
         }
-        let previous_frame = self.frame.wrapping_sub(1);
+        let previous_frame = crate::frames::previous_frame(self.frame);
         for i in range.start.max(dynamic_count)..range.end.max(dynamic_count) {
             let slot = self.order[(level.start + i) as usize];
             let s = slot as usize;
@@ -1868,6 +1868,28 @@ mod tests {
             assert!(!scene.changed().get(still_slot), "frame {frame}");
         }
         assert_eq!(frame, 3);
+    }
+
+    #[test]
+    fn a_static_change_in_the_last_frame_of_the_count_reaches_the_other_buffer_in_the_first() {
+        use crate::frames::{FIRST_FRAME, next_frame, previous_frame};
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let last = previous_frame(FIRST_FRAME);
+        scene.apply_commands(&[c], previous_frame(last)).unwrap();
+        scene.update_transforms(&jobs);
+        let slot = scene.resolve(h).unwrap() as usize;
+        scene.positions_mut()[slot * 3] = 50.0;
+        scene.mark_dirty(h).unwrap();
+        scene.begin_frame(last);
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, h), [50.0, 0.0, 0.0]);
+        // The first frame copies the row that the last frame changed into its own buffer.
+        scene.begin_frame(next_frame(last));
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, h), [50.0, 0.0, 0.0]);
+        assert_eq!(scene.world(0).matrix(slot), scene.world(1).matrix(slot));
     }
 
     #[test]

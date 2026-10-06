@@ -29,8 +29,7 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    # Stays above the hour that the CI check below may wait.
-    timeout-minutes: 75
+    timeout-minutes: 15
     if: github.ref == 'refs/heads/main'
     env:
       # Git hooks are for local commits; the release commit carries its own trailers.
@@ -52,30 +51,19 @@ jobs:
           fetch-tags: true
           token: ${{ steps.app-token.outputs.token }}
 
-      # The last CI run on main's HEAD must have passed. A release started right after a merge is
-      # normal, so this waits for a run in progress, then requires success.
+      # A full CI run of main's HEAD must have passed: the merge queue's run, or a run started by
+      # hand for a commit that reached main without the queue. The newest of them counts. Main's own
+      # run keeps only caches (D-86).
       - name: Verify CI passed for HEAD
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sha="$(git rev-parse HEAD)"
-          deadline=$(( $(date +%s) + 3600 ))
-          while :; do
-            info="$(gh run list --workflow=ci.yml --branch=main --commit="$sha" \
-              --json status,conclusion,headSha \
-              --jq 'map(select(.headSha=="'"$sha"'")) | first | "\(.status)|\(.conclusion)"' || true)"
-            status="${info%%|*}"
-            conclusion="${info##*|}"
-            echo "CI for $sha: status='${status}' conclusion='${conclusion}'"
-            if [ "$status" = "completed" ]; then break; fi
-            if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::Timed out waiting for CI on $sha (last status: '${status:-none}')."
-              exit 1
-            fi
-            sleep 30
-          done
+          conclusion="$(gh run list --workflow=ci.yml --commit="$sha" --json event,conclusion \
+            --jq 'map(select(.event == "merge_group" or .event == "workflow_dispatch")) | first | .conclusion // "no run"')"
+          echo "The newest full CI run of $sha: ${conclusion}"
           if [ "$conclusion" != "success" ]; then
-            echo "::error::CI for $sha concluded '${conclusion}', not success."
+            echo "::error::The newest full CI run of $sha concluded '${conclusion}', not success. Start one with: gh workflow run ci.yml --ref main"
             exit 1
           fi
 

@@ -1176,9 +1176,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eight `vec4f`s. On WebGL2 each row is a
-    /// row of eight `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 128;
+    /// Bytes of one material's row in the material table: nine `vec4f`s. On WebGL2 each row is a
+    /// row of nine `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 144;
+    /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
+    /// at bindings from 0, with each one's sampler at the bindings after every texture.
+    pub const MAP_SLOTS: u32 = 8;
     /// Grid cells in use at most, which the shaders' tables of offsets from the camera to each
     /// cell hold, one `vec4f` each.
     pub const MAX_CELLS: u32 = 512;
@@ -1193,8 +1196,8 @@ pub mod sizes {
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
     /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
-    /// six vectors.
-    pub const SHADOW_UNIFORM_BYTES: u32 = 352;
+    /// seven vectors.
+    pub const SHADOW_UNIFORM_BYTES: u32 = 368;
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
@@ -1676,6 +1679,7 @@ pub fn typescript_constants() -> String {
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
+                ("MAP_SLOTS", sizes::MAP_SLOTS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),

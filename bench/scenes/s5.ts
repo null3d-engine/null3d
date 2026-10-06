@@ -1,8 +1,9 @@
 // S5, the crowd: copies of one animated character from an optimized glTF file walk in rings on a
 // lit ground, under a sun that casts shadows, while the camera orbits them. Each character blends
-// a walk with a run at its ring's weight, and plays both at a rate of its own, so no two step in
-// time. Its ring's speed follows the blend: rings that run more move faster. The characters of one
-// ring keep their spacing, and rings lie apart, so no two characters ever overlap.
+// a walk with a run by clip weights, at its ring's weight. It starts both clips at a time of its
+// own and plays them at a rate of its own, so no two step in time. Its ring's speed follows the
+// blend: rings that run more move faster. The characters of one ring keep their spacing, and rings
+// lie apart, so no two characters ever overlap.
 //
 // Everything here is plain data and pure functions with no engine imports, as in spec.ts. The
 // per-frame function writes into arrays that the caller owns, so it allocates nothing.
@@ -49,6 +50,12 @@ export const S5_BLEND = { least: 0.2, most: 0.8 } as const;
 /** The least and most rate at which a character plays its clips. */
 export const S5_RATES = { least: 0.85, most: 1.15 } as const;
 
+/**
+ * The latest time in seconds at which a character starts its clips, about one step of the walk.
+ * The engines wrap a later time into each clip.
+ */
+export const S5_LATEST_START = 1;
+
 /** The ground: a slab this wide, its top at height 0, with its sRGB color and roughness. */
 export const S5_GROUND = { size: 600, thickness: 0.2, color: '#7d8b6c', roughness: 1 } as const;
 
@@ -91,6 +98,8 @@ export interface S5Data {
 	weight: Float32Array;
 	/** The rate at which each character plays its clips. */
 	rate: Float32Array;
+	/** The time in seconds at which each character starts its walk and its run. */
+	start: Float32Array;
 }
 
 /** The characters that a ring of radius `radius` holds. */
@@ -100,12 +109,13 @@ const ringCapacity = (radius: number) => Math.floor((TAU * radius) / S5_RINGS.al
  * Makes S5 with `count` characters. The rings fill from the inside out. The last ring holds what
  * is left, spread evenly around it. The generator draws, ring by ring: the ring's starting angle
  * and the share of its blend's range, then each character's rate. Rings take turns going one way
- * and the other.
+ * and the other. A second generator draws each character's start time.
  */
 export function createS5(count: number, seed = 5): S5Data {
 	if (!(Number.isSafeInteger(count) && count > 0))
 		throw new RangeError(`S5 needs a whole number of characters above 0, not ${count}.`);
 	const random = mulberry32(seed);
+	const randomStart = mulberry32(seed + 1);
 	const data: S5Data = {
 		count,
 		rings: 0,
@@ -115,6 +125,7 @@ export function createS5(count: number, seed = 5): S5Data {
 		angularSpeed: new Float32Array(count),
 		weight: new Float32Array(count),
 		rate: new Float32Array(count),
+		start: new Float32Array(count),
 	};
 	let placed = 0;
 	for (let ring = 0; placed < count; ring++) {
@@ -131,6 +142,7 @@ export function createS5(count: number, seed = 5): S5Data {
 			data.angularSpeed[i] = (direction * speed) / radius;
 			data.weight[i] = weight;
 			data.rate[i] = S5_RATES.least + (S5_RATES.most - S5_RATES.least) * random();
+			data.start[i] = S5_LATEST_START * randomStart();
 		}
 		placed += members;
 		data.rings = ring + 1;
