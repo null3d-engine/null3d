@@ -37,7 +37,14 @@ struct SkyOut {
     @location(1) @interpolate(flat, either) sun_direction: vec3f,
     @location(2) @interpolate(flat, either) beta_r: vec3f,
     @location(3) @interpolate(flat, either) beta_m: vec3f,
-    @location(4) @interpolate(flat, either) sun_e: f32,
+    /// The sun's light, how low the sun stands (as three.js's `pow(1 - sunDirection.y, 5)`), and
+    /// how much daylight the clouds take: values of the whole sky, found once per vertex.
+    @location(4) @interpolate(flat, either) sun: vec3f,
+}
+
+/// `x` to the power 1.5, without the logarithm and exponential of `pow`.
+fn pow_1_5(x: vec3f) -> vec3f {
+    return x * sqrt(x);
 }
 
 /// The sun's light at the zenith angle whose cosine is `zenith_cos`, fading as the sun sinks
@@ -61,7 +68,9 @@ fn vs(@builtin(vertex_index) vertex: u32) -> SkyOut {
     out.direction = corner.direction;
     let sun_position = backdrop.sun.xyz;
     out.sun_direction = normalize(sun_position);
-    out.sun_e = sun_intensity(out.sun_direction.y);
+    let sun_e = sun_intensity(out.sun_direction.y);
+    let low_sun = clamp(pow(1.0 - out.sun_direction.y, 5.0), 0.0, 1.0);
+    out.sun = vec3f(sun_e, low_sun, smoothstep(-0.08, 0.3, out.sun_direction.y));
     let sun_fade = 1.0 - clamp(1.0 - exp(sun_position.y / 450000.0), 0.0, 1.0);
     let rayleigh_coefficient = backdrop.scattering.y - (1.0 - sun_fade);
     out.beta_r = TOTAL_RAYLEIGH * rayleigh_coefficient;
@@ -77,7 +86,8 @@ fn rayleigh_phase(cos_theta: f32) -> f32 {
 /// The Henyey-Greenstein phase function of directional factor `g`.
 fn hg_phase(cos_theta: f32, g: f32) -> f32 {
     let g2 = g * g;
-    let inverse = 1.0 / pow(1.0 - 2.0 * g * cos_theta + g2, 1.5);
+    let base = 1.0 - 2.0 * g * cos_theta + g2;
+    let inverse = 1.0 / (base * sqrt(base));
     return ONE_OVER_FOUR_PI * ((1.0 - g2) * inverse);
 }
 
@@ -121,13 +131,14 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
     let sun_direction = in.sun_direction;
     let beta_r = in.beta_r;
     let beta_m = in.beta_m;
-    let sun_e = in.sun_e;
+    let sun_e = in.sun.x;
 
     // The optical length, with the zenith angle cut off at 90 degrees, where the formula has a
-    // singularity.
-    let zenith_angle = acos(max(0.0, direction.y));
+    // singularity. The cosine of the angle is the direction's height.
+    let zenith_cos = max(0.0, direction.y);
+    let zenith_angle = acos(zenith_cos);
     let inverse =
-        1.0 / (cos(zenith_angle) + 0.15 * pow(93.885 - ((zenith_angle * 180.0) / PI), -1.253));
+        1.0 / (zenith_cos + 0.15 * pow(93.885 - ((zenith_angle * 180.0) / PI), -1.253));
     let s_r = RAYLEIGH_ZENITH_LENGTH * inverse;
     let s_m = MIE_ZENITH_LENGTH * inverse;
 
@@ -137,9 +148,8 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
     let beta_r_theta = beta_r * rayleigh_phase(cos_theta * 0.5 + 0.5);
     let beta_m_theta = beta_m * hg_phase(cos_theta, backdrop.scattering.w);
     let scattered = sun_e * ((beta_r_theta + beta_m_theta) / (beta_r + beta_m));
-    var lin = pow(scattered * (1.0 - fex), vec3f(1.5));
-    let low_sun = clamp(pow(1.0 - sun_direction.y, 5.0), 0.0, 1.0);
-    lin *= mix(vec3f(1.0), pow(scattered * fex, vec3f(0.5)), low_sun);
+    var lin = pow_1_5(scattered * (1.0 - fex));
+    lin *= mix(vec3f(1.0), sqrt(scattered * fex), in.sun.y);
 
     // The night sky, and the sun's disc.
     let l0 = vec3f(0.1) * fex;
@@ -171,14 +181,15 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
         let mask = smoothstep(threshold, threshold + 0.3, density) * horizon_fade;
 
         // Light from the sky itself, a self shadow, and a silver lining toward the sun.
-        let day = smoothstep(-0.08, 0.3, sun_direction.y);
+        let day = in.sun.z;
         let sun_color = sun_e * fex * 0.22 * 0.04;
         let sky_ambient = lin * 0.04 + vec3f(0.0, 0.0003, 0.00075);
         let depth = max(0.0, density - threshold);
         let beer = exp(depth * -4.0);
         let powder = 1.0 - beer * beer;
         let shade = mix(0.45, 1.0, clamp(beer * powder * 2.6, 0.0, 1.0));
-        let silver = clamp(0.51 / pow(1.49 - cos_theta * 1.4, 1.5), 0.0, 3.0);
+        let silver_base = 1.49 - cos_theta * 1.4;
+        let silver = clamp(0.51 / (silver_base * sqrt(silver_base)), 0.0, 3.0);
         let edge = mask * (1.0 - mask) * 4.0;
         var cloud_color = sky_ambient + sun_color * shade;
         cloud_color += sun_color * silver * edge * 0.6;
