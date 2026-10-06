@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { ALONE } from '../lib/alone.ts';
 import {
 	POLICY_WITHOUT_WASM,
 	STRICT_POLICY,
@@ -35,16 +36,18 @@ async function withPolicy(page: Page, policy: string): Promise<string[]> {
 test.afterEach(({ page }) => page.unrouteAll({ behavior: 'ignoreErrors' }));
 
 for (const mode of ENGINE_MODES)
-	test(`the engine starts under a strict Content-Security-Policy, ${mode.name}`, async ({
-		page,
-	}) => {
-		const violations = await withPolicy(page, STRICT_POLICY);
-		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
-		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
-		expect(result.error).toBeUndefined();
-		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
-		expect(violations).toEqual([]);
-	});
+	test(
+		`the engine starts under a strict Content-Security-Policy, ${mode.name}`,
+		ALONE,
+		async ({ page }) => {
+			const violations = await withPolicy(page, STRICT_POLICY);
+			await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
+			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+			expect(violations).toEqual([]);
+		},
+	);
 
 for (const mode of ENGINE_MODES.filter(({ name }) =>
 	['pipelined', 'single-threaded'].includes(name),

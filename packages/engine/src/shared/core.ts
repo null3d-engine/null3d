@@ -462,10 +462,16 @@ export interface CoreGlue extends CoreErrors {
 	setPixelRatio(ratio: number): number;
 	/**
 	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
-	 * shadow cascade, from 1 to 8, and whether a far cascade draws in every frame while a moving
-	 * caster touches it, from the next frame on.
+	 * shadow cascade, from 1 to 8, whether a far cascade draws in every frame while a moving
+	 * caster touches it, and the share of each cascade's length over which it blends into the next,
+	 * from 0 to 0.5, from the next frame on.
 	 */
-	setShadowQuality(filter: number, farInterval: number, followMovers: boolean): number;
+	setShadowQuality(
+		filter: number,
+		farInterval: number,
+		followMovers: boolean,
+		cascadeBlend: number,
+	): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights

@@ -369,7 +369,7 @@ const DOCS = {
 	E1419: {
 		title: 'Canvas held by another engine',
 		cause:
-			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread failed, so no engine can draw on it again. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
+			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread ended, so no engine can draw on it again. That thread ends when it fails, or when the canvas leaves the page. It also ends when the page goes away, or when the browser refuses memory for a new engine. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
 		example:
 			'E1419: createEngine() got a canvas that another engine draws on, which has not stopped.',
 		since: '0.2',

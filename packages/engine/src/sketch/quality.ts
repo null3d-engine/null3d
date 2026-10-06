@@ -66,7 +66,8 @@ export interface QualityGovernor {
 	readonly steps: number;
 	/**
 	 * How often each far shadow cascade draws now: `settings.farCascadeInterval`, or up to twice as
-	 * long for each of the governor's steps, at most every 8th frame.
+	 * long for each of the governor's steps, at most every 8th frame. While
+	 * `settings.followMovingCasters` is false, the governor takes no such step.
 	 */
 	readonly farCascadeInterval: number;
 	/** The shadow filter that shadows draw with now: `settings.shadowFilter`, or 3 after the last step. */

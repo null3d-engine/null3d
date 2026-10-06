@@ -40,6 +40,21 @@ export interface RunOptions {
 	shadowMapSize: number | null;
 	shadowFilter: number | null;
 	/**
+	 * `?shadowCascadeBlend=`: the share of each shadow cascade that blends into the next, from 0 to
+	 * 0.5, to measure what the band costs, or null for the preset's.
+	 */
+	shadowCascadeBlend: number | null;
+	/**
+	 * `?antialias=`: how a null3D page smooths edges, `none`, `fxaa` or `msaa`, in place of the
+	 * preset's, to measure what each mode costs, or null for the preset's.
+	 */
+	antialias: 'none' | 'fxaa' | 'msaa' | null;
+	/**
+	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page which fills the window draws at,
+	 * in place of the preset's cap, or null for the preset's.
+	 */
+	maxPixelRatio: number | null;
+	/**
 	 * False with `?governor=off`, which keeps the quality governor off in a null3D scene that turns
 	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
 	 */
@@ -91,8 +106,8 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
- * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=` and the shadow
- * quality settings.
+ * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=`, the shadow
+ * quality settings, `?antialias=` and `?maxPixelRatio=`.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
@@ -139,6 +154,21 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 		shadowCascades: readNumber(params, 'shadowCascades', whole, 'a cascade count from 1 to 4'),
 		shadowMapSize: readNumber(params, 'shadowMapSize', whole, 'a size such as 2048'),
 		shadowFilter: readNumber(params, 'shadowFilter', whole, 'a filter size of 3 or 5'),
+		shadowCascadeBlend: readNumber(
+			params,
+			'shadowCascadeBlend',
+			(v) => Number.isFinite(v) && v >= 0 && v <= 0.5,
+			'a share from 0 to 0.5',
+		),
+		antialias: params.has('antialias')
+			? readChoice(params, 'antialias', ['none', 'fxaa', 'msaa'] as const)
+			: null,
+		maxPixelRatio: readNumber(
+			params,
+			'maxPixelRatio',
+			(v) => Number.isFinite(v) && v >= 0.5,
+			'a pixel ratio of 0.5 or more',
+		),
 		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
 	};
 }

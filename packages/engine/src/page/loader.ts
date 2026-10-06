@@ -6,6 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import { type Build, coreUrls } from '../shared/core';
 import { compileWasm, type MemoryLimits, readMemoryLimits, type WasmError } from '../shared/wasm';
+import { endParkedWorkers } from './ownership';
 
 /**
  * The shared memory's maximum when neither the page nor a quality preset asks for one: 1 GiB. The
@@ -96,19 +97,24 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * shared memory when the address space it keeps for them, or its budget of their pages, is full.
  * A stopped engine's memory counts against both until the engine's workers have finished, which
  * Safari does a moment after the engine stops. So after each refusal the loader waits longer and
- * tries again, for about 10 seconds in all, and a refusal after that fails with E1109. `create` and
- * `pause` stand in for the browser in tests.
+ * tries again, for about 10 seconds in all, and a refusal after that fails with E1109. The first
+ * refusal also ends the drawing workers that stopped engines left with their canvases: Safari frees
+ * the memory that such a worker used only once the worker ends. `create`, `pause` and `freeRoom`
+ * stand in for the browser and the page in tests.
  */
 export async function createSharedMemory(
 	descriptor: WebAssembly.MemoryDescriptor,
 	create: (descriptor: WebAssembly.MemoryDescriptor) => WebAssembly.Memory = (d) =>
 		new WebAssembly.Memory(d),
 	pause: (ms: number) => Promise<void> = wait,
+	freeRoom: () => void = () =>
+		endParkedWorkers('when the browser refused the shared memory of a new engine'),
 ): Promise<WebAssembly.Memory> {
 	for (let tries = 1; ; tries++) {
 		try {
 			return create(descriptor);
 		} catch (e) {
+			if (tries === 1) freeRoom();
 			const delay = MEMORY_RETRY_MS[tries - 1];
 			if (delay === undefined) {
 				const mib = Math.ceil((descriptor.maximum ?? descriptor.initial) / PAGES_PER_MIB);
