@@ -265,6 +265,8 @@ The Mac reproduced the gap: in Chrome, 1.22 ms for A against 1.33 ms for B. The 
 
 Main had also moved on. #343 blends cascades where they meet, which added about 0.02 ms. #353 copies each indirect draw's arguments before each render pass with two or more such draws, against Safari 26's GPU hang ([D-85](decisions/D-85-safari-indirect-arguments.md)). It doubled S4's GPU time at Low on the Mac: 2.71 ms against 1.42 ms for the commit before it, in 3 rounds in turns. The passes took the same time, and 0.64 to 0.78 ms per frame fell between passes. D-85's comparison measured CPU time only.
 
+The owner's iPad then ran the same builds, all with the newer timer and without #353's copies. On 6 October, 30 s per run, in turns: f46c0686 read 9.71 and 9.71 ms. Main with #364's loops read 10.81 and 10.76 ms, and main without them 11.35 and 11.21 ms. So #364 won back about 0.5 ms, and main stayed 1.08 ms (11%) above the older commit. A second iPad run split that gap: the receiver plane costs 1.19 ms, more than the whole gap, and #343's band 0.50 ms of it. #350's timestamp reads and Safari's copies of #353 changed nothing beyond the runs' spread. [D-16](decisions/D-16-moving-casters-and-bias.md#addendum-2026-10-07-the-receiver-planes-cost-on-the-ipad-and-a-cheaper-form) gives the table, the owner's rulings and the plane's cheaper form.
+
 ### What the gate still needs
 
 On the gate commit, the Mac runs `bun run gate` with every step, and with no other heavy work during the timing steps. The rehearsal's figures do not count for the gate.
