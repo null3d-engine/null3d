@@ -26,6 +26,8 @@ Which path does each failure take to the page, and what may a page do with a can
 | The frame step throws, in the 5 thread modes | 3 of 5 froze with no report | 5 of 5 report E1404 | `tests/image/failures.spec.ts` |
 | A job worker dies inside a chunk, in the 4 threaded modes | 4 of 4 froze; with the sketch on the page the tab hung for the whole 90 s test | 4 of 4 report E1404, and the page's own timer runs on | the same spec, which makes job worker 0's clock throw |
 | A second engine on the same canvas, 2 StrictMode patterns in 5 modes | 9 of 10 failed: InvalidStateError, E1403 or no frames | 10 of 10 draw, with as many workers as one engine | the same spec |
+| Stopped engines whose canvas stays, in the 3 modes where a worker draws (Chrome) | the page reached each stopped engine's memory through its parked worker's handlers, and the worker reached it through its stopped drawing | the page and the worker reach none | `tests/image/restart.spec.ts`, and a count in each worker's heap |
+| 42 starts and stops on kept canvases in Playwright's WebKit, room 38 | the room fell by about 1 for each engine, and stayed down | every start passed; a refused start ended the idle parked workers | the shared memory page, `?kinds=canvas-kept` |
 | A call from sketch code after `destroy()` | A TypeError, then success against the next engine | E1420 both times | the same spec |
 | WebGL2 context lost inside a framebuffer check | E1404 | recovers and draws on | `gpu-loss.html?mid-frame` |
 | A WebGPU buffer past the device's limit | a black canvas, no code | E1305 | `tests/image/gpu-errors.spec.ts` |
@@ -46,10 +48,13 @@ Failures:
 The canvas:
 
 - One engine holds a canvas at a time, and one engine holds the page's copy of the core. A start waits for an engine that is stopping or still starting. It fails with E1419 or E1415 only when the holder runs on after its start settled. The waiting start takes the canvas in the same task as it finds it free.
-- A canvas moved to a worker can never come back to the page. So when its engine stops, the worker that drew stays with it, without the engine's core and GPU device. The next engine on the canvas draws through that worker, in the same role. It stays only while the canvas is in the document. A canvas that leaves the page, or that the browser collects, takes the worker with it. A later engine on that canvas then fails with E1419. Options rejected:
+- A canvas moved to a worker can never come back to the page. So when its engine stops, the worker that drew stays with it, without the engine's core and GPU device. The next engine on the canvas draws through that worker, in the same role. It stays only while the canvas is in the document. A canvas that leaves the page, or that the browser collects, takes the worker with it. So does the page when it goes away. So does a new engine whose shared memory the browser refuses, unless an engine is starting on that canvas. A later engine on that canvas then fails with E1419. Options rejected:
   - Refusing a canvas that moved to a worker, as the review proposed. StrictMode mounts would then fail in every app.
   - A parked worker that stays until the canvas is collected. The restart tests keep every canvas, so each would keep a worker.
   - A parked worker with a time limit. A page could not know how long it has.
+- The parked worker drops the stopped engine's message handlers, and drops the stopped drawing. Before 6 October 2026, both still reached the engine's 1 GiB shared memory. Even with no reference left, Safari frees that memory only once the worker collects its garbage. An idle worker never does. In Playwright's WebKit, each parked worker kept its memory for good. The room fell by 11 places after 10 engines on kept canvases, and again in a second round. Only a churn of about 400 MB of garbage in each parked worker brought it back. So the engine ends parked workers when the room is needed or the page leaves ([implementation notes](../implementation-notes.md#threads-and-shared-memory)). Options rejected:
+  - Churning garbage in the parked worker to make it collect. 16 MB and 64 MB did nothing in WebKit, and the amount that works is a property of the browser's collector.
+  - Moving the canvas to a fresh worker for the next engine. A canvas with a context cannot be transferred.
 - Sketch code that outlives its engine fails with E1420. The sketch's `onDestroy` runs first, on its own thread. Then the runner swaps the core for a stand-in whose every function throws, and views on engine memory cannot be made again. The swap costs nothing per call. The loaders' helper workers stop at the same time.
 
 Long runs:
@@ -60,10 +65,10 @@ Long runs:
 
 ## Open question for the owner
 
-The worker that kept a canvas stays alive, idle, for as long as the canvas is in the document: one thread per such canvas. It costs no GPU memory and no engine memory, only the thread and its loaded code. The coordinator accepted it on 5 October 2026, and puts it to the owner. The alternative is to refuse a canvas that moved to a worker, with E1419. Apps would then make a new canvas element for each engine. React components that render `<canvas ref>` would then fail under StrictMode.
+The worker that kept a canvas stays alive, idle, for as long as the canvas is in the document: one thread per such canvas. It costs no GPU memory. In Safari it keeps the address space of the stopped engine's shared memory until the engine ends it, as above. The coordinator accepted it on 5 October 2026, and puts it to the owner. The alternative is to refuse a canvas that moved to a worker, with E1419. Apps would then make a new canvas element for each engine. React components that render `<canvas ref>` would then fail under StrictMode.
 
 ## Consequences
 
 - The engine package's page, worker, runner and render code changed; the error table gained E1304, E1305, E1419 and E1420. `api/engine`, `api/sketch` and `guides/debugging` describe the paths.
-- An idle worker per kept canvas is the cost of reuse. Device runs must check that Safari frees an engine's shared memory while its drawing worker stays parked.
+- An idle worker per kept canvas is the cost of reuse. The `canvas-kept-restarts-*` and `frame-destroyed-restarts-*` device checks start engines on kept canvases and in frames removed after the stop, as the runner page runs every page. On 5 October 2026, without them, iPhones refused the engine's memory after about 10 pages of every checks run.
 - The built-in room, which a frame's list makes in slices at its first use, comes back through the same recovery after a GPU loss. Its texture store fills the room again on the new device.

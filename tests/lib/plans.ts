@@ -245,6 +245,12 @@ const RESTARTS_TIMEOUT_SECONDS = 300;
  * some runs of 100 such frames, so that mode stays out until the cause is known.
  */
 const FRAME_RESTART_MODES = THREADED_MODES.filter((mode) => mode.sketchThread === 'worker');
+/**
+ * The thread modes where a worker draws. When the engine stops, that worker stays with the canvas
+ * for the next engine, so the restart page also stops engines whose canvas stays in the page, or
+ * whose frame the page removes only after the stop, as the runner page does with every test page.
+ */
+const KEPT_WORKER_MODES = THREADED_MODES.filter((mode) => mode.renderThread !== 'main');
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -496,6 +502,16 @@ export function checksPlan(): PlanItem<Check>[] {
 				{ switches: ['kinds=frame', mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
 			),
 		),
+		...KEPT_WORKER_MODES.flatMap((mode) =>
+			(['canvas-kept', 'frame-destroyed'] as const).map((start) =>
+				pageItem(
+					`${start}-restarts-${slug(mode.name)}`,
+					'shared-memory',
+					{ kind: 'restarts', mode, start },
+					{ switches: [`kinds=${start}`, mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+				),
+			),
+		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
 			kind: 'capabilities-reload',
 			first: CAPABILITIES,
@@ -543,10 +559,11 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
 		case 'warm-up':
 			return id === `warm-up-${check.tier}`;
 		// Starts on the page in one thread mode of each build: the threaded build's first mode, and the
-		// single-threaded build.
+		// single-threaded build. Starts and stops in frames in the threaded build's first mode, as the
+		// runner page runs every test page.
 		case 'restarts':
 			return (
-				check.start === 'engine' &&
+				(check.start === 'engine' || check.start === 'frame-destroyed') &&
 				ENGINE_MODES.find(({ build }) => build === check.mode.build) === check.mode
 			);
 		default:
@@ -558,8 +575,9 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
  * A short version of the checks plan, about a tenth of its pages, for a device in a cloud session
  * of limited time. It keeps the pages that find a device's faults soonest: the capability report,
  * isolation, every shader's compile, the shader library, uploads, presets, warm-up and stats on
- * each GPU path, the main features' image tests, and the restarts of each build. New GPU tiers and
- * thread modes join by the same rules.
+ * each GPU path, the main features' image tests, the restarts of each build, and starts and stops
+ * in frames, as the runner page runs every page. New GPU tiers and thread modes join by the same
+ * rules.
  */
 export const smokePlan = (): PlanItem<Check>[] => checksPlan().filter(inSmokePlan);
 
@@ -1448,10 +1466,10 @@ function imageRunProblems(
 }
 
 /**
- * How the shared memory page starts each engine: on the page, which stops it, or in a frame, which
- * the page removes while the engine runs.
+ * How the shared memory page starts each engine: on the page, which stops it and removes its canvas
+ * or keeps it, or in a frame, which the page removes while the engine runs or after it stopped.
  */
-export type RestartStart = 'engine' | 'frame';
+export type RestartStart = 'engine' | 'canvas-kept' | 'frame' | 'frame-destroyed';
 
 /** One round of the restart page's starts and stops. */
 interface RestartRound {
@@ -1482,10 +1500,20 @@ export interface RestartResult {
 /** Each way of starting engines, as the restart problems name it. */
 const RESTART_WORDS: Record<RestartStart, { cycle: string; cycles: string; engines: string }> = {
 	engine: { cycle: 'start and stop', cycles: 'starts and stops', engines: 'stopped engines' },
+	'canvas-kept': {
+		cycle: 'start and stop on a kept canvas',
+		cycles: 'starts and stops on kept canvases',
+		engines: 'stopped engines whose canvases stayed',
+	},
 	frame: {
 		cycle: 'start in a frame',
 		cycles: 'starts in frames',
 		engines: 'engines in removed frames',
+	},
+	'frame-destroyed': {
+		cycle: 'start and stop in a frame',
+		cycles: 'starts and stops in frames',
+		engines: 'stopped engines in removed frames',
 	},
 };
 
@@ -1501,7 +1529,8 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
  * memory that the browser did not get back from the stopped engines. Room that the first round lost
  * and the second round kept is lost address space, not memory that the engines hold, so it gets a
- * note through `note` instead.
+ * note through `note` instead. So does room that engines on kept canvases left held: their starts go
+ * past the room, so a start fails when that memory stops it.
  */
 export function restartProblems(
 	result: RestartResult,
@@ -1517,6 +1546,12 @@ export function restartProblems(
 	if (engine.error) problems.push(failed(engine, ''));
 	if (!roomLost(result.room, engine)) return problems;
 	const lostText = `it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`;
+	// The workers that stay with kept canvases may hold memory until a start needs it, which the
+	// starts past the room check.
+	if (start === 'canvas-kept') {
+		note?.(`the workers that stayed with the canvases held memory: ${lostText}`);
+		return problems;
+	}
 	const { again } = engine;
 	if (!again)
 		problems.push(
