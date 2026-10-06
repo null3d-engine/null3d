@@ -97,6 +97,8 @@ export function runNull3dPage(
 		if (options.far !== null) sketchUrl.searchParams.set('far', String(options.far));
 		if (options.shadowFilter !== null)
 			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
+		if (options.shadowCascadeBlend !== null)
+			sketchUrl.searchParams.set('shadowCascadeBlend', String(options.shadowCascadeBlend));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
 		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
 		if (options.demo) sketchUrl.searchParams.set('demo', '');
