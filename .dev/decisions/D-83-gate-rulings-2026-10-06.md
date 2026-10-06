@@ -4,7 +4,7 @@ Status: decided by the owner on 2026-10-06, in the morning, Singapore time. Date
 
 ## Question
 
-The M1 gate ran on the night of 5 to 6 October 2026, on the gate commit 89a1d6295 (#321). Most items passed. One check failed on a known cause, and some device runs gave no valid result. The S24+'s cold start missed its target by 32 and 57 ms. Must every item run again on a commit with the fix? Does the cold start fail item 5? The owner also saw the shadows trail the cars in S4 at Low. Does their fix belong in the gate? Last, Safari on the iPhone and the iPad kept the memory of old engines until new engines met E1109. Is its fix part of the gate? And do the other browser fixes in progress that day join it?
+The M1 gate ran on the night of 5 to 6 October 2026, on the gate commit 89a1d6295 (#321). Most items passed. One check failed on a known cause, and some device runs gave no valid result. The S24+'s cold start missed its target by 32 and 57 ms. Must every item run again on a commit with the fix? Does the cold start fail item 5? The owner also saw the shadows trail the cars in S4 at Low. Does their fix belong in the gate? Then the iPad's GPU time on fdf14a28 came in 8% above the older commit. Does the gate pass with it? Last, Safari on the iPhone and the iPad kept the memory of old engines until new engines met E1109. Is its fix part of the gate? And do the other browser fixes in progress that day join it?
 
 ## Rule
 
@@ -31,6 +31,7 @@ The owner decides. [Releases](../releases.md#m1-exit-gate) says that every item 
 | 4 | The fix for the memory that piles up in Safari on the iPhone and the iPad (#352) is part of the gate. Safari kept the memory of engines whose drawing worker stays with the canvas, so new engines met E1109. The gate needs #352 merged, then device evidence on that main: the cloud iPhone 16 runs the 12 engine pages that failed before, and the owner's iPad runs its test pages without a Safari restart | [Releases](../releases.md#what-the-gate-still-needs) |
 | 5 | The browser fixes for memory, speed and faults that are in progress on 6 October join the gate. New features wait for the next week. The gate's final pass runs on the main commit of the last of these merges | [Releases](../releases.md#what-the-gate-still-needs) |
 | 6 | The fix for the shadows that trail the cars in S4 at Low is part of the gate, and it replaces ruling 3. At Low, the far cascade draws only every few frames, so it lags moving casters. The fix keeps a cached far layer, on fix/shadow-trail. The gate needs its pull request merged, then a check on the owner's iPad after the gate's soak and GPU time comparison: S4 by eye, then a timing of main against the cache | [Releases](../releases.md#what-the-gate-still-needs) |
+| 7 | The gate holds on the iPad's GPU time of S4 at Low on WebGPU. On fdf14a28 it is 0.83 ms (8%) above the older commit f46c0686, with the same 56 draw calls per frame. That rise must be found and fixed before the gate passes | [Releases](../releases.md#what-the-gate-still-needs) |
 
 The items that run again on the new gate commit:
 
