@@ -148,10 +148,10 @@ The engine's shader text compresses well with Brotli, which finds text that repe
 
 | The host sends | The engine's JavaScript at the start |
 | --- | --- |
-| Brotli | 107 KB |
-| gzip at level 9 | 403 KB |
-| gzip at level 6, a common setting for compression on the fly | about 500 KB |
-| Files as they are | 3.0 MB |
+| Brotli | 118 KB |
+| gzip at level 9 | 153 KB |
+| gzip at level 6, a common setting for compression on the fly | about 155 KB |
+| Files as they are | 0.7 MB |
 
 Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module. With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, and send the compressed files with `brotli_static on;`.
 

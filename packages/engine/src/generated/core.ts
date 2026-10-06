@@ -174,6 +174,8 @@ export const MAP_SLOT_NORMAL = 2;
 export const MAP_SLOT_OCCLUSION = 3;
 export const MAP_SLOT_EMISSIVE = 4;
 export const MAP_SLOT_LIGHT = 5;
+export const MAP_SLOT_SPECULAR_INTENSITY = 6;
+export const MAP_SLOT_SPECULAR_COLOR = 7;
 
 export const MATERIAL_PARAM_COLOR = 0;
 export const MATERIAL_PARAM_OPACITY = 3;
@@ -188,6 +190,9 @@ export const MATERIAL_PARAM_LIGHT_MAP_INTENSITY = 13;
 export const MATERIAL_PARAM_ENV_INTENSITY = 19;
 export const MATERIAL_PARAM_UV_U = 16;
 export const MATERIAL_PARAM_UV_V = 20;
+export const MATERIAL_PARAM_REFLECTANCE = 23;
+export const MATERIAL_PARAM_SPECULAR_COLOR = 32;
+export const MATERIAL_PARAM_SPECULAR_INTENSITY = 35;
 
 export const POST_VALUE_EXPOSURE = 0;
 export const POST_VALUE_BLOOM_INTENSITY = 1;
@@ -285,6 +290,7 @@ export const MESH_ARRAYS_WEIGHTS = 1024;
 export const MORPH_POSITIONS = 1;
 export const MORPH_NORMALS = 2;
 export const MORPH_TANGENTS = 4;
+export const MORPH_COLORS = 8;
 export const MORPH_MAX_WEIGHTS = 65536;
 export const MORPH_MAX_TARGETS = 256;
 export const MORPH_WEIGHTS_PER_JOINT = 3;

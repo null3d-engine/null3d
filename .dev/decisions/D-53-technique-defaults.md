@@ -127,7 +127,7 @@ Each ruling becomes work in M2 or later. The tasks marked "proposed" need the co
 Other consequences:
 
 - Per-feature shader files that load on first use (M2-R11, D-56) come before any new feature that adds shader code. Branches already built move their shaders into first-use files in a follow-up.
-- Color morph targets (glTF's `COLOR_n` morph targets) are a parity gap under D-52's strict glTF intent. A follow-up task closes it in M2, after morph targets (M2-C5) merge.
+- Color morph targets (glTF's `COLOR_n` morph targets) are a parity gap under D-52's strict glTF intent. A follow-up task closes it in M2, after morph targets (M2-C5) merge. Closed on 5 October 2026 by M2-C11 for `COLOR_0`: [D-51](D-51-morph-targets.md#color-targets).
 - The parity list keeps only shared building blocks. Bloom, AO, outlines and the vignette leave it when their defaults change.
 - The porting skill, the port tools and the three.js mapping change with each feature as it ships, as D-52 says. Until then they describe what the engine does now: ACES as the default curve, and `UnrealBloomPass`'s steps.
 - The review's other changes need no owner ruling, and follow the best-default rule:
