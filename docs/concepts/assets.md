@@ -40,7 +40,7 @@ For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draw
 
 Before you publish a model, run it through `bunx @null3d/cli assets optimize`. The command stores its meshes as integers compressed with meshopt, and its textures as KTX2 files. The model then downloads less and takes less GPU memory. [The asset pipeline](../guides/assets-pipeline.md) covers it.
 
-The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_materials_specular`, `KHR_materials_ior`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
+The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`, `EXT_texture_webp`, `EXT_texture_avif`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_materials_specular`, `KHR_materials_ior`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
 
 ### Compressed meshes
 
@@ -56,7 +56,11 @@ The loader reads both names of the extension: `KHR_meshopt_compression`, and the
 
 ## Textures
 
-`assets.loadTexture` loads PNG, JPEG and WebP images, AVIF images where the browser decodes them, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. A worker transcodes KTX2 data into the compressed format that the device supports. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it.
+`assets.loadTexture` loads PNG, JPEG, WebP and AVIF images, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. Every browser that runs null3D decodes WebP and AVIF, so the engine ships no decoder for them. An image that does not decode fails with E1412. A worker transcodes KTX2 data into the compressed format that the device supports. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it.
+
+A KTX2 file of UASTC HDR data holds colors brighter than white, such as a sky or a lamp. It becomes BC6H on a device with BC formats, at one byte per texel. Devices without BC formats, such as the iPad and most phones, get `rgb9e5ufloat`: shared-exponent floats at four bytes per texel, half the memory of `rgba16float`, which every device filters. Its values are linear, so use it for emissive maps and unlit materials, with tone mapping on.
+
+A glTF texture takes the first image it has of these: `KHR_texture_basisu`'s KTX2 image, `EXT_texture_webp`'s WebP image, `EXT_texture_avif`'s AVIF image, its own image. Its own image is a fallback for loaders without the extensions, so the engine does not download or decode it.
 
 ```ts
 // sketch.ts
@@ -96,7 +100,7 @@ A model or texture file can come from a user, or be broken. So the loaders check
 | A mesh that the engine builds from a file or from arrays | What engine memory holds. The call fails, and the engine runs on | E1109 |
 | The sides of a KTX2 texture | `textures.maxSize`, checked before the transcoder runs | E1412 |
 | The layers of a KTX2 texture, and its texels | 256 layers, and 256 MiB of texels in the format that the device gets | E1412 |
-| The sides of a PNG or JPEG image inside a model, from its header before it decodes | 4,096, the largest texture of the engine | E1416 |
+| The sides of a PNG, JPEG, WebP or AVIF image inside a model, from its header before it decodes | 4,096, the largest texture of the engine | E1416 |
 | The pixels of every image that a model's materials decode | 1 GiB in all, 4 bytes per pixel | E1416 |
 | The sides of an image that `loadTexture` decodes, or that a model names by address | `textures.maxSize`, from the header before it decodes | E1412 |
 | The sides of an image that `loadImageBitmap` decodes | 16,384, the largest canvas of browsers | E1412 |
@@ -120,6 +124,8 @@ Each texture reports its GPU memory in `memoryBytes`. The engine counts this mem
 | `new GLTFLoader().loadAsync(url)`, then `scene.add(gltf.scene)` | `const prefab = await assets.loadGltf(url)`, then `scene.instantiate(prefab)` |
 | `gltf.scene.clone()` or `SkeletonUtils.clone` for each copy | `scene.instantiate(prefab)` for each copy, which shares the GPU data |
 | `GLTFLoader` with `KTX2Loader` and its transcoder path | `assets.loadGltf(url)`. The engine ships the transcoder |
+| `GLTFLoader` with a model whose textures use `EXT_texture_webp` or `EXT_texture_avif` | `assets.loadGltf(url)`. The browser decodes both formats |
+| `KTX2Loader` with a UASTC HDR file | `assets.loadTexture(url)`, which gives BC6H or `rgb9e5ufloat` |
 | `GLTFLoader` with `setMeshoptDecoder(MeshoptDecoder)` | `assets.loadGltf(url)`. The engine ships the decoder, and downloads it with the first compressed file |
 | `GLTFLoader` with a quantized mesh | `assets.loadGltf(url)`. A glTF node's transform becomes the object's transform, so the integers stay on the GPU |
 | An `InstancedMesh` for each mesh of a model, kept in step by hand | `scene.createInstances(prefab, count)`: one set of rows for all the model's meshes |

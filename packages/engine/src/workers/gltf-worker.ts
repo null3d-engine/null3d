@@ -2,9 +2,9 @@
 // which starts it with the first file. Each file arrives as bytes. The worker reads its container
 // and JSON, and asks for the buffers that the file names by address, which the loader downloads.
 // Then it parses the file, decoding its meshopt data with meshoptimizer's decoder, which it imports
-// with the first file that needs it. It decodes the PNG, JPEG and WebP images that the file holds
-// with createImageBitmap, once for each way a material uses them, and hands everything back in one
-// message that moves the arrays and images rather than copying them. A file it refuses comes back
+// with the first file that needs it. It decodes the PNG, JPEG, WebP and AVIF images that the file
+// holds with createImageBitmap, once for each way a material uses them, and hands everything back
+// in one message that moves the arrays and images rather than copying them. A file it refuses comes back
 // as an error with the engine's code, so no load ever waits for an answer that does not come.
 
 import {

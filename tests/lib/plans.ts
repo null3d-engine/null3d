@@ -543,6 +543,7 @@ export const SMOKE_IMAGE_TESTS: ReadonlySet<string> = new Set([
 	's4',
 	'textures',
 	'ktx2',
+	'gltf-image-formats',
 	'standard-maps',
 	'transparency',
 	'lights-16',

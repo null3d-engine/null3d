@@ -248,6 +248,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	if (bptc) {
 		compressed(G.FORMAT_BC7_RGBA_UNORM, bptc.COMPRESSED_RGBA_BPTC_UNORM_EXT);
 		compressed(G.FORMAT_BC7_RGBA_UNORM_SRGB, bptc.COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT);
+		compressed(G.FORMAT_BC6H_RGB_UFLOAT, bptc.COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT);
 	}
 	const etc = gl.getExtension('WEBGL_compressed_texture_etc');
 	if (etc) {

@@ -31,8 +31,8 @@ const FAMILIES: Record<CompressionFamily, readonly string[]> = {
 
 /**
  * The page's textures, in the order the sketch loads them: the ETC1S file twice, the UASTC file
- * with alpha, the ramp whose size takes no compressed format, and the ETC1S file without its mip
- * levels. Each gives its data, color space, size and mip levels.
+ * with alpha, the ramp whose size takes no compressed format, the ETC1S file without its mip
+ * levels, and the UASTC HDR file. Each gives its data, color space, size and mip levels.
  */
 const TEXTURES = [
 	{ data: 'etc1s', colorSpace: 'srgb', size: [64, 64, 1], levels: 7 },
@@ -40,6 +40,7 @@ const TEXTURES = [
 	{ data: 'uastc', colorSpace: 'srgb', size: [64, 64, 1], levels: 7 },
 	{ data: 'ramp', colorSpace: 'linear', size: [30, 20, 1], levels: 5 },
 	{ data: 'etc1s', colorSpace: 'srgb', size: [64, 64, 1], levels: 1 },
+	{ data: 'hdr', colorSpace: 'linear', size: [64, 64, 1], levels: 7 },
 ] as const;
 
 /**
@@ -58,15 +59,16 @@ export function deviceFamilies(
 }
 
 /**
- * The formats of the ETC1S file and of the UASTC file with alpha on a device with `families`:
- * ETC1S data goes to ETC2, BC7 or ASTC first, in that order, and UASTC data to ASTC, BC7 or ETC2.
- * On WebGL2, whose features are extension names, BC7 comes first for both, since desktop drivers
- * may emulate ETC2 and ASTC.
+ * The formats of the ETC1S file, of the UASTC file with alpha and of the UASTC HDR file on a
+ * device with `families`: ETC1S data goes to ETC2, BC7 or ASTC first, in that order, and UASTC
+ * data to ASTC, BC7 or ETC2. On WebGL2, whose features are extension names, BC7 comes first for
+ * both, since desktop drivers may emulate ETC2 and ASTC. HDR data goes to BC6H with BC, and to
+ * shared-exponent floats without.
  */
 function expectedFormats(
 	families: readonly CompressionFamily[],
 	webgl2: boolean,
-): Record<'etc1s' | 'uastc', string> {
+): Record<'etc1s' | 'uastc' | 'hdr', string> {
 	const format: Record<CompressionFamily, [etc1s: string, uastc: string]> = {
 		astc: ['astc-4x4-unorm', 'astc-4x4-unorm'],
 		bc: ['bc7-rgba-unorm', 'bc7-rgba-unorm'],
@@ -79,16 +81,18 @@ function expectedFormats(
 	return {
 		etc1s: etc1s ? format[etc1s][0] : 'rgba8unorm',
 		uastc: uastc ? format[uastc][1] : 'rgba8unorm',
+		hdr: families.includes('bc') ? 'bc6h-rgb-ufloat' : 'rgb9e5ufloat',
 	};
 }
 
 /** GPU bytes of `levels` mip levels of a texture of one layer. */
 function textureBytes(format: string, width: number, height: number, levels: number): number {
 	const block = format === 'etc2-rgb8unorm' ? 8 : 16;
+	const texels = format === 'rgba8unorm' || format === 'rgb9e5ufloat';
 	let bytes = 0;
 	for (let level = 0; level < levels; level++) {
 		const [w, h] = [Math.max(1, width >> level), Math.max(1, height >> level)];
-		bytes += format === 'rgba8unorm' ? w * h * 4 : Math.ceil(w / 4) * Math.ceil(h / 4) * block;
+		bytes += texels ? w * h * 4 : Math.ceil(w / 4) * Math.ceil(h / 4) * block;
 	}
 	return bytes;
 }
@@ -139,8 +143,8 @@ export function ktx2Problems(
 	const expectedCodes = { broken: 'E1412', flipY: production ? 'none' : 'E1208', update: 'E1208' };
 	for (const [call, code] of Object.entries(expectedCodes))
 		if (codes[call] !== code) problems.push(`the ${call} call gave ${codes[call]}, not ${code}`);
-	// A compressed texture has an array of its own. Textures of RGBA8 share an array of four
-	// layers by size, format and mip levels.
+	// A compressed or shared-exponent texture has an array of its own. Textures of RGBA8 share an
+	// array of four layers by size, format and mip levels.
 	const arrays = new Map<string, number>();
 	for (const t of production ? [...textures, textures[0] as Ktx2Texture] : textures) {
 		const compressed = t.format !== 'rgba8unorm';
@@ -155,8 +159,8 @@ export function ktx2Problems(
 
 /** The formats that the ETC1S and UASTC files became, for a run's notes. */
 export function ktx2FormatsNote(result: Ktx2Result, tier: string): string {
-	const [etc1s, , uastc] = result.recorded.textures;
-	if (!etc1s || !uastc) return `KTX2 on ${tier}: the page made no textures`;
+	const [etc1s, , uastc, , , hdr] = result.recorded.textures;
+	if (!etc1s || !uastc || !hdr) return `KTX2 on ${tier}: the page made no textures`;
 	const families = deviceFamilies(result.features);
-	return `KTX2 on ${tier}: ETC1S became ${etc1s.format}, UASTC ${uastc.format} (compressed families: ${families.length > 0 ? families.join(', ') : 'none'})`;
+	return `KTX2 on ${tier}: ETC1S became ${etc1s.format}, UASTC ${uastc.format}, UASTC HDR ${hdr.format} (compressed families: ${families.length > 0 ? families.join(', ') : 'none'})`;
 }

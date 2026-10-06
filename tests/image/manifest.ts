@@ -512,6 +512,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: [`compression=${family}`],
 		reference: 'ktx2',
 	})),
+	// A KTX2 file of UASTC HDR data beside the same values as half floats made in code: BC6H where
+	// the device has BC formats, and shared-exponent floats without them, as ?compression=none
+	// makes it. Both draw the half floats' image, so the second borrows the first's references.
+	{
+		name: 'ktx2-hdr',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'ktx2-hdr-rgb9e5',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['compression=none'],
+		reference: 'ktx2-hdr',
+	},
+	// glTF files whose texture is the same picture as PNG, as WebP and as AVIF through their
+	// extensions, as AVIF with a PNG fallback, and as AVIF named by address. Every square draws the
+	// PNG's picture.
+	{
+		name: 'gltf-image-formats',
+		sketch: 'tests/pages/sketches/gltf-image-formats-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
 	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates,
