@@ -6,7 +6,7 @@ This guide covers how a release is made. [AGENTS.md](../AGENTS.md) holds the rul
 
 The first release is 1.0, as [Versions](#versions) says. Until then, no step below runs. To release, run the Release workflow from the Actions tab and pick a release type. The workflow:
 
-1. Waits for CI to pass on main's latest commit.
+1. Checks that the newest full CI run of main's latest commit passed. That is the merge queue's run, or a run started by hand for a commit that reached main without the queue ([D-86](decisions/D-86-ci-runs-per-event.md)). Main's own run holds only a few jobs.
 2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md` and regenerates the docs.
 3. Opens a pull request. Review the changelog there, and edit `CHANGELOG.md` on that branch if a line needs it.
 
@@ -21,6 +21,8 @@ The README's roadmap lists 0.1, 0.2 and 0.3 before 1.0. Each names a set of feat
 1.0 is also the first public release. The roadmap is internal, so it stays in the README until then. Before releasing 1.0, remove it: the Roadmap section, its navigation link, the status badge's link and the by-version table under Features. Replace the pre-alpha status line too. The release script refuses 1.0.0 and every later version while the README has the roadmap.
 
 At 1.0, also announce the agent skills. Add the Claude Code plugin commands to the README's "For AI agents" section, and link `guides/agents` for other agent tools. Until then, `.claude-plugin/marketplace.json` exists and each release attaches the skill zips, but the README does not name them.
+
+At 1.0, also restore the browser tests on pull request pushes, as [D-86](decisions/D-86-ci-runs-per-event.md#until-10) says. Until then, they run only in the merge queue and in a CI run started by hand.
 
 ### Open point for 1.0: the version labels
 
