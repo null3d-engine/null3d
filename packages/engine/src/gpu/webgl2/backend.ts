@@ -45,6 +45,7 @@ import {
 	type ProgramHost,
 	prepareProgram,
 	programHost,
+	SUN_SHADOW_READS,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -306,6 +307,9 @@ function glTexture(
 	};
 }
 
+/** The slot of the sun's shadow map in the frame group. */
+const SUN_MAP_SLOT = slotOf(0, 4);
+
 export class WebGL2Backend {
 	private readonly buffers: (GlBuffer | undefined)[] = [];
 	private readonly textures: (GlTexture | undefined)[] = [];
@@ -357,6 +361,9 @@ export class WebGL2Backend {
 	private readonly depth: DepthSetup;
 	/** A vertex array with no attributes, for draws whose vertex shaders make their vertices. */
 	private shaderVertices: WebGLVertexArrayObject | null = null;
+	/** Measurement only: the sampler that `nearestOf` copied, and its copy. */
+	private nearestSource: WebGLSampler | null = null;
+	private nearestSampler: WebGLSampler | null = null;
 	/** The framebuffer through which copies read their source. */
 	private copyFramebuffer: WebGLFramebuffer | null = null;
 	/** The ring of pixel unpack buffers that texture rewrites go through, and their sizes in bytes. */
@@ -1861,7 +1868,23 @@ export class WebGL2Backend {
 		this.setScissorTest(false);
 		if (this.passToCanvas) return;
 		const framebuffer = this.passFramebuffer;
-		if (this.passResolve !== G.NO_TARGET) {
+		// Tile-based GPUs skip writing a target that the pass discards back to memory. A discard
+		// comes while the pass's framebuffer is still the one drawn into, as ANGLE on Metal ends the
+		// pass, with its stores, at a resolve's blit, which it draws as a pass of its own. The blit
+		// reads the color, so a pass that resolves discards its color after the blit.
+		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
+		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
+		const resolves = this.passResolve !== G.NO_TARGET;
+		const keepsColor = storeColor || resolves;
+		const discard = storeDepth
+			? keepsColor
+				? undefined
+				: DISCARD_COLOR
+			: keepsColor
+				? DISCARD_DEPTH
+				: DISCARD_BOTH;
+		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		if (resolves) {
 			const into =
 				this.passResolve === 0
 					? (this.canvasTarget?.framebuffer ?? null)
@@ -1873,21 +1896,11 @@ export class WebGL2Backend {
 			const height = this.passHeight;
 			gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 		}
-		// Tile-based GPUs then skip writing the multisampled targets back to memory.
-		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
-		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const depth = this.passDepth;
 		if (storeDepth && depth?.renderbuffer && depth.texture) this.copyDepth(framebuffer, depth);
-		const discard = storeColor
-			? storeDepth
-				? undefined
-				: DISCARD_DEPTH
-			: storeDepth
-				? DISCARD_COLOR
-				: DISCARD_BOTH;
-		if (discard) {
+		if (resolves && !storeColor) {
 			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
-			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, discard);
+			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, DISCARD_COLOR);
 		}
 	}
 
@@ -2239,9 +2252,35 @@ export class WebGL2Backend {
 			const sampler = units[k + 2] as number;
 			const texture = this.slotTextures[slot] ?? null;
 			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
-			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
+			const bound = sampler < 0 ? null : (this.slotSamplers[sampler] ?? null);
+			this.bindUnitSampler(
+				unit,
+				SUN_SHADOW_READS === 'nearest' && slot === SUN_MAP_SLOT && bound
+					? this.nearestOf(bound)
+					: bound,
+			);
 		}
 		this.unitsChanged = false;
+	}
+
+	/** Measurement only: a copy of comparison sampler `sampler` that does not filter, made once. */
+	private nearestOf(sampler: WebGLSampler): WebGLSampler {
+		const gl = this.gl;
+		if (this.nearestSource === sampler && this.nearestSampler) return this.nearestSampler;
+		const copy = gl.createSampler() as WebGLSampler;
+		for (const name of [
+			gl.TEXTURE_WRAP_S,
+			gl.TEXTURE_WRAP_T,
+			gl.TEXTURE_WRAP_R,
+			gl.TEXTURE_COMPARE_MODE,
+			gl.TEXTURE_COMPARE_FUNC,
+		])
+			gl.samplerParameteri(copy, name, gl.getSamplerParameter(sampler, name) as number);
+		gl.samplerParameteri(copy, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.samplerParameteri(copy, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		this.nearestSource = sampler;
+		this.nearestSampler = copy;
+		return copy;
 	}
 
 	/** Binds a sampler to a texture unit, or none. */

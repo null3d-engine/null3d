@@ -220,6 +220,96 @@ export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'
 	return { shader: shaders.mipmap, pipeline };
 }
 
+/**
+ * How the fragment shaders read the sun's shadow map, for measurements only (?glshadow=, read from
+ * the page's address, so only with render=main): `grad`, the build's own comparison reads with
+ * explicit gradients; `implicit`, the same comparisons with the texture's own level; `nearest`, the
+ * build's reads through a comparison sampler without filtering; and `fetch`, plain texel reads
+ * that the shader compares.
+ */
+export const SUN_SHADOW_READS: string = (() => {
+	try {
+		return new URLSearchParams(globalThis.location?.search ?? '').get('glshadow') ?? 'grad';
+	} catch {
+		return 'grad';
+	}
+})();
+
+/** The uniform name of the sun's shadow map in fragment shaders. */
+export const SUN_SHADOW_MAP = '_group_0_binding_4_fs';
+
+/** The end of the call whose arguments start at `open`, just past its `(`, and its top-level arguments. */
+function callArguments(text: string, open: number): { end: number; args: string[] } {
+	const args: string[] = [];
+	let depth = 0;
+	let start = open;
+	for (let i = open; i < text.length; i++) {
+		const c = text[i];
+		if (c === '(') depth++;
+		else if (c === ')') {
+			if (depth === 0) {
+				args.push(text.slice(start, i).trim());
+				return { end: i + 1, args };
+			}
+			depth--;
+		} else if (c === ',' && depth === 0) {
+			args.push(text.slice(start, i).trim());
+			start = i + 1;
+		}
+	}
+	throw new Error('unbalanced call in a shader');
+}
+
+/** Rewrites each comparison read of the sun's shadow map in `source` with `rewrite`. */
+function rewriteSunReads(source: string, rewrite: (coord: string[]) => string): string {
+	const call = `textureGrad(${SUN_SHADOW_MAP},`;
+	let out = '';
+	let from = 0;
+	for (let at = source.indexOf(call); at >= 0; at = source.indexOf(call, from)) {
+		const { end, args } = callArguments(source, at + 'textureGrad('.length);
+		const coord = args[1] as string;
+		const inner = callArguments(coord, coord.indexOf('(') + 1).args;
+		out += source.slice(from, at) + rewrite(inner);
+		from = end;
+	}
+	return out + source.slice(from);
+}
+
+/** A program's sources with the sun's shadow map read as `mode` asks. */
+export function sunShadowReads(program: GlslProgram, mode = SUN_SHADOW_READS): GlslProgram {
+	const fragment = program.fragment;
+	if (mode !== 'implicit' && mode !== 'fetch') return program;
+	if (!fragment.source.includes(`textureGrad(${SUN_SHADOW_MAP},`)) return program;
+	if (mode === 'implicit')
+		return {
+			...program,
+			fragment: {
+				...fragment,
+				source: rewriteSunReads(
+					fragment.source,
+					([uv, layer, reference]) =>
+						`texture(${SUN_SHADOW_MAP}, vec4(${uv}, ${layer}, ${reference}))`,
+				),
+			},
+		};
+	const size = `vec2(textureSize(${SUN_SHADOW_MAP}, 0).xy)`;
+	const source = rewriteSunReads(
+		fragment.source,
+		([uv, layer, reference]) =>
+			`step(texelFetch(${SUN_SHADOW_MAP}, ivec3(ivec2(floor((${uv}) * ${size})), int(${layer})), 0).r, ${reference})`,
+	).replace(`sampler2DArrayShadow ${SUN_SHADOW_MAP};`, `sampler2DArray ${SUN_SHADOW_MAP};`);
+	return {
+		...program,
+		fragment: {
+			...fragment,
+			source,
+			textures: fragment.textures.map((t) =>
+				t.name === SUN_SHADOW_MAP ? { ...t, sampler: null } : t,
+			),
+		},
+	};
+}
+
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
 	const shader = gl.createShader(type);
 	if (!shader) throw new Error('WebGL2 could not create a shader');
@@ -260,8 +350,9 @@ export function createProgram(
 ): Program {
 	const build = buildPermutation(template, permutation);
 	const shading = variantFor(template.shader, build, 'glsl')?.glsl?.[template.pipeline];
-	const source =
+	const shaded =
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
+	const source = shaded && sunShadowReads(shaded);
 	if (!source)
 		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
 	const { program, shaders } = link(gl, source, '');
