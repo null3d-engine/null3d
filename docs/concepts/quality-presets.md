@@ -173,7 +173,6 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Shadow filter (`shadowFilter`) | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
 | Far cascades follow moving casters (`followMovingCasters`) | yes | yes | yes | yes | during play | built |
-| Far cascades cache still casters (`farCascadeCache`) | yes | no | no | no | during play | built |
 | Blend between shadow cascades (`shadowCascadeBlend`) | 10% of each cascade | 10% of each cascade | 10% of each cascade | 10% of each cascade | during play | built |
 | Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |

@@ -50,12 +50,6 @@
 //! rebuilds both layouts. Every camera view's frame group binds the shadow map, which is one texel
 //! of one layer while no light casts shadows.
 //!
-//! While far cascades cache their still casters, each far cascade's cache is a view too, which the
-//! job workers cull for the still casters alone, in the cascade's turns. A cascade that draws
-//! through its cache culls its moving casters alone, and its shadow pass copies the cache layer
-//! into its layer before it draws them (see [`crate::shadow_cache`]). Both cull by the scene's
-//! cell order, which keeps the still and the moving sources apart.
-//!
 //! Point and spot lights cast shadows into the tiles of the shadow atlas (see
 //! [`crate::shadow_tiles`]). Each tile is a view too, which the job workers cull against the
 //! casters' layout into an index list of its own, but only in the frames in which the tile must
@@ -105,7 +99,7 @@ use null3d_gpu::drawlist::{
 use crate::ao::{self, AoIds};
 use crate::background::BackgroundPass;
 use crate::bloom::BloomIds;
-use crate::cells::{CellCulling, Sources};
+use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
 use crate::environment;
@@ -122,7 +116,6 @@ use crate::meshes::{MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
-use crate::shadow_cache::ShadowRestore;
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
@@ -245,11 +238,8 @@ mod ids {
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
-    /// The bind group of the far shadow cascades' cache, which the copy into a cascade's layer
-    /// reads, after ambient occlusion's.
-    pub const RESTORE_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
-    /// The bind groups of materials' maps, after the cache's.
-    pub const TEXTURE_GROUPS: u32 = RESTORE_GROUP + 1;
+    /// The bind groups of materials' maps, after ambient occlusion's.
+    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -336,11 +326,6 @@ pub struct CpuCulledRenderer {
     /// The shadow cascades' culling output and draws.
     cascade_culling: Culling,
     cascade_draws: Opaque,
-    /// The culling output and draws of the far cascades' caches, which hold their still casters.
-    cache_culling: Culling,
-    cache_draws: Opaque,
-    /// The copy of the far cascades' cache layers into their layers.
-    restore: ShadowRestore,
     /// The main directional light's shadows in the frame that culled last, or `None` without them.
     shadow: Option<ShadowFrame>,
     /// The tiles of the point and spot lights' shadow atlas, as the frame that culled last planned
@@ -447,9 +432,6 @@ impl CpuCulledRenderer {
             opaque: Opaque::new(ViewId::CAMERA, config.multi_draw),
             cascade_culling: Culling::new(ViewId::cascade(0)),
             cascade_draws: Opaque::new(ViewId::cascade(0), config.multi_draw),
-            cache_culling: Culling::new(ViewId::cascade_cache(0)),
-            cache_draws: Opaque::new(ViewId::cascade_cache(0), config.multi_draw),
-            restore: ShadowRestore::default(),
             shadow: None,
             tiles: ShadowTiles::new(),
             tile_culling: Culling::new(ViewId::tile(0)),
@@ -516,13 +498,12 @@ impl CpuCulledRenderer {
         self.clusters.current_order(slot)
     }
 
-    /// The culling of the views of `view`'s kind: the cameras', the shadow cascades', the
-    /// cascades' caches', the shadow tiles' or the outline view's.
+    /// The culling of the views of `view`'s kind: the cameras', the shadow cascades', the shadow
+    /// tiles' or the outline view's.
     fn culling_of(&self, view: ViewId) -> &Culling {
-        match (view.cascade_index(), view.tile_index(), view.cache_index()) {
-            (Some(_), _, _) => &self.cascade_culling,
-            (_, Some(_), _) => &self.tile_culling,
-            (_, _, Some(_)) => &self.cache_culling,
+        match (view.cascade_index(), view.tile_index()) {
+            (Some(_), _) => &self.cascade_culling,
+            (_, Some(_)) => &self.tile_culling,
             _ if view == ViewId::OUTLINE => &self.outline_culling,
             _ => &self.culling,
         }
@@ -550,15 +531,6 @@ impl CpuCulledRenderer {
     /// The shadow cascades that the frame that culled last draws.
     fn cascades(&self) -> usize {
         self.shadow.as_ref().map_or(0, |s| s.cascades.count)
-    }
-
-    /// The cache views of the frame that culled last: one per cascade while far cascades cache,
-    /// of which the nearest cascade's never draws.
-    fn caches(&self) -> usize {
-        self.shadow
-            .as_ref()
-            .filter(|s| s.cache)
-            .map_or(0, |s| s.cascades.count)
     }
 
     /// The tiles of the shadow atlas in the frame that culled last.
@@ -718,13 +690,11 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         let new_views = self.culling.views() < views;
         let cascades = self.cascades();
-        let caches = self.caches();
         let tiles = self.tile_count();
         let outlines = self.outline_views();
         for (culling, layout, count) in [
             (&mut self.culling, &self.layout, views),
             (&mut self.cascade_culling, &self.casters, cascades),
-            (&mut self.cache_culling, &self.casters, caches),
             (&mut self.tile_culling, &self.casters, tiles),
             (&mut self.outline_culling, &self.outlined, outlines),
         ] {
@@ -754,10 +724,9 @@ impl CpuCulledRenderer {
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the material table, three.js's table of specular terms, the light grid, each
-    /// view's, each shadow cascade's, each cascade cache's and each shadow tile's frame uniform,
-    /// draw records and multi-draw arrays, the cascades' and the tiles' uniform blocks, the final
-    /// pass's settings, the skinned objects' first joints after a change, and the cluster orders
-    /// not uploaded yet.
+    /// view's, each shadow cascade's and each shadow tile's frame uniform, draw records and
+    /// multi-draw arrays, the cascades' and the tiles' uniform blocks, the final pass's settings,
+    /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -774,7 +743,7 @@ impl CpuCulledRenderer {
         };
         let views = self.settings.views().len();
         let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
-        let cascades = (2 * MAX_CASCADES + tiles) * per_view(&self.casters);
+        let cascades = (MAX_CASCADES + tiles) * per_view(&self.casters);
         let outline = per_view(&self.outlined);
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         meshes
@@ -817,17 +786,16 @@ impl CpuCulledRenderer {
         Ok(())
     }
 
-    /// Makes the data textures, and each view's, each shadow cascade's, each cascade cache's and
-    /// each shadow tile's index list textures and draw records, big enough for their layouts, with
-    /// room to grow. Binds each view's textures again when one is new: every view after a new
-    /// layout, else only the new ones, from `first_new` for the views, the cascades, the caches,
-    /// the tiles and the outline view in turn. Returns true when the resident texture is new, so
-    /// it needs every row again.
+    /// Makes the data textures, and each view's, each shadow cascade's and each shadow tile's index
+    /// list textures and draw records, big enough for their layouts, with room to grow. Binds each
+    /// view's textures again when one is new: every view after a new layout, else only the new
+    /// ones, from `first_new` for the views, the cascades and the tiles in turn. Returns true when
+    /// the resident texture is new, so it needs every row again.
     fn size_resources(
         &mut self,
         list: &mut DrawList,
         input: &FrameInput<'_>,
-        first_new: [usize; 5],
+        first_new: [usize; 4],
         rebuilt: bool,
     ) -> Result<bool, RecordError> {
         let limit = self.config.max_texture_size;
@@ -842,13 +810,11 @@ impl CpuCulledRenderer {
         let skins = self.skins.textures();
         let views = self.settings.views().len();
         let cascades = self.cascades();
-        let caches = self.caches();
         let tiles = self.tile_count();
         let outlines = self.outline_views();
         let [
             first_new,
             first_new_cascade,
-            first_new_cache,
             first_new_tile,
             first_new_outline,
         ] = first_new;
@@ -866,13 +832,6 @@ impl CpuCulledRenderer {
                 &self.casters,
                 cascades,
                 first_new_cascade,
-            ),
-            (
-                &mut self.cache_culling,
-                &mut self.cache_draws,
-                &self.casters,
-                caches,
-                first_new_cache,
             ),
             (
                 &mut self.tile_culling,
@@ -1045,8 +1004,6 @@ impl CpuCulledRenderer {
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        let cache = self.shadow.as_ref().is_some_and(|s| s.cache);
-        self.restore.request_pipeline(cache, &mut self.pipelines);
         let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
@@ -1092,16 +1049,6 @@ impl CpuCulledRenderer {
         for cascade in first_new_cascade..cascades {
             Opaque::bind_frame(list, ViewId::cascade(cascade), None)?;
         }
-        let caches = self.caches();
-        let first_new_cache = self.cache_draws.views();
-        self.cache_draws.add_views(list, caches)?;
-        for cascade in first_new_cache..caches {
-            Opaque::bind_frame(list, ViewId::cascade_cache(cascade), None)?;
-        }
-        let cache_texture = self.graph.shadow_cache();
-        let remade = self.graph.textures_made();
-        self.restore
-            .bind(list, ids::RESTORE_GROUP, cache_texture, remade)?;
         let tiles = self.tile_count();
         let first_new_tile = self.tile_draws.views();
         self.tile_draws.add_views(list, tiles)?;
@@ -1149,14 +1096,12 @@ impl CpuCulledRenderer {
         self.background.prepare(&self.settings);
         let new_views = first_new < views
             || first_new_cascade < cascades
-            || first_new_cache < caches
             || first_new_tile < tiles
             || first_new_outline < outlines;
         let new_texture = if rebuilt || new_views {
             let first_new = [
                 first_new,
                 first_new_cascade,
-                first_new_cache,
                 first_new_tile,
                 first_new_outline,
             ];
@@ -1238,19 +1183,6 @@ impl CpuCulledRenderer {
                     frame,
                     streamed,
                 )?;
-                upload_views(
-                    list,
-                    arena,
-                    (
-                        &mut self.cache_culling,
-                        &mut self.cache_draws,
-                        &self.casters,
-                    ),
-                    None,
-                    caches,
-                    frame,
-                    streamed,
-                )?;
             }
         }
         let camera = self.culling.frame(ViewId::CAMERA);
@@ -1263,14 +1195,6 @@ impl CpuCulledRenderer {
 
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
-        let (cache_culling, cache_draws) = (&self.cache_culling, &self.cache_draws);
-        let restore = &self.restore;
-        // The cascades that copy their cache layer into their layer before their moving casters.
-        let shadow = self.shadow.as_ref();
-        let restores = |view: ViewId| {
-            view.cascade_index()
-                .filter(|&cascade| shadow.is_some_and(|s| s.restores(cascade)))
-        };
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
@@ -1280,9 +1204,6 @@ impl CpuCulledRenderer {
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
-            Role::Shadow(view) if view.cache_index().is_some() => {
-                cache_culling.frame(view).is_none()
-            }
             Role::Shadow(view) => cascade_culling.frame(view).is_none(),
             _ => false,
         };
@@ -1306,18 +1227,7 @@ impl CpuCulledRenderer {
                     let shading = Shading::Prepass { light_slot };
                     opaque.record(list, arena, view, starts, layout, meshes, shading)
                 }
-                Role::Shadow(view) if view.cache_index().is_some() => {
-                    if cache_culling.frame(view).is_none() {
-                        return Ok(());
-                    }
-                    let starts = cache_culling.culled(frame, view).bucket_starts();
-                    let shading = Shading::Depth;
-                    cache_draws.record(list, arena, view, starts, casters, meshes, shading)
-                }
                 Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
-                    if let Some(cascade) = restores(view) {
-                        restore.record(list, ids::RESTORE_GROUP, cascade as u32 - 1)?;
-                    }
                     let starts = cascade_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Depth;
                     cascade_draws.record(list, arena, view, starts, casters, meshes, shading)
@@ -1418,7 +1328,6 @@ impl FrameBuilder for CpuCulledRenderer {
     fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
         self.culling.reserve_sources(sources)?;
         self.cascade_culling.reserve_sources(sources)?;
-        self.cache_culling.reserve_sources(sources)?;
         self.tile_culling.reserve_sources(sources)?;
         self.outline_culling.reserve_sources(sources)
     }
@@ -1430,7 +1339,7 @@ impl FrameBuilder for CpuCulledRenderer {
             input.canvas,
             input.render_scale,
         );
-        self.shadow = self.settings.shadow_frame(input, self.cells.enabled());
+        self.shadow = self.settings.shadow_frame(input);
         let camera = self
             .settings
             .view_frame(ViewId::CAMERA, scene, parity, canvas, scale);
@@ -1466,10 +1375,6 @@ impl FrameBuilder for CpuCulledRenderer {
             self.rebuild_layout(input, shadows, outlines)?;
         }
         self.add_culled_views()?;
-        // Far cascades that cache cull their still and their moving casters apart, by the cell
-        // order, which must then follow every frame.
-        let cache = self.shadow.as_ref().is_some_and(|s| s.cache);
-        self.cells.set_split(cache);
         self.cells.update(input);
         let out_of_memory = |layout: &Layout| RecordError::OutOfMemory {
             bytes: layout.room.rows.saturating_mul(8),
@@ -1485,7 +1390,6 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| settings.view_frame(view, scene, parity, canvas, scale),
-                &|_| Sources::All,
                 Some(sorted),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
@@ -1512,28 +1416,6 @@ impl FrameBuilder for CpuCulledRenderer {
                     let shadow = shadow.filter(|s| s.draws(cascade))?;
                     Some(shadow.view_frame(cascade))
                 },
-                // A cascade that draws through its cache draws its moving casters alone.
-                &|view| match view.cascade_index() {
-                    Some(cascade) if shadow.is_some_and(|s| s.restores(cascade)) => Sources::Moving,
-                    _ => Sources::All,
-                },
-                None,
-                None,
-            )
-            .map_err(|_| out_of_memory(&self.casters))?;
-        // In its turn, a far cascade's cache view draws its still casters alone.
-        self.cache_culling
-            .cull(
-                input,
-                &self.casters,
-                &mut self.clusters,
-                cells,
-                &|view| {
-                    let cascade = view.cache_index()?;
-                    let shadow = shadow.filter(|s| s.caches(cascade))?;
-                    Some(shadow.view_frame(cascade))
-                },
-                &|_| Sources::Still,
                 None,
                 None,
             )
@@ -1546,7 +1428,6 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
-                &|_| Sources::All,
                 None,
                 None,
             )
@@ -1563,7 +1444,6 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|_| camera.filter(|_| outlines),
-                &|_| Sources::All,
                 None,
                 None,
             )
@@ -1614,9 +1494,6 @@ impl FrameBuilder for CpuCulledRenderer {
         self.opaque.forget_gpu();
         self.cascade_culling.forget_gpu();
         self.cascade_draws.forget_gpu();
-        self.cache_culling.forget_gpu();
-        self.cache_draws.forget_gpu();
-        self.restore.forget_gpu();
         self.tile_culling.forget_gpu();
         self.tile_draws.forget_gpu();
         self.outline_culling.forget_gpu();

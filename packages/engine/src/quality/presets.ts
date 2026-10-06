@@ -51,11 +51,6 @@ export interface Setting {
 	presets: readonly [unknown, unknown, unknown, unknown];
 	changes: SettingChange;
 	values: SettingValues;
-	/**
-	 * True for a flag that costs less GPU time when on, as a cache does, which trades memory for
-	 * it. Every other flag costs more when on.
-	 */
-	lighterWhenOn?: boolean;
 }
 
 /**
@@ -117,17 +112,6 @@ export const QUALITY_SETTINGS = {
 		presets: [true, true, true, true],
 		changes: 'live',
 		values: 'flag',
-	},
-	// Whether each far cascade keeps the depth of its still casters in a cache layer, so that
-	// between its turns it copies the cache and draws only its moving casters. It keeps the saving
-	// of the turns where moving casters fill the far cascades, as S4's cars do, for a cache layer
-	// of the shadow map's size per far cascade: 4 MiB on Low. The heavier presets keep the memory
-	// and draw such a cascade whole. D-16 gives the figures.
-	farCascadeCache: {
-		presets: [true, false, false, false],
-		changes: 'live',
-		values: 'flag',
-		lighterWhenOn: true,
 	},
 	// The share of each shadow cascade's length, at its far end, over which its shadow blends into
 	// the next cascade's, so no line shows where they meet. Only the band's pixels read a second
@@ -310,15 +294,6 @@ export interface QualitySettings {
 	 * it on. It changes during play.
 	 */
 	followMovingCasters: boolean;
-	/**
-	 * True when each far shadow cascade keeps the depth of its still casters in a cache layer of
-	 * its own. A far cascade then draws its still casters only in its turns of
-	 * `farCascadeInterval` frames, into the cache, and in a frame where a moving caster touches it,
-	 * it copies the cache and draws only its moving casters. Each cache layer takes the memory of
-	 * a layer of the shadow map: 4 MiB for each far cascade of 1,024 texels. False draws such a
-	 * cascade whole. Low turns it on. It changes during play.
-	 */
-	farCascadeCache: boolean;
 	/**
 	 * The share of each shadow cascade's length, at its far end, over which its shadow blends into
 	 * the next cascade's, from 0 to 0.5. The blend hides the line where a near cascade's sharper

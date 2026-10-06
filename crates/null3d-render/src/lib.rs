@@ -36,7 +36,6 @@
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
-//! - `shadow_cache`: the copy of a far shadow cascade's cache of still casters into its layer
 //! - `shadow_tiles`: the tiles of the point and spot lights' shadow atlas, and when each draws
 //! - `shadows`: the cascades of a directional light's shadows, fitted to the camera's view
 //! - `skinning`: skinned objects' bounds from their poses, the joint matrix texture, and the
@@ -75,7 +74,6 @@ pub mod output;
 pub mod parallel_record;
 pub mod pipelines;
 pub mod queries;
-mod shadow_cache;
 pub mod shadow_tiles;
 pub mod shadows;
 pub mod skinning;

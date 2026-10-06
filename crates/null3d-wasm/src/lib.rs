@@ -2055,24 +2055,16 @@ pub fn shadow_casters() -> u32 {
 
 /// The shadow settings that the quality settings give every light: the texels on each side of the
 /// shadow filter, how many frames pass between two draws of a far cascade, whether a far cascade
-/// draws in every frame while a moving caster touches it, the share of each cascade's length over
-/// which it blends into the next, and whether far cascades keep their still casters in cache
-/// layers. The TypeScript API checks them.
+/// draws in every frame while a moving caster touches it, and the share of each cascade's length
+/// over which it blends into the next. The TypeScript API checks them.
 #[wasm_bindgen(js_name = setShadowQuality)]
-pub fn set_shadow_quality(
-    filter: u32,
-    far_interval: u32,
-    follow_movers: bool,
-    blend: f32,
-    cache: bool,
-) -> u32 {
+pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool, blend: f32) -> u32 {
     with_engine(|e| {
         let quality = ShadowQuality {
             filter,
             far_interval,
             follow_movers,
             blend,
-            cache,
         };
         e.renderer.settings_mut().set_shadow_quality(quality);
         0

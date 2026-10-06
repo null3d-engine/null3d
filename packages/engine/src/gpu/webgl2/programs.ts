@@ -32,7 +32,6 @@ import {
 	TEMPLATE_LINE_LIT,
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
-	TEMPLATE_SHADOW_RESTORE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
 } from '../../generated/gpu';
@@ -188,7 +187,6 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_DEPTH] = { shader: shaders.shadow_depth, pipeline: 'main' };
-	templates[TEMPLATE_SHADOW_RESTORE] = { shader: shaders.shadow_restore, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
 	// Sprites turn their quads to face the camera, so their prepass draws with their own vertex
 	// shader too.

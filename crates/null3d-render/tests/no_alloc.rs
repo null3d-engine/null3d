@@ -56,10 +56,10 @@ fn recording_steady_frames_allocates_nothing() {
 }
 
 /// Records warm-up frames of `world` with every object casting and receiving the sun's shadows
-/// in four cascades, far ones that draw every other frame, through their cache with `cache`, and
-/// a dynamic caster that keeps them drawing, then steady frames and frames whose structure
-/// changes, and returns what those allocated.
-fn shadow_allocations<B: FrameBuilder>(mut world: World<B>, cache: bool) -> u64 {
+/// in four cascades, far ones that draw every other frame, and a dynamic caster that keeps them
+/// drawing, then steady frames and frames whose structure changes, and returns what those
+/// allocated.
+fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
     let mut commands: Vec<Command> = world
         .objects
@@ -72,7 +72,6 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>, cache: bool) -> u64 
         filter: 3,
         far_interval: 2,
         follow_movers: true,
-        cache,
         ..ShadowQuality::default()
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
@@ -99,15 +98,10 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>, cache: bool) -> u64 
 fn recording_frames_with_shadows_allocates_nothing() {
     let _only = CountingAllocator::exclusive();
     CountingAllocator::track_this_thread();
-    for cache in [false, true] {
-        assert_eq!(shadow_allocations(World::new(), cache), 0, "cache {cache}");
-        for multi_draw in [true, false] {
-            let allocated = shadow_allocations(webgl2_world(multi_draw), cache);
-            assert_eq!(
-                allocated, 0,
-                "WebGL2, multi-draw {multi_draw}, cache {cache}"
-            );
-        }
+    assert_eq!(shadow_allocations(World::new()), 0);
+    for multi_draw in [true, false] {
+        let allocated = shadow_allocations(webgl2_world(multi_draw));
+        assert_eq!(allocated, 0, "WebGL2, multi-draw {multi_draw}");
     }
 }
 
@@ -305,7 +299,7 @@ fn recording_frames_with_the_depth_prepass_allocates_nothing() {
             ..RendererConfig::default()
         })
     };
-    assert_eq!(shadow_allocations(world(), false), 0, "shadows");
+    assert_eq!(shadow_allocations(world()), 0, "shadows");
     assert_eq!(two_view_allocations(world()), 0, "two views");
     for multi_draw in [true, false] {
         let world = || {
@@ -316,7 +310,7 @@ fn recording_frames_with_the_depth_prepass_allocates_nothing() {
             }))
         };
         assert_eq!(
-            shadow_allocations(world(), false),
+            shadow_allocations(world()),
             0,
             "WebGL2 shadows, multi-draw {multi_draw}"
         );

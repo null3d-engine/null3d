@@ -44,16 +44,6 @@ pub(crate) const MOVING: u32 = MAX_CELLS;
 /// test, before the cell counts as out of view: well past the rounding of the per-object test.
 const MARGIN: f64 = 8.0 * f32::EPSILON as f64;
 
-/// Which sources a view culls: all of them, the still ones alone, or the moving ones alone. A far
-/// shadow cascade with a cache draws its still casters into the cache and its moving casters over
-/// a copy of it (see [`crate::shadows`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Sources {
-    All,
-    Still,
-    Moving,
-}
-
 /// Visits sources for [`CellOrder::build`]: it calls the visitor it gets with each source and its
 /// cell, or [`MOVING`].
 pub(crate) type Visit<'a> = &'a dyn Fn(&mut dyn FnMut(u32, u32));
@@ -277,11 +267,6 @@ pub(crate) struct CellCulling {
     current: bool,
     /// True when the last update found cells to cull by.
     active: bool,
-    /// True when the builder needs the order of still and moving sources even where the scene
-    /// lies in the origin cell alone, as shadow cascades with a cache do.
-    split: bool,
-    /// True when the order matches the scene as of the last update.
-    ordered: bool,
     /// How many times the order was built, so a builder knows when to upload its own again.
     builds: u32,
 }
@@ -302,22 +287,8 @@ impl CellCulling {
             chain: Vec::new(),
             current: false,
             active: false,
-            split: false,
-            ordered: false,
             builds: 0,
         }
-    }
-
-    /// Makes the updates keep the order of still and moving sources in every frame, or only while
-    /// cell culling runs.
-    pub(crate) fn set_split(&mut self, split: bool) {
-        self.split = split;
-    }
-
-    /// True for a builder made with cell culling on, which can keep the order of still and moving
-    /// sources.
-    pub(crate) fn enabled(&self) -> bool {
-        self.enabled
     }
 
     /// Sorts the scene's slots into still and moving sources after a layout rebuild, which
@@ -385,31 +356,24 @@ impl CellCulling {
 
     /// Brings the order and the boxes up to the frame, and returns true when cell culling runs
     /// for it: the builder was made with it on, and the scene's sources lie in more than the
-    /// origin cell. With the split on, the order follows the frame in either case. Call it once
-    /// per frame, after [`CellCulling::classify`] for a new layout. Allocates nothing.
+    /// origin cell. Call it once per frame, after [`CellCulling::classify`] for a new layout.
+    /// Allocates nothing.
     #[inline(never)]
     pub(crate) fn update(&mut self, input: &FrameInput<'_>) -> bool {
         self.active = self.enabled && !input.scene.cell_table().origin_only();
-        self.ordered = self.enabled && (self.active || self.split);
-        if !self.ordered {
+        if !self.active {
             self.current = false;
             return false;
         }
         if !(self.current && self.follow(input)) {
             self.build(input);
         }
-        self.active
+        true
     }
 
     /// True when the last update found cells to cull by.
     pub(crate) fn active(&self) -> bool {
         self.active
-    }
-
-    /// True when the order of still and moving sources matches the frame of the last update: while
-    /// cell culling runs, or while the split is on.
-    pub(crate) fn ordered(&self) -> bool {
-        self.ordered
     }
 
     /// How many times the order was built; a builder whose order holds more than the scene's

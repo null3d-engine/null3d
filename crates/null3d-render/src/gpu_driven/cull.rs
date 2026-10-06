@@ -27,7 +27,7 @@ use null3d_gpu::drawlist::{
 
 use super::ids;
 use super::layout::Layout;
-use crate::cells::{CellCulling, CellMask, Sources};
+use crate::cells::{CellCulling, CellMask};
 use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes,
 };
@@ -207,10 +207,8 @@ impl Culling {
     /// mask, the offset from its camera to each cell in use in `scene`, and, while `cells` culls by
     /// cell, the runs of the cell order of the cells it can see. `sources` is the scene's layout,
     /// whose sources and cell order every view culls, and `drawn` the layout whose buckets the
-    /// view draws. A view that culls only the still or the moving sources (`kinds`) culls the
-    /// runs of the cell order that hold them, which `cells` keeps while far cascades cache.
-    /// Resets its indirect draws' instance counts to zero, and notes the workgroups of its
-    /// dispatch.
+    /// view draws. Resets its indirect draws' instance counts to zero, and notes the workgroups of
+    /// its dispatch.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn upload(
         &mut self,
@@ -222,7 +220,6 @@ impl Culling {
         drawn: &Layout,
         scene: &SceneStorage,
         cells: &CellCulling,
-        kinds: Sources,
     ) -> Result<(), RecordError> {
         let mut params = [0u32; (CULL_PLANES_BYTES / 4) as usize];
         for (plane, out) in frame.frustum.planes().iter().zip(params.chunks_mut(4)) {
@@ -236,13 +233,9 @@ impl Culling {
         let buffers = self.views[view.index()]
             .as_mut()
             .expect("a view's buffers exist before it culls");
-        let (ranges, groups) = if cells.active() || kinds != Sources::All {
-            debug_assert!(
-                cells.ordered(),
-                "a view culls still or moving sources by cell order"
-            );
+        let (ranges, groups) = if cells.active() {
             let visible: CellMask = cells.visible(&frame.frustum, self.offsets.as_slice());
-            sources.ranges(&visible, kinds, &mut buffers.ranges)
+            sources.ranges(&visible, &mut buffers.ranges)
         } else {
             (0, sources.sources.div_ceil(sizes::CULL_WORKGROUP_SIZE))
         };

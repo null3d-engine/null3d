@@ -68,12 +68,6 @@
 //! Turning shadows on or off rebuilds both layouts. Every camera view's frame group binds the
 //! shadow map, which is one texel of one layer while no light casts shadows.
 //!
-//! While far cascades cache their still casters, each far cascade's cache is a view too, which
-//! culls the casters' layout for its still casters alone, in the cascade's turns. A cascade that
-//! draws through its cache culls its moving casters alone, and its shadow pass copies the cache
-//! layer into its layer before its bundle (see [`crate::shadow_cache`]). Both cull runs of the
-//! scene's cell order, which keeps the still and the moving sources apart.
-//!
 //! Point and spot lights cast shadows into the tiles of the shadow atlas (see
 //! [`crate::shadow_tiles`]). Each tile is a view too, which culls and draws the casters' layout as
 //! a cascade does, but only in the frames in which the tile must draw again. Every camera view's
@@ -126,7 +120,7 @@ use null3d_gpu::drawlist::{
 use crate::ao::{self, AoIds};
 use crate::background::BackgroundPass;
 use crate::bloom::BloomIds;
-use crate::cells::{CellCulling, Sources};
+use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
 use crate::environment;
@@ -142,7 +136,6 @@ use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
-use crate::shadow_cache::ShadowRestore;
 use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
 use crate::shadows::{self, MAX_CASCADES, ShadowUniform};
 use crate::sorted::SortedLayout;
@@ -336,11 +329,8 @@ mod ids {
     pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_SEGMENTS;
     /// The bind group of each step of ambient occlusion, after the joint texture's.
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
-    /// The bind group of the far shadow cascades' cache, which the copy into a cascade's layer
-    /// reads, after ambient occlusion's.
-    pub const RESTORE_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
-    /// The bind groups of materials' maps, after the cache's.
-    pub const TEXTURE_GROUPS: u32 = RESTORE_GROUP + 1;
+    /// The bind groups of materials' maps, after ambient occlusion's.
+    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -441,16 +431,11 @@ pub struct GpuDrivenRenderer {
     /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
     /// frame does not draw.
     cascade_frames: [Option<ViewFrame>; MAX_CASCADES],
-    /// Each far cascade's values in the frame being recorded while its cache draws, or `None`.
-    cache_frames: [Option<ViewFrame>; MAX_CASCADES],
-    /// The copy of the far cascades' cache layers into their layers.
-    restore: ShadowRestore,
     /// The tiles of the point and spot lights' shadow atlas.
     tiles: ShadowTiles,
-    /// The camera views, the cascades, the cascades' caches and the tiles whose GPU objects exist.
+    /// The camera views, the cascades and the tiles whose GPU objects exist.
     views_made: usize,
     cascades_made: usize,
-    caches_made: usize,
     tiles_made: usize,
     /// True when the cascades' uniform block holds cascades, which receivers then read.
     cascades_held: bool,
@@ -542,12 +527,9 @@ impl GpuDrivenRenderer {
             skinning: Skinning::new(config.vertex_skinning),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
-            cache_frames: [None; MAX_CASCADES],
-            restore: ShadowRestore::default(),
             tiles: ShadowTiles::new(),
             views_made: 0,
             cascades_made: 0,
-            caches_made: 0,
             tiles_made: 0,
             cascades_held: false,
             created: false,
@@ -567,9 +549,6 @@ impl GpuDrivenRenderer {
     pub fn view_frame(&self, view: ViewId) -> Option<&ViewFrame> {
         if let Some(tile) = view.tile_index() {
             return self.tiles.frame(tile);
-        }
-        if let Some(cascade) = view.cache_index() {
-            return self.cache_frames.get(cascade)?.as_ref();
         }
         match view.cascade_index() {
             Some(cascade) => self.cascade_frames.get(cascade)?.as_ref(),
@@ -613,8 +592,7 @@ impl GpuDrivenRenderer {
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
-        let shadow = self.settings.shadow_frame(input, self.cells.enabled());
-        let cache = shadow.as_ref().is_some_and(|s| s.cache);
+        let shadow = self.settings.shadow_frame(input);
         let camera = self.settings.view_frame(
             ViewId::CAMERA,
             input.scene,
@@ -768,7 +746,6 @@ impl GpuDrivenRenderer {
             &mut self.pipelines,
             self.graph.scene_targets(),
         );
-        self.restore.request_pipeline(cache, &mut self.pipelines);
         created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
         created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
@@ -794,10 +771,6 @@ impl GpuDrivenRenderer {
             .graph
             .shadow_atlas()
             .expect("the builder's graph binds a shadow atlas");
-        let cache_texture = self.graph.shadow_cache();
-        let remade = self.graph.textures_made();
-        self.restore
-            .bind(list, ids::RESTORE_GROUP, cache_texture, remade)?;
         let first_new = self.views_made;
         let prepass = self.graph.depth_prepass();
         let occlusion = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
@@ -834,15 +807,6 @@ impl GpuDrivenRenderer {
             self.culling.add_view(list, view)?;
         }
         self.cascades_made = self.cascades_made.max(cascades);
-        // Far cascades have a cache view each while they cache; the nearest has none.
-        let caches = if cache { cascades } else { 0 };
-        let first_new_cache = self.caches_made.max(1);
-        for cascade in first_new_cache..caches {
-            let view = ViewId::cascade_cache(cascade);
-            shadow::create_view(list, view)?;
-            self.culling.add_view(list, view)?;
-        }
-        self.caches_made = self.caches_made.max(caches);
         let tiles = self.tiles.shape().map_or(0, |s| s.layers as usize);
         let first_new_tile = self.tiles_made;
         for tile in first_new_tile..tiles {
@@ -859,9 +823,6 @@ impl GpuDrivenRenderer {
             self.outline_made = true;
         }
 
-        // Far cascades that cache cull their still and their moving casters apart, by the cell
-        // order, which must then follow every frame.
-        self.cells.set_split(cache);
         self.cells.update(input);
         // Each view's values first: the camera's light grid sets how much its upload takes.
         self.frames.clear();
@@ -977,11 +938,6 @@ impl GpuDrivenRenderer {
         } else {
             first_new_cascade
         };
-        let first_cache_to_apply = if upload_everything || buffers_remade {
-            1
-        } else {
-            first_new_cache
-        };
         let first_tile_to_apply = if upload_everything || buffers_remade {
             0
         } else {
@@ -989,7 +945,6 @@ impl GpuDrivenRenderer {
         };
         let shadow_views = (first_cascade_to_apply..cascades)
             .map(ViewId::cascade)
-            .chain((first_cache_to_apply..caches).map(ViewId::cascade_cache))
             .chain((first_tile_to_apply..tiles).map(ViewId::tile));
         for view in shadow_views {
             let recreated = shared_recreated || casters_recreated;
@@ -1033,7 +988,6 @@ impl GpuDrivenRenderer {
                     layout,
                     input.scene,
                     cells,
-                    Sources::All,
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning
@@ -1053,11 +1007,9 @@ impl GpuDrivenRenderer {
                 outlined,
                 input.scene,
                 cells,
-                Sources::All,
             )?;
         }
         self.cascade_frames = [None; MAX_CASCADES];
-        self.cache_frames = [None; MAX_CASCADES];
         if shadow.is_none() && self.cascades_held && shadows {
             // Receivers of point and spot light shadows read the cascades too: none now.
             let (at, bytes) = arena.push(ShadowUniform::default().as_bytes())?;
@@ -1081,7 +1033,6 @@ impl GpuDrivenRenderer {
                 casters,
                 input.scene,
                 cells,
-                Sources::All,
             )?;
             let offsets = self.culling.offsets();
             self.skinning
@@ -1089,26 +1040,8 @@ impl GpuDrivenRenderer {
         }
         if let Some(shadow) = &shadow {
             shadows::upload(list, arena, ids::SHADOWS, shadow)?;
-            // A cascade that draws through its cache culls its moving casters alone, and its
-            // cache view, in the cascade's turns, its still casters alone.
-            let views = (0..cascades).flat_map(|cascade| {
-                let cached = shadow
-                    .caches(cascade)
-                    .then_some((ViewId::cascade_cache(cascade), Sources::Still));
-                let kinds = if shadow.restores(cascade) {
-                    Sources::Moving
-                } else {
-                    Sources::All
-                };
-                let drawn = shadow
-                    .draws(cascade)
-                    .then_some((ViewId::cascade(cascade), kinds));
-                cached
-                    .into_iter()
-                    .chain(drawn)
-                    .map(move |(view, kinds)| (cascade, view, kinds))
-            });
-            for (cascade, view, kinds) in views {
+            for cascade in (0..cascades).filter(|&cascade| shadow.draws(cascade)) {
+                let view = ViewId::cascade(cascade);
                 let frame = shadow.view_frame(cascade);
                 opaque::upload(list, arena, view, &frame)?;
                 let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
@@ -1121,16 +1054,11 @@ impl GpuDrivenRenderer {
                     casters,
                     input.scene,
                     cells,
-                    kinds,
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning
                     .see(&frame, offsets, input.scene, parity, true);
-                if view.cache_index().is_some() {
-                    self.cache_frames[cascade] = Some(frame);
-                } else {
-                    self.cascade_frames[cascade] = Some(frame);
-                }
+                self.cascade_frames[cascade] = Some(frame);
             }
         }
         let storage = self.settings.meshes();
@@ -1170,22 +1098,13 @@ impl GpuDrivenRenderer {
             (&self.layout, &self.casters, &self.culling, &self.lines);
         let outlined = &self.outlined;
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
-        let cache_frames = &self.cache_frames;
         let (background, light_clusters) = (&self.background, &self.light_clusters);
-        let (skinning, restore) = (&self.skinning, &self.restore);
+        let skinning = &self.skinning;
         let drawn = |view: ViewId| match (view.cascade_index(), view.tile_index()) {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
             (_, Some(tile)) => tiles.frame(tile).is_some(),
             _ if view == ViewId::OUTLINE => outline_drawn && frames[0].is_some(),
-            _ => match view.cache_index() {
-                Some(cascade) => cache_frames[cascade].is_some(),
-                None => frames[view.index()].is_some(),
-            },
-        };
-        // The cascades that copy their cache layer into their layer before their moving casters.
-        let restores = |view: ViewId| {
-            view.cascade_index()
-                .filter(|&cascade| shadow.as_ref().is_some_and(|s| s.restores(cascade)))
+            _ => frames[view.index()].is_some(),
         };
         let layout_of = |view: ViewId| match view {
             ViewId::OUTLINE => outlined,
@@ -1208,9 +1127,6 @@ impl GpuDrivenRenderer {
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
                     if view == ViewId::CAMERA {
                         background.record(list, ids::frame_group(view), &[])?;
-                    }
-                    if let Some(cascade) = restores(view) {
-                        restore.record(list, ids::RESTORE_GROUP, cascade as u32 - 1)?;
                     }
                     opaque::record(list, view, false)
                 }
@@ -1274,9 +1190,9 @@ impl GpuDrivenRenderer {
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
-    /// tables, the light grid, each view's, each cascade's, each cascade cache's and each tile's
-    /// frame uniform, culling parameters and indirect draws, the cascades' and the tiles'
-    /// uniforms, and the final pass's settings.
+    /// tables, the light grid, each view's, each cascade's and each tile's frame uniform, culling
+    /// parameters and indirect draws, the cascades' and the tiles' uniforms, and the final pass's
+    /// settings.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
@@ -1288,7 +1204,7 @@ impl GpuDrivenRenderer {
         let camera_views = self.settings.views().len();
         let views = camera_views * per_view(&self.layout) + per_view(&self.outlined);
         let tiles = self.settings.tile_settings().tiles as usize;
-        let cascades = (2 * MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
+        let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
         let tables =
             self.layout.upload_bound() + self.casters.upload_bound() + self.outlined.upload_bound();
         let lights = self.lights.upload_room();
@@ -1357,10 +1273,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.views_made = 0;
         self.prepass_views = 0;
         self.cascades_made = 0;
-        self.caches_made = 0;
         self.tiles_made = 0;
         self.cascades_held = false;
-        self.restore.forget_gpu();
         self.tiles.forget_gpu();
         self.lines.forget_gpu();
         self.lights.forget_gpu();

@@ -17,7 +17,6 @@ import {
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
-	LAYOUT_SHADOW_RESTORE,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	PERMUTATION_PREPASS,
@@ -60,7 +59,6 @@ import {
 	TEMPLATE_LINE_LIT,
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
-	TEMPLATE_SHADOW_RESTORE,
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -129,11 +127,6 @@ export interface RenderTemplate {
 	 * nothing.
 	 */
 	readonly ownPrepass?: boolean;
-	/**
-	 * True for a template whose fragment shader writes the depth, so its pipelines keep their
-	 * fragment stage where they draw into a depth target alone.
-	 */
-	readonly writesDepth?: boolean;
 }
 
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
@@ -480,15 +473,6 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
-		// The far shadow cascades' cache, which the copy into a cascade's layer reads with
-		// textureLoad, as ambient occlusion reads the depth target.
-		this.defineLayout(LAYOUT_SHADOW_RESTORE, 'shadow restore', [
-			{
-				binding: 0,
-				visibility: fragment,
-				texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' },
-			},
-		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -559,14 +543,6 @@ export class Pipelines {
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}
-		this.defineTemplate(TEMPLATE_SHADOW_RESTORE, {
-			label: 'shadow restore',
-			shader: shaders.shadow_restore,
-			pipeline: 'main',
-			layouts: [LAYOUT_SHADOW_RESTORE],
-			vertexBuffers: [],
-			writesDepth: true,
-		});
 		this.defineTemplate(TEMPLATE_BACKGROUND, {
 			label: 'background',
 			shader: shaders.background,
@@ -730,9 +706,7 @@ export class Pipelines {
 							},
 						],
 					}
-				: t.writesDepth
-					? { module, entryPoint: entryPoints?.fragment, targets: [] }
-					: undefined,
+				: undefined,
 			primitive: {
 				topology: stateFlags & STATE_LINE_LIST ? 'line-list' : 'triangle-list',
 				cullMode:

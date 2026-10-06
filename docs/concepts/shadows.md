@@ -212,8 +212,6 @@ A kept layer shows each caster where it stood when the layer drew. So on every p
 
 A camera high above a scene can see nothing near enough for the nearest cascade. S4's camera flies 42 m up, and Low's nearest cascade ends 38 m from the camera. So every shadow on screen comes from the far cascade. That is why far cascades follow moving casters on Low too.
 
-On Low, each far cascade also keeps a cache: a depth layer of its own that holds its still casters. The cascade draws its still casters into the cache only in its turns. In a frame where a moving caster touches it, it copies the cache into its layer and draws only the moving casters over it. A town's buildings and street furniture then draw once every few frames, and its cars in every frame. Each cache layer takes the memory of a layer of the shadow map: 4 MiB for Low's one far cascade of 1,024 texels. The other presets draw such a cascade whole and keep the memory. The `farCascadeCache` quality setting turns the cache on or off on any preset.
-
 The `followMovingCasters` quality setting turns this off. Each far cascade then keeps its turns, even while moving casters touch it, and the frames draw fewer shadow passes. A moving shadow in a far cascade then trails its caster until the cascade's next turn: up to 3 frames at Low's interval of 4. The quality governor then leaves `farCascadeInterval` as you set it, so the trail never grows. The setting changes during play:
 
 ```ts

@@ -456,16 +456,14 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
 	 * shadow cascade, from 1 to 8, whether a far cascade draws in every frame while a moving
-	 * caster touches it, the share of each cascade's length over which it blends into the next,
-	 * from 0 to 0.5, and whether far cascades keep their still casters in cache layers, from the
-	 * next frame on.
+	 * caster touches it, and the share of each cascade's length over which it blends into the next,
+	 * from 0 to 0.5, from the next frame on.
 	 */
 	setShadowQuality(
 		filter: number,
 		farInterval: number,
 		followMovers: boolean,
 		cascadeBlend: number,
-		cache: boolean,
 	): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
