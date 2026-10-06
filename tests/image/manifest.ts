@@ -413,7 +413,7 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
  * S5's characters on SwiftShader. Its time grows with the crowd, and the software GPU on CI's
  * slowest machines took nearly all of the run's limit for the full crowd. A smaller crowd still
  * skins, blends and shadows every character in rings that fill the frame. The real GPU, Safari and
- * Firefox draw the full crowd. .dev/decisions/D-88-s5-software-crowd.md gives the figures.
+ * Firefox draw the full crowd. .dev/decisions/D-88-software-gpu-loads.md gives the figures.
  */
 const S5_SWIFTSHADER_COUNT = 100;
 

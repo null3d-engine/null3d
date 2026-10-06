@@ -8,11 +8,15 @@
 // frame, in which every cascade draws. On both GPU paths.
 //
 // The sketch first sets `followMovingCasters` itself. Then each preset runs with its own setting,
-// far cascades every 8th frame (the governor's longest interval), and 60 frames read one after
+// far cascades every 8th frame (the governor's longest interval), and frames read one after
 // another, so a preset whose far cascades kept their turns around moving casters fails. The box
 // drives in the last of the sketch's three cascades, past any preset's nearest one.
-import { expect, type Page, test } from '@playwright/test';
+//
+// Each test opens its own pages, so the tests run in parallel, and CI's shards can split them.
+import { expect, type Page, type TestInfo, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
+
+test.describe.configure({ mode: 'parallel' });
 
 interface Result {
 	error?: string;
@@ -38,6 +42,16 @@ const PRESETS = {
 /** Frames that a preset's run reads back, one after another, and how long the page may take. */
 const PRESET_READS = 60;
 const PRESET_RUN_MS = 100_000;
+/**
+ * Frames that a preset's run reads back on SwiftShader: three cycles of the far cascades' 8 frames,
+ * so 21 frames still show a kept layer. Each read draws a frame twice on the software GPU, and on
+ * CI's slowest machines the full count took nearly all of the page's time.
+ */
+const SWIFTSHADER_PRESET_READS = 24;
+
+/** The frames that a preset's run reads back in the environment that the test runs in. */
+const presetReads = (testInfo: TestInfo) =>
+	testInfo.project.name === 'chromium-swiftshader' ? SWIFTSHADER_PRESET_READS : PRESET_READS;
 
 async function offsets(
 	page: Page,
@@ -76,9 +90,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const preset of PRESETS[gpu])
 		test(`a moving caster's shadow follows it at ${preset} with its own setting on ${gpu}`, async ({
 			page,
-		}) => {
+		}, testInfo) => {
 			test.setTimeout(240_000);
-			const switches = `&preset=${preset}&reads=${PRESET_READS}&gap=1`;
+			const switches = `&preset=${preset}&reads=${presetReads(testInfo)}&gap=1`;
 			const expected = median(await offsets(page, gpu, 1, switches, PRESET_RUN_MS));
 			const kept = await offsets(page, gpu, 8, switches, PRESET_RUN_MS);
 			for (const offset of kept)
