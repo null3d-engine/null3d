@@ -4,15 +4,46 @@
 // also acts out a loss of the GPU before that, so the capture shows the scene the engine drew again
 // on a new device. ?sketch= draws another sketch module, by its path from this page, with the
 // sketch's own query after it. ?stop-after= sets a pause in ms between the capture and the stop,
-// while the engine goes on drawing.
-import { createEngine } from '@null3d/engine';
+// while the engine goes on drawing. ?frames= sets the fewest frames to measure: the page measures
+// again until its measurements hold that many, so a slow runner still gives a test enough frames.
+import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
+import { measureUntil } from './lib/measure';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
 const seconds = Number(params.get('seconds') ?? '1');
 const stopAfterMs = Number(params.get('stop-after') ?? '0');
+const minFrames = Number(params.get('frames') ?? '0');
 /** How long the engine has to start a new device and draw again after a loss. */
 const RECOVERY_MS = 1000;
+/**
+ * The most times the page doubles its measurement to reach the fewest frames: from one second, the
+ * measurements then take 15 seconds in all, within the test's wait.
+ */
+const MAX_DOUBLINGS = 3;
+
+/**
+ * Measures the engine's frames until the measurements hold the fewest frames. The frames and the
+ * rebuilds add up over the measurements; the other figures are the first measurement's.
+ */
+async function measureFrames(engine: Engine): Promise<FrameMetrics> {
+	let stats: FrameMetrics | undefined;
+	await measureUntil(
+		engine,
+		seconds,
+		MAX_DOUBLINGS,
+		(more) => {
+			if (!stats) stats = more;
+			else {
+				stats.frames += more.frames;
+				stats.rebuilds += more.rebuilds;
+			}
+		},
+		() => (stats?.frames ?? 0) >= minFrames,
+	);
+	if (!stats) throw new Error('the page took no measurement');
+	return stats;
+}
 
 run('scene', async () => {
 	const canvas = document.querySelector('canvas');
@@ -30,7 +61,7 @@ run('scene', async () => {
 		engine.simulateGpuLoss();
 		await new Promise((resolve) => setTimeout(resolve, RECOVERY_MS));
 	}
-	const stats = live ? await engine.measure(seconds) : undefined;
+	const stats = live ? await measureFrames(engine) : undefined;
 	const capture = await engine.captureFrame();
 	if (stopAfterMs > 0) await new Promise((resolve) => setTimeout(resolve, stopAfterMs));
 	await engine.destroy();

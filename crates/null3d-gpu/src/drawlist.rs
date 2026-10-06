@@ -148,14 +148,13 @@ pub enum Op {
     /// of a custom material whose last material was destroyed. A backend that holds no such
     /// pipeline does nothing, as when a capture replays a list again.
     DestroyPipeline = 52,
-    /// [texture id, image id, slice, slices]: runs one of `slices` parts of the work of the
-    /// generator that the backend holds under the image id, which fill every mip level of every
-    /// face of a cube texture on the GPU. Slice 0 starts the work, and each slice needs the slices
-    /// before it, in that order. The thread that draws counts a generator among the images it
-    /// received once its code has loaded, so the generator runs at once. The texture is a cube of
-    /// `RGB9E5_UFLOAT` with `COPY_DST` usage. The backend keeps the entry until `ReleaseImage`, so
-    /// a new GPU device can fill the texture again. A slice of a texture that the generator
-    /// filled already, as when a capture replays a list again, does nothing.
+    /// [texture id, image id]: runs the generator that the backend holds under the image id, which
+    /// fills every mip level of every face of a cube texture on the GPU in one submit, ahead of the
+    /// frame's passes. The thread that draws counts a generator among the images it received once
+    /// its code has loaded and its pipelines are built, so the generator runs at once. The texture
+    /// is a cube of `RGB9E5_UFLOAT` with `COPY_DST` usage. The backend keeps the entry until
+    /// `ReleaseImage`, so a new GPU device can fill the texture again. A list that runs again, as
+    /// a capture's does, fills the texture again with the same texels.
     GenerateTexture = 54,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
@@ -1187,9 +1186,12 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eight `vec4f`s. On WebGL2 each row is a
-    /// row of eight `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 128;
+    /// Bytes of one material's row in the material table: nine `vec4f`s. On WebGL2 each row is a
+    /// row of nine `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 144;
+    /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
+    /// at bindings from 0, with each one's sampler at the bindings after every texture.
+    pub const MAP_SLOTS: u32 = 8;
     /// Grid cells in use at most, which the shaders' tables of offsets from the camera to each
     /// cell hold, one `vec4f` each.
     pub const MAX_CELLS: u32 = 512;
@@ -1689,6 +1691,7 @@ pub fn typescript_constants() -> String {
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
+                ("MAP_SLOTS", sizes::MAP_SLOTS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),

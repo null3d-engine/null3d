@@ -7,6 +7,7 @@ import type { PowerPreference } from '../page/capabilities';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
+import type { FramePacing } from '../render/loop';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
@@ -52,15 +53,11 @@ export interface CapturedFrame {
 }
 
 /** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */
-export interface RendererSetup {
+export interface RendererSetup extends FramePacing {
 	canvas: OffscreenCanvas;
 	tier: Tier;
 	forceCompat: boolean;
 	powerPreference?: PowerPreference;
-	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
-	fps?: number;
-	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
-	queue?: number;
 	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
 	hold?: boolean;
 	/** How ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */

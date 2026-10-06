@@ -51,8 +51,10 @@
 //! A cube texture's texels can also come from a generator, which the thread that draws runs on
 //! the GPU, such as the built-in room environment's. A generator takes the next image id and waits
 //! for the thread that draws as an image does: that thread counts it once the generator's code has
-//! loaded, so the generator runs as soon as the list names it. One command fills every level, and
-//! the store keeps the generator, so a new GPU device fills the texture again.
+//! loaded and its pipelines are built, so the generator runs as soon as the list names it. The
+//! first frame after the generator arrives records one command that fills every level, outside
+//! the upload budget and before the frame's passes, so that frame already draws with the texture.
+//! The store keeps the generator, so a new GPU device fills the texture again.
 //!
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
@@ -188,9 +190,9 @@ enum Source {
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
     /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU in
-    /// `slices` parts of its work, one a frame. The store keeps it until the texture gets other
-    /// texels or is destroyed, so a new GPU device runs it again.
-    Generated { id: u32, slices: u32 },
+    /// one command. The store keeps it until the texture gets other texels or is destroyed, so a
+    /// new GPU device runs it again.
+    Generated { id: u32 },
 }
 
 /// Where a texture is on its way to the GPU.
@@ -413,7 +415,7 @@ struct SamplerSlot {
 }
 
 /// The maps of one map set's bind group, in the order of the material's map slots.
-pub const MAP_SET_SLOTS: usize = 6;
+pub const MAP_SET_SLOTS: usize = crate::materials::MAP_SLOTS;
 
 /// What a bind group binds: one array and its sampler, or a map set of an array and a sampler
 /// for each map slot.
@@ -788,20 +790,20 @@ impl TextureStore {
         Ok((id, moved))
     }
 
-    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU
-    /// in `slices` parts of its work, one a frame, and returns the generator's id, which it takes
-    /// from the images' ids. The caller sends the generator to the thread that draws under that
-    /// id, in the order of the ids, as it sends images. Texels that were waiting are released
+    /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU,
+    /// all in the first frame after the generator arrives, and returns the generator's id, which it
+    /// takes from the images' ids. The caller sends the generator to the thread that draws under
+    /// that id, in the order of the ids, as it sends images. Texels that were waiting are released
     /// unused.
-    pub fn set_generated(&mut self, texture: Handle, slices: u32) -> Result<u32, TextureError> {
+    pub fn set_generated(&mut self, texture: Handle) -> Result<u32, TextureError> {
         let slot = *self.slot(texture)?;
         let key = self.arrays[slot.array as usize].key;
-        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT || slices == 0 {
+        if key.kind != Kind::Cube || key.format != format::RGB9E5_UFLOAT {
             return Err(TextureError::Unsupported);
         }
         self.last_image += 1;
         let id = self.last_image;
-        self.queue_source(texture, Source::Generated { id, slices })?;
+        self.queue_source(texture, Source::Generated { id })?;
         Ok(id)
     }
 
@@ -1242,23 +1244,16 @@ impl TextureStore {
             let levels = slot.source_levels(key);
             let block = format::block_size(key.format);
             let total = match source {
-                Source::Generated { slices, .. } => slices,
+                Source::Generated { .. } => 1,
                 _ => key.rows(levels),
             };
-            if let Source::Generated {
-                id: generator,
-                slices,
-            } = source
-            {
-                // One slice of the generator's work a frame, or every slice that is left in a frame
-                // with no budget, as a held frame is.
-                let last = if budget == u64::MAX { slices } else { rows + 1 };
-                for slice in rows..last {
-                    list.push(Op::GenerateTexture, &[id, generator, slice, slices])?;
-                }
-                rows = last;
+            if let Source::Generated { id: generator } = source {
+                // The generator makes the whole map in one command, outside the upload budget, so
+                // the frame that records it already draws with the map.
+                list.push(Op::GenerateTexture, &[id, generator])?;
+                rows = total;
             }
-            while rows < total && !matches!(source, Source::Generated { .. }) {
+            while rows < total {
                 let band = key.band(rows, levels);
                 let left = budget.saturating_sub(spent);
                 let mut take = u64::from(band.rows_left).min(left / band.row_bytes) as u32;

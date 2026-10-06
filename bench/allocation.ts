@@ -14,7 +14,8 @@
 // S4, the phone scene, with its shadows, street lights and quality governor. `--blend` makes
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass.
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
-// and an additive one, and fire events to the sketch's handlers through the animator. `--morphed 64`
+// and an additive one, play phase-synced blends and clips at weights that the sketch moves, and
+// fire events to the sketch's handlers through the animator. `--morphed 64`
 // adds 64 spheres with three morph targets each, whose weights the sketch sets in every frame.
 // `--grading`
 // gives S1 a color grading table and the vignette, and changes both every frame. `--sprites` draws

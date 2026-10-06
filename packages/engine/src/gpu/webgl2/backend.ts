@@ -413,15 +413,17 @@ export class WebGL2Backend {
 	private activeUnit = -1;
 	private readonly unitTextures: (WebGLTexture | null)[] = [];
 	private readonly unitSamplers: (WebGLSampler | null)[] = [];
+	/** The texture that bind groups set at each slot, which the program's unit for the slot gets. */
+	private readonly slotTextures: (WebGLTexture | null)[] = [];
+	/** The target of each slot's texture. */
+	private readonly slotTargets: number[] = [];
 	/** The sampler that bind groups set at each slot, which the units that read it get. */
 	private readonly slotSamplers: (WebGLSampler | null)[] = [];
-	/** True when the program or the bind groups' samplers changed since the units' samplers were set. */
-	private samplersChanged = true;
 	/**
-	 * The units that have a sampler bound. While none has, a program that samples no texture finds
-	 * every unit as it needs it, so switching to it leaves the units alone.
+	 * True when the program, the bind groups' textures or samplers, or a unit that a spare program
+	 * borrowed changed since the program's units were set.
 	 */
-	private boundSamplers = 0;
+	private unitsChanged = true;
 	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
@@ -1232,6 +1234,8 @@ export class WebGL2Backend {
 			gl.deleteTexture(old.texture);
 			for (let unit = 0; unit < this.unitTextures.length; unit++)
 				if (this.unitTextures[unit] === old.texture) this.unitTextures[unit] = null;
+			for (let slot = 0; slot < this.slotTextures.length; slot++)
+				if (this.slotTextures[slot] === old.texture) this.slotTextures[slot] = null;
 		}
 		if (old.renderbuffer) gl.deleteRenderbuffer(old.renderbuffer);
 	}
@@ -1464,10 +1468,10 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Runs a slice of the work of a generator that the table holds, which fills a cube texture on
-	 * the GPU. The generator draws full-screen triangles with no depth test, culling, scissor or
-	 * blending, and writes every channel. It changes bindings that the state cache holds, so the
-	 * cache forgets them, and the next draws bind what they need again.
+	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
+	 * generator draws full-screen triangles with no depth test, culling, scissor or blending, and
+	 * writes every channel. It changes bindings that the state cache holds, so the cache forgets
+	 * them, and the next draws bind what they need again.
 	 */
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
@@ -1486,15 +1490,13 @@ export class WebGL2Backend {
 			texture.texture as WebGLTexture,
 			texture.width,
 			texture.mips,
-			words[a + 2] as number,
-			words[a + 3] as number,
 		);
 		this.program = null;
 		this.activeUnit = -1;
 		this.unitTextures.length = 0;
 		this.blockBuffers.length = 0;
 		this.viewport.fill(-1);
-		this.samplersChanged = true;
+		this.unitsChanged = true;
 	}
 
 	/**
@@ -1529,7 +1531,7 @@ export class WebGL2Backend {
 		if (this.blend) this.setBlend(0);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
-		this.samplersChanged = true;
+		this.unitsChanged = true;
 		return program;
 	}
 
@@ -1749,11 +1751,8 @@ export class WebGL2Backend {
 		for (let slot = 0; slot < this.slotSamplers.length; slot++)
 			if (this.slotSamplers[slot] === old) this.slotSamplers[slot] = null;
 		for (let unit = 0; unit < this.unitSamplers.length; unit++)
-			if (this.unitSamplers[unit] === old) {
-				this.unitSamplers[unit] = null;
-				this.boundSamplers--;
-			}
-		this.samplersChanged = true;
+			if (this.unitSamplers[unit] === old) this.unitSamplers[unit] = null;
+		this.unitsChanged = true;
 	}
 
 	/** Attaches a render target to the bound framebuffer. */
@@ -2017,8 +2016,8 @@ export class WebGL2Backend {
 		this.skipDraws = !this.compiled(program);
 		if (this.skipDraws) return;
 		this.useProgram(program);
-		if (this.current?.program !== program && (program.sampled || this.boundSamplers > 0))
-			this.samplersChanged = true;
+		if (this.current?.program !== program && program.textureUnits.length > 0)
+			this.unitsChanged = true;
 		this.current = p;
 		this.setCullFace(p.cull);
 		this.setDepthTest(p.depth);
@@ -2117,12 +2116,16 @@ export class WebGL2Backend {
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
 				const texture = this.textureOf(entry.resource);
-				this.bindTexture(slot, texture.target, texture.texture);
+				if (this.slotTextures[slot] !== texture.texture) {
+					this.slotTextures[slot] = texture.texture;
+					this.slotTargets[slot] = texture.target;
+					this.unitsChanged = true;
+				}
 			} else if (entry.kind === G.RESOURCE_SAMPLER) {
 				const sampler = this.need(this.samplers, entry.resource, 'sampler');
 				if (this.slotSamplers[slot] !== sampler) {
 					this.slotSamplers[slot] = sampler;
-					this.samplersChanged = true;
+					this.unitsChanged = true;
 				}
 			}
 		}
@@ -2242,25 +2245,27 @@ export class WebGL2Backend {
 			gl.uniform1ui(p.firstInstance, firstInstance);
 			p.firstInstanceValue = firstInstance;
 		}
-		if (!this.samplersChanged) return;
-		// Each unit that the program reads gets the sampler that its texture's pair names, or none
-		// for texelFetch, which a comparison sampler left on the unit would break.
-		const pairs = p.samplerUnits;
-		for (let k = 0; k < pairs.length; k += 2) {
-			const unit = pairs[k] as number;
-			const slot = pairs[k + 1] as number;
-			this.bindUnitSampler(unit, slot < 0 ? null : (this.slotSamplers[slot] ?? null));
+		if (!this.unitsChanged) return;
+		// Each unit that the program reads gets the texture of its slot, and the sampler that its
+		// triple names, or none for texelFetch, which a comparison sampler left on the unit would
+		// break.
+		const units = p.textureUnits;
+		for (let k = 0; k < units.length; k += 3) {
+			const unit = units[k] as number;
+			const slot = units[k + 1] as number;
+			const sampler = units[k + 2] as number;
+			const texture = this.slotTextures[slot] ?? null;
+			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
+			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
 		}
-		this.samplersChanged = false;
+		this.unitsChanged = false;
 	}
 
-	/** Binds a sampler to a texture unit, or none, and keeps the count of units that have one. */
+	/** Binds a sampler to a texture unit, or none. */
 	private bindUnitSampler(unit: number, sampler: WebGLSampler | null): void {
-		const bound = this.unitSamplers[unit] ?? null;
-		if (bound === sampler) return;
+		if ((this.unitSamplers[unit] ?? null) === sampler) return;
 		this.gl.bindSampler(unit, sampler);
 		this.unitSamplers[unit] = sampler;
-		this.boundSamplers += (sampler ? 1 : 0) - (bound ? 1 : 0);
 	}
 
 	/**

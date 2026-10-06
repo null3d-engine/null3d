@@ -308,6 +308,7 @@ export class SketchRunner {
 			this.recorded,
 			device.capabilities,
 			() => this.quality.own('uploadBytesPerFrame'),
+			(id) => imagesArrived(slots, id),
 			device.webgl2,
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own

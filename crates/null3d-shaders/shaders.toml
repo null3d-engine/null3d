@@ -399,11 +399,13 @@ variants.instanced = { defs = ["INSTANCED"], targets = ["wgsl", "glsl"] }
 variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }
 
 # The skinning pass on WebGPU: one thread per vertex of each part of each skinned mesh that a view
-# draws, into the skinned vertex buffer that the shadow and main passes draw.
+# draws, into the skinned vertex buffer that the shadow and main passes draw. VERTEX_TANGENT builds
+# the pass for vertex formats with a tangent, and VERTEX_COLOR for those of morphed meshes with a
+# color; a build without a bit holds no code for that attribute at all.
 [shaders.skin]
 file = "skin.wgsl"
 by_device = true
-variants.webgpu = { targets = ["wgsl"] }
+variants.webgpu = { permutations = ["VERTEX_TANGENT", "VERTEX_COLOR"], targets = ["wgsl"] }
 
 # A page downloads the skinning pass and every SKIN build with its first skinned mesh. The passes
 # leave skinned meshes out until every pipeline that draws or skins them is built.

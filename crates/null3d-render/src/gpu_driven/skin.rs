@@ -51,8 +51,8 @@ use null3d_core::morph::MorphWeights;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_gpu::caps::MAX_WORKGROUPS_PER_DIMENSION;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
-    vertex,
+    DrawList, Op, buffer_usage as usage, layout as bind_layout, permutation, resource_kind, sizes,
+    template, vertex,
 };
 
 use super::ids;
@@ -63,7 +63,7 @@ use crate::meshes::MeshStorage;
 use crate::morph::{MORPH_LOCATION, MorphTexture, morph_of};
 use crate::pipelines::{DrawKey, PipelineCache};
 use crate::skinning::{
-    JointTexture, SkinnedGate, skin_of, skinned_format, skinned_in_vertex_shader,
+    COLOR_LOCATION, JointTexture, SkinnedGate, skin_of, skinned_format, skinned_in_vertex_shader,
 };
 use crate::sorted::SkinnedPipeline;
 use crate::view::ViewFrame;
@@ -101,8 +101,22 @@ const SEGMENT_ALIGN: u32 = 256 / (ENTRY_WORDS * 4);
 const NONE: u32 = u32::MAX;
 /// The vertex location of tangents.
 const TANGENT: usize = 4;
-/// The vertex locations of the attributes that the pass copies unchanged, in vertex order.
-const COPIED: [usize; 3] = [2, 3, 5];
+/// The vertex locations of the attributes that the pass copies unchanged, in vertex order: the
+/// texture coordinates, then the color of a mesh that no target morphs.
+const COPIED: [usize; 3] = [2, 3, COLOR_LOCATION];
+
+/// The pass's pipelines, by [`Segment::pipeline`]: their ids and the permutation bits of their
+/// builds. A build holds the tangent's code only for formats with a tangent, and the color's only
+/// for formats whose color it morphs (see `skin.wgsl`).
+const PIPELINES: [(u32, u32); 4] = [
+    (ids::SKIN, 0),
+    (ids::SKIN_TANGENT, permutation::VERTEX_TANGENT),
+    (ids::SKIN_COLOR, permutation::VERTEX_COLOR),
+    (
+        ids::SKIN_TANGENT_COLOR,
+        permutation::VERTEX_TANGENT | permutation::VERTEX_COLOR,
+    ),
+];
 
 /// The joint base of an object that no animated instance skins.
 const NOT_SKINNED: u32 = NONE;
@@ -157,6 +171,14 @@ struct Segment {
     groups: u32,
 }
 
+impl Segment {
+    /// The place in [`PIPELINES`] of the pipeline that skins its format: plus 1 for a format with
+    /// a tangent, and plus 2 for one whose color the pass morphs.
+    fn pipeline(&self) -> usize {
+        usize::from(self.format[1][0] != NONE) | usize::from(self.format[2][2] != NONE) << 1
+    }
+}
+
 /// The skinning pass's layout and GPU objects.
 #[derive(Debug)]
 pub(super) struct Skinning {
@@ -177,8 +199,9 @@ pub(super) struct Skinning {
     table_made: u32,
     /// True when the bind groups must be made again before the next dispatch.
     groups_stale: bool,
-    pipeline_made: bool,
-    /// The frame whose list created the pass's pipeline.
+    /// Which of [`PIPELINES`] the GPU has.
+    pipelines_made: [bool; PIPELINES.len()],
+    /// The frame whose list created the pass's newest pipeline.
     pipeline_frame: u32,
     /// Whether the passes draw the skinned objects yet.
     gate: SkinnedGate,
@@ -212,7 +235,7 @@ impl Skinning {
             table_entries: 0,
             table_made: 0,
             groups_stale: true,
-            pipeline_made: false,
+            pipelines_made: [false; PIPELINES.len()],
             pipeline_frame: 0,
             gate: SkinnedGate::default(),
             joints: JointTexture::new(ids::JOINTS),
@@ -296,13 +319,18 @@ fn copied_run(format: u32, skinned: u32, locations: &[usize]) -> u32 {
 }
 
 /// The table entries of a source vertex format: the strides, where each attribute sits, and the
-/// runs that the pass copies (see `skin.wgsl`).
+/// runs that the pass copies (see `skin.wgsl`). A morphed mesh's color is no run: the pass morphs
+/// it and writes it as floats, where its field says.
 fn format_entries(format: u32) -> [[u32; 4]; 3] {
     let skinned = skinned_format(format);
-    let tangent = match vertex::offset(skinned, TANGENT) {
-        Some(out) => field(format, TANGENT) | ((out / 4) << 16),
+    // A field of the source format with its offset in the skinned vertex in the third byte.
+    let moved = |location: usize| match vertex::offset(skinned, location) {
+        Some(out) => field(format, location) | ((out / 4) << 16),
         None => NONE,
     };
+    let morphed = format & vertex::MORPH != 0;
+    let color = if morphed { moved(COLOR_LOCATION) } else { NONE };
+    let copied = if morphed { &COPIED[2..2] } else { &COPIED[2..] };
     [
         [
             vertex::stride(format) / 4,
@@ -311,15 +339,15 @@ fn format_entries(format: u32) -> [[u32; 4]; 3] {
             field(format, vertex::NORMAL),
         ],
         [
-            tangent,
+            moved(TANGENT),
             field(format, 6),
             field(format, 7),
             field(format, MORPH_LOCATION),
         ],
         [
             copied_run(format, skinned, &COPIED[..2]),
-            copied_run(format, skinned, &COPIED[2..]),
-            0,
+            copied_run(format, skinned, copied),
+            color,
             0,
         ],
     ]
@@ -348,7 +376,14 @@ impl Skinning {
         !self.gate.drawn() && self.object(slot).is_some()
     }
 
-    /// Lets the passes draw the skinned objects once the pass's pipeline is built, where the
+    /// True when the GPU has each pipeline that the layout's segments skin with.
+    fn has_pipelines(&self) -> bool {
+        self.segments
+            .iter()
+            .all(|s| self.pipelines_made[s.pipeline()])
+    }
+
+    /// Lets the passes draw the skinned objects once the pass's pipelines are built, where the
     /// skinning pass runs, and every pipeline in `waiting` is built, by `pipelines_built` (see
     /// [`SkinnedGate`]). Returns true when they start to draw, so the layouts take them in.
     pub(super) fn open_when_built(
@@ -359,7 +394,7 @@ impl Skinning {
     ) -> bool {
         let skinned = self.active();
         let pass_built =
-            !self.dispatches() || (self.pipeline_made && self.pipeline_frame <= pipelines_built);
+            !self.dispatches() || (self.has_pipelines() && self.pipeline_frame <= pipelines_built);
         self.gate.open_when_built(skinned, pipelines_built, || {
             pass_built && pipelines.all_built(waiting, pipelines_built)
         })
@@ -570,21 +605,30 @@ impl Skinning {
         Ok(())
     }
 
-    /// Records the creation of the pass's pipeline in the list of `frame` while the scene draws
-    /// skinned objects and the GPU lacks it. Returns true when it recorded it. Pipelines come first
-    /// in a frame's list.
+    /// Records the creation of the pass's pipelines that the layout's segments need and the GPU
+    /// lacks, in the list of `frame`. Returns true when it recorded one. Pipelines come first in a
+    /// frame's list.
     pub(super) fn create_pipeline(
         &mut self,
         list: &mut DrawList,
         frame: u32,
     ) -> Result<bool, RecordError> {
-        if self.pipeline_made || !self.dispatches() {
+        if !self.dispatches() {
             return Ok(false);
         }
-        list.push(Op::CreateComputePipeline, &[ids::SKIN, template::SKIN, 0])?;
-        self.pipeline_made = true;
-        self.pipeline_frame = frame;
-        Ok(true)
+        let mut created = false;
+        for (k, &(id, bits)) in PIPELINES.iter().enumerate() {
+            if self.pipelines_made[k] || !self.segments.iter().any(|s| s.pipeline() == k) {
+                continue;
+            }
+            list.push(Op::CreateComputePipeline, &[id, template::SKIN, bits])?;
+            self.pipelines_made[k] = true;
+            created = true;
+        }
+        if created {
+            self.pipeline_frame = frame;
+        }
+        Ok(created)
     }
 
     /// Records the GPU objects the layout needs that the GPU lacks: the joint texture, the morph
@@ -790,14 +834,15 @@ impl Skinning {
     /// Records the frame's dispatches, one per segment with parts to skin, inside the compute
     /// pass that the render graph began.
     pub(super) fn record(&self, list: &mut DrawList) -> Result<(), RecordError> {
-        let mut pipeline_set = false;
+        let mut pipeline = None;
         for (k, segment) in self.segments.iter().enumerate() {
             if segment.groups == 0 {
                 continue;
             }
-            if !pipeline_set {
-                list.push(Op::SetComputePipeline, &[ids::SKIN])?;
-                pipeline_set = true;
+            let id = PIPELINES[segment.pipeline()].0;
+            if pipeline != Some(id) {
+                list.push(Op::SetComputePipeline, &[id])?;
+                pipeline = Some(id);
             }
             list.push(Op::SetBindGroup, &[0, ids::SKIN_GROUPS + k as u32, 0])?;
             list.push(Op::Dispatch, &dispatch_size(segment.groups))?;
@@ -810,7 +855,7 @@ impl Skinning {
         self.skinned_made = [0; MAX_SKINNED_BUFFERS as usize];
         self.table_made = 0;
         self.groups_stale = true;
-        self.pipeline_made = false;
+        self.pipelines_made = [false; PIPELINES.len()];
         self.gate.forget_gpu();
         self.joints.forget_gpu();
         self.morph.forget_gpu();
@@ -878,11 +923,56 @@ mod tests {
         assert_eq!(more, [tangent, joints, weights, NONE]);
         assert_eq!(
             runs,
-            [5 | (6 << 8) | (2 << 16), 11 | (12 << 8) | (1 << 16), 0, 0]
+            [
+                5 | (6 << 8) | (2 << 16),
+                11 | (12 << 8) | (1 << 16),
+                NONE,
+                0
+            ]
         );
+        // A morphed mesh's color is morphed into four floats, not copied. Source: the morph
+        // attribute after the weights, at 60 bytes. Skinned: the color at 48, 64 bytes in all.
+        let morphed = format | vertex::MORPH;
+        let [strides, more, runs] = format_entries(morphed);
+        assert_eq!(strides[..2], [17, 16]);
+        assert_eq!(more[3], 15);
+        let color = 11 | (Type::Unorm8 as u32) << 8 | (12 << 16);
+        assert_eq!(runs, [5 | (6 << 8) | (2 << 16), 0, color, 0]);
         // Floats with no tangent, coordinates or color: nothing to copy.
         let plain = format_entries(vertex::JOINTS | vertex::WEIGHTS);
         assert_eq!(plain[1][0], NONE);
-        assert_eq!(plain[2], [0; 4]);
+        assert_eq!(plain[2], [0, 0, NONE, 0]);
+    }
+
+    #[test]
+    fn a_format_picks_the_build_that_holds_only_the_code_it_needs() {
+        let build = |format: u32| {
+            let segment = Segment {
+                page: 0,
+                buffer: 0,
+                format: format_entries(format),
+                first_entry: 0,
+                capacity: 0,
+                parts: 0,
+                groups: 0,
+            };
+            PIPELINES[segment.pipeline()].1
+        };
+        let skinned = vertex::JOINTS | vertex::WEIGHTS;
+        assert_eq!(build(skinned), 0);
+        assert_eq!(
+            build(skinned | vertex::TANGENT),
+            permutation::VERTEX_TANGENT
+        );
+        // A color that the pass copies needs no color code, and a morphed one does.
+        assert_eq!(build(skinned | vertex::COLOR), 0);
+        assert_eq!(
+            build(vertex::COLOR | vertex::MORPH),
+            permutation::VERTEX_COLOR
+        );
+        assert_eq!(
+            build(vertex::TANGENT | vertex::COLOR | vertex::MORPH),
+            permutation::VERTEX_TANGENT | permutation::VERTEX_COLOR
+        );
     }
 }

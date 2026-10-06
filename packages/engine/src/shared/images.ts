@@ -93,15 +93,15 @@ export class ImageTable {
 
 	/**
 	 * Says how the backend of the thread's GPU device builds the generators' pipelines ahead, so
-	 * that a generator's first slice waits for no build. Each new device says it again. It builds
-	 * them at once when the code has loaded already.
+	 * that a generator's run waits for no build. Each new device says it again. It builds them at
+	 * once when the code has loaded already.
 	 */
 	warmGeneratorsWith(warm: (code: unknown) => Promise<unknown>): void {
 		this.warm = warm;
 		if (this.generatorCode !== undefined) void this.warmGenerators();
 	}
 
-	/** Builds the generators' pipelines ahead, where a backend said how. A failure waits for the slice. */
+	/** Builds the generators' pipelines ahead, where a backend said how. A failure waits for the run. */
 	private warmGenerators(): Promise<unknown> {
 		const { warm, generatorCode } = this;
 		if (!warm || generatorCode === undefined) return Promise.resolve();
