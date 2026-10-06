@@ -1726,7 +1726,11 @@ describe('parseArgs', () => {
 		expect(planItems(bench)?.every((item) => item.path.endsWith('&half=on&preset=ultra'))).toBe(
 			true,
 		);
-		expect(() => parseArgs(['--switches', '?half=on'])).toThrow('--switches: give page switches');
+		const checks = parseArgs(['--plan', 'governor', '--switches', 'render=main&display-check=off']);
+		expect(checks.switches).toBe('render=main&display-check=off');
+		expect(() => parseArgs(['--switches', '?half=on'])).toThrow(
+			'--switches: give page switches without the ?',
+		);
 	});
 });
 
