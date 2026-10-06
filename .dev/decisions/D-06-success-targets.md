@@ -346,6 +346,8 @@ Reading the data:
 
 Target, confirmed by the owner on 2026-09-30: on the S24+ in Chrome on Slow 4G, the first frame within 4.5 s on a cold load, and within 1 s on a warm load, at the engine test page's size. Two changes can bring the cold load down. The first starts the workers' downloads with the core's, which saves about two round trips (1.1 s on Slow 4G). The second is the earlier sketch download in single-threaded mode (M1-K7, about 0.56 s).
 
+On 2026-10-06 the owner raised the cold-load target to 5.5 s and kept the warm target at 1 s ([D-83](D-83-gate-rulings-2026-10-06.md)).
+
 ## Addendum, 2026-09-30: figures from production builds
 
 From pull request #98 on, the benchmarks measure a production build of the benchmark pages, as developers ship the engine. The build leaves out the engine's development checks, such as the handle and argument checks. The figures above this addendum came from the dev server's pages, with the checks of their day on. The benchmark run, the CI benchmark job, the device runner's bench plan, the profile, the allocation check and the soak all use the build now. With `--dev`, the tools run the dev server's pages instead.
