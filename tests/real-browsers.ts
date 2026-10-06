@@ -131,7 +131,14 @@ import {
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
-import { type AppWindow, appWindow, PARKED_APPS, parkWindow } from './lib/app-window.ts';
+import {
+	type AppWindow,
+	appWindow,
+	frontApp,
+	giveFocusBack,
+	PARKED_APPS,
+	parkWindow,
+} from './lib/app-window.ts';
 import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
 import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
 import type { CloudSessions } from './lib/cloud-sessions.ts';
@@ -569,13 +576,14 @@ const unparked = new Set<string>();
  * as behind a first-launch prompt on a machine that nobody watches, fails after a minute instead
  * of stopping the whole run. There the app opens in the background unless the run asks for the
  * front, and the runner window of an app that the tool can move goes almost wholly past the main
- * display's left edge.
+ * display's left edge. Should the app take focus all the same, the app in front before gets it back.
  * On Linux, the app's command by its name in lowercase opens the page: the first call starts the
  * browser, which keeps running, and a later call hands the page to it.
  */
 function openApp({ app, window }: AppLaunch, url: string): boolean {
 	try {
 		if (process.platform === 'darwin') {
+			const before = window?.background ? frontApp() : undefined;
 			const background = window?.background ? ['-g'] : [];
 			execFileSync('open', [...background, '-a', app, url], { timeout: OPEN_TIMEOUT_MS });
 			const why =
@@ -584,6 +592,7 @@ function openApp({ app, window }: AppLaunch, url: string): boolean {
 				unparked.add(app);
 				console.log(`${app}: its runner window stays where the app put it: ${why}`);
 			}
+			giveFocusBack(before);
 		} else {
 			const command = execFileSync('which', [slug(app)], { encoding: 'utf8' }).trim();
 			spawn(command, [url], { detached: true, stdio: 'ignore' })
