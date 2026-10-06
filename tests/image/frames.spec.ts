@@ -3,6 +3,7 @@
 // counts no time. ?fps= holds the drawing to a fixed rate below the display's. On a GPU that falls
 // behind, at most two frames wait on it, on both GPU paths.
 import { expect, test } from '@playwright/test';
+import { ALONE } from '../lib/alone.ts';
 import { ENGINE_MODES, type EngineResult } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 import { framesInFlight, type OverloadResult, PARTED_SHARE } from '../pages/lib/overload.ts';
@@ -24,7 +25,7 @@ const HELD_FPS_SHARE = 0.1;
 const MIN_REFRESH_HZ = 60;
 
 for (const mode of ENGINE_MODES) {
-	test(`a pause draws nothing and is not one long step, ${mode.name}`, async ({ page }) => {
+	test(`a pause draws nothing and is not one long step, ${mode.name}`, ALONE, async ({ page }) => {
 		await page.goto(`engine.html?gpu=webgpu&seconds=1&pause&${mode.query}`);
 		const result = await pageResult<Result>(page, 30_000);
 		expect(result.error).toBeUndefined();
@@ -37,17 +38,22 @@ for (const mode of ENGINE_MODES) {
 		expect(result.count.largestStep, 'the longest step').toBeLessThan(LONGEST_STEP_S);
 	});
 
-	test(`?fps=${HELD_FPS} holds the drawing at ${HELD_FPS} frames per second, ${mode.name}`, async ({
-		page,
-	}) => {
-		await page.goto(`engine.html?gpu=webgpu&seconds=2&fps=${HELD_FPS}&${mode.query}`);
-		const result = await pageResult<Result>(page, 30_000);
-		expect(result.error).toBeUndefined();
-		const hz = result.stats.refreshHz ?? 0;
-		test.skip(hz < MIN_REFRESH_HZ, `the display refreshes at ${hz} Hz, below ${MIN_REFRESH_HZ} Hz`);
-		expect(result.stats.presentedFps).toBeGreaterThan(HELD_FPS * (1 - HELD_FPS_SHARE));
-		expect(result.stats.presentedFps).toBeLessThan(HELD_FPS * (1 + HELD_FPS_SHARE));
-	});
+	test(
+		`?fps=${HELD_FPS} holds the drawing at ${HELD_FPS} frames per second, ${mode.name}`,
+		ALONE,
+		async ({ page }) => {
+			await page.goto(`engine.html?gpu=webgpu&seconds=2&fps=${HELD_FPS}&${mode.query}`);
+			const result = await pageResult<Result>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			const hz = result.stats.refreshHz ?? 0;
+			test.skip(
+				hz < MIN_REFRESH_HZ,
+				`the display refreshes at ${hz} Hz, below ${MIN_REFRESH_HZ} Hz`,
+			);
+			expect(result.stats.presentedFps).toBeGreaterThan(HELD_FPS * (1 - HELD_FPS_SHARE));
+			expect(result.stats.presentedFps).toBeLessThan(HELD_FPS * (1 + HELD_FPS_SHARE));
+		},
+	);
 }
 
 /** The engine's limit of frames waiting on the GPU. */
@@ -68,32 +74,34 @@ const MEASURED_SECONDS = 2;
 const MIN_COMPLETED_FPS = 1;
 
 for (const tier of ['webgpu', 'webgl2'] as const) {
-	test(`a GPU that falls behind has at most two frames waiting on it, ${tier}`, async ({
-		page,
-	}) => {
-		test.setTimeout(120_000);
-		await page.goto(`overload.html?gpu=${tier}&seconds=${MEASURED_SECONDS}`);
-		const result = await pageResult<OverloadResult & { error?: string }>(page, 110_000);
-		expect(result.error).toBeUndefined();
-		const step = result.overloaded;
-		test.skip(!step, 'no step of the page overloaded this GPU');
-		if (!step) return;
-		const figures = JSON.stringify(step);
-		test.skip(
-			(step.completedFps ?? Number.POSITIVE_INFINITY) <= MIN_COMPLETED_FPS,
-			`the GPU finished too few frames to compare the rates: ${figures}`,
-		);
-		// The measurement can end with more frames waiting on the GPU than it started with, up to
-		// the limit. The presented rate counts them, and the completed rate does not yet. CI's
-		// software GPU finishes about three frames in the measurement, so those frames alone can
-		// part the two rates by half; the check allows them.
-		const waitingFps = FRAMES_LIMIT / MEASURED_SECONDS;
-		expect(
-			step.presentedFps,
-			`the presented rate stayed above the completed rate: ${figures}`,
-		).toBeLessThanOrEqual((step.completedFps ?? 0) * (1 + PARTED_SHARE) + waitingFps);
-		expect(framesInFlight(step) ?? Number.POSITIVE_INFINITY, figures).toBeLessThan(
-			MOST_FRAMES_IN_FLIGHT,
-		);
-	});
+	test(
+		`a GPU that falls behind has at most two frames waiting on it, ${tier}`,
+		ALONE,
+		async ({ page }) => {
+			test.setTimeout(120_000);
+			await page.goto(`overload.html?gpu=${tier}&seconds=${MEASURED_SECONDS}`);
+			const result = await pageResult<OverloadResult & { error?: string }>(page, 110_000);
+			expect(result.error).toBeUndefined();
+			const step = result.overloaded;
+			test.skip(!step, 'no step of the page overloaded this GPU');
+			if (!step) return;
+			const figures = JSON.stringify(step);
+			test.skip(
+				(step.completedFps ?? Number.POSITIVE_INFINITY) <= MIN_COMPLETED_FPS,
+				`the GPU finished too few frames to compare the rates: ${figures}`,
+			);
+			// The measurement can end with more frames waiting on the GPU than it started with, up to
+			// the limit. The presented rate counts them, and the completed rate does not yet. CI's
+			// software GPU finishes about three frames in the measurement, so those frames alone can
+			// part the two rates by half; the check allows them.
+			const waitingFps = FRAMES_LIMIT / MEASURED_SECONDS;
+			expect(
+				step.presentedFps,
+				`the presented rate stayed above the completed rate: ${figures}`,
+			).toBeLessThanOrEqual((step.completedFps ?? 0) * (1 + PARTED_SHARE) + waitingFps);
+			expect(framesInFlight(step) ?? Number.POSITIVE_INFINITY, figures).toBeLessThan(
+				MOST_FRAMES_IN_FLIGHT,
+			);
+		},
+	);
 }
