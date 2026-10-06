@@ -85,7 +85,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
 #ifdef MORPH
-    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0)));
+    var source = Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0));
+#ifdef VERTEX_COLOR
+    source.color = v.vertex_color;
+#endif
+    let rest = morph_vertex(found, v.morph, source);
     let rest_position = rest.position;
 #else
     let rest_position = mesh_position(v.position);
@@ -101,7 +105,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
     out.material = found.material;
 #ifdef VERTEX_COLOR
+#ifdef MORPH
+    out.vertex_color = rest.color;
+#else
     out.vertex_color = v.vertex_color;
+#endif
 #endif
 #ifdef ALPHA_HASH
     out.mesh_place = mesh_position(v.position);

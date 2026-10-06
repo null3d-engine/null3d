@@ -4,7 +4,8 @@ enable draw_index;
 // them, times the mesh's vertex colors in the VERTEX_COLOR builds. The ALPHA_MASK builds draw
 // nothing where the alpha falls below the material's cutoff, the ALPHA_COVERAGE builds fade it
 // there for alpha to coverage, and the ALPHA_HASH builds test it against the alpha hash
-// (null3d::cutout). A material that blends writes premultiplied color. null3d::mesh finds each instance on both GPU paths.
+// (null3d::cutout). A material that blends writes premultiplied color. null3d::mesh finds each
+// instance on both GPU paths.
 #import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{material_of, relative_position}
@@ -60,7 +61,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
 #ifdef MORPH
-    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0)));
+    var source = Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0));
+#ifdef VERTEX_COLOR
+    source.color = v.vertex_color;
+#endif
+    let rest = morph_vertex(found, v.morph, source);
     let rest_position = rest.position;
 #else
     let rest_position = mesh_position(v.position);
@@ -75,7 +80,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.clip = clip_of(found, out.relative);
     out.material = found.material;
 #ifdef VERTEX_COLOR
+#ifdef MORPH
+    out.vertex_color = rest.color;
+#else
     out.vertex_color = v.vertex_color;
+#endif
 #endif
 #ifdef ALPHA_HASH
     out.mesh_place = mesh_position(v.position);

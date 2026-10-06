@@ -449,7 +449,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let source_tangent = vec3f(0.0);
 #endif
 #ifdef MORPH
-    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, source_tangent));
+    var source = Morphed(mesh_position(v.position), v.normal, source_tangent, vec4f(1.0));
+#ifdef VERTEX_COLOR
+    source.color = v.vertex_color;
+#endif
+    let rest = morph_vertex(found, v.morph, source);
     let rest_position = rest.position;
     let rest_normal = rest.normal;
     let rest_tangent = rest.tangent;
@@ -476,7 +480,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.normal = world_normal(found, normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
+#ifdef MORPH
+    out.vertex_color = rest.color;
+#else
     out.vertex_color = v.vertex_color;
+#endif
 #endif
 #ifdef MAPS
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));

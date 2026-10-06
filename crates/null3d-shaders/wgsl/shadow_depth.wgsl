@@ -121,7 +121,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
 #endif
     let found = find_instance(i);
 #ifdef MORPH
-    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, vec3f(0.0)));
+    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, vec3f(0.0), vec4f(1.0)));
     let rest_position = rest.position;
     let rest_normal = rest.normal;
 #else
