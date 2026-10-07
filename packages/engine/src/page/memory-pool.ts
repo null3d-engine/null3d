@@ -42,11 +42,14 @@ function drop(entry: Kept): void {
 
 /**
  * Keeps the memory of an engine whose threads have all left it, for `keepMs`. Only an engine with
- * the same core and maximum can take it.
+ * the same core and maximum can take it. The pool lets go of it when the page goes away too: a
+ * frame that its page removes runs no more timers, and Safari can keep a removed frame's page, and
+ * all that it reaches, for minutes (D-92).
  */
 export function keepMemory(memory: WebAssembly.Memory, key: MemoryKey, keepMs = KEEP_MS): void {
 	const kept = pool();
 	if (kept.some((entry) => entry.memory === memory)) return;
+	globalThis.addEventListener?.('pagehide', releaseMemories);
 	const entry: Kept = { ...key, memory, timer: setTimeout(() => drop(entry), keepMs) };
 	kept.push(entry);
 	while (kept.length > POOL_SIZE) drop(kept[0] as Kept);

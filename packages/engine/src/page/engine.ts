@@ -91,7 +91,7 @@ import {
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
-import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
+import { STOP_TIMEOUT_MS, stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -543,8 +543,6 @@ const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
-/** How long stopping the engine waits for its job workers and the worker that draws to stop. */
-const STOP_TIMEOUT_MS = 2_000;
 
 interface TierChoice {
 	tier: Tier;

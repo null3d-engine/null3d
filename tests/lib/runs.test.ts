@@ -1028,8 +1028,19 @@ describe('the checks plan', () => {
 				NONE_MISSING,
 			),
 		).toEqual([
-			'the 10 starts and stops made 3 shared memories: each start after the first should take the memory that the page kept',
+			'the 10 starts and stops made 3 shared memories, after 0 stops that were not clean: each start after a clean stop should take the memory that the page kept',
 		]);
+		const stops = [
+			{ stopMs: 2_000, jobs: 6, jobsStopped: 5 },
+			{ stopMs: 300, jobs: 6, jobsStopped: 6 },
+		];
+		expect(
+			judge(
+				restart.check,
+				result({ kinds: { engine: { ...engine, memoriesMade: 2, starts: stops } } }),
+				NONE_MISSING,
+			),
+		).toEqual([]);
 		const failed = {
 			cycles: 2,
 			error: 'the engine start took more than 20 s',

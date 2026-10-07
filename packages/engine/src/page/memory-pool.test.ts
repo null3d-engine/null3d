@@ -46,6 +46,12 @@ describe('the memory pool', () => {
 		expect(keptMemories()).toBe(1);
 	});
 
+	it('lets every memory go when the page goes away', () => {
+		keepMemory(memory(), key);
+		globalThis.dispatchEvent(new Event('pagehide'));
+		expect(keptMemories()).toBe(0);
+	});
+
 	it('lets a memory go when its time ends, or when the page releases the pool', async () => {
 		keepMemory(memory(), key, 5);
 		keepMemory(memory(), { core: CORE, maximum: 32 });

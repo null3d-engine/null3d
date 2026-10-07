@@ -59,6 +59,8 @@ The owner chose the pool on 7 October 2026, in every browser, so that the engine
 - The pool keeps at most 2 memories, for 30 seconds each, and a third stop drops the oldest. React's strict mode and hot reloads start the next engine within a second. A page that stops the engine for good gets its RAM back after 30 seconds.
 - `engine.destroy({ release: true })` empties the pool at once. A page that will not start the engine again soon uses it, most of all on a phone with little memory.
 - A memory serves only an engine with the same core file and the same maximum, as `memory.maximumMiB` or the preset sets it. A memory's maximum is fixed. A larger one would let the engine grow past what the page asked for. An engine with another maximum makes a new memory, and the kept one stays until its time ends.
+- The pool lets go of its memories when the page goes away (`pagehide`). A frame that its page removes runs no more timers, so the 30 seconds never end there. Safari can keep a removed frame's page, and all that it reaches, for minutes ([D-92](D-92-safari-removed-frames.md)). Before this rule, each test page on the cloud iPad left its kept memory held. The seventh page in a row found no room at all (E1109).
+- A new memory that the browser refuses first lets go of the kept memories, as it ends the drawing workers of kept canvases.
 - The pool lives on the page's global object, so a hot reload's new copy of the engine's code finds it.
 - The single-threaded build needs no pool. The page keeps its core, and the memory that the core made, for the next engine already.
 

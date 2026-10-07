@@ -6,7 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import { type Build, coreUrls } from '../shared/core';
 import { compileWasm, type MemoryLimits, readMemoryLimits, type WasmError } from '../shared/wasm';
-import { type MemoryKey, takeMemory } from './memory-pool';
+import { type MemoryKey, releaseMemories, takeMemory } from './memory-pool';
 import { endParkedWorkers } from './ownership';
 
 /**
@@ -105,7 +105,8 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * A stopped engine's memory counts against both until the engine's workers have finished, which
  * Safari does a moment after the engine stops. So after each refusal the loader waits longer and
  * tries again, for about 45 seconds in all, and a refusal after that fails with E1109. The first
- * refusal after 10 seconds of waits also tells the page, through `stillWaiting`. The first refusal also ends
+ * refusal after 10 seconds of waits also tells the page, through `stillWaiting`. The first refusal also
+ * lets go of the memories that the page kept for new engines, which this one could not take, and ends
  * the drawing workers that stopped engines left with their canvases: Safari frees the memory that
  * such a worker used only once the worker ends. `create`, `pause` and `freeRoom` stand in for the
  * browser and the page in tests.
@@ -115,8 +116,10 @@ export async function createSharedMemory(
 	create: (descriptor: WebAssembly.MemoryDescriptor) => WebAssembly.Memory = (d) =>
 		new WebAssembly.Memory(d),
 	pause: (ms: number) => Promise<void> = wait,
-	freeRoom: () => void = () =>
-		endParkedWorkers('when the browser refused the shared memory of a new engine'),
+	freeRoom: () => void = () => {
+		releaseMemories();
+		endParkedWorkers('when the browser refused the shared memory of a new engine');
+	},
 	stillWaiting: () => void = () => {},
 ): Promise<WebAssembly.Memory> {
 	let waited = 0;
