@@ -164,9 +164,10 @@ export const DEBUG_VIEW_OVERDRAW = 3;
 export const DEBUG_VIEW_WIREFRAME = 4;
 export const DEBUG_VIEW_SHADOWS = 5;
 
-export const FOG_KIND_NONE = 0;
-export const FOG_KIND_LINEAR = 1;
-export const FOG_KIND_EXP2 = 2;
+export const FOG_CURVE_NONE = 0;
+export const FOG_CURVE_LINEAR = 1;
+export const FOG_CURVE_EXP2 = 2;
+export const FOG_CURVE_EXPONENTIAL = 3;
 
 export const MAP_SLOT_BASE_COLOR = 0;
 export const MAP_SLOT_METAL_ROUGH = 1;
@@ -252,6 +253,7 @@ export const TEXTURE_FORMAT_ASTC = 11;
 export const TEXTURE_FORMAT_ASTC_SRGB = 12;
 export const TEXTURE_FORMAT_BC7 = 13;
 export const TEXTURE_FORMAT_BC7_SRGB = 14;
+export const TEXTURE_FORMAT_BC6H = 21;
 export const TEXTURE_FORMAT_ETC2_RGB = 15;
 export const TEXTURE_FORMAT_ETC2_RGB_SRGB = 16;
 export const TEXTURE_FORMAT_ETC2_RGBA = 17;

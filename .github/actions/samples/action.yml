@@ -8,15 +8,24 @@ description: >-
   every file's SHA-256 when the cache missed. The cache saves only when the workflow's
   SAVE_CACHES is true.
 
+inputs:
+  cache-only:
+    description: >-
+      "true" only keeps the Actions cache current: when the cache already holds this version, the
+      step downloads and installs nothing.
+    default: "false"
+
 runs:
   using: composite
   steps:
     - uses: actions/cache/restore@v4
       id: restore
       with:
+        lookup-only: ${{ inputs.cache-only }}
         path: ~/.cache/null3d/samples
         key: null3d-samples-${{ hashFiles('tools/samples/lock.json') }}
     - name: Fetch and check the sample content
+      if: inputs.cache-only != 'true' || steps.restore.outputs.cache-hit != 'true'
       shell: bash
       run: bun run samples:fetch
     - uses: actions/cache/save@v4

@@ -16,7 +16,9 @@ pub const REST_FLOATS: usize = 10;
 
 /// A skeleton: each joint's parent, rest pose and inverse bind matrix. Joints are in parents-first
 /// order, so composing them in index order finds each parent finished.
-#[derive(Clone, Debug)]
+///
+/// The default skeleton has no joints: what a removed skeleton's place holds.
+#[derive(Clone, Debug, Default)]
 pub struct Skeleton {
     parents: Box<[u32]>,
     rest: Pose,

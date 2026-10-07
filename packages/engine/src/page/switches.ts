@@ -1,13 +1,14 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Nine more set what the
+// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Ten more set what the
 // benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
 // shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
 // without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for occlusion
-// culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU, and
-// ?join=off for custom effects in a pass each, none joined. ?hold
-// starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
-// running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
+// culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU,
+// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth, and ?join=off
+// for custom effects in a pass each, none joined. ?hold starts hold mode for image tests, ?preset=
+// fixes the quality preset, ?bench publishes the running engine for benchmark tools, and
+// ?gl-timing times each WebGL call for benchmark pages.
 
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
@@ -48,6 +49,9 @@ export type SketchThread = 'worker' | 'main';
  * @category api/engine
  */
 export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
+
+/** The bits per texel of the shadow cascades' depth. */
+export type ShadowDepthBits = 16 | 32;
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
@@ -131,8 +135,8 @@ export interface Switches {
 	prepass: boolean | undefined;
 	/**
 	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
-	 * and undefined to leave it to the page's options and the quality preset. It sets software
-	 * occlusion culling on WebGL2.
+	 * and undefined to leave it to the page's options and the quality preset. It sets GPU occlusion
+	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
 	/**
@@ -141,6 +145,11 @@ export interface Switches {
 	 * two against each other.
 	 */
 	vertexSkinning: boolean;
+	/**
+	 * The bits per texel of the shadow cascades' depth: 32 when ?shadowdepth=32 asks for 32-bit
+	 * floats, to measure them against the 16-bit depth that the engine stores otherwise.
+	 */
+	shadowDepthBits: ShadowDepthBits;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -254,6 +263,7 @@ export function parseSwitches(search: string): Switches {
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
 		vertexSkinning: params.get('skinning') === 'vertex',
+		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

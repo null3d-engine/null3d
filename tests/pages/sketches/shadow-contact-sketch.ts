@@ -20,8 +20,10 @@
 // ?moving adds a blue box that drives to and fro along x, dynamic, behind the still red ones. It
 // moves a fixed step in each frame, 10 m/s at 60 frames a second, so a slow GPU reads the box
 // where a fast one does. ?far=<n> sets the frames between two draws of a far cascade, 1 by
-// default, and turns off the governor, which would lengthen it. ?bias= and ?normalBias= set the
-// light's biases, and ?mapSize= the shadow map's texels on each side, 512 by default.
+// default, and turns off the governor, which would lengthen it. Far cascades follow moving casters
+// on every preset, and ?follow=preset leaves that to the preset's own `followMovingCasters` instead.
+// ?bias= and ?normalBias= set the light's biases, and ?mapSize= the shadow map's texels on each
+// side, 512 by default.
 import { defineSketch } from '@null3d/engine';
 import { CONTACT_AIM_HEIGHT, CONTACT_TURN } from '../lib/shadow-turn';
 
@@ -33,6 +35,8 @@ const BIASES = {
 	...(params.has('bias') && { bias: Number(params.get('bias')) }),
 	...(params.has('normalBias') && { normalBias: Number(params.get('normalBias')) }),
 };
+/** True when the sketch module's ?follow=preset switch keeps the preset's `followMovingCasters`. */
+const PRESET_FOLLOWS = params.get('follow') === 'preset';
 /** True when the sketch module's ?moving switch adds the driving box. */
 const MOVING = params.has('moving');
 /** Texels on each side of the shadow map, from the sketch module's ?mapSize switch. */
@@ -76,11 +80,11 @@ const VIEWS = {
 const YAW = (Number(params.get('yaw') ?? 0) * Math.PI) / 180;
 
 export default defineSketch(({ scene, materials, geometry, quality, time }) => {
-	// Moving casters keep far cascades drawing on every preset, so the driving box's shadow follows
-	// it wherever the preset check places the test's browser.
+	// Moving casters keep far cascades drawing, so the driving box's shadow follows it wherever the
+	// preset check places the test's browser, unless the page asks for the preset's own setting.
 	quality.set({
 		farCascadeInterval: FAR,
-		followMovingCasters: true,
+		...(!PRESET_FOLLOWS && { followMovingCasters: true }),
 		governor: false,
 		shadowFilter: FILTER,
 	});

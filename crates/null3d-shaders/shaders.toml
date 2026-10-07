@@ -347,6 +347,13 @@ file = "cull.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
+# The two phases of two-phase occlusion culling, from the same file: compute entry points `early`
+# and `late`. WebGPU only.
+[shaders.cull_occlusion]
+file = "cull.wgsl"
+by_device = true
+variants.webgpu = { defs = ["OCCLUSION"], targets = ["wgsl"] }
+
 # The mip levels of a layer of a texture array, one render pass per level. It loads by device, as
 # the backends make the mip levels of textures that the scene uploads. The copy pipeline copies a
 # layer texel by texel, for the WebGL2 backend.
@@ -358,10 +365,11 @@ pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
-# Environment maps made on the GPU (D-19): the built-in room, traced from its center, blurred as
-# three.js's examples blur it, halved into a chain of levels, and filtered for each roughness, one
-# face of one level per draw. It loads on first use, with the generator code that the thread that
-# draws loads when a sketch first asks for the room.
+# Environment maps made on the GPU (D-19): the built-in room, traced from its center and blurred as
+# three.js's examples blur it, or a panorama from an HDR file mapped onto the cube; then halved into
+# a chain of levels, and filtered for each roughness, the six faces of one level per draw. It loads
+# on first use, with the generator code that the thread that draws loads when a sketch first asks
+# for the room or loads an HDR file.
 [shaders.environment]
 file = "environment.wgsl"
 first_use = true
@@ -369,6 +377,7 @@ pipelines.trace = { vertex = "vs_main", fragment = "fs_trace" }
 pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
 pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
 pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
+pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
@@ -453,6 +462,19 @@ bits = ["SKIN"]
 # skinning pass, so it has no MORPH builds.
 [first_use.morph]
 bits = ["MORPH"]
+
+# The depth pyramid of two-phase occlusion culling, a batch of levels per dispatch; its compute
+# entry point is `main`. WebGPU only.
+[shaders.pyramid]
+file = "pyramid.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+# A WebGPU page downloads occlusion culling's phases and its depth pyramid when the engine runs
+# GPU occlusion culling and the scene first marks an occluder. Until their pipelines are built,
+# each camera view culls once, against the frustum alone.
+[first_use.occlusion]
+shaders = ["cull_occlusion", "pyramid"]
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;

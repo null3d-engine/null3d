@@ -142,6 +142,11 @@ pub enum AnimationError {
         /// The id.
         mask: u32,
     },
+    /// A live animated instance still uses the skeleton that a removal names.
+    SkeletonInUse {
+        /// The instance.
+        instance: u32,
+    },
     /// The engine's memory or a fixed capacity ran out.
     Core(CoreError),
 }

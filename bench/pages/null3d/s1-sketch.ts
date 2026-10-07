@@ -22,6 +22,8 @@
 // light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes.
+// The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
+// the decoders' work in the engine's workers.
 import { defineSketch, type Environment, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
@@ -54,6 +56,7 @@ export default defineSketch(async (context) => {
 	const outlineSettings = { outline: line };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
+	if (switches.has('decode')) void decodeWithoutEnd(context);
 	const ao = switches.has('ao');
 	const occlusion = { ao: { intensity: 1 } };
 	if (ao) context.quality.set({ aoScale: 0.5 });
@@ -137,6 +140,29 @@ fn effect(input: EffectInput) -> vec4f {
     return vec4f(mix(input.color.rgb, uniforms.color * input.color.a, fade), input.color.a);
 }
 `;
+
+/** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
+const LAMP = '/samples/sources/khronos/StainedGlassLamp/glTF-KTX-BasisU';
+/** The meshopt sample model, which the `decode` switch loads after each round of textures. */
+const MESHOPT_CUBE = '/samples/sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf';
+
+/**
+ * Loads the KTX2 sample model's textures, all at once, and the meshopt sample model, round after
+ * round until the page closes. The textures go as soon as they arrive. The frames meanwhile show
+ * what the decoders' work in the engine's workers costs the frame loop.
+ */
+async function decodeWithoutEnd({ assets }: SketchContext): Promise<void> {
+	const gltf = (await (await fetch(`${LAMP}/StainedGlassLamp.gltf`)).json()) as {
+		images: { uri: string }[];
+	};
+	for (;;) {
+		const textures = await Promise.all(
+			gltf.images.map(({ uri }) => assets.loadTexture(`${LAMP}/${uri}`)),
+		);
+		for (const texture of textures) texture.destroy();
+		await assets.loadGltf(MESHOPT_CUBE);
+	}
+}
 
 /** The number of outlined boxes that the `outline` switch adds. */
 const OUTLINED_BOXES = 16;

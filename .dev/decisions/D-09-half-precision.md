@@ -2,6 +2,8 @@
 
 Status: decided by the rule on both paths: half precision stays off. The iPad's image check with half precision on is pending. Date: 2026-10-03. Task: M1-H5. Test: T-22.
 
+Summary: Color math at half precision behind `?half=on`, off on both paths. No GPU saved 5%: the iPad's WebGPU saved 1.5% in S4 and lost 1% in S3, and the S24+ showed no gain and failed one image test.
+
 ## Question
 
 Phone and tablet GPUs can run 16-bit float math faster than 32-bit math, and keep more of it in registers. Should the scene shaders do their color math at half precision: in `f16` on WebGPU, where the device has the optional feature `shader-f16`, and at `mediump` on WebGL2?

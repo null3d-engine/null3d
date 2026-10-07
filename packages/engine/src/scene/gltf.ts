@@ -31,9 +31,12 @@ import {
 } from '../generated/core';
 import { DEV } from '../shared/dev';
 import { onEngineStop } from '../shared/helper-workers';
-import type { GltfAnswer, GltfRequest } from '../workers/gltf-worker';
-import { type AnimationRig, loadAnimationRig } from './animation';
-import { affineOf, multiplyAffine } from './gltf-math';
+import { compileOnce, type WasmFile } from '../shared/tasks';
+import type { WasmError } from '../shared/wasm';
+import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
+import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
+import { type AnimationRig, destroyRig, loadAnimationRig } from './animation';
+import { affineOf, growBox, multiplyAffine } from './gltf-math';
 import type {
 	BlockerData,
 	GltfData,
@@ -92,10 +95,22 @@ export interface GltfContext {
 	): Promise<ImageBitmap>;
 	/** Makes one of the engine's coded errors: the caller's `EngineError`. */
 	error(
-		code: 'E1406' | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1418' | 'E1420',
+		code: Parameters<WasmError>[0] | 'E1411' | 'E1412' | 'E1416' | 'E1417' | 'E1420',
 		message: string,
 	): EngineError;
 }
+
+/**
+ * The decoders that the glTF worker asks for, by name: WebAssembly files that the on-demand loader
+ * compiles once per page and sends to the worker.
+ */
+const DECODERS: Readonly<Record<GltfDecoder, WasmFile>> = {
+	meshopt: {
+		name: 'meshopt',
+		url: new URL('../../vendor/meshopt/meshopt_decoder.wasm', import.meta.url),
+		what: 'the meshopt decoder',
+	},
+};
 
 /** A request that waits for the worker. */
 interface Waiting {
@@ -112,11 +127,18 @@ class Parser {
 	private readonly waiting = new Map<number, Waiting>();
 	private next = 0;
 
-	constructor(private readonly stopped: () => void) {
-		this.worker = new Worker(new URL('../workers/gltf-worker.ts', import.meta.url), {
-			type: 'module',
-			name: 'null3d-gltf',
-		});
+	constructor(
+		private readonly stopped: () => void,
+		error: WasmError,
+	) {
+		this.worker = spawnWorker(
+			() =>
+				new Worker(new URL('../workers/gltf-worker.ts', import.meta.url), {
+					type: 'module',
+					name: 'null3d-gltf',
+				}),
+			error,
+		);
 		this.worker.onmessage = (event: MessageEvent<GltfAnswer>) => {
 			const waiting = this.waiting.get(event.data.id);
 			if (!waiting) return;
@@ -166,7 +188,7 @@ function parse(
 		const made: Parser = new Parser(() => {
 			forget();
 			if (parser === made) parser = undefined;
-		});
+		}, context.error);
 		const forget = onEngineStop(() => made.stop('the engine stopped'));
 		parser = made;
 	}
@@ -184,15 +206,26 @@ function parse(
 								: context.error('E1416', `${call}() could not read ${address}: ${message}.`),
 					);
 				} else if ('needs' in answer)
-					Promise.all(
-						answer.needs.map(async ([k, url]) => {
-							const blob = await context.download(new URL(url), call);
-							return [k, await blob.arrayBuffer()] as [number, ArrayBuffer];
-						}),
-					).then(
-						(buffers) =>
+					Promise.all([
+						Promise.all(
+							answer.needs.map(async ([k, url]) => {
+								const blob = await context.download(new URL(url), call);
+								return [k, await blob.arrayBuffer()] as [number, ArrayBuffer];
+							}),
+						),
+						Promise.all(
+							answer.decoders.map(
+								async (name) =>
+									[name, await compileOnce(DECODERS[name], context.error)] as [
+										GltfDecoder,
+										WebAssembly.Module,
+									],
+							),
+						),
+					]).then(
+						([buffers, decoders]) =>
 							worker.send(
-								{ id, buffers },
+								{ id, buffers, decoders },
 								buffers.map(([, bytes]) => bytes),
 							),
 						(error) => {
@@ -206,7 +239,11 @@ function parse(
 			},
 			(reason) =>
 				reject(
-					context.error('E1406', `the glTF loader's worker did not load for ${call}(): ${reason}.`),
+					bootstrapFailure(reason, context.error) ??
+						context.error(
+							'E1406',
+							`the glTF loader's worker did not load for ${call}(): ${reason}.`,
+						),
 				),
 		);
 		worker.send({ id, file, url: address.href }, [file]);
@@ -229,16 +266,24 @@ export async function loadGltf(
 		context.materials.shaders.need('morph');
 	const textures = await makeTextures(context, data, bitmaps, address, call);
 	const materials = new FileMaterials(context, data, textures);
+	const made: Made = { meshes: [] };
 	try {
 		materials.makeBase();
-		return await buildPrefab(context, data, textures, materials, address, call);
+		return await buildPrefab(context, data, textures, materials, made, address, call);
 	} catch (error) {
-		// A load that fails frees the textures and materials it made. Meshes and skeletons have no
-		// destroy call yet, so they stay.
+		// A load that fails frees everything it made. No object uses any of it yet.
 		materials.destroy();
 		for (const texture of textures) texture?.destroy();
+		context.geometry.destroyMeshes(made.meshes, call);
+		if (made.rig) destroyRig(context.core, made.rig);
 		throw error;
 	}
+}
+
+/** The meshes and the rig that a load made so far, which a failed load frees. */
+interface Made {
+	meshes: MeshGeometry[];
+	rig?: AnimationRig;
 }
 
 /** The prefab of a parsed file, once its textures and materials exist. */
@@ -247,17 +292,19 @@ async function buildPrefab(
 	data: GltfData,
 	textures: readonly (Texture | undefined)[],
 	materials: FileMaterials,
+	made: Made,
 	address: URL,
 	call: string,
 ): Promise<Prefab> {
 	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.
 	const meshes: (MeshGeometry[] | undefined)[] = [];
 	const meshOf = (k: number) => {
-		meshes[k] ??= makeMeshes(context, data.meshes[k] as MeshData, address, call);
+		meshes[k] ??= makeMeshes(context, data.meshes[k] as MeshData, made.meshes, address, call);
 		return meshes[k];
 	};
 	const lights = data.lights.map(lightTemplate);
 	const rig = await makeRig(context, data, address, call);
+	if (rig) made.rig = rig;
 	const template: TemplateNode[] = [
 		{
 			name: '',
@@ -290,11 +337,11 @@ async function buildPrefab(
 		}));
 		const light = n.light < 0 ? undefined : lights[n.light];
 		if (n.skinned) {
-			// Joints move the mesh in the space of the copy's group. A mesh that one joint moves
-			// rests where that joint does.
-			const rest = n.skin >= 0 ? IDENTITY : n.transform;
-			for (const part of parts)
+			// Joints move the mesh in the space of the copy's group, where the parser boxed it.
+			parts.forEach((part, k) => {
+				const rest = mesh?.primitives[k]?.rest;
 				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest });
+			});
 			const isObject = (n.joint ?? -1) < 0 && parents.has(index);
 			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform }) : -1);
 			continue;
@@ -342,6 +389,12 @@ async function buildPrefab(
 		materials.list(),
 		textures.filter((t): t is Texture => t !== undefined),
 		rig,
+		{
+			meshes: made.meshes,
+			materials: materials.all(),
+			geometry: context.geometry,
+			error: context.scene.checks.error,
+		},
 	);
 }
 
@@ -475,11 +528,12 @@ function isKtx2(bytes: Uint8Array): boolean {
 
 /**
  * The engine's meshes of a glTF mesh, one for each primitive, with the stored tree and the blocker
- * that the asset tool gave each primitive.
+ * that the asset tool gave each primitive. Each mesh also goes into `out` as it is made.
  */
 function makeMeshes(
 	context: GltfContext,
 	mesh: MeshData,
+	out: MeshGeometry[],
 	address: URL,
 	call: string,
 ): MeshGeometry[] {
@@ -513,6 +567,7 @@ function makeMeshes(
 				`${call}() could not read ${address}: primitive ${k} of mesh "${mesh.name}" makes no mesh: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
+		out.push(made);
 		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV)
 			console.warn(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
@@ -567,6 +622,11 @@ class FileMaterials {
 	/** The materials in the file's order. */
 	list(): Material[] {
 		return this.base;
+	}
+
+	/** Every material made so far: the file's, and the other ways that primitives draw them. */
+	all(): Material[] {
+		return [...this.made.values()];
 	}
 
 	/** Destroys every material made so far, for a load that fails. */
@@ -654,7 +714,8 @@ function lightTemplate(light: LightData): LightTemplate {
 
 /**
  * The model's meshes as parts of instance batches, each with its place in the model's space, and
- * the bounds of every mesh in that space, the instances of instancing nodes included.
+ * the bounds of every mesh in that space, the instances of instancing nodes included. A mesh that
+ * joints move has its box in that space already, and draws in a batch where it lies at rest.
  */
 function partsOf(
 	template: readonly TemplateNode[],
@@ -663,43 +724,35 @@ function partsOf(
 	instancing: readonly InstancingTemplate[],
 ): { parts: PartTemplate[]; bounds: ReturnType<typeof boundsOf> } {
 	const worlds: Float64Array[] = [];
-	const boxes = new Map<MeshGeometry, readonly [number[], number[]]>();
+	const primitives = new Map<MeshGeometry, PrimitiveData>();
 	data.meshes.forEach((mesh, k) => {
 		const made = meshes[k];
 		if (!made) return;
 		mesh.primitives.forEach((p, j) => {
-			boxes.set(made[j] as MeshGeometry, [p.min, p.max]);
+			primitives.set(made[j] as MeshGeometry, p);
 		});
 	});
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];
-	const grow = (m: Float64Array, box: readonly [number[], number[]] | undefined) => {
-		if (!box) return;
-		for (let corner = 0; corner < 8; corner++) {
-			const p = [0, 1, 2].map(
-				(axis) => ((corner >> axis) & 1 ? box[1][axis] : box[0][axis]) as number,
-			);
-			for (let r = 0; r < 3; r++) {
-				const v =
-					(m[r * 4] as number) * (p[0] as number) +
-					(m[r * 4 + 1] as number) * (p[1] as number) +
-					(m[r * 4 + 2] as number) * (p[2] as number) +
-					(m[r * 4 + 3] as number);
-				min[r] = Math.min(min[r] as number, v);
-				max[r] = Math.max(max[r] as number, v);
-			}
-		}
+	const grow = (m: Float64Array, mesh: MeshGeometry) => {
+		const p = primitives.get(mesh);
+		if (p) growBox(m, p.min, p.max, min, max);
 	};
 	const parts: PartTemplate[] = [];
 	template.forEach((node, k) => {
-		// A mesh that a joint moves counts where the joint rests.
-		const local = affineOf(node.rest ?? node.transform);
+		const local = affineOf(node.transform);
 		worlds[k] =
 			node.parent < 0 ? local : multiplyAffine(worlds[node.parent] as Float64Array, local);
 		const world = worlds[k] as Float64Array;
 		if (node.mesh && node.material) {
-			parts.push({ mesh: node.mesh, material: node.material, matrix: Float32Array.from(world) });
-			grow(world, boxes.get(node.mesh));
+			const { rest } = node;
+			parts.push({
+				mesh: node.mesh,
+				material: node.material,
+				matrix: Float32Array.from(rest?.matrix ?? world),
+				...(rest?.exact === false && { bindPose: true }),
+			});
+			grow(world, node.mesh);
 		}
 	});
 	for (const spec of instancing) {
@@ -711,7 +764,7 @@ function partsOf(
 				...spec.scales.subarray(r * 3, r * 3 + 3),
 			]);
 			const placed = multiplyAffine(world, row);
-			for (const part of spec.parts) grow(placed, boxes.get(part.mesh));
+			for (const part of spec.parts) grow(placed, part.mesh);
 		}
 	}
 	const empty = min[0] === Infinity;

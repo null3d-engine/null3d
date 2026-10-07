@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-09-29. Test: T-06.
 
+Summary: Upload straight from shared memory wherever the startup test passes, which is every browser measured; copies stay as the fallback.
+
 ## Question
 
 Can the WebGL2 path upload straight from views on the shared WebAssembly memory in Safari, or must it copy each changed range into a plain buffer first?

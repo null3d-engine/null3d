@@ -342,9 +342,16 @@ pub mod format {
     /// ambient occlusion's copy of the depth. WebGL2 calls it `R32F`, and draws into it with
     /// `EXT_color_buffer_float`.
     pub const R32_FLOAT: u32 = 20;
+    /// BC6H in blocks of 4 x 4 texels, 16 bytes each, with three unsigned half floats per texel
+    /// and no alpha: high dynamic range color in an eighth of the bytes of `RGBA16_FLOAT`
+    /// (`Capabilities::TEXTURE_BC`).
+    pub const BC6H_RGB_UFLOAT: u32 = 21;
+    /// Depth as a 16-bit unsigned normalized number: half the bytes of `DEPTH32_FLOAT`, with even
+    /// steps of 1 / 65,535 from 0 to 1. WebGL2 calls it `DEPTH_COMPONENT16`.
+    pub const DEPTH16_UNORM: u32 = 22;
 
     /// Every format.
-    pub const ALL: [u32; 21] = [
+    pub const ALL: [u32; 23] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -366,6 +373,8 @@ pub mod format {
         ETC2_RGBA8_UNORM_SRGB,
         RGB9E5_UFLOAT,
         R32_FLOAT,
+        BC6H_RGB_UFLOAT,
+        DEPTH16_UNORM,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -396,7 +405,7 @@ pub mod format {
 
     /// True for the depth formats.
     pub const fn is_depth(format: u32) -> bool {
-        matches!(format, DEPTH24_PLUS | DEPTH32_FLOAT)
+        matches!(format, DEPTH16_UNORM | DEPTH24_PLUS | DEPTH32_FLOAT)
     }
 
     /// True for the formats stored in compressed blocks of texels.
@@ -408,7 +417,7 @@ pub mod format {
     pub const fn capability(format: u32) -> Capabilities {
         match format {
             ASTC_4X4_UNORM | ASTC_4X4_UNORM_SRGB => Capabilities::TEXTURE_ASTC,
-            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB => Capabilities::TEXTURE_BC,
+            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB | BC6H_RGB_UFLOAT => Capabilities::TEXTURE_BC,
             ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB | ETC2_RGBA8_UNORM | ETC2_RGBA8_UNORM_SRGB => {
                 Capabilities::TEXTURE_ETC2
             }
@@ -419,7 +428,7 @@ pub mod format {
     /// Texels on each side of a block: 4 for the compressed formats, and 1 for the rest.
     pub const fn block_size(format: u32) -> u32 {
         match format {
-            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB => 4,
+            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB | BC6H_RGB_UFLOAT => 4,
             _ => 1,
         }
     }
@@ -430,12 +439,14 @@ pub mod format {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
             | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
+            DEPTH16_UNORM => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
             | ASTC_4X4_UNORM
             | ASTC_4X4_UNORM_SRGB
             | BC7_RGBA_UNORM
             | BC7_RGBA_UNORM_SRGB
+            | BC6H_RGB_UFLOAT
             | ETC2_RGBA8_UNORM
             | ETC2_RGBA8_UNORM_SRGB => 16,
             _ => 0,
@@ -459,6 +470,12 @@ pub mod format {
     /// Bytes of one row of blocks of a mip level: a row of texels for an uncompressed format.
     pub const fn row_bytes(format: u32, width: u32, level: u32) -> u64 {
         blocks(format, width, level) as u64 * block_bytes(format) as u64
+    }
+
+    /// True for the formats whose textures get their texels from writes alone: the compressed
+    /// formats and `RGB9E5_UFLOAT`, which no path draws into or copies.
+    pub const fn writes_only(format: u32) -> bool {
+        is_compressed(format) || format == RGB9E5_UFLOAT
     }
 
     /// True for the formats whose mip levels `GenerateMipmaps` makes: 8-bit color, which every
@@ -595,7 +612,9 @@ pub mod resource_kind {
 pub mod layout {
     /// Group 0 of render pipelines: per-frame constants and the material table.
     pub const FRAME: u32 = 0;
-    /// Group 0 of the culling compute pipeline.
+    /// Group 0 of the culling compute pipelines, plain and of the two occlusion phases: the
+    /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
+    /// depth pyramid or a placeholder.
     pub const CULL: u32 = 1;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
@@ -634,6 +653,10 @@ pub mod layout {
     /// vertices, the skinned vertices that it writes, the texture of skinning matrices, and the
     /// morph textures of deltas and of weights.
     pub const SKIN: u32 = 12;
+    /// Group 0 of the depth pyramid's compute pipeline: the level's parameters at a dynamic
+    /// offset, the pyramid, which it writes, and the view's depth target of one sample, which it
+    /// reads as a float texture.
+    pub const DEPTH_PYRAMID: u32 = 14;
     /// Group 0 of ambient occlusion's depth step on a depth target of one sample: the steps'
     /// uniform block, then the depth target, which the step reads as unfilterable floats with
     /// `textureLoad`. Compatibility mode reads no depth texture type with `textureLoad`, so the
@@ -1209,12 +1232,17 @@ pub mod sizes {
     /// parameters list them for the cells a view can see. Runs that follow each other join, so
     /// there is at most one per pair of cells, and one more for the sources that move.
     pub const MAX_CULL_RANGES: u32 = MAX_CELLS / 2 + 1;
+    /// Bytes of the occlusion phases' values at the end of the culling parameters: the
+    /// view-projection matrix, the render size, the depth pyramid's levels, where the second
+    /// phase's draws and the history start, and an occluder's least span. Views that cull in one
+    /// phase leave them unset, but the parameters have room for them.
+    pub const CULL_OCCLUSION_BYTES: u32 = 96;
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
     /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
-    /// six vectors.
-    pub const SHADOW_UNIFORM_BYTES: u32 = 352;
+    /// seven vectors.
+    pub const SHADOW_UNIFORM_BYTES: u32 = 368;
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
@@ -1281,6 +1309,14 @@ pub mod template {
     /// [`SPRITE`] times the material's map, at each sprite's frame of the atlas. The bind group of
     /// index 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
     pub const SPRITE_MAP: u32 = 23;
+    /// The first phase of occlusion culling: the culling shader's `early` entry point, which
+    /// keeps the instances in view that drew in the view's last frame.
+    pub const OCCLUSION_EARLY: u32 = 24;
+    /// The second phase of occlusion culling: the culling shader's `late` entry point, which
+    /// tests the instances in view against the depth pyramid.
+    pub const OCCLUSION_LATE: u32 = 25;
+    /// One level of the depth pyramid that the second phase of occlusion culling tests against.
+    pub const DEPTH_PYRAMID: u32 = 28;
     /// Wide lines: a quad with round ends for each instance batch row, whose world matrix holds a
     /// segment's middle, its half, its end colors and its distance along the line packed (see
     /// `null3d_core::lines`), in the material's color times the segment's colors.
@@ -1487,6 +1523,8 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
                 ("R32_FLOAT", format::R32_FLOAT),
+                ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
+                ("DEPTH16_UNORM", format::DEPTH16_UNORM),
             ],
         ),
         (
@@ -1572,6 +1610,7 @@ pub fn typescript_constants() -> String {
                 ("FINAL_BLOOM", layout::FINAL_BLOOM),
                 ("JOINTS", layout::JOINTS),
                 ("SKIN", layout::SKIN),
+                ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
@@ -1649,6 +1688,9 @@ pub fn typescript_constants() -> String {
                 ("OUTLINE_MASK", template::OUTLINE_MASK),
                 ("SPRITE", template::SPRITE),
                 ("SPRITE_MAP", template::SPRITE_MAP),
+                ("OCCLUSION_EARLY", template::OCCLUSION_EARLY),
+                ("OCCLUSION_LATE", template::OCCLUSION_LATE),
+                ("DEPTH_PYRAMID", template::DEPTH_PYRAMID),
                 ("LINE", template::LINE),
                 ("LINE_LIT", template::LINE_LIT),
                 ("AO_DEPTH", template::AO_DEPTH),
@@ -1704,6 +1746,7 @@ pub fn typescript_constants() -> String {
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
+                ("CULL_OCCLUSION_BYTES", sizes::CULL_OCCLUSION_BYTES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
                 ("SHADOW_UNIFORM_BYTES", sizes::SHADOW_UNIFORM_BYTES),
                 (
@@ -2105,6 +2148,8 @@ mod tests {
         assert_eq!(format::texel_bytes(format::DEPTH24_PLUS), 0);
         assert_eq!(format::texel_bytes(99), 0);
         assert!(format::is_depth(format::DEPTH32_FLOAT));
+        assert!(format::is_depth(format::DEPTH16_UNORM));
+        assert_eq!(format::texel_bytes(format::DEPTH16_UNORM), 2);
         assert!(!format::is_depth(format::RGBA8_UNORM_SRGB));
     }
 
@@ -2153,6 +2198,14 @@ mod tests {
             format::capability(format::BC7_RGBA_UNORM_SRGB),
             Capabilities::TEXTURE_BC
         );
+        // BC6H holds high dynamic range color in the same blocks of 16 bytes as BC7.
+        let bc6h = format::BC6H_RGB_UFLOAT;
+        assert!(format::is_compressed(bc6h));
+        assert_eq!(format::level_bytes(bc6h, 64, 32, 0), 16 * 8 * 16);
+        assert_eq!(format::capability(bc6h), Capabilities::TEXTURE_BC);
+        assert!(format::writes_only(bc6h));
+        assert!(format::writes_only(format::RGB9E5_UFLOAT));
+        assert!(!format::writes_only(format::RGBA16_FLOAT));
         assert_eq!(
             format::capability(format::RGBA8_UNORM),
             Capabilities::empty()

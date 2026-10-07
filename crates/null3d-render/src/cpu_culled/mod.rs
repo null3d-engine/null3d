@@ -113,12 +113,12 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
-use crate::meshes::{MeshStorage, Packing};
+use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
-use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
-use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
+use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
+use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -276,6 +276,8 @@ pub struct CpuCulledConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
+    /// How the shadow cascades store depth.
+    pub cascade_depth: CascadeDepth,
 }
 
 impl Default for CpuCulledConfig {
@@ -290,6 +292,7 @@ impl Default for CpuCulledConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
+            cascade_depth: CascadeDepth::default(),
         }
     }
 }
@@ -317,12 +320,12 @@ pub struct CpuCulledRenderer {
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
-    /// The shadow casters' layout, which the shadow cascades draw.
+    /// The shadow casters' layout, which the shadow cascades and tiles draw.
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
-    /// True when the layouts were built for a frame with shadows.
-    layouts_shadowed: bool,
+    /// The shadow passes of the frame that the layouts were built for.
+    layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
     layouts_outlined: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
@@ -397,6 +400,7 @@ impl CpuCulledRenderer {
                 config.max_materials,
                 textures,
                 config.canvas,
+                config.cascade_depth,
             ),
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
@@ -432,14 +436,14 @@ impl CpuCulledRenderer {
                         },
                     },
                 );
-                graph.bind_shadow_map();
+                graph.bind_shadow_map(config.cascade_depth);
                 graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             outlined: Layout::new(Drawn::Outlined),
-            layouts_shadowed: false,
+            layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             layout_prepass: false,
             clusters: Clusters::default(),
@@ -556,13 +560,13 @@ impl CpuCulledRenderer {
     }
 
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
-    /// the clusters, the culling runs and every view's output, and the upload arenas. With
-    /// `shadows`, the casters' layout holds the casters, and the receivers read the shadow map.
-    /// With `outlines`, the outlined layout holds the outlined objects.
+    /// the clusters, the culling runs and every view's output, and the upload arenas. While
+    /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
+    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects.
     fn rebuild_layout(
         &mut self,
         input: &FrameInput<'_>,
-        shadows: bool,
+        shadows: CasterPasses,
         outlines: bool,
     ) -> Result<(), RecordError> {
         self.settings
@@ -583,14 +587,13 @@ impl CpuCulledRenderer {
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
         self.layout_prepass = self.graph.depth_prepass();
-        let prepass = Prepass::OwnVertexShader.if_on(self.layout_prepass);
+        let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
             settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
         )?;
-        // The casters' layout holds buckets only while the light casts shadows.
-        if shadows {
-            let targets = self.with_draw_index(shadows::TARGETS);
+        // The casters' layout holds buckets only while a light casts shadows.
+        if shadows.any() {
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
             self.casters.rebuild(
                 settings,
@@ -644,7 +647,7 @@ impl CpuCulledRenderer {
                 input.batches,
                 place,
                 RESIDENT,
-                shadows,
+                shadows.any(),
                 |slot, key| skins.sorted_pipeline(slot, key),
             )
             .map_err(out_of_memory)?;
@@ -1162,7 +1165,7 @@ impl CpuCulledRenderer {
                 frame,
                 streamed,
             )?;
-            let shadowed = self.layouts_shadowed;
+            let shadowed = self.layouts_shadowed.any();
             if self.shadow.is_none() && self.cascades_held && shadowed {
                 // Receivers of point and spot light shadows read the cascades too: none now.
                 let (at, bytes) = arena.push(ShadowUniform::default().as_bytes())?;
@@ -1258,7 +1261,7 @@ impl CpuCulledRenderer {
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
-                    tile_draws.record(list, arena, view, starts, casters, meshes, Shading::Depth)
+                    tile_draws.record(list, arena, view, starts, casters, meshes, Shading::Tile)
                 }
                 Role::OutlineMask if outline_culling.frame(ViewId::OUTLINE).is_some() => {
                     let view = ViewId::OUTLINE;
@@ -1371,8 +1374,17 @@ impl FrameBuilder for CpuCulledRenderer {
         let filter = self.settings.shadow_quality().filter;
         self.tiles
             .plan(input, tile_settings, filter, camera.as_ref());
-        // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
-        let shadows = self.shadow.is_some() || self.tiles.shape().is_some();
+        // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
+        // casters draw into the passes of each.
+        let cascades = self.settings.cascade_depth().targets();
+        let shadows = CasterPasses {
+            cascades: self
+                .shadow
+                .is_some()
+                .then(|| self.with_draw_index(cascades)),
+            tiles: (self.tiles.shape().is_some())
+                .then(|| self.with_draw_index(shadow_tiles::TARGETS)),
+        };
         let outlines = self.settings.outline().is_some();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
@@ -1502,6 +1514,18 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn casts_tile_shadows(&self) -> bool {
         self.tiles.shape().is_some()
+    }
+
+    fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves) {
+        self.meshes.moved(moves);
+        if let Some(first) = moves.morph_texels {
+            self.skins.morph_mut().deltas_moved(first);
+        }
+        self.occluders.forget(ids);
+    }
+
+    fn mesh_gpu_bytes(&self) -> u64 {
+        self.meshes.gpu_bytes() + self.skins.morph().delta_bytes()
     }
 
     fn reset_gpu(&mut self) {

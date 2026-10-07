@@ -1,7 +1,7 @@
 enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
-#import null3d::fog::{apply_fog, fog_factor}
+#import null3d::fog::{fog_color, fog_factor}
 #import null3d::globals::{Frame, Material}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
@@ -184,10 +184,17 @@ fn custom_value(id: u32, k: u32) -> vec4f {
 const NO_FOG: u32 = 4u;
 
 /// Exposed linear color `c` of a fragment at `relative`, its position relative to the camera, seen
-/// through the scene's fog, whose color the core exposes. A material with fog off keeps its color.
+/// through the scene's fog, whose color the core exposes and the sun may light. A material with fog
+/// off keeps its color.
 fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
-    let fog_on = (u32(m.strengths.z) & NO_FOG) == 0u;
-    return apply_fog(c, frame.fog.color.xyz, select(0.0, fog_factor(frame.fog, relative), fog_on));
+    if ((u32(m.strengths.z) & NO_FOG) != 0u) {
+        return c;
+    }
+    let factor = fog_factor(frame.fog, relative);
+    if (factor == 0.0) {
+        return c;
+    }
+    return mix(c, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.

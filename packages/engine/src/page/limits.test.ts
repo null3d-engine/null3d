@@ -49,7 +49,9 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	joinEffects: true,
 	depthPrepass: false,
 	vertexSkinning: false,
+	shadowDepthBits: 16,
 	largeWorld: false,
+	gpuOcclusion: false,
 });
 
 /** A WebGL2 device that draws RGBA16F targets with the engine's MSAA. */
@@ -83,12 +85,14 @@ const PLAIN: DeviceOptions = {
 	cells: true,
 	join: true,
 	vertexSkinning: false,
+	shadowDepthBits: 16,
 	hdr: true,
 	half: undefined,
 	antialias: 'msaa',
 	transparent: false,
 	depthPrepass: false,
 	largeWorld: false,
+	gpuOcclusion: false,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */
@@ -305,6 +309,14 @@ describe('coreDevice on WebGL2', () => {
 		for (const tier of ['webgpu', 'webgpu-compat'] as const) {
 			expect(coreDevice(tier, report({}), PLAIN).depthPrepass).toBe(false);
 			expect(coreDevice(tier, report({}), on).depthPrepass).toBe(true);
+		}
+	});
+
+	it('culls in two phases on WebGPU where the options ask for it', () => {
+		const on: DeviceOptions = { ...PLAIN, gpuOcclusion: true };
+		for (const tier of ['webgpu', 'webgpu-compat'] as const) {
+			expect(coreDevice(tier, report({}), PLAIN).gpuOcclusion).toBe(false);
+			expect(coreDevice(tier, report({}), on).gpuOcclusion).toBe(true);
 		}
 	});
 });

@@ -2,6 +2,8 @@
 
 Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). Date: 2026-09-30.
 
+Summary: M1: up to 100 KB for the engine's JavaScript that a page downloads, per thread mode and GPU path. M2: up to 140 KB at a page's start, and up to 16 KB for each file that loads on first use or after the first frame. A feature that a page does not use loads its code on first use. Each first-use shader file may take about 24 KB. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The size report adds gzip and uncompressed columns: with gzip a WebGL2 page downloads 496 KB at its start.
+
 ## Question
 
 M1's exit gate holds the engine's JavaScript that a page downloads to 60 KB after Brotli in each thread mode. Only the owner can revise that budget, in writing. A pipelined page downloaded 36.9 KB early on 30 September and 49.5 KB that afternoon. Most of M1 has not merged yet. How does the rest of M1 fit, and what does each way cost?
@@ -285,7 +287,7 @@ The files that load later, with #264. No start counts them:
 | The WebGL call timing files | 0.9 | only with `?gl-timing`, on benchmark pages |
 | The preset check's files | 0.4 to 0.5 | after the first frame, unless a stored result skips the check (D-17) |
 
-M2-A3's meshopt decoder (#263) adds `gltf-meshopt.js`, 6.2 KB, with the first file that holds meshopt data. M2-C7 adds skins, clips and morph targets to the glTF worker, about 3 KB by estimate, which takes the worker to about 9 KB. The KTX2 transcoder's own files, the Basis Universal build of 365 KB, keep their own section with no budget. The engine ships them as their authors build them.
+M2-A3's meshopt decoder (#263) adds `gltf-meshopt.js`, 6.2 KB, with the first file that holds meshopt data. M2-C7 adds skins, clips and morph targets to the glTF worker, about 3 KB by estimate, which takes the worker to about 9 KB. The KTX2 transcoder's module, 361 KB, keeps its own section with no budget, beside meshopt's module. Since M2-R18 the engine builds the transcoder itself, without code made from strings. Its script goes into the KTX2 task's file: 8.9 KB, within the 16 KB limit. The meshopt decoder became a module of 3.1 KB and a script of 0.4 KB.
 
 What the budgets cost in time. The startup benchmark's Slow 4G profile downloads 157,500 bytes per second. A page's JavaScript shares the link with the core's 206 KB. At that rate, the 41 KB from 98.8 KB to 140 KB add about 0.27 s to a cold start. A cold load on the MacBook Pro took 4.0 s on Slow 4G on 30 September 2026. A file of 16 KB that loads on first use takes about 0.1 s on the same link. Its round trip of at least 562 ms comes on top. Where the loader starts both downloads at once, as the glTF loader does, that round trip overlaps the download of the feature's own data.
 
@@ -328,7 +330,7 @@ This is also the way to trim the start. Each feature's shaders move into a file 
 | Draco's glTF-only decoder: 49 KB of WebAssembly and 10 KB of JavaScript | 59 KB | On first use, only for files that hold Draco data, in the glTF worker, once per page ([D-54](D-54-addon-modules.md)) | The owner decided on 4 October 2026 that the engine reads Draco files. Draco's authors build the decoder, and no smaller build reads glTF's Draco data. The first figure quoted, 66 KB, was the full build's `.wasm` alone |
 | The two fitted tables of area lights, as half floats | To be measured when built | On first use, with the first area light, after 1.0 | Every engine with rectangle lights uses fitted tables, and they cannot be made at load at a sensible cost ([D-53](D-53-technique-defaults.md) ruling 20). The tables are data, so they are also an exception to the rule that built-in assets are made at run time |
 
-Like the KTX2 transcoder, the Draco decoder is a third-party build that the engine ships as its authors build it. The size report may list it in that section. Either way, a page that reads no Draco file never downloads it.
+The Draco decoder is a third-party build. Its module may go in the size report's section of first-use WebAssembly, beside the KTX2 transcoder's and meshopt's, which have no budget. Either way, a page that reads no Draco file never downloads it. Its script must make no code from strings, or a page's Content-Security-Policy without `'unsafe-eval'` stops it, as it stopped the official KTX2 transcoder (M2-R18). The engine then builds it from its release's sources, as it builds the transcoder.
 
 ### Hosts that compress with gzip
 

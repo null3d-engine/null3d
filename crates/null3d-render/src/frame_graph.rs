@@ -10,6 +10,16 @@
 //! compacted instances and indirect draws, which its opaque pass reads. On WebGL2 the job workers
 //! cull each view before the frame records, so that graph has no culling passes.
 //!
+//! With two-phase occlusion culling on WebGPU, each camera view culls twice before its opaque pass
+//! (see [`crate::gpu_driven`]). Its culling pass keeps the objects that drew in the view's last
+//! frame, and its occluders' pass draws their depth alone into a depth target of its own. A compute
+//! pass builds the view's depth pyramid from that depth, and the late culling pass tests every
+//! object in view against the pyramid. The opaque pass then draws what the late pass kept, as it
+//! does without occlusion culling, so its targets never leave tile memory between passes. The
+//! occluders' pass reads the compacted instances as the first culling pass leaves them, before the
+//! late pass writes them again. Occlusion culling and the depth prepass do not run together; the
+//! prepass wins.
+//!
 //! With the depth prepass, a depth prepass comes before each view's opaque pass. It creates the
 //! view's depth and draws the opaque objects' depth into it, and the opaque pass then writes into
 //! that depth (see [`crate::pipelines`]). Both draw in one render pass, which has the color from
@@ -116,13 +126,14 @@ use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInp
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::graph::{
-    CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale, Size,
-    Step, StepKind, StoreOp, Surface, Target,
+    CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale,
+    ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
 };
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
-use crate::pipelines::{PassTargets, PipelineCache};
-use crate::shadows::{MAX_CASCADES, ShadowFrame};
+use crate::pipelines::{PassTargets, PipelineCache, Prepass};
+use crate::shadow_tiles;
+use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
@@ -291,6 +302,13 @@ pub(crate) enum Role {
     Prepass(ViewId),
     /// Draws a view's opaque objects.
     Opaque(ViewId),
+    /// Draws the depth of the objects that a camera view's first culling phase kept, for occlusion
+    /// culling.
+    Occluders(ViewId),
+    /// Builds a camera view's depth pyramid from its occluders' depth, for occlusion culling.
+    Pyramid(ViewId),
+    /// Culls a camera view against its depth pyramid, for its opaque pass.
+    LateCull(ViewId),
     /// Draws the depth of a shadow cascade's or a shadow tile's casters, by its view.
     Shadow(ViewId),
     /// Draws the frame's debug lines into the camera's view.
@@ -370,6 +388,12 @@ pub(crate) struct FrameGraph {
     skinning: bool,
     /// Each view's depth prepass, by view, with the depth prepass.
     prepasses: Vec<PassId>,
+    /// True when each camera view culls in two phases against its depth pyramid, on WebGPU.
+    occlusion: bool,
+    /// Each view's occluders' pass, and the depth that its depth pyramid reads, by view, with
+    /// occlusion culling.
+    occluder_passes: Vec<PassId>,
+    pyramid_depths: Vec<ResourceId>,
     /// MSAA samples of the scene's color and depth targets.
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
@@ -465,6 +489,8 @@ pub(crate) struct FrameGraph {
     canvas: (u32, u32),
     /// True when the builder's scene passes bind a shadow map.
     shadow_map: bool,
+    /// The depth format of the cascades' shadow map.
+    cascade_format: u32,
     /// The directional light's shadow passes, or `None` without shadows.
     shadows: Option<ShadowPasses>,
     /// Each cascade's shadow pass, once the passes are declared.
@@ -506,6 +532,9 @@ impl FrameGraph {
             prepass: false,
             skinning: false,
             prepasses: Vec::new(),
+            occlusion: false,
+            occluder_passes: Vec::new(),
+            pyramid_depths: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
             scene_color,
@@ -557,6 +586,7 @@ impl FrameGraph {
             layer_views: Vec::new(),
             made_views: 0,
             shadow_map: false,
+            cascade_format: CascadeDepth::default().format(),
             shadows: None,
             shadow_passes: Vec::new(),
             tiles: None,
@@ -595,10 +625,11 @@ impl FrameGraph {
         self.declared = false;
     }
 
-    /// Makes the scene passes sample a shadow map, which the builder binds with every view's
-    /// objects. Without shadows the map is one texel of one layer.
-    pub(crate) fn bind_shadow_map(&mut self) {
+    /// Makes the scene passes sample a shadow map whose cascades store `depth`, which the builder
+    /// binds with every view's objects. Without shadows the map is one texel of one layer.
+    pub(crate) fn bind_shadow_map(&mut self, depth: CascadeDepth) {
         self.shadow_map = true;
+        self.cascade_format = depth.format();
         self.declared = false;
     }
 
@@ -615,6 +646,31 @@ impl FrameGraph {
             self.skinning = on;
             self.declared = false;
         }
+    }
+
+    /// Culls each camera view in two phases against its depth pyramid, or in one. It takes effect
+    /// on WebGPU without the depth prepass, which ambient occlusion also turns on while it draws.
+    pub(crate) fn set_occlusion(&mut self, on: bool) {
+        if on != self.occlusion {
+            self.occlusion = on;
+            self.declared = false;
+        }
+    }
+
+    /// How the opaque objects' depth draws before the pass that shades them: in the depth prepass,
+    /// the way that the builder's `prepass` names, in the occluders' pass of occlusion culling, or
+    /// not at all.
+    pub(crate) fn depth_pass(&self, prepass: Prepass) -> Prepass {
+        if self.depth_prepass() {
+            prepass
+        } else {
+            Prepass::Occluders.if_on(self.occlusion())
+        }
+    }
+
+    /// True when each camera view culls in two phases against its depth pyramid.
+    pub(crate) fn occlusion(&self) -> bool {
+        self.occlusion && self.gpu_culling && !self.depth_prepass()
     }
 
     /// True when each view has a depth prepass: from the builder's start, or while ambient
@@ -939,6 +995,9 @@ impl FrameGraph {
         for (&pass, view) in self.prepasses.iter().zip(views) {
             self.graph.set_layers(pass, view.layers());
         }
+        for (&pass, view) in self.occluder_passes.iter().zip(views) {
+            self.graph.set_layers(pass, view.layers());
+        }
     }
 
     /// Switches the debug lines pass on for a frame with lines, and off for one without. The
@@ -977,6 +1036,8 @@ impl FrameGraph {
         self.roles.clear();
         self.opaque.clear();
         self.prepasses.clear();
+        self.occluder_passes.clear();
+        self.pyramid_depths.clear();
         self.transparent.clear();
         self.shadow_passes.clear();
         self.bloom_passes.clear();
@@ -986,14 +1047,16 @@ impl FrameGraph {
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.shadow_map {
             let (layers, size) = self.shadows.map_or((1, 1), |s| (s.cascades, s.map_size));
-            let map = Target::depth(DEPTH_FORMAT).layers(layers).array();
+            let map = Target::depth(self.cascade_format).layers(layers).array();
             let size = Size::Fixed {
                 width: size,
                 height: size,
             };
             self.graph.keep(SHADOW_MAP, map, size);
             let (tiles, size) = self.tiles.map_or((1, 1), |t| (t.tiles, t.size));
-            let atlas = Target::depth(DEPTH_FORMAT).layers(tiles).array();
+            let atlas = Target::depth(shadow_tiles::TARGETS.depth_format)
+                .layers(tiles)
+                .array();
             let size = Size::Fixed {
                 width: size,
                 height: size,
@@ -1056,6 +1119,9 @@ impl FrameGraph {
             } else {
                 pass = pass.creates(depth_name, depth);
             }
+            if self.occlusion() {
+                self.declare_occluders(view, index);
+            }
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
                 if index == ViewId::CAMERA.index() {
@@ -1117,6 +1183,62 @@ impl FrameGraph {
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
+    }
+
+    /// Declares a camera view's occlusion culling before its opaque pass: the occluders' pass,
+    /// which draws the depth of the objects that its first culling phase kept into a depth target
+    /// of its own, of one sample; the compute pass that builds the view's depth pyramid from that
+    /// depth; and the late culling pass, which tests every object against the pyramid and writes
+    /// the compacted instances that the opaque pass draws.
+    fn declare_occluders(&mut self, view: &View, index: usize) {
+        let id = ViewId::from_index(index);
+        let visible = view_name(index, "visible", "visible");
+        let occluders = view_name(index, "occluderDepth", "occluderDepth");
+        let pyramid = view_name(index, "depthPyramid", "depthPyramid");
+        let mut pass = Pass::new(view_name(index, "Occluders", "Occluders"), PassKind::Scene)
+            .layers(view.layers())
+            .creates(occluders.clone(), Target::depth(DEPTH_FORMAT))
+            .reads_so_far(visible.clone());
+        if self.skins() {
+            pass = pass.reads(SKINNED);
+        }
+        let pass = self.add(pass, Role::Occluders(id));
+        self.occluder_passes.push(pass);
+        let build = Pass::new(
+            view_name(index, "DepthPyramid", "DepthPyramid"),
+            PassKind::Compute,
+        )
+        .reads(occluders.clone())
+        .creates_buffer(pyramid.clone());
+        self.add(build, Role::Pyramid(id));
+        let late = Pass::new(
+            view_name(index, "LateCulling", "LateCulling"),
+            PassKind::Compute,
+        )
+        .reads(OBJECTS)
+        .reads(pyramid)
+        .writes(visible);
+        self.add(late, Role::LateCull(id));
+        let occluders = self
+            .graph
+            .find_resource(&occluders)
+            .expect("the occluders' pass creates its depth");
+        self.pyramid_depths.push(occluders);
+    }
+
+    /// The draw list's id of the occluders' depth of a view that culls in two phases, which its
+    /// depth pyramid reads. Valid once the frame's [`FrameGraph::prepare`] made the plan's
+    /// textures.
+    pub(crate) fn depth_texture(&self, view: ViewId) -> Option<u32> {
+        let depth = *self.pyramid_depths.get(view.index())?;
+        let surface = self.graph.plan()?.sampled_texture_of(depth)?;
+        Some(self.texture_id(surface))
+    }
+
+    /// The render size of the frame being recorded: the part of the full-size targets that scene
+    /// passes draw into, in pixels.
+    pub(crate) fn render_size(&self) -> (u32, u32) {
+        Size::Full.viewport(self.canvas, self.scale)
     }
 
     /// Declares the outline's passes: on WebGPU the outline view's culling pass, then the mask

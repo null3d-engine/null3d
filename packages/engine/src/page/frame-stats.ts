@@ -75,10 +75,10 @@ export interface FrameSummary {
 	gpuMs: Percentiles | null;
 	/**
 	 * The parts of the GPU time per frame, in the order the frame runs them: the copies before the
-	 * first pass, where the browser times them, each pass, and the time between passes. In a frame
-	 * with more passes than the engine times one by one, the last pass it times also counts the
-	 * passes after it. Null where `gpuMs` is. On WebGL2 the frame has no parts, so the list is
-	 * empty.
+	 * first pass, where the browser times them, each pass that the browser times, and the time
+	 * between passes in frames where it times every pass. In a frame with more passes than the
+	 * engine times one by one, the last pass it times also counts the passes after it. Null where
+	 * `gpuMs` is. On WebGL2 the frame has no parts, so the list is empty.
 	 */
 	gpuPassMs: GpuPassStats[] | null;
 	/**
@@ -404,13 +404,21 @@ export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
 			parted = copies;
 		}
 		const kinds = { render: 0, compute: 0 };
+		let whole = true;
 		for (let pass = 0; pass < Math.min(passes, GPU_TIMED_PASSES); pass++) {
 			const kind = (renderPasses >>> pass) & 1 ? 'render' : 'compute';
+			const name = `${kind} ${++kinds[kind]}`;
 			const ms = slot(1 + pass, r);
-			add(`${kind} ${++kinds[kind]}`, ms);
+			// A pass that the GPU left untimed has no time of its own, and the time between passes
+			// would hold it.
+			if (ms === UNTIMED) {
+				whole = false;
+				continue;
+			}
+			add(name, ms);
 			parted += ms;
 		}
-		if (passes > 1) add('between passes', Math.max(0, frameMs - parted));
+		if (passes > 1 && whole) add('between passes', Math.max(0, frameMs - parted));
 	});
 	return Array.from(parts, ([name, values]) => ({ name, ms: percentiles(values) }));
 }
