@@ -948,13 +948,33 @@ export function createAnimationRig(scene: Scene, data: RigData): AnimationRig {
 }
 
 /**
+ * Frees a rig's skeleton, clips and joint masks in the engine core, once no animated object uses
+ * them. Their ids go to later rigs. Throws E1111 while an animated object uses the skeleton.
+ */
+export function destroyRig(core: CoreMemory, rig: AnimationRig): void {
+	core.check(core.glue.destroySkeleton(rig.skeleton), 'prefab.destroy', 'a model', true);
+	rig.masks.clear();
+}
+
+/**
  * Stores a skeleton and its clips in the engine core, as `createAnimationRig` does, but the job
  * workers resample the clips between frames, so no frame waits for them. Without job workers,
  * this thread resamples them, a few milliseconds at a time between frames. Throws the core's
- * E1218 for a clip that the core refuses, after every other clip is done.
+ * E1218 for a clip that the core refuses, after every other clip is done, and frees the skeleton
+ * and the clips made so far.
  */
 export async function loadAnimationRig(scene: Scene, data: RigData): Promise<AnimationRig> {
 	const start = startRig(scene, data);
+	try {
+		return await finishLoad(start, data);
+	} catch (error) {
+		start.core.glue.destroySkeleton(start.skeleton);
+		throw error;
+	}
+}
+
+/** Makes the clips of a rig whose skeleton `start` stored, on the job workers. */
+async function finishLoad(start: RigStart, data: RigData): Promise<AnimationRig> {
 	const { core } = start;
 	const tickets = data.clips.map((clip) => {
 		stageClip(core, clip);

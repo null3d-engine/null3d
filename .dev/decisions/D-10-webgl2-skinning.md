@@ -1,6 +1,8 @@
 # D-10: WebGL2 skinning
 
-Status: decided by its rule on 2026-10-02. Date: 2026-10-02. Task: M1-L2. Test: T-21.
+Status: decided by its rule on 2026-10-02, and built on 2026-10-04. Date: 2026-10-02. Task: M1-L2. Test: T-21.
+
+Summary: Skin in the vertex shader of every pass: transform feedback made frames slower on the S24+ in every case, and on the iPad in most. The skin bit doubles the WebGL2 mesh builds (+3.6 KB after Brotli per shader file), and skinned crowds stay instanced.
 
 ## Question
 

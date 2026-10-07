@@ -1,10 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
-import {
-	isFirstUseShaderPart,
-	LATER_PARTS,
-	TRANSCODER_FILES,
-} from '../../tools/lib/size-report.ts';
+import { FIRST_USE_WASM, isFirstUseShaderPart, LATER_PARTS } from '../../tools/lib/size-report.ts';
 import { ALONE } from '../lib/alone.ts';
 import {
 	ENGINE_MODES,
@@ -102,8 +98,7 @@ for (const mode of ENGINE_MODES) {
 		const files: Record<string, RegExp> = { 'the sketch module': /\/empty-sketch[^/]*\.[jt]s$/ };
 		// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
 		// the characters of URL-safe base64, the underscore among them.
-		if (mode.sketchThread === 'main')
-			files["the core's loader"] = /\/null3d(-[\w-]+)?\.js(\?no-inline)?$/;
+		if (mode.sketchThread === 'main') files["the core's loader"] = /\/null3d(-[\w-]+)?\.js$/;
 		if (mode.renderThread === 'main') files['the renderer'] = /\/draw(-[^/]*)?\.[jt]s$/;
 		for (const [what, file] of Object.entries(files)) {
 			const asked = result.downloads?.find(({ name }) => file.test(name))?.startTime;
@@ -238,7 +233,8 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
  * The address of each file that loads only when a sketch first uses its feature, on the dev server
  * and in a production build, which names a file after its module and adds a hash. The size report
- * lists these files apart from the start, and the transcoder's files with them.
+ * lists these files apart from the start, and the WebAssembly modules that load on first use with
+ * them.
  */
 const FIRST_USE_FILES: readonly RegExp[] = [
 	...[
@@ -249,7 +245,7 @@ const FIRST_USE_FILES: readonly RegExp[] = [
 		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
 		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
 	}),
-	...TRANSCODER_FILES.map((file) => {
+	...FIRST_USE_WASM.map((file) => {
 		const dot = file.lastIndexOf('.');
 		return new RegExp(`/${escaped(file.slice(0, dot))}(-[\\w-]{8})?${escaped(file.slice(dot))}$`);
 	}),
@@ -313,6 +309,29 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(shaderFiles).toHaveLength(1);
 			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${feature}-(wgsl|glsl)[^/]*$`));
 		});
+
+// GPU occlusion culling runs only on WebGPU. A scene whose walls are marked occluders downloads its
+// shader file once with the culling on, and none with it off.
+for (const occlusion of ['on', 'off'] as const)
+	test(`marked occluders download the occlusion shader file only with ?occlusion=${occlusion} on webgpu`, async ({
+		page,
+	}, testInfo) => {
+		test.skip(testInfo.project.name === 'production build', 'no image test page');
+		const requests: string[] = [];
+		page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
+		const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts');
+		await page.goto(
+			`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=${occlusion}&sketch=${sketch}`,
+		);
+		const result = await pageResult<{ error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		const shaderFiles = requests.filter(isFirstUseShaderFile);
+		if (occlusion === 'off') expect(shaderFiles).toEqual([]);
+		else {
+			expect(shaderFiles).toHaveLength(1);
+			expect(shaderFiles[0]).toMatch(/\/shaders-occlusion-wgsl[^/]*$/);
+		}
+	});
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {

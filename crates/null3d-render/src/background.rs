@@ -13,8 +13,11 @@
 //! Each draws at the far plane in the camera's opaque pass, after the opaque objects and before
 //! the transparent ones, with the depth test on and no depth write. It shades only the pixels
 //! where no object wrote depth, so a costly background such as the sky costs nothing where objects
-//! cover it. Drawn first, it shades the whole view on GPUs that do not drop the fragments that
-//! later objects cover, as Adreno does not (D-68). While an opaque material writes no depth, the
+//! cover it. Drawn first, it would shade the whole view on GPUs that do not drop the fragments that
+//! later objects cover. A depth write would store the far plane where the target already holds
+//! it, so it writes none. On a Galaxy S25 (Adreno 830), a scene pass with a background takes about
+//! 4.8 ms more GPU time, but any other extra object costs the same, so the background's order,
+//! shape and depth state do not change it (D-68). While an opaque material writes no depth, the
 //! background draws first with no depth test instead, as three.js draws `scene.background`, so
 //! that material still shows over it. Its color goes into the scene color like an object's, so
 //! exposure and tone mapping change it too: its shader multiplies the exposure into its light,

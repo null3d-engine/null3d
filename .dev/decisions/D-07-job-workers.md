@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-09-30. Date: 2026-09-30. Test: T-09.
 
+Summary: Keep "logical cores minus 2, at least 1" job workers.
+
 ## Question
 
 How many job workers should the engine start? Today it starts the reported logical cores minus 2 (one core each for the sketch worker and the render worker), and at least 1.

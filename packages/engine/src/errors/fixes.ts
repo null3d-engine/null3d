@@ -28,6 +28,8 @@ export const ERROR_FIXES = {
 		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Split a mesh of millions of vertices into smaller meshes, or simplify it. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
 	E1110:
 		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. If your code writes no engine memory, this is an engine bug: report it with the message.',
+	E1111:
+		'Destroy the objects and instance batches that use the mesh or model first, with destroy() on each. Then destroy the mesh or model, in the same frame or later. Destroying the group that scene.instantiate() returned takes the whole copy of a model. To keep an object and drop its mesh, give it another mesh with setMesh() first.',
 	E1203:
 		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
 	E1204:
@@ -45,9 +47,9 @@ export const ERROR_FIXES = {
 	E1214:
 		'Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8.',
 	E1215:
-		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface in it, with no @vertex or @fragment entry point. For a full shader, give the @vertex entry point an InstanceIn from null3d::mesh.',
+		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface in it, with no @vertex or @fragment entry point. For a full shader, give the @vertex entry point an InstanceIn from null3d::mesh. Give post.addEffect() WGSL that declares fn effect(input: EffectInput) -> vec4f, and post.set({ toneMapping }) WGSL that declares fn toneCurve(color: vec3f) -> vec3f.',
 	E1216:
-		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color.',
+		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color. Give post.setEffectUniform() an effect that post.addEffect() returned.',
 	E1217:
 		"Give alphaMode 'opaque', 'mask' or 'blend', and blending 'normal', 'additive' or 'multiply'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff.",
 	E1218:
@@ -75,7 +77,7 @@ export const ERROR_FIXES = {
 	E1404:
 		'This is an engine bug. Report it with the message and the browser, then destroy the engine and start it again.',
 	E1405:
-		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load. Serve the worker scripts from the page's own origin, and allow them in the worker-src of a Content-Security-Policy. Report the error if it repeats.",
+		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load. Allow the workers in the worker-src of a Content-Security-Policy. For the engine's files on another origin, such as a CDN, the hosting page of the docs gives the headers and the policy. Report the error if it repeats.",
 	E1406:
 		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files, the KTX2 transcoder's files, the glTF loader's files and the meshopt decoder are among them. If the page loads at other times, the network dropped: reload the page.",
 	E1407:
@@ -108,6 +110,10 @@ export const ERROR_FIXES = {
 		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
 	E1421:
 		'Name each feature as the message lists it. Leave a feature out to let its shaders download the first time the sketch uses it.',
+	E1422:
+		"Add what the message names to the page's Content-Security-Policy: blob: in worker-src, and the origin of the engine's files in script-src and connect-src. For example: worker-src 'self' blob:; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; connect-src 'self' https://cdn.example.com. Or serve the engine's files from the page's own origin.",
+	E1423:
+		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502: RENDER_GRAPH_FIX,

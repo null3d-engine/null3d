@@ -22,7 +22,7 @@
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -130,10 +130,16 @@ interface GlTexture {
 	readonly view: boolean;
 	/** True once a write has gone into the texture, so later writes go through an unpack buffer. */
 	written: boolean;
-	/** The framebuffer of passes that draw into this color target, and the depth target in it. */
+	/**
+	 * The framebuffer of passes that draw into this color target with a depth target, and that
+	 * depth target.
+	 */
 	framebuffer: WebGLFramebuffer | null;
 	framebufferDepth: GlTexture | null;
-	/** A framebuffer with only this target in it: for passes that draw depth only, and resolves. */
+	/**
+	 * A framebuffer with only this target in it: for passes that draw into it without depth, passes
+	 * that draw depth only, and resolves.
+	 */
 	soloFramebuffer: WebGLFramebuffer | null;
 	/** The framebuffer of the one-sample copy of a multisampled depth target that shaders read. */
 	copyFramebuffer: WebGLFramebuffer | null;
@@ -248,6 +254,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	if (bptc) {
 		compressed(G.FORMAT_BC7_RGBA_UNORM, bptc.COMPRESSED_RGBA_BPTC_UNORM_EXT);
 		compressed(G.FORMAT_BC7_RGBA_UNORM_SRGB, bptc.COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT);
+		compressed(G.FORMAT_BC6H_RGB_UFLOAT, bptc.COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT);
 	}
 	const etc = gl.getExtension('WEBGL_compressed_texture_etc');
 	if (etc) {
@@ -272,6 +279,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	const depth = gl.DEPTH_ATTACHMENT;
 	add(G.FORMAT_DEPTH24_PLUS, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, depth);
 	add(G.FORMAT_DEPTH32_FLOAT, gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, depth);
+	add(G.FORMAT_DEPTH16_UNORM, gl.DEPTH_COMPONENT16, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, depth);
 	return formats;
 }
 
@@ -511,11 +519,7 @@ export class WebGL2Backend {
 		this.depth = setDepthMode(gl, depthMode);
 		this.programHost = programHost(gl, this.depth, this.parallel);
 		const host = this.programHost;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(host)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(host));
 		this.depthFunc = this.nearerPasses();
 		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
 		this.clearDepth = this.depth.standard ? 0 : 1;
@@ -586,8 +590,12 @@ export class WebGL2Backend {
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
 			if (!shader) return false;
-			// A custom material's prepass draws with its own vertex shader, as every mesh's does.
-			defined = { shader: shader.variants, pipeline: 'main', meshPrepass: true };
+			// A custom material's prepass draws with its own vertex shader, as every mesh's does. A
+			// custom effect's or tone curve's template draws one triangle, as the final pass does.
+			defined =
+				shader.kind === undefined
+					? { shader: shader.variants, pipeline: 'main', meshPrepass: true }
+					: { shader: shader.variants, pipeline: 'main' };
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);
@@ -1466,8 +1474,7 @@ export class WebGL2Backend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
@@ -1475,11 +1482,12 @@ export class WebGL2Backend {
 		if (this.blend) this.setBlend(0);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
-		generators[name].run(
+		code.run(
 			this.programHost,
 			texture.texture as WebGLTexture,
 			texture.width,
 			texture.mips,
+			source,
 		);
 		this.program = null;
 		this.activeUnit = -1;
@@ -1770,8 +1778,15 @@ export class WebGL2Backend {
 		return framebuffer;
 	}
 
-	/** The framebuffer of passes that draw into `color`, made again when their depth target changes. */
+	/**
+	 * The framebuffer of passes that draw into `color`, with `depth` when given. A target that the
+	 * render graph shares between a pass with depth and one without, as the scene color and a
+	 * custom effect's target, keeps a framebuffer for each, so no frame makes one again: each new
+	 * framebuffer's completeness check waits for the browser's GPU process, about 1.5 ms on a
+	 * Pixel 10. A framebuffer is made again when its depth target changes.
+	 */
 	private colorFramebuffer(color: GlTexture, depth: GlTexture | null): WebGLFramebuffer {
+		if (!depth) return this.soloFramebuffer(color);
 		if (color.framebuffer && color.framebufferDepth === depth) return color.framebuffer;
 		if (color.framebuffer) this.gl.deleteFramebuffer(color.framebuffer);
 		color.framebuffer = this.makeFramebuffer(color, depth);

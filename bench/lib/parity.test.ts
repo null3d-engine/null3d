@@ -431,6 +431,8 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-depth32',
+			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
 			'null3d-webgpu-sky',
@@ -439,6 +441,7 @@ describe('the pages', () => {
 			'null3d-webgpu-sky-room',
 			'null3d-webgpu-sky-texture',
 			'null3d-webgpu-first',
+			'null3d-webgpu-box',
 			'null3d-webgpu-sky-room-first',
 			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
@@ -487,6 +490,15 @@ describe('the pages', () => {
 		);
 	});
 
+	test('runs the 32-bit shadow cascade pages on the pipelined pages with the depth switch', () => {
+		expect(pagePath('s4', 'null3d-webgpu-depth32', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowdepth=32&seconds=2',
+		);
+		expect(pagePath('s4', 'null3d-webgl2-depth32')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgl2&shadowdepth=32',
+		);
+	});
+
 	test('runs the sky pages on the pipelined pages with the sky switch', () => {
 		expect(pagePath('s1', 'null3d-webgpu-sky', 'seconds=2')).toBe(
 			'/bench/pages/null3d/s1.html?gpu=webgpu&sky&seconds=2',
@@ -500,6 +512,9 @@ describe('the pages', () => {
 		);
 		expect(pagePath('s1', 'null3d-webgpu-sky-room-first')).toBe(
 			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=room&backgroundFirst',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-box')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&extraBox',
 		);
 	});
 
@@ -526,6 +541,8 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-depth32',
+			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
 			'null3d-webgpu-sky',
@@ -534,6 +551,7 @@ describe('the pages', () => {
 			'null3d-webgpu-sky-room',
 			'null3d-webgpu-sky-texture',
 			'null3d-webgpu-first',
+			'null3d-webgpu-box',
 			'null3d-webgpu-sky-room-first',
 			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
@@ -558,6 +576,9 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
 			'webgpu',
 			'webgpu',
 			'webgpu',

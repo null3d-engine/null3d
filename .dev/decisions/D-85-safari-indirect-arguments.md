@@ -2,6 +2,8 @@
 
 Status: decided; since [D-87](D-87-webkit-indirect-arguments.md), the copies run only in Apple's WebKit. Date: 2026-10-06. Task: fix/safari-gate-1006 (an M1 gate failure).
 
+Summary: Safari 26 can hang the GPU when a pass draws indirect twice from one buffer (WebKit bug 321876). Before such a pass, the WebGPU backend copies each draw's 20 bytes of arguments into a buffer of its own, in Apple's WebKit only since D-87.
+
 ## Question
 
 Safari 26 can hang the GPU when one render pass holds two indexed indirect draws from one buffer. The engine's culled passes draw every bucket that way. How should the engine avoid the fault?

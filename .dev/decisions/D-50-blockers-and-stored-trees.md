@@ -2,6 +2,8 @@
 
 Status: decided by the owner, 2026-10-04: the blockers, the file format, the tool's default, and S6's buildings without stored trees. Task: M2-B4.
 
+Summary: The tool gives each mesh that encloses space a blocker of one or two boxes, checked from 48 rays per point to lie inside the mesh: all 76 city buildings get one, about 45 triangles each, for 2.9% more bytes after Brotli. `NULL3D_occluder` and `NULL3D_mesh_bvh` hold blockers and trees. Trees are stored from 20,000 triangles: they take 9.5 bytes per triangle after Brotli, and a build costs 0.2 to 0.3 µs per triangle on the job workers.
+
 ## Question
 
 Software occlusion culling on WebGL2 (D-41) draws each blocker's own mesh, up to 4,096 triangles, and the frame draws at most 16,384 blocker triangles. Raycasts build each mesh's tree on the first query (D-27, D-30). The asset tool can do both jobs once, before a model ships. The question has four parts:

@@ -104,6 +104,10 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	s3: ["WebGLRenderer's shader for 256 point lights, which most GPUs cannot build"],
 	s4: [
 		"on WebGL2, more pixels that differ from WebGLRenderer's frame than three.js's two renderers differ by",
+		// The fog measures the straight-line distance from the camera, and three.js the depth along
+		// the view, so the town's far corners take more fog: 2.9% to 3.3% of the pixels differ on the
+		// Mac's GPU. The fog scenes compare the same curves by three.js's own rule.
+		"on every tier, fog by distance from the camera where three.js's fog follows the depth along the view",
 	],
 	s5: [],
 };
@@ -122,12 +126,13 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -prepass, the depth prepass, for those that end in -blend-off, S4's shadow cascades with
- * no band between them, for those with -sky, a background behind S1 (the benchmarks guide lists
- * them), for those that end in -first, a background drawn before the objects, for those that end
- * in -timed, the time of each WebGL call, and for those
- * that end in -synced, that time with a wait for the browser's GPU process after each call, and the
- * GPU interface it draws with.
+ * end in -prepass, the depth prepass, for those that end in -depth32, shadow cascades in 32-bit
+ * float depth, for those that end in -blend-off, S4's shadow cascades with no band between them,
+ * for those with -sky, a background behind S1 (the benchmarks guide lists them), for those that
+ * end in -first, a background drawn before the objects, for those that end in -box, a small box
+ * that writes depth, for those that end in -timed, the time of each WebGL call, and for those that
+ * end in -synced, that time with a wait for the browser's GPU process after each call, and the GPU
+ * interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -143,6 +148,16 @@ const PAGES = {
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
 	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
 	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
+	'null3d-webgpu-depth32': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowdepth=32',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-depth32': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowdepth=32',
+		api: 'webgl2',
+	},
 	'null3d-webgpu-blend-off': {
 		folder: 'null3d',
 		switches: 'gpu=webgpu&shadowCascadeBlend=0',
@@ -167,6 +182,7 @@ const PAGES = {
 		switches: 'gpu=webgpu&backgroundFirst',
 		api: 'webgpu',
 	},
+	'null3d-webgpu-box': { folder: 'null3d', switches: 'gpu=webgpu&extraBox', api: 'webgpu' },
 	'null3d-webgpu-sky-room-first': {
 		folder: 'null3d',
 		switches: 'gpu=webgpu&sky=room&backgroundFirst',
@@ -323,6 +339,15 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			sketchSwitches: NO_TONE,
 		}),
 	),
+	// The sunset again, from its Radiance file, which the engine filters at load, against three.js's
+	// HDRLoader with PMREMGenerator. The studio's OpenEXR file is left out. Its map matches the
+	// tool's, but in compatibility mode its bright sphere edges differ from three.js in more pixels
+	// than three.js's rule allows, as D-19 records.
+	{
+		test: 'environment-venice-hdr',
+		twin: `${TWINS}/environment.html?env=venice`,
+		sketchSwitches: NO_TONE,
+	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },

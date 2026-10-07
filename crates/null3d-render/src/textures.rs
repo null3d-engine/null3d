@@ -310,10 +310,10 @@ impl ArrayKey {
         format::layer_bytes(self.format, self.width, self.height, self.mips)
     }
 
-    /// True when textures share the array. A texture of several layers, of a compressed format,
-    /// of three dimensions or of a cube's faces has an array of its own.
+    /// True when textures share the array. A texture of several layers, of a format that takes
+    /// writes only, of three dimensions or of a cube's faces has an array of its own.
     fn shared(&self) -> bool {
-        self.depth == 1 && !format::is_compressed(self.format) && self.kind == Kind::Layers
+        self.depth == 1 && !format::writes_only(self.format) && self.kind == Kind::Layers
     }
 
     /// The view dimension that bind groups see the GPU texture as.
@@ -647,7 +647,7 @@ impl TextureStore {
             && match desc.format {
                 format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB => true,
                 format::RGBA16_FLOAT => !desc.mipmaps,
-                format::RGB9E5_UFLOAT => kind == Kind::Cube,
+                format::RGB9E5_UFLOAT => !desc.mipmaps && matches!(kind, Kind::Cube | Kind::Layers),
                 code => format::is_compressed(code) && !desc.mipmaps,
             }
             && sampling
@@ -1166,8 +1166,9 @@ impl TextureStore {
             };
             // Images upload into and mip levels draw into a texture that textures share, and a
             // larger one copies its layers. Images upload into a cube texture of 8-bit texels too.
-            // A compressed texture, a 3D texture and a cube texture of floats take writes only.
-            let usage = if format::is_compressed(key.format) || key.kind == Kind::Volume {
+            // A texture of a format that takes writes only, a 3D texture and a cube texture of
+            // floats take writes only.
+            let usage = if format::writes_only(key.format) || key.kind == Kind::Volume {
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
             } else if key.kind == Kind::Cube {
                 let images = if format::makes_mipmaps(key.format) {
@@ -2330,6 +2331,58 @@ mod tests {
         );
         assert_eq!(h.store.ready_layer(texture), Some(0));
         assert_eq!(h.store.memory_bytes(), bytes);
+    }
+
+    #[test]
+    fn high_dynamic_range_textures_from_files_take_writes_only() {
+        let mut h = Harness::with_capabilities(Capabilities::TEXTURE_BC);
+        let hdr = |format| TextureDesc {
+            format,
+            mipmaps: false,
+            levels: 3,
+            ..desc(8, 8)
+        };
+        let shared_exponent = h.store.create(hdr(format::RGB9E5_UFLOAT)).unwrap();
+        let other = h.store.create(hdr(format::RGB9E5_UFLOAT)).unwrap();
+        let bc6h = h.store.create(hdr(format::BC6H_RGB_UFLOAT)).unwrap();
+        let array = |h: &Harness, t: Handle| h.store.slot(t).unwrap().array;
+        assert_ne!(
+            array(&h, shared_exponent),
+            array(&h, other),
+            "no path copies rgb9e5ufloat, so its arrays could not grow"
+        );
+        // Levels of 8 x 8, 4 x 4 and 2 x 2 texels: 4 bytes a texel, or 2 x 2, 1 x 1 and 1 x 1
+        // blocks of 16 bytes.
+        assert_eq!(h.store.bytes(shared_exponent), Ok((64 + 16 + 4) * 4));
+        assert_eq!(h.store.bytes(bc6h), Ok((4 + 1 + 1) * 16));
+        assert_eq!(
+            h.store.create(TextureDesc {
+                mipmaps: true,
+                levels: 1,
+                ..hdr(format::RGB9E5_UFLOAT)
+            }),
+            Err(TextureError::Unsupported),
+            "no path draws the mip levels of rgb9e5ufloat"
+        );
+        assert_eq!(
+            h.store.set_image(shared_exponent, 8, 8, 0),
+            Err(TextureError::Unsupported),
+            "images upload into RGBA8 textures only"
+        );
+        for texture in [shared_exponent, other, bc6h] {
+            fill(&mut h.store, texture, 8, 8);
+        }
+        let (commands, _) = h.frame();
+        let created = ops(&commands, Op::CreateTexture);
+        assert_eq!(created.len(), 3);
+        for made in &created {
+            assert_eq!(
+                made[5],
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                "sampled and written, never drawn into or copied"
+            );
+        }
+        assert!(ops(&commands, Op::GenerateMipmaps).is_empty());
     }
 
     #[test]

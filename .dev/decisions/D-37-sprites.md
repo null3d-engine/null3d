@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04; points decided 2026-10-05. Date: 2026-10-04. Tasks: M2-G1, M2-G2 ([Points](#points)).
 
+Summary: A sprite batch is an instance batch whose update packs each sprite's size, rotation, color and atlas frame into its row's world matrix, so culling, sorting and both GPU paths take sprites unchanged. Sizes without attenuation are in CSS pixels. The sprite code loads on first use, so `scene.createSprites` returns a promise. The parity scene differs from three.js's `Sprite` in 0.000% to 0.033% of the pixels. Points are sprites of one size, with sizes in world units, and their parity scene takes a limit of 0.2% for WebGPU's sample pattern and compatibility mode's 8-bit edges.
+
 ## Question
 
 1. How does a batch of sprites reach the GPU? It can use the rows, culling and sorting of instance batches, or a draw path of its own.

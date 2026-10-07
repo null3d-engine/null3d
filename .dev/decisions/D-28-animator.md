@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-03; the phone and tablet timings of the step pending. Date: 2026-10-03. Task: M2-C2.
 
+Summary: The core keeps each object's play state and advances it in the same job worker loop that blends. 8 slots and 4 layers per object; layers above 0 replace the pose below, through joint masks; additive clips convert once, as three.js's `makeClipAdditive` does; events come in one sorted buffer. Fades, masks and additive clips stay within 1.7e-4 of three.js.
+
 ## Question
 
 How should `object.animator()` play clips? It needs fades, layers, joint masks, additive clips, a time scale and events. A crowd of 500 characters must stay cheap, and a frame must allocate nothing. Fades and blends must match three.js's `AnimationMixer` where three.js has the same feature.

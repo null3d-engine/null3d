@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-06, until the 1.0 release. Date: 2026-10-06.
 
+Summary: The merge queue runs every job. A pull request runs the quick checks, without the browser and benchmark page shards, and its author runs the browser tests of the areas it changes. A push to main runs only what keeps the caches and the commit's sizes, since main gets the exact commit that the queue tested.
+
 ## Question
 
 CI ran its full suite three times for each pull request that merged: on the pull request, in the merge queue and again on main. The runs filled GitHub's runners, and merge queue runs waited for them. Which jobs must each event run?

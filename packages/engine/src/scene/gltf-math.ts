@@ -1,6 +1,7 @@
 // The matrix arithmetic of glTF files that the parser (in the glTF worker) and the loader (on the
 // sketch's thread) share: 3 × 4 matrices by rows from a position, a rotation and a scale, their
-// products, and the split of a matrix back into those three parts. It imports nothing.
+// products, boxes that they move, and the split of a matrix back into those three parts. It
+// imports nothing.
 
 /** A 3 × 4 matrix by rows from a position, a rotation and a scale. */
 export function affineOf(t: ArrayLike<number>): Float64Array {
@@ -36,6 +37,33 @@ export function multiplyAffine(a: Float64Array, b: Float64Array): Float64Array {
 				(a[r * 4 + 2] as number) * (b[8 + c] as number) +
 				(c === 3 ? (a[r * 4 + 3] as number) : 0);
 	return out;
+}
+
+/**
+ * Grows the box `min`, `max` to hold the box `low`, `high` moved by the 3 × 4 matrix by rows `m`:
+ * each of its eight corners.
+ */
+export function growBox(
+	m: ArrayLike<number>,
+	low: ArrayLike<number>,
+	high: ArrayLike<number>,
+	min: number[],
+	max: number[],
+): void {
+	for (let corner = 0; corner < 8; corner++) {
+		const x = corner & 1 ? (high[0] as number) : (low[0] as number);
+		const y = corner & 2 ? (high[1] as number) : (low[1] as number);
+		const z = corner & 4 ? (high[2] as number) : (low[2] as number);
+		for (let r = 0; r < 3; r++) {
+			const v =
+				(m[r * 4] as number) * x +
+				(m[r * 4 + 1] as number) * y +
+				(m[r * 4 + 2] as number) * z +
+				(m[r * 4 + 3] as number);
+			if (v < (min[r] as number)) min[r] = v;
+			if (v > (max[r] as number)) max[r] = v;
+		}
+	}
 }
 
 /**
