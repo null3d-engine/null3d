@@ -41,9 +41,11 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	const { stats } = result;
 	if (!stats) throw new Error('the live page measured no frames');
 	// Four buckets draw: the red box, the red sphere, the unlit blue box, and the green floor batch.
-	// WebGPU draws them from one bundle; WebGL2 in multi-draw calls, or one draw each. Where the
-	// scene draws HDR color, the final pass adds one triangle over the canvas.
-	expect(stats.drawCalls.median).toBe(result.capabilities.hdr ? 5 : 4);
+	// WebGPU draws them from one bundle; WebGL2 in multi-draw calls, or one draw each, and again in
+	// the depth prepass that its presets draw. Where the scene draws HDR color, the final pass adds
+	// one triangle over the canvas.
+	const opaqueDraws = tier === 'webgl2' ? 8 : 4;
+	expect(stats.drawCalls.median).toBe(opaqueDraws + (result.capabilities.hdr ? 1 : 0));
 	// On WebGL2 the list of visible objects has the three meshes and one entry for the floor batch,
 	// whose 25 rows form one group once they stop changing. The GPU culls on WebGPU.
 	if (tier === 'webgl2') expect(stats.visibleEntries?.median).toBe(4);
