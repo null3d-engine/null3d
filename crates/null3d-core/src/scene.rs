@@ -1197,7 +1197,9 @@ impl SceneStorage {
                 let mask = command.a & flags::SETTABLE;
                 let f = &mut self.flags[slot as usize];
                 *f = (*f & !mask) | (command.b & mask);
-                if mask & flags::BOUNDS != 0 {
+                // A new world bounding sphere, or a new occluder mark, which the WebGPU builder
+                // keeps in the object's entry of its culling table, rewrites the object's data.
+                if mask & (flags::BOUNDS | flags::OCCLUDER) != 0 {
                     self.dirty.set(slot);
                 }
             }

@@ -2,6 +2,8 @@
 
 Status: decided; the order in which maps are dropped confirmed by the owner, 7 October 2026. Date: 2026-10-07. Task: M2-J7.
 
+Summary: The WebGL2 fragment stage of the standard material reads 12 of its 16 texture units, down from 16. Maps that share an array and a sampler share one of six units. The light grid and light records share one data texture, and the split-sum table sits in the material table's texture. Past six units, a material drops its specular intensity map, then its specular color map, then its light map. WebGPU keeps one binding per map.
+
 ## Question
 
 WebGL2 guarantees each shader stage only 16 texture units. After M2-E2 and M2-J5 the standard material's fragment stage read all 16. Sheen, clearcoat, iridescence, transmission, probes and area lights each need more. How should the stage make room, and how much room?

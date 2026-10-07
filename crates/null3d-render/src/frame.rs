@@ -30,8 +30,9 @@ use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::effects::{Effect, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
-use crate::fog::Fog;
+use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale, Size};
@@ -39,13 +40,14 @@ use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
 };
-use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
-    CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades,
+    CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
+    fit_cascades,
 };
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -291,6 +293,19 @@ pub trait FrameBuilder {
     fn casts_tile_shadows(&self) -> bool {
         false
     }
+    /// Removes the live meshes among `ids`, which no object or batch names any more, packs the
+    /// storage over their data, and makes the next frame upload the data that moved. The next
+    /// frame rebuilds the draw tables, as after any structure change.
+    fn remove_meshes(&mut self, ids: &[u32]) {
+        let moves = self.settings_mut().meshes_mut().remove(ids);
+        self.meshes_moved(ids, &moves);
+    }
+    /// Makes the GPU copies of the meshes follow a removal: the pages and the delta texels upload
+    /// again from where `moves` says they changed, and the removed `ids` lose what the builder
+    /// kept for them.
+    fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves);
+    /// The GPU bytes of the meshes: the buffers of every page and the texture of morph deltas.
+    fn mesh_gpu_bytes(&self) -> u64;
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.
@@ -569,7 +584,7 @@ struct Lighting {
     shadow_quality: ShadowQuality,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
-    fog: Fog,
+    fog: Option<Fog>,
 }
 
 /// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
@@ -606,6 +621,8 @@ pub struct SceneSettings {
     lighting: Lighting,
     /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
     shadow_schedule: CascadeSchedule,
+    /// How the cascades' shadow map stores depth.
+    cascade_depth: CascadeDepth,
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
@@ -629,6 +646,10 @@ pub struct SceneSettings {
     environment: Option<Environment>,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
+    /// The sketch's custom effects, in the order they run.
+    effects: Vec<Effect>,
+    /// The first template of the sketch's custom tone curve, while it sets one.
+    tone_curve: Option<u32>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -646,11 +667,13 @@ pub struct SceneSettings {
 }
 
 impl SceneSettings {
+    /// Settings with no scene content yet, whose cascades' shadow map stores `cascade_depth`.
     pub fn new(
         meshes: MeshStorage,
         max_materials: u32,
         textures: TextureStore,
         canvas: CanvasOutput,
+        cascade_depth: CascadeDepth,
     ) -> Self {
         Self {
             meshes,
@@ -668,9 +691,10 @@ impl SceneSettings {
                 sun_shadow: None,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
-                fog: Fog::None,
+                fog: None,
             },
             shadow_schedule: CascadeSchedule::default(),
+            cascade_depth,
             moving_casters: MovingCasters::default(),
             canvas,
             output: Output::default(),
@@ -683,6 +707,8 @@ impl SceneSettings {
             vignette: None,
             environment: None,
             outline: None,
+            effects: Vec::with_capacity(MAX_EFFECTS),
+            tone_curve: None,
             clock: [0.0; 4],
             render_scaling: false,
             pixel_ratio: 1.0,
@@ -775,6 +801,48 @@ impl SceneSettings {
     /// Turns bloom on with its settings, or off with `None`, from the next recorded frame on.
     pub fn set_bloom(&mut self, bloom: Option<Bloom>) {
         self.bloom = bloom;
+    }
+
+    /// The custom effects that run, in order, and none while a debug view draws, whose colors
+    /// reach the canvas as its shader writes them.
+    pub fn effects(&self) -> &[Effect] {
+        if self.debug_view.is_debug() {
+            return &[];
+        }
+        &self.effects
+    }
+
+    /// Sets the custom effect at place `index` in the order they run, from the next recorded frame
+    /// on: a new effect at the end, or a new template or new uniforms at a place that has one.
+    /// `None` removes the effect at `index` and every one after it. Places past the end, and past
+    /// [`MAX_EFFECTS`], change nothing.
+    pub fn set_effect(&mut self, index: usize, effect: Option<Effect>) {
+        match effect {
+            Some(effect) if index < self.effects.len() => self.effects[index] = effect,
+            Some(effect) if index == self.effects.len() && index < MAX_EFFECTS => {
+                self.effects.push(effect);
+            }
+            Some(_) => {}
+            None => self.effects.truncate(index),
+        }
+    }
+
+    /// The first template of the custom tone curve, while the sketch sets one and no debug view
+    /// draws.
+    pub(crate) fn tone_curve(&self) -> Option<u32> {
+        self.tone_curve.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Makes the final pass map HDR color with the custom tone curve whose builds take the
+    /// templates from `template` on, or with the built-in curves with `None`, from the next
+    /// recorded frame on.
+    pub fn set_tone_curve(&mut self, template: Option<u32>) {
+        self.tone_curve = template;
+    }
+
+    /// The sketch time and the seconds since the frame before.
+    pub(crate) fn clock_seconds(&self) -> [f32; 2] {
+        [self.clock[0], self.clock[1]]
     }
 
     /// The size of bloom's base and the governor's halvings of it.
@@ -1203,6 +1271,11 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
+    /// How the cascades' shadow map stores depth.
+    pub fn cascade_depth(&self) -> CascadeDepth {
+        self.cascade_depth
+    }
+
     /// The shadow filter and how the far cascades update.
     pub fn shadow_quality(&self) -> ShadowQuality {
         self.lighting.shadow_quality
@@ -1276,6 +1349,7 @@ impl SceneSettings {
             camera: position,
             layers: shadow.layers,
             drawn,
+            depth: self.cascade_depth,
         })
     }
 
@@ -1322,9 +1396,9 @@ impl SceneSettings {
         self.lighting.background = Some(color);
     }
 
-    /// The fog that every view's objects take, apart from materials that opt out. The background
-    /// takes none.
-    pub fn set_fog(&mut self, fog: Fog) {
+    /// The fog that every view's objects take, apart from materials that opt out, or none. The
+    /// background takes none.
+    pub fn set_fog(&mut self, fog: Option<Fog>) {
         self.lighting.fog = fog;
     }
 
@@ -1425,7 +1499,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
             output: output.uniform(),
-            fog: self.lighting.fog.uniform(camera.forward, output.exposure),
+            fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
@@ -1626,6 +1700,25 @@ impl MeshBuffers {
             }
         }
         Ok(remade)
+    }
+
+    /// Makes the next upload send each page's data again from where a removal of meshes changed
+    /// it.
+    pub(crate) fn moved(&mut self, moves: &MeshMoves) {
+        for &(page, vertices, indices) in &moves.pages {
+            if let Some(buffers) = self.pages.get_mut(page as usize) {
+                buffers.vertices = buffers.vertices.min(vertices);
+                buffers.indices = buffers.indices.min(indices);
+            }
+        }
+    }
+
+    /// The bytes of every page's buffers on the GPU.
+    pub(crate) fn gpu_bytes(&self) -> u64 {
+        self.pages
+            .iter()
+            .map(|buffers| u64::from(buffers.vertex_bytes) + u64::from(buffers.index_bytes))
+            .sum()
     }
 
     /// Forgets every buffer, after the thread that draws replaced the GPU, so the next upload

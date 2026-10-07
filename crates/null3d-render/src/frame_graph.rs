@@ -10,6 +10,16 @@
 //! compacted instances and indirect draws, which its opaque pass reads. On WebGL2 the job workers
 //! cull each view before the frame records, so that graph has no culling passes.
 //!
+//! With two-phase occlusion culling on WebGPU, each camera view culls twice before its opaque pass
+//! (see [`crate::gpu_driven`]). Its culling pass keeps the objects that drew in the view's last
+//! frame, and its occluders' pass draws their depth alone into a depth target of its own. A compute
+//! pass builds the view's depth pyramid from that depth, and the late culling pass tests every
+//! object in view against the pyramid. The opaque pass then draws what the late pass kept, as it
+//! does without occlusion culling, so its targets never leave tile memory between passes. The
+//! occluders' pass reads the compacted instances as the first culling pass leaves them, before the
+//! late pass writes them again. Occlusion culling and the depth prepass do not run together; the
+//! prepass wins.
+//!
 //! With the depth prepass, a depth prepass comes before each view's opaque pass. It creates the
 //! view's depth and draws the opaque objects' depth into it, and the opaque pass then writes into
 //! that depth (see [`crate::pipelines`]). Both draw in one render pass, which has the color from
@@ -43,6 +53,13 @@
 //! the canvas, with no pass, copy or target of its own. With one sample, or while the render scale
 //! can drop below the whole canvas, the final pass copies the scene color into the canvas. In the
 //! FXAA mode the final pass smooths edges on either path.
+//!
+//! On the HDR path, the sketch's custom effects come after the transparent passes (see
+//! [`crate::effects`]): one full-screen pass each, in the sketch's order, each reading the color
+//! that the pass before it left and creating a target of its own. Bloom's first step and the final
+//! pass then read the last effect's target in place of the scene color. An effect that reads the
+//! scene's depth reads it after every pass that draws it. The passes are declared again when the
+//! number of effects or their depth reads change.
 //!
 //! On the HDR path, bloom's passes come between the transparent passes and the final pass (see
 //! [`crate::bloom`]): a step down into each level of its mip chain, the first from the scene
@@ -104,17 +121,19 @@ use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
+use crate::effects::{self, Effect, EffectIds, EffectPass, MAX_EFFECTS, Sources};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::graph::{
-    CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale, Size,
-    Step, StepKind, StoreOp, Surface, Target,
+    CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale,
+    ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
 };
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
-use crate::pipelines::{PassTargets, PipelineCache};
-use crate::shadows::{MAX_CASCADES, ShadowFrame};
+use crate::pipelines::{PassTargets, PipelineCache, Prepass};
+use crate::shadow_tiles;
+use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
@@ -128,6 +147,7 @@ pub(crate) struct GraphIds {
     pub(crate) final_pass: FinalIds,
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
+    pub(crate) effects: EffectIds,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -196,6 +216,27 @@ const BLOOM_LEVELS: [&str; LEVELS] = [
     "bloomLevel8",
     "bloomLevel9",
 ];
+/// Each custom effect's pass, and the target it creates, which the next effect, bloom and the
+/// final pass read.
+const EFFECT_PASSES: [&str; MAX_EFFECTS] = [
+    "Effect0", "Effect1", "Effect2", "Effect3", "Effect4", "Effect5", "Effect6", "Effect7",
+];
+const EFFECT_TARGETS: [&str; MAX_EFFECTS] = [
+    "effectColor0",
+    "effectColor1",
+    "effectColor2",
+    "effectColor3",
+    "effectColor4",
+    "effectColor5",
+    "effectColor6",
+    "effectColor7",
+];
+/// An effect slot that holds no effect.
+const NO_EFFECT: Effect = Effect {
+    template: 0,
+    depth: false,
+    values: [0.0; effects::EFFECT_FLOATS],
+};
 /// The outline view's culling pass on WebGPU, and the buffer of its compacted instances and
 /// indirect draws.
 const OUTLINE_CULLING: &str = "OutlineCulling";
@@ -261,6 +302,13 @@ pub(crate) enum Role {
     Prepass(ViewId),
     /// Draws a view's opaque objects.
     Opaque(ViewId),
+    /// Draws the depth of the objects that a camera view's first culling phase kept, for occlusion
+    /// culling.
+    Occluders(ViewId),
+    /// Builds a camera view's depth pyramid from its occluders' depth, for occlusion culling.
+    Pyramid(ViewId),
+    /// Culls a camera view against its depth pyramid, for its opaque pass.
+    LateCull(ViewId),
     /// Draws the depth of a shadow cascade's or a shadow tile's casters, by its view.
     Shadow(ViewId),
     /// Draws the frame's debug lines into the camera's view.
@@ -276,6 +324,8 @@ pub(crate) enum Role {
     OutlineMask,
     /// A step of ambient occlusion, by its place. The graph records it itself.
     Ao(u8),
+    /// A custom effect, by its place in the chain. The graph records it itself.
+    Effect(u8),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
@@ -337,6 +387,12 @@ pub(crate) struct FrameGraph {
     skinning: bool,
     /// Each view's depth prepass, by view, with the depth prepass.
     prepasses: Vec<PassId>,
+    /// True when each camera view culls in two phases against its depth pyramid, on WebGPU.
+    occlusion: bool,
+    /// Each view's occluders' pass, and the depth that its depth pyramid reads, by view, with
+    /// occlusion culling.
+    occluder_passes: Vec<PassId>,
+    pyramid_depths: Vec<ResourceId>,
     /// MSAA samples of the scene's color and depth targets.
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
@@ -379,6 +435,23 @@ pub(crate) struct FrameGraph {
     /// The texture that each of bloom's steps reads, and the base level's, found once for each
     /// compile of the graph, which the count says.
     bloom_textures: Option<(u32, [u32; STEPS], u32)>,
+    /// The custom effects' passes and their GPU objects, on the HDR path.
+    effect_pass: Option<EffectPass>,
+    /// The GPU objects that the effects take.
+    effect_ids: EffectIds,
+    /// The effects that run, in order: the first `effect_count` slots.
+    effects: [Effect; MAX_EFFECTS],
+    effect_count: usize,
+    /// A bit for each effect that reads the scene's depth, by its place.
+    effect_depths: u32,
+    /// The textures that each effect reads, found once for each compile of the graph, which the
+    /// count says.
+    effect_textures: Option<(u32, [Sources; MAX_EFFECTS])>,
+    /// The sketch time and the seconds since the frame before, which effects read.
+    effect_clock: [f32; 2],
+    /// The inverse of the camera's projection, which effects that read depth use, or `None`
+    /// without a camera.
+    inverse_projection: Option<Mat4>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -407,6 +480,8 @@ pub(crate) struct FrameGraph {
     canvas: (u32, u32),
     /// True when the builder's scene passes bind a shadow map.
     shadow_map: bool,
+    /// The depth format of the cascades' shadow map.
+    cascade_format: u32,
     /// The directional light's shadow passes, or `None` without shadows.
     shadows: Option<ShadowPasses>,
     /// Each cascade's shadow pass, once the passes are declared.
@@ -448,6 +523,9 @@ impl FrameGraph {
             prepass: false,
             skinning: false,
             prepasses: Vec::new(),
+            occlusion: false,
+            occluder_passes: Vec::new(),
+            pyramid_depths: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
             scene_color,
@@ -469,6 +547,16 @@ impl FrameGraph {
             ao_built: false,
             bloom_chain: ChainFrame::default(),
             bloom_textures: None,
+            effect_pass: scene_color
+                .is_hdr()
+                .then(|| EffectPass::new(ids.effects, gpu_culling && antialias.samples() > 1)),
+            effect_ids: ids.effects,
+            effects: [NO_EFFECT; MAX_EFFECTS],
+            effect_count: 0,
+            effect_depths: 0,
+            effect_textures: None,
+            effect_clock: [0.0; 2],
+            inverse_projection: None,
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -485,6 +573,7 @@ impl FrameGraph {
             layer_views: Vec::new(),
             made_views: 0,
             shadow_map: false,
+            cascade_format: CascadeDepth::default().format(),
             shadows: None,
             shadow_passes: Vec::new(),
             tiles: None,
@@ -508,15 +597,24 @@ impl FrameGraph {
         self.resolves = !scene_color.is_hdr() && antialias == Antialias::Msaa;
         self.final_pass.set_mode(scene_color, antialias);
         self.make_bloom_pass();
+        // Effects run on HDR color only, and read the depth's samples, which the new mode may
+        // change.
+        self.effect_pass = scene_color
+            .is_hdr()
+            .then(|| EffectPass::new(self.effect_ids, self.gpu_culling && self.samples > 1));
+        self.effect_count = 0;
+        self.effect_depths = 0;
+        self.effect_textures = None;
         // The depth step reads the depth's samples, which the new mode may change.
         self.ao_pass = None;
         self.declared = false;
     }
 
-    /// Makes the scene passes sample a shadow map, which the builder binds with every view's
-    /// objects. Without shadows the map is one texel of one layer.
-    pub(crate) fn bind_shadow_map(&mut self) {
+    /// Makes the scene passes sample a shadow map whose cascades store `depth`, which the builder
+    /// binds with every view's objects. Without shadows the map is one texel of one layer.
+    pub(crate) fn bind_shadow_map(&mut self, depth: CascadeDepth) {
         self.shadow_map = true;
+        self.cascade_format = depth.format();
         self.declared = false;
     }
 
@@ -533,6 +631,31 @@ impl FrameGraph {
             self.skinning = on;
             self.declared = false;
         }
+    }
+
+    /// Culls each camera view in two phases against its depth pyramid, or in one. It takes effect
+    /// on WebGPU without the depth prepass, which ambient occlusion also turns on while it draws.
+    pub(crate) fn set_occlusion(&mut self, on: bool) {
+        if on != self.occlusion {
+            self.occlusion = on;
+            self.declared = false;
+        }
+    }
+
+    /// How the opaque objects' depth draws before the pass that shades them: in the depth prepass,
+    /// the way that the builder's `prepass` names, in the occluders' pass of occlusion culling, or
+    /// not at all.
+    pub(crate) fn depth_pass(&self, prepass: Prepass) -> Prepass {
+        if self.depth_prepass() {
+            prepass
+        } else {
+            Prepass::Occluders.if_on(self.occlusion())
+        }
+    }
+
+    /// True when each camera view culls in two phases against its depth pyramid.
+    pub(crate) fn occlusion(&self) -> bool {
+        self.occlusion && self.gpu_culling && !self.depth_prepass()
     }
 
     /// True when each view has a depth prepass: from the builder's start, or while ambient
@@ -643,7 +766,12 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao
+        let effects = if self.effect_count > 0 {
+            EffectPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom + ao + effects
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -731,6 +859,54 @@ impl FrameGraph {
         }
     }
 
+    /// Sets the custom effects that run, in order, from the next frame on, with the sketch time and
+    /// the seconds since the frame before, and the camera's projection and its inverse. Effects run
+    /// only on the HDR path, at most [`MAX_EFFECTS`] of them. The passes are declared again only
+    /// when the number of effects or their depth reads change; new templates or uniforms change
+    /// only what the frames draw.
+    pub(crate) fn set_effects(
+        &mut self,
+        effects: &[Effect],
+        clock: [f32; 2],
+        projection: Option<(Mat4, Mat4)>,
+    ) {
+        let count = if self.effect_pass.is_some() {
+            effects.len().min(MAX_EFFECTS)
+        } else {
+            0
+        };
+        let depths = effects[..count]
+            .iter()
+            .enumerate()
+            .fold(0, |bits, (index, effect)| {
+                bits | (u32::from(effect.depth) << index)
+            });
+        if count != self.effect_count || depths != self.effect_depths {
+            self.effect_count = count;
+            self.effect_depths = depths;
+            self.effect_textures = None;
+            self.declared = false;
+        }
+        self.effects[..count].copy_from_slice(&effects[..count]);
+        self.effect_clock = clock;
+        self.inverse_projection = projection.map(|(_, inverse)| inverse);
+    }
+
+    /// Makes the final pass draw with the custom tone curve whose pipelines take the templates from
+    /// `template` on, or with its own curves with `None`, from the next frame on.
+    pub(crate) fn set_tone_curve(&mut self, template: Option<u32>) {
+        self.final_pass.set_tone_curve(template);
+    }
+
+    /// The resource that holds the scene's color after the custom effects: the last effect's
+    /// target, or the scene color without effects. Bloom and the final pass read it.
+    fn color_output(&self) -> &'static str {
+        match self.effect_count {
+            0 => SCENE_COLOR,
+            count => EFFECT_TARGETS[count - 1],
+        }
+    }
+
     /// Makes bloom's steps for the chain's base size on the HDR path. Its GPU objects keep their
     /// ids, so the new steps make them again over the old ones.
     fn make_bloom_pass(&mut self) {
@@ -763,6 +939,9 @@ impl FrameGraph {
             self.graph.set_layers(pass, view.layers());
         }
         for (&pass, view) in self.prepasses.iter().zip(views) {
+            self.graph.set_layers(pass, view.layers());
+        }
+        for (&pass, view) in self.occluder_passes.iter().zip(views) {
             self.graph.set_layers(pass, view.layers());
         }
     }
@@ -803,6 +982,8 @@ impl FrameGraph {
         self.roles.clear();
         self.opaque.clear();
         self.prepasses.clear();
+        self.occluder_passes.clear();
+        self.pyramid_depths.clear();
         self.transparent.clear();
         self.shadow_passes.clear();
         self.bloom_passes.clear();
@@ -812,14 +993,16 @@ impl FrameGraph {
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.shadow_map {
             let (layers, size) = self.shadows.map_or((1, 1), |s| (s.cascades, s.map_size));
-            let map = Target::depth(DEPTH_FORMAT).layers(layers).array();
+            let map = Target::depth(self.cascade_format).layers(layers).array();
             let size = Size::Fixed {
                 width: size,
                 height: size,
             };
             self.graph.keep(SHADOW_MAP, map, size);
             let (tiles, size) = self.tiles.map_or((1, 1), |t| (t.tiles, t.size));
-            let atlas = Target::depth(DEPTH_FORMAT).layers(tiles).array();
+            let atlas = Target::depth(shadow_tiles::TARGETS.depth_format)
+                .layers(tiles)
+                .array();
             let size = Size::Fixed {
                 width: size,
                 height: size,
@@ -882,6 +1065,9 @@ impl FrameGraph {
             } else {
                 pass = pass.creates(depth_name, depth);
             }
+            if self.occlusion() {
+                self.declare_occluders(view, index);
+            }
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
                 if index == ViewId::CAMERA.index() {
@@ -915,13 +1101,14 @@ impl FrameGraph {
             self.transparent.push(pass);
         }
         self.declare_outline(color.samples);
+        self.declare_effects();
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let resolve = self.add(resolve, Role::Resolve);
         let final_pass = Pass::new("Final", PassKind::Fullscreen)
             .size(Size::Canvas)
-            .reads(SCENE_COLOR)
+            .reads(self.color_output())
             .writes(CANVAS);
         let final_outline = with_outline(final_pass.clone()).named("FinalOutline");
         let final_pass = self.add(final_pass, Role::Final);
@@ -939,6 +1126,62 @@ impl FrameGraph {
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
+    }
+
+    /// Declares a camera view's occlusion culling before its opaque pass: the occluders' pass,
+    /// which draws the depth of the objects that its first culling phase kept into a depth target
+    /// of its own, of one sample; the compute pass that builds the view's depth pyramid from that
+    /// depth; and the late culling pass, which tests every object against the pyramid and writes
+    /// the compacted instances that the opaque pass draws.
+    fn declare_occluders(&mut self, view: &View, index: usize) {
+        let id = ViewId::from_index(index);
+        let visible = view_name(index, "visible", "visible");
+        let occluders = view_name(index, "occluderDepth", "occluderDepth");
+        let pyramid = view_name(index, "depthPyramid", "depthPyramid");
+        let mut pass = Pass::new(view_name(index, "Occluders", "Occluders"), PassKind::Scene)
+            .layers(view.layers())
+            .creates(occluders.clone(), Target::depth(DEPTH_FORMAT))
+            .reads_so_far(visible.clone());
+        if self.skins() {
+            pass = pass.reads(SKINNED);
+        }
+        let pass = self.add(pass, Role::Occluders(id));
+        self.occluder_passes.push(pass);
+        let build = Pass::new(
+            view_name(index, "DepthPyramid", "DepthPyramid"),
+            PassKind::Compute,
+        )
+        .reads(occluders.clone())
+        .creates_buffer(pyramid.clone());
+        self.add(build, Role::Pyramid(id));
+        let late = Pass::new(
+            view_name(index, "LateCulling", "LateCulling"),
+            PassKind::Compute,
+        )
+        .reads(OBJECTS)
+        .reads(pyramid)
+        .writes(visible);
+        self.add(late, Role::LateCull(id));
+        let occluders = self
+            .graph
+            .find_resource(&occluders)
+            .expect("the occluders' pass creates its depth");
+        self.pyramid_depths.push(occluders);
+    }
+
+    /// The draw list's id of the occluders' depth of a view that culls in two phases, which its
+    /// depth pyramid reads. Valid once the frame's [`FrameGraph::prepare`] made the plan's
+    /// textures.
+    pub(crate) fn depth_texture(&self, view: ViewId) -> Option<u32> {
+        let depth = *self.pyramid_depths.get(view.index())?;
+        let surface = self.graph.plan()?.sampled_texture_of(depth)?;
+        Some(self.texture_id(surface))
+    }
+
+    /// The render size of the frame being recorded: the part of the full-size targets that scene
+    /// passes draw into, in pixels.
+    pub(crate) fn render_size(&self) -> (u32, u32) {
+        Size::Full.viewport(self.canvas, self.scale)
     }
 
     /// Declares the outline's passes: on WebGPU the outline view's culling pass, then the mask
@@ -961,6 +1204,23 @@ impl FrameGraph {
         }
         let pass = self.add(pass, Role::OutlineMask);
         self.outline_passes.push(pass);
+    }
+
+    /// Declares the custom effects' passes: each reads the color that the pass before it left, and
+    /// the scene's depth as every pass leaves it when it reads depth, and creates a target of its
+    /// own.
+    fn declare_effects(&mut self) {
+        let mut input = SCENE_COLOR;
+        for index in 0..self.effect_count {
+            let mut pass = Pass::new(EFFECT_PASSES[index], PassKind::Fullscreen)
+                .reads(input)
+                .creates(EFFECT_TARGETS[index], Target::color(effects::FORMAT));
+            if self.effects[index].depth {
+                pass = pass.reads(SCENE_DEPTH);
+            }
+            self.add(pass, Role::Effect(index as u8));
+            input = EFFECT_TARGETS[index];
+        }
     }
 
     /// Declares ambient occlusion's steps: the depth copy reads the scene depth as the prepass
@@ -1002,7 +1262,7 @@ impl FrameGraph {
                 .size(bloom::level_size(size, level))
                 .creates(BLOOM_LEVELS[level], target);
             let pass = match level {
-                0 => pass.reads(SCENE_COLOR),
+                0 => pass.reads(self.color_output()),
                 _ => pass.reads_so_far(BLOOM_LEVELS[level - 1]),
             };
             let pass = self.add(pass, Role::Bloom(level as u8));
@@ -1019,7 +1279,7 @@ impl FrameGraph {
         }
         Pass::new("FinalBloom", PassKind::Fullscreen)
             .size(Size::Canvas)
-            .reads(SCENE_COLOR)
+            .reads(self.color_output())
             .reads(BLOOM_LEVELS[0])
             .writes(CANVAS)
     }
@@ -1119,6 +1379,9 @@ impl FrameGraph {
     ) {
         let wanted = self.bloom_wanted();
         let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
+        if let Some(pass) = self.effect_pass.as_mut() {
+            pass.request_pipelines(pipelines, &self.effects[..self.effect_count]);
+        }
         let built = match (wanted, final_bloom, self.bloom_pass.as_mut()) {
             (true, Some(final_bloom), Some(bloom)) => {
                 let (down, up) = bloom.request_pipelines(pipelines);
@@ -1162,11 +1425,12 @@ impl FrameGraph {
         grading: Grading,
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
+        self.upload_effects(list, arena)?;
         if !self.final_runs() {
             return Ok(());
         }
         let scene_color = self
-            .sampled_id(SCENE_COLOR)
+            .sampled_id(self.color_output())
             .expect("the final pass samples the scene color");
         let render_size = Size::Full.viewport(self.canvas, self.scale);
         let bloom = if self.bloom_draws() {
@@ -1228,7 +1492,7 @@ impl FrameGraph {
             if step >= 2 * levels - 1 {
                 0
             } else if step == 0 {
-                id(SCENE_COLOR)
+                id(self.color_output())
             } else if step < levels {
                 id(BLOOM_LEVELS[step - 1])
             } else {
@@ -1238,6 +1502,72 @@ impl FrameGraph {
         let base = id(BLOOM_LEVELS[0]);
         self.bloom_textures = Some((compiles, sources, base));
         (sources, base)
+    }
+
+    /// Records the custom effects' objects and blocks while effects run, and binds each effect to
+    /// the textures it reads.
+    fn upload_effects(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let count = self.effect_count;
+        if count == 0 {
+            return Ok(());
+        }
+        let sources = self.effect_textures();
+        let frame = (self.canvas, self.scale);
+        let (clock, inverse, made) = (
+            self.effect_clock,
+            self.inverse_projection,
+            self.textures_made,
+        );
+        let pass = self
+            .effect_pass
+            .as_mut()
+            .expect("effects run only on the HDR path");
+        pass.prepare(
+            list,
+            arena,
+            &self.effects[..count],
+            &sources[..count],
+            frame,
+            clock,
+            inverse,
+            made,
+        )
+    }
+
+    /// The textures that each effect reads, found by name once for each compile of the graph.
+    fn effect_textures(&mut self) -> [Sources; MAX_EFFECTS] {
+        let compiles = self.graph.compiles();
+        if let Some((at, sources)) = self.effect_textures
+            && at == compiles
+        {
+            return sources;
+        }
+        let depth = if self.effect_depths != 0 {
+            self.sampled_id(SCENE_DEPTH)
+                .expect("an effect that reads depth reads the scene depth")
+        } else {
+            0
+        };
+        let mut sources = [Sources::default(); MAX_EFFECTS];
+        for (index, slot) in sources.iter_mut().enumerate().take(self.effect_count) {
+            let input = if index == 0 {
+                SCENE_COLOR
+            } else {
+                EFFECT_TARGETS[index - 1]
+            };
+            *slot = Sources {
+                color: self
+                    .sampled_id(input)
+                    .expect("each effect reads a planned texture"),
+                depth,
+            };
+        }
+        self.effect_textures = Some((compiles, sources));
+        sources
     }
 
     /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
@@ -1393,6 +1723,11 @@ impl FrameGraph {
                                     usize::from(step),
                                     ao::corner(self.canvas, self.scale, self.ao_scale),
                                 )?,
+                            Role::Effect(index) => self
+                                .effect_pass
+                                .as_ref()
+                                .expect("effects run only on the HDR path")
+                                .record(list, usize::from(index))?,
                             role => record(list, role)?,
                         }
                     }
@@ -1554,6 +1889,9 @@ impl FrameGraph {
         if let Some(ao) = self.ao_pass.as_mut() {
             ao.reset_gpu();
         }
+        if let Some(effects) = self.effect_pass.as_mut() {
+            effects.reset_gpu();
+        }
     }
 }
 
@@ -1595,6 +1933,7 @@ fn create_texture(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
     fn views_after_the_camera_take_their_number_in_their_names() {
@@ -1621,6 +1960,12 @@ mod tests {
         ao: AoIds {
             buffer: 11,
             first_group: 20,
+        },
+        effects: EffectIds {
+            buffer: 12,
+            sampler: 12,
+            first_group: 30,
+            blank_depth: 902,
         },
     };
 
@@ -2198,6 +2543,98 @@ mod tests {
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+    }
+
+    #[test]
+    fn effects_run_in_order_between_the_scene_and_bloom_and_share_two_targets() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let without = frames.graph().plan().unwrap().textures().len();
+
+        let effect = |template, depth| Effect {
+            template,
+            depth,
+            values: [0.0; effects::EFFECT_FLOATS],
+        };
+        let chain = [effect(64, false), effect(65, true), effect(66, false)];
+        frames.set_effects(&chain, [0.0; 2], None);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.sync_views(&[View::default()]);
+        let mut pipelines = PipelineCache::default();
+        // Bloom draws once a frame drew with its pipelines built.
+        frames.request_pipelines(&mut pipelines, 0);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        assert!(place("Opaque") < place("Effect0"));
+        assert!(place("Effect0") < place("Effect1") && place("Effect1") < place("Effect2"));
+        assert!(place("Effect2") < place(BLOOM_DOWN[0]));
+        // The effects' targets live one after another, so they share textures: the chain adds two
+        // at most, whatever its length.
+        let with = frames.graph().plan().unwrap().textures().len();
+        assert!(with <= without + LEVELS + 2, "{with} textures");
+        // The effect that reads depth reads the multisampled depth through its build and layout.
+        let keys = pipelines.keys();
+        let templates: Vec<(u32, u32)> = keys
+            .iter()
+            .filter(|key| key.template >= 64)
+            .map(|key| (key.template, key.permutation))
+            .collect();
+        assert_eq!(
+            templates,
+            [(64, 0), (65, permutation::DEPTH_MULTISAMPLED), (66, 0)]
+        );
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+            .iter()
+            .filter(|group| group[0] >= 30 && group[0] < 30 + MAX_EFFECTS as u32)
+            .map(|group| group[1])
+            .collect();
+        assert_eq!(
+            layouts,
+            [
+                bind_layout::EFFECT,
+                bind_layout::EFFECT_DEPTH_MS,
+                bind_layout::EFFECT
+            ]
+        );
+
+        // Fewer effects declare the chain again; none leave the plan as it was.
+        frames.set_effects(&[], [0.0; 2], None);
+        frames.set_bloom(None, ChainFrame::default());
+        frames.sync_views(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+        assert!(frames.graph().find_pass(EFFECT_PASSES[0]).is_none());
+    }
+
+    #[test]
+    fn the_8_bit_path_runs_no_effects() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        let effect = Effect {
+            template: 64,
+            depth: false,
+            values: [0.0; effects::EFFECT_FLOATS],
+        };
+        frames.set_effects(&[effect], [0.0; 2], None);
+        frames.sync_views(&[View::default()]);
+        assert!(frames.graph().find_pass(EFFECT_PASSES[0]).is_none());
     }
 
     #[test]

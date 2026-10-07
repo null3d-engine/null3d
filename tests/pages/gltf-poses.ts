@@ -81,11 +81,17 @@ function compare(
 		}
 }
 
+/** The meshopt decoder's module file, which the engine ships. */
+const MESHOPT_WASM = new URL(
+	'../../packages/engine/vendor/meshopt/meshopt_decoder.wasm',
+	import.meta.url,
+);
+
 /** Parses a model file, with the meshopt decoder, and returns it with the parse's milliseconds. */
 async function parse(url: string): Promise<{ data: GltfData; parseMs: number }> {
 	const address = new URL(url, location.href).href;
 	const bytes = new Uint8Array(await (await fetch(address)).arrayBuffer());
-	const decode = await meshoptDecoder();
+	const decode = await meshoptDecoder(await WebAssembly.compileStreaming(fetch(MESHOPT_WASM)));
 	const started = performance.now();
 	const data = parseGltf(readContainer(bytes, address), new Map(), address, decode);
 	return { data, parseMs: performance.now() - started };

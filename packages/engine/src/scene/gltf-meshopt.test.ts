@@ -2,10 +2,16 @@
 // extension names and both vertex codecs, fallback buffers, and data that breaks the rules. The
 // test files of tests/lib/meshopt-fixtures.ts cover files from gltfpack and the Khronos samples.
 import { beforeAll, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { MeshoptEncoder } from 'meshoptimizer/encoder';
-import { referenceDecoder, rotated } from '../../../../tests/lib/meshopt-checks';
+import { referenceDecoder, rotated, shippedDecoder } from '../../../../tests/lib/meshopt-checks';
 import { boxArrays, GltfBuilder } from '../../../../tests/pages/lib/gltf-files';
-import { meshoptDecoder } from './gltf-meshopt';
+import {
+	installedMeshoptWasm,
+	MESHOPT_VENDOR,
+	MESHOPT_WASM,
+} from '../../../../tools/lib/meshopt-wasm';
 import {
 	type GltfData,
 	GltfError,
@@ -23,13 +29,13 @@ const UNSIGNED_SHORT = 5123;
 const UNSIGNED_INT = 5125;
 const FLOAT = 5126;
 
-/** meshoptimizer's WebAssembly decoder, which the glTF worker loads. */
+/** meshoptimizer's WebAssembly decoder, from the file that the engine ships. */
 let decode: MeshoptDecode;
 /** meshoptimizer's reference decoder, written in plain JavaScript to follow the format's rules. */
 let reference: MeshoptDecode;
 
 beforeAll(async () => {
-	decode = await meshoptDecoder();
+	decode = await shippedDecoder();
 	reference = await referenceDecoder();
 	await MeshoptEncoder.ready;
 });
@@ -283,6 +289,12 @@ const COMPRESSIONS: readonly Compression[] = [
 ];
 
 describe('meshopt data', () => {
+	test('the shipped decoder is the SIMD module of the meshoptimizer package that the engine pins', () => {
+		expect(
+			Buffer.from(installedMeshoptWasm()).equals(readFileSync(join(MESHOPT_VENDOR, MESHOPT_WASM))),
+		).toBe(true);
+	});
+
 	for (const compression of COMPRESSIONS) {
 		const name = `${compression.extension}, vertex codec ${compression.version}`;
 

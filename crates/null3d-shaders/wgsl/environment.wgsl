@@ -1,6 +1,7 @@
 // Environment maps made on the GPU (D-19): the built-in room, traced, blurred and filtered for each
-// roughness, as the asset tool makes it on the CPU (crates/null3d-assets-wasm/src/environment).
-// Every constant and formula here follows the tool's, so the two maps match.
+// roughness, and panoramas from HDR files, mapped onto the cube and filtered the same way, as the
+// asset tool makes them on the CPU (crates/null3d-assets-wasm/src/environment). Every constant and
+// formula here follows the tool's, so the maps match.
 //
 // Each draw fills rows of one level with one triangle. The level's six faces lie side by side in
 // the target, from +X to -Z, so one draw runs the texels of every face at once. The fragment's
@@ -9,7 +10,10 @@
 // - `trace` traces three.js's RoomEnvironment scene from the room's center, 4 x 4 directions per
 //   texel.
 // - `blur` blurs the traced room by a Gaussian over the sphere, as three.js's examples blur it.
-// - `half` makes a level of the blurred room's chain from the level before it.
+// - `panorama` maps an equirectangular panorama onto the cube, averaging directions over each
+//   texel.
+// - `half` makes a level of the chain, the blurred room or the panorama on the cube, from the
+//   level before it.
 // - `prefilter` filters the chain for one roughness, with the GGX distribution.
 //
 // No GPU path draws into shared-exponent floats, so each draw packs its texel as `rgb9e5ufloat`
@@ -20,7 +24,7 @@
 struct Step {
     /// The texels across a side of each face at the level that the draw fills.
     size: u32,
-    /// The directions of the prefilter.
+    /// The directions of the prefilter, or the panorama's directions a side of each texel.
     samples: u32,
     /// The texels across a side of the source's largest level.
     source_size: u32,
@@ -28,7 +32,10 @@ struct Step {
     /// The blur's sigma in radians, the source level that `half` reads, or the prefilter's
     /// perceptual roughness.
     value: f32,
-    spare_a: f32,
+    /// The factor of the light that the draw stores. A panorama's texels and chain hold its light
+    /// divided by a power of two, so that a sun past the largest shared-exponent value keeps its
+    /// light, and the draws that fill the map multiply it back in.
+    gain: f32,
     spare_b: f32,
     spare_c: f32,
 }
@@ -36,6 +43,9 @@ struct Step {
 @group(0) @binding(0) var<uniform> params: Step;
 @group(0) @binding(1) var source: texture_cube<f32>;
 @group(0) @binding(2) var source_sampler: sampler;
+@group(0) @binding(3) var panorama: texture_2d<f32>;
+/// Repeats across the panorama's width and clamps at its top and bottom rows.
+@group(0) @binding(4) var panorama_sampler: sampler;
 
 const PI: f32 = 3.14159265358979;
 
@@ -429,6 +439,33 @@ fn fs_blur(@builtin(position) position: vec4f) -> @location(0) vec4f {
     return pack(sum * (1.0 / total));
 }
 
+/// The panorama's light in a unit direction, filtered linearly. Columns run as three.js maps them:
+/// the middle column faces +X, a quarter of the way faces -Z. Row 0 is the top, +Y.
+fn panorama_light(d: vec3f) -> vec3f {
+    let u = atan2(d.z, d.x) * (0.5 / PI) + 0.5;
+    let v = asin(clamp(d.y, -1.0, 1.0)) * (1.0 / PI) + 0.5;
+    return textureSampleLevel(panorama, panorama_sampler, vec2f(u, 1.0 - v), 0.0).rgb;
+}
+
+/// The panorama's light averaged over `samples` x `samples` directions spread evenly over the
+/// texel, as the tool samples a file.
+@fragment
+fn fs_panorama(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let at = face_texel(position.xy);
+    let texel = at.texel;
+    let count = params.samples;
+    let spacing = 2.0 / (f32(params.size) * f32(count));
+    var sum = vec3f(0.0);
+    for (var j = 0u; j < count; j++) {
+        let tc = (texel.y * f32(count) + f32(j) + 0.5) * spacing - 1.0;
+        for (var i = 0u; i < count; i++) {
+            let sc = (texel.x * f32(count) + f32(i) + 0.5) * spacing - 1.0;
+            sum += panorama_light(normalize(face_direction(at.face, sc, tc)));
+        }
+    }
+    return pack(sum * (params.gain / f32(count * count)));
+}
+
 /// The average of the four texels of the level before that this texel covers: a linear filter
 /// reads them at their shared corner, where the texel's center lies.
 @fragment
@@ -486,5 +523,5 @@ fn fs_prefilter(@builtin(position) position: vec4f) -> @location(0) vec4f {
         sum += textureSampleLevel(source, source_sampler, d, lod).rgb * light.z;
         total += light.z;
     }
-    return pack(sum * (1.0 / total));
+    return pack(sum * (params.gain / total));
 }

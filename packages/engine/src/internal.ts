@@ -7,7 +7,7 @@ export type {
 	ShaderVariants,
 } from './generated/shaders';
 export { everyShader, loadGlslShaders, loadWgslShaders, SHADERS } from './generated/shaders';
-export { webgl2RoomGenerator, webgpuRoomGenerator } from './gpu/environment';
+export { webgl2EnvironmentGenerator, webgpuEnvironmentGenerator } from './gpu/environment';
 export { readbackWebGL2, readbackWebGPU } from './gpu/readback';
 export { WebGL2Backend } from './gpu/webgl2/backend';
 export { DEPTH_SETUPS } from './gpu/webgl2/depth';

@@ -4,7 +4,7 @@
 
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import type { CubeGenerator } from './environment';
@@ -23,12 +23,14 @@ TEXTURE_FORMATS[G.FORMAT_RGBA16_FLOAT] = 'rgba16float';
 TEXTURE_FORMATS[G.FORMAT_RG11B10_UFLOAT] = 'rg11b10ufloat';
 TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
+TEXTURE_FORMATS[G.FORMAT_DEPTH16_UNORM] = 'depth16unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
 TEXTURE_FORMATS[G.FORMAT_R32_UINT] = 'r32uint';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM] = 'astc-4x4-unorm';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM_SRGB] = 'astc-4x4-unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM] = 'bc7-rgba-unorm';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM_SRGB] = 'bc7-rgba-unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_BC6H_RGB_UFLOAT] = 'bc6h-rgb-ufloat';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM] = 'etc2-rgb8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM_SRGB] = 'etc2-rgb8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
@@ -65,6 +67,19 @@ COMPARE_FUNCTIONS[G.COMPARE_GREATER] = 'greater';
 COMPARE_FUNCTIONS[G.COMPARE_NOT_EQUAL] = 'not-equal';
 COMPARE_FUNCTIONS[G.COMPARE_GREATER_EQUAL] = 'greater-equal';
 COMPARE_FUNCTIONS[G.COMPARE_ALWAYS] = 'always';
+
+/**
+ * The compute pipelines that a preloaded feature's file builds at once, each a template and its
+ * permutation bits: their layouts are fixed, so the scene need not draw first.
+ */
+const PRECOMPILED: Readonly<Record<string, readonly (readonly [number, number])[]>> = {
+	skinning: SKIN_BUILDS.map((bits) => [G.TEMPLATE_SKIN, bits] as const),
+	occlusion: [
+		[G.TEMPLATE_OCCLUSION_EARLY, 0],
+		[G.TEMPLATE_OCCLUSION_LATE, 0],
+		[G.TEMPLATE_DEPTH_PYRAMID, 0],
+	],
+};
 
 /** Reads a code from a table, and fails with its kind when the table has no entry for it. */
 function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
@@ -176,11 +191,7 @@ export class WebGPUBackend {
 		this.indirect = new IndirectArguments(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(device)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(device));
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -384,9 +395,8 @@ export class WebGPUBackend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
-		generators[name].run(this.device, texture);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
+		code.run(this.device, texture, source);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -498,16 +508,17 @@ export class WebGPUBackend {
 	/**
 	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
 	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the skinning pass's pipelines, whose layout is fixed. A render pipeline also needs the targets,
-	 * the vertex format and the state of the objects that draw with it, which the scene gives, so
-	 * `scene.warmUp()` builds those. Skinning's builds for the vertex shader serve only the
-	 * `?skinning=vertex` switch, and are left out.
+	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
+	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
+	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's builds for the vertex
+	 * shader serve only the `?skinning=vertex` switch, and are left out.
 	 */
 	precompile(feature: string, module: FirstUseShaders): void {
-		if (feature === 'skinning') {
-			for (const bits of SKIN_BUILDS)
+		const compute = PRECOMPILED[feature];
+		if (compute) {
+			for (const [template, bits] of compute)
 				this.device
-					.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN, bits))
+					.createComputePipelineAsync(this.pipelines.compute(template, bits))
 					.catch(() => undefined);
 			return;
 		}

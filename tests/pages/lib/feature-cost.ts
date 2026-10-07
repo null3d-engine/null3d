@@ -14,6 +14,8 @@ export interface SideCost {
 	gpuMs: number | null;
 	intervalMs: number | null;
 	cpuMs: number | null;
+	/** The median busy time per frame of each thread, by name. */
+	threads: Record<string, number | null>;
 }
 
 /** The middle of some numbers, or null without any. */
@@ -33,12 +35,14 @@ function median(values: number[]): number | null {
 export async function featureCost(
 	engine: Engine,
 	turn: (on: boolean) => Promise<void>,
+	measured?: (side: 'off' | 'on') => Promise<void>,
 ): Promise<{ off: SideCost; on: SideCost }> {
 	await new Promise((resolve) => setTimeout(resolve, WARM_UP_SECONDS * 1000));
 	const sides = {
 		off: { gpuMs: [] as number[], intervalMs: [] as number[], cpuMs: [] as number[] },
 		on: { gpuMs: [] as number[], intervalMs: [] as number[], cpuMs: [] as number[] },
 	};
+	const threads = { off: new Map<string, number[]>(), on: new Map<string, number[]>() };
 	for (let round = 0; round < ROUNDS; round++) {
 		for (const side of ['off', 'on'] as const) {
 			await turn(side === 'on');
@@ -46,12 +50,23 @@ export async function featureCost(
 			if (stats.gpuMs) sides[side].gpuMs.push(stats.gpuMs.median);
 			sides[side].intervalMs.push(stats.intervalMs.median);
 			sides[side].cpuMs.push(stats.cpuMs.median);
+			for (const [name, thread] of Object.entries(stats.threads)) {
+				const values = threads[side].get(name) ?? [];
+				values.push(thread.busyMs.median);
+				threads[side].set(name, values);
+			}
+			await measured?.(side);
 		}
 	}
 	const summary = (side: 'off' | 'on'): SideCost => ({
 		gpuMs: median(sides[side].gpuMs),
 		intervalMs: median(sides[side].intervalMs),
 		cpuMs: median(sides[side].cpuMs),
+		threads: Object.fromEntries(
+			[...threads[side]]
+				.map(([name, values]) => [name, median(values)] as const)
+				.filter(([, ms]) => ms !== null && ms > 0),
+		),
 	});
 	return { off: summary('off'), on: summary('on') };
 }

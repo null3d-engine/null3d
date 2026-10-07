@@ -7,7 +7,7 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { ASSET_SCENE, assetSceneGlb } from '../../../../tests/lib/asset-scene.ts';
-import { meshoptDecoder } from '../../../engine/src/scene/gltf-meshopt.ts';
+import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
 import {
 	type GltfData,
 	type NodeData,
@@ -72,7 +72,7 @@ function glbJson(glb: Uint8Array) {
 }
 
 /** The meshopt decoder that the engine's glTF worker loads. */
-const decode = await meshoptDecoder();
+const decode = await shippedDecoder();
 
 /** A file's data as the engine's loader parses it, with the buffers inside it. */
 const parse = (glb: Uint8Array): GltfData =>
