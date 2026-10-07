@@ -30,6 +30,7 @@ use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::effects::{Effect, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -642,6 +643,10 @@ pub struct SceneSettings {
     environment: Option<Environment>,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
+    /// The sketch's custom effects, in the order they run.
+    effects: Vec<Effect>,
+    /// The first template of the sketch's custom tone curve, while it sets one.
+    tone_curve: Option<u32>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -698,6 +703,8 @@ impl SceneSettings {
             vignette: None,
             environment: None,
             outline: None,
+            effects: Vec::with_capacity(MAX_EFFECTS),
+            tone_curve: None,
             clock: [0.0; 4],
             render_scaling: false,
             pixel_ratio: 1.0,
@@ -783,6 +790,48 @@ impl SceneSettings {
     /// Turns bloom on with its settings, or off with `None`, from the next recorded frame on.
     pub fn set_bloom(&mut self, bloom: Option<Bloom>) {
         self.bloom = bloom;
+    }
+
+    /// The custom effects that run, in order, and none while a debug view draws, whose colors
+    /// reach the canvas as its shader writes them.
+    pub fn effects(&self) -> &[Effect] {
+        if self.debug_view.is_debug() {
+            return &[];
+        }
+        &self.effects
+    }
+
+    /// Sets the custom effect at place `index` in the order they run, from the next recorded frame
+    /// on: a new effect at the end, or a new template or new uniforms at a place that has one.
+    /// `None` removes the effect at `index` and every one after it. Places past the end, and past
+    /// [`MAX_EFFECTS`], change nothing.
+    pub fn set_effect(&mut self, index: usize, effect: Option<Effect>) {
+        match effect {
+            Some(effect) if index < self.effects.len() => self.effects[index] = effect,
+            Some(effect) if index == self.effects.len() && index < MAX_EFFECTS => {
+                self.effects.push(effect);
+            }
+            Some(_) => {}
+            None => self.effects.truncate(index),
+        }
+    }
+
+    /// The first template of the custom tone curve, while the sketch sets one and no debug view
+    /// draws.
+    pub(crate) fn tone_curve(&self) -> Option<u32> {
+        self.tone_curve.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Makes the final pass map HDR color with the custom tone curve whose builds take the
+    /// templates from `template` on, or with the built-in curves with `None`, from the next
+    /// recorded frame on.
+    pub fn set_tone_curve(&mut self, template: Option<u32>) {
+        self.tone_curve = template;
+    }
+
+    /// The sketch time and the seconds since the frame before.
+    pub(crate) fn clock_seconds(&self) -> [f32; 2] {
+        [self.clock[0], self.clock[1]]
     }
 
     /// The size of bloom's base and the governor's halvings of it.

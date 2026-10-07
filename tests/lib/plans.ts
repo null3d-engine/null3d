@@ -203,7 +203,7 @@ export type Check =
 	/** A skinning page, on WebGL2 or on WebGPU's core path, with its crowd and its cascades. */
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The effect cost page: an effect off and on in turns, at one render scale. */
-	| { kind: 'effect'; effect: 'bloom' | 'ao'; tier: Tier; scale: number }
+	| { kind: 'effect'; effect: CostedEffect; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
 	/**
@@ -876,6 +876,9 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 	);
 }
 
+/** The effects that the effect cost page measures: bloom, ambient occlusion, or 4 custom effects. */
+export type CostedEffect = 'bloom' | 'ao' | 'effects';
+
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
 /** The render scales at which the effect plans measure an effect. */
@@ -886,9 +889,11 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * and the page times its frames with the effect off and on in turns. Ambient occlusion turns the
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
- * prepass's. D-21 records the results of the bloom plan and the ao plan.
+ * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
+ * one effect's pass. D-21 records the results of the bloom plan and the ao plan, and D-71 those of
+ * the effects plan.
  */
-export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
+export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const prepass = effect === 'ao' ? [false, true] : [false];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -1358,6 +1363,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	effects: () => effectPlan('effects'),
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	occlusion: occlusionPlan,

@@ -130,10 +130,16 @@ interface GlTexture {
 	readonly view: boolean;
 	/** True once a write has gone into the texture, so later writes go through an unpack buffer. */
 	written: boolean;
-	/** The framebuffer of passes that draw into this color target, and the depth target in it. */
+	/**
+	 * The framebuffer of passes that draw into this color target with a depth target, and that
+	 * depth target.
+	 */
 	framebuffer: WebGLFramebuffer | null;
 	framebufferDepth: GlTexture | null;
-	/** A framebuffer with only this target in it: for passes that draw depth only, and resolves. */
+	/**
+	 * A framebuffer with only this target in it: for passes that draw into it without depth, passes
+	 * that draw depth only, and resolves.
+	 */
 	soloFramebuffer: WebGLFramebuffer | null;
 	/** The framebuffer of the one-sample copy of a multisampled depth target that shaders read. */
 	copyFramebuffer: WebGLFramebuffer | null;
@@ -583,8 +589,12 @@ export class WebGL2Backend {
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
 			if (!shader) return false;
-			// A custom material's prepass draws with its own vertex shader, as every mesh's does.
-			defined = { shader: shader.variants, pipeline: 'main', meshPrepass: true };
+			// A custom material's prepass draws with its own vertex shader, as every mesh's does. A
+			// custom effect's or tone curve's template draws one triangle, as the final pass does.
+			defined =
+				shader.kind === undefined
+					? { shader: shader.variants, pipeline: 'main', meshPrepass: true }
+					: { shader: shader.variants, pipeline: 'main' };
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);
@@ -1767,8 +1777,15 @@ export class WebGL2Backend {
 		return framebuffer;
 	}
 
-	/** The framebuffer of passes that draw into `color`, made again when their depth target changes. */
+	/**
+	 * The framebuffer of passes that draw into `color`, with `depth` when given. A target that the
+	 * render graph shares between a pass with depth and one without, as the scene color and a
+	 * custom effect's target, keeps a framebuffer for each, so no frame makes one again: each new
+	 * framebuffer's completeness check waits for the browser's GPU process, about 1.5 ms on a
+	 * Pixel 10. A framebuffer is made again when its depth target changes.
+	 */
 	private colorFramebuffer(color: GlTexture, depth: GlTexture | null): WebGLFramebuffer {
+		if (!depth) return this.soloFramebuffer(color);
 		if (color.framebuffer && color.framebufferDepth === depth) return color.framebuffer;
 		if (color.framebuffer) this.gl.deleteFramebuffer(color.framebuffer);
 		color.framebuffer = this.makeFramebuffer(color, depth);

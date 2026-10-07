@@ -55,6 +55,7 @@ pub mod cpu_culled;
 pub mod debug_lines;
 pub mod debug_view;
 pub mod dfg;
+pub mod effects;
 pub mod environment;
 mod final_pass;
 pub mod fog;
