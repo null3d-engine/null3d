@@ -53,6 +53,8 @@ const OFFICIAL_OUTPUT: Record<string, string> = {
 		'ed4e3b4e3a55ab31413f94e239dbc9b28e54d8f04b3d74840f5d38901e9b3aa2',
 	'quarters-etc1s.ktx2/cTFRGBA32':
 		'dd3b6698b71e639ed2fa1659c710f24624813f92dc129c2b9d1dec3ae62ff66f',
+	'quarters-hdr.ktx2/cTFBC6H': '70abc5f2b1be18d4b7fcc72fc3fcbfea5c592d797465ebcb87565ec3e12e0f5a',
+	'quarters-hdr.ktx2/cTFRGB_9E5':
 		'c9facdadcbe39d60511fc2e67c41a86e919988a7721945c83fe5149181c49c2a',
 	'quarters-uastc.ktx2/cTFASTC_4x4_RGBA':
 		'c6198fe79470251443477568f60d7b7d930462a50772a2a4ec6c633a9055b772',
