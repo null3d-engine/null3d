@@ -4,6 +4,7 @@
 // move everything in between.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { MEMORY_REFUSED } from '../pages/lib/room.ts';
 import type { DeviceFacts } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
@@ -71,10 +72,40 @@ export interface Plan<Check = unknown> {
 	 * where `allowed` lets it lack that path, and posts a skip as the page's result.
 	 */
 	skipMissing?: { report: string; allowed: MissingAllowed };
+	/**
+	 * Where the runner tool can open runner pages, a runner page hands the run to a new one after it
+	 * has run this many pages. Each engine start in Safari can take one of the 8 fast slots that
+	 * its process has for WebAssembly memories, and Safari can keep a dropped one held while later
+	 * pages ask for memory. A new runner page starts with none of what the pages before it kept.
+	 */
+	tabEvery?: number;
 }
 
 /** How the runner page runs a plan's pages. */
-export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing'>;
+export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing' | 'tabEvery'>;
+
+/**
+ * The pages that a runner page runs before it hands the run to a new one: fewer than Safari's 8 fast
+ * slots, so the engines of one runner page never use them all up (D-94).
+ */
+export const PAGES_PER_TAB = 6;
+
+/**
+ * The failures that memory Safari kept from earlier pages explains: a refused memory (E1109, or the
+ * browser's own "Out of memory"), a lost GPU or context (E1302), and room for shared memory that
+ * did not come back.
+ */
+const HELD_MEMORY_FAILURE =
+	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
+
+/**
+ * Whether a page's failure in Safari earns one more run in a new runner page. Safari keeps memory
+ * that pages before it dropped, in a way that a new runner page does not inherit (D-92). A page
+ * whose failure that explains runs once more there, and fails only if it fails again.
+ */
+export function rerunsInNewTab(browser: string, verdict: readonly string[]): boolean {
+	return browser === 'Safari' && verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem));
+}
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {
@@ -116,9 +147,16 @@ export const OOM_STOP_PAGES = 3;
 /** The engine's code for a shared memory that the browser refused, and the browser's own words. */
 const OUT_OF_MEMORY = /\bE1109\b|out of memory/i;
 
-/** Whether a page failed because the browser refused it memory. */
+/**
+ * Whether a page failed because the browser refused it memory: with E1109 or the browser's own
+ * error, or with no result in time while the engine still waited for its memory.
+ */
 export const outOfMemory = (result: ItemResult | undefined): boolean =>
-	result?.ok === false && OUT_OF_MEMORY.test(String(result.error ?? ''));
+	result?.ok === false &&
+	(OUT_OF_MEMORY.test(String(result.error ?? '')) ||
+		(String(result.error).startsWith('no result within') &&
+			Array.isArray(result.trail) &&
+			result.trail.some((step) => String(step).includes(MEMORY_REFUSED))));
 
 /**
  * Whether a runner's browser keeps refusing memory, from whether each of its pages failed for lack

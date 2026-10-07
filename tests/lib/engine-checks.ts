@@ -71,6 +71,8 @@ export interface ReportedMode {
 	latency: string;
 	sketchThread: string;
 	renderThread: string;
+	/** Why the page draws when a worker was meant to, or null. */
+	renderFallback?: string | null;
 }
 
 /** What differs between the thread mode the engine reports and the mode the switches asked for. */
@@ -81,7 +83,9 @@ export function modeProblems(reported: ReportedMode, mode: EngineMode): string[]
 	if (reported.sketchThread !== mode.sketchThread)
 		problems.push(`ran the sketch on ${reported.sketchThread}, expected ${mode.sketchThread}`);
 	if (reported.renderThread !== mode.renderThread)
-		problems.push(`drew on ${reported.renderThread}, expected ${mode.renderThread}`);
+		problems.push(
+			`drew on ${reported.renderThread}, expected ${mode.renderThread}${reported.renderFallback ? ` (${reported.renderFallback})` : ''}`,
+		);
 	return problems;
 }
 

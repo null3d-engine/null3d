@@ -5,7 +5,7 @@ use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
     MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
-use null3d_core::cells::CELL_SIZE;
+use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
@@ -379,7 +379,9 @@ pub mod animation_problem {
 /// of the numbers they read and write. Every array holds 64-bit floats.
 pub mod query {
     /// The query's input: a ray's origin and direction, then its far limit; a sphere's centre,
-    /// then its radius at the far limit's place; or a box's lowest and highest corners.
+    /// then its radius at the far limit's place; or a box's lowest and highest corners. A
+    /// raycast's input goes on with its thresholds and the camera that sprites, points and lines
+    /// face, from `INPUT_POINT_THRESHOLD` on.
     pub const INPUT: u32 = 0;
     /// The hit records that queries write, `HIT_FLOATS` numbers each.
     pub const HITS: u32 = 1;
@@ -389,9 +391,33 @@ pub mod query {
     pub const RAYS: u32 = 3;
 
     /// Numbers in the input array.
-    pub const INPUT_FLOATS: u32 = 8;
+    pub const INPUT_FLOATS: u32 = 26;
     /// Where the input holds the far limit or the radius.
     pub const INPUT_LIMIT: u32 = 6;
+    /// The point threshold, or a number below 0 for none.
+    pub const INPUT_POINT_THRESHOLD: u32 = 7;
+    /// The line threshold, or a number below 0 for none.
+    pub const INPUT_LINE_THRESHOLD: u32 = 8;
+    /// The camera's kind: one of `CAMERA_NONE`, `CAMERA_PERSPECTIVE` and `CAMERA_ORTHOGRAPHIC`.
+    pub const INPUT_CAMERA: u32 = 9;
+    /// The camera's position in the world, three numbers.
+    pub const INPUT_EYE: u32 = 10;
+    /// The camera's unit axes to the right, up and along its view, three numbers each.
+    pub const INPUT_RIGHT: u32 = 13;
+    pub const INPUT_UP: u32 = 16;
+    pub const INPUT_FORWARD: u32 = 19;
+    /// The world units of a CSS pixel across and up the view: at a depth of 1 for a perspective
+    /// camera.
+    pub const INPUT_PIXEL: u32 = 22;
+    /// The distances to the camera's near and far planes.
+    pub const INPUT_NEAR: u32 = 24;
+    pub const INPUT_FAR: u32 = 25;
+    /// No camera: rays miss the rows that need one.
+    pub const CAMERA_NONE: u32 = 0;
+    /// A perspective camera.
+    pub const CAMERA_PERSPECTIVE: u32 = 1;
+    /// An orthographic camera.
+    pub const CAMERA_ORTHOGRAPHIC: u32 = 2;
     /// Numbers per ray of a batch.
     pub const RAY_FLOATS: u32 = 6;
 
@@ -472,7 +498,7 @@ pub fn typescript() -> String {
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
-        ("CELL", &[("SIZE", CELL_SIZE as u32)]),
+        ("CELL", &[("SIZE", CELL_SIZE as u32), ("MAX", MAX_CELLS)]),
         (
             "LIGHT_KIND",
             &[
@@ -546,6 +572,19 @@ pub fn typescript() -> String {
                 ("RAYS", query::RAYS),
                 ("INPUT_FLOATS", query::INPUT_FLOATS),
                 ("INPUT_LIMIT", query::INPUT_LIMIT),
+                ("INPUT_POINT_THRESHOLD", query::INPUT_POINT_THRESHOLD),
+                ("INPUT_LINE_THRESHOLD", query::INPUT_LINE_THRESHOLD),
+                ("INPUT_CAMERA", query::INPUT_CAMERA),
+                ("INPUT_EYE", query::INPUT_EYE),
+                ("INPUT_RIGHT", query::INPUT_RIGHT),
+                ("INPUT_UP", query::INPUT_UP),
+                ("INPUT_FORWARD", query::INPUT_FORWARD),
+                ("INPUT_PIXEL", query::INPUT_PIXEL),
+                ("INPUT_NEAR", query::INPUT_NEAR),
+                ("INPUT_FAR", query::INPUT_FAR),
+                ("CAMERA_NONE", query::CAMERA_NONE),
+                ("CAMERA_PERSPECTIVE", query::CAMERA_PERSPECTIVE),
+                ("CAMERA_ORTHOGRAPHIC", query::CAMERA_ORTHOGRAPHIC),
                 ("RAY_FLOATS", query::RAY_FLOATS),
                 ("HIT_FLOATS", query::HIT_FLOATS),
                 ("HIT_SLOT", query::HIT_SLOT),

@@ -50,6 +50,12 @@ function glslStages(): [string, GlslStage][] {
 
 const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
 
+/**
+ * The texture units that every stage leaves free, for the per-pixel inputs of later features, such
+ * as probes of light or the tables of area lights.
+ */
+const SPARE_TEXTURE_UNITS = 4;
+
 describe('WebGL2 slots of bind groups', () => {
 	const stages = glslStages();
 
@@ -86,11 +92,11 @@ describe('WebGL2 slots of bind groups', () => {
 		}
 	});
 
-	it('keeps each stage within the texture units that every device gives it', () => {
+	it('keeps each stage within the texture units that every device gives it, with room to spare', () => {
 		let most: [string, number] = ['', 0];
 		for (const [name, stage] of stages) {
 			const units = new Set(stage.textures.map(key)).size;
-			expect([name, units <= MIN_STAGE_TEXTURE_UNITS]).toEqual([name, true]);
+			expect([name, units <= MIN_STAGE_TEXTURE_UNITS - SPARE_TEXTURE_UNITS]).toEqual([name, true]);
 			if (units > most[1]) most = [name, units];
 		}
 		for (const [name, program] of glslPrograms()) {

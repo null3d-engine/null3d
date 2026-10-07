@@ -36,6 +36,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run test:real-browsers Safari Firefox` | The same test pages and the image test manifest in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks in Chrome on an Android phone over USB and on a runner page that waits on the local network (an iPad's Safari) |
 | `bun run devices:cloud` | The same checks on BrowserStack Automate's real phones, tablets and desktops, with no setup in a browser: `--tier A` or `--tier B` picks the devices of [device sessions](.dev/devices.md#browserstack-automate), `--only` names runners, `--part 1/3` runs a third of them, `--parallel` limits the sessions at once, and `--check` checks the account and the devices without a run |
+| `bun run devices:record` | Print the record of tested devices as one table, with every run's plans and results. [Tested devices](.dev/tested-devices.md) says how the record is kept |
 | `bun run test:bench` | The production build of the benchmark pages of both engines in Chrome, through Playwright |
 | `bun run parity` | Compare each benchmark scene's hold frame in null3D with three.js's, per GPU tier; `--save-baselines` stores how much three.js's two renderers differ, for devices that lack one of them |
 | `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame, own work, busiest thread and frame pacing; `--sweep` runs each scene from one object up, on both null3D paths in both latency modes and both three.js renderers, and compares each path with three.js's faster renderer and with three.js on the same API; `--jobs 1,2,4` runs the null3D pages at each job worker count; `--compare <baseline>,<new>` runs the null3D pages of two built checkouts in turns and fails when the new build is slower, as the benchmark job in CI does; `--shard 1/3` runs one share of those pages, as each CI shard does, and `--merge <folder>` judges the shares' records as one comparison; `--dev` runs the dev server's pages instead of the production build |
@@ -89,7 +90,7 @@ Code review enforces these rules.
 4. No thread waits synchronously for another on the critical path, and no worker makes a synchronous call to the main thread.
 5. The sketch worker and the render worker wait with `Atomics.waitAsync` (a `MessageChannel` message on Firefox before 145). Only job workers block with `Atomics.wait`.
 6. The WebGPU path stays within WebGPU's default limits. Where the engine supports compatibility mode, it also stays within that mode's lower limits (the portable budget in [GPU tiers and backends](docs/concepts/backends.md#the-portable-budget)). Anything beyond these needs a capability flag and a fallback. For example, compute workgroups use at most 128 invocations.
-7. Per-instance data reaches vertex shaders through vertex buffers, never through storage buffers.
+7. Per-instance data reaches vertex shaders through vertex buffers, never through storage buffers. The one exception is the `?instances=index` test switch on core WebGPU, which [D-23](.dev/decisions/D-23-index-instances.md) measures.
 8. Indirect draws keep first-instance at 0. Buckets select their data with vertex-buffer offsets.
 9. Dynamic buffer offsets align to 256 bytes.
 10. WGSL uses only the three language features that Chrome, Safari and Firefox all report: `packed_4x8_integer_dot_product`, `pointer_composite_access` and `readonly_and_readwrite_storage_textures`. Any other language feature needs a capability flag and a fallback. Flat interpolation uses `@interpolate(flat, either)`.
@@ -159,6 +160,17 @@ Published Markdown (every page under `docs/`, the skills, the README, the packag
 - Run the humanizer skill over any prose you write or change. This covers user-facing text that lives in data or code too: the mapping notes, error messages and TSDoc comments.
 
 The docs style check catches the mechanical part of these rules. It blocks build-process words such as milestone and checkpoint, and the command line tool run by the wrong name. It checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
+
+## Record the reasons
+
+The owner set this rule on 7 October 2026. Every pull request records its reasons in `.dev/`, in the same pull request. Pull request text, commit messages and chat are not enough.
+
+- A design choice or an owner's ruling: a [decision record](.dev/decisions/README.md), new or an addendum. It gives the problem, the figures, the options rejected and why, and who decided and when.
+- A bug fix: the cause, and why the fix is right, in the record or guide that owns the area. Examples are the [implementation notes](.dev/implementation-notes.md), the driver bugs, the [image tests](.dev/image-tests.md) and the [benchmarks](.dev/benchmarks.md).
+- A device or benchmark run: a new run file in the [tested devices](.dev/tested-devices.md) record, or a row in the [benchmark results](.dev/benchmark-results.md).
+- A lesson about process or tools: the guide that covers it, such as [pull requests and parallel work](.dev/pull-requests.md) or the benchmarks.
+
+The `Docs-Checked:` trailer names the `.dev` page that holds the reason, or says why there is no new reason. [Pull requests and parallel work](.dev/pull-requests.md#before-you-open-a-pull-request) gives an example of each kind.
 
 ## Commit gates
 

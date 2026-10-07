@@ -254,7 +254,7 @@ export class WebGPUSceneRenderer implements Renderer {
 			try {
 				this.frames.replay(frame);
 			} finally {
-				this.backend.canvasTarget = undefined;
+				this.backend.endCapture();
 				this.backend.resetCounts();
 			}
 		});

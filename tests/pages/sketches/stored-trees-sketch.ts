@@ -3,7 +3,13 @@
 // a layer of its own, so a raycast finds one copy alone. The same seeded rays must give the same
 // hits through both, since a stored tree answers as the tree that the engine builds. The sketch
 // posts the comparison as `results` when the page asks.
-import { defineSketch, type InstanceBatch, type Object3D, type RaycastHit } from '@null3d/engine';
+import {
+	defineSketch,
+	type InstanceBatch,
+	type Object3D,
+	type QueryTarget,
+	type RaycastHit,
+} from '@null3d/engine';
 import { mulberry32 } from '../../../bench/scenes/spec';
 import type { StoredTreeResults } from '../lib/stored-trees';
 
@@ -30,7 +36,7 @@ export default defineSketch(async ({ scene, assets, page }) => {
 		for (const part of [...copies[copy].objects, ...copies[copy].batches])
 			part.setLayers(LAYERS[copy]);
 	/** A hit's object as its place in its copy, which both copies share. */
-	const placeOf = (copy: keyof typeof copies, object: Object3D | InstanceBatch | null) => {
+	const placeOf = (copy: keyof typeof copies, object: QueryTarget | null) => {
 		const { objects, batches } = copies[copy];
 		const k = objects.indexOf(object as Object3D);
 		return k >= 0 ? `object ${k}` : `batch ${batches.indexOf(object as InstanceBatch)}`;

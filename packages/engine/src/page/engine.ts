@@ -61,6 +61,7 @@ import {
 	type PowerPreference,
 	probeCapabilities,
 	readDeviceHints,
+	type WorkerProbeFailure,
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
@@ -252,7 +253,9 @@ export interface EngineOptions {
 	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
-	 * GPU has finished the first frame.
+	 * GPU has finished the first frame. Before `core`, `memory-wait` comes when the browser has
+	 * refused the engine's memory for 10 seconds. The engine then tries for about 35 seconds more
+	 * before it fails with E1109.
 	 */
 	onProgress?: (stage: StartupStage) => void;
 	/**
@@ -296,7 +299,7 @@ export interface EngineOptions {
  *
  * @category api/engine
  */
-export type StartupStage = 'core' | 'sketch' | 'first-frame';
+export type StartupStage = 'memory-wait' | 'core' | 'sketch' | 'first-frame';
 
 /**
  * The GPU path the engine chose, and what it offers.
@@ -397,7 +400,34 @@ export interface EngineMode {
 	 * shared.
 	 */
 	memoryMaximumMiB: number | null;
+	/**
+	 * Why the page draws when a worker was meant to, or null when the thread that draws is the one
+	 * that the options asked for. `report.worker` holds the probe's answer.
+	 */
+	renderFallback: RenderFallback | null;
 }
+
+/**
+ * Why the engine draws on the page's thread when its options asked a worker to draw:
+ * - `no-answer`: the probe worker, and a second one after it, gave no answer within their time
+ *   limits. A stalled GPU call or a very busy machine causes this.
+ * - `failed-to-start`: the probe worker's script failed to load or run.
+ * - `no-surface`: a worker cannot draw with the GPU path here, as the browser offers no context of
+ *   it for an `OffscreenCanvas` in a worker.
+ *
+ * @category api/engine
+ */
+export type RenderFallback = WorkerProbeFailure['failure'] | 'no-surface';
+
+/** Why a worker cannot draw, in words, for the warning in development builds. */
+function fallbackText(report: CapabilityReport): string {
+	return 'failure' in report.worker
+		? report.worker.error
+		: 'this browser cannot draw with the chosen GPU path in a worker';
+}
+
+/** True once an engine on the page has warned that the page draws instead of a worker. */
+let warnedFallback = false;
 
 /**
  * A running engine, as `createEngine` returns it.
@@ -519,7 +549,7 @@ export function chooseTier(
 	wanted: GpuSwitch,
 	inWorker: boolean,
 ): TierChoice | null {
-	const worker = 'error' in report.worker ? undefined : report.worker;
+	const worker = 'failure' in report.worker ? undefined : report.worker;
 	const webgpu =
 		report.webgpu.compatibilityAdapter && (!inWorker || worker?.offscreenWebGPU === true);
 	const webgl2 = inWorker ? worker?.offscreenWebGL2 === true : report.webgl2.available;
@@ -1041,7 +1071,7 @@ async function startEngine(
 	const sketchOnPage = sketchThread === 'main';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
-		loadCore(build, maximumMiB).then((loaded) => {
+		loadCore(build, maximumMiB, () => onProgress('memory-wait')).then((loaded) => {
 			coreMs = performance.now() - startedAt;
 			return loaded;
 		}),
@@ -1313,9 +1343,17 @@ async function startEngine(
 			(safeGpu && chooseTier(report, safeGpu, inWorker)) || chooseTier(report, requested, inWorker);
 
 		let choice = pickTier(renderThread !== 'main');
+		let renderFallback: RenderFallback | null = null;
 		if (!choice && renderThread !== 'main' && !movedTo) {
 			// Worker rendering is unavailable here, so the page draws while the sketch worker computes
 			// the frames, in pipelined mode. Low latency needs the sketch worker to draw.
+			renderFallback = 'failure' in report.worker ? report.worker.failure : 'no-surface';
+			if (DEV && !warnedFallback) {
+				warnedFallback = true;
+				console.warn(
+					`null3D: the page draws instead of a worker, because ${fallbackText(report)}. The page's thread then shares its time with the drawing until the page reloads. engine.mode.renderFallback and engine.report.worker give the reason.`,
+				);
+			}
 			if (DEV && latency === 'low')
 				console.warn(
 					'null3D: low latency needs a worker that draws, and this browser cannot draw in a worker. The engine runs in pipelined mode, and the page draws.',
@@ -1375,6 +1413,7 @@ async function startEngine(
 			presetCheck: storedCheck ?? null,
 			crashedStarts: history.crashed,
 			memoryMaximumMiB: threaded ? maximumMiB : null,
+			renderFallback,
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];

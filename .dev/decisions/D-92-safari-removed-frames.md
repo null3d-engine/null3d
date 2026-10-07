@@ -1,6 +1,6 @@
 # D-92: Frame restart pages in runner pages of their own, and notes for memory that removed frames keep
 
-Status: decided. Date: 7 October 2026. Task: M2-R26.
+Status: decided, and confirmed by the owner on 7 October 2026. Date: 7 October 2026. Task: M2-R26.
 
 Summary: Safari on CI's Mac sometimes keeps a removed frame's whole page, and the shared memory it reaches, for minutes, even with no engine. So each frame restart page runs in a runner page of its own. Memory that stopped engines in removed frames leave held is a note, not a failure.
 
@@ -24,6 +24,8 @@ Diagnostic runs on CI's Mac (Safari 26.6.1), on a branch of their own that never
 | Restart pages that count the whole room (run 37559349506) | 12 of 36 places held for 118 s and 123 s after `frame-destroyed-restarts-low-latency` and the next page; other pages started at 2, 3 or 6 and were back to full by their end |
 | Safari's budget of bytes for these memories | 21 memories of 1 GiB initial size, against 36 to 38 places of address space; engines start at 1.1 MiB, so the budget does not refuse them |
 
+The same probe ran on the owner's Mac (Safari 26.6.2) on 7 October 2026, in plain Safari and through WebDriver. All 8 pages passed. Plain Safari kept a removed frame's page with no engine, and 1 place of room, for at least the 19 s that the probe watched. The probe stops watching at 19 s, so it cannot tell 19 s from 19 minutes. On CI, held room came back after about 2 minutes. So Safari keeps removed frames without automation too.
+
 How the data was produced: `gh workflow run ci.yml` on the diagnostic branch, running only the Safari 1/2 shard, at most 4 copies at once. The test server saved Safari's memory map with `vmmap` when a page posted a refusal. The probe is `tests/pages/frame-memory.html`, on the branch `probe/ios-frame-memory`.
 
 ## Decision
@@ -39,3 +41,55 @@ The browser holds the memory. A removed frame's page that Safari keeps reaches e
 - `tests/lib/runs.ts` (`ownTab`, `handovers`, the wait's `onHandover`), `tests/pages/runner.ts` and `tests/real-browsers.ts` hand the run over; `tests/lib/plans.ts` marks the pages and judges the held room.
 - A run takes about 5 more runner pages, a few seconds each. Runner pages that the tool cannot open, on phones, tablets and the device cloud, run these pages in place as before.
 - The owner can overrule. A fix in Safari, or proof of an engine part, reopens the question.
+
+## Addendum, 2026-10-07
+
+A review of this record against WebKit's source and bug list found three things that change how to read the data. The decision stands.
+
+### WebKit already knows this behavior
+
+[WebKit bug 247984](https://bugs.webkit.org/show_bug.cgi?id=247984), "References to iframes seem do not get garbage collected", has been open since November 2022. It holds a sample with a `WebAssembly.Memory` in a removed frame, the same case as ours. Apple's engineers replied that the frame's page is still alive, so its memory is too. On 26 April 2023 one of them found no leak, since removed frames do get destroyed. But "GC is not destroying frames as fast as they are constructed", which "looks like GC not being aggressive enough". No standard says when a browser must free a removed frame's memory. So the hold is known behavior of Safari's collector, not a new fault.
+
+### Safari collects and tries again before it refuses
+
+When a new WebAssembly memory does not fit, Safari's JavaScript engine runs one full garbage collection and tries again (`tryAllocate` in WebKit's `WasmMemory.cpp`). Every collection then frees the dead WebAssembly memories it found at once. So a memory that nothing reaches comes back at the first refusal.
+
+The collection runs only on the heap of the thread that asked. The page and its same-origin frames share the main thread's heap, and each worker has a heap of its own. When the last reference to a memory was in another thread, the memory stays held. A clean repro on the owner's Mac proved it on 7 October 2026, in 20 of 20 rounds each way. Memories that one thread dropped kept the other thread's request refused, through 3 s of asks every 250 ms. One request from the thread that dropped them then freed them at once. Memories of a worker that the page ended came back at once, 20 of 20. This is the likely reason a worker's request can fail while the page holds dead memories. [D-94](D-94-memory-retry-window.md#open) gives what it means for the engine.
+
+### What the probe can and cannot show
+
+- The probe's kept frames survived at least 4 refusals, each with a full collection of the main thread's heap. So something still reached them. Safari scans the stack conservatively: a value on the stack that looks like a pointer keeps its object alive. WebKit's own leak tests make 10 to 20 frames and pass when any one is freed, for this reason. A Web Inspector heap snapshot tells a conservative root from a strong reference that outlived the frame. Only the second would be a WebKit fault.
+- The probe's frames loaded Vite's live-reload client, and the parent page read each frame's window. Both put references to the frame on the page's side.
+- The probe and the whole-room counts keep every memory they count in one array and drop them together. One stale pointer to that array holds all of them. This most likely explains a WebDriver run that found no room at all: two frames of 256 MiB each cannot take about 120 places.
+- A clean repro left these out. It used static pages and a held block of memories, and its parent never touched a frame's window. In plain Safari 26.6.2 on the owner's Mac, 20 of 20 removed frames gave their memory back at the first request. Frames that gave their memory to a worker did so within 1 s. That held for 20 of 20 with the worker ended, and 20 of 20 with it running. So Safari did not keep clean removed frames there. The figures above give the room that the tests saw held. They do not show what held it.
+
+### Frame restarts: a fall that the second round held
+
+The merge queue's Safari failed `frame-restarts-low-latency` on 7 October 2026 (run 37596224427). The room fell from 10 (the count's cap) to 8 after 43 starts in frames. It fell to 7 after 43 more. That second round lost no more than a round may keep. But the total fall of 3 was more than the 2 that the check put down to lost address space.
+
+A leak in the engine loses room in every round, since each of the 43 engines would keep its memory. Here the second round held the room. So the fall came once, from what Safari kept. Two causes fit, and neither is the engine's. Safari can keep what a removed frame reaches, as above. And a dropped memory that held one of Safari's 8 fast slots can stay held while the page keeps asking for memory ([D-94](D-94-memory-retry-window.md#open)).
+
+So in `frame-restarts-*`, a fall that the second round held is now a note, as held room is in `frame-destroyed-restarts-*`. Room that the second round loses too still fails, and so does a start or a stop that fails. The restarts on the page keep the old rule. Their engines stop with no frame, so a fall there points at the engine.
+
+### Every runner page runs a few pages
+
+Where the runner tool opens runner pages, a runner page now also hands the run to a new one after 6 pages. It does the same around a page of its own. Each engine start in Safari can take one of the 8 fast slots that a Safari process has for its WebAssembly memories. Safari can keep a dropped one held while later pages ask for memory ([D-94](D-94-memory-retry-window.md#open)). The merge queue's Safari runs failed late in their long runs. They hit E1109 and held room, and on 7 October 2026 a lost WebGL2 context on S1 (run 37593573711). A new runner page starts with none of what the pages before it kept. Six pages stay below the 8 slots, even when every page leaves one held. Pages that a runner page only skips do not count.
+
+### A Safari page that fails for held memory runs once more
+
+Some failures in Safari fit memory that it kept. They are E1109, a browser "Out of memory", E1302 (a lost GPU or context), and room for shared memory that did not come back. A page that fails in one of these ways now runs once more after the run. It runs in a new runner page, which inherits none of what Safari kept. It fails only if it fails again there. The owner asked for this on 7 October 2026, so that Safari's kept memory stops failing the merge queue while real faults still show.
+
+The runner tool prints each rerun as RERUN, with the first failure, and how many pages passed the second time. It writes the same into the first run's results as `reruns`. A fault in the engine fails both times, so it still fails the run. A rerun that passes leaves its first failure in the record, so a fault that comes now and then stays visible. Other browsers get no rerun.
+
+### The Safari test harness, in short
+
+Three guards keep memory that Safari holds from failing the Safari runs, while a real fault still fails:
+
+| Guard | What it does | Why |
+| --- | --- | --- |
+| A new runner page every 6 pages | A runner page hands the run to a new one after 6 pages that it ran, and around each page that runs in a runner page of its own | A Safari process has 8 fast slots, and each engine start can take one. A new runner page inherits nothing that the pages before it kept |
+| A fall that the second round held is a note | In `frame-restarts-*`, as in `frame-destroyed-restarts-*`, room held once is a note; a loss in the second round fails | A leak in the engine loses room in every round |
+| One more run in a new runner page | In Safari, a page that fails with E1109, "Out of memory", E1302 or room that did not come back runs once more, and fails only if it fails again | The page's failure then comes from what earlier pages left, and the rerun proves it. Each rerun prints as RERUN and goes into the results |
+
+The proof, on 7 October 2026: CI run 37603199761 ran 4 copies of each Safari shard with all three guards. All 8 jobs passed, with no rerun, and each opened 30 to 33 runner pages. The merge queue's Safari jobs then passed 2 of 2 (run 37604797713). On the owner's Mac, the whole Safari plan passed 965 of 966 pages with the first two guards. The one failure was `image-vertex-formats-compat-compat-single-threaded`: 6 pixels differed from the first thread mode's image. It passed 10 of 10 in 5 more runs, and no earlier run shows it. CI's Safari has no WebGPU, so it skips that page.
+

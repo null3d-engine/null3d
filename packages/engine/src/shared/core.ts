@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		cellCulling: boolean,
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
+		indexInstances: boolean,
 		largeWorld: boolean,
 		gpuOcclusion: boolean,
 		shadowDepthBits: number,
@@ -106,6 +107,11 @@ export interface CoreGlue extends CoreErrors {
 	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
 	/**
+	 * The times that an object or an instance row entered a new grid cell while every cell was in
+	 * use, so that it went into the origin's cell instead.
+	 */
+	cellsRefused(): number;
+	/**
 	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
 	 * is the newest frame that the thread that draws drew with every pipeline built, as for
 	 * `recordFrame`.
@@ -163,7 +169,8 @@ export interface CoreGlue extends CoreErrors {
 	): number;
 	/**
 	 * Creates a sprite batch of a quad mesh and a sprite material, with an atlas of `columns` by
-	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`.
+	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`. `points` marks a batch of
+	 * points, which a raycast's point threshold reaches.
 	 */
 	createSpriteBatch(
 		capacity: number,
@@ -173,6 +180,7 @@ export interface CoreGlue extends CoreErrors {
 		columns: number,
 		rows: number,
 		screenSize: boolean,
+		points: boolean,
 	): number;
 	/**
 	 * Creates a line batch of `points` points of the segment mesh and a line material, joined as

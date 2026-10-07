@@ -209,7 +209,11 @@ fn a_generated_cube_fills_whole_in_the_frame_after_its_generator_arrived_and_tha
         operands(&commands, Op::GenerateTexture),
         [vec![id, generator]]
     );
-    assert!(operands(&commands, Op::WriteTexture).is_empty());
+    assert!(
+        operands(&commands, Op::WriteTexture)
+            .iter()
+            .all(|o| o[0] != id)
+    );
     assert!(operands(&commands, Op::ReleaseImage).is_empty());
     let maps = bound_maps(&commands);
     assert!(

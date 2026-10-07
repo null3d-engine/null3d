@@ -79,6 +79,9 @@ function rowCalls(log: string[]): LineBatchRows {
 		setLayers: (mask) => log.push(`layers ${mask}`),
 		markDirty: (start, count) => log.push(`dirty ${start} ${count}`),
 		destroy: () => log.push('destroy'),
+		destroyedFrame: -1,
+		listen: (_target, type) => log.push(`on ${type}`),
+		unlisten: (_target, type) => log.push(`off ${type}`),
 	};
 }
 

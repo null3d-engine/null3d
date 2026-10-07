@@ -10,6 +10,33 @@ export function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
 	return windowValue<T>(page, '__null3dResult', timeoutMs);
 }
 
+/** The steps that the page has noted in its trail so far. */
+const pageTrail = (page: Page): Promise<string[]> =>
+	page.evaluate(() => (globalThis as { __null3dProgress?: string[] }).__null3dProgress ?? []);
+
+/**
+ * Waits until the page publishes its result, for as long as the page keeps noting steps in its
+ * trail. Each wait lasts `stallMs`, and a wait in which the page noted no new step throws, with the
+ * trail's last steps. A page whose work takes longer on a busy machine gets the time it needs, and
+ * a stuck page still fails after one wait.
+ */
+export async function pageResultWhileProgressing<T>(page: Page, stallMs: number): Promise<T> {
+	let steps = -1;
+	for (;;) {
+		try {
+			return await pageResult<T>(page, stallMs);
+		} catch (e) {
+			if (!(e instanceof errors.TimeoutError)) throw e;
+			const trail = await pageTrail(page);
+			if (trail.length <= steps)
+				throw new Error(
+					`no result and no new step within ${stallMs / 1000} s. The last steps:\n${trail.slice(-5).join('\n')}`,
+				);
+			steps = trail.length;
+		}
+	}
+}
+
 /**
  * Opens a page and returns the result it publishes, as the runner page records it: a page that
  * publishes nothing in time gives a failure with the steps it got through, and never throws.
@@ -20,9 +47,10 @@ export async function loadResult(page: Page, path: string, timeoutMs: number): P
 		return await pageResult<ItemResult>(page, timeoutMs);
 	} catch (e) {
 		if (!(e instanceof errors.TimeoutError)) throw e;
-		const trail = await page.evaluate(
-			() => (globalThis as { __null3dProgress?: string[] }).__null3dProgress ?? [],
-		);
-		return { ok: false, error: `no result within ${timeoutMs / 1000} s`, trail };
+		return {
+			ok: false,
+			error: `no result within ${timeoutMs / 1000} s`,
+			trail: await pageTrail(page),
+		};
 	}
 }

@@ -53,6 +53,9 @@ pub struct SpriteLook {
     pub rows: u32,
     /// True when sizes are in CSS pixels of the screen, false when they are in world units.
     pub screen_size: bool,
+    /// True for a batch of points: sprites that a query's point threshold reaches, as three.js's
+    /// `Raycaster` reaches `Points`.
+    pub points: bool,
 }
 
 impl SpriteLook {
@@ -62,6 +65,15 @@ impl SpriteLook {
             columns: columns.clamp(1, MAX_ATLAS_SIDE),
             rows: rows.clamp(1, MAX_ATLAS_SIDE),
             screen_size,
+            points: false,
+        }
+    }
+
+    /// The same look for a batch of points.
+    pub fn as_points(self) -> Self {
+        Self {
+            points: true,
+            ..self
         }
     }
 

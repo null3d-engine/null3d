@@ -23,6 +23,7 @@
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan skinning-webgpu --lan ipad-safari
 //   bun tests/real-browsers.ts --plan animation --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan jitter --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
@@ -43,7 +44,9 @@
 //                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
 //                       transform feedback, skinning-webgpu, which times the same two ways on
 //                       WebGPU, with a compute pass that skins once per frame, animation, which times the core's animation step on
-//                       the job workers for crowds of 100 and 500 characters, governor, which runs the quality governor's stress
+//                       the job workers for crowds of 100 and 500 characters, jitter, which flies a
+//                       camera past objects at the origin and 1,000 km and 6,378 km out on each GPU
+//                       path, and compares each object's motion from frame to frame, governor, which runs the quality governor's stress
 //                       test on each GPU path: every live step down and back up under a load,
 //                       then a scene too heavy for the GPU whose frame rate the governor must bring
 //                       back, tab-memory, which grows GPU textures, GPU buffers and a WebAssembly
@@ -103,9 +106,13 @@
 //                       it, they open in the background, and Safari's and Firefox's runner windows
 //                       move almost wholly past the main display's left edge, at a small size, or at
 //                       their own size in timed plans
+// In Safari, a page that fails with a refused memory, a lost GPU or context, or room for shared
+// memory that did not come back runs once more in a new runner page after the run, and fails only
+// if it fails again there. Each such rerun prints as RERUN and goes into the run's results.
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
-// results depend on. After a fixed plan, it prints each browser's row for the record of tested
-// devices, from what the runner page found about its browser, device and GPU. A runner whose name
+// results depend on. After a fixed plan, it prints each browser's entry for the record of tested
+// devices, from what the runner page found about its browser, device and GPU: the run's file and
+// the folder where it goes. A runner whose name
 // names one browser warns when its page ran in another.
 import { execFileSync, spawn } from 'node:child_process';
 import {
@@ -130,6 +137,13 @@ import {
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
+import {
+	factsOf,
+	RECORD_DIR,
+	readRecord,
+	recordFiles,
+	runEntryText,
+} from '../tools/lib/tested-devices.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import {
 	type AppWindow,
@@ -150,7 +164,7 @@ import {
 	NO_FRAMES,
 	type NoFramesRecord,
 	noFramesText,
-	testedDeviceRow,
+	testedDeviceEntry,
 } from './lib/device-record.ts';
 import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
@@ -164,6 +178,7 @@ import {
 	governorSummary,
 	gpuPathOf,
 	itemsNeeded,
+	jitterSummary,
 	judge,
 	MEMORY_LIMIT_CHECKS,
 	type MissingAllowed,
@@ -188,6 +203,7 @@ import {
 	keepsRefusingMemory,
 	OOM_WINDOW_PAGES,
 	outOfMemory,
+	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
 	type PlanPlace,
@@ -198,6 +214,7 @@ import {
 	readShard,
 	receivedAt,
 	repeatItems,
+	rerunsInNewTab,
 	runName,
 	SHARD_FORMAT,
 	type Shard,
@@ -446,24 +463,25 @@ export const shieldsText = (state: ShieldsState | null) =>
 const browserOf = (device: DeviceFacts) => device.browser ?? detectBrowser(device);
 
 /**
- * Prints a row of the record of tested devices for each runner whose page started, ready to paste
- * into `.dev/tested-devices.md`.
+ * Prints each runner's entry for the record of tested devices, for the runners whose page started:
+ * the run's file, and the folder where it goes, or a new folder's README.
  */
-function printRecordRows(
+function printRecordEntries(
 	run: string,
 	runners: readonly LaunchedRunner[],
 	summary: Readonly<Record<string, RunnerSummary>>,
 ): void {
-	const rows = runners.flatMap(({ name, launch }) => {
+	const { rows } = readRecord(recordFiles(REPO_ROOT));
+	const entries = runners.flatMap(({ name, launch }) => {
 		const device = readDevice(run, name);
 		const counts = summary[name];
-		return device && counts
-			? [testedDeviceRow({ run, launch: launch.kind, device, ...counts })]
-			: [];
+		if (!device || !counts) return [];
+		const entry = testedDeviceEntry({ run, launch: launch.kind, device, ...counts });
+		return [runEntryText(rows, run, factsOf(entry.facts), entry.plans, entry.result)];
 	});
-	if (rows.length > 0)
+	if (entries.length > 0)
 		console.log(
-			`\nRows for the record of tested devices (.dev/tested-devices.md):\n${rows.join('\n')}\n`,
+			`\nEntries for the record of tested devices (${RECORD_DIR}/). Add the commit to the plans, and what the run found to the result:\n\n${entries.join('\n')}`,
 		);
 }
 
@@ -1258,13 +1276,16 @@ async function runPlan(
 	launches: Launches,
 	local: DevServer,
 	cloud?: CloudSessions,
-): Promise<number> {
+	rerun = false,
+): Promise<PlanOutcome> {
 	const run = runName(options.plan);
+	const reruns = new Map<string, { item: PlanItem<Check>; verdict: string[] }[]>();
 	const timed = TIMED_PLANS.has(options.plan);
 	const paths = withGpuPaths(items, options.missing);
 	const plan = writePlan(run, paths.items, {
 		...(REPORT_ON_TOP_PLANS.has(options.plan) && { reportOnTop: true }),
 		...(timed && { measureRefresh: true }),
+		tabEvery: PAGES_PER_TAB,
 		...paths.flags,
 	});
 	const recovery = new QuietRecovery(plan, deviceReopener(run, launches, local.url));
@@ -1426,7 +1447,11 @@ async function runPlan(
 			} else {
 				counts.fail++;
 				if (item.check.kind === 'image') imageFailures++;
-				console.log(`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}`);
+				const again = !rerun && rerunsInNewTab(browser.name, verdict);
+				if (again) reruns.set(name, [...(reruns.get(name) ?? []), { item, verdict }]);
+				console.log(
+					`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}${again ? ' (RERUN: runs once more in a new runner page)' : ''}`,
+				);
 			}
 			for (const text of notes) console.log(`      note: ${text}`);
 			const heat = heatByRunner.get(name)?.get(item.id);
@@ -1445,6 +1470,7 @@ async function runPlan(
 			overloadSummary,
 			skinningSummary,
 			animationSummary,
+			jitterSummary,
 			tabMemorySummary,
 			soakSummary,
 			warmUpTimeSummary,
@@ -1467,10 +1493,54 @@ async function runPlan(
 		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
 		if (endedEarly) console.log(endedEarlyText(name, endedEarly));
 	}
-	printRecordRows(run, runners, summary);
+	printRecordEntries(run, runners, summary);
 	console.log(`results: ${join(RUNS_DIR, run)}`);
 	if (imageFailures > 0)
 		console.log('Review the new and changed images with their diffs: bun run images:review');
+	return { run, failures, reruns };
+}
+
+/** A plan's run: its name, its failures, and the failed pages that run once more, by runner. */
+interface PlanOutcome {
+	run: string;
+	failures: number;
+	reruns: Map<string, { item: PlanItem<Check>; verdict: string[] }[]>;
+}
+
+/**
+ * Runs each page that failed in Safari in a way that kept memory explains once more, each in a new
+ * runner page, and returns the run's failures: those of the first run, less the pages that passed
+ * the second time. Each rerun is printed, and recorded in the first run's results as `reruns`, so
+ * a fault that a second run hides stays in the record.
+ */
+async function rerunInNewTabs(
+	outcome: PlanOutcome,
+	options: Options,
+	runners: readonly LaunchedRunner[],
+	launches: Launches,
+	local: DevServer,
+	cloud?: CloudSessions,
+): Promise<number> {
+	let failures = outcome.failures;
+	for (const [name, pages] of outcome.reruns) {
+		const runner = runners.find((r) => r.name === name);
+		if (!runner) continue;
+		console.log(
+			`\nRERUN ${name}: ${pages.length} pages failed in a way that memory Safari kept explains. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
+		);
+		const items = pages.map(({ item }) => ({ ...item, ownTab: true as const }));
+		const again = await runPlan(options, items, [runner], launches, local, cloud, true);
+		failures += again.failures - pages.length;
+		const record = {
+			rerunIn: again.run,
+			pages: pages.map(({ item, verdict }) => ({ id: item.id, firstVerdict: verdict })),
+			failedAgain: again.failures,
+		};
+		writeRunnerFile(outcome.run, name, 'reruns', record);
+		console.log(
+			`RERUN ${name}: ${pages.length - again.failures} of ${pages.length} passed in a new runner page, ${again.failures} failed again (run ${again.run})`,
+		);
+	}
 	return failures;
 }
 
@@ -1682,9 +1752,10 @@ async function main(): Promise<void> {
 		const names = builds.map(({ name }) => name);
 		if (names.length > 0)
 			for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl, names);
-		failures = items
-			? await runPlan(options, items, runners, launches, local, cloud)
-			: await runScale(options, runners, launches, local);
+		if (items) {
+			const outcome = await runPlan(options, items, runners, launches, local, cloud);
+			failures = await rerunInNewTabs(outcome, options, runners, launches, local, cloud);
+		} else failures = await runScale(options, runners, launches, local);
 	} finally {
 		await cloud?.closeAll();
 		forgetCloud?.();

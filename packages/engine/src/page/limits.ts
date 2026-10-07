@@ -124,6 +124,13 @@ export interface CoreDevice {
 	/** The bits per texel of the shadow cascades' depth: 16, or 32 for floats. */
 	shadowDepthBits: ShadowDepthBits;
 	/**
+	 * True when core WebGPU's vertex shaders read each culled instance by index from storage
+	 * buffers, instead of a copy that the culling shader writes. Only a test switch asks for it,
+	 * and compatibility mode, which may have no storage buffers in vertex shaders, and WebGL2 never
+	 * do it.
+	 */
+	indexInstances: boolean;
+	/**
 	 * True when each object's position holds whole cells besides its 32-bit part, so positions keep
 	 * their precision at any distance from the origin.
 	 */
@@ -181,6 +188,7 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'vertexSkinning'
+	| 'indexInstances'
 	| 'shadowDepthBits'
 > & {
 	/** The anti-aliasing mode. */
@@ -334,6 +342,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			sharedUploads: true,
 			depth: 'reversed',
 			shaderBits: toneMap | half,
+			indexInstances: tier === 'webgpu' && options.indexInstances,
 			...common,
 		};
 	}
@@ -351,6 +360,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap | half,
+		indexInstances: false,
 		...common,
 	};
 }
@@ -422,4 +432,12 @@ export function rowLimitWarning(sources: number, webgl2: boolean): string | unde
 		? `WebGL2 devices whose textures reach only ${count(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE)} pixels`
 		: "devices with WebGPU's default limits";
 	return `null3D: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but ${smallest} draw at most ${count(portable)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`;
+}
+
+/**
+ * The warning that the sketch thread gives once, the first time an object or an instance row
+ * enters a new grid cell while every cell is in use.
+ */
+export function cellTableWarning(): string {
+	return `null3D: all ${C.CELL_MAX} grid cells are in use, so an object or instance row that entered a new cell went into the origin's cell instead. There it has only the precision of a 32-bit position, and far from the origin it jitters as the camera moves. Keep far content in fewer cells: put far objects under a few parent objects, which share their root's cell, or create and destroy them as the camera moves.`;
 }

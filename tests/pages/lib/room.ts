@@ -15,6 +15,13 @@ export const ROOM_KEPT = 1;
  */
 export const ROOM_LOST_ONCE = 2;
 
+/**
+ * The step that a test page's trail notes at the first shared memory that the browser refuses. The
+ * engine tries again for about 45 seconds before E1109, longer than many pages may take, so a page
+ * that times out while it waits for memory shows this in its trail.
+ */
+export const MEMORY_REFUSED = 'the browser refused a shared memory';
+
 /** The engine's default maximum of its shared memory, in 64 KiB pages: 1 GiB. */
 export const DEFAULT_MAXIMUM_PAGES = 16_384;
 const INITIAL_PAGES = 18;
@@ -31,14 +38,14 @@ export const MOST_ROOM_SEEN = 39;
 /** The cap of a count of the whole room, as the memory plan makes: room for this many is plenty. */
 export const FULL_COUNT = 64;
 /**
- * The pauses before each count of the room, while a page waits for it to come back. Safari frees a
- * memory only after a full collection finds it unused and its sweeper then reaches it. A count that
- * the browser refused ends with a collection, and the pause gives Safari time to free what it
- * found. The pauses grow, because each collection starts the sweep again, and then hold at the
- * longest. Safari frees the memory of engines in removed frames late, at times long after the
- * frames have gone, so the wait in all is about twice the slowest return of the room seen in
- * Safari, as the implementation notes record. A shorter wait failed checks whose room came back
- * later. Memory that engines keep never comes back, so a real leak still fails, only later.
+ * The pauses before each count of the room, while a page waits for it to come back. A count that
+ * the browser refused ends with a collection of the page's heap, and Safari frees the dead memories
+ * that the collection finds at once. Memory that something else still holds comes back later: a
+ * removed frame that Safari keeps, a worker that has not ended yet, or a fast slot that Safari
+ * keeps while the page asks for memory. So the pauses grow, and then hold at the longest. The wait
+ * in all is about twice the slowest return of the room seen in Safari, as the implementation notes
+ * record. A shorter wait failed checks whose room came back later. Memory that engines keep never
+ * comes back, so a real leak still fails, only later.
  */
 const ROOM_PAUSES_MS = [1_000, 1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000, 15_000];
 
