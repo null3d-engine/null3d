@@ -292,7 +292,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 - The page kinds that end in `-prepass` start null3D with `?prepass=on`, so a bench run takes turns between a page and its prepass twin: `bun run bench:run --scenes s2 --pages null3d-webgl2,null3d-webgl2-prepass,null3d-webgpu,null3d-webgpu-prepass`.
 - On 2 October 2026 (M1-A7), S2 ran on WebGPU in Chrome on the MacBook Pro, 3 runs of 10 seconds each way. Its GPU time per frame was 0.28 ms without the prepass and 0.41 ms with it. The scene's render pass grew from 0.13 ms to 0.26 ms. S2's trees hide few others, and its shading is cheap, so a second pass over its vertices costs more than it saves.
 - On 4 October 2026 (M2-R2), S2 ran again with the `-prepass` pages, 5 runs of 5 seconds each, in turns. WebGPU's GPU time per frame went from 0.28 ms to 0.40 ms. On WebGL2 the draw calls went from 101 to 201, and the render worker's time per frame from 0.075 ms to 0.080 ms. Chrome on the Mac has no GPU timer on WebGL2, so the WebGL2 GPU cost needs a device.
-- Every preset leaves the prepass off on those results. The iPad's and the phones' figures, from the bench plan with the `-prepass` pages, are still to come.
+- Every preset left the prepass off on those results. On 7 October 2026 (M2-R22), S4 on the iPad showed that WebGL2 shades hidden layers on Apple GPUs, where WebGPU does not. Every preset now draws the prepass on WebGL2, and WebGPU keeps it off ([D-43](decisions/D-43-webgl2-prepass.md#addendum-2026-10-07-the-prepass-on-for-webgl2-at-every-preset)). The page `null3d-webgl2` therefore draws the prepass too. Compare it with WebGL2 without the prepass through `?prepass=off`.
 
 ## The sky
 

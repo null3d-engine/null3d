@@ -78,7 +78,7 @@ import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
-import { loadCore, memoryMaximumMiB } from './loader';
+import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import {
 	type CanvasHold,
@@ -182,9 +182,9 @@ export interface EngineOptions {
 	 * True to draw the depth of the opaque objects before the engine shades them, so each pixel is
 	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
 	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
-	 * it, the quality preset decides. The prepass stays fixed while the engine runs, and the
-	 * `?prepass=on` or `?prepass=off` switch wins over this option.
-	 * Another value fails with E1213.
+	 * it, the quality preset decides: every preset draws the prepass on WebGL2, and none on WebGPU.
+	 * The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off`
+	 * switch wins over this option. Another value fails with E1213.
 	 */
 	depthPrepass?: boolean;
 	/**
@@ -251,6 +251,16 @@ export interface EngineOptions {
 	 * tables of 16 bytes per label in memory that its threads share, so 4,096 labels take 192 KB.
 	 */
 	maxLabels?: number;
+	/**
+	 * The number of objects that the scene will hold at most, when the sketch knows it: a whole
+	 * number from 1 to 1,048,575. Another value fails with E1213. The scene then starts with room
+	 * for that many, so it never grows during play. Without it, the scene starts with room for
+	 * 1,023 objects. A scene grows on its own when it needs more: it doubles its room at the start
+	 * of a frame once it is three quarters full. A create call that finds it full doubles it at once.
+	 * Each growth copies the scene's tables, about 263 bytes per object, in one short pause. Set
+	 * this option for a scene that creates many objects during play, so they never wait for one.
+	 */
+	expectedObjects?: number;
 	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
@@ -1153,6 +1163,7 @@ async function startEngine(
 		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
 		: 0;
 	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
+	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const views = controlViews(control);
 	const { slots } = views;
@@ -1405,14 +1416,14 @@ async function startEngine(
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 		// Occlusion culling on the GPU needs WebGPU's compute passes, and does not run with the depth
-		// prepass, which only the page turns on.
+		// prepass, which only the page turns on outside WebGL2.
 		const tierSettings =
 			tier === 'webgl2' || pageSettings.depthPrepass
 				? { ...pageSettings, gpuOcclusion: false }
 				: pageSettings;
 		const quality: QualityStart = {
 			preset,
-			settings: checkedSettings(chosen, preset, tierSettings),
+			settings: checkedSettings(chosen, preset, tierSettings, tier),
 			options: tierSettings,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
@@ -1451,6 +1462,7 @@ async function startEngine(
 			transparent: options.transparent === true,
 			depthPrepass: quality.settings.depthPrepass,
 			largeWorld: options.largeWorld === true,
+			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
 		// The GPU path and the device's fixed bits choose the shader file that the renderer loads

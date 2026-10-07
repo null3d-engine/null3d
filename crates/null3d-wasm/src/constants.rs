@@ -6,7 +6,7 @@ use null3d_core::animation::{
     MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
 use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
-use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
+use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, MAX_SLOTS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
 use null3d_core::lines::LineMode;
@@ -698,6 +698,8 @@ pub fn typescript() -> String {
                 ),
                 ("WEBGL2_MAX_SOURCES", 1 << MAX_SOURCE_BITS),
                 ("MSAA_SAMPLES", Antialias::Msaa.samples()),
+                ("START_OBJECTS", crate::START_OBJECTS),
+                ("MAX_OBJECTS", MAX_SLOTS),
             ],
         ),
         (

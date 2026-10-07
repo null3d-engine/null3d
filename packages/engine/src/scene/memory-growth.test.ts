@@ -7,7 +7,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
-import { Materials, type MeshGeometry } from './resources';
+import { type Material, Materials, type MeshGeometry } from './resources';
 import { Scene } from './scene';
 import { Textures } from './textures';
 
@@ -65,6 +65,8 @@ function growingCore() {
 
 /** A mesh the fake core never needs to know. */
 const box = (core: CoreMemory) => ({ id: 1, radius: 1, core }) as unknown as MeshGeometry;
+/** A material the fake core never needs to know. */
+const paint = (core: CoreMemory) => ({ id: 1, core }) as unknown as Material;
 
 describe('writes after a call that grows the engine memory', () => {
 	const calls: Record<string, (c: ReturnType<typeof growingCore>) => void> = {
@@ -107,4 +109,70 @@ describe('writes after a call that grows the engine memory', () => {
 			expect(floats(positions + crate.slot * 12, 3)).toEqual([7, 8, 9]);
 		});
 	}
+});
+
+/**
+ * A core whose scene starts with room for `start` objects and moves its arrays to a larger place,
+ * as the engine core's scene does when it grows, on the reserve that finds it full. The core
+ * counts each move in a word that the views check.
+ */
+function growingScene(start: number) {
+	const memory = new WebAssembly.Memory({ initial: 1, maximum: 1 });
+	const at = { small: 0, large: 16384, records: 8192, write: 12288, read: 12292, moved: 12296 };
+	let capacity = start;
+	let base = at.small;
+	let next = 0;
+	const moved = new Uint32Array(memory.buffer, at.moved, 1);
+	const grow = () => {
+		capacity = capacity * 2 + 1;
+		base = at.large;
+		moved[0] = (moved[0] as number) + 1;
+	};
+	const room = (count: number) => {
+		if (next + count > capacity) grow();
+	};
+	const glue = {
+		sceneCapacity: () => capacity,
+		sceneArrays: (field: number) => base + field * 1024,
+		commandRing: (field: number) => [at.records, RING, at.write, at.read][field] as number,
+		reserveObject: () => {
+			room(1);
+			return ++next;
+		},
+		lastErrorCode: () => 0,
+		lastErrorDetail: () => 0,
+	};
+	const core = new CoreMemory(glue as unknown as CoreGlue, memory, at.moved);
+	const scene = new Scene(core, { frame: 1 }, false);
+	const position = (slot: number) => [
+		...new Float32Array(memory.buffer, base + C.SCENE_FIELD_POSITIONS * 1024 + slot * 12, 3),
+	];
+	return { core, scene, position, grow, base: () => base, at };
+}
+
+describe('writes after the scene grows', () => {
+	test('land in the moved arrays, for the object that made it grow and for older ones', () => {
+		const { core, scene, position, base, at } = growingScene(2);
+		const generation = core.generation;
+		const [mesh, material] = [box(core), paint(core)];
+		const first = scene.createMesh({ mesh, material, position: [1, 2, 3] });
+		scene.createMesh({ mesh, material });
+		expect(base()).toBe(at.small);
+		const third = scene.createMesh({ mesh, material, position: [4, 5, 6] });
+		expect(base()).toBe(at.large);
+		expect(core.generation).toBeGreaterThan(generation);
+		expect(position(third.slot)).toEqual([4, 5, 6]);
+		first.setPosition(7, 8, 9);
+		expect(position(first.slot)).toEqual([7, 8, 9]);
+	});
+
+	test("land in the moved arrays after a growth at a frame's start", () => {
+		const { core, scene, position, grow } = growingScene(15);
+		const crate = scene.createMesh({ mesh: box(core), material: paint(core) });
+		grow();
+		expect(core.refresh()).toBe(true);
+		expect(core.refresh()).toBe(false);
+		crate.setPosition(1, 1, 1);
+		expect(position(crate.slot)).toEqual([1, 1, 1]);
+	});
 });

@@ -52,7 +52,9 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	indexInstances: false,
 	shadowDepthBits: 16,
 	largeWorld: false,
+	expectedObjects: 0,
 	gpuOcclusion: false,
+	textureCache: true,
 });
 
 /** What the WebGL2 probe finds of a format that the device does not draw into. */
@@ -97,7 +99,9 @@ const PLAIN: DeviceOptions = {
 	transparent: false,
 	depthPrepass: false,
 	largeWorld: false,
+	expectedObjects: 0,
 	gpuOcclusion: false,
+	textureCache: true,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */

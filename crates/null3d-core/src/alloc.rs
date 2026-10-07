@@ -10,3 +10,9 @@ pub fn filled<T: Clone>(len: usize, value: T) -> Result<Vec<T>, TryReserveError>
     v.resize(len, value);
     Ok(v)
 }
+
+/// Makes room in `v` for `len` items in all, without changing its length, so a later resize to
+/// `len` cannot fail.
+pub fn reserve_len<T>(v: &mut Vec<T>, len: usize) -> Result<(), TryReserveError> {
+    v.try_reserve_exact(len.saturating_sub(v.len()))
+}

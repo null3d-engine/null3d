@@ -8,6 +8,9 @@
 //! never handed out: a destroyed object's wrapper keeps a handle with it, which stays stale however
 //! often its slot is reused.
 
+use std::collections::TryReserveError;
+
+use crate::alloc::reserve_len;
 use crate::bitset::Bitset;
 use crate::error::{CoreError, Resource};
 
@@ -108,6 +111,40 @@ impl SlotAllocator {
             fresh: 1,
             live_count: 0,
         }
+    }
+
+    /// Makes room for `capacity` slots without changing the allocator, so [`SlotAllocator::grow`]
+    /// to `capacity` cannot fail.
+    pub fn try_reserve(&mut self, capacity: u32) -> Result<(), TryReserveError> {
+        let rows = capacity as usize + 1;
+        reserve_len(&mut self.generations, rows)?;
+        reserve_len(&mut self.destroyed_frames, rows)?;
+        self.live.try_reserve(capacity + 1)?;
+        reserve_len(&mut self.free, capacity as usize)
+    }
+
+    /// Raises the slot count to `capacity`. Live handles, generations and the order in which
+    /// freed slots come back all stay as they were; the new slots are fresh.
+    ///
+    /// # Panics
+    /// When `capacity` is over [`MAX_SLOTS`].
+    pub fn grow(&mut self, capacity: u32) {
+        assert!(
+            capacity <= MAX_SLOTS,
+            "a slot allocator holds at most {MAX_SLOTS} slots, not {capacity}"
+        );
+        if capacity <= self.capacity {
+            return;
+        }
+        let rows = capacity as usize + 1;
+        self.generations.resize(rows, 0);
+        self.destroyed_frames.resize(rows, 0);
+        self.live.grow(capacity + 1);
+        // The freed slots wrap around the old queue's end; the larger queue starts them at 0.
+        self.free.rotate_left(self.free_head as usize);
+        self.free.resize(capacity as usize, 0);
+        self.free_head = 0;
+        self.capacity = capacity;
     }
 
     /// The number of usable slots.
@@ -329,6 +366,41 @@ mod tests {
         );
         let big = SlotAllocator::with_capacity(MAX_SLOTS);
         assert_eq!(big.capacity(), 1_048_575);
+    }
+
+    #[test]
+    fn grow_keeps_handles_and_the_order_of_freed_slots() {
+        let mut slots = SlotAllocator::with_capacity(4);
+        let handles: Vec<Handle> = (0..4).map(|_| slots.reserve().unwrap()).collect();
+        // Free slots 3 then 1, and move the queue's head past the end once, so the queue wraps.
+        slots.release(handles[0], 5).unwrap();
+        let again = slots.reserve().unwrap();
+        slots.release(handles[2], 6).unwrap();
+        slots.release(handles[1], 7).unwrap();
+        slots.try_reserve(9).unwrap();
+        assert_eq!(slots.capacity(), 4);
+        slots.grow(9);
+        assert_eq!((slots.capacity(), slots.live_count()), (9, 2));
+        assert_eq!(slots.resolve(again), Ok(1));
+        assert_eq!(slots.resolve(handles[3]), Ok(4));
+        assert!(matches!(
+            slots.resolve(handles[1]),
+            Err(CoreError::StaleHandle {
+                slot: 2,
+                destroyed_frame: 7
+            })
+        ));
+        // Fresh slots come first, as in an allocator that started this large.
+        let fresh: Vec<u32> = (0..5).map(|_| slots.reserve().unwrap().slot()).collect();
+        assert_eq!(fresh, [5, 6, 7, 8, 9]);
+        // Then the freed slots, in the order they were freed, with new generations.
+        let reused: Vec<(u32, u32)> = (0..2)
+            .map(|_| slots.reserve().map(|h| (h.slot(), h.generation())).unwrap())
+            .collect();
+        assert_eq!(reused, [(3, 1), (2, 1)]);
+        assert!(slots.reserve().is_err());
+        slots.grow(3);
+        assert_eq!(slots.capacity(), 9);
     }
 
     #[test]

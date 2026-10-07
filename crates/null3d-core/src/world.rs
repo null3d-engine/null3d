@@ -61,8 +61,8 @@ impl<'a> SphereArrays<'a> {
     }
 }
 
-/// One frame parity's world output. Every array is allocated at creation and never
-/// reallocated, so TypeScript views on it stay valid.
+/// One frame parity's world output. Its arrays never reallocate: an owner that needs more rows
+/// makes new arrays with [`WorldArrays::try_grown`], so readers of the old ones stay valid.
 #[derive(Clone, Debug)]
 pub struct WorldArrays {
     matrices: Vec<f32>,
@@ -92,6 +92,20 @@ impl WorldArrays {
             radii: filled(rows, HIDDEN_RADIUS)?,
             colors: filled(if with_colors { rows * COLOR_FLOATS } else { 0 }, 1.0)?,
         })
+    }
+
+    /// A copy with `rows` rows: these rows, then hidden ones. It is a new allocation, so these
+    /// arrays stay where they are for a reader that still holds their addresses.
+    pub(crate) fn try_grown(&self, rows: usize) -> Result<Self, TryReserveError> {
+        let mut grown = Self::try_new(rows.max(self.rows()), !self.colors.is_empty())?;
+        let copy = |to: &mut Vec<f32>, from: &[f32]| to[..from.len()].copy_from_slice(from);
+        copy(&mut grown.matrices, &self.matrices);
+        copy(&mut grown.xs, &self.xs);
+        copy(&mut grown.ys, &self.ys);
+        copy(&mut grown.zs, &self.zs);
+        copy(&mut grown.radii, &self.radii);
+        copy(&mut grown.colors, &self.colors);
+        Ok(grown)
     }
 
     /// The number of rows.
@@ -147,7 +161,7 @@ impl WorldArrays {
     }
 
     /// Read-only pointers to these arrays for a reader on another thread. The addresses stay
-    /// valid for the life of the owner, because the arrays are never reallocated.
+    /// valid while these arrays live, because they never reallocate.
     pub fn view(&self) -> WorldView {
         WorldView {
             matrices: self.matrices.as_ptr(),
