@@ -1,5 +1,6 @@
 // Textures past a small texture memory budget, for the test of the budget. Two planes show the same
-// 512 x 512 image from a PNG file, and a third shows a 64 x 64 one. Each quarter of the large image
+// 512 x 512 image from a PNG file, and a third, a little in front of them where they overlap, shows a
+// 64 x 64 one, so the depth test alone decides which one shows. Each quarter of the large image
 // is a checker of single texels at full and half brightness, so its first smaller mip level is one
 // flat color: the frame shows at a glance which textures lost their largest level.
 //
@@ -43,16 +44,16 @@ export default defineSketch(async (ctx) => {
 		assets.loadTexture('assets/textures/budget-checker.png'),
 		assets.loadTexture('assets/textures/quadrants.png'),
 	]);
-	const show = (texture: Texture, x: number, size: number) =>
+	const show = (texture: Texture, x: number, size: number, z = 0) =>
 		scene.createMesh({
 			mesh: square,
 			material: materials.unlit({ map: texture }),
-			position: [x, 0, 0],
+			position: [x, 0, z],
 			scale: [size, size, 1],
 		});
 	show(left as Texture, -1.05, 1);
 	show(right as Texture, 1.05, 1);
-	show(small as Texture, 0, 0.3);
+	show(small as Texture, 0, 0.3, 0.01);
 	let changes = 0;
 	quality.onChange(() => changes++);
 
