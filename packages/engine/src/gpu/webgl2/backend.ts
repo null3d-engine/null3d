@@ -22,7 +22,8 @@
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { DEV } from '../../shared/dev';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -37,14 +38,17 @@ import type { CubeGenerator } from './environment';
 import {
 	buildPermutation,
 	createProgram,
+	customTemplate,
 	engineTemplates,
 	type GlslTemplate,
+	metalFault,
 	mipmapTemplate,
 	type Pipeline,
 	type Program,
 	type ProgramHost,
 	prepareProgram,
 	programHost,
+	relink,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -130,10 +134,16 @@ interface GlTexture {
 	readonly view: boolean;
 	/** True once a write has gone into the texture, so later writes go through an unpack buffer. */
 	written: boolean;
-	/** The framebuffer of passes that draw into this color target, and the depth target in it. */
+	/**
+	 * The framebuffer of passes that draw into this color target with a depth target, and that
+	 * depth target.
+	 */
 	framebuffer: WebGLFramebuffer | null;
 	framebufferDepth: GlTexture | null;
-	/** A framebuffer with only this target in it: for passes that draw depth only, and resolves. */
+	/**
+	 * A framebuffer with only this target in it: for passes that draw into it without depth, passes
+	 * that draw depth only, and resolves.
+	 */
 	soloFramebuffer: WebGLFramebuffer | null;
 	/** The framebuffer of the one-sample copy of a multisampled depth target that shaders read. */
 	copyFramebuffer: WebGLFramebuffer | null;
@@ -248,6 +258,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	if (bptc) {
 		compressed(G.FORMAT_BC7_RGBA_UNORM, bptc.COMPRESSED_RGBA_BPTC_UNORM_EXT);
 		compressed(G.FORMAT_BC7_RGBA_UNORM_SRGB, bptc.COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT);
+		compressed(G.FORMAT_BC6H_RGB_UFLOAT, bptc.COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT);
 	}
 	const etc = gl.getExtension('WEBGL_compressed_texture_etc');
 	if (etc) {
@@ -269,9 +280,11 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	add(G.FORMAT_RGBA32_FLOAT, gl.RGBA32F, gl.RGBA, gl.FLOAT, color);
 	add(G.FORMAT_R32_UINT, gl.R32UI, gl.RED_INTEGER, gl.UNSIGNED_INT, color);
 	add(G.FORMAT_R32_FLOAT, gl.R32F, gl.RED, gl.FLOAT, color);
+	add(G.FORMAT_RGBA32_UINT, gl.RGBA32UI, gl.RGBA_INTEGER, gl.UNSIGNED_INT, color);
 	const depth = gl.DEPTH_ATTACHMENT;
 	add(G.FORMAT_DEPTH24_PLUS, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, depth);
 	add(G.FORMAT_DEPTH32_FLOAT, gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, depth);
+	add(G.FORMAT_DEPTH16_UNORM, gl.DEPTH_COMPONENT16, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, depth);
 	return formats;
 }
 
@@ -345,6 +358,12 @@ export class WebGL2Backend {
 	 */
 	private readonly parked = new Map<number, Uint32Array>();
 	/**
+	 * In development builds, the programs that a hot update of a custom material's shader compiles,
+	 * each under the key of the program it replaces once it has compiled. `relinked` is set once the
+	 * program has linked a second time after Safari's random Metal fault.
+	 */
+	private readonly swapping = new Map<string, { program: Program; relinked: boolean }>();
+	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
 	 */
@@ -407,15 +426,17 @@ export class WebGL2Backend {
 	private activeUnit = -1;
 	private readonly unitTextures: (WebGLTexture | null)[] = [];
 	private readonly unitSamplers: (WebGLSampler | null)[] = [];
+	/** The texture that bind groups set at each slot, which the program's unit for the slot gets. */
+	private readonly slotTextures: (WebGLTexture | null)[] = [];
+	/** The target of each slot's texture. */
+	private readonly slotTargets: number[] = [];
 	/** The sampler that bind groups set at each slot, which the units that read it get. */
 	private readonly slotSamplers: (WebGLSampler | null)[] = [];
-	/** True when the program or the bind groups' samplers changed since the units' samplers were set. */
-	private samplersChanged = true;
 	/**
-	 * The units that have a sampler bound. While none has, a program that samples no texture finds
-	 * every unit as it needs it, so switching to it leaves the units alone.
+	 * True when the program, the bind groups' textures or samplers, or a unit that a spare program
+	 * borrowed changed since the program's units were set.
 	 */
-	private boundSamplers = 0;
+	private unitsChanged = true;
 	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
@@ -509,11 +530,7 @@ export class WebGL2Backend {
 		this.depth = setDepthMode(gl, depthMode);
 		this.programHost = programHost(gl, this.depth, this.parallel);
 		const host = this.programHost;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(host)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(host));
 		this.depthFunc = this.nearerPasses();
 		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
 		this.clearDepth = this.depth.standard ? 0 : 1;
@@ -563,6 +580,7 @@ export class WebGL2Backend {
 	 * material's shader. Pipelines whose shaders arrived are created first.
 	 */
 	get building(): boolean {
+		if (DEV && (this.images.replaced.length > 0 || this.swapping.size > 0)) this.swapReplaced();
 		if (this.parked.size > 0) this.unpark();
 		const compiling = this.compiling;
 		for (let k = compiling.length - 1; k >= 0; k--) {
@@ -571,7 +589,61 @@ export class WebGL2Backend {
 				compiling.pop();
 			}
 		}
-		return compiling.length > 0 || this.parked.size > 0;
+		return compiling.length > 0 || this.parked.size > 0 || this.swapping.size > 0;
+	}
+
+	/**
+	 * Compiles each program of a custom material whose shader a hot update replaced again, in the
+	 * background where the context can, and swaps each in once it has linked. The old program
+	 * draws until then, so no frame loses the material's objects. A link that fails with Safari's
+	 * random Metal fault is done once more, also in the background. A program that fails to link
+	 * otherwise keeps the old one and logs why.
+	 */
+	private swapReplaced(): void {
+		if (!DEV) return;
+		const gl = this.gl;
+		for (const template of this.images.replaced.splice(0)) {
+			const shader = this.images.shaders.get(template);
+			// A template that no pipeline has used takes the new shader at its first use.
+			if (!shader || !this.templates[template]) continue;
+			const defined = customTemplate(shader);
+			this.templates[template] = defined;
+			for (const key of this.programs.keys()) {
+				const [owner, permutation] = key.split(' ').map(Number);
+				if (owner !== template) continue;
+				const earlier = this.swapping.get(key);
+				if (earlier) this.deleteProgram(earlier.program);
+				const program = createProgram(gl, defined, permutation as number);
+				program.background = true;
+				this.swapping.set(key, { program, relinked: false });
+				this.counts.pipelines++;
+			}
+		}
+		for (const [key, swap] of this.swapping) {
+			const program = swap.program;
+			if (!this.compiled(program)) continue;
+			const old = this.programs.get(key);
+			const linked = gl.getProgramParameter(program.program, gl.LINK_STATUS);
+			if (old && !linked && !swap.relinked && metalFault(gl, program)) {
+				relink(gl, program);
+				swap.relinked = true;
+				continue;
+			}
+			this.swapping.delete(key);
+			if (!old || !linked) {
+				if (old)
+					console.error(
+						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${gl.getProgramInfoLog(program.program)}`,
+					);
+				this.deleteProgram(program);
+				continue;
+			}
+			this.programs.set(key, program);
+			this.pipelines.forEach((pipeline, id) => {
+				if (pipeline?.program === old) this.pipelines[id] = { ...pipeline, program };
+			});
+			this.deleteProgram(old);
+		}
 	}
 
 	/**
@@ -584,8 +656,7 @@ export class WebGL2Backend {
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
 			if (!shader) return false;
-			// A custom material's prepass draws with its own vertex shader, as every mesh's does.
-			defined = { shader: shader.variants, pipeline: 'main', meshPrepass: true };
+			defined = customTemplate(shader);
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);
@@ -934,10 +1005,6 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * The program of a template and permutation, which starts compiling the first time, in the
-	 * background when `background` is set and the context can.
-	 */
-	/**
 	 * Forgets a render pipeline, and deletes its program once no other pipeline uses it. A pipeline
 	 * that is gone already, as when a capture replays a list again, changes nothing.
 	 */
@@ -946,6 +1013,11 @@ export class WebGL2Backend {
 		const program = this.pipelines[id]?.program;
 		this.pipelines[id] = undefined;
 		if (!program || this.pipelines.some((p) => p?.program === program)) return;
+		this.deleteProgram(program);
+	}
+
+	/** Deletes a program and its shaders, and forgets it. */
+	private deleteProgram(program: Program): void {
 		for (const [key, held] of this.programs) if (held === program) this.programs.delete(key);
 		const compiling = this.compiling.indexOf(program);
 		if (compiling >= 0) this.compiling.splice(compiling, 1);
@@ -953,6 +1025,10 @@ export class WebGL2Backend {
 		this.gl.deleteProgram(program.program);
 	}
 
+	/**
+	 * The program of a template and permutation, which starts compiling the first time, in the
+	 * background when `background` is set and the context can.
+	 */
 	private programOf(template: number, permutation: number, background: boolean): Program {
 		const key = `${template} ${permutation}`;
 		let program = this.programs.get(key);
@@ -1222,6 +1298,8 @@ export class WebGL2Backend {
 			gl.deleteTexture(old.texture);
 			for (let unit = 0; unit < this.unitTextures.length; unit++)
 				if (this.unitTextures[unit] === old.texture) this.unitTextures[unit] = null;
+			for (let slot = 0; slot < this.slotTextures.length; slot++)
+				if (this.slotTextures[slot] === old.texture) this.slotTextures[slot] = null;
 		}
 		if (old.renderbuffer) gl.deleteRenderbuffer(old.renderbuffer);
 	}
@@ -1462,8 +1540,7 @@ export class WebGL2Backend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
@@ -1471,18 +1548,19 @@ export class WebGL2Backend {
 		if (this.blend) this.setBlend(0);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
-		generators[name].run(
+		code.run(
 			this.programHost,
 			texture.texture as WebGLTexture,
 			texture.width,
 			texture.mips,
+			source,
 		);
 		this.program = null;
 		this.activeUnit = -1;
 		this.unitTextures.length = 0;
 		this.blockBuffers.length = 0;
 		this.viewport.fill(-1);
-		this.samplersChanged = true;
+		this.unitsChanged = true;
 	}
 
 	/**
@@ -1517,7 +1595,7 @@ export class WebGL2Backend {
 		if (this.blend) this.setBlend(0);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
-		this.samplersChanged = true;
+		this.unitsChanged = true;
 		return program;
 	}
 
@@ -1737,11 +1815,8 @@ export class WebGL2Backend {
 		for (let slot = 0; slot < this.slotSamplers.length; slot++)
 			if (this.slotSamplers[slot] === old) this.slotSamplers[slot] = null;
 		for (let unit = 0; unit < this.unitSamplers.length; unit++)
-			if (this.unitSamplers[unit] === old) {
-				this.unitSamplers[unit] = null;
-				this.boundSamplers--;
-			}
-		this.samplersChanged = true;
+			if (this.unitSamplers[unit] === old) this.unitSamplers[unit] = null;
+		this.unitsChanged = true;
 	}
 
 	/** Attaches a render target to the bound framebuffer. */
@@ -1769,8 +1844,15 @@ export class WebGL2Backend {
 		return framebuffer;
 	}
 
-	/** The framebuffer of passes that draw into `color`, made again when their depth target changes. */
+	/**
+	 * The framebuffer of passes that draw into `color`, with `depth` when given. A target that the
+	 * render graph shares between a pass with depth and one without, as the scene color and a
+	 * custom effect's target, keeps a framebuffer for each, so no frame makes one again: each new
+	 * framebuffer's completeness check waits for the browser's GPU process, about 1.5 ms on a
+	 * Pixel 10. A framebuffer is made again when its depth target changes.
+	 */
 	private colorFramebuffer(color: GlTexture, depth: GlTexture | null): WebGLFramebuffer {
+		if (!depth) return this.soloFramebuffer(color);
 		if (color.framebuffer && color.framebufferDepth === depth) return color.framebuffer;
 		if (color.framebuffer) this.gl.deleteFramebuffer(color.framebuffer);
 		color.framebuffer = this.makeFramebuffer(color, depth);
@@ -1860,7 +1942,23 @@ export class WebGL2Backend {
 		this.setScissorTest(false);
 		if (this.passToCanvas) return;
 		const framebuffer = this.passFramebuffer;
-		if (this.passResolve !== G.NO_TARGET) {
+		// Tile-based GPUs skip writing a target that the pass discards back to memory. A discard
+		// comes while the pass's framebuffer is still the one drawn into, as ANGLE on Metal ends the
+		// pass, with its stores, at a resolve's blit, which it draws as a pass of its own. The blit
+		// reads the color, so a pass that resolves discards its color after the blit.
+		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
+		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
+		const resolves = this.passResolve !== G.NO_TARGET;
+		const keepsColor = storeColor || resolves;
+		const discard = storeDepth
+			? keepsColor
+				? undefined
+				: DISCARD_COLOR
+			: keepsColor
+				? DISCARD_DEPTH
+				: DISCARD_BOTH;
+		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		if (resolves) {
 			const into =
 				this.passResolve === 0
 					? (this.canvasTarget?.framebuffer ?? null)
@@ -1872,21 +1970,11 @@ export class WebGL2Backend {
 			const height = this.passHeight;
 			gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 		}
-		// Tile-based GPUs then skip writing the multisampled targets back to memory.
-		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
-		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const depth = this.passDepth;
 		if (storeDepth && depth?.renderbuffer && depth.texture) this.copyDepth(framebuffer, depth);
-		const discard = storeColor
-			? storeDepth
-				? undefined
-				: DISCARD_DEPTH
-			: storeDepth
-				? DISCARD_COLOR
-				: DISCARD_BOTH;
-		if (discard) {
+		if (resolves && !storeColor) {
 			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
-			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, discard);
+			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, DISCARD_COLOR);
 		}
 	}
 
@@ -1998,8 +2086,8 @@ export class WebGL2Backend {
 		this.skipDraws = !this.compiled(program);
 		if (this.skipDraws) return;
 		this.useProgram(program);
-		if (this.current?.program !== program && (program.sampled || this.boundSamplers > 0))
-			this.samplersChanged = true;
+		if (this.current?.program !== program && program.textureUnits.length > 0)
+			this.unitsChanged = true;
 		this.current = p;
 		this.setCullFace(p.cull);
 		this.setDepthTest(p.depth);
@@ -2025,11 +2113,13 @@ export class WebGL2Backend {
 	 * GL's depth function of a pipeline's state flags. A pipeline without the depth test still
 	 * keeps GL's test on, with a function that passes every fragment: GL writes no depth while its
 	 * test is off, and the pipeline writes none either way. After the depth prepass, the opaque
-	 * pass draws only at the depth that the prepass found, in every depth mode.
+	 * pass draws only at the depth that the prepass found, in every depth mode. A background at the
+	 * far plane draws where the target still holds the far plane.
 	 */
 	private depthFuncOf(flags: number): number {
 		const gl = this.gl;
 		if (flags & G.STATE_NO_DEPTH_TEST) return gl.ALWAYS;
+		if (flags & G.STATE_DEPTH_OR_EQUAL) return this.depth.standard ? gl.LEQUAL : gl.GEQUAL;
 		return flags & G.STATE_DEPTH_EQUAL ? gl.EQUAL : this.nearerPasses();
 	}
 
@@ -2098,12 +2188,16 @@ export class WebGL2Backend {
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
 				const texture = this.textureOf(entry.resource);
-				this.bindTexture(slot, texture.target, texture.texture);
+				if (this.slotTextures[slot] !== texture.texture) {
+					this.slotTextures[slot] = texture.texture;
+					this.slotTargets[slot] = texture.target;
+					this.unitsChanged = true;
+				}
 			} else if (entry.kind === G.RESOURCE_SAMPLER) {
 				const sampler = this.need(this.samplers, entry.resource, 'sampler');
 				if (this.slotSamplers[slot] !== sampler) {
 					this.slotSamplers[slot] = sampler;
-					this.samplersChanged = true;
+					this.unitsChanged = true;
 				}
 			}
 		}
@@ -2223,25 +2317,27 @@ export class WebGL2Backend {
 			gl.uniform1ui(p.firstInstance, firstInstance);
 			p.firstInstanceValue = firstInstance;
 		}
-		if (!this.samplersChanged) return;
-		// Each unit that the program reads gets the sampler that its texture's pair names, or none
-		// for texelFetch, which a comparison sampler left on the unit would break.
-		const pairs = p.samplerUnits;
-		for (let k = 0; k < pairs.length; k += 2) {
-			const unit = pairs[k] as number;
-			const slot = pairs[k + 1] as number;
-			this.bindUnitSampler(unit, slot < 0 ? null : (this.slotSamplers[slot] ?? null));
+		if (!this.unitsChanged) return;
+		// Each unit that the program reads gets the texture of its slot, and the sampler that its
+		// triple names, or none for texelFetch, which a comparison sampler left on the unit would
+		// break.
+		const units = p.textureUnits;
+		for (let k = 0; k < units.length; k += 3) {
+			const unit = units[k] as number;
+			const slot = units[k + 1] as number;
+			const sampler = units[k + 2] as number;
+			const texture = this.slotTextures[slot] ?? null;
+			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
+			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
 		}
-		this.samplersChanged = false;
+		this.unitsChanged = false;
 	}
 
-	/** Binds a sampler to a texture unit, or none, and keeps the count of units that have one. */
+	/** Binds a sampler to a texture unit, or none. */
 	private bindUnitSampler(unit: number, sampler: WebGLSampler | null): void {
-		const bound = this.unitSamplers[unit] ?? null;
-		if (bound === sampler) return;
+		if ((this.unitSamplers[unit] ?? null) === sampler) return;
 		this.gl.bindSampler(unit, sampler);
 		this.unitSamplers[unit] = sampler;
-		this.boundSamplers += (sampler ? 1 : 0) - (bound ? 1 : 0);
 	}
 
 	/**

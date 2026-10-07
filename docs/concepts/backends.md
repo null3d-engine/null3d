@@ -26,7 +26,7 @@ null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere
 | --- | --- | --- | --- |
 | WebGPU core | Chrome and Edge 113+ on Windows, macOS and ChromeOS; Chrome 121+ on Android 12+ with ARM, Qualcomm or Intel GPUs; Safari 26 on macOS, iOS and iPadOS; Firefox 141+ on Windows and 147+ on Apple silicon Macs | Compute shaders, indirect draws, render bundles, storage buffers | Optional features differ from device to device |
 | WebGPU compatibility mode | Chrome 146+ on devices that have only OpenGL ES 3.1 or Direct3D 11 | Compute shaders and indirect draws on older GPUs | About 45% of these devices allow no storage buffers in vertex shaders; 16-bit float targets cannot use MSAA; uniform bindings stop at 16 KB |
-| WebGL2 | Every other supported browser: iPhones before iOS 26, Android phones without WebGPU (including phones with Samsung Xclipse GPUs), Firefox on Android and Linux | Instancing, uniform buffers, MSAA | No compute shaders, no indirect draws, no storage buffers |
+| WebGL2 | Every other supported browser: iPhones and iPads on iOS and iPadOS 18, Android phones without WebGPU (including phones with Samsung Xclipse GPUs), Firefox on Android and Linux | Instancing, uniform buffers, MSAA | No compute shaders, no indirect draws, no storage buffers |
 
 These facts were checked in September 2026. Browser support changes often, so this table can go out of date. At run time, the engine's feature tests decide.
 
@@ -46,6 +46,7 @@ Every feature works on both paths, or its page describes its WebGL2 fallback. Th
 | [Skinning](../api/animation.md#skinned-meshes) | A compute pass, once per frame for every pass that draws the mesh | The vertex shader of each pass that draws the mesh |
 | [Morph targets](../api/animation.md#morph-targets) | The skinning pass, once per frame, with every weight | The vertex shader of each pass, with the preset's count of each object's largest weights. Its shaders load with the first morphed mesh |
 | The [depth prepass](quality-presets.md#the-depth-prepass) | Drawn when `depthPrepass` is on, with a shader that computes positions only | Drawn when `depthPrepass` is on, with each material's own vertex shader |
+| [Occlusion culling](culling.md#gpu-occlusion-culling-on-webgpu) | On the GPU, in two phases, when `gpuOcclusion` is on | Not on the GPU |
 | GPU time in `engine.measure` | Where the device has timestamp queries | Not measured |
 
 Shadows, skinned and morphed meshes, debug views and custom materials draw the same on both paths. The one exception: on WebGL2, a custom material draws a morphed mesh in its shape at rest. A debug view's wireframe draws an edge list of each mesh, because neither API fills triangles as lines.
@@ -70,11 +71,11 @@ The scene's color target differs from tier to tier:
 | --- | --- | --- |
 | WebGPU core | `rg11b10ufloat` where the device can draw into it and the canvas is opaque; `rgba16float` elsewhere | The final pass applies the exposure and the tone mapping, encodes sRGB and dithers, into the canvas. With MSAA, the render pass first averages the samples into a texture. |
 | WebGPU compatibility mode | With MSAA, 8 bits per channel. With FXAA or none, as on core WebGPU. | With MSAA, each shader tone maps and encodes its own result. The render pass averages the samples into the canvas, or into a texture that the final pass copies while the render scale can drop below 1. With FXAA or none, as on core WebGPU. |
-| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere | As on core WebGPU with the float target. Without it, each shader tone maps its own result. MSAA then averages the samples as in compatibility mode. With FXAA or none, the final pass reads the color as it is, and FXAA smooths its edges. |
+| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere. With `?scene-format=rg11b10`, `R11F_G11F_B10F` where the canvas is opaque and that format passes the test too | As on core WebGPU with the float target. Without it, each shader tone maps its own result. MSAA then averages the samples as in compatibility mode. With FXAA or none, the final pass reads the color as it is, and FXAA smooths its edges. |
 
 On every tier, the final pass also scales the image up to the canvas when the [render scale](quality-presets.md#dynamic-resolution) is below 1. It blends the nearest four pixels, and skips FXAA there, because the scaling softens edges already. WebGL2 and compatibility mode run Low or Medium, whose lowest render scale is below 1, so there the final pass usually runs.
 
-High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into, with 4 samples for MSAA. Compatibility mode allows no MSAA on 16-bit float targets, so there MSAA takes the 8-bit path, and FXAA and none keep HDR color. Some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test. The target must be complete and keep values above 1. For MSAA it must also take 4 samples.
+High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into, with 4 samples for MSAA. Compatibility mode allows no MSAA on 16-bit float targets, so there MSAA takes the 8-bit path, and FXAA and none keep HDR color. Some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test for `RGBA16F`, `RGBA32F` and `R11F_G11F_B10F`. The target must be complete and keep values above 1. For MSAA it must also take 4 samples.
 
 `engine.capabilities.hdr` says which path the engine started on. Bloom moves compatibility mode to HDR color with FXAA when a sketch turns it on ([the post-processing chain](post-processing.md#effects-on-devices-without-hdr-color)). Both paths show the same colors. Edges differ a little, because the 8-bit path averages MSAA's samples after the tone mapping. FXAA compares and blends colors as the tone mapping would show them on both paths, so bright edges stay smooth. [Color management](color-management.md) describes the conversions and the tone mapping.
 
@@ -109,7 +110,7 @@ The `features` field lists the WebGPU adapter's optional features. On WebGL2 it 
 - each texture compression family: BC, ETC2 and ASTC
 - multi-draw on WebGL2 (`WEBGL_multi_draw`)
 - GPU timer queries on WebGPU (`timestamp-query`)
-- rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
+- rendering into 16-bit and 32-bit float textures, and into the packed `R11F_G11F_B10F` format, on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 - transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
 
 Where float targets take the anti-aliasing mode, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU and on WebGL2 devices that pass the float target test. It holds in compatibility mode with FXAA or none too. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
@@ -158,7 +159,7 @@ On WebGL2, uploads read straight from the engine's shared memory. A browser that
 
 On WebGL2, the engine compiles shader programs in the background where the browser has the `KHR_parallel_shader_compile` extension. The switch `?compile=wait` makes it wait for each compile at the program's first draw instead, as a browser without the extension does.
 
-The switch `?half=on` makes the scene shaders do their color math at half precision, where the device can. It is off by default, and serves measurements. The switch `?hdr=off` makes the engine draw the 8-bit color path on a device that draws HDR color, so one device can test both. The switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off.
+The switch `?half=on` makes the scene shaders do their color math at half precision, where the device can. It is off by default, and serves measurements. The switch `?hdr=off` makes the engine draw the 8-bit color path on a device that draws HDR color, so one device can test both. The switch `?scene-format=` picks the HDR scene color's format where the device can draw it. The value `rg11b10` takes the packed small float format of 4 bytes a pixel, and `rgba16f` takes 16-bit floats of 8 bytes. The small format keeps 6 bits of mantissa in red and green and 5 in blue, against 10 in a 16-bit float. On WebGL2 it serves measurements of its cost and of banding in dark gradients. Without the switch, WebGL2 keeps `RGBA16F`: on the phones measured, the small format drew no faster. The switch `?prepass=on` or `?prepass=off` turns the depth prepass on or off, and `?occlusion=on` or `?occlusion=off` turns GPU occlusion culling on or off.
 
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead. Shadow maps hold the same depth values as on WebGPU in `reversed` and `reversed-gl`. In `standard` they would hold them the other way around, so WebGL2 draws no shadows in that mode.
 
@@ -172,11 +173,15 @@ A WebGPU device can be lost, for example after a driver reset, and so can a WebG
 
 | Browser | Minimum version |
 | --- | --- |
-| Safari on macOS and iOS | 16.4 |
+| Safari on macOS, iOS and iPadOS | 18 |
 | Chrome and Edge | 91 |
 | Firefox | 89 |
 
-WebAssembly SIMD sets these minimums. In an older browser, `createEngine` fails with [E1303](../errors/E1303.md) instead of taking a slow path, and the page can show its own message. On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
+WebAssembly SIMD sets the minimums of Chrome, Edge and Firefox. In an older browser, and in Safari before 16.4, `createEngine` fails with [E1303](../errors/E1303.md) instead of taking a slow path. The page can then show its own message.
+
+Safari 16.4 and 17 have WebAssembly SIMD and pass the engine's feature tests. The engine still meets faults there that no test finds in advance. On a phone with 4 GB of memory, Safari 17 refused the engine's shared memory. Its WebGL2 compiler also rejected a shader of the standard material. So null3D does not support Safari before 18, and `createEngine` fails there with [E1306](../errors/E1306.md) before it starts a worker or asks for memory. A page that the null3D Vite plugin builds still starts the core's download as its HTML arrives, and leaves it unread. Every browser on iPhone and iPad runs Safari's WebKit engine, so the same check covers Chrome, Edge and Firefox on iOS and iPadOS before 18. The check reads the browser's user agent. An `AppleWebKit/` number of 600 or more marks Apple's WebKit, and the check then reads Safari's `Version/` part, or else the iOS or iPadOS version. Chrome, Edge, Samsung Internet and Firefox on other systems give no such number, so the check passes them.
+
+On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
 
 ## Related pages
 

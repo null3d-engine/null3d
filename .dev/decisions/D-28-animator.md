@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-03; the phone and tablet timings of the step pending. Date: 2026-10-03. Task: M2-C2.
 
+Summary: The core keeps each object's play state and advances it in the same job worker loop that blends. 8 slots and 4 layers per object; layers above 0 replace the pose below, through joint masks; additive clips convert once, as three.js's `makeClipAdditive` does; events come in one sorted buffer. Fades, masks and additive clips stay within 1.7e-4 of three.js.
+
 ## Question
 
 How should `object.animator()` play clips? It needs fades, layers, joint masks, additive clips, a time scale and events. A crowd of 500 characters must stay cheap, and a frame must allocate nothing. Fades and blends must match three.js's `AnimationMixer` where three.js has the same feature.
@@ -62,7 +64,7 @@ The rejected option kept the play state in TypeScript and wrote each slot's time
 
 ### Slots and layers
 
-Each object has 8 slots, up from the 4 of D-26, and 4 layers. Two layers that each cross-fade between two clips, plus an additive clip, fill 5. The rest absorb quick changes of mind, such as a cross-fade back while the first still runs. When all 8 hold clips, a play takes the slot whose clip counts least now. A slot costs 32 bytes and an unused slot costs one comparison per frame.
+Each object has 8 slots, up from the 4 of D-26, and 4 layers. Two layers that each cross-fade between two clips, plus an additive clip, fill 5. The rest absorb quick changes of mind, such as a cross-fade back while the first still runs. When all 8 hold clips, a play first takes the slot of a clip that fades out. Only then does it take the slot whose clip counts least, as [D-62](D-62-clip-weights-and-blends.md) changed it. A slot costs 32 bytes and an unused slot costs one comparison per frame.
 
 Inside a layer, clips blend as three.js's mixer does, as D-26 settled: each clip counts only where it has tracks. Layer 0 blends with the rest pose below. Each layer above replaces the pose below by the layer's weight, times its own blend's weight up to 1. This is the override layer of Unity and Unreal. three.js has no layers. Its way to split a body is clips with tracks taken out, which blend half and half where both clips have tracks. With a layer at full weight, the upper body follows the wave alone. A masked layer at weight 1 gives what three.js gives for clips with the masked tracks taken out. The fixture checks both weights.
 
@@ -88,7 +90,7 @@ A first version ran the handlers right after the step, and timed the step and th
 
 ### Removing an object
 
-Destroying an animated object removes its instance from the core. Its id and its run of skinning matrices go to the next instance that fits them, first fit. The matrix buffer never moves, so the threads that read it keep their views. Freed runs are not merged; a game that mixes many skeleton sizes and churns through them can use up the 65,536 joints sooner.
+Destroying an animated object removes its instance from the core. Its id and its run of skinning matrices go to the next instance that fits them, first fit. The matrix buffer never moves, so the threads that read it keep their views. Freed runs merge with the free runs next to them. A run at the end of the joints handed out is handed back, as [D-62](D-62-clip-weights-and-blends.md) decided after the core review. A first version left them apart. A game that mixed skeleton sizes could then be refused joints that were free.
 
 ## How three.js handles it
 

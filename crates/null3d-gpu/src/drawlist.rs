@@ -342,9 +342,19 @@ pub mod format {
     /// ambient occlusion's copy of the depth. WebGL2 calls it `R32F`, and draws into it with
     /// `EXT_color_buffer_float`.
     pub const R32_FLOAT: u32 = 20;
+    /// BC6H in blocks of 4 x 4 texels, 16 bytes each, with three unsigned half floats per texel
+    /// and no alpha: high dynamic range color in an eighth of the bytes of `RGBA16_FLOAT`
+    /// (`Capabilities::TEXTURE_BC`).
+    pub const BC6H_RGB_UFLOAT: u32 = 21;
+    /// Depth as a 16-bit unsigned normalized number: half the bytes of `DEPTH32_FLOAT`, with even
+    /// steps of 1 / 65,535 from 0 to 1. WebGL2 calls it `DEPTH_COMPONENT16`.
+    pub const DEPTH16_UNORM: u32 = 22;
+    /// Four 32-bit unsigned integers per texel: data of several kinds in one data texture, such as
+    /// WebGL2's light grid and light records, which shaders read as integers or turn into floats.
+    pub const RGBA32_UINT: u32 = 23;
 
     /// Every format.
-    pub const ALL: [u32; 21] = [
+    pub const ALL: [u32; 24] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -366,6 +376,9 @@ pub mod format {
         ETC2_RGBA8_UNORM_SRGB,
         RGB9E5_UFLOAT,
         R32_FLOAT,
+        BC6H_RGB_UFLOAT,
+        DEPTH16_UNORM,
+        RGBA32_UINT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -396,7 +409,7 @@ pub mod format {
 
     /// True for the depth formats.
     pub const fn is_depth(format: u32) -> bool {
-        matches!(format, DEPTH24_PLUS | DEPTH32_FLOAT)
+        matches!(format, DEPTH16_UNORM | DEPTH24_PLUS | DEPTH32_FLOAT)
     }
 
     /// True for the formats stored in compressed blocks of texels.
@@ -408,7 +421,7 @@ pub mod format {
     pub const fn capability(format: u32) -> Capabilities {
         match format {
             ASTC_4X4_UNORM | ASTC_4X4_UNORM_SRGB => Capabilities::TEXTURE_ASTC,
-            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB => Capabilities::TEXTURE_BC,
+            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB | BC6H_RGB_UFLOAT => Capabilities::TEXTURE_BC,
             ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB | ETC2_RGBA8_UNORM | ETC2_RGBA8_UNORM_SRGB => {
                 Capabilities::TEXTURE_ETC2
             }
@@ -419,7 +432,7 @@ pub mod format {
     /// Texels on each side of a block: 4 for the compressed formats, and 1 for the rest.
     pub const fn block_size(format: u32) -> u32 {
         match format {
-            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB => 4,
+            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB | BC6H_RGB_UFLOAT => 4,
             _ => 1,
         }
     }
@@ -430,12 +443,15 @@ pub mod format {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
             | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
+            DEPTH16_UNORM => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
+            | RGBA32_UINT
             | ASTC_4X4_UNORM
             | ASTC_4X4_UNORM_SRGB
             | BC7_RGBA_UNORM
             | BC7_RGBA_UNORM_SRGB
+            | BC6H_RGB_UFLOAT
             | ETC2_RGBA8_UNORM
             | ETC2_RGBA8_UNORM_SRGB => 16,
             _ => 0,
@@ -459,6 +475,12 @@ pub mod format {
     /// Bytes of one row of blocks of a mip level: a row of texels for an uncompressed format.
     pub const fn row_bytes(format: u32, width: u32, level: u32) -> u64 {
         blocks(format, width, level) as u64 * block_bytes(format) as u64
+    }
+
+    /// True for the formats whose textures get their texels from writes alone: the compressed
+    /// formats and `RGB9E5_UFLOAT`, which no path draws into or copies.
+    pub const fn writes_only(format: u32) -> bool {
+        is_compressed(format) || format == RGB9E5_UFLOAT
     }
 
     /// True for the formats whose mip levels `GenerateMipmaps` makes: 8-bit color, which every
@@ -595,7 +617,9 @@ pub mod resource_kind {
 pub mod layout {
     /// Group 0 of render pipelines: per-frame constants and the material table.
     pub const FRAME: u32 = 0;
-    /// Group 0 of the culling compute pipeline.
+    /// Group 0 of the culling compute pipelines, plain and of the two occlusion phases: the
+    /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
+    /// depth pyramid or a placeholder.
     pub const CULL: u32 = 1;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
@@ -634,6 +658,10 @@ pub mod layout {
     /// vertices, the skinned vertices that it writes, the texture of skinning matrices, and the
     /// morph textures of deltas and of weights.
     pub const SKIN: u32 = 12;
+    /// Group 0 of the depth pyramid's compute pipeline: the level's parameters at a dynamic
+    /// offset, the pyramid, which it writes, and the view's depth target of one sample, which it
+    /// reads as a float texture.
+    pub const DEPTH_PYRAMID: u32 = 14;
     /// Group 0 of ambient occlusion's depth step on a depth target of one sample: the steps'
     /// uniform block, then the depth target, which the step reads as unfilterable floats with
     /// `textureLoad`. Compatibility mode reads no depth texture type with `textureLoad`, so the
@@ -645,12 +673,23 @@ pub mod layout {
     /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
     /// textures that the step reads with `textureLoad`.
     pub const AO: u32 = 18;
+    /// The background's group: its uniform block, then a cube texture and its filtering sampler.
+    /// It is group 1 of the cube and sky backgrounds, and group 2 of the texture background,
+    /// which reads only the uniform block.
+    pub const BACKGROUND: u32 = 19;
     /// The group after a template's own groups in the WebGPU builds that read their instances by
     /// index ([`INSTANCE_INDEX`](super::permutation::INSTANCE_INDEX)): the view's culling
     /// parameters as a uniform block, for the offset from the camera to each cell, then the world
     /// matrices, the bucket table and the bucket records of the layout that the view draws, which
     /// vertex shaders read.
     pub const INSTANCE_INDEX: u32 = 20;
+    /// Group 0 of a custom effect's pass: the effect's uniform block, the color it reads, a linear
+    /// sampler, and the scene's depth as unfilterable floats, or a blank texture for an effect that
+    /// reads no depth.
+    pub const EFFECT: u32 = 21;
+    /// [`EFFECT`] with a multisampled scene depth, whose sample 0 the effect reads. Only WebGPU has
+    /// it: WebGL2 reads a copy of one sample that the backend keeps.
+    pub const EFFECT_DEPTH_MS: u32 = 22;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -713,9 +752,11 @@ pub mod permutation {
     /// its cell's offset from storage buffers, instead of a copy that the culling shader writes.
     /// Only the test switch for index-only instance data asks for it (decision record D-23).
     pub const INSTANCE_INDEX: u32 = 131072;
+    /// A custom effect reads the scene's depth from a multisampled target, at sample 0.
+    pub const DEPTH_MULTISAMPLED: u32 = 262144;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 18] = [
+    pub const NAMES: [(&str, u32); 19] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -734,6 +775,7 @@ pub mod permutation {
         ("BLOOM", BLOOM),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
         ("INSTANCE_INDEX", INSTANCE_INDEX),
+        ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -806,6 +848,10 @@ pub mod state_flags {
     pub const DEPTH_EQUAL: u32 = 128;
     /// Writes no color, as the depth prepass draws into the color target's render pass.
     pub const NO_COLOR_WRITE: u32 = 256;
+    /// Draws where the fragment is as near as what the depth target holds or nearer, so a
+    /// fragment at the far plane draws where no object wrote depth, as backgrounds draw after the
+    /// opaque objects.
+    pub const DEPTH_OR_EQUAL: u32 = 1024;
     /// Every flag.
     pub const ALL: u32 = CULL_NONE
         | LINE_LIST
@@ -814,7 +860,8 @@ pub mod state_flags {
         | NO_DEPTH_TEST
         | BLEND
         | DEPTH_EQUAL
-        | NO_COLOR_WRITE;
+        | NO_COLOR_WRITE
+        | DEPTH_OR_EQUAL;
 }
 
 /// Vertex formats. Every vertex has a position and a normal. A format adds optional attributes
@@ -1169,8 +1216,9 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
-    /// Bytes per compacted instance that a vertex shader reads by index: the source's index.
-    pub const INDEX_STRIDE: u32 = 4;
+    /// Bytes per compacted instance that a vertex shader reads by index: the source's index in a
+    /// whole 16-byte entry, which the culling shader writes as one vector.
+    pub const INDEX_STRIDE: u32 = 16;
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, and the
@@ -1200,9 +1248,13 @@ pub mod sizes {
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
-    /// Light records per row of the WebGL2 light list's data texture, four texels each. A
-    /// power of two.
-    pub const LIGHTS_PER_TEXTURE_ROW: u32 = 512;
+    /// Light records per row of WebGL2's light data texture, four texels each, from its first
+    /// column. A power of two.
+    pub const LIGHTS_PER_TEXTURE_ROW: u32 = 256;
+    /// Words of the light grid per row of WebGL2's light data texture, four to a texel, in the
+    /// columns after the light records'. A power of two. The texture is 2,048 texels wide, the
+    /// width that every WebGL2 device allows.
+    pub const GRID_WORDS_PER_TEXTURE_ROW: u32 = 4096;
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
@@ -1210,9 +1262,16 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eight `vec4f`s. On WebGL2 each row is a
-    /// row of eight `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 128;
+    /// Bytes of one material's row in the material table: nine `vec4f`s. On WebGL2 each row is a
+    /// row of nine `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 144;
+    /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
+    /// at bindings from 0, with each one's sampler at the bindings after every texture.
+    pub const MAP_SLOTS: u32 = 8;
+    /// The units that the standard material's maps share on WebGL2, which gives a shader stage
+    /// only 16 texture units: the group's first bindings hold the units' arrays, and the bindings
+    /// from [`MAP_SLOTS`] their samplers.
+    pub const SHARED_MAP_UNITS: u32 = 6;
     /// Grid cells in use at most, which the shaders' tables of offsets from the camera to each
     /// cell hold, one `vec4f` each.
     pub const MAX_CELLS: u32 = 512;
@@ -1223,15 +1282,23 @@ pub mod sizes {
     /// parameters list them for the cells a view can see. Runs that follow each other join, so
     /// there is at most one per pair of cells, and one more for the sources that move.
     pub const MAX_CULL_RANGES: u32 = MAX_CELLS / 2 + 1;
+    /// Bytes of the occlusion phases' values at the end of the culling parameters: the
+    /// view-projection matrix, the render size, the depth pyramid's levels, where the second
+    /// phase's draws and the history start, and an occluder's least span. Views that cull in one
+    /// phase leave them unset, but the parameters have room for them.
+    pub const CULL_OCCLUSION_BYTES: u32 = 96;
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
     /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
-    /// six vectors.
-    pub const SHADOW_UNIFORM_BYTES: u32 = 352;
+    /// seven vectors.
+    pub const SHADOW_UNIFORM_BYTES: u32 = 368;
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
+    /// Bytes of the background's uniform block: eight vectors, which the cube map and the sky
+    /// read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 128;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1260,8 +1327,9 @@ pub mod template {
     /// Casters between the light and the layer's view flatten onto its near face.
     pub const SHADOW_DEPTH: u32 = 8;
     /// A texture behind every object: one triangle over the whole view, with no vertex buffer, that
-    /// samples a layer of a texture array. The bind group of index 0 is the frame's and that of
-    /// index 1 the texture's. The draw's first vertex is the layer times three.
+    /// samples a layer of a texture array. The bind group of index 0 is the frame's, that of index
+    /// 1 the texture's and that of index 2 the background's, of layout
+    /// [`BACKGROUND`](super::layout::BACKGROUND). The draw's first vertex is the layer times three.
     pub const BACKGROUND: u32 = 9;
     /// The debug views of instanced meshes: normals, depth, overdraw or wireframe, which the
     /// permutation's debug view bits pick, in place of each mesh's material. Only development
@@ -1295,6 +1363,14 @@ pub mod template {
     /// [`SPRITE`] times the material's map, at each sprite's frame of the atlas. The bind group of
     /// index 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
     pub const SPRITE_MAP: u32 = 23;
+    /// The first phase of occlusion culling: the culling shader's `early` entry point, which
+    /// keeps the instances in view that drew in the view's last frame.
+    pub const OCCLUSION_EARLY: u32 = 24;
+    /// The second phase of occlusion culling: the culling shader's `late` entry point, which
+    /// tests the instances in view against the depth pyramid.
+    pub const OCCLUSION_LATE: u32 = 25;
+    /// One level of the depth pyramid that the second phase of occlusion culling tests against.
+    pub const DEPTH_PYRAMID: u32 = 28;
     /// Wide lines: a quad with round ends for each instance batch row, whose world matrix holds a
     /// segment's middle, its half, its end colors and its distance along the line packed (see
     /// `null3d_core::lines`), in the material's color times the segment's colors.
@@ -1314,6 +1390,14 @@ pub mod template {
     /// Ambient occlusion's edge-aware blur, three.js's Poisson denoise: it writes the occlusion
     /// that the opaque pass reads, beside the depth it blurred at.
     pub const AO_DENOISE: u32 = 34;
+    /// A cube map behind every object, such as an environment map: a cube around the camera of 36
+    /// vertices with no vertex buffer, whose fragments read the cube map in their direction. The
+    /// bind group of index 0 is the frame's and that of index 1 the background's, of layout
+    /// [`BACKGROUND`](super::layout::BACKGROUND).
+    pub const BACKGROUND_CUBE: u32 = 35;
+    /// three.js's analytic sky behind every object, drawn as [`BACKGROUND_CUBE`] is, from the
+    /// values of the background's uniform block alone.
+    pub const BACKGROUND_SKY: u32 = 36;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1501,6 +1585,9 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
                 ("R32_FLOAT", format::R32_FLOAT),
+                ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
+                ("DEPTH16_UNORM", format::DEPTH16_UNORM),
+                ("RGBA32_UINT", format::RGBA32_UINT),
             ],
         ),
         (
@@ -1586,10 +1673,14 @@ pub fn typescript_constants() -> String {
                 ("FINAL_BLOOM", layout::FINAL_BLOOM),
                 ("JOINTS", layout::JOINTS),
                 ("SKIN", layout::SKIN),
+                ("DEPTH_PYRAMID", layout::DEPTH_PYRAMID),
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
+                ("BACKGROUND", layout::BACKGROUND),
                 ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
+                ("EFFECT", layout::EFFECT),
+                ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1635,6 +1726,7 @@ pub fn typescript_constants() -> String {
                 ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
                 ("DEPTH_EQUAL", state_flags::DEPTH_EQUAL),
                 ("NO_COLOR_WRITE", state_flags::NO_COLOR_WRITE),
+                ("DEPTH_OR_EQUAL", state_flags::DEPTH_OR_EQUAL),
             ],
         ),
         (
@@ -1660,12 +1752,17 @@ pub fn typescript_constants() -> String {
                 ("OUTLINE_MASK", template::OUTLINE_MASK),
                 ("SPRITE", template::SPRITE),
                 ("SPRITE_MAP", template::SPRITE_MAP),
+                ("OCCLUSION_EARLY", template::OCCLUSION_EARLY),
+                ("OCCLUSION_LATE", template::OCCLUSION_LATE),
+                ("DEPTH_PYRAMID", template::DEPTH_PYRAMID),
                 ("LINE", template::LINE),
                 ("LINE_LIT", template::LINE_LIT),
                 ("AO_DEPTH", template::AO_DEPTH),
                 ("AO_DEPTH_MS", template::AO_DEPTH_MS),
                 ("AO", template::AO),
                 ("AO_DENOISE", template::AO_DENOISE),
+                ("BACKGROUND_CUBE", template::BACKGROUND_CUBE),
+                ("BACKGROUND_SKY", template::BACKGROUND_SKY),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1708,19 +1805,27 @@ pub fn typescript_constants() -> String {
                 ("INDICES_PER_TEXTURE_ROW", sizes::INDICES_PER_TEXTURE_ROW),
                 ("LIGHT_RECORD_BYTES", sizes::LIGHT_RECORD_BYTES),
                 ("LIGHTS_PER_TEXTURE_ROW", sizes::LIGHTS_PER_TEXTURE_ROW),
+                (
+                    "GRID_WORDS_PER_TEXTURE_ROW",
+                    sizes::GRID_WORDS_PER_TEXTURE_ROW,
+                ),
                 ("DRAW_RECORD_BYTES", sizes::DRAW_RECORD_BYTES),
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
+                ("MAP_SLOTS", sizes::MAP_SLOTS),
+                ("SHARED_MAP_UNITS", sizes::SHARED_MAP_UNITS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
+                ("CULL_OCCLUSION_BYTES", sizes::CULL_OCCLUSION_BYTES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
                 ("SHADOW_UNIFORM_BYTES", sizes::SHADOW_UNIFORM_BYTES),
                 (
                     "SHADOW_TILES_UNIFORM_BYTES",
                     sizes::SHADOW_TILES_UNIFORM_BYTES,
                 ),
+                ("BACKGROUND_UNIFORM_BYTES", sizes::BACKGROUND_UNIFORM_BYTES),
             ],
         ),
     ];
@@ -1786,7 +1891,6 @@ mod tests {
         for line in [
             format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
-            format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
             format!("const MAX_RANGES: u32 = {}u;", sizes::MAX_CULL_RANGES),
             format!(
                 "const WORKGROUP_SIZE: u32 = {}u;",
@@ -2116,6 +2220,8 @@ mod tests {
         assert_eq!(format::texel_bytes(format::DEPTH24_PLUS), 0);
         assert_eq!(format::texel_bytes(99), 0);
         assert!(format::is_depth(format::DEPTH32_FLOAT));
+        assert!(format::is_depth(format::DEPTH16_UNORM));
+        assert_eq!(format::texel_bytes(format::DEPTH16_UNORM), 2);
         assert!(!format::is_depth(format::RGBA8_UNORM_SRGB));
     }
 
@@ -2164,6 +2270,14 @@ mod tests {
             format::capability(format::BC7_RGBA_UNORM_SRGB),
             Capabilities::TEXTURE_BC
         );
+        // BC6H holds high dynamic range color in the same blocks of 16 bytes as BC7.
+        let bc6h = format::BC6H_RGB_UFLOAT;
+        assert!(format::is_compressed(bc6h));
+        assert_eq!(format::level_bytes(bc6h, 64, 32, 0), 16 * 8 * 16);
+        assert_eq!(format::capability(bc6h), Capabilities::TEXTURE_BC);
+        assert!(format::writes_only(bc6h));
+        assert!(format::writes_only(format::RGB9E5_UFLOAT));
+        assert!(!format::writes_only(format::RGBA16_FLOAT));
         assert_eq!(
             format::capability(format::RGBA8_UNORM),
             Capabilities::empty()

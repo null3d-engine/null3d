@@ -35,8 +35,15 @@ import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
+import {
+	type BackgroundOptions,
+	type BackgroundSource,
+	Cubemap,
+	isSkyBackground,
+	SceneBackground,
+} from './background';
 import { type ColorInput, linearColor } from './color';
-import { type Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
+import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
@@ -82,9 +89,17 @@ import {
 	type RaycastOptions,
 	SceneQueries,
 } from './queries';
-import type { Material, MeshGeometry } from './resources';
+import type { AlphaMode, Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
-import type { SpriteBatch, SpriteMakers, SpriteOptions } from './sprites';
+import type {
+	PointBatch,
+	PointChecks,
+	PointOptions,
+	SpriteBatch,
+	SpriteLook,
+	SpriteMakers,
+	SpriteOptions,
+} from './sprites';
 import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
@@ -152,7 +167,7 @@ export interface MeshOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes the mesh block the view for software occlusion culling on WebGL2, like
+	 * True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like
 	 * `setOccluder(true)`. The default is false.
 	 */
 	occluder?: boolean;
@@ -264,9 +279,9 @@ export interface InstantiateOptions extends NodeOptions {
 	/** True makes shadows fall on every mesh of the copy. The default is false. */
 	receiveShadows?: boolean;
 	/**
-	 * True makes every mesh of the copy block the view for software occlusion culling on WebGL2,
-	 * like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset
-	 * tool gave blockers block, and the others do not.
+	 * True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on
+	 * WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the
+	 * asset tool gave blockers block, and the others do not.
 	 */
 	occluder?: boolean;
 	/**
@@ -1198,13 +1213,15 @@ export class Mesh extends Object3D {
 	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
 	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
 	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
-	 * frame, and the engine skips every object that lies wholly behind the blockers. Mark large,
-	 * solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most
-	 * 4,096 triangles. A mesh that the asset tool gave a blocker draws that blocker instead, a few
-	 * boxes inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what
-	 * the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
-	 * mask, use a custom material or are skinned never block, whatever this says. WebGPU culls
-	 * hidden objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
+	 * frame, and the engine skips every object that lies wholly behind the blockers. On WebGPU,
+	 * while the `gpuOcclusion` setting is on, the GPU draws the depth of the blockers that showed
+	 * in the last frame and skips every object wholly behind them. Mark large, solid meshes that
+	 * hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles.
+	 * On WebGL2, a mesh that the asset tool gave a blocker draws that blocker instead, a few boxes
+	 * inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what the
+	 * object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
+	 * mask or use a custom material never block, whatever this says, nor do skinned ones on
+	 * WebGL2. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
 		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
@@ -1818,6 +1835,11 @@ export class InstanceBatch {
 	destroyedFrame = -1;
 	/** @internal The batch's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
+	/**
+	 * @internal The sprite, point or line batch whose rows this batch holds, which hits and pointer
+	 * events name in its place.
+	 */
+	face: SpriteBatch | PointBatch | LineBatch | undefined = undefined;
 
 	/** @internal */
 	constructor(
@@ -1828,6 +1850,8 @@ export class InstanceBatch {
 		private readonly hasColors: boolean,
 		/** @internal The batches of a model's other meshes, which read this batch's rows. */
 		readonly parts: readonly number[] = [],
+		/** @internal The meshes and materials that the batch and its parts draw. */
+		readonly uses: BatchUses = NO_USES,
 	) {}
 
 	/**
@@ -1898,13 +1922,26 @@ export class InstanceBatch {
 	 * The event's `instance` names the row.
 	 */
 	on(type: ObjectEventType, handler: ObjectEventHandler): void {
-		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
-		this.scene.pointerEvents.add(this, type, handler);
+		this.listen(this, type, handler);
 	}
 
 	/** Removes a handler that `on` added for events of `type`. */
 	off(type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.scene.pointerEvents.remove(this, type, handler);
+		this.unlisten(this, type, handler);
+	}
+
+	/**
+	 * @internal Adds `handler` for events of `type` on `target`: this batch, or the sprite, point or
+	 * line batch whose rows it holds.
+	 */
+	listen(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
+		this.scene.pointerEvents.add(target, type, handler);
+	}
+
+	/** @internal Removes a handler that `listen` added. */
+	unlisten(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(target, type, handler);
 	}
 
 	/** @internal A batch has no parent for its pointer events to go on to. */
@@ -1935,12 +1972,21 @@ export class InstanceBatch {
 		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
 		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
 		this.scene.forgetListeners(this);
+		if (this.face) this.scene.forgetListeners(this.face);
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
 		this.generation = -1;
 	}
 }
+
+/** @internal The meshes and materials that an instance batch draws, which their destroy checks. */
+export interface BatchUses {
+	readonly meshes: readonly MeshGeometry[];
+	readonly materials: readonly Material[];
+}
+
+const NO_USES: BatchUses = { meshes: [], materials: [] };
 
 /** The class of each kind of light that a model's node can create, by the core's light kind. */
 const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
@@ -2007,27 +2053,66 @@ function linePoints(
 		throw bad(`${points} points for segments, which join points in pairs`);
 	if (colors && colors.length !== positions.length)
 		throw bad(`${colors.length} numbers in colors for ${points} points, not ${positions.length}`);
-	if (DEV)
-		for (const [name, values] of [
-			['positions', positions],
-			['colors', colors ?? []],
-		] as const)
-			for (let k = 0; k < values.length; k++)
-				if (!Number.isFinite(values[k])) throw bad(`${values[k]} at index ${k} of ${name}`);
+	checkFinitePoints(call, positions, colors);
 	return points;
+}
+
+/**
+ * The points of `scene.createPoints`'s arrays: 3 numbers per point in `positions`, and 3 or 4 in
+ * `colors`. Throws E1206 for arrays that make no points.
+ */
+function pointCount(
+	call: string,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): number {
+	const points = positions.length / 3;
+	if (!Number.isInteger(points) || points < 1)
+		throw new EngineError(
+			'E1206',
+			`${call}() got ${positions.length} numbers in positions; points take 3 numbers each, and at least 1 point.`,
+		);
+	if (colors && colors.length !== points * 3 && colors.length !== points * 4)
+		throw new EngineError(
+			'E1206',
+			`${call}() got ${colors.length} numbers in colors for ${points} points, not ${points * 3} or ${points * 4}.`,
+		);
+	checkFinitePoints(call, positions, colors);
+	return points;
+}
+
+/** Development builds: throws E1206 for a number of `positions` or `colors` that is not finite. */
+function checkFinitePoints(
+	call: string,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+): void {
+	if (!DEV) return;
+	for (const [name, values] of [
+		['positions', positions],
+		['colors', colors ?? []],
+	] as const)
+		for (let k = 0; k < values.length; k++)
+			if (!Number.isFinite(values[k]))
+				throw new EngineError('E1206', `${call}() got ${values[k]} at index ${k} of ${name}.`);
+}
+
+/** Development builds: throws E1203 for a `name` value that is not finite, and E1108 for one not above 0. */
+function checkPositive(call: string, name: string, value: number): void {
+	if (!DEV) return;
+	if (!Number.isFinite(value))
+		throw new EngineError('E1203', `${call}() got ${value} for ${name}.`);
+	if (!(value > 0))
+		throw new EngineError(
+			'E1108',
+			`${call}() got the ${name} ${value}; it takes a number above 0.`,
+		);
 }
 
 /** The checks of line batches' calls, which the line code takes from the scene. */
 const LINE_CHECKS: LineChecks = {
 	width(width: number, call: string): void {
-		if (!DEV) return;
-		if (!Number.isFinite(width))
-			throw new EngineError('E1203', `${call}() got ${width} for width.`);
-		if (!(width > 0))
-			throw new EngineError(
-				'E1108',
-				`${call}() got the width ${width}; it takes a number above 0.`,
-			);
+		checkPositive(call, 'width', width);
 	},
 	values(values: LineValues, call: string): void {
 		if (!DEV) return;
@@ -2039,6 +2124,13 @@ const LINE_CHECKS: LineChecks = {
 			if (key !== 'dashOffset' && value < 0)
 				throw new EngineError('E1108', `${call}() got the ${key} ${value}; it takes 0 or more.`);
 		}
+	},
+};
+
+/** The checks of a point batch's later calls. */
+const POINT_CHECKS: PointChecks = {
+	size(size: number, call: string): void {
+		checkPositive(call, 'size', size);
 	},
 };
 
@@ -2112,6 +2204,8 @@ export class Scene {
 	private sceneQueries: SceneQueries | undefined;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
 	private sceneEnvironment: SceneEnvironment | undefined;
+	/** The background's values in the core, made on the first `setBackground`. */
+	private sceneBackground: SceneBackground | undefined;
 	/** Pointer events on objects, made on the first `on`. */
 	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -2423,6 +2517,34 @@ export class Scene {
 		for (const part of batch.parts) this.batchSlots[part & SLOT_MASK] = batch;
 	}
 
+	/**
+	 * @internal The first live object or instance batch that uses one of `meshes` or `materials`,
+	 * or whose animator plays `rig`, as error messages describe it, or undefined when none does.
+	 * It looks at every object and batch, so destroys call it, never the frame loop.
+	 */
+	userOf(
+		meshes: ReadonlySet<MeshGeometry>,
+		materials: ReadonlySet<Material> = new Set(),
+		rig?: object,
+	): string | undefined {
+		for (const object of this.objectSlots) {
+			if (object === undefined || object.destroyedFrame !== -1) continue;
+			if (rig !== undefined && object.animation?.rig === rig && object.animation.instance !== 0)
+				return object.describe();
+			if (!(object instanceof Mesh)) continue;
+			const { mesh, material } = object;
+			if ((mesh && meshes.has(mesh)) || (material && materials.has(material)))
+				return object.describe();
+		}
+		for (const batch of this.batchSlots) {
+			if (batch === undefined || batch.destroyedFrame !== -1) continue;
+			const { uses } = batch;
+			if (uses.meshes.some((m) => meshes.has(m)) || uses.materials.some((m) => materials.has(m)))
+				return 'an instance batch';
+		}
+		return undefined;
+	}
+
 	/** @internal Takes a destroyed object out of the index of names. */
 	forget(object: Object3D): void {
 		const { name } = object;
@@ -2567,6 +2689,7 @@ export class Scene {
 	 */
 	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
 		const call = 'instantiate';
+		prefab.checkLive(call);
 		const { template } = prefab;
 		if (DEV) {
 			checkSameEngine(call, 'model', prefab.core, this);
@@ -2854,7 +2977,8 @@ export class Scene {
 			throw error;
 		}
 		if (DEV) this.countBatchRows(count * ids.length);
-		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1));
+		const uses = { meshes: parts.map((p) => p.mesh), materials: parts.map((p) => p.material) };
+		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1), uses);
 		this.rememberBatch(batch);
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.origin) batch.setOrigin(options.origin, call);
@@ -2883,6 +3007,7 @@ export class Scene {
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		if ('template' in source) {
+			source.checkLive(call);
 			const problem =
 				source.instancing.length > 0
 					? 'has instancing of its own. Use scene.instantiate for it'
@@ -2891,6 +3016,10 @@ export class Scene {
 						: undefined;
 			if (problem)
 				throw new EngineError('E1417', `${call}() got ${source.describe()}, which ${problem}.`);
+			if (DEV && source.parts.some((part) => part.bindPose))
+				console.warn(
+					`${call}() draws the skinned meshes of ${source.describe()} in their bind pose, because their rest pose differs from it and batches do not skin. Use scene.instantiate to draw them at rest.`,
+				);
 			return this.createParts(source.parts, count, options, call);
 		}
 		const mesh = source;
@@ -2906,7 +3035,10 @@ export class Scene {
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
+		const batch = new InstanceBatch(this, id, count, options.colors ?? false, [], {
+			meshes: [mesh],
+			materials: [material],
+		});
 		this.rememberBatch(batch);
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
@@ -2924,9 +3056,6 @@ export class Scene {
 	 */
 	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
 		const call = 'createSprites';
-		const { core, makers } = this;
-		const { count, layers } = options;
-		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const { columns = 1, rows = 1 } = options.atlas ?? {};
 		for (const [name, side] of [
 			['columns', columns],
@@ -2940,10 +3069,58 @@ export class Scene {
 		const { center } = options;
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
+		const [, batch] = await this.spriteBatch(call, options.count, options, [columns, rows], false);
+		return batch;
+	}
+
+	/**
+	 * Many points in one batch: squares that face the camera, all of one size, like three.js's
+	 * `Points` with a `PointsMaterial`. Each point is a sprite: typed arrays give each point its
+	 * position and color, as an instance batch's arrays give its rows. Sizes above one pixel work on
+	 * every GPU path. Points are opaque by default, and blended points draw back to front with the
+	 * other blended objects. The first call downloads the sprite code. Throws E1206 for points or
+	 * colors that make no points, E1108 for a size that is not above 0, E1203 for a size that is not
+	 * finite, and E1406 when the sprite code does not download.
+	 */
+	async createPoints(options: PointOptions): Promise<PointBatch> {
+		const call = 'createPoints';
+		const { positions, colors, size = 1 } = options;
+		const count = pointCount(call, positions, colors);
+		POINT_CHECKS.size(size, call);
+		const [sprites, batch, instances] = await this.spriteBatch(call, count, options, [1, 1], true);
+		const points = sprites.pointBatch(batch, POINT_CHECKS, positions, colors, size);
+		instances.face = points;
+		return points;
+	}
+
+	/**
+	 * Downloads the sprite code on first use, and creates a sprite batch of `count` rows with the
+	 * look, layers and origin of `options` and an atlas of `columns` by `rows` frames. A batch of
+	 * `points` is opaque when the options give no alpha mode, and sprites blend. Returns the batch
+	 * and the instance batch that holds its rows.
+	 */
+	private async spriteBatch(
+		call: string,
+		count: number,
+		options: SpriteLook,
+		[columns, rows]: readonly [number, number],
+		points: boolean,
+	): Promise<[typeof import('./sprites'), SpriteBatch, InstanceBatch]> {
+		const alphaMode: AlphaMode = points ? 'opaque' : 'blend';
+		const { core, makers } = this;
+		const { layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
 		makers.materials.shaders.need('sprites');
 		const sprites = await loadSprites(call);
-		const parts = sprites.spriteParts(makers, this.spriteQuads, options, [columns, rows], call);
+		const parts = sprites.spriteParts(
+			makers,
+			this.spriteQuads,
+			options,
+			[columns, rows],
+			alphaMode,
+			call,
+		);
 		const id = core.checkGrowth(
 			core.glue.createSpriteBatch(
 				count,
@@ -2953,16 +3130,21 @@ export class Scene {
 				columns,
 				rows,
 				options.sizeAttenuation === false,
+				points,
 			),
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const instances = new InstanceBatch(this, id, count, false);
+		const instances = new InstanceBatch(this, id, count, false, [], {
+			meshes: [parts.mesh],
+			materials: [parts.material],
+		});
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
+		instances.face = batch;
 		if (layers !== undefined) batch.setLayers(layers);
-		return batch;
+		return [sprites, batch, instances];
 	}
 
 	/**
@@ -3003,10 +3185,14 @@ export class Scene {
 		);
 		const rows = LINE_SEGMENTS[mode](points);
 		if (DEV) this.countBatchRows(rows);
-		const instances = new InstanceBatch(this, id, rows, false);
+		const instances = new InstanceBatch(this, id, rows, false, [], {
+			meshes: [parts.mesh],
+			materials: [],
+		});
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new lines.LineBatch(core, id, points, parts.material, instances, LINE_CHECKS);
+		instances.face = batch;
 		batch.positions.set(positions);
 		if (colors) batch.colors.set(colors);
 		if (layers !== undefined) batch.setLayers(layers);
@@ -3152,24 +3338,36 @@ export class Scene {
 	}
 
 	/**
-	 * What the camera shows behind every object: a color, or a texture. A texture fills the view and
-	 * stretches to its shape, as a texture in three.js's `scene.background` does. The color set
-	 * before it shows until the texture's texels are on the GPU, and again if the texture is
-	 * destroyed. A color takes the place of a texture. Exposure and tone mapping change the
-	 * background with the rest of the scene. Without a background, the canvas shows black, or the
-	 * page behind it on a transparent canvas.
+	 * What the camera shows behind every object, as three.js's `scene.background`: a color, a
+	 * texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube
+	 * map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture
+	 * fills the view and stretches to its shape. An environment or a cube map surrounds the scene,
+	 * and `options` give its intensity, rotation and, for an environment, its blur, as three.js's
+	 * `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before
+	 * shows until a texture's texels are on the GPU, and again if the texture is destroyed. A color
+	 * takes the place of any other background. Exposure and tone mapping change the background with
+	 * the rest of the scene. Without a background, the canvas shows black, or the page behind it on
+	 * a transparent canvas. Settings are values, not shader builds, and the call allocates nothing,
+	 * so a sketch can move the sky's sun or turn a cube map every frame. Throws E1204 for a color
+	 * it cannot read, E1203 for a number that is not finite, E1108 for a number out of its range,
+	 * E1213 for an option that the background does not take, and E1101 for a texture, an
+	 * environment or a cube map that was destroyed.
 	 */
-	setBackground(background: ColorInput | Texture): void {
-		const { glue } = this.core;
-		if (background instanceof Texture) {
-			this.makers?.materials.shaders.need('background');
-			const status = glue.setBackgroundTexture(background.handle);
-			this.core.check(status, 'setBackground', 'a texture', true);
+	setBackground(background: ColorInput | BackgroundSource, options?: BackgroundOptions): void {
+		// No closure here: one that reads `this` would make every call allocate a context.
+		this.sceneBackground ??= new SceneBackground(this.core, this.makers?.materials.shaders);
+		if (
+			background instanceof Texture ||
+			background instanceof Environment ||
+			background instanceof Cubemap ||
+			isSkyBackground(background)
+		) {
+			this.sceneBackground.set(background, options);
 			return;
 		}
 		const [r, g, b] = linearColor(background, 'setBackground');
-		glue.setBackground(r, g, b);
-		glue.setBackgroundTexture(0);
+		this.core.glue.setBackground(r, g, b);
+		this.sceneBackground.clear();
 	}
 
 	/**
@@ -3189,9 +3387,12 @@ export class Scene {
 	}
 
 	/**
-	 * Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential
-	 * squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a
-	 * material created with `fog: false` keeps its color. Converting the color allocates.
+	 * Fog over every object, by each object's straight-line distance from the camera along a curve:
+	 * exponential by default, exponential squared or linear. The fog can thin with height and glow
+	 * toward the main directional light. Null removes the fog. The background takes no fog, and a
+	 * material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a
+	 * value out of its range, and E1203 for a value that is not finite. Converting the color
+	 * allocates.
 	 */
 	setFog(fog: FogOptions | null): void {
 		setSceneFog(this.core.glue, fog);
@@ -3206,6 +3407,12 @@ export class Scene {
 					const batch = this.batchSlots[id & SLOT_MASK];
 					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
 				},
+				writeCamera: (input) => {
+					const camera = this.activeCamera;
+					const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
+					this.frameCameras.queryCamera(live, input);
+				},
+				writeRayCamera: (input) => this.frameCameras.rayCamera(input),
 			});
 		return this.sceneQueries;
 	}

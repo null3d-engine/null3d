@@ -1,10 +1,7 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Page, type Route, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
-import {
-	isFirstUseShaderPart,
-	LATER_PARTS,
-	TRANSCODER_FILES,
-} from '../../tools/lib/size-report.ts';
+import { FIRST_USE_WASM, isFirstUseShaderPart, LATER_PARTS } from '../../tools/lib/size-report.ts';
+import { ALONE } from '../lib/alone.ts';
 import {
 	ENGINE_MODES,
 	type EngineChecks,
@@ -29,27 +26,60 @@ async function withoutIsolation(page: Page): Promise<void> {
 	});
 }
 
+/** The worker probe's script, in development and in a production build. */
+const PROBE_WORKER = /\/probe-worker[^/]*\.(js|ts)(\?|$)/;
+
+/**
+ * Serves `body` in place of the worker probe's script. The response keeps the server's headers,
+ * whose cross-origin isolation headers an isolated page needs to start a worker at all.
+ */
+async function replaceProbe(route: Route, body: string): Promise<void> {
+	const response = await route.fetch();
+	await route.fulfill({ response, contentType: 'text/javascript', body });
+}
+
 /**
  * Serves the worker probe as a worker that can draw with neither GPU path, as in a browser without
  * a GPU context for an offscreen canvas in a worker.
  */
 async function workersCannotDraw(page: Page): Promise<void> {
-	await page.context().route(/\/probe-worker[^/]*\.(js|ts)(\?|$)/, (route) =>
-		route.fulfill({
-			contentType: 'text/javascript',
-			body: 'postMessage({ requestAnimationFrame: true, offscreenWebGL2: false, offscreenWebGPU: false });',
-		}),
-	);
+	await page
+		.context()
+		.route(PROBE_WORKER, (route) =>
+			replaceProbe(
+				route,
+				'postMessage({ requestAnimationFrame: true, offscreenWebGL2: false, offscreenWebGPU: false });',
+			),
+		);
+}
+
+/**
+ * Serves the worker probe as a worker that says it has loaded and then never answers, as a stalled
+ * GPU call does, for the first `stalls` probe workers. Later ones get the real probe.
+ */
+async function probeStalls(page: Page, stalls: number): Promise<{ served: number }> {
+	const counts = { served: 0 };
+	await page.context().route(PROBE_WORKER, (route) => {
+		if (counts.served++ >= stalls) return route.fallback();
+		return replaceProbe(route, "postMessage('loaded');");
+	});
+	return counts;
 }
 
 /**
  * The engine checks without their frame-rate checks, for the tests whose job is not the pace of the
  * frame loop. The engine must still run after its start, at whatever rate the machine draws. A busy
  * runner can slow every frame of a short measurement, which says nothing about what these tests
- * check. The tests that run each thread mode, and those that wake the threads with messages, check
- * the pace.
+ * check. The tests that run each thread mode check the pace, and so do those that wake the threads
+ * with messages. On a software GPU no test checks it, as the GPU sets the pace there.
  */
 const notPacing: EngineChecks = { pacing: false };
+
+/**
+ * The fewest frames that the tests without Atomics.waitAsync count after the pause, to show that
+ * its end woke the threads. The page counts until they come, however slowly the GPU draws them.
+ */
+const RESUMED_FRAMES = 11;
 
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
@@ -95,8 +125,7 @@ for (const mode of ENGINE_MODES) {
 		const files: Record<string, RegExp> = { 'the sketch module': /\/empty-sketch[^/]*\.[jt]s$/ };
 		// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
 		// the characters of URL-safe base64, the underscore among them.
-		if (mode.sketchThread === 'main')
-			files["the core's loader"] = /\/null3d(-[\w-]+)?\.js(\?no-inline)?$/;
+		if (mode.sketchThread === 'main') files["the core's loader"] = /\/null3d(-[\w-]+)?\.js$/;
 		if (mode.renderThread === 'main') files['the renderer'] = /\/draw(-[^/]*)?\.[jt]s$/;
 		for (const [what, file] of Object.entries(files)) {
 			const asked = result.downloads?.find(({ name }) => file.test(name))?.startTime;
@@ -231,7 +260,8 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
  * The address of each file that loads only when a sketch first uses its feature, on the dev server
  * and in a production build, which names a file after its module and adds a hash. The size report
- * lists these files apart from the start, and the transcoder's files with them.
+ * lists these files apart from the start, and the WebAssembly modules that load on first use with
+ * them.
  */
 const FIRST_USE_FILES: readonly RegExp[] = [
 	...[
@@ -242,7 +272,7 @@ const FIRST_USE_FILES: readonly RegExp[] = [
 		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
 		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
 	}),
-	...TRANSCODER_FILES.map((file) => {
+	...FIRST_USE_WASM.map((file) => {
 		const dot = file.lastIndexOf('.');
 		return new RegExp(`/${escaped(file.slice(0, dot))}(-[\\w-]{8})?${escaped(file.slice(dot))}$`);
 	}),
@@ -307,9 +337,32 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${feature}-(wgsl|glsl)[^/]*$`));
 		});
 
+// GPU occlusion culling runs only on WebGPU. A scene whose walls are marked occluders downloads its
+// shader file once with the culling on, and none with it off.
+for (const occlusion of ['on', 'off'] as const)
+	test(`marked occluders download the occlusion shader file only with ?occlusion=${occlusion} on webgpu`, async ({
+		page,
+	}, testInfo) => {
+		test.skip(testInfo.project.name === 'production build', 'no image test page');
+		const requests: string[] = [];
+		page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
+		const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts');
+		await page.goto(
+			`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=${occlusion}&sketch=${sketch}`,
+		);
+		const result = await pageResult<{ error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		const shaderFiles = requests.filter(isFirstUseShaderFile);
+		if (occlusion === 'off') expect(shaderFiles).toEqual([]);
+		else {
+			expect(shaderFiles).toHaveLength(1);
+			expect(shaderFiles[0]).toMatch(/\/shaders-occlusion-wgsl[^/]*$/);
+		}
+	});
+
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
-		test(`the engine runs ${mode.name} on ${gpu}`, async ({ page }) => {
+		test(`the engine runs ${mode.name} on ${gpu}`, ALONE, async ({ page }) => {
 			await page.goto(`engine.html?gpu=${gpu}&seconds=2&${mode.query}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
@@ -319,22 +372,24 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 	// A page that runs the sketch and draws steps the sketch right before each draw, which is low
 	// latency, whether the page asked for low latency or for drawing on the main thread.
 	for (const query of ['sketch-thread=main&latency=low', 'sketch-thread=main&render=main']) {
-		test(`the engine runs the sketch and draws on the main thread with ?${query} on ${gpu}`, async ({
-			page,
-		}) => {
-			const mode: EngineMode = {
-				name: 'sketch and drawing on the main thread',
-				query,
-				build: 'threaded',
-				latency: 'low',
-				sketchThread: 'main',
-				renderThread: 'main',
-			};
-			await page.goto(`engine.html?gpu=${gpu}&seconds=2&${query}`);
-			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
-			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, gpu)).toEqual([]);
-		});
+		test(
+			`the engine runs the sketch and draws on the main thread with ?${query} on ${gpu}`,
+			ALONE,
+			async ({ page }) => {
+				const mode: EngineMode = {
+					name: 'sketch and drawing on the main thread',
+					query,
+					build: 'threaded',
+					latency: 'low',
+					sketchThread: 'main',
+					renderThread: 'main',
+				};
+				await page.goto(`engine.html?gpu=${gpu}&seconds=2&${query}`);
+				const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+				expect(result.error).toBeUndefined();
+				expect(engineProblems(result, mode, gpu)).toEqual([]);
+			},
+		);
 	}
 	const [pipelined] = ENGINE_MODES;
 	if (!pipelined) throw new Error('no engine modes');
@@ -372,7 +427,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 
 // Where a worker cannot draw, the page draws, and the sketch worker computes the frames in
 // pipelined mode. Low latency needs the sketch worker to draw, so it falls back to pipelined mode
-// too, with a warning in development builds, and engine.mode says so.
+// too, with a warning in development builds, and engine.mode says so. engine.mode names the reason,
+// and a development build warns once that the page draws.
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const latency of ['pipelined', 'low'] as const)
 		test(`a ${latency} latency start draws on the page where a worker cannot draw, on ${gpu}`, async ({
@@ -388,24 +444,43 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			await page.context().unrouteAll({ behavior: 'ignoreErrors' });
 			expect(result.error).toBeUndefined();
 			expect(engineProblems(result, drawingOnPage, gpu, notPacing)).toEqual([]);
+			expect(result.mode.renderFallback).toBe('no-surface');
 			const fallback = warnings.filter((text) => text.includes('pipelined mode'));
 			const development = testInfo.project.name !== 'production build';
 			expect(fallback.length).toBe(latency === 'low' && development ? 1 : 0);
+			const pageDraws = warnings.filter((text) => text.includes('the page draws instead'));
+			expect(pageDraws.length).toBe(development ? 1 : 0);
 		});
+
+// A probe worker that stalls gets a second one with a longer limit, so a machine that was busy for
+// a moment still draws in a worker for the rest of the session.
+test('a second probe worker answers for one that stalled, and a worker draws', async ({ page }) => {
+	const probes = await probeStalls(page, 1);
+	await page.goto('engine.html?gpu=webgl2&seconds=1');
+	const result = await pageResult<EngineResult & { error?: string }>(page, 60_000);
+	await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+	expect(result.error).toBeUndefined();
+	expect(probes.served).toBe(2);
+	expect(result.mode.renderThread).toBe('render-worker');
+	expect(result.mode.renderFallback).toBeNull();
+});
 
 // A browser without Atomics.waitAsync, such as Firefox before 145, runs every threaded mode. Its
 // threads wake each other with messages instead: for each frame, for a pause and its end, and for
 // the stop, which must end the job workers' loops.
 for (const mode of THREADED_MODES) {
-	test(`the engine runs without Atomics.waitAsync, ${mode.name}`, async ({ page }) => {
+	test(`the engine runs without Atomics.waitAsync, ${mode.name}`, ALONE, async ({ page }) => {
 		await withoutWaitAsync(page);
-		await page.goto(`engine.html?gpu=webgl2&seconds=1&pause&${mode.query}`);
+		const switches = `gpu=webgl2&seconds=1&pause&resumed-frames=${RESUMED_FRAMES}&${mode.query}`;
+		await page.goto(`engine.html?${switches}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		await restoreWaitAsync(page);
 		expect(result.error).toBeUndefined();
 		expect(result.report.atomicsWaitAsync).toBe(false);
 		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
 		expect(result.pause?.paused.frames, 'frames computed during the pause').toBe(0);
-		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThan(10);
+		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThanOrEqual(
+			RESUMED_FRAMES,
+		);
 	});
 }

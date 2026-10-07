@@ -70,6 +70,8 @@ document.querySelector('#loading')?.remove();
 
 A handler that `engine.onSketchMessage` adds after `createEngine` resolves hears the setup's messages late, once the setup ends. That is too late for a progress bar.
 
+A start can also wait for memory. When the browser has refused the engine's memory for 10 seconds, `onProgress` reports `memory-wait`. The engine then tries for about 35 seconds more, so tell the user that the start takes longer than usual.
+
 ## Pipelines and warm-up
 
 The GPU draws each object with a pipeline: compiled shaders, and the drawing state that goes with them. One pipeline serves every object with the same shading model and the same vertex format of mesh. A thousand materials of one shading model share it, so a scene needs few pipelines, often fewer than ten. [Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames) lists what sets pipelines apart.
@@ -139,7 +141,9 @@ Most shaders come with the engine's start. The shaders of a feature that many ga
 | `'ao'` | when `post.set` turns ambient occlusion on |
 | `'sprites'` | with the first sprite batch |
 | `'lines'` | with the first line batch |
-| `'background'` | with the first texture background |
+| `'background'` | with the first texture, environment or cube map background |
+| `'sky'` | with the first sky background |
+| `'occlusion'` | with the first object that `setOccluder(true)` marks, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders |
 
 Each feature's file is 1 to 19 KB after Brotli. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 

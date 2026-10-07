@@ -11,7 +11,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_core::scene::{Command, NO_PARENT, flags};
 use null3d_core::world::SphereArrays;
-use null3d_gpu::drawlist::{NO_TARGET, Op, layout};
+use null3d_gpu::drawlist::{NO_TARGET, Op, format, layout, resource_kind};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::frame::FrameBuilder;
@@ -20,9 +20,8 @@ use null3d_render::light_grid::{CLUSTER_PARAMS_BYTES, DEFAULT_GRID};
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
-/// Where a view's culling parameters hold the runs of the cell order: after the planes and the
-/// offsets to 512 cells.
-const RANGES: u32 = 112 + 512 * 16;
+/// Where a view's culling parameters hold the runs of the cell order: after the planes.
+const RANGES: u32 = 112;
 /// The builder's buffers of world matrices, of the bucket of every source, and of the layer
 /// mask of every source.
 const MATRICES: u32 = 2;
@@ -128,10 +127,18 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // its own, which share the camera's textures, as the two render passes do not overlap. The
     // textures: the color and depth targets, the shadow map and the shadow atlas, one texel each
     // while no light casts shadows, the table of specular terms, the materials' custom values,
-    // the environment's blank cube, and the blank texture that stands in for ambient occlusion.
+    // the environment's blank cube, the blank texture that stands in for ambient occlusion, and
+    // the views' cell offsets.
     assert_eq!(camera.pass[1], 0);
     assert_eq!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 8);
+    assert_eq!(count(&commands, Op::CreateTexture), 9);
+    // Each view writes its cell offsets into a row of its own.
+    let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
+        .iter()
+        .map(|&(row, _)| row)
+        .collect();
+    assert_eq!(rows.len(), 2);
+    assert_ne!(rows[0], rows[1]);
 
     // Each view's culling tests its own frustum: the side view's leaves out the object at
     // x = -3, which the camera sees. A frustum is relative to its view's camera, so each sphere
@@ -245,8 +252,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the table of specular terms, the materials' custom values, the
-    // environment's blank cube, and the blank texture that stands in for ambient occlusion.
-    assert_eq!(count(&commands, Op::CreateTexture), 8);
+    // environment's blank cube, the blank texture that stands in for ambient occlusion, and the
+    // views' cell offsets.
+    assert_eq!(count(&commands, Op::CreateTexture), 9);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -590,6 +598,45 @@ fn cull_params_writes(commands: &[(Op, Vec<u32>)], params: u32) -> Vec<(u32, u32
         .collect()
 }
 
+/// The texture of cell offsets that a frame's culling groups bind, after their buffers.
+fn offsets_texture(commands: &[(Op, Vec<u32>)]) -> u32 {
+    let group = commands
+        .iter()
+        .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CULL)
+        .map(|(_, o)| o)
+        .expect("the frame binds a culling group");
+    assert_eq!(group[3 + 9 * 5 + 1], resource_kind::TEXTURE);
+    group[3 + 9 * 5 + 2]
+}
+
+/// Writes of a frame into the texture of cell offsets: the view's row and the cells it writes.
+fn offsets_writes(commands: &[(Op, Vec<u32>)], texture: u32) -> Vec<(u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteTexture && o[0] == texture)
+        .map(|(_, o)| (o[3], o[5]))
+        .collect()
+}
+
+#[test]
+fn each_view_writes_its_cell_offsets_into_its_own_row_of_a_float_texture() {
+    // Each culling thread reads its own cell's offset. The Galaxy S25's driver read a table in the
+    // uniform parameters at one thread's index for all of them, so the offsets sit in a texture.
+    let mut world = World::new();
+    world.move_far_out();
+    world.record(true);
+    let commands = world.commands();
+    let texture = offsets_texture(&commands);
+    let created = commands
+        .iter()
+        .find(|(op, o)| *op == Op::CreateTexture && o[0] == texture)
+        .map(|(_, o)| o.clone())
+        .expect("the frame creates the texture of cell offsets");
+    assert_eq!([created[1], created[4]], [512, format::RGBA32_FLOAT]);
+    // The camera's view, row 0, uses the origin cell and the far cell.
+    assert_eq!(offsets_writes(&commands, texture), vec![(0, 2)]);
+}
+
 #[test]
 fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
     let mut world = World::new();
@@ -604,12 +651,14 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
         let slot = world.scene.resolve(object).unwrap() as usize;
         assert_eq!(world.scene.cells()[slot], far);
     }
-    // The planes, then the offsets from the camera to the two cells in use, in one write. Then the
-    // runs of the cell order that the view culls: the far cell's still objects and the batch's
-    // moving rows, which follow them, joined into one.
-    let params = vec![(0, 112 + 2 * 16), (RANGES, 16)];
+    // The planes, then the runs of the cell order that the view culls: the far cell's still
+    // objects and the batch's moving rows, which follow them, joined into one. The offsets from
+    // the camera to the two cells in use go into the view's row of the offsets texture.
+    let params = vec![(0, 112), (RANGES, 16)];
     let buffer = views_of(&world.commands())[0].culling[0];
+    let texture = offsets_texture(&world.commands());
     assert_eq!(cull_params_writes(&world.commands(), buffer), params);
+    assert_eq!(offsets_writes(&world.commands(), texture), vec![(0, 2)]);
 
     for frame in 2..=5 {
         world.frame = frame;
@@ -636,6 +685,11 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
             params,
             "frame {frame}"
         );
+        assert_eq!(
+            offsets_writes(&commands, texture),
+            vec![(0, 2)],
+            "frame {frame}"
+        );
     }
 }
 
@@ -648,8 +702,10 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(
         cull_params_writes(&world.commands(), buffer),
-        vec![(0, 112 + 16)]
+        vec![(0, 112)]
     );
+    let texture = offsets_texture(&world.commands());
+    assert_eq!(offsets_writes(&world.commands(), texture), vec![(0, 1)]);
 
     world.frame = 2;
     world.scene.begin_frame(2);
@@ -671,8 +727,9 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     // moved object's cell, out of view, lies between them.
     assert_eq!(
         cull_params_writes(&commands, buffer),
-        vec![(0, 112 + 2 * 16), (RANGES, 2 * 16)]
+        vec![(0, 112), (RANGES, 2 * 16)]
     );
+    assert_eq!(offsets_writes(&commands, texture), vec![(0, 2)]);
 }
 
 /// A WebGPU world spread over 5 x 5 grid cells, with room for `objects` more scene objects, and
@@ -1068,12 +1125,14 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
 }
 
 /// One draw of a bundle as the bundle has set it up: its pipeline's template and permutation, the
-/// buffer of its instances at vertex slot 1, and the groups after the frame's.
+/// buffer of its instances at vertex slot 1 with the byte range it binds, and the groups after the
+/// frame's.
 #[derive(Debug)]
 struct BundleDraw {
     template: u32,
     permutation: u32,
     instances: u32,
+    range: std::ops::Range<u32>,
     groups: [u32; 3],
 }
 
@@ -1085,12 +1144,16 @@ fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> Vec<BundleDraw> {
         .map(|(_, o)| (o[0], (o[1], o[2])))
         .collect();
     let (mut pipeline, mut instances, mut groups) = (0, 0, [0; 3]);
+    let mut range = 0..0;
     let mut draws = Vec::new();
     for (op, o) in commands {
         match op {
             Op::BeginBundle => (pipeline, instances, groups) = (0, 0, [0; 3]),
             Op::SetPipeline => pipeline = o[0],
-            Op::SetVertexBuffer if o[0] == 1 => instances = o[1],
+            Op::SetVertexBuffer if o[0] == 1 => {
+                instances = o[1];
+                range = o[2]..o[2] + o[3];
+            }
             Op::SetBindGroup if (1..=3).contains(&o[0]) => groups[o[0] as usize - 1] = o[1],
             Op::DrawIndexedIndirect => {
                 let (template, permutation) = pipelines[&pipeline];
@@ -1098,6 +1161,7 @@ fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> Vec<BundleDraw> {
                     template,
                     permutation,
                     instances,
+                    range: range.clone(),
                     groups,
                 });
             }
@@ -1109,7 +1173,7 @@ fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> Vec<BundleDraw> {
 
 #[test]
 fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_group() {
-    use null3d_gpu::drawlist::{permutation, template, vertex};
+    use null3d_gpu::drawlist::{permutation, sizes, template, vertex};
     use null3d_render::materials::{CustomShading, Shading};
 
     for index_instances in [false, true] {
@@ -1136,7 +1200,7 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
         let mut mock = MockBackend::default();
         let commands = world.step(&mut mock, true);
 
-        // The buffers that each bind group of a layout binds, by binding, after the group's id.
+        // The resources that each bind group of a layout binds, by binding, after the group's id.
         let groups_of = |kind: u32| -> Vec<Vec<u32>> {
             commands
                 .iter()
@@ -1147,17 +1211,21 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
                 })
                 .collect()
         };
-        // Each view's culling group binds its compacted index buffer last.
+        // Each view's culling group binds the same nine buffers and the cell offsets texture with
+        // the switch or without: the indices share the compacted instance buffer.
         let culling = groups_of(layout::CULL);
         assert_eq!(culling.len(), 3, "the camera and two cascades: {culling:?}");
-        assert!(culling.iter().all(|group| group.len() == 1 + 9));
-        // With the switch, each view's index group binds its culling parameters, the matrices and
-        // the bucket tables of the layout it draws, as its culling group does.
+        assert!(culling.iter().all(|group| group.len() == 1 + 10));
+        // With the switch, each view's index group binds its culling parameters, the matrices, the
+        // bucket tables of the layout it draws and the cell offsets texture, as its culling group
+        // does.
         let indexed = groups_of(layout::INSTANCE_INDEX);
         assert_eq!(indexed.len(), if index_instances { 3 } else { 0 });
         for group in &indexed {
             let cull = culling.iter().find(|c| c[1] == group[1]).unwrap();
-            assert_eq!(group[1..], cull[1..5]);
+            assert_eq!(group.len(), 1 + 5);
+            assert_eq!(group[1..5], cull[1..5]);
+            assert_eq!(group.last(), cull.last());
         }
 
         let draws = bundle_draws(&commands);
@@ -1165,18 +1233,40 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
             let reads_index = draw.permutation & permutation::INSTANCE_INDEX != 0;
             let engine_template = draw.template < template::CUSTOM_FIRST;
             assert_eq!(reads_index, index_instances && engine_template, "{draw:?}");
-            // A draw that reads indices draws its view's compacted index buffer, and binds its
-            // view's index group right after the frame's: these templates sample no maps.
+            // Every draw reads its view's compacted instance buffer. One that reads indices binds
+            // its view's index group right after the frame's: these templates sample no maps.
             let view = culling
                 .iter()
-                .find(|c| c[5] == draw.instances || c[9] == draw.instances)
+                .find(|c| c[5] == draw.instances)
                 .unwrap_or_else(|| panic!("a view's compacted buffer: {draw:?}"));
             if reads_index {
-                assert_eq!(draw.instances, view[9]);
                 let group = indexed.iter().find(|g| g[1] == view[1]).unwrap();
                 assert_eq!(draw.groups[0], group[0], "{draw:?}");
-            } else {
-                assert_eq!(draw.instances, view[5]);
+            }
+        }
+        // In each view's buffer, the index slices start after the last copy slice, at whole
+        // entries, and fit in the buffer.
+        for view in &culling {
+            let in_view = || draws.iter().filter(|d| d.instances == view[5]);
+            let reads_index = |d: &&BundleDraw| d.permutation & permutation::INSTANCE_INDEX != 0;
+            let copies_end = in_view()
+                .filter(|d| !reads_index(d))
+                .map(|d| d.range.end)
+                .max()
+                .unwrap_or(0);
+            let size = commands
+                .iter()
+                .filter(|(op, o)| *op == Op::CreateBuffer && o[0] == view[5])
+                .map(|(_, o)| o[1])
+                .next_back()
+                .unwrap();
+            for draw in in_view().filter(reads_index) {
+                assert!(
+                    draw.range.start >= copies_end,
+                    "{draw:?} after {copies_end}"
+                );
+                assert_eq!(draw.range.start % sizes::INDEX_STRIDE, 0);
+                assert!(draw.range.end <= size, "{draw:?} in {size} bytes");
             }
         }
         // The scene's lit and unlit buckets in the camera's bundle, and the casters' in each

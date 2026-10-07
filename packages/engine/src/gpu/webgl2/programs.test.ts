@@ -11,10 +11,13 @@ import {
 	declaresUniform,
 	type GlslTemplate,
 	METAL_FAULT,
+	MIN_STAGE_TEXTURE_UNITS,
 	MIN_UNIFORM_BLOCK_SLOTS,
+	metalFault,
 	type Program,
 	prepareProgram,
 	RELINK_TAIL,
+	relink,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -22,24 +25,36 @@ import {
 const SHADERS = await everyShader();
 
 /**
- * Every GLSL stage that the shader build writes, those of every device module too, by a name that
- * says where it comes from.
+ * Every GLSL program that the shader build writes, those of every device module too, by a name
+ * that says where it comes from.
  */
-function glslStages(): [string, GlslStage][] {
-	const stages: [string, GlslStage][] = [];
+function glslPrograms(): [string, GlslProgram][] {
+	const found: [string, GlslProgram][] = [];
 	for (const [shader, variants] of Object.entries(SHADERS)) {
 		for (const [variant, built] of Object.entries(variants)) {
 			const programs: Record<string, GlslProgram> = built.glsl ?? {};
-			for (const [pipeline, program] of Object.entries(programs)) {
-				const name = `${shader}.${variant}.${pipeline}`;
-				stages.push([`${name}.vertex`, program.vertex], [`${name}.fragment`, program.fragment]);
-			}
+			for (const [pipeline, program] of Object.entries(programs))
+				found.push([`${shader}.${variant}.${pipeline}`, program]);
 		}
 	}
-	return stages;
+	return found;
+}
+
+/** Every GLSL stage that the shader build writes, by a name that says where it comes from. */
+function glslStages(): [string, GlslStage][] {
+	return glslPrograms().flatMap(([name, program]): [string, GlslStage][] => [
+		[`${name}.vertex`, program.vertex],
+		[`${name}.fragment`, program.fragment],
+	]);
 }
 
 const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
+
+/**
+ * The texture units that every stage leaves free, for the per-pixel inputs of later features, such
+ * as probes of light or the tables of area lights.
+ */
+const SPARE_TEXTURE_UNITS = 4;
 
 describe('WebGL2 slots of bind groups', () => {
 	const stages = glslStages();
@@ -66,7 +81,7 @@ describe('WebGL2 slots of bind groups', () => {
 		}
 	});
 
-	it('keeps uniform blocks within the binding points and textures below the upload unit', () => {
+	it('keeps uniform blocks within the binding points', () => {
 		for (const [name, stage] of stages) {
 			for (const block of stage.uniformBlocks) {
 				expect([name, slotOf(block.group, block.binding) < MIN_UNIFORM_BLOCK_SLOTS]).toEqual([
@@ -74,10 +89,23 @@ describe('WebGL2 slots of bind groups', () => {
 					true,
 				]);
 			}
-			for (const texture of stage.textures) {
-				expect([name, slotOf(texture.group, texture.binding) < UPLOAD_UNIT]).toEqual([name, true]);
-			}
 		}
+	});
+
+	it('keeps each stage within the texture units that every device gives it, with room to spare', () => {
+		let most: [string, number] = ['', 0];
+		for (const [name, stage] of stages) {
+			const units = new Set(stage.textures.map(key)).size;
+			expect([name, units <= MIN_STAGE_TEXTURE_UNITS - SPARE_TEXTURE_UNITS]).toEqual([name, true]);
+			if (units > most[1]) most = [name, units];
+		}
+		for (const [name, program] of glslPrograms()) {
+			const units = new Set([...program.vertex.textures, ...program.fragment.textures].map(key));
+			expect([name, units.size < UPLOAD_UNIT]).toEqual([name, true]);
+		}
+		console.log(
+			`the most texture units in one stage: ${most[1]} of ${MIN_STAGE_TEXTURE_UNITS}, in ${most[0]}`,
+		);
 	});
 });
 
@@ -129,15 +157,19 @@ describe('WebGL2 programs that a driver optimized', () => {
 			shaders: [],
 			firstInstance: null,
 			firstInstanceValue: 0,
-			samplerUnits: [],
-			sampled: false,
+			textureUnits: [],
 			ready: false,
 			background: false,
 		};
 		prepareProgram(gl, program, DEPTH_SETUPS.reversed);
 		expect(program.ready).toBe(true);
-		expect([...units]).toEqual([[kept.name, slotOf(kept.group, kept.binding)]]);
-		expect(program.sampled).toBe(true);
+		// The kept texture takes the program's first unit, whatever its slot.
+		expect([...units]).toEqual([[kept.name, 0]]);
+		expect(program.textureUnits).toEqual([
+			0,
+			slotOf(kept.group, kept.binding),
+			slotOf(kept.sampler.group, kept.sampler.binding),
+		]);
 	});
 });
 
@@ -203,6 +235,19 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 			/failed to link twice, the second time after a fault in its Metal: .*no matching function/s,
 		);
 		expect(context.links()).toBe(2);
+	});
+
+	it('links a program that is not in use again without waiting, as a hot shader swap does', () => {
+		const context = fakeContext([FAULT_LOG, '']);
+		const program = createProgram(context.gl, TEMPLATE, 0);
+		const first = program.program;
+		expect(metalFault(context.gl, program)).toBe(true);
+		relink(context.gl, program);
+		expect(program.ready).toBe(false);
+		expect(program.program).not.toBe(first);
+		expect(context.deleted).toContain(first);
+		expect(metalFault(context.gl, program)).toBe(false);
+		expect(context.sources).toEqual([STAGE, STAGE, STAGE + RELINK_TAIL, STAGE + RELINK_TAIL]);
 	});
 
 	it('reports any other link failure at once', () => {

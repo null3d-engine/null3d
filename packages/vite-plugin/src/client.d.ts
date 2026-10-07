@@ -3,7 +3,7 @@
 // the `types` of its tsconfig.json.
 
 declare module '*.wgsl' {
-	/** The WGSL file, compiled for WebGPU and WebGL2: a whole shader, or a custom material. */
+	/** The WGSL file, compiled for WebGPU and WebGL2: a whole shader, a custom material, a custom effect or a custom tone curve. */
 	const shader: import('./shader-types').CompiledWgsl;
 	export default shader;
 }

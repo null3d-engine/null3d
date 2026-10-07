@@ -36,8 +36,11 @@ pub const EVENT_CAPACITY: usize = 1024;
 /// bits), its kind (bits 8 to 15) and its clip's layer (low 8 bits); the clip; the clip event's id.
 pub const EVENT_WORDS: usize = 4;
 
-/// The skeleton of an instance id that holds no instance: one that was removed.
+/// The skeleton of an instance id that holds no instance, and of a removed clip or mask.
 const REMOVED: u32 = u32::MAX;
+
+/// The source clip of a sample slot that no play fills ([`SampleSlots::source`]).
+pub const NO_SOURCE: u32 = u32::MAX;
 
 /// The pose step of an instance whose matrices no frame step has written yet. The next step counts
 /// its pose as changed, whatever the matrices it replaces.
@@ -56,8 +59,13 @@ pub struct SampleSlots {
     /// The time in seconds at which each slot samples its clip; times outside the clip take its
     /// first or last key.
     pub time: Box<[f32]>,
-    /// The weight of each slot; 0 leaves the slot out.
+    /// The weight of each slot; 0 leaves the slot out. A play's weight multiplies its fade, and
+    /// a blend's share of the clip multiplies both.
     pub weight: Box<[f32]>,
+    /// The clip that a play put in each slot, as the play named it (for an additive play, the
+    /// clip it was made from), or [`NO_SOURCE`] for a slot that no play fills. TypeScript reads
+    /// it to find the slots of a clip whose weight it sets.
+    pub source: Box<[u32]>,
 }
 
 /// How [`Animations::play`] plays a clip.
@@ -75,6 +83,15 @@ pub struct Play {
     /// True to add the clip's change from its first frame to the pose of the layers, as an
     /// additive clip does, instead of blending it in.
     pub additive: bool,
+    /// The time in seconds at which the clip starts, or `None` for its first frame. A repeating
+    /// clip wraps the time into its length, and a clip that plays once holds it within its
+    /// length.
+    pub time: Option<f32>,
+    /// The clip's own weight, 0 or more, which its fade multiplies; `None` gives a clip that
+    /// starts a weight of 1, and leaves the weight of a clip that plays.
+    pub weight: Option<f32>,
+    /// True to play the clip beside the other clips of its layer; false to fade them out.
+    pub join: bool,
 }
 
 impl Default for Play {
@@ -85,6 +102,42 @@ impl Default for Play {
             speed: 1.0,
             looping: true,
             additive: false,
+            time: None,
+            weight: None,
+            join: false,
+        }
+    }
+}
+
+/// How [`Animations::play_blend`] plays a 1D blend.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Blend {
+    /// The layer, below [`MAX_LAYERS`].
+    pub layer: u32,
+    /// Seconds over which the blend fades in and the layer's other clips fade out.
+    pub fade: f32,
+    /// The rate of the blend's phase: 1 moves it one cycle per weight-averaged length of its
+    /// clips. A negative rate plays it backward.
+    pub speed: f32,
+    /// True to repeat the clips; false to play them once and hold their last frames.
+    pub looping: bool,
+    /// The share of their cycle at which the clips start, or `None` to keep the phase of the
+    /// layer's clips.
+    pub phase: Option<f32>,
+    /// The layer's blend value ([`Animations::blend_values_mut`]) from this play on, or `None` to
+    /// keep the value it has.
+    pub value: Option<f32>,
+}
+
+impl Default for Blend {
+    fn default() -> Self {
+        Blend {
+            layer: 0,
+            fade: 0.0,
+            speed: 1.0,
+            looping: true,
+            phase: None,
+            value: None,
         }
     }
 }
@@ -170,6 +223,10 @@ pub struct Animations {
     additive_clips: Vec<u32>,
     pub(super) clip_events: Vec<ClipEvents>,
     masks: Vec<Mask>,
+    /// The ids of removed skeletons, clips and masks, which the next ones added take.
+    free_skeletons: Vec<u32>,
+    free_clips: Vec<u32>,
+    free_masks: Vec<u32>,
     /// The skeleton of each instance, or [`REMOVED`].
     instance_skeletons: Box<[u32]>,
     /// The first joint of each instance in the matrix buffer.
@@ -180,7 +237,9 @@ pub struct Animations {
     free_instances: Vec<u32>,
     /// Joints handed out from the start of the matrix buffer so far.
     joints: u32,
-    /// Runs of joints that removed instances gave back: first joint and length.
+    /// Runs of joints that removed instances gave back, below the joints handed out: first joint
+    /// and length. Runs that touch merge, so each run has a live instance's joints after it, and
+    /// the list holds at most one run per instance.
     free_joints: Vec<(u32, u32)>,
     pub(super) slots: SampleSlots,
     /// How each slot that a play filled advances.
@@ -192,6 +251,9 @@ pub struct Animations {
     layer_weights: Box<[f32]>,
     /// The joint mask of each layer of each instance: a mask id plus one, or 0 for every joint.
     layer_masks: Box<[u32]>,
+    /// The blend value of each layer of each instance, [`MAX_LAYERS`] per instance, which picks
+    /// the mix of the layer's 1D blend; TypeScript writes them.
+    pub(super) blend_values: Box<[f32]>,
     /// Two buffers of [`MATRIX_FLOATS`] floats per joint of every instance. Each frame step writes
     /// the buffer that the step before did not, so a frame's draw list can upload the matrices of
     /// its step while the next frame's step runs.
@@ -238,6 +300,9 @@ impl Animations {
             additive_clips: Vec::new(),
             clip_events: Vec::new(),
             masks: Vec::new(),
+            free_skeletons: Vec::new(),
+            free_clips: Vec::new(),
+            free_masks: Vec::new(),
             instance_skeletons: boxed(n, REMOVED)?,
             first_joints: boxed(n, 0)?,
             instances: 0,
@@ -248,11 +313,13 @@ impl Animations {
                 clip: boxed(slots, 0)?,
                 time: boxed(slots, 0.0)?,
                 weight: boxed(slots, 0.0)?,
+                source: boxed(slots, NO_SOURCE)?,
             },
             actions: boxed(slots, Action::default())?,
             time_scales: boxed(n, 1.0)?,
             layer_weights: boxed(n * MAX_LAYERS, 1.0)?,
             layer_masks: boxed(n * MAX_LAYERS, 0)?,
+            blend_values: boxed(n * MAX_LAYERS, 0.0)?,
             matrices: [
                 boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
                 boxed(joints as usize * MATRIX_FLOATS, 0.0)?,
@@ -272,24 +339,15 @@ impl Animations {
         })
     }
 
-    /// Adds a skeleton and returns its id.
+    /// Adds a skeleton and returns its id: a removed skeleton's, or a new one.
     pub fn add_skeleton(&mut self, skeleton: Skeleton) -> Result<u32, AnimationError> {
         let lanes = skeleton.lanes();
         if lanes > self.scratch_lanes {
-            let len = POSE_FIELDS * lanes as usize;
-            for scratch in &mut self.scratch {
-                *scratch.0.get_mut() = Scratch {
-                    pose: boxed(len, 0.0)?,
-                    sample: boxed(len, 0.0)?,
-                    layer: boxed(len, 0.0)?,
-                    add: boxed(len, 0.0)?,
-                    weights: boxed(3 * lanes as usize, 0.0)?,
-                    shares: boxed(3 * lanes as usize, 0.0)?,
-                    matrices: boxed(lanes as usize, [0.0; MATRIX_FLOATS])?,
-                };
-            }
-            self.ones = boxed(lanes as usize, 1.0)?;
-            self.scratch_lanes = lanes;
+            self.size_scratch(lanes)?;
+        }
+        if let Some(id) = self.free_skeletons.pop() {
+            self.skeletons[id as usize] = skeleton;
+            return Ok(id);
         }
         self.skeletons
             .try_reserve(1)
@@ -298,9 +356,85 @@ impl Animations {
         Ok(self.skeletons.len() as u32 - 1)
     }
 
-    /// The skeleton with this id.
+    /// Gives each thread's scratch memory room for skeletons of `lanes` lanes, and no more.
+    fn size_scratch(&mut self, lanes: u32) -> Result<(), AnimationError> {
+        let len = POSE_FIELDS * lanes as usize;
+        for scratch in &mut self.scratch {
+            *scratch.0.get_mut() = Scratch {
+                pose: boxed(len, 0.0)?,
+                sample: boxed(len, 0.0)?,
+                layer: boxed(len, 0.0)?,
+                add: boxed(len, 0.0)?,
+                weights: boxed(3 * lanes as usize, 0.0)?,
+                shares: boxed(3 * lanes as usize, 0.0)?,
+                matrices: boxed(lanes as usize, [0.0; MATRIX_FLOATS])?,
+            };
+        }
+        self.ones = boxed(lanes as usize, 1.0)?;
+        self.scratch_lanes = lanes;
+        Ok(())
+    }
+
+    /// Removes skeleton `skeleton` with its clips, their additive versions and events, and its
+    /// joint masks. Their ids go to the next ones added. Each thread's scratch memory shrinks to
+    /// the largest skeleton left. Fails while a live instance uses the skeleton.
+    pub fn remove_skeleton(&mut self, skeleton: u32) -> Result<(), AnimationError> {
+        if self.skeleton(skeleton).is_none() {
+            return Err(AnimationError::UnknownSkeleton { skeleton });
+        }
+        if let Some(instance) =
+            (0..self.instances).find(|&i| self.instance_skeletons[i as usize] == skeleton)
+        {
+            return Err(AnimationError::SkeletonInUse { instance });
+        }
+        let failed = |_| out_of_memory(size_of::<u32>());
+        let clips = self
+            .clip_skeletons
+            .iter()
+            .filter(|&&s| s == skeleton)
+            .count();
+        let masks = self.masks.iter().filter(|m| m.skeleton == skeleton).count();
+        self.free_skeletons.try_reserve(1).map_err(failed)?;
+        self.free_clips.try_reserve(clips).map_err(failed)?;
+        self.free_masks.try_reserve(masks).map_err(failed)?;
+        self.skeletons[skeleton as usize] = Skeleton::default();
+        self.free_skeletons.push(skeleton);
+        for clip in 0..self.clips.len() {
+            if self.clip_skeletons[clip] != skeleton {
+                continue;
+            }
+            self.clips[clip] = Clip::default();
+            self.clip_events[clip] = ClipEvents::default();
+            self.clip_skeletons[clip] = REMOVED;
+            self.additive_clips[clip] = u32::MAX;
+            self.free_clips.push(clip as u32);
+        }
+        for (id, mask) in self.masks.iter_mut().enumerate() {
+            if mask.skeleton == skeleton {
+                *mask = Mask {
+                    skeleton: REMOVED,
+                    weights: Box::default(),
+                };
+                self.free_masks.push(id as u32);
+            }
+        }
+        let lanes = self
+            .skeletons
+            .iter()
+            .map(Skeleton::lanes)
+            .max()
+            .unwrap_or(0);
+        if lanes < self.scratch_lanes {
+            self.size_scratch(lanes)?;
+        }
+        Ok(())
+    }
+
+    /// The live skeleton with this id.
     pub fn skeleton(&self, skeleton: u32) -> Option<&Skeleton> {
-        self.skeletons.get(skeleton as usize)
+        self.skeletons
+            .get(skeleton as usize)
+            .filter(|s| s.joints() > 0)
     }
 
     /// Adds a clip that [`super::resample`] built for skeleton `skeleton`, and returns its id.
@@ -315,12 +449,39 @@ impl Animations {
                 skeleton_joints: joints,
             });
         }
-        let id = self.clips.len() as u32;
-        self.push_clip(skeleton, clip, id)
+        self.push_clip(skeleton, clip, None)
     }
 
-    /// Stores a clip with its skeleton and source, and returns its id.
-    fn push_clip(&mut self, skeleton: u32, clip: Clip, source: u32) -> Result<u32, AnimationError> {
+    /// The clips held now that [`super::resample`] evaluated at each frame, in some track at
+    /// least. The others were copied from keys already on their frames, and removed clips hold no
+    /// tracks.
+    pub fn resampled_clips(&self) -> u32 {
+        // An additive clip counts through its source.
+        self.clips
+            .iter()
+            .enumerate()
+            .filter(|(k, clip)| self.clip_sources[*k] as usize == *k && clip.resampled_tracks() > 0)
+            .count() as u32
+    }
+
+    /// Stores a clip with its skeleton and source, or itself as its source with `None`, and
+    /// returns its id: a removed clip's, or a new one.
+    fn push_clip(
+        &mut self,
+        skeleton: u32,
+        clip: Clip,
+        source: Option<u32>,
+    ) -> Result<u32, AnimationError> {
+        if let Some(id) = self.free_clips.pop() {
+            let k = id as usize;
+            self.clips[k] = clip;
+            self.clip_skeletons[k] = skeleton;
+            self.clip_sources[k] = source.unwrap_or(id);
+            self.additive_clips[k] = u32::MAX;
+            self.clip_events[k] = ClipEvents::default();
+            return Ok(id);
+        }
+        let source = source.unwrap_or(self.clips.len() as u32);
         let failed = |_| out_of_memory(size_of::<Clip>());
         self.clips.try_reserve(1).map_err(failed)?;
         self.clip_skeletons.try_reserve(1).map_err(failed)?;
@@ -335,9 +496,11 @@ impl Animations {
         Ok(self.clips.len() as u32 - 1)
     }
 
-    /// The clip with this id.
+    /// The live clip with this id.
     pub fn clip(&self, clip: u32) -> Option<&Clip> {
-        self.clips.get(clip as usize)
+        self.clips
+            .get(clip as usize)
+            .filter(|_| self.clip_skeletons[clip as usize] != REMOVED)
     }
 
     /// The additive version of clip `clip` ([`Clip::additive`]), which it builds on first use.
@@ -352,7 +515,7 @@ impl Animations {
         }
         let additive = self.clips[source as usize].additive()?;
         let skeleton = self.clip_skeletons[source as usize];
-        let id = self.push_clip(skeleton, additive, source)?;
+        let id = self.push_clip(skeleton, additive, Some(source))?;
         self.additive_clips[source as usize] = id;
         Ok(id)
     }
@@ -366,10 +529,10 @@ impl Animations {
         times: &[f32],
         ids: &[u32],
     ) -> Result<(), AnimationError> {
-        let source = *self
-            .clip_sources
-            .get(clip as usize)
-            .ok_or(AnimationError::UnknownClip { clip })?;
+        if self.clip(clip).is_none() {
+            return Err(AnimationError::UnknownClip { clip });
+        }
+        let source = self.clip_sources[clip as usize];
         let duration = self.clips[source as usize].duration();
         if times.len() != ids.len() {
             return Err(AnimationError::Events {
@@ -414,13 +577,18 @@ impl Animations {
         }
         let mut padded = filled(target.lanes() as usize, 0.0f32)?;
         padded[..weights.len()].copy_from_slice(weights);
+        let mask = Mask {
+            skeleton,
+            weights: padded.into_boxed_slice(),
+        };
+        if let Some(id) = self.free_masks.pop() {
+            self.masks[id as usize] = mask;
+            return Ok(id);
+        }
         self.masks
             .try_reserve(1)
             .map_err(|_| out_of_memory(size_of::<Mask>()))?;
-        self.masks.push(Mask {
-            skeleton,
-            weights: padded.into_boxed_slice(),
-        });
+        self.masks.push(mask);
         Ok(self.masks.len() as u32 - 1)
     }
 
@@ -512,25 +680,52 @@ impl Animations {
         self.pose_steps[instance] = FRESH;
         let slots = instance * MAX_BLEND..(instance + 1) * MAX_BLEND;
         self.slots.weight[slots.clone()].fill(0.0);
+        self.slots.source[slots.clone()].fill(NO_SOURCE);
         self.actions[slots].fill(Action::default());
         self.time_scales[instance] = 1.0;
         let layers = instance * MAX_LAYERS..(instance + 1) * MAX_LAYERS;
         self.layer_weights[layers.clone()].fill(1.0);
-        self.layer_masks[layers].fill(0);
+        self.layer_masks[layers.clone()].fill(0);
+        self.blend_values[layers].fill(0.0);
         Ok(instance as u32)
     }
 
-    /// Removes instance `instance`. Its id and joints go to the next instances that fit them.
+    /// Removes instance `instance`. Its id goes to the next instance, and its joints to the next
+    /// instances that fit them: they join the free runs next to them, and joints at the end of
+    /// those handed out are handed back.
     pub fn remove_instance(&mut self, instance: u32) -> Result<(), AnimationError> {
         let skeleton = self.live_skeleton(instance)?;
         let i = instance as usize;
         let joints = self.skeletons[skeleton as usize].joints();
-        // Both lists hold at most one entry per instance id, which their capacity covers.
-        self.free_joints.push((self.first_joints[i], joints));
+        self.free_run(self.first_joints[i], joints);
+        // The list holds at most one entry per instance id, which its capacity covers.
         self.free_instances.push(instance);
         self.instance_skeletons[i] = REMOVED;
-        self.slots.weight[i * MAX_BLEND..(i + 1) * MAX_BLEND].fill(0.0);
+        let slots = i * MAX_BLEND..(i + 1) * MAX_BLEND;
+        self.slots.weight[slots.clone()].fill(0.0);
+        self.slots.source[slots].fill(NO_SOURCE);
         Ok(())
+    }
+
+    /// Gives back `len` joints from joint `first`: merges them with the free runs that touch
+    /// them, and hands back a run that ends where the joints handed out end. A run that merges
+    /// replaces its neighbours, so the list never grows past one run per live instance, and
+    /// never allocates.
+    fn free_run(&mut self, first: u32, len: u32) {
+        let (mut first, mut len) = (first, len);
+        if let Some(k) = self.free_joints.iter().position(|&(f, l)| f + l == first) {
+            let (f, l) = self.free_joints.swap_remove(k);
+            first = f;
+            len += l;
+        }
+        if let Some(k) = self.free_joints.iter().position(|&(f, _)| f == first + len) {
+            len += self.free_joints.swap_remove(k).1;
+        }
+        if first + len == self.joints {
+            self.joints = first;
+        } else {
+            self.free_joints.push((first, len));
+        }
     }
 
     /// The number of instance ids handed out, removed ones included.
@@ -570,6 +765,17 @@ impl Animations {
     /// The weight of each layer of each instance, [`MAX_LAYERS`] per instance; 1 by default.
     pub fn layer_weights_mut(&mut self) -> &mut [f32] {
         &mut self.layer_weights
+    }
+
+    /// The blend value of each layer of each instance, [`MAX_LAYERS`] per instance; 0 by
+    /// default.
+    pub fn blend_values_mut(&mut self) -> &mut [f32] {
+        &mut self.blend_values
+    }
+
+    /// The blend value of each layer of each instance.
+    pub fn blend_values(&self) -> &[f32] {
+        &self.blend_values
     }
 
     /// Sets slot `slot` of instance `instance` to sample `clip` at `time` seconds with `weight`.
@@ -687,6 +893,7 @@ impl Animations {
             let out = SharedMut::new(&mut self.matrices[self.written]);
             let times = SharedMut::new(&mut self.slots.time);
             let weights = SharedMut::new(&mut self.slots.weight);
+            let sources = SharedMut::new(&mut self.slots.source);
             let actions = SharedMut::new(&mut self.actions);
             let sink = EventSink {
                 records: SharedMut::new(&mut self.events),
@@ -713,11 +920,12 @@ impl Animations {
                         // SAFETY: instances own disjoint runs of the matrix buffer, from their
                         // first joint for as many joints as their skeleton has, and their own
                         // slots; each instance is in one chunk.
-                        let (matrices, time, weight, action) = unsafe {
+                        let (matrices, time, weight, source, action) = unsafe {
                             (
                                 out.slice(first, len),
                                 times.slice(at, MAX_BLEND),
                                 weights.slice(at, MAX_BLEND),
+                                sources.slice(at, MAX_BLEND),
                                 actions.slice(at, MAX_BLEND),
                             )
                         };
@@ -725,7 +933,9 @@ impl Animations {
                             instance: i as u32,
                             time,
                             weight,
+                            source,
                             action,
+                            shares: [1.0; MAX_BLEND],
                             sink: &sink,
                             order: 0,
                         };
@@ -756,7 +966,8 @@ impl Animations {
     }
 
     /// Blends instance `i`'s clips into the pose in its scratch memory, from its slots' times and
-    /// weights. Each slot's weight is its own weight times its fade.
+    /// weights. Each slot's weight is its own weight times its fade, times its share of its
+    /// layer's blend.
     fn pose_instance(
         &self,
         i: usize,
@@ -774,7 +985,7 @@ impl Animations {
         let mut layers_used = 0u32;
         for k in 0..MAX_BLEND {
             let action = &slots.action[k];
-            let w = weight[k] * action.factor();
+            let w = weight[k] * action.factor() * slots.shares[k];
             let clip = self.slots.clip[i * MAX_BLEND + k];
             // Comparisons with NaN are false, so NaN weights are skipped too.
             let usable = w > 0.0

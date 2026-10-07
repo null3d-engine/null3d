@@ -4,12 +4,14 @@
 // compiled result where its source was: WGSL for WebGPU, and GLSL ES 3.00 for WebGL2 with the
 // reflection that the WebGL2 backend binds by. WGSL with entry points is a whole shader. WGSL
 // without them holds a custom material's functions, such as `fn surface`, which the plugin builds
-// into every variant of the engine's standard material. WGSL that does not compile stops the
+// into every variant of the engine's standard material, or a custom effect's `fn effect` or tone
+// curve's `fn toneCurve`, which it builds into the effect template or the final pass. WGSL that
+// does not compile stops the
 // module with an error at the file, line and column of each problem.
 import { type ESTree, parseSync, Visitor } from 'vite';
 import {
-	compileMaterial,
-	compileShader,
+	compileHere,
+	type ShaderCompiler,
 	type ShaderProblem,
 	type ShaderVariantSpec,
 } from './shader-compiler.ts';
@@ -158,10 +160,13 @@ function isMeshShader(source: string): boolean {
 	return false;
 }
 
-/** True when WGSL declares a function of a custom material, such as `fn surface`. */
-function declaresMaterialFunction(source: string): boolean {
+/** The functions that a custom effect's or tone curve's WGSL declares for the engine to call. */
+const POST_FUNCTIONS: ReadonlySet<string> = new Set(['effect', 'toneCurve']);
+
+/** True when WGSL declares a function of `functions`, such as a custom material's `fn surface`. */
+function declaresFunction(source: string, functions: ReadonlySet<string>): boolean {
 	for (const match of blankComments(source).matchAll(FUNCTION))
-		if (MATERIAL_FUNCTIONS.has(match[2] ?? '')) return true;
+		if (functions.has(match[2] ?? '')) return true;
 	return false;
 }
 
@@ -209,7 +214,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point and no function of a custom material. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material or effect. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, and for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {
@@ -256,13 +261,28 @@ export type WgslCompile =
 /**
  * Compiles WGSL from a project with the engine's shader library. A whole shader builds for WebGPU,
  * and for WebGL2 when it has a render pipeline. A custom material's functions build into every
- * variant of the engine's standard material. `path` names the file in messages, and `hint` ends
- * the message about WGSL that is neither.
+ * variant of the engine's standard material, and a custom effect's or tone curve's into its
+ * template. `path` names the file in messages, and `hint` ends the message about WGSL that is
+ * none of these. `compiler` runs the compile, on this thread by default.
  */
-export function compileWgsl(path: string, source: string, hint: string): WgslCompile {
-	const material = entryPoints(source).length === 0 && declaresMaterialFunction(source);
+export async function compileWgsl(
+	path: string,
+	source: string,
+	hint: string,
+	compiler: ShaderCompiler = compileHere,
+): Promise<WgslCompile> {
+	const noEntryPoints = entryPoints(source).length === 0;
+	if (noEntryPoints && declaresFunction(source, POST_FUNCTIONS)) {
+		const result = await compiler.effect({ path, source });
+		// Effects and tone curves build for both GPU paths.
+		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
+		const { function: kind, uniforms, depth, variants } = result.effect;
+		if (kind === 'toneCurve') return { ok: true, shader: { kind, variants } };
+		return { ok: true, shader: { kind, uniforms, depth, variants } };
+	}
+	const material = noEntryPoints && declaresFunction(source, MATERIAL_FUNCTIONS);
 	if (material || isMeshShader(source)) {
-		const result = compileMaterial({ path, source });
+		const result = await compiler.material({ path, source });
 		// Custom materials build for both GPU paths.
 		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
 		return { ok: true, shader: { kind: 'material', ...result.material } };
@@ -271,7 +291,7 @@ export function compileWgsl(path: string, source: string, hint: string): WgslCom
 	if ('problem' in shape) return { ok: false, problems: [shape.problem], builds: [] };
 	const render = Object.keys(shape.pipelines).length > 0;
 	const variants = render ? BUILDS : { webgpu: BUILDS.webgpu };
-	const result = compileShader({ path, source, pipelines: shape.pipelines, variants });
+	const result = await compiler.shader({ path, source, pipelines: shape.pipelines, variants });
 	if (!result.ok) return { ok: false, problems: result.problems, builds: Object.keys(variants) };
 	const { webgpu, webgl2 } = result.variants;
 	if (!webgpu) throw new Error('null3D: the shader compiler gave no WebGPU build.');
@@ -368,11 +388,38 @@ export type ShaderOrError = { readonly shader: CompiledWgsl } | { readonly error
  * Compiles a `.wgsl` file. `path` names the file in messages, `id` is its module id, and `text` its
  * content as read from disk.
  */
-export function compileWgslFile(path: string, id: string, text: string): ShaderOrError {
+export async function compileWgslFile(
+	path: string,
+	id: string,
+	text: string,
+	compiler: ShaderCompiler = compileHere,
+): Promise<ShaderOrError> {
 	const source = text.replaceAll('\r\n', '\n');
-	const compiled = compileWgsl(path, source, FILE_HINT);
+	const compiled = await compileWgsl(path, source, FILE_HINT, compiler);
 	if (compiled.ok) return { shader: compiled.shader };
 	return { error: wgslError(compiled, source, { path, line: 1, column: 1 }, id, source) };
+}
+
+/**
+ * Compiles one tagged template literal of a script module, whose code is `code`: the compiled
+ * WGSL that takes its place, or the error that stops the module.
+ */
+export async function compileLiteral(
+	literal: TaggedWgsl,
+	code: string,
+	id: string,
+	path: string,
+	compiler: ShaderCompiler = compileHere,
+): Promise<ShaderOrError> {
+	if (literal.substitution !== null) {
+		const problem = problemAt(path, code, literal.substitution, SUBSTITUTION);
+		const failed = { ok: false, problems: [problem], builds: [] } as const;
+		return { error: wgslError(failed, code, { path, line: 1, column: 1 }, id, code) };
+	}
+	const origin = { path, ...placeOf(code, literal.start + 1) };
+	const compiled = await compileWgsl(path, literal.source, TAG_HINT, compiler);
+	if (compiled.ok) return { shader: compiled.shader };
+	return { error: wgslError(compiled, literal.source, origin, id, code) };
 }
 
 /** A tagged template literal of a module, and the compiled WGSL that takes its place. */
@@ -383,25 +430,24 @@ export interface TaggedShader {
 }
 
 /**
- * Compiles each tagged template literal in a script module, or gives the error that stops the
- * module at its first literal that does not compile.
+ * Compiles each tagged template literal in a script module, all at once, or gives the error that
+ * stops the module at its first literal that does not compile.
  */
-export function compileTaggedWgsl(
+export async function compileTaggedWgsl(
 	code: string,
 	id: string,
 	path: string,
-): { readonly shaders: readonly TaggedShader[] } | { readonly error: WgslError } {
+	compiler: ShaderCompiler = compileHere,
+): Promise<{ readonly shaders: readonly TaggedShader[] } | { readonly error: WgslError }> {
+	const literals = findTaggedWgsl(code, id);
+	const results = await Promise.all(
+		literals.map((literal) => compileLiteral(literal, code, id, path, compiler)),
+	);
 	const shaders: TaggedShader[] = [];
-	for (const literal of findTaggedWgsl(code, id)) {
-		if (literal.substitution !== null) {
-			const problem = problemAt(path, code, literal.substitution, SUBSTITUTION);
-			const failed = { ok: false, problems: [problem], builds: [] } as const;
-			return { error: wgslError(failed, code, { path, line: 1, column: 1 }, id, code) };
-		}
-		const origin = { path, ...placeOf(code, literal.start + 1) };
-		const compiled = compileWgsl(path, literal.source, TAG_HINT);
-		if (!compiled.ok) return { error: wgslError(compiled, literal.source, origin, id, code) };
-		shaders.push({ start: literal.start, end: literal.end, shader: compiled.shader });
+	for (const [k, result] of results.entries()) {
+		if ('error' in result) return result;
+		const { start, end } = literals[k] as TaggedWgsl;
+		shaders.push({ start, end, shader: result.shader });
 	}
 	return { shaders };
 }

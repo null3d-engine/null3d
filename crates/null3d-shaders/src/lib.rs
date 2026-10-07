@@ -16,6 +16,7 @@
 //!   a feature's first use as a whole has a module of its own for each target.
 
 mod composition;
+mod effect;
 mod features;
 mod glsl;
 mod half;
@@ -42,10 +43,11 @@ use naga_oil::compose::{NagaModuleDescriptor, ShaderDefValue};
 use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
+pub use effect::{EffectOutput, EffectSource, PostTemplates};
 pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
-pub use material::{MaterialOutput, MaterialSource, MaterialTemplate};
+pub use material::{MaterialOutput, MaterialSource, MaterialTemplate, Share};
 pub use output::{
     Binding, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output,
     Response, VariantOutput, WgslOutput,
@@ -153,9 +155,13 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             &inputs.files[&shader.file],
             &shader.pipelines,
             &shader.variants,
+            None,
             &label,
             &mut errors,
         );
+        if shader.custom_effects {
+            continue;
+        }
         output.shaders.insert(shader_name.clone(), variants);
         let pipelines = shader.pipelines.keys().cloned().collect();
         output.pipelines.insert(shader_name.clone(), pipelines);
@@ -269,6 +275,7 @@ impl Compiler {
             &shader.source,
             &shader.pipelines,
             &shader.variants,
+            None,
             &str::to_owned,
             &mut errors,
         );
@@ -276,20 +283,27 @@ impl Compiler {
     }
 
     /// Builds the variants of one entry shader, each once for every combination of its
-    /// permutation bits, by build name. Problems go to `errors`, each named with the `label` of its
-    /// build.
+    /// permutation bits, by build name: all of them, or the builds that `share` holds. Problems go
+    /// to `errors`, each named with the `label` of its build.
+    #[allow(clippy::too_many_arguments)]
     fn variants(
         &mut self,
         path: &str,
         source: &str,
         pipelines: &BTreeMap<String, Pipeline>,
         variants: &BTreeMap<String, Variant>,
+        share: Option<Share>,
         label: &dyn Fn(&str) -> String,
         errors: &mut BuildError,
     ) -> BTreeMap<String, VariantOutput> {
         let mut built = BTreeMap::new();
+        let mut place = 0;
         for (name, variant) in variants {
             for build in variant.builds(name) {
+                place += 1;
+                if share.is_some_and(|share| !share.holds(place - 1, variant, build.permutation)) {
+                    continue;
+                }
                 match self.variant(path, source, pipelines, variant, &build) {
                     Ok(output) => {
                         built.insert(build.name, output);

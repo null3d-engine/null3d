@@ -4,6 +4,7 @@
 // move everything in between.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { MEMORY_REFUSED } from '../pages/lib/room.ts';
 import type { DeviceFacts } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
@@ -28,6 +29,12 @@ export interface PlanItem<Check = unknown> {
 	 * its progress name, and a dead tab then counts as its result, not as a stopped runner page.
 	 */
 	endsTab?: true;
+	/**
+	 * The page runs in a runner page of its own: where the runner tool can open runner pages, the
+	 * runner page hands the run to a new one before the page and after it, and closes. Safari can keep
+	 * the memory of engines in a removed frame for minutes, and a new tab does not inherit it.
+	 */
+	ownTab?: true;
 	/**
 	 * The page's check times its frames, so the runner page keeps the page's frame on top in a plan
 	 * that draws its report over pages. Under an opaque report, a canvas that a worker draws changes
@@ -65,10 +72,39 @@ export interface Plan<Check = unknown> {
 	 * where `allowed` lets it lack that path, and posts a skip as the page's result.
 	 */
 	skipMissing?: { report: string; allowed: MissingAllowed };
+	/**
+	 * Where the runner tool can open runner pages, a runner page hands the run to a new one after it
+	 * has run this many pages. Memory that earlier pages left held builds up in one Safari process,
+	 * such as what a removed frame reaches. A new runner page starts with none of it.
+	 */
+	tabEvery?: number;
 }
 
 /** How the runner page runs a plan's pages. */
-export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing'>;
+export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing' | 'tabEvery'>;
+
+/**
+ * The pages that a runner page runs before it hands the run to a new one: fewer than Safari's 8 fast
+ * slots, so the engines of one runner page never use them all up (D-94).
+ */
+export const PAGES_PER_TAB = 6;
+
+/**
+ * The failures that memory Safari kept from earlier pages explains: a refused memory (E1109, or the
+ * browser's own "Out of memory"), a lost GPU or context (E1302), and room for shared memory that
+ * did not come back.
+ */
+const HELD_MEMORY_FAILURE =
+	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
+
+/**
+ * Whether a page's failure in Safari earns one more run in a new runner page. Safari keeps memory
+ * that pages before it dropped, in a way that a new runner page does not inherit (D-92). A page
+ * whose failure that explains runs once more there, and fails only if it fails again.
+ */
+export function rerunsInNewTab(browser: string, verdict: readonly string[]): boolean {
+	return browser === 'Safari' && verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem));
+}
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {
@@ -110,9 +146,16 @@ export const OOM_STOP_PAGES = 3;
 /** The engine's code for a shared memory that the browser refused, and the browser's own words. */
 const OUT_OF_MEMORY = /\bE1109\b|out of memory/i;
 
-/** Whether a page failed because the browser refused it memory. */
+/**
+ * Whether a page failed because the browser refused it memory: with E1109 or the browser's own
+ * error, or with no result in time while the engine still waited for its memory.
+ */
 export const outOfMemory = (result: ItemResult | undefined): boolean =>
-	result?.ok === false && OUT_OF_MEMORY.test(String(result.error ?? ''));
+	result?.ok === false &&
+	(OUT_OF_MEMORY.test(String(result.error ?? '')) ||
+		(String(result.error).startsWith('no result within') &&
+			Array.isArray(result.trail) &&
+			result.trail.some((step) => String(step).includes(MEMORY_REFUSED))));
 
 /**
  * Whether a runner's browser keeps refusing memory, from whether each of its pages failed for lack
@@ -190,6 +233,21 @@ export function readDevice(
 	runner: string,
 ): (DeviceFacts & Record<string, unknown>) | undefined {
 	return readJson(join(RUNS_DIR, run, runner, 'device.json'));
+}
+
+/**
+ * The plan items at which a runner page handed the run to a new runner page, that `handled` does
+ * not name yet, in order.
+ */
+export function handovers(run: string, runner: string, handled: ReadonlySet<number>): number[] {
+	const dir = join(RUNS_DIR, run, runner);
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.map((name) => /^handover-(\d+)\.json$/.exec(name)?.[1])
+		.filter((from) => from !== undefined)
+		.map(Number)
+		.filter((from) => !handled.has(from))
+		.sort((a, b) => a - b);
 }
 
 export function finished(run: string, runner: string): boolean {
@@ -397,6 +455,11 @@ export interface WaitOptions<Check = unknown> {
 	 * browser keeps refusing memory. The wait then stops waiting for it.
 	 */
 	endTurn?: (runner: string) => boolean;
+	/**
+	 * Opens a new runner page at the plan's item `from`, for a runner page that handed the run over
+	 * there, and says whether it opened. Without it, a handover ends the runner's turn.
+	 */
+	onHandover?: (runner: string, from: number) => boolean;
 }
 
 /**
@@ -415,14 +478,17 @@ export async function waitForRunners<Check>(
 		endTurn = () => false,
 		startMs,
 		onNoStart = () => {},
+		onHandover = () => false,
 	}: WaitOptions<Check> = {},
 ): Promise<string[]> {
 	const startedAt = Date.now();
 	let deadline = startedAt + batchTimeoutMs(plan);
 	const done: string[] = [];
 	const waiting = new Set(runners);
-	/** When the runner tool last opened a new runner page for a runner that went quiet. */
+	/** When the runner tool last opened a new runner page for a runner. */
 	const reopenedAt = new Map<string, number>();
+	/** For each runner, the plan items at which its runner pages handed the run over. */
+	const handled = new Map<string, Set<number>>();
 	while (waiting.size > 0 && Date.now() < deadline) {
 		for (const runner of waiting) {
 			const written = lastWrite(plan.run, runner);
@@ -436,6 +502,16 @@ export async function waitForRunners<Check>(
 				waiting.delete(runner);
 				done.push(runner);
 				onFinish(runner);
+				continue;
+			}
+			const seen = handled.get(runner) ?? new Set<number>();
+			handled.set(runner, seen);
+			const pending = handovers(plan.run, runner, seen);
+			const handedAt = pending.at(-1);
+			if (handedAt !== undefined) {
+				for (const from of pending) seen.add(from);
+				if (onHandover(runner, handedAt)) reopenedAt.set(runner, Date.now());
+				else waiting.delete(runner);
 				continue;
 			}
 			if (last === undefined) {

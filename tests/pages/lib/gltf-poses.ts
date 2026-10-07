@@ -89,13 +89,20 @@ export interface PoseFixture {
 	models: { url: string; cases: PoseCase[] }[];
 }
 
-/** What the poses page reports for each model. */
+/** What the poses page adds to a model's address for its clips after the asset tool. */
+export const TOOL_SUFFIX = ' after the asset tool';
+
+/** What the poses page reports for each model, and for each model's clips after the asset tool. */
 export interface PoseResult {
 	url: string;
 	joints: number;
 	clips: number;
+	/** Milliseconds that the engine's parser took over the file. */
+	parseMs: number;
 	/** Milliseconds from the first clip handed to the job workers to the last one back. */
 	resampleMs: number;
+	/** The clips that the core resampled at each frame; it copied the others' keys. */
+	resampled: number;
 	/** The largest difference from three.js in the rotation and scale part of a matrix. */
 	linear: number;
 	/** The largest difference from three.js in a translation, as a share of the model's size. */

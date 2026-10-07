@@ -46,8 +46,11 @@ export interface Null3dPageOptions {
  * `outline` adds outlined boxes to S1, `labels` adds that many labeled objects to S1, whose
  * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
  * point light shadows on, `environment` lights S1 with the built-in room, which turns every
- * frame, and `still` makes that share of S5's knights stand still in one pose, as waiting
- * characters do.
+ * frame, `effects` adds two custom effects to S1, whose uniforms change every frame,
+ * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
+ * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
+ * makes it draw before S1's objects, `extraBox` adds a small box to S1, and `still` makes that
+ * share of S5's knights stand still in one pose, as waiting characters do.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -62,6 +65,11 @@ const SKETCH_SWITCHES = [
 	'labels',
 	'tileShadows',
 	'environment',
+	'effects',
+	'decode',
+	'sky',
+	'backgroundFirst',
+	'extraBox',
 	'still',
 ] as const;
 
@@ -99,6 +107,8 @@ export function runNull3dPage(
 		if (options.far !== null) sketchUrl.searchParams.set('far', String(options.far));
 		if (options.shadowFilter !== null)
 			sketchUrl.searchParams.set('shadowFilter', String(options.shadowFilter));
+		if (options.shadowCascadeBlend !== null)
+			sketchUrl.searchParams.set('shadowCascadeBlend', String(options.shadowCascadeBlend));
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
 		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
 		if (options.demo) sketchUrl.searchParams.set('demo', '');
@@ -109,11 +119,14 @@ export function runNull3dPage(
 		}
 
 		// A bare `?hold` holds at the scene's hold time, which the page passes as the engine's option.
-		// A page that fills the window leaves the pixel ratio's cap to the quality preset.
+		// A page that fills the window leaves the pixel ratio's cap to the quality preset, unless
+		// `?maxPixelRatio=` names one.
 		const engine = await createEngine({
 			canvas,
 			sketch: sketchUrl,
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
+			...(filled && options.maxPixelRatio !== null && { maxPixelRatio: options.maxPixelRatio }),
+			antialias: options.antialias ?? undefined,
 			shadowCascades: options.shadowCascades ?? undefined,
 			shadowMapSize: options.shadowMapSize ?? undefined,
 			...(params.has('tileShadows') && { pointLightShadows: true, shadowTiles: 24 }),
@@ -133,7 +146,10 @@ export function runNull3dPage(
 				canvas: {
 					width: canvas.clientWidth,
 					height: canvas.clientHeight,
-					pixelRatio: Math.min(devicePixelRatio, twinSettings(engine.mode.preset).maxPixelRatio),
+					pixelRatio: Math.min(
+						devicePixelRatio,
+						options.maxPixelRatio ?? twinSettings(engine.mode.preset).maxPixelRatio,
+					),
 				},
 			}),
 		};

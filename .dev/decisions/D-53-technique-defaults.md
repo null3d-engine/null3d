@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-04. Rulings 6, 11, 12, 17 and 24 are rules that the owner agreed. A prototype sets their settings. It stops them only if they cost more than they give on phones. Rulings 1, 4, 9, 14, 15, 16, 18 and 28 wait on their prototypes, as the consequences table says. Date: 2026-10-04. Task: M2-N1.
 
+Summary: 28 rulings under D-52's best-default rule. Mip-chain bloom, crisp outlines, the vignette in HDR, AgX, native radial fog, AO on indirect light, specular anti-aliasing, exposure in the lights and a `three-next` baseline for r187. AO stays off on phones until it fits: Filament measured 7.5 to 14.4 ms on a Pixel 7 Pro. GPU occlusion culling stays off on Android until the GPUs that Bevy and Unity block pass. Phone tests run on BrowserStack Automate, and Brave is no longer tested.
+
 ## Question
 
 On 4 October 2026 the team compared each area of the engine with the source of eight engines. Then it checked the open facts by web search ([Technique review, October 2026](../technique-review-2026-10.md)). Under [D-52](D-52-intent-parity.md), each look uses the best technique as its default. Which default does each area take, how do three.js ports reach it, and which prototype must confirm it first?
@@ -66,7 +68,7 @@ The owner's rulings of 4 October 2026. Rulings 1 to 4, 13, 14, 19 and 27 follow 
 | 25 | Color grading controls | Not in M2. `.cube` and `.3dl` tables stay after the tone curve. When controls come, a job worker bakes them with the tone curve into one 32³ table on each change, as Filament does | One table read per pixel beats per-pixel controls, which add ALU and shader builds |
 | 26 | `three-compat` | ACES, Reinhard and Cineon; `OutlinePass`'s glow and pulse; `UnrealBloomPass`'s halo only if P2 fails. Each candidate gets its own decision, as D-52 asks. Built in M3 with the porting skill, after M2-F5 and M2-F6 make the extension points public | It must add nothing to pages that do not import it, and it tests the public extension points as a user's code would |
 | 27 | Tests and benchmarks | Strict pixel tests against three.js for shared building blocks. Improved techniques get null3D's own references and a looser sanity comparison. Benchmarks compare equal work, with quality notes | D-52 parts 4 and 5 |
-| 28 | Shadow comparison on Adreno before Chrome 149 | Run the shadow image tests on the S25 with Chrome 149 or later, and with an older Chrome if BrowserStack offers one. Add no guard if the older Chrome draws correctly, or if none is offered: Chrome on Android updates itself. If it draws wrong shadows, add a guard: on a Qualcomm adapter with Chrome before 149, compare in the shader, as three.js does on every Android browser | Dawn's workaround covers 2D and 2D-array depth textures, which are all that null3D's cascades and tiles use. No driver fix is known, so the workaround stays in Dawn (S-02) |
+| 28 | Shadow comparison on Adreno before Chrome 149 | Run the shadow image tests on the S25 with Chrome 149 or later, and with an older Chrome if BrowserStack offers one. Add no guard if the older Chrome draws correctly, or if none is offered: Chrome on Android updates itself. If it draws wrong shadows, add a guard: on a Qualcomm adapter with Chrome before 149, compare in the shader, as three.js does on every Android browser | Dawn's workaround covers 2D and 2D-array depth textures, which are all that null3D's cascades and tiles use. No driver fix is known, so the workaround stays in Dawn (S-02). On 7 October 2026 the S25's shadow image tests passed in Chrome 149 and in Samsung Internet's Chromium 143, so no guard ([D-76](D-76-16-bit-cascades.md)) |
 
 ### Shared building blocks and improved techniques
 
@@ -127,7 +129,7 @@ Each ruling becomes work in M2 or later. The tasks marked "proposed" need the co
 Other consequences:
 
 - Per-feature shader files that load on first use (M2-R11, D-56) come before any new feature that adds shader code. Branches already built move their shaders into first-use files in a follow-up.
-- Color morph targets (glTF's `COLOR_n` morph targets) are a parity gap under D-52's strict glTF intent. A follow-up task closes it in M2, after morph targets (M2-C5) merge.
+- Color morph targets (glTF's `COLOR_n` morph targets) are a parity gap under D-52's strict glTF intent. A follow-up task closes it in M2, after morph targets (M2-C5) merge. Closed on 5 October 2026 by M2-C11 for `COLOR_0`: [D-51](D-51-morph-targets.md#color-targets).
 - The parity list keeps only shared building blocks. Bloom, AO, outlines and the vignette leave it when their defaults change.
 - The porting skill, the port tools and the three.js mapping change with each feature as it ships, as D-52 says. Until then they describe what the engine does now: ACES as the default curve, and `UnrealBloomPass`'s steps.
 - The review's other changes need no owner ruling, and follow the best-default rule:

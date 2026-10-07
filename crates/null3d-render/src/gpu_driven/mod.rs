@@ -79,6 +79,17 @@
 //! [`crate::light_grid`]). The CPU uploads the light list, and a compute pass before the culling
 //! passes lists each cluster's lights in the grid.
 //!
+//! # Occlusion culling
+//!
+//! With two-phase occlusion culling, each camera view culls twice (see [`cull`] and [`pyramid`]).
+//! The first phase keeps the objects in view that drew in the view's last frame, and the occluders'
+//! pass draws their depth alone, into a depth target of its own, with the depth prepass's
+//! pipelines and bundle. A compute pass then builds the view's depth pyramid from that depth, and
+//! the second phase tests every object in view against it. The opaque pass draws the visible ones,
+//! as it does without occlusion culling. Every object that the depth test would show is visible to
+//! the second phase, so the image matches culling without the pyramid. Shadow views cull in one
+//! phase.
+//!
 //! # Depth prepass
 //!
 //! With the depth prepass, each camera view also replays a bundle of its opaque buckets' depth
@@ -92,8 +103,9 @@
 //! or turning outlines on or off, rebuilds the layouts, as casting shadows does.
 //!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
-//! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
-//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
+//! that the camera's opaque pass draws after its bundle, or before it while a bucket writes no
+//! depth, is [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and
+//! begins their render passes.
 //!
 //! # Memory
 //!
@@ -106,6 +118,7 @@ mod cull;
 mod layout;
 mod lights;
 mod opaque;
+mod pyramid;
 mod shadow;
 mod skin;
 mod transparent;
@@ -118,11 +131,12 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, AoIds};
-use crate::background::BackgroundPass;
+use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
@@ -133,19 +147,20 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
-use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
-use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
-use crate::shadows::{self, MAX_CASCADES, ShadowUniform};
+use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
+use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
-use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
+use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
 use layout::{Drawn, Layout};
 use lights::LightClusters;
 use opaque::Bundle;
+use pyramid::Pyramids;
 use skin::Skinning;
 use transparent::Transparent;
 
@@ -190,6 +205,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 mod ids {
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::effects::MAX_EFFECTS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
@@ -199,14 +215,12 @@ mod ids {
     pub const SOURCE_LAYERS: u32 = 5;
     /// Every drawn source's place, in cell order.
     pub const ORDER: u32 = 6;
-    /// Each view's buffers: its frame uniform, culling parameters, compacted instances, indirect
-    /// draws and compacted indices, `VIEW_BUFFER_IDS` ids from
-    /// `VIEW_BUFFERS + VIEW_BUFFER_IDS * view`.
+    /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
+    /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
     const VIEW_BUFFERS: u32 = 7;
-    const VIEW_BUFFER_IDS: u32 = 5;
 
     pub const fn frame(view: ViewId) -> u32 {
-        VIEW_BUFFERS + VIEW_BUFFER_IDS * view.index() as u32
+        VIEW_BUFFERS + 4 * view.index() as u32
     }
     pub const fn cull_params(view: ViewId) -> u32 {
         frame(view) + 1
@@ -217,14 +231,9 @@ mod ids {
     pub const fn indirect(view: ViewId) -> u32 {
         frame(view) + 3
     }
-    /// The view's compacted index buffer, which the buckets that read their instances by index
-    /// draw from.
-    pub const fn visible_indices(view: ViewId) -> u32 {
-        frame(view) + 4
-    }
 
     /// The vertices of the debug lines.
-    pub const LINES: u32 = VIEW_BUFFERS + VIEW_BUFFER_IDS * MAX_VIEW_IDS as u32;
+    pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEW_IDS as u32;
     /// The casters' bucket table and bucket records, which the shadow cascades' culling reads.
     pub const CASTER_BUCKETS: u32 = LINES + 1;
     pub const CASTER_RECORDS: u32 = LINES + 2;
@@ -264,8 +273,26 @@ mod ids {
     /// reads.
     pub const OUTLINE_BUCKETS: u32 = AO + 1;
     pub const OUTLINE_RECORDS: u32 = OUTLINE_BUCKETS + 1;
+    /// The uniform buffer of the background's values.
+    pub const BACKGROUND: u32 = OUTLINE_RECORDS + 1;
+    /// Each camera view's buffers of occlusion culling: its depth pyramid and the pyramid's level
+    /// parameters, two ids from `OCCLUSION + 2 * view`.
+    const OCCLUSION: u32 = BACKGROUND + 1;
+
+    pub const fn pyramid(view: ViewId) -> u32 {
+        OCCLUSION + 2 * view.index() as u32
+    }
+    pub const fn pyramid_params(view: ViewId) -> u32 {
+        pyramid(view) + 1
+    }
+
+    /// The placeholder that views without a depth pyramid bind in its place.
+    pub const NO_PYRAMID: u32 = OCCLUSION + 2 * MAX_VIEWS as u32;
+
+    /// The uniform buffer of the custom effects' blocks.
+    pub const EFFECTS: u32 = NO_PYRAMID + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OUTLINE_RECORDS + 1;
+    pub const PAGES: u32 = EFFECTS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -285,8 +312,13 @@ mod ids {
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
+    /// The texture that custom effects bind in place of the scene's depth when they read none.
+    pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
+    /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
+    /// per view (see [`super::cull`]).
+    pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_OUTLINE + 1;
+    pub const TARGETS: u32 = CELL_OFFSETS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -299,17 +331,26 @@ mod ids {
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The sampler that reads four texels of the shadow map at once.
     pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
+    /// The linear sampler of the custom effects.
+    pub const EFFECT_SAMPLER: u32 = 6;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 6;
+    pub const SAMPLERS: u32 = 7;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
     pub const LIGHT_COUNT: u32 = 2;
     pub const LIGHT_PLACE: u32 = 3;
     pub const LIGHT_WRITE: u32 = 4;
-    /// The skinning pass's pipelines: for vertex formats without a tangent, and with one.
+    /// The skinning pass's pipelines: for vertex formats without a tangent, and with one, then
+    /// the same for formats whose color the pass morphs.
     pub const SKIN: u32 = 5;
     pub const SKIN_TANGENT: u32 = 6;
+    pub const SKIN_COLOR: u32 = 7;
+    pub const SKIN_TANGENT_COLOR: u32 = 8;
+    /// The pipelines of occlusion culling: its two phases and the depth pyramid's.
+    pub const OCCLUSION_EARLY: u32 = 9;
+    pub const OCCLUSION_LATE: u32 = 10;
+    pub const PYRAMID: u32 = 11;
 
     /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
     /// the group of the pipelines that read their instances by index.
@@ -338,8 +379,16 @@ mod ids {
     pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_SEGMENTS;
     /// The bind group of each step of ambient occlusion, after the joint texture's.
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
-    /// The bind groups of materials' maps, after ambient occlusion's.
-    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The background's bind group, after ambient occlusion's.
+    pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// Each camera view's group of its depth pyramid, after the background's.
+    pub const fn pyramid_group(view: ViewId) -> u32 {
+        BACKGROUND_GROUP + 1 + view.index() as u32
+    }
+    /// The bind group of each custom effect, after the depth pyramids'.
+    pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1 + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after the effects'.
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -381,6 +430,11 @@ pub struct RendererConfig {
     /// storage buffers, where their templates can, instead of a copy that the culling shader
     /// writes. A test switch asks for it on core WebGPU (decision record D-23).
     pub index_instances: bool,
+    /// True to cull each camera view in two phases against a depth pyramid of what it drew, so
+    /// objects that others hide do not draw. The depth prepass turns it off.
+    pub gpu_occlusion: bool,
+    /// How the shadow cascades store depth.
+    pub cascade_depth: CascadeDepth,
 }
 
 impl Default for RendererConfig {
@@ -397,6 +451,8 @@ impl Default for RendererConfig {
             depth_prepass: false,
             skinning: SkinningMode::LEAN,
             index_instances: false,
+            gpu_occlusion: false,
+            cascade_depth: CascadeDepth::default(),
         }
     }
 }
@@ -416,8 +472,8 @@ pub struct GpuDrivenRenderer {
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
-    /// True when the layouts were built for a frame with shadows.
-    layouts_shadowed: bool,
+    /// The shadow passes of the frame that the layouts were built for.
+    layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
     layouts_outlined: bool,
     /// True once the outline view's GPU objects exist.
@@ -429,6 +485,8 @@ pub struct GpuDrivenRenderer {
     /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
     cells: CellCulling,
     culling: Culling,
+    /// Each camera view's depth pyramid, with occlusion culling.
+    pyramids: Pyramids,
     lines: LinesPass,
     /// The sources of the transparent pass, and each camera view's sorted rows.
     sorted: SortedLayout,
@@ -482,6 +540,7 @@ fn scene_settings(config: &RendererConfig) -> SceneSettings {
         config.max_materials,
         textures,
         config.canvas,
+        config.cascade_depth,
     )
 }
 
@@ -516,26 +575,39 @@ impl GpuDrivenRenderer {
                             buffer: ids::AO,
                             first_group: ids::AO_GROUPS,
                         },
+                        effects: EffectIds {
+                            buffer: ids::EFFECTS,
+                            sampler: ids::EFFECT_SAMPLER,
+                            first_group: ids::EFFECT_GROUPS,
+                            blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
                     },
                 );
-                graph.bind_shadow_map();
+                graph.bind_shadow_map(config.cascade_depth);
                 graph.set_depth_prepass(config.depth_prepass);
+                graph.set_occlusion(config.gpu_occlusion);
                 graph
             },
             layout: Layout::new(Drawn::Scene, config.index_instances),
             casters: Layout::new(Drawn::Casters, config.index_instances),
             outlined: Layout::new(Drawn::Outlined, config.index_instances),
-            layouts_shadowed: false,
+            layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             outline_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, false),
             culling: Culling::new(config.index_instances),
+            pyramids: Pyramids::default(),
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
-            background: BackgroundPass::default(),
+            background: BackgroundPass::new(BackgroundIds {
+                buffer: ids::BACKGROUND,
+                group: ids::BACKGROUND_GROUP,
+                blank_cube: ids::BLANK_ENVIRONMENT,
+                sampler: ids::ENVIRONMENT_SAMPLER,
+            }),
             lights: CameraLights::on_gpu(config.light_limits),
             light_clusters: LightClusters::default(),
             skinning: Skinning::new(config.skinning),
@@ -628,8 +700,19 @@ impl GpuDrivenRenderer {
         let filter = self.settings.shadow_quality().filter;
         self.tiles
             .plan(input, tile_settings, filter, camera.as_ref());
-        // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
-        let shadows = shadow.is_some() || self.tiles.shape().is_some();
+        // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
+        // casters draw into the passes of each.
+        let passes = CasterPasses {
+            cascades: shadow
+                .is_some()
+                .then(|| self.settings.cascade_depth().targets()),
+            tiles: self
+                .tiles
+                .shape()
+                .is_some()
+                .then_some(shadow_tiles::TARGETS),
+        };
+        let shadows = passes.any();
         let outlines = self.settings.outline().is_some();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
@@ -647,7 +730,7 @@ impl GpuDrivenRenderer {
                 .open_when_built(&self.pipelines, waiting, input.pipelines_built);
         let upload_everything = input.structure_changed
             || !self.layout.built
-            || shadows != self.layouts_shadowed
+            || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass
             || skinned_appear;
@@ -672,8 +755,8 @@ impl GpuDrivenRenderer {
                 input.batches,
                 parity,
                 limit,
-                shadows,
-                Prepass::DepthTemplate.if_on(self.graph.depth_prepass()),
+                passes,
+                self.graph.depth_pass(Prepass::DepthTemplate),
                 &self.skinning,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
@@ -691,17 +774,17 @@ impl GpuDrivenRenderer {
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
                 )
                 .map_err(out_of_memory)?;
-            // The casters' layout holds buckets only while the light casts shadows.
+            // The casters' layout holds buckets only while a light casts shadows.
             if shadows {
                 self.casters.rebuild(
                     &self.settings,
                     &mut self.pipelines,
-                    shadows::TARGETS,
+                    targets,
                     input.scene,
                     input.batches,
                     parity,
                     limit,
-                    shadows,
+                    passes,
                     Prepass::Off,
                     &self.skinning,
                 )?;
@@ -709,7 +792,7 @@ impl GpuDrivenRenderer {
                 self.casters.clear();
             }
             self.skinning.asked();
-            self.layouts_shadowed = shadows;
+            self.layouts_shadowed = passes;
             // The outlined layout holds buckets only while outlines are on.
             if outlines {
                 self.outlined.rebuild(
@@ -720,7 +803,7 @@ impl GpuDrivenRenderer {
                     input.batches,
                     parity,
                     limit,
-                    shadows,
+                    passes,
                     Prepass::Off,
                     &self.skinning,
                 )?;
@@ -749,6 +832,7 @@ impl GpuDrivenRenderer {
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         let mut created_pipelines = !self.created;
+        let occlusion = self.graph.occlusion();
         if !self.created {
             cull::create_pipeline(list)?;
             lights::create_pipelines(list)?;
@@ -760,6 +844,12 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
+        self.graph.set_effects(
+            self.settings.effects(),
+            self.settings.clock_seconds(),
+            self.settings.camera_projection(input.canvas),
+        );
+        self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
@@ -769,8 +859,14 @@ impl GpuDrivenRenderer {
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
+            Place::of(self.layout.depthless),
         );
         created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
+        // Occlusion culling's shaders load on first use: its pipelines wait for the scene's first
+        // marked occluder.
+        if occlusion && self.layout.occluders() > 0 {
+            created_pipelines |= self.pyramids.create_pipelines(list, input.frame)?;
+        }
         created_pipelines |= self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
@@ -796,16 +892,17 @@ impl GpuDrivenRenderer {
             .shadow_atlas()
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
-        let prepass = self.graph.depth_prepass();
-        let occlusion = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
+        let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
+        let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
                 opaque::create_frame_buffer(list, view)?;
                 self.culling.add_view(list, view)?;
             }
-            // Ambient occlusion can switch the prepass on after a view first drew.
-            if prepass && index >= self.prepass_views {
+            // Ambient occlusion can switch the prepass on after a view first drew, and
+            // occlusion culling's occluders' pass draws into the same depth.
+            if depth_pass != Prepass::Off && index >= self.prepass_views {
                 shadow::bind_depth(list, ids::prepass_group(view), view)?;
             }
             if index >= first_new || self.graph.textures_made() {
@@ -814,14 +911,28 @@ impl GpuDrivenRenderer {
                     view,
                     shadow_map,
                     atlas,
-                    occlusion,
+                    ao_texture,
                     self.bound_environment,
                 )?;
             }
         }
         self.views_made = self.views_made.max(views);
-        if prepass {
+        if depth_pass != Prepass::Off {
             self.prepass_views = self.prepass_views.max(views);
+        }
+        // Each camera view's depth pyramid, whose new buffer its culling group binds again.
+        let mut pyramids_made = 0u32;
+        if occlusion {
+            for index in 0..views {
+                let view = ViewId::from_index(index);
+                let depth = self
+                    .graph
+                    .depth_texture(view)
+                    .expect("a view that culls in two phases samples its depth");
+                if self.pyramids.prepare(list, view, input.canvas, depth)? {
+                    pyramids_made |= 1 << index;
+                }
+            }
         }
         let cascades = shadow.as_ref().map_or(0, |s| s.cascades.count);
         let first_new_cascade = self.cascades_made;
@@ -868,7 +979,7 @@ impl GpuDrivenRenderer {
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
-            dfg::upload(list, arena, ids::DFG)?;
+            dfg::upload(list, arena, ids::DFG, 0)?;
         }
         let pages_remade = self
             .meshes
@@ -896,7 +1007,7 @@ impl GpuDrivenRenderer {
             self.bound_environment = environment;
             for index in 0..views {
                 let view = ViewId::from_index(index);
-                opaque::bind_frame(list, view, shadow_map, atlas, occlusion, environment)?;
+                opaque::bind_frame(list, view, shadow_map, atlas, ao_texture, environment)?;
             }
         }
         for frame in self.frames.iter_mut().flatten() {
@@ -908,7 +1019,7 @@ impl GpuDrivenRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(&self.settings);
+        self.background.prepare(list, arena, &self.settings)?;
         let binding_bytes = self.config.storage_binding_bytes;
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -937,14 +1048,32 @@ impl GpuDrivenRenderer {
             first_new
         };
         let scene_targets = self.graph.scene_targets();
-        for index in first_to_apply..views {
+        for index in 0..views {
             let view = ViewId::from_index(index);
-            self.culling
-                .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
+            let pyramid_made = pyramids_made & (1 << index) != 0;
+            let records = index >= first_to_apply;
+            if !records && !pyramid_made {
+                continue;
+            }
+            let recreated = shared_recreated || pyramid_made;
             let (layout, meshes) = (&self.layout, &self.meshes);
-            opaque::record_bundle(list, view, layout, meshes, scene_targets, Bundle::Opaque)?;
-            if prepass {
-                opaque::record_bundle(list, view, layout, meshes, scene_targets, Bundle::Prepass)?;
+            self.culling
+                .apply(list, view, layout, recreated, binding_bytes, occlusion)?;
+            if !records {
+                continue;
+            }
+            // With occlusion culling, the opaque pass draws the second set of indirect draws, and
+            // the occluders' pass the first, into its depth target alone.
+            let (first_draw, depth_targets) = if occlusion {
+                (layout.draws.len() as u32, scene_targets.occluder_depth())
+            } else {
+                (0, scene_targets)
+            };
+            let kind = Bundle::Opaque;
+            opaque::record_bundle(list, view, layout, meshes, scene_targets, kind, first_draw)?;
+            if depth_pass != Prepass::Off {
+                let depth = Bundle::Prepass;
+                opaque::record_bundle(list, view, layout, meshes, depth_targets, depth, 0)?;
             }
         }
         if outline_drawn && (upload_everything || buffers_remade || new_outline) {
@@ -952,10 +1081,10 @@ impl GpuDrivenRenderer {
             // The outlined layout's tables are new whenever the layouts are.
             let recreated = shared_recreated || upload_everything;
             self.culling
-                .apply(list, view, &self.outlined, recreated, binding_bytes)?;
+                .apply(list, view, &self.outlined, recreated, binding_bytes, false)?;
             let targets = self.graph.outline_targets();
             let (outlined, meshes) = (&self.outlined, &self.meshes);
-            opaque::record_bundle(list, view, outlined, meshes, targets, Bundle::Outline)?;
+            opaque::record_bundle(list, view, outlined, meshes, targets, Bundle::Outline, 0)?;
         }
         let first_cascade_to_apply = if upload_everything || buffers_remade {
             0
@@ -973,16 +1102,14 @@ impl GpuDrivenRenderer {
         for view in shadow_views {
             let recreated = shared_recreated || casters_recreated;
             self.culling
-                .apply(list, view, &self.casters, recreated, binding_bytes)?;
+                .apply(list, view, &self.casters, recreated, binding_bytes, false)?;
             let (casters, meshes) = (&self.casters, &self.meshes);
-            opaque::record_bundle(
-                list,
-                view,
-                casters,
-                meshes,
-                shadows::TARGETS,
-                Bundle::Opaque,
-            )?;
+            let (targets, kind) = if view.tile_index().is_some() {
+                (shadow_tiles::TARGETS, Bundle::Tile)
+            } else {
+                (self.settings.cascade_depth().targets(), Bundle::Opaque)
+            };
+            opaque::record_bundle(list, view, casters, meshes, targets, kind, 0)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
@@ -998,10 +1125,16 @@ impl GpuDrivenRenderer {
         self.light_clusters.upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
 
+        let render_size = self.graph.render_size();
         for (index, frame) in self.frames.iter().enumerate() {
             let view = ViewId::from_index(index);
             if let Some(frame) = frame {
                 opaque::upload(list, arena, view, frame)?;
+                let levels = if occlusion {
+                    Some(*self.pyramids.upload(list, arena, view, render_size)?)
+                } else {
+                    None
+                };
                 let (layout, cells) = (&self.layout, &self.cells);
                 self.culling.upload(
                     list,
@@ -1012,6 +1145,7 @@ impl GpuDrivenRenderer {
                     layout,
                     input.scene,
                     cells,
+                    levels.as_ref(),
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning
@@ -1031,6 +1165,7 @@ impl GpuDrivenRenderer {
                 outlined,
                 input.scene,
                 cells,
+                None,
             )?;
         }
         self.cascade_frames = [None; MAX_CASCADES];
@@ -1057,6 +1192,7 @@ impl GpuDrivenRenderer {
                 casters,
                 input.scene,
                 cells,
+                None,
             )?;
             let offsets = self.culling.offsets();
             self.skinning
@@ -1078,6 +1214,7 @@ impl GpuDrivenRenderer {
                     casters,
                     input.scene,
                     cells,
+                    None,
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning
@@ -1120,6 +1257,12 @@ impl GpuDrivenRenderer {
 
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
+        let pyramids = &self.pyramids;
+        // Without marked occluders, or until occlusion culling's pipelines are built, the frame
+        // draws no occluders' depth and builds no pyramid: each camera view culls once, as without
+        // occlusion culling, into the draws its opaque pass reads.
+        let occluding =
+            occlusion && self.layout.occluders() > 0 && self.pyramids.built(input.pipelines_built);
         let outlined = &self.outlined;
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
         let (background, light_clusters) = (&self.background, &self.light_clusters);
@@ -1136,7 +1279,11 @@ impl GpuDrivenRenderer {
             _ => casters,
         };
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
-        let skips = |role: Role| matches!(role, Role::Shadow(view) if !drawn(view));
+        let skips = |role: Role| match role {
+            Role::Shadow(view) => !drawn(view),
+            Role::Occluders(_) => !occluding,
+            _ => false,
+        };
         let (sorted, transparent) = (&self.sorted, &self.transparent);
         let (settings, meshes) = (&self.settings, &self.meshes);
         self.graph.record(
@@ -1146,16 +1293,34 @@ impl GpuDrivenRenderer {
             |list, role| match role {
                 Role::LightClusters => light_clusters.record(list),
                 Role::Skin => skinning.record(list),
-                Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
-                Role::Prepass(view) if drawn(view) => opaque::record(list, view, true),
+                Role::Cull(view) if drawn(view) => {
+                    let phase = if occluding && culling.occludes(view) {
+                        Phase::Early
+                    } else {
+                        Phase::Once
+                    };
+                    culling.record(list, view, layout_of(view), phase)
+                }
+                Role::Prepass(view) | Role::Occluders(view) if drawn(view) => {
+                    opaque::record(list, view, Bundle::Prepass)
+                }
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
-                    if view == ViewId::CAMERA {
-                        background.record(list, ids::frame_group(view), &[])?;
+                    let camera = view == ViewId::CAMERA;
+                    if camera {
+                        background.record(list, ids::frame_group(view), &[], Place::First)?;
                     }
-                    opaque::record(list, view, false)
+                    opaque::record(list, view, Bundle::Opaque)?;
+                    if camera {
+                        background.record(list, ids::frame_group(view), &[], Place::Last)?;
+                    }
+                    Ok(())
+                }
+                Role::Pyramid(view) if drawn(view) && occluding => pyramids.record(list, view),
+                Role::LateCull(view) if drawn(view) && occluding => {
+                    culling.record(list, view, layout, Phase::Late)
                 }
                 Role::OutlineMask if drawn(ViewId::OUTLINE) => {
-                    opaque::record(list, ViewId::OUTLINE, false)
+                    opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
@@ -1226,7 +1391,12 @@ impl GpuDrivenRenderer {
                 + layout.draws.len() * INDIRECT_BYTES as usize
         };
         let camera_views = self.settings.views().len();
-        let views = camera_views * per_view(&self.layout) + per_view(&self.outlined);
+        let pyramids = if self.graph.occlusion() {
+            Pyramids::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let views = camera_views * (per_view(&self.layout) + pyramids) + per_view(&self.outlined);
         let tiles = self.settings.tile_settings().tiles as usize;
         let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
         let tables =
@@ -1245,6 +1415,7 @@ impl GpuDrivenRenderer {
             + shadows
             + sorted
             + self.graph.upload_bound()
+            + BackgroundPass::UPLOAD_BYTES
     }
 }
 
@@ -1283,10 +1454,22 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.tiles.shape().is_some()
     }
 
+    fn meshes_moved(&mut self, _ids: &[u32], moves: &MeshMoves) {
+        self.meshes.moved(moves);
+        if let Some(first) = moves.morph_texels {
+            self.skinning.morph_mut().deltas_moved(first);
+        }
+    }
+
+    fn mesh_gpu_bytes(&self) -> u64 {
+        self.meshes.gpu_bytes() + self.skinning.morph().delta_bytes()
+    }
+
     fn reset_gpu(&mut self) {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.background.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();
@@ -1294,6 +1477,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.outlined.forget_gpu();
         self.outline_made = false;
         self.culling.forget_gpu();
+        self.pyramids.forget_gpu();
         self.views_made = 0;
         self.prepass_views = 0;
         self.cascades_made = 0;

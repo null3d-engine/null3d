@@ -43,13 +43,22 @@ export interface CoreGlue extends CoreErrors {
 		skinning: number,
 		indexInstances: boolean,
 		largeWorld: boolean,
+		gpuOcclusion: boolean,
+		shadowDepthBits: number,
 	): number;
-	jobWorkerLoop(index: number): void;
 	/**
 	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
 	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
 	 */
 	jobWorkerFailed(index: number): void;
+	/** Serves the job system on a job worker: true when a task call made it return, false at stop. */
+	jobWorkerLoop(index: number): boolean;
+	/** Asks a job worker to leave the job loop for one more task. */
+	callJobWorker(index: number): void;
+	/** Ends one task call of a job worker. */
+	jobWorkerCallDone(index: number): void;
+	/** The task calls of a job worker that it has not finished. */
+	jobWorkerCalls(index: number): number;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
@@ -97,6 +106,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
+	/**
+	 * The times that an object or an instance row entered a new grid cell while every cell was in
+	 * use, so that it went into the origin's cell instead.
+	 */
+	cellsRefused(): number;
 	/**
 	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
 	 * is the newest frame that the thread that draws drew with every pipeline built, as for
@@ -155,7 +169,8 @@ export interface CoreGlue extends CoreErrors {
 	): number;
 	/**
 	 * Creates a sprite batch of a quad mesh and a sprite material, with an atlas of `columns` by
-	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`.
+	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`. `points` marks a batch of
+	 * points, which a raycast's point threshold reaches.
 	 */
 	createSpriteBatch(
 		capacity: number,
@@ -165,6 +180,7 @@ export interface CoreGlue extends CoreErrors {
 		columns: number,
 		rows: number,
 		screenSize: boolean,
+		points: boolean,
 	): number;
 	/**
 	 * Creates a line batch of `points` points of the segment mesh and a line material, joined as
@@ -257,6 +273,13 @@ export interface CoreGlue extends CoreErrors {
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
 	/**
+	 * Destroys `count` meshes whose ids `meshArrays`'s words hold: their data goes at once, and the
+	 * next frame gives their ids to later meshes once no object or batch names them.
+	 */
+	destroyMeshes(count: number): number;
+	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
+	meshMemoryBytes(): number;
+	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
 	 * polygon offset units and factor.
@@ -322,8 +345,9 @@ export interface CoreGlue extends CoreErrors {
 	createVolumeTexture(width: number, height: number, depth: number, format: number): number;
 	/**
 	 * A cube texture with faces of `size` texels a side and `levels` mip levels, in a `FORMAT_*`
-	 * code of shared-exponent floats or half floats, with no texels yet. Its texels bring every
-	 * level, each level's six faces in turn. Returns its handle.
+	 * code of shared-exponent floats or half floats, whose texels bring every level, each level's
+	 * six faces in turn, or of 8-bit sRGB texels and one level, whose faces come from six images.
+	 * It has no texels yet. Returns its handle.
 	 */
 	createCubeTexture(size: number, levels: number, format: number): number;
 	/**
@@ -331,6 +355,12 @@ export interface CoreGlue extends CoreErrors {
 	 * returns the image's id for the thread that draws. An image of another size resizes it.
 	 */
 	setTextureImage(texture: number, width: number, height: number, flags: number): number;
+	/**
+	 * Gives a cube texture of 8-bit texels six images, one for each face from +X to -Z, uploaded
+	 * with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and returns the first image's id for the
+	 * thread that draws. The other five take the ids after it.
+	 */
+	setCubeImages(texture: number, flags: number): number;
 	/**
 	 * Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU, all
 	 * in the first frame after the generator arrives, and returns the generator's id among the
@@ -431,10 +461,29 @@ export interface CoreGlue extends CoreErrors {
 	 * from the next frame on, with the post-processing values' intensity and domain.
 	 */
 	setLut(texture: number): number;
-	/** Turns the vignette on with the post-processing values' offset and darkness, or off. */
+	/**
+	 * Turns the vignette on with the post-processing values' intensity, size, falloff and roundness,
+	 * or off.
+	 */
 	setVignette(on: boolean): number;
 	/** Turns outlines on with the post-processing values' line colors and width, or off. */
 	setOutline(on: boolean): number;
+	/**
+	 * The address of a custom effect's uniforms (`EFFECT_FLOATS` 32-bit floats), which TypeScript
+	 * writes before it calls `setEffect`.
+	 */
+	effectValues(): number;
+	/**
+	 * Sets the custom effect at a place in the order effects run, from the next frame on: its render
+	 * pipeline template, its flags (`EFFECT_DEPTH`) and the uniforms at `effectValues`. Template 0
+	 * removes the effect at the place and every one after it.
+	 */
+	setEffect(index: number, template: number, flags: number): number;
+	/**
+	 * Maps HDR color with the custom tone curve whose builds take the render pipeline templates from
+	 * `template` on, or with the curve that `setOutput` sets for 0, from the next frame on.
+	 */
+	setToneCurve(template: number): number;
 	/**
 	 * The address of the block of the environment's values (`ENVIRONMENT_VALUE_*`), 32-bit floats
 	 * that TypeScript writes before it calls `setEnvironment`.
@@ -456,30 +505,50 @@ export interface CoreGlue extends CoreErrors {
 	setPixelRatio(ratio: number): number;
 	/**
 	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
-	 * shadow cascade, from 1 to 8, and whether a far cascade draws in every frame while a moving
-	 * caster touches it, from the next frame on.
+	 * shadow cascade, from 1 to 8, whether a far cascade draws in every frame while a moving
+	 * caster touches it, and the share of each cascade's length over which it blends into the next,
+	 * from 0 to 0.5, from the next frame on.
 	 */
-	setShadowQuality(filter: number, farInterval: number, followMovers: boolean): number;
+	setShadowQuality(
+		filter: number,
+		farInterval: number,
+		followMovers: boolean,
+		cascadeBlend: number,
+	): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
 	 * cast shadows.
 	 */
 	shadowCasters(): number;
-	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
-	setBackgroundTexture(texture: number): number;
 	/**
-	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
-	 * linear fog, and the density of exponential squared fog.
+	 * The address of the block of the background's values (`BACKGROUND_VALUE_*`), 32-bit floats
+	 * that TypeScript writes before it calls `setBackgroundSource`.
+	 */
+	backgroundValues(): number;
+	/**
+	 * Draws a source (`BACKGROUND_KIND_*`) behind every object in the camera's view, with the
+	 * background's values: texture or cube texture `texture`, or none for the sky. `NONE` leaves
+	 * the background color alone.
+	 */
+	setBackgroundSource(kind: number, texture: number): number;
+	/**
+	 * The scene's fog: its curve (`FOG_CURVE_*`), or none, its linear color, the density of
+	 * exponential and exponential squared fog, the near and far distances of linear fog, the height
+	 * where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 	 */
 	setFog(
-		kind: number,
+		curve: number,
 		r: number,
 		g: number,
 		b: number,
+		density: number,
 		near: number,
 		far: number,
-		density: number,
+		height: number,
+		heightFalloff: number,
+		sunGlow: number,
+		sunGlowExponent: number,
 	): number;
 	/**
 	 * Draws the scene with a debug view (`DEBUG_VIEW_*`), or with its materials with
@@ -498,6 +567,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createSkeleton(joints: number): number;
 	/**
+	 * Destroys a skeleton with its clips and joint masks. Fails with 1111 while an animated
+	 * instance uses it.
+	 */
+	destroySkeleton(skeleton: number): number;
+	/**
 	 * Creates a clip from the staging words: `tracks` headers of `ANIMATION_TRACK_WORDS` words
 	 * (joint, channel, interpolation, key count), then each track's key times and values, resampled
 	 * at `rate` keys per second.
@@ -514,6 +588,11 @@ export interface CoreGlue extends CoreErrors {
 	 * clip itself.
 	 */
 	clipReady(ticket: number): number;
+	/**
+	 * The clips so far that the core resampled at each frame, plus one. The others held keys on
+	 * their frames already, as the asset tool writes them, and were copied.
+	 */
+	resampledClips(): number;
 	/** Adds an animated instance of a skeleton. */
 	createAnimatedInstance(skeleton: number): number;
 	/** Removes an animated instance; later instances take its id and joints. */
@@ -541,17 +620,15 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	animatedInstanceJoints(instance: number): number;
 	/**
-	 * Plays a clip on an instance's layer, fading over `fade` seconds at `speed`, with
-	 * `ANIMATION_PLAY_*` flags.
+	 * Plays a clip on an instance's layer with `ANIMATION_PLAY_*` flags, and the fade, speed, time
+	 * and weight written into the play numbers (`ANIMATION_FIELD_PLAY_ARGS`).
 	 */
-	animatorPlay(
-		instance: number,
-		clip: number,
-		layer: number,
-		fade: number,
-		speed: number,
-		flags: number,
-	): number;
+	animatorPlay(instance: number, clip: number, layer: number, flags: number): number;
+	/**
+	 * Plays a 1D blend on an instance's layer, of `count` clips staged as their ids plus one, then
+	 * their points as floats, with the fade, speed and phase written into the play numbers.
+	 */
+	animatorPlayBlend(instance: number, count: number, layer: number, flags: number): number;
 	/** Stops a clip on an instance, or every clip when `clip` is 0, fading over `fade` seconds. */
 	animatorStop(instance: number, clip: number, fade: number): number;
 	/** Creates a joint mask of a skeleton from the staging words: one weight from 0 to 1 per joint. */
@@ -576,6 +653,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initEngine',
 	'jobWorkerLoop',
 	'jobWorkerFailed',
+	'callJobWorker',
+	'jobWorkerCallDone',
+	'jobWorkerCalls',
 	'takeJobBusyMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',
@@ -625,6 +705,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'meshRadius',
+	'destroyMeshes',
+	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
 	'setMaterialValues',
@@ -634,6 +716,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createVolumeTexture',
 	'createCubeTexture',
 	'setTextureImage',
+	'setCubeImages',
 	'generateTexture',
 	'setTextureData',
 	'destroyTexture',
@@ -663,20 +746,26 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'environmentValues',
 	'setEnvironment',
 	'setOutline',
+	'effectValues',
+	'setEffect',
+	'setToneCurve',
 	'setCanvasOutput',
 	'setRenderScaling',
 	'setPixelRatio',
 	'setShadowQuality',
 	'shadowCasters',
-	'setBackgroundTexture',
+	'backgroundValues',
+	'setBackgroundSource',
 	'setFog',
 	'setDebugView',
 	'initAnimations',
 	'animationStaging',
 	'createSkeleton',
+	'destroySkeleton',
 	'createClip',
 	'createClipLater',
 	'clipReady',
+	'resampledClips',
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
@@ -688,6 +777,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMorphTargets',
 	'animationArrays',
 	'animatorPlay',
+	'animatorPlayBlend',
 	'animatorStop',
 	'createJointMask',
 	'setLayerMask',
@@ -706,20 +796,21 @@ export interface CoreFiles {
 }
 
 /**
- * Each build's files. Every path is written out in full, so a bundler finds the files, ships them
- * with the app and rewrites the addresses to the shipped copies. `no-inline` keeps Vite from
- * turning a file into a data: address when a project raises its inline limit: a Content-Security-
- * Policy that allows only the page's origin blocks the import or the download of one.
+ * Each build's files. Every path is written out in full in the standard form, `new URL('<file>',
+ * import.meta.url)`, so a bundler finds the files, ships them with the app and rewrites the
+ * addresses to the shipped copies. The null3D Vite plugin keeps Vite from turning an engine file
+ * into a data: address: a Content-Security-Policy that allows only the page's origin blocks the
+ * import or the download of one.
  */
 export function coreUrls(build: Build): CoreFiles {
 	return build === 'threaded'
 		? {
-				glue: new URL('../../dist/wasm/threaded/null3d.js?no-inline', import.meta.url),
-				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm?no-inline', import.meta.url),
+				glue: new URL('../../dist/wasm/threaded/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url),
 			}
 		: {
-				glue: new URL('../../dist/wasm/single/null3d.js?no-inline', import.meta.url),
-				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm?no-inline', import.meta.url),
+				glue: new URL('../../dist/wasm/single/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url),
 			};
 }
 

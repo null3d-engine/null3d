@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; background, environment, fo
 
 # Scene
 
-> Ships in null3D 0.1, with the environment from 0.2. The API is experimental, so it can still change between versions. The sky and environment backgrounds are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1, with the environment, the sky and environment backgrounds from 0.2. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -100,7 +100,7 @@ door?.setVisible(false);
 
 The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color. The default background is black, or the page behind a transparent canvas. Exposure and tone mapping change the background as they change the objects: [Color management](../concepts/color-management.md#the-background).
 
-`setBackground` also takes a [texture](textures.md). The texture fills the camera's view behind every object, as a texture in three.js's `scene.background` does. It stretches to the shape of the view. A texture that loads with the default `flipY` stands upright. The engine samples it with the texture's own filter and ignores its alpha. It draws the texture before the objects, without the depth test, so every object draws over it.
+`setBackground` also takes a [texture](textures.md). The texture fills the camera's view behind every object, as a texture in three.js's `scene.background` does. It stretches to the shape of the view. A texture that loads with the default `flipY` stands upright. The engine samples it with the texture's own filter and ignores its alpha. The texture draws behind every object, in the pixels that no object covers.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -113,6 +113,73 @@ export default defineSketch(async ({ scene, assets }) => {
 ```
 
 The color set before a texture shows until the texture's texels are on the GPU, and again if you destroy the texture. A later color takes the place of the texture.
+
+### Environments, cube maps and the sky
+
+`setBackground` also takes three backgrounds that surround the scene, as three.js's `scene.background` does with a cube texture and its `Sky` object:
+
+- An environment from [`assets.loadEnvironment` or `assets.builtinEnvironment`](assets.md#environments). It can blur, as three.js's `backgroundBlurriness` blurs a PMREM texture.
+- A cube map of six images from [`assets.loadCubemap`](assets.md#cube-maps), a sky box.
+- three.js's analytic sky: `{ sky: { sunPosition } }`, with the settings of three.js's `Sky` object.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  const sunset = await assets.loadEnvironment('/env/sunset.ktx2');
+  scene.setEnvironment(sunset);
+  // The same light behind the objects, blurred, dimmed and turned a quarter turn.
+  scene.setBackground(sunset, { blur: 0.3, intensity: 0.7, rotation: [0, Math.PI / 2, 0] });
+  return {};
+});
+```
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `intensity` | Every background but a color | 1 | The factor of the background's light, 0 or more, as three.js's `scene.backgroundIntensity` |
+| `blur` | Environments | 0 | How much the background blurs, from 0 (sharp) to 1, as `scene.backgroundBlurriness` |
+| `rotation` | Environments and cube maps | `[0, 0, 0]` | The background's turn, as Euler angles in radians in the order X, Y, Z, as `scene.backgroundRotation` |
+
+An environment's map holds its light blurred for each roughness. So the background reads the level of the blur's roughness, as three.js reads its PMREM texture. A blurred background costs no more than a sharp one. The background and `setEnvironment` are separate: a scene can show one environment and take its light from another. A cube map shows its six images as three.js's `CubeTextureLoader` shows them, and does not light the scene.
+
+The sky takes the names and the defaults of three.js's `Sky` uniforms:
+
+| Setting | Default | What it sets |
+| --- | --- | --- |
+| `sunPosition` | `[0, 0.0349, -0.9994]` | A point toward the sun, as `sunPosition`. The default puts the sun 2 degrees over the horizon, as three.js's sky example does |
+| `turbidity` | 2 | The haze in the air |
+| `rayleigh` | 1 | The scattering by the air's molecules, which makes the sky blue |
+| `mieCoefficient` | 0.005 | The scattering by haze |
+| `mieDirectionalG` | 0.8 | How much the haze scatters toward the sun, from 0 to below 1 |
+| `cloudCoverage` | 0.4 | The share of the sky that clouds cover, from 0 to 1. 0 draws no clouds |
+| `cloudDensity` | 0.4 | How solid the clouds are |
+| `cloudElevation` | 0.5 | The height of the clouds, from 0 to 1 |
+| `cloudScale` | 0.0002 | The size of the clouds' pattern. Larger values make smaller clouds |
+| `cloudSpeed` | 0.00002 | How fast the clouds drift as `time` grows |
+| `time` | 0 | The time in seconds that moves the clouds, such as the sketch's time |
+| `showSunDisc` | true | Whether the sky shows the sun's disc |
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, time }) => {
+  const sun: [number, number, number] = [0, 0.1, -1];
+  const settings = { sunPosition: sun, turbidity: 10, rayleigh: 3, time: 0 };
+  const sky = { sky: settings };
+  return {
+    onUpdate() {
+      // The sun rises and sets, and the clouds drift with the sketch's time.
+      sun[1] = 0.1 + 0.05 * Math.sin(time.now * 0.1);
+      settings.time = time.now;
+      scene.setBackground(sky);
+    },
+  };
+});
+```
+
+The first background of each kind downloads its shaders, `'background'` or `'sky'`, and the view shows the background color until they are built. [Loading screens](../guides/loading-screens.md#loading-everything-up-front) shows how to load them before the first frame. Each call sets every option and every setting, and one left out takes its default. The settings are values, not shader builds, and the call allocates nothing. So a sketch can move the sun or turn a cube map in every frame. Each background draws behind every object, in the pixels that no object covers, and exposure and tone mapping change it with the rest of the scene. An orthographic camera's view rays are parallel, so an environment, a cube map or the sky fills its view with one color. The color set before an environment or a cube map shows until its texels are on the GPU, and again after you destroy it.
+
+Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
 
 ## The environment
 
@@ -132,22 +199,38 @@ Each call sets both options, and an option left out takes its default. The call 
 
 ## Fog
 
-`setFog` covers every object in fog, with three.js's formulas. Linear fog is clear up to `near` and hides objects from `far`, with a smooth change between them. Exponential squared fog thickens with the square of the distance, at a rate that `density` sets. Distances run from the camera along its view direction, for both kinds of camera. `setFog(null)` removes the fog.
+`setFog` covers every object in fog that thickens with its distance from the camera. The distance is the straight line from the camera to the point, so an object keeps its fog as the camera turns. A curve sets how the fog thickens:
+
+- `'exponential'`, the default: an even haze. An object at distance d takes the fog color by a factor of 1 - exp(-density × d).
+- `'exp2'`: thicker with the square of the distance, 1 - exp(-(density × d)²), as three.js's `FogExp2`.
+- `'linear'`: clear up to `near`, and hides objects from `far`, with a smooth change between them, as three.js's `Fog`.
+
+The fog can also thin with height, as mist lies in a valley, and glow toward the main directional light. `setFog(null)` removes the fog.
 
 ```ts
 scene.setBackground('#b8c4d0');
-scene.setFog({ type: 'linear', color: '#b8c4d0', near: 10, far: 70 });
-// Or thicker with distance: scene.setFog({ type: 'exp2', color: '#b8c4d0', density: 0.03 });
+scene.setFog({ color: '#b8c4d0', density: 0.04 });
+// Mist on the ground that thins upward:
+scene.setFog({ color: '#b8c4d0', density: 0.1, height: 0, heightFalloff: 0.5 });
+// A low sun that lights the haze around it:
+scene.setFog({ color: '#b8c4d0', density: 0.04, sunGlow: 1.5 });
 ```
 
-| Option | Fog | Default | What it sets |
+| Option | Curves | Default | What it sets |
 | --- | --- | --- | --- |
-| `color` | Both | none | The fog's color, in any form that `setBackground` takes |
+| `color` | All | none | The fog's color, in any form that `setBackground` takes |
+| `curve` | All | `'exponential'` | How the fog thickens: `'exponential'`, `'exp2'` or `'linear'` |
+| `density` | Exponential and exp2 | 0.01 | How fast the fog thickens, 0 or more. At 0.01, exponential fog hides about two thirds of an object 100 units away |
 | `near` | Linear | 1 | The distance where the fog starts |
 | `far` | Linear | 1000 | The distance from which the fog hides every object. It must be above `near` |
-| `density` | Exponential squared | 0.00025 | How fast the fog thickens: 0 or more |
+| `height` | All | 0 | The height where the fog has its `density`, or its `near` and `far` |
+| `heightFalloff` | All | 0 | How fast the fog thins with height, 0 or more. The fog's density falls to about a third every 1 / `heightFalloff` units up, and grows below `height`. 0 keeps the fog the same at every height |
+| `sunGlow` | All | 0 | How much of the main directional light the fog scatters toward the camera, 0 or more. Fog toward that light glows in its color |
+| `sunGlowExponent` | All | 8 | How tightly the glow gathers around the light's direction, above 0. Higher values make a smaller glow |
 
-The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for a `far` that is not above `near` and for a negative `density`, and E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
+Height fog sums the fog along each line of sight. A view down into the mist then sees thick fog, and a view up sees clear air. The sun glow takes the color and the intensity of the scene's main directional light, so it follows the light as it moves. Shadows do not block the glow.
+
+The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for an unknown curve, a `far` that is not above `near`, a negative `density`, `heightFalloff` or `sunGlow`, and a `sunGlowExponent` that is not above 0. They throw E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
 
 ## Lights
 
@@ -190,6 +273,26 @@ An instance batch is one object that draws many copies of one mesh with one mate
 
 <!-- null3d:api:start -->
 
+### `BackgroundOptions`
+
+Interface `BackgroundOptions`.
+
+The options of `scene.setBackground` for a texture, an environment, a cube map or the sky. A call that leaves an option out takes its default.
+
+| Member | Description |
+| --- | --- |
+| `intensity?: number` | The factor of the background's light, 0 or more, as three.js's `scene.backgroundIntensity`. The default is 1. |
+| `blur?: number` | How much an environment blurs, from 0 (sharp) to 1, as three.js's `scene.backgroundBlurriness`. It reads the environment's light at that roughness, so a blurred background costs no more than a sharp one. Only environments blur. The default is 0. |
+| `rotation?: readonly [number, number, number]` | The turn of a cube map or an environment about the scene, as Euler angles in radians in the order X, Y, Z, as three.js's `scene.backgroundRotation`. The default is `[0, 0, 0]`. |
+
+### `BackgroundSource`
+
+```ts
+type BackgroundSource = Texture | Environment | Cubemap | SkyBackground;
+```
+
+What `scene.setBackground` draws behind every object in place of a plain color: a texture, an environment, a cube map or three.js's sky.
+
 ### `EnvironmentOptions`
 
 Interface `EnvironmentOptions`.
@@ -201,25 +304,31 @@ The options of `scene.setEnvironment`. A call that leaves an option out takes it
 | `intensity?: number` | The factor of the environment's light on every surface, 0 or more, as three.js's `scene.environmentIntensity`. A material's `envIntensity` multiplies it. The default is 1. |
 | `rotation?: readonly [number, number, number]` | The turn of the environment about the scene, as Euler angles in radians in the order X, Y, Z, as three.js's `scene.environmentRotation`. The default is `[0, 0, 0]`. |
 
-### `Exp2FogOptions`
+### `FogCurve`
 
-Interface `Exp2FogOptions`.
+```ts
+type FogCurve = 'exponential' | 'exp2' | 'linear';
+```
 
-Exponential squared fog, as three.js's `FogExp2`: an object at distance d takes the fog color by a factor of 1 - exp(-(density × d)²). Distances run from the camera along its view direction.
-
-| Member | Description |
-| --- | --- |
-| `type: 'exp2'` | Exponential squared fog. |
-| `color: ColorInput` | The fog's color. |
-| `density?: number` | How fast the fog thickens with distance: 0 or more. The default is 0.00025. |
+How fog thickens with distance. Exponential fog, `'exponential'`, follows light through an even haze. An object at distance d takes the fog color by a factor of 1 - exp(-density × d). Exponential squared fog, `'exp2'`, thickens with the square of the distance, as three.js's `FogExp2`: 1 - exp(-(density × d)²). Linear fog, `'linear'`, is clear up to `near` and hides objects from `far`, with a smooth step between them, as three.js's `Fog`.
 
 ### `FogOptions`
 
-```ts
-type FogOptions = LinearFogOptions | Exp2FogOptions;
-```
+Interface `FogOptions`.
 
-Options of `scene.setFog`: linear fog or exponential squared fog.
+Options of `scene.setFog`. Fog measures each object's straight-line distance from the camera, so an object keeps its fog as the camera turns.
+
+| Member | Description |
+| --- | --- |
+| `color: ColorInput` | The fog's color. Give the background the same color, because the background takes no fog. |
+| `curve?: FogCurve` | How the fog thickens with distance. The default is `'exponential'`. |
+| `density?: number` | How fast exponential and exponential squared fog thicken with distance: 0 or more. At the default of 0.01, exponential fog hides about two thirds of an object 100 units away. |
+| `near?: number` | The distance where linear fog starts. The default is 1. |
+| `far?: number` | The distance from which linear fog hides every object. It must be above `near`. The default is 1000. |
+| `height?: number` | The height where the fog has its `density`, or its `near` and `far` distances. Above it, fog with a `heightFalloff` thins; below it, the fog thickens. The default is 0. |
+| `heightFalloff?: number` | How fast the fog thins with height, 0 or more: its density falls by a factor of e, to about a third, every 1 / `heightFalloff` units up. The engine adds up the fog along each line of sight, so a view down into a valley sees thick fog and a view up sees clear air. The default is 0: the fog is the same at every height. |
+| `sunGlow?: number` | How much of the main directional light the fog scatters toward the camera, 0 or more. Fog toward that light then glows in the light's color. The default is 0: no glow. |
+| `sunGlowExponent?: number` | How tightly the glow gathers around the light's direction, above 0. Higher values make a smaller glow. The default is 8. |
 
 ### `InstanceBatch`
 
@@ -265,21 +374,8 @@ Options for `scene.instantiate`: where the copy's group goes, and settings for a
 | --- | --- |
 | `castShadows?: boolean` | True makes every mesh of the copy cast the shadows of a directional light. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
-| `occluder?: boolean` | True makes every mesh of the copy block the view for software occlusion culling on WebGL2, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset tool gave blockers block, and the others do not. |
+| `occluder?: boolean` | True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset tool gave blockers block, and the others do not. |
 | `layers?: number` | The layers of every object of the copy and of its instance batches, as a 32-bit mask. Left out, they keep the default, 1, which is layer 0. |
-
-### `LinearFogOptions`
-
-Interface `LinearFogOptions`.
-
-Linear fog, as three.js's `Fog`: none up to `near`, full from `far`, and a smooth step between them. Distances run from the camera along its view direction.
-
-| Member | Description |
-| --- | --- |
-| `type: 'linear'` | Linear fog. |
-| `color: ColorInput` | The fog's color. |
-| `near?: number` | The distance where the fog starts. The default is 1. |
-| `far?: number` | The distance from which the fog hides every object. It must be above `near`. The default is 1000. |
 
 ### `MeshOptions`
 
@@ -293,7 +389,7 @@ Options for `scene.createMesh`.
 | `material: Material` | How the surface looks, from `ctx.materials`. |
 | `castShadows?: boolean` | True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on the mesh, like `setReceiveShadows(true)`. The default is false. Unlit materials show no shadows. |
-| `occluder?: boolean` | True makes the mesh block the view for software occlusion culling on WebGL2, like `setOccluder(true)`. The default is false. |
+| `occluder?: boolean` | True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like `setOccluder(true)`. The default is false. |
 
 ### `NodeOptions`
 
@@ -340,6 +436,7 @@ The scene: every object, the active camera, the lights and the background.
 | `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createInstances(prefab: Prefab, count: number, options?: Omit<InstanceOptions, 'material'>): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. Or many copies of a model that `assets.loadGltf` loaded, without a material: one batch for each mesh of the model, which share one set of rows, so one row places a whole copy. The model's lights are left out. Throws E1417 for a model with no meshes, or with instancing of its own. |
 | `createSprites(options: SpriteOptions): Promise<SpriteBatch>` | Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended sprites draw back to front with the other blended objects. The first call downloads the sprite code. Throws E1108 for an atlas side that is not a whole number from 1 to 2048, E1203 for a center that is not two finite numbers, and E1406 when the sprite code does not download. |
+| `createPoints(options: PointOptions): Promise<PointBatch>` | Many points in one batch: squares that face the camera, all of one size, like three.js's `Points` with a `PointsMaterial`. Each point is a sprite: typed arrays give each point its position and color, as an instance batch's arrays give its rows. Sizes above one pixel work on every GPU path. Points are opaque by default, and blended points draw back to front with the other blended objects. The first call downloads the sprite code. Throws E1206 for points or colors that make no points, E1108 for a size that is not above 0, E1203 for a size that is not finite, and E1406 when the sprite code does not download. |
 | `createLines(options: LineOptions): Promise<LineBatch>` | Lines of any width in one batch, like three.js's `Line2` and `LineSegments2` with a `LineMaterial`, and its `Line`, `LineSegments` and `LineLoop`. Each segment between two points draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or world units wide with `worldUnits`. A typed array gives each point its position and color, as an instance batch's arrays give its rows. The first call downloads the line code. Throws E1206 for points or colors that make no line, E1217 for an unknown mode, E1108 for a width that is not positive or a dash or gap below 0, E1203 for a value that is not finite, and E1406 when the line code does not download. |
 | `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
 | `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
@@ -349,9 +446,9 @@ The scene: every object, the active camera, the lights and the background.
 | `createSpotLight(options: SpotLightOptions): SpotLight` | Light from a point in a cone, out to `range` meters, which it needs. |
 | `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
 | `createAmbientLight(options: AmbientLightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
-| `setBackground(background: ColorInput \| Texture): void` | What the camera shows behind every object: a color, or a texture. A texture fills the view and stretches to its shape, as a texture in three.js's `scene.background` does. The color set before it shows until the texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of a texture. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
+| `setBackground(background: ColorInput \| BackgroundSource, options?: BackgroundOptions): void` | What the camera shows behind every object, as three.js's `scene.background`: a color, a texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture fills the view and stretches to its shape. An environment or a cube map surrounds the scene, and `options` give its intensity, rotation and, for an environment, its blur, as three.js's `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before shows until a texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of any other background. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. Settings are values, not shader builds, and the call allocates nothing, so a sketch can move the sky's sun or turn a cube map every frame. Throws E1204 for a color it cannot read, E1203 for a number that is not finite, E1108 for a number out of its range, E1213 for an option that the background does not take, and E1101 for a texture, an environment or a cube map that was destroyed. |
 | `setEnvironment(environment: Environment \| null, options?: EnvironmentOptions): void` | Lights the scene with an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene draws without a file's environment until its map is on the GPU. The built-in room's map is whole in the first frame that uses it. It allocates nothing, so a sketch can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for a negative intensity, E1213 for a value that is not an environment, and E1101 for an environment that was destroyed. |
-| `setFog(fog: FogOptions \| null): void` | Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Converting the color allocates. |
+| `setFog(fog: FogOptions \| null): void` | Fog over every object, by each object's straight-line distance from the camera along a curve: exponential by default, exponential squared or linear. The fog can thin with height and glow toward the main directional light. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a value out of its range, and E1203 for a value that is not finite. Converting the color allocates. |
 | `raycast(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hit: RaycastHit): boolean` | Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they were. The direction needs no unit length. The ray tests the triangles of objects and instance rows on the layers of `options.layers`, as their materials draw them: front faces, or both faces for a double-sided material. Queries see the scene as the last frame's update left it, so a move, a new object or a destroy in this frame counts from the next frame, or from `onLateUpdate`. Create `hit` and `options` once and pass them each time. |
 | `raycastAny(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): boolean` | True when a ray from `origin` along `direction` hits anything on the layers of `options.layers`. It stops at the first hit it finds, so it is faster than `raycast`: use it for line-of-sight checks. |
 | `raycastAll(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hits: RaycastHit[]): number` | Casts a ray as `raycast` does, writes every hit into `hits` nearest first, one hit for each triangle that the ray crosses, and returns how many. It fills the first entries of `hits`, adds hit objects when the array is too short, and leaves the entries after the hits as they were. |
@@ -359,5 +456,36 @@ The scene: every object, the active camera, the lights and the background.
 | `overlapSphere(center: Vec3Like, radius: number, options: QueryOptions \| undefined, out: OverlapHit[]): number` | Finds the objects and instance rows on the layers of `options.layers` that have a triangle within `radius` meters of `center`, writes them into `out`, and returns how many. It fills `out` as `raycastAll` fills its hits, in no set order. |
 | `overlapBox(min: Vec3Like, max: Vec3Like, options: QueryOptions \| undefined, out: OverlapHit[]): number` | Finds the objects and instance rows on the layers of `options.layers` that have a triangle inside the box from `min` to `max` or crossing it, as `overlapSphere` does. The box's sides lie along the world's axes. |
 | `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Hidden objects count too. After the first frame, an object whose pipeline is still building draws nothing, so create a loading stage's objects hidden, warm up, then show them. The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once they are built, before the setup goes on. |
+
+### `SkyBackground`
+
+Interface `SkyBackground`.
+
+three.js's analytic sky as a background: `scene.setBackground({ sky: { sunPosition } })`.
+
+| Member | Description |
+| --- | --- |
+| `sky: SkyOptions` | The sky's settings. |
+
+### `SkyOptions`
+
+Interface `SkyOptions`.
+
+The settings of three.js's sky, with the names and defaults of its `Sky` object's uniforms. A call that leaves a setting out takes its default.
+
+| Member | Description |
+| --- | --- |
+| `sunPosition?: readonly [number, number, number]` | A point toward the sun, as three.js's `sunPosition`. Its direction places the sun. A point far below the horizon, hundreds of thousands of units down, also dims the sky, as in three.js. The default is the sun 2 degrees above the horizon toward -Z, as three.js's sky example sets it: `[0, 0.0349, -0.9994]`. |
+| `turbidity?: number` | The haze in the air, 0 or more. The default is 2. |
+| `rayleigh?: number` | The scattering by the air's molecules, which makes the sky blue, 0 or more. The default is 1. |
+| `mieCoefficient?: number` | The scattering by haze, 0 or more. The default is 0.005. |
+| `mieDirectionalG?: number` | How much the haze scatters toward the sun, from 0 to 1 (below 1). The default is 0.8. |
+| `cloudCoverage?: number` | The share of the sky that clouds cover, from 0 to 1. 0 draws no clouds. The default is 0.4. |
+| `cloudDensity?: number` | How solid the clouds are, 0 or more. The default is 0.4. |
+| `cloudElevation?: number` | The height of the clouds, from 0 to 1: higher clouds look smaller. The default is 0.5. |
+| `cloudScale?: number` | The size of the clouds' pattern, more than 0: larger values make smaller clouds. The default is 0.0002. |
+| `cloudSpeed?: number` | How fast the clouds drift as `time` grows. The default is 0.00002. |
+| `time?: number` | The time in seconds that moves the clouds, such as the sketch's `time`. The default is 0, so the clouds stand still until a sketch sets it. |
+| `showSunDisc?: boolean` | Whether the sky shows the sun's disc. The default is true. |
 
 <!-- null3d:api:end -->

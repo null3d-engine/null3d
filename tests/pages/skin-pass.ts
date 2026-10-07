@@ -703,8 +703,9 @@ run('skin-pass', async () => {
 			{ binding: 5, visibility: compute, texture: data },
 		],
 	});
-	// The pass's two builds, as the renderer picks them: for formats without a tangent, and with one.
-	// With `narrow` off, the pipeline constant writes directions as floats.
+	// The pass's builds for formats without a tangent and with one, as the renderer picks them. No
+	// case morphs a color, so none needs the builds with the color's code. With `narrow` off, the
+	// pipeline constant writes directions as floats.
 	const build = (bits: number, narrow: boolean) => {
 		const skin = variantFor(skinBuilds, bits, 'wgsl')?.wgsl;
 		if (!skin) throw new Error(`the shader module has no skinning build of bits ${bits}`);

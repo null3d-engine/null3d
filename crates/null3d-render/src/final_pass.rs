@@ -1,15 +1,18 @@
 //! The final pass: one triangle over the canvas, which reads the scene color and writes the canvas
-//! (see [`crate::output`]). On the HDR path it applies the tone mapping, encodes sRGB and dithers.
-//! The scene color holds exposed color already, so the pass's exposure is 1. In the FXAA mode it smooths edges first. On the 8-bit path the scene shaders
-//! did the output transform, and the pass runs when the scene has one sample per pixel or the
-//! render scale can drop: it copies the scene color, or runs FXAA on it. Below the whole canvas's
-//! render scale, it scales the scene's corner of the scene color up to the canvas instead. With
-//! bloom (see [`crate::bloom`]), the pass draws with its bloom build, which blends the base level of
-//! bloom's chain into the scene color before the output transform. While objects are outlined, the pass paints the
-//! outline's line around them after the output transform (see [`crate::outline`]). Last, it grades
-//! the canvas color with a color grading table and the vignette while the sketch sets them (see
-//! [`crate::grading`]). Each frame builder owns one, with GPU object ids from its own ranges, and
-//! its pipelines come from the builder's pipeline cache like every other.
+//! (see [`crate::output`]). On the HDR path it applies the tone mapping and encodes sRGB. The scene
+//! color holds exposed color already, so the pass's exposure is 1. In the FXAA mode it smooths
+//! edges first. On the 8-bit path the scene shaders did the output transform, and the pass runs
+//! when the scene has one sample per pixel or the render scale can drop: it copies the scene color,
+//! or runs FXAA on it. Below the whole canvas's render scale, it scales the scene's corner of the
+//! scene color up to the canvas instead. With bloom (see [`crate::bloom`]), the pass draws with its
+//! bloom build, which blends the base level of bloom's chain into the scene color before the output
+//! transform. The vignette darkens HDR color before the output transform too. While objects are
+//! outlined, the pass paints the outline's line around them after the output transform (see
+//! [`crate::outline`]). Then it grades the canvas color with a color grading table while the sketch
+//! sets one (see [`crate::grading`]), and it dithers last. A custom tone curve takes the place of
+//! the built-in curves: the pass then draws with the curve's templates, the curve's builds of the
+//! pass. Each frame builder owns one, with GPU object ids from its own ranges, and its pipelines
+//! come from the builder's pipeline cache like every other.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
@@ -37,7 +40,7 @@ const OUTLINE_BINDING: u32 = 11;
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct FinalUniform {
     output: OutputUniform,
-    /// The vignette's offset and darkness, then two spare values.
+    /// The vignette's intensity, size, falloff and roundness.
     vignette: [f32; 4],
     /// The scale that places a color in the color grading table, then the table's intensity.
     lut_scale: [f32; 4],
@@ -67,13 +70,15 @@ impl FinalUniform {
 /// The final pass's pipeline: it draws into the canvas, with no depth and no antialiasing. The
 /// shader makes its triangle from the vertex index, so it reads no vertex buffer, and the triangle
 /// covers the canvas whichever way it winds. The FXAA build smooths edges, and the bloom build
-/// blends in bloom's base level.
-const fn pipeline(fxaa: bool, bloom: bool) -> PipelineKey {
+/// blends in bloom's base level. A custom tone curve's builds take the templates from `curve` on:
+/// the first binds as the pass does, and the next as its bloom build does.
+const fn pipeline(fxaa: bool, bloom: bool, curve: Option<u32>) -> PipelineKey {
     PipelineKey {
-        template: if bloom {
-            template::FINAL_BLOOM
-        } else {
-            template::FINAL
+        template: match (curve, bloom) {
+            (Some(first), false) => first,
+            (Some(first), true) => first + 1,
+            (None, false) => template::FINAL,
+            (None, true) => template::FINAL_BLOOM,
         },
         permutation: if fxaa { permutation::FXAA } else { 0 }
             | if bloom { permutation::BLOOM } else { 0 },
@@ -143,6 +148,9 @@ pub(crate) struct FinalPass {
     pipeline: Option<u32>,
     /// The bloom build's pipeline's id, once a frame with bloom asked for it.
     bloom_pipeline: Option<u32>,
+    /// The first template of the custom tone curve that the pass draws with, or `None` for the
+    /// pass's own curves.
+    tone_curve: Option<u32>,
     created: bool,
     /// The settings the buffer holds, or `None` before the first upload.
     uploaded: Option<FinalUniform>,
@@ -164,6 +172,7 @@ impl FinalPass {
             },
             pipeline: None,
             bloom_pipeline: None,
+            tone_curve: None,
             created: false,
             uploaded: None,
             bound: None,
@@ -176,8 +185,20 @@ impl FinalPass {
         let fresh = Self::new(self.ids, scene_color, antialias);
         *self = Self {
             created: self.created,
+            tone_curve: self.tone_curve,
             ..fresh
         };
+    }
+
+    /// Draws with the custom tone curve whose templates start at `template`, or with the pass's own
+    /// curves with `None`, from the next frame on. The pass asks for its pipelines again when the
+    /// curve changes.
+    pub(crate) fn set_tone_curve(&mut self, template: Option<u32>) {
+        if template != self.tone_curve {
+            self.tone_curve = template;
+            self.pipeline = None;
+            self.bloom_pipeline = None;
+        }
     }
 
     /// Bytes the pass may copy into a frame's arena: its settings.
@@ -192,10 +213,10 @@ impl FinalPass {
         bloom: bool,
     ) -> Option<u32> {
         if self.pipeline.is_none() {
-            self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false)));
+            self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve)));
         }
         if bloom && self.bloom_pipeline.is_none() {
-            self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true)));
+            self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve)));
         }
         self.bloom_pipeline
     }
@@ -238,7 +259,7 @@ impl FinalPass {
         settings.output.set_render_size(render_size);
         if let Some(vignette) = grading.vignette {
             settings.output.flags |= OutputUniform::VIGNETTE;
-            settings.vignette = [vignette.offset, vignette.darkness, 0.0, 0.0];
+            settings.vignette = vignette.uniform();
         }
         let lut = match grading.lut {
             Some((texture, scale, offset)) => {
@@ -451,6 +472,31 @@ mod tests {
     }
 
     #[test]
+    fn a_custom_tone_curve_takes_its_own_templates_and_asks_again_when_it_changes() {
+        let mut pass = FinalPass::new(
+            IDS,
+            SceneColor::from_format(format::RGBA16_FLOAT),
+            Antialias::Fxaa,
+        );
+        let mut pipelines = PipelineCache::default();
+        pass.request_pipeline(&mut pipelines, true);
+        pass.set_tone_curve(Some(70));
+        pass.request_pipeline(&mut pipelines, true);
+        let templates: Vec<u32> = pipelines.keys().iter().map(|key| key.template).collect();
+        assert_eq!(
+            templates,
+            [template::FINAL, template::FINAL_BLOOM, 70, 71],
+            "the curve's builds bind as the pass's"
+        );
+        pass.set_mode(
+            SceneColor::from_format(format::RGBA16_FLOAT),
+            Antialias::None,
+        );
+        pass.request_pipeline(&mut pipelines, false);
+        assert_eq!(pipelines.keys().last().map(|key| key.template), Some(70));
+    }
+
+    #[test]
     fn grading_sets_its_flags_and_values_and_binds_the_table_or_the_blank_one() {
         check_flag("VIGNETTE", OutputUniform::VIGNETTE);
         check_flag("LUT", OutputUniform::LUT);
@@ -479,8 +525,10 @@ mod tests {
         let grading = Grading {
             lut: Some((40, scale, offset)),
             vignette: Some(Vignette {
-                offset: 1.2,
-                darkness: 0.7,
+                intensity: 0.7,
+                size: 1.2,
+                falloff: 2.0,
+                roundness: 0.5,
             }),
         };
         let (_, settings, list) = prepared(format::CANVAS, Antialias::Msaa, grading);
@@ -488,7 +536,7 @@ mod tests {
             settings.output.flags,
             OutputUniform::DISPLAY_COLOR | OutputUniform::VIGNETTE | OutputUniform::LUT
         );
-        assert_eq!(settings.vignette, [1.2, 0.7, 0.0, 0.0]);
+        assert_eq!(settings.vignette, [0.7, 1.2, 2.0, 0.5]);
         assert_eq!((settings.lut_scale, settings.lut_offset), (scale, offset));
         assert_eq!(bound_table(&list), 40);
     }

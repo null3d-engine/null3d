@@ -144,8 +144,10 @@ fn check_eight_bit<B: FrameBuilder>(mut world: World<B>) {
 
     // The vignette needs the final pass, which reads the resolved color.
     world.renderer.settings_mut().set_vignette(Some(Vignette {
-        offset: 1.0,
-        darkness: 1.0,
+        intensity: 1.0,
+        size: 1.0,
+        falloff: 2.0,
+        roundness: 0.0,
     }));
     let commands = world.step(&mut mock, false);
     assert_eq!(passes(&commands), 2);

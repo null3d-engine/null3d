@@ -2,6 +2,8 @@
 
 Status: proposed; the Mac and iPad timings pending. Date: 2026-10-04. Task: M2-C3.
 
+Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, the compute pass by default and `?skinning=vertex` for the other, and both draw the same images; the skinning scene matches three.js's `SkinnedMesh`. The WebGPU skinning page times both.
+
 ## Question
 
 On WebGPU, should the engine skin each animated mesh once per frame in a compute pass? The shadow and main passes would then draw the skinned vertices. Or should it skin each mesh in the vertex shader of every pass that draws it, as WebGL2 does ([D-10](D-10-webgl2-skinning.md))?

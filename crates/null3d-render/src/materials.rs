@@ -3,10 +3,12 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, eight `vec4f`s, which the WGSL struct
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, nine `vec4f`s, which the WGSL struct
 //! `Material` in `null3d::globals` mirrors field for field. The [`param`] module names where each
 //! value sits. A row also holds the texture array layer of each of its maps, which the table
-//! writes once the map's image is on the GPU, and [`NO_MAP`] until then. On WebGPU the table is a
+//! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
+//! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
+//! unit times [`UNIT_LAYERS`], plus its layer. On WebGPU the table is a
 //! storage buffer; on WebGL2 it is a data texture with one row of texels per material.
 //!
 //! A change marks its rows, and the next frame uploads the rows from the first changed one to the
@@ -14,8 +16,8 @@
 //!
 //! # Custom values
 //!
-//! Each material also has a row of [`MATERIAL_FLOATS`] custom values: the uniforms of a custom
-//! material's WGSL, as the shader compiler packs them. Vertex shaders read them too, so on WebGPU,
+//! Each material also has a row of [`MATERIAL_FLOATS`] custom values, of which a custom material's
+//! WGSL uses the first [`CUSTOM_FLOATS`] for its uniforms, as the shader compiler packs them. Vertex shaders read them too, so on WebGPU,
 //! where vertex shaders read no storage buffers, they live in a data texture of their own, one row
 //! of texels per material. On WebGL2 the table's data texture holds them after every material's
 //! row: it has twice [`MaterialTable::capacity`] rows, and the custom values of material `id` sit
@@ -230,8 +232,11 @@ const fn row_flags(features: u32) -> u32 {
     flags
 }
 
-/// Floats in each material's row: eight `vec4f`s.
+/// Floats in each material's row: nine `vec4f`s.
 pub const MATERIAL_FLOATS: usize = sizes::MATERIAL_BYTES as usize / 4;
+/// Floats of a row of custom values that a custom material's uniforms and texture layers use: eight
+/// `vec4f`s, as the shader compiler packs them. The rest of the row stays unused.
+pub const CUSTOM_FLOATS: usize = 32;
 /// Texels in each material's row of the WebGL2 data texture, one `vec4f` each.
 pub const MATERIAL_TEXELS: u32 = MATERIAL_FLOATS as u32 / 4;
 
@@ -267,17 +272,26 @@ pub mod param {
     pub const ENV_INTENSITY: usize = 19;
     /// The row of the texture coordinate transform that gives v: 3 floats.
     pub const UV_V: usize = 20;
+    /// The dielectric reflectance at normal incidence that the index of refraction gives,
+    /// `((ior - 1) / (ior + 1))^2`: 0.04 for glTF's default index of 1.5.
+    pub const REFLECTANCE: usize = 23;
     /// The texture array layer of each map, in [`super::MapSlot`] order: one float per slot.
     pub const MAP_LAYERS: usize = 24;
+    /// The specular color, which tints the dielectric reflectance at normal incidence: 3 floats,
+    /// linear, which may exceed 1.
+    pub const SPECULAR_COLOR: usize = 32;
+    /// The strength of the dielectric specular reflection, from 0 to 1.
+    pub const SPECULAR_INTENSITY: usize = 35;
 
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
     /// the flags, the map layers, a spare float or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         match at {
-            COLOR | EMISSIVE | UV_U | UV_V => Some(3),
+            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR => Some(3),
             NORMAL_SCALE => Some(2),
             OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
-            | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY => Some(1),
+            | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
+            | SPECULAR_INTENSITY => Some(1),
             _ => None,
         }
     }
@@ -296,6 +310,13 @@ fn marked(range: &Range<u32>, id: u32) -> Range<u32> {
 /// GPU yet. Shaders test for a layer of 0 or more.
 pub const NO_MAP: f32 = -1.0;
 
+/// The layers of one shared unit in a map's layer as a row holds it: the most layers of a texture
+/// array, so a layer and its unit never mix.
+pub const UNIT_LAYERS: u32 = crate::textures::MAX_LAYERS;
+
+/// The unit of a map that found no shared unit (see [`MaterialTable::set_map_units`]).
+pub const NO_UNIT: u8 = u8::MAX;
+
 /// The maps a material can sample, in the order their layers sit in its row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapSlot {
@@ -311,16 +332,20 @@ pub enum MapSlot {
     Emissive = 4,
     /// Baked light, read at the second texture coordinates.
     Light = 5,
+    /// The strength of the specular reflection in alpha, which multiplies the specular intensity.
+    SpecularIntensity = 6,
+    /// The specular color, in sRGB, which multiplies the specular color value.
+    SpecularColor = 7,
 }
 
 /// The number of map slots in a row.
-pub const MAP_SLOTS: usize = 6;
+pub const MAP_SLOTS: usize = sizes::MAP_SLOTS as usize;
 
 /// The float of a material's custom values that holds the layer of its custom texture `k`: the
-/// row's last float for the first texture, and one float lower for each next one, as the shader
-/// compiler places them.
+/// last float of the custom values for the first texture, and one float lower for each next one,
+/// as the shader compiler places them.
 pub const fn texture_layer_offset(k: usize) -> usize {
-    MATERIAL_FLOATS - 1 - k
+    CUSTOM_FLOATS - 1 - k
 }
 
 /// Where a material id stands.
@@ -334,6 +359,20 @@ enum State {
 }
 
 impl MapSlot {
+    /// Every slot in the order that its map takes a shared unit, where a builder's maps share a
+    /// few. When a material's maps need more units than there are, the maps last in this order
+    /// draw without their texture: the specular maps first, which change the look least.
+    pub const SHARING_ORDER: [MapSlot; MAP_SLOTS] = [
+        MapSlot::BaseColor,
+        MapSlot::Normal,
+        MapSlot::MetalRough,
+        MapSlot::Occlusion,
+        MapSlot::Emissive,
+        MapSlot::Light,
+        MapSlot::SpecularColor,
+        MapSlot::SpecularIntensity,
+    ];
+
     /// Every slot, in the order of a row's maps, so a slot's number indexes it.
     pub const ALL: [MapSlot; MAP_SLOTS] = [
         MapSlot::BaseColor,
@@ -342,12 +381,15 @@ impl MapSlot {
         MapSlot::Occlusion,
         MapSlot::Emissive,
         MapSlot::Light,
+        MapSlot::SpecularIntensity,
+        MapSlot::SpecularColor,
     ];
 }
 
 /// A row's values before the sketch changes any: white, opaque, not metal, fully rough, the
-/// identity texture coordinate transform, and no maps. The metalness and roughness are three.js's
-/// `MeshStandardMaterial` defaults; the alpha cutoff is glTF's.
+/// identity texture coordinate transform, a white specular color at full intensity with glTF's
+/// index of refraction, and no maps. The metalness and roughness are three.js's
+/// `MeshStandardMaterial` defaults; the alpha cutoff and the index of refraction are glTF's.
 const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     let mut row = [0.0; MATERIAL_FLOATS];
     let mut k = 0;
@@ -365,6 +407,12 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::ENV_INTENSITY] = 1.0;
     row[param::UV_U] = 1.0;
     row[param::UV_V + 1] = 1.0;
+    row[param::REFLECTANCE] = 0.04;
+    let mut k = 0;
+    while k < 4 {
+        row[param::SPECULAR_COLOR + k] = 1.0;
+        k += 1;
+    }
     let mut slot = 0;
     while slot < MAP_SLOTS {
         row[param::MAP_LAYERS + slot] = NO_MAP;
@@ -383,6 +431,8 @@ pub struct MaterialTable {
     features: Vec<u32>,
     /// Each material's maps by slot, `Handle::NONE` where it has none.
     maps: Vec<[Handle; MAP_SLOTS]>,
+    /// The shared unit that each material's map samples, by slot (see [`MaterialTable::set_map_units`]).
+    map_units: Vec<[u8; MAP_SLOTS]>,
     /// Each material's custom values, in id order: zero until a custom material sets them.
     values: Vec<f32>,
     /// Each material's depth bias.
@@ -420,6 +470,7 @@ impl MaterialTable {
             shading: Vec::with_capacity(capacity as usize),
             features: Vec::with_capacity(capacity as usize),
             maps: Vec::with_capacity(capacity as usize),
+            map_units: Vec::with_capacity(capacity as usize),
             values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
             biases: Vec::with_capacity(capacity as usize),
             states: Vec::with_capacity(capacity as usize),
@@ -449,6 +500,7 @@ impl MaterialTable {
                 self.shading.push(shading);
                 self.features.push(0);
                 self.maps.push([Handle::NONE; MAP_SLOTS]);
+                self.map_units.push([0; MAP_SLOTS]);
                 self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
                 self.biases.push(DepthBias::NONE);
                 self.states.push(State::Live);
@@ -465,6 +517,7 @@ impl MaterialTable {
         self.shading[at] = shading;
         self.features[at] = features;
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
+        self.map_units[at] = [0; MAP_SLOTS];
         self.biases[at] = DepthBias::NONE;
         self.states[at] = State::Live;
         let values = &mut self.values[at * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
@@ -538,7 +591,7 @@ impl MaterialTable {
     /// Changes 1 to 4 custom values of a material, from float `at` of its row of custom values,
     /// and keeps the others.
     pub fn set_values(&mut self, id: u32, at: usize, values: &[f32]) -> Result<(), MaterialError> {
-        if values.is_empty() || values.len() > 4 || at + values.len() > MATERIAL_FLOATS {
+        if values.is_empty() || values.len() > 4 || at + values.len() > CUSTOM_FLOATS {
             return Err(MaterialError::Value(at as u32));
         }
         if !self.is_live(id) {
@@ -626,6 +679,19 @@ impl MaterialTable {
         Ok(())
     }
 
+    /// Gives a material's maps the shared units that they sample, by slot, where a builder's
+    /// standard material samples its maps through a few shared units (WebGL2's). A map's layer in
+    /// the row then holds its unit times [`UNIT_LAYERS`], plus its layer. [`NO_UNIT`] marks a map
+    /// that found no unit, which draws as without it. Every map samples unit 0 until this is called.
+    pub fn set_map_units(&mut self, id: u32, units: [u8; MAP_SLOTS]) {
+        if let Some(held) = self.map_units.get_mut(id as usize)
+            && *held != units
+        {
+            *held = units;
+            self.maps_changed = true;
+        }
+    }
+
     /// A material's maps by slot, `Handle::NONE` where it has none.
     pub fn maps(&self, id: u32) -> [Handle; MAP_SLOTS] {
         self.maps
@@ -694,16 +760,19 @@ impl MaterialTable {
         }
         for id in 0..self.len() {
             let maps = self.maps[id as usize];
+            let units = self.map_units[id as usize];
             let row = &mut self.rows[id as usize * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
             let mut changed = false;
             let layers = &mut row[param::MAP_LAYERS..param::MAP_LAYERS + MAP_SLOTS];
-            for (layer, map) in layers.iter_mut().zip(maps) {
-                let ready = if map.is_none() {
+            for ((layer, map), unit) in layers.iter_mut().zip(maps).zip(units) {
+                let ready = if map.is_none() || unit == NO_UNIT {
                     None
                 } else {
                     ready_layer(map)
                 };
-                let value = ready.map_or(NO_MAP, |layer| layer as f32);
+                let value = ready.map_or(NO_MAP, |layer| {
+                    (u32::from(unit) * UNIT_LAYERS + layer) as f32
+                });
                 changed |= *layer != value;
                 *layer = value;
             }
@@ -841,6 +910,14 @@ mod tests {
             &row[param::MAP_LAYERS..param::MAP_LAYERS + MAP_SLOTS],
             &[NO_MAP; MAP_SLOTS]
         );
+        // glTF's index of refraction of 1.5, and a white specular color at full intensity, which
+        // the shaders turn into the metallic-roughness model's reflectance of 0.04.
+        assert_eq!(row[param::REFLECTANCE], 0.04);
+        assert_eq!(
+            &row[param::SPECULAR_COLOR..param::SPECULAR_COLOR + 3],
+            &[1.0; 3]
+        );
+        assert_eq!(row[param::SPECULAR_INTENSITY], 1.0);
     }
 
     #[test]
@@ -859,7 +936,10 @@ mod tests {
             (param::EMISSIVE_INTENSITY, 1),
             (param::UV_U, 3),
             (param::UV_V, 3),
+            (param::REFLECTANCE, 1),
             (param::MAP_LAYERS, MAP_SLOTS),
+            (param::SPECULAR_COLOR, 3),
+            (param::SPECULAR_INTENSITY, 1),
         ];
         starts.sort();
         for pair in starts.windows(2) {
@@ -868,7 +948,7 @@ mod tests {
         }
         for (start, length) in starts {
             // The shaders read a value of up to four floats from one vec4f, so none crosses one;
-            // the map layers take one and a half.
+            // the map layers take two.
             if length <= 4 {
                 assert_eq!(start / 4, (start + length - 1) / 4, "float {start}");
             }
@@ -909,7 +989,14 @@ mod tests {
         table.set(0, param::EMISSIVE_INTENSITY, &[2.0]).unwrap();
         table.set(0, param::NORMAL_SCALE, &[0.5, -0.5]).unwrap();
         table.set(0, param::UV_V, &[0.0, 2.0, 0.25]).unwrap();
+        table.set(0, param::REFLECTANCE, &[0.25]).unwrap();
+        table
+            .set(0, param::SPECULAR_COLOR, &[2.0, 0.5, 0.0])
+            .unwrap();
+        table.set(0, param::SPECULAR_INTENSITY, &[0.5]).unwrap();
         let row = row(&table, 0);
+        assert_eq!(row[param::REFLECTANCE], 0.25);
+        assert_eq!(&row[param::SPECULAR_COLOR..][..4], &[2.0, 0.5, 0.0, 0.5]);
         assert_eq!([row[param::METALNESS], row[param::ROUGHNESS]], [0.75, 0.25]);
         assert_eq!(&row[param::EMISSIVE..param::EMISSIVE + 3], &[1.0, 0.5, 0.0]);
         assert_eq!(row[param::EMISSIVE_INTENSITY], 2.0);
@@ -1024,7 +1111,9 @@ mod tests {
             Some(mapped..mapped + 1),
             "only it changed"
         );
-        assert_eq!(layers(&table, mapped), [7.0, -1.0, -1.0, -1.0, -1.0, -1.0]);
+        let mut expected = [NO_MAP; MAP_SLOTS];
+        expected[0] = 7.0;
+        assert_eq!(layers(&table, mapped), expected);
         assert_eq!(layers(&table, waiting), [NO_MAP; MAP_SLOTS]);
         table.update_map_layers(false, layer, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), None, "nothing changed");
@@ -1033,6 +1122,17 @@ mod tests {
         table.update_map_layers(true, both, |_| Premultiplied::No);
         assert_eq!(table.take_changed(), Some(mapped..waiting + 1));
         assert_eq!(layers(&table, waiting)[MapSlot::Emissive as usize], 3.0);
+        // The specular maps take the last two layers, and their own coordinate bits.
+        table
+            .set_map(mapped, MapSlot::SpecularColor, ready, true)
+            .unwrap();
+        table.update_map_layers(false, layer, |_| Premultiplied::No);
+        assert_eq!(layers(&table, mapped)[MAP_SLOTS - 1], 7.0);
+        assert_eq!(
+            row(&table, mapped)[param::FLAGS] as u32
+                & (flag::SECOND_UV << MapSlot::SpecularColor as u32),
+            flag::SECOND_UV << 7
+        );
         // A premultiplied base color map's encoding sets the flags; an emissive map's does not.
         let map_flags = |table: &MaterialTable, id| {
             row(table, id)[param::FLAGS] as u32 & (flag::MAP_PREMULTIPLIED | flag::MAP_LINEAR)
@@ -1053,5 +1153,61 @@ mod tests {
             table.set_map(9, MapSlot::BaseColor, ready, false),
             Err(MaterialError::Unknown(9))
         );
+    }
+
+    #[test]
+    fn the_shaders_read_the_shared_units_as_the_rows_and_groups_hold_them() {
+        use null3d_gpu::drawlist::sizes;
+        let mesh = include_str!("../../null3d-shaders/wgsl/lib/mesh.wgsl");
+        assert!(mesh.contains(&format!("const UNIT_LAYERS: u32 = {UNIT_LAYERS}u;")));
+        let lit = include_str!("../../null3d-shaders/wgsl/lit.wgsl");
+        let units = sizes::SHARED_MAP_UNITS;
+        for k in 0..units {
+            let texture =
+                format!("@group(3) @binding({k}) var unit_{k}_map: texture_2d_array<f32>;");
+            let sampler = format!(
+                "@group(3) @binding({}) var unit_{k}_sampler: sampler;",
+                MAP_SLOTS as u32 + k
+            );
+            assert!(lit.contains(&texture), "lit.wgsl lacks {texture}");
+            assert!(lit.contains(&sampler), "lit.wgsl lacks {sampler}");
+        }
+        assert!(!lit.contains(&format!("unit_{units}_map")));
+        assert!(units as usize <= MAP_SLOTS);
+    }
+
+    #[test]
+    fn rows_name_the_shared_unit_of_each_map_beside_its_layer() {
+        let mut table = MaterialTable::with_capacity(1);
+        let id = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let texture = Handle::new(1, 0);
+        for slot in [MapSlot::BaseColor, MapSlot::Normal, MapSlot::SpecularColor] {
+            table.set_map(id, slot, texture, false).unwrap();
+        }
+        let ready = |_: Handle| Some(5);
+        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        assert_eq!(
+            layers(&table, id)[MapSlot::Normal as usize],
+            5.0,
+            "unit 0 by default"
+        );
+        let mut units = [NO_UNIT; MAP_SLOTS];
+        units[MapSlot::BaseColor as usize] = 0;
+        units[MapSlot::Normal as usize] = 2;
+        table.take_changed();
+        table.set_map_units(id, units);
+        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        assert_eq!(table.take_changed(), Some(id..id + 1));
+        let mut expected = [NO_MAP; MAP_SLOTS];
+        expected[MapSlot::BaseColor as usize] = 5.0;
+        expected[MapSlot::Normal as usize] = (2 * UNIT_LAYERS + 5) as f32;
+        assert_eq!(
+            layers(&table, id),
+            expected,
+            "a map without a unit draws as without its texture"
+        );
+        table.set_map_units(id, units);
+        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        assert_eq!(table.take_changed(), None, "the same units change nothing");
     }
 }

@@ -30,6 +30,7 @@ use crate::frame::{
 };
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
+use crate::shadows::CasterPasses;
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -39,6 +40,8 @@ const BUCKET_WORDS: u32 = sizes::BUCKET_WORDS;
 const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
+/// The index entries that fit in the bytes of one copied instance.
+const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
 
 /// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
 /// group of its material's map, the mesh page of its mesh's first part, its engine mesh and
@@ -101,11 +104,13 @@ fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Bucket {
-    /// The id of its render pipeline.
+    /// The id of its render pipeline. In the casters' layout, the pipeline that draws into the
+    /// shadow cascades, or 0 while the cascades are off.
     pub(super) pipeline: u32,
-    /// The id of the render pipeline that draws its depth in the depth prepass, or 0 for a bucket
-    /// that the prepass leaves out. In the outlined layout, the pipeline that marks the parts that
-    /// nothing hides, after `pipeline` marked every part.
+    /// The id of the render pipeline that draws its depth in the depth prepass or the occluders'
+    /// pass, or 0 for a bucket that the pass leaves out. In the outlined layout, the pipeline that
+    /// marks the parts that nothing hides, after `pipeline` marked every part. In the casters'
+    /// layout, the pipeline that draws into the shadow atlas's tiles, or 0 while the tiles are off.
     pub(super) prepass: u32,
     /// True when that pipeline is the bucket's own template's, which reads the frame group and the
     /// maps' group as the shading does, and false for the depth template's.
@@ -125,8 +130,9 @@ pub(super) struct Bucket {
     /// of its skin in the joint texture.
     pub(super) skins: bool,
     pub(super) first_joint: u32,
-    /// True when its pipelines read their instances by index, so its slice, from `base` on, is in
-    /// each view's compacted index buffer, and false when it is in the compacted instance buffer.
+    /// True when its pipelines read their instances by index, so its slice holds an index entry
+    /// per instance from entry `base` on, after every copy; false when it holds a copy per instance
+    /// from copy `base` on.
     pub(super) indexed: bool,
 }
 
@@ -143,37 +149,55 @@ pub(super) struct Draw {
     pub(super) vertices: Option<(u32, u32)>,
 }
 
-// Buckets never outnumber sources, so every bucket fits below a cell index in a table entry, and
-// the entry of a drawn source is never `HIDDEN`.
-const _: () = assert!(u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE < (1 << CELL_SHIFT) - 1);
+/// The bit of a table entry that marks a source that the sketch marks as an occluder, which the
+/// first phase of occlusion culling draws. Buckets take the bits below it, and the cell index the
+/// bits from `CELL_SHIFT` up.
+pub(super) const OCCLUDER: u32 = 1 << 22;
+const _: () = assert!(OCCLUDER << 1 == 1 << CELL_SHIFT);
 
-/// A source's entry in the bucket table: its bucket with its cell index above it, or `HIDDEN` for
-/// a source that draws nowhere.
-fn entry(bucket: u32, cell: u32) -> u32 {
+/// The most buckets a layout holds, so that each fits below the occluder bit, and the entry of a
+/// drawn source is never `HIDDEN`. Sources may outnumber it, but each bucket needs its own mesh,
+/// material or bounds.
+const MAX_BUCKETS: u32 = OCCLUDER;
+
+/// A source's entry in the bucket table: its bucket with the occluder bit and its cell index above
+/// it, or `HIDDEN` for a source that draws nowhere.
+fn entry(bucket: u32, cell: u32, occluder: bool) -> u32 {
     if bucket == HIDDEN {
         HIDDEN
+    } else if occluder {
+        bucket | OCCLUDER | (cell << CELL_SHIFT)
     } else {
         bucket | (cell << CELL_SHIFT)
     }
 }
 
-/// A scene object's entry in the bucket table: its bucket and cell, or `HIDDEN` while it is
-/// hidden, which its world radius says.
-fn scene_entry(home: u32, world_radius: f32, cell: u32) -> u32 {
+/// A scene object's entry in the bucket table: its bucket, whether it is an occluder, and its
+/// cell, or `HIDDEN` while it is hidden, which its world radius says.
+fn scene_entry(home: u32, world_radius: f32, cell: u32, object_flags: u32) -> u32 {
     if world_radius == f32::NEG_INFINITY {
         HIDDEN
     } else {
-        entry(home, cell)
+        entry(home, cell, object_flags & flags::OCCLUDER != 0)
     }
 }
 
 /// The entry of a batch's `row`: the batch's bucket and the row's cell while the row is active.
+/// Instance rows are never occluders.
 fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32) -> u32 {
     if row < active {
-        entry(bucket, batch.cells()[row as usize])
+        entry(bucket, batch.cells()[row as usize], false)
     } else {
         HIDDEN
     }
+}
+
+/// The occluders among entries.
+fn occluders_in(entries: &[u32]) -> u32 {
+    entries
+        .iter()
+        .filter(|&&entry| entry != HIDDEN && entry & OCCLUDER != 0)
+        .count() as u32
 }
 
 /// Uploads the entries of sources `rows` of a per-source table into its buffer.
@@ -230,14 +254,16 @@ pub(super) struct Layout {
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
     pub(super) buckets: Vec<Bucket>,
-    /// The slots of the buckets that read copies, which each view's compacted instance buffer
-    /// holds, and of those that read indices, which its compacted index buffer holds.
+    /// The slots of the buckets that read copies, and of those that read indices, which each
+    /// view's compacted instance buffer holds after the copies.
     pub(super) copied: u32,
     pub(super) indexed: u32,
     /// Every bucket's draws, bucket by bucket; a draw's place is its indirect draw's.
     pub(super) draws: Vec<Draw>,
-    /// The entry of every source: its bucket and cell, or `HIDDEN`.
+    /// The entry of every source: its bucket, its occluder bit and its cell, or `HIDDEN`.
     instance_buckets: Vec<u32>,
+    /// The shown sources whose entries carry the occluder bit.
+    occluders: u32,
     /// The layer mask of every source.
     source_layers: Vec<u32>,
     /// True when every scene slot holds the default mask in the layer table, as it does while no
@@ -260,6 +286,9 @@ pub(super) struct Layout {
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
     /// entry per bucket.
     key_counts: Vec<(BucketKey, u32)>,
+    /// True when a bucket draws without writing depth, so a background drawn after the objects
+    /// would cover it where nothing lies behind it.
+    pub(super) depthless: bool,
     pub(super) built: bool,
     /// Sizes of the matrix buffer, the bucket table, the layer table, the bucket records and the
     /// cell order, 0 before they exist.
@@ -272,6 +301,13 @@ pub(super) struct Layout {
 }
 
 impl Layout {
+    /// Bytes of each view's compacted instance buffer for this layout: a copy for each slot of the
+    /// buckets that read copies, then an index entry for each slot of those that read indices.
+    pub(super) fn compacted_bytes(&self) -> u32 {
+        (self.copied * sizes::INSTANCE_STRIDE + self.indexed * sizes::INDEX_STRIDE)
+            .max(sizes::INSTANCE_STRIDE)
+    }
+
     /// An empty layout of buckets that draw `drawn`, whose pipelines read their instances by index
     /// where their templates can, with `index_instances`.
     pub(super) fn new(drawn: Drawn, index_instances: bool) -> Self {
@@ -348,6 +384,8 @@ impl Layout {
 
     /// Empties the buckets, for a layout that draws nothing until it is built again.
     pub(super) fn clear(&mut self) {
+        self.depthless = false;
+        self.occluders = 0;
         self.buckets.clear();
         (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
@@ -355,6 +393,11 @@ impl Layout {
         self.waiting.clear();
         self.indirect_template.clear();
         self.bucket_records.clear();
+    }
+
+    /// The shown scene objects that the sketch marks as occluders.
+    pub(super) fn occluders(&self) -> u32 {
+        self.occluders
     }
 
     /// Forgets the buffers, so the next layout makes them again and uploads everything.
@@ -444,14 +487,15 @@ impl Layout {
     }
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
-    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
-    /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
-    /// a `prepass`, the buckets that the depth prepass draws get its pipelines too. The outlined
-    /// layout's buckets get both pipelines of the outline mask. Skinned objects draw the skinned
-    /// vertices that `skinning` lays out; the skinned objects that it hides get no bucket, and the
-    /// layout asks only for their pipelines (see [`Self::waiting`]). It reuses
-    /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
-    /// `limit` sources fails.
+    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. While
+    /// `shadows` has a pass on, the scene's receivers draw with pipelines that read the shadow maps,
+    /// and the casters' buckets get a pipeline for each pass of `shadows` in place of `targets`.
+    /// With a `prepass`, the buckets that the depth prepass or the occluders' pass draws get its
+    /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask.
+    /// Skinned objects draw the skinned vertices that `skinning` lays out; the skinned objects that
+    /// it hides get no bucket, and the layout asks only for their pipelines (see
+    /// [`Self::waiting`]). It reuses the layout's tables and scratch space, which grow only with
+    /// the scene. A scene of more than `limit` sources fails.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
@@ -462,7 +506,7 @@ impl Layout {
         batches: &BatchTable,
         parity: usize,
         limit: u32,
-        shadows: bool,
+        shadows: CasterPasses,
         prepass: Prepass,
         skinning: &Skinning,
     ) -> Result<(), RecordError> {
@@ -508,7 +552,7 @@ impl Layout {
             if pipeline.blends() {
                 return None;
             }
-            let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
+            let pipeline = if shadows.any() && object & flags::RECEIVE_SHADOWS != 0 {
                 settings.receiving(pipeline)
             } else {
                 pipeline
@@ -521,7 +565,7 @@ impl Layout {
             let object = scene.flags()[slot];
             let left_out = match drawn {
                 Drawn::Scene => false,
-                Drawn::Casters => !shadows || object & flags::CAST_SHADOWS == 0,
+                Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
             };
             if left_out {
@@ -564,7 +608,14 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+        self.depthless = self
+            .key_counts
+            .iter()
+            .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
+        if self.key_counts.len() as u32 >= MAX_BUCKETS {
+            return Err(RecordError::TooManySources { limit: MAX_BUCKETS });
+        }
         self.waiting.clear();
         for slot in 0..scene_rows {
             if !skinning.hides(slot) {
@@ -572,14 +623,16 @@ impl Layout {
             }
             if let Some((pipeline, ..)) = any_key(slot as usize) {
                 // The outlined layout's buckets draw with both pipelines of the outline mask.
-                let (pipeline, second) = if drawn == Drawn::Outlined {
-                    let (every, visible) = mask_keys(pipeline);
-                    (
-                        pipelines.id(every.in_pass(targets)),
-                        pipelines.id(visible.in_pass(targets)),
-                    )
-                } else {
-                    pipelines.opaque(pipeline, targets, prepass)
+                let (pipeline, second) = match drawn {
+                    Drawn::Outlined => {
+                        let (every, visible) = mask_keys(pipeline);
+                        (
+                            pipelines.id(every.in_pass(targets)),
+                            pipelines.id(visible.in_pass(targets)),
+                        )
+                    }
+                    Drawn::Casters => shadows.pipelines(pipelines, pipeline),
+                    Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
                 };
                 self.waiting
                     .extend([pipeline, second].into_iter().filter(|&id| id != 0));
@@ -607,17 +660,24 @@ impl Layout {
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
             // The mask's second pipeline binds as the depth template does.
-            let (pipeline, prepass, prepass_own) = if drawn == Drawn::Outlined {
-                let (every, visible) = mask_keys(pipeline);
-                (
-                    pipelines.id(every.in_pass(targets)),
-                    pipelines.id(visible.in_pass(targets)),
-                    false,
-                )
-            } else {
-                let own = pipeline.places_own_vertices();
-                let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
-                (pipeline, prepass, own)
+            let (pipeline, prepass, prepass_own) = match drawn {
+                Drawn::Outlined => {
+                    let (every, visible) = mask_keys(pipeline);
+                    (
+                        pipelines.id(every.in_pass(targets)),
+                        pipelines.id(visible.in_pass(targets)),
+                        false,
+                    )
+                }
+                Drawn::Casters => {
+                    let (cascades, tiles) = shadows.pipelines(pipelines, pipeline);
+                    (cascades, tiles, false)
+                }
+                Drawn::Scene => {
+                    let own = pipeline.places_own_vertices();
+                    let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                    (pipeline, prepass, own)
+                }
             };
             let base = if by_index { &mut indexed } else { &mut copied };
             self.buckets.push(Bucket {
@@ -653,18 +713,25 @@ impl Layout {
                 }
             }));
         }
+        // The index slices follow the copies, so their bases count entries from the buffer's
+        // start.
+        for bucket in self.buckets.iter_mut().filter(|bucket| bucket.indexed) {
+            bucket.base += copied * INDEX_ENTRIES_PER_COPY;
+        }
         (self.copied, self.indexed) = (copied, indexed);
 
         let counts = &self.key_counts;
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
         self.instance_buckets.clear();
         self.home_buckets.clear();
-        let slots = world.radii().iter().zip(scene.cells());
-        for (slot, (&radius, &cell)) in slots.take(scene_rows as usize).enumerate() {
+        let slots = world.radii().iter().zip(scene.cells()).zip(scene.flags());
+        for (slot, ((&radius, &cell), &flags)) in slots.take(scene_rows as usize).enumerate() {
             let home = bucket_of(scene_key(slot));
             self.home_buckets.push(home);
-            self.instance_buckets.push(scene_entry(home, radius, cell));
+            self.instance_buckets
+                .push(scene_entry(home, radius, cell, flags));
         }
+        self.occluders = occluders_in(&self.instance_buckets);
         self.source_layers.clear();
         if self.owns_sources() {
             self.source_layers
@@ -810,6 +877,7 @@ impl Layout {
     ) -> Result<(), RecordError> {
         let scene = input.scene;
         let (radii, cells, layers) = (scene.world(parity).radii(), scene.cells(), scene.layers());
+        let object_flags = scene.flags();
         let scene_rows = self.home_buckets.len() as u32;
         let (entries, _) = self.table_ids();
         let owns_sources = self.owns_sources();
@@ -819,12 +887,19 @@ impl Layout {
         let check_layers = owns_sources && !(all_default && self.scene_layers_default);
         self.scene_layers_default = all_default;
         let home_buckets = &self.home_buckets;
-        let (instance_buckets, source_layers) =
-            (&mut self.instance_buckets, &mut self.source_layers);
+        let (instance_buckets, source_layers, occluders) = (
+            &mut self.instance_buckets,
+            &mut self.source_layers,
+            &mut self.occluders,
+        );
         let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
             let slots = start..(start + count).min(scene_rows);
-            let entry = |s: usize| scene_entry(home_buckets[s], radii[s], cells[s]);
+            let entry =
+                |s: usize| scene_entry(home_buckets[s], radii[s], cells[s], object_flags[s]);
+            let range = slots.start as usize..slots.end as usize;
+            let before = occluders_in(&instance_buckets[range.clone()]);
             if let Some(rows) = sync_rows(instance_buckets, slots.clone(), entry) {
+                *occluders = *occluders - before + occluders_in(&instance_buckets[range]);
                 write_rows(list, arena, entries, instance_buckets, rows)?;
             }
             if check_layers && let Some(rows) = sync_rows(source_layers, slots, |s| layers[s]) {
@@ -997,7 +1072,7 @@ mod tests {
                 &batches,
                 parity,
                 u32::MAX,
-                false,
+                CasterPasses::default(),
                 Prepass::Off,
                 &Skinning::default(),
             )

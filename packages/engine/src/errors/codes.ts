@@ -81,7 +81,7 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 260 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A mesh of millions of vertices can fill it too, from geometry.fromArrays or a model file. Building such a mesh with normals to compute takes about 100 bytes per vertex for a moment. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 10 seconds before it fails.",
+			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 260 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A mesh of millions of vertices can fill it too, from geometry.fromArrays or a model file. Building such a mesh with normals to compute takes about 100 bytes per vertex for a moment. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped before is not free yet. The engine then tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
@@ -91,6 +91,14 @@ const DOCS = {
 			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. Release builds leave the check out.",
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
 		since: '0.1',
+	},
+	E1111: {
+		title: 'Mesh or model still in use',
+		cause:
+			'A call to destroy() named a mesh, or a model that assets.loadGltf loaded, while an object or an instance batch still uses it. For a model, that includes objects that use one of its meshes or materials, and objects that its animation clips move. The engine keeps the mesh or model, so nothing draws freed memory.',
+		example:
+			'E1111: mesh.destroy() was called on a mesh that "Crate" (slot 7) still uses. Destroy the objects and instance batches that use it first.',
+		since: '0.2',
 	},
 	E1203: {
 		title: 'Invalid number',
@@ -116,7 +124,7 @@ const DOCS = {
 	E1206: {
 		title: 'Invalid mesh arrays',
 		cause:
-			'geometry.fromArrays() received arrays that make no mesh, or scene.createLines() received points that make no line. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A line needs at least 2 points, and pairs of points need an even number.',
+			'geometry.fromArrays() received arrays that make no mesh, scene.createLines() received points that make no line, or scene.createPoints() received arrays that make no points. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A line needs at least 2 points, and pairs of points need an even number. Points need at least 1 point, with 3 or 4 numbers of color each.',
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
@@ -150,9 +158,9 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1215: {
-		title: 'Invalid custom material WGSL',
+		title: 'Invalid custom WGSL',
 		cause:
-			'materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh.',
+			'materials.shader(), post.addEffect() or post.set() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function or a vertex offset. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, and a tone curve fn toneCurve.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
@@ -160,7 +168,7 @@ const DOCS = {
 	E1216: {
 		title: 'Invalid uniform or texture',
 		cause:
-			"A custom material's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer.",
+			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` declarations, each with a texture of one layer.",
 		example:
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
 		since: '0.1',
@@ -221,6 +229,14 @@ const DOCS = {
 			"E1305: the render worker's GPU rejected a command: Buffer size (377487360) exceeds the max buffer size limit (268435456).",
 		since: '0.2',
 	},
+	E1306: {
+		title: 'Safari before 18',
+		cause:
+			'The browser runs the WebKit engine of a Safari before 18, which null3D does not support. Every browser on iPhone and iPad runs WebKit, so Chrome, Edge and Firefox there count too.',
+		example:
+			'E1306: this browser runs the WebKit engine of Safari 17, and the engine needs Safari 18 or later.',
+		since: '0.2',
+	},
 	E1401: {
 		title: 'Not a sketch module',
 		cause:
@@ -259,7 +275,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, the first environment its reader, the first sprite batch the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
@@ -353,7 +369,7 @@ const DOCS = {
 	E1418: {
 		title: 'WebAssembly blocked by the page',
 		cause:
-			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core or the KTX2 transcoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
+			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core, the KTX2 transcoder or the meshopt decoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
 		example:
 			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
 		since: '0.2',
@@ -361,7 +377,7 @@ const DOCS = {
 	E1419: {
 		title: 'Canvas held by another engine',
 		cause:
-			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread failed, so no engine can draw on it again. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
+			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread ended, so no engine can draw on it again. That thread ends when it fails, or when the canvas leaves the page. It also ends when the page goes away, or when the browser refuses memory for a new engine. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
 		example:
 			'E1419: createEngine() got a canvas that another engine draws on, which has not stopped.',
 		since: '0.2',
@@ -379,6 +395,22 @@ const DOCS = {
 			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, morph, skinning and sprites, and instance_index and texcoords for the engine's own tests.",
 		example:
 			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, instance_index, lines, morph, skinning, sprites, texcoords.",
+		since: '0.2',
+	},
+	E1422: {
+		title: 'Engine file blocked by the page',
+		cause:
+			"The engine's files come from another origin than the page, such as a CDN, and the page's Content-Security-Policy blocks one of them. The engine starts each worker from a blob: address that imports the worker's script from that origin, and downloads its .wasm files from there. So the policy's worker-src must allow blob: and the other origin, and its script-src and connect-src must allow the other origin too. Firefox checks the modules that a worker imports against worker-src.",
+		example:
+			"E1422: the page's Content-Security-Policy blocks the job-0 worker: its worker-src does not allow blob:, which the engine starts its workers from when its files come from another origin.",
+		since: '0.2',
+	},
+	E1423: {
+		title: 'Engine file without CORS',
+		cause:
+			"The engine's files come from another origin than the page, such as a CDN. One of them came without a CORS header, or did not download. A page loads a module or a .wasm file from another origin only when the response carries Access-Control-Allow-Origin.",
+		example:
+			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
 		since: '0.2',
 	},
 	E1501: {

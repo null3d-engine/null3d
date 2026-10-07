@@ -73,11 +73,11 @@
     {
       "id": "tone-mapping",
       "category": "Renderer and loop",
-      "three": "renderer.toneMapping (ACESFilmic, AgX, Neutral, Reinhard, Cineon, Linear) / toneMappingExposure",
+      "three": "renderer.toneMapping (ACESFilmic, AgX, Neutral, Reinhard, Cineon, Custom, Linear) / toneMappingExposure",
       "status": "changed",
       "since": "0.1",
-      "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none', exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
+      "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none' | curveWgsl, exposure })",
+      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -120,8 +120,8 @@
       "three": "renderer.setClearColor / scene.background = color or texture",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.setBackground('#rrggbb' | texture); environment backgrounds (0.2)",
-      "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background. Environment backgrounds come in 0.2.",
+      "target": "scene.setBackground('#rrggbb' | texture | environment (0.2) | cube map (0.2) | { sky } (0.2), options)",
+      "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. An environment or a cube map surrounds the scene, as a PMREM texture or a CubeTexture in scene.background does. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
     },
@@ -209,20 +209,31 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'))",
-      "notes": "Prefilter HDR files offline with `bunx @null3d/cli assets env`. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. scene.environmentIntensity becomes the `intensity` option.",
+      "notes": "`loadEnvironment` takes an HDR file as it is, or its map from `bunx @null3d/cli assets env`, which needs no filtering at load. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. scene.environmentIntensity becomes the `intensity` option.",
       "docs": "concepts/lighting",
       "detect": "\\.environment\\s*=|\\bRoomEnvironment\\b"
     },
     {
       "id": "fog",
       "category": "Scene graph",
-      "three": "scene.fog = new Fog(color, near, far) / new FogExp2(color, density)",
-      "status": "direct",
+      "three": "scene.fog = new Fog(color, near, far)",
+      "status": "changed",
       "since": "0.1",
-      "target": "scene.setFog({ type: 'linear', color, near, far }) or { type: 'exp2', color, density }",
-      "notes": "Same formulas and defaults. Materials opt out with fog: false. null3D mixes the fog in linear color, as WebGPURenderer does. WebGLRenderer mixes it after the sRGB encoding when it draws to the canvas, so there the same fog looks a little darker at middle distances.",
+      "target": "scene.setFog({ curve: 'linear', color, near, far })",
+      "notes": "The linear curve keeps three.js's smooth step and its defaults of 1 and 1000. null3D measures the straight-line distance from the camera, where three.js measures the depth along the view. So fog at the screen's corners is a little thicker, and it no longer shifts as the camera turns. null3D mixes the fog in linear color before the tone mapping, as WebGPURenderer does, and as WebGLRenderer does when it draws into a half-float target. Only WebGLRenderer's default 8-bit canvas mixes the fog after the sRGB encoding, so there the same fog looks a little darker at middle distances. Materials opt out with fog: false. For new scenes, the default exponential curve looks more like real haze. The fog can also thin with height (heightFalloff) and glow toward the sun (sunGlow).",
       "docs": "api/scene",
-      "detect": "\\bFog(Exp2)?\\b"
+      "detect": "\\bFog\\b"
+    },
+    {
+      "id": "fog-exp2",
+      "category": "Scene graph",
+      "three": "scene.fog = new FogExp2(color, density)",
+      "status": "changed",
+      "since": "0.1",
+      "target": "scene.setFog({ curve: 'exp2', color, density })",
+      "notes": "Pass three.js's density. Its default there is 0.00025, and null3D's is 0.01. null3D measures the straight-line distance from the camera, where three.js measures the depth along the view. So fog at the screen's corners is a little thicker, and it no longer shifts as the camera turns. null3D mixes the fog in linear color before the tone mapping, as WebGPURenderer does, and as WebGLRenderer does when it draws into a half-float target. Only WebGLRenderer's default 8-bit canvas mixes the fog after the sRGB encoding, so there the same fog looks a little darker at middle distances. Materials opt out with fog: false.",
+      "docs": "api/scene",
+      "detect": "\\bFogExp2\\b"
     },
     {
       "id": "group",
@@ -428,8 +439,8 @@
       "three": "geometry.dispose() / material.dispose() / texture.dispose()",
       "status": "changed",
       "since": "0.1",
-      "target": "texture.destroy(); material.destroy() (0.2); mesh.destroy() (0.2)",
-      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. material.destroy() (0.2) frees the material's place, and a custom material's pipelines with its last material, once no object uses it; objects that still use it draw nothing. Meshes get destroy() in 0.2. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed.",
+      "target": "texture.destroy(); material.destroy() (0.2); mesh.destroy() (0.2); prefab.destroy() (0.2) for a loaded glTF model",
+      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. material.destroy() (0.2) frees the material's place, and a custom material's pipelines with its last material, once no object uses it; objects that still use it draw nothing. mesh.destroy() (0.2) frees a mesh's GPU memory and data at the next frame, and throws E1111 while an object or instance batch uses it, so destroy those first, in the same frame or before. prefab.destroy() (0.2) frees every mesh, material and texture of a loaded model, and its skeleton and clips, once its copies are destroyed. three.js's dispose leaves the object usable and uploads it again on the next render; null3D's destroy ends it, and later calls throw E1101.",
       "docs": "api/textures",
       "detect": "\\.dispose\\s*\\("
     },
@@ -451,7 +462,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "scene.setEnvironment(env, { rotation }) and scene.setBackground(env, { rotation })",
-      "notes": "Rotation is an Euler array in radians, in the order X, Y, Z, as in three.js. Each material shares the scene's rotation, so material.envMapRotation has none of its own. scene.setBackground takes environments with environment backgrounds.",
+      "notes": "Rotation is an Euler array in radians, in the order X, Y, Z, as in three.js. Each material shares the scene's rotation, so material.envMapRotation has none of its own. scene.setBackground turns environments and cube maps, not textures or the sky.",
       "docs": "api/scene",
       "detect": "\\b(environment|background|envMap)Rotation\\b"
     },
@@ -462,7 +473,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "scene.setBackground(env, { blur, intensity })",
-      "notes": "",
+      "notes": "Each setBackground call sets the options of that background, where three.js keeps them on the scene. The blur reads the environment's level for that roughness, as three.js reads its PMREM texture, so it costs nothing extra. Only environments blur: three.js turns a blurred CubeTexture into a PMREM texture, and the engine asks for an environment from assets.loadEnvironment. intensity applies to textures, environments, cube maps and the sky.",
       "docs": "api/scene",
       "detect": "background(Blurriness|Intensity)\\b"
     },
@@ -605,7 +616,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "Built in: shadow: { cascades } on the directional light",
-      "notes": "Delete the addon. Its cascades, maxFar and shadowMapSize become the cascades, distance and mapSize settings. The cascades keep still edges as the camera turns, and far cascades draw every few frames, as the farCascadeInterval quality setting says. The mode setting has no equivalent: the engine's split leans a little more toward the camera than the addon's practical mode, so its near cascade is shorter.",
+      "notes": "Delete the addon. Its cascades, maxFar and shadowMapSize become the cascades, distance and mapSize settings. The cascades keep still edges as the camera turns, and far cascades draw every few frames, as the farCascadeInterval quality setting says. The fade option is on by default: neighboring cascades blend over a band, which the shadowCascadeBlend quality setting sizes, and fade: false maps to shadowCascadeBlend: 0. The mode setting has no equivalent: the engine's split leans a little more toward the camera than the addon's practical mode, so its near cascade is shorter.",
       "docs": "concepts/shadows",
       "detect": "\\bCSM\\b|csm/CSM"
     },
@@ -616,7 +627,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
-      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. The directional light's map stores 16-bit depth, so in each cascade bias covers at least 1.5 of its depth steps, about 2 cm in a far cascade 200 m out. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
       "docs": "concepts/shadows",
       "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
     },
@@ -725,8 +736,8 @@
       "three": "morphAttributes / morphTargetInfluences / morphTargetDictionary",
       "status": "changed",
       "since": "0.2",
-      "target": "mesh.setMorphWeight(indexOrName, weight) and mesh.getMorphWeight(indexOrName); geometry.fromArrays({ ..., morphTargets: { positions, normals, names } })",
-      "notes": "glTF morph targets and their default weights load with the model, and its clips animate the weights. Targets are deltas, as with morphTargetsRelative = true. mesh.mesh.morphTargetNames lists the names in target order, in place of morphTargetDictionary. A clip blends its weights with the object's own, as AnimationMixer does. On WebGL2 each object draws only its largest weights, by the morphTargets quality setting: 8 on Low up to 64 on Ultra.",
+      "target": "mesh.setMorphWeight(indexOrName, weight) and mesh.getMorphWeight(indexOrName); geometry.fromArrays({ ..., morphTargets: { positions, normals, colors, names } })",
+      "notes": "glTF morph targets and their default weights load with the model, and its clips animate the weights. Targets are deltas, as with morphTargetsRelative = true. Color targets (morphAttributes.color, glTF's COLOR_0 targets) change vertex colors, which stay between 0 and 1 as glTF asks; three.js does not clamp them. mesh.mesh.morphTargetNames lists the names in target order, in place of morphTargetDictionary. A clip blends its weights with the object's own, as AnimationMixer does. On WebGL2 each object draws only its largest weights, by the morphTargets quality setting: 8 on Low up to 64 on Ultra.",
       "docs": "api/animation",
       "detect": "morphAttributes|morphTargetInfluences|morphTargetDictionary"
     },
@@ -747,10 +758,21 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard for the base layer",
-      "notes": "Clearcoat, transmission, sheen, iridescence, anisotropy and specular come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas. Clearcoat, transmission, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
+    },
+    {
+      "id": "mat-specular-ior",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial ior / reflectivity / specularIntensity / specularColor / specularIntensityMap / specularColorMap",
+      "status": "direct",
+      "since": "0.2",
+      "target": "materials.standard({ ior, specularIntensity, specularColor, specularIntensityMap, specularColorMap })",
+      "notes": "Same names, ranges and formulas, so the values carry over, and glTF's KHR_materials_ior and KHR_materials_specular load into them. specularColor takes linear components above 1, as three.js's Color does. reflectivity has no option: set ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity), as three.js converts it.",
+      "docs": "api/materials",
+      "detect": "\\bspecular(Intensity|Color)(Map)?\\b|\\.ior\\b|\\bior\\s*:"
     },
     {
       "id": "mat-basic",
@@ -1055,9 +1077,9 @@
       "three": "CubeTextureLoader / CubeTexture",
       "status": "changed",
       "since": "0.2",
-      "target": "assets.loadCubemap(urls) for sky boxes; assets.loadEnvironment for lighting",
-      "notes": "",
-      "docs": "api/textures",
+      "target": "assets.loadCubemap([px, nx, py, ny, pz, nz]) for sky boxes with scene.setBackground; assets.loadEnvironment for lighting",
+      "notes": "The faces come in three.js's order and draw as three.js draws a CubeTexture background, mirrored across x. Each face is square, of one size, at most 2,048 pixels a side. A cube map does not light materials and does not blur: for envMap or a blurred background, load an environment from an HDR or EXR image with assets.loadEnvironment.",
+      "docs": "api/assets",
       "detect": "\\bCubeTexture(Loader)?\\b"
     },
     {
@@ -1066,9 +1088,9 @@
       "three": "RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "`bunx @null3d/cli assets env sunset.hdr sunset.ktx2` offline, then assets.loadEnvironment",
-      "notes": "Prefiltering happens once at build time instead of on every visit.",
-      "docs": "guides/assets-pipeline",
+      "target": "await assets.loadEnvironment('sunset.hdr'), or `bunx @null3d/cli assets env sunset.hdr sunset.ktx2` and assets.loadEnvironment('sunset.ktx2')",
+      "notes": "One call loads a Radiance (.hdr) or OpenEXR (.exr) file and prefilters it on the GPU, as HDRLoader or EXRLoader with PMREMGenerator.fromEquirectangular do. No loader object and no generator to dispose. The tool's file skips the filtering at load. UltraHDRLoader's JPEG files with gain maps do not load: convert them to .hdr or .exr. EXR files with DWAA or DWAB compression, tiled or multi-part EXR files do not load either.",
+      "docs": "api/assets",
       "detect": "\\b(RGBE|EXR|HDR|UltraHDR)Loader\\b|\\bPMREMGenerator\\b"
     },
     {
@@ -1078,7 +1100,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "assets.loadTexture('x.ktx2')",
-      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader.",
+      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader. UASTC HDR files load too: as BC6H where the device has BC formats, else as rgb9e5ufloat, where three.js uses ASTC HDR or half floats. Both stay linear, so keep tone mapping on.",
       "docs": "api/textures",
       "detect": "\\bKTX2Loader\\b|setTranscoderPath|\\.detectSupport\\s*\\("
     },
@@ -1122,7 +1144,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures, WebP and AVIF textures (EXT_texture_webp, EXT_texture_avif) and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1250,11 +1272,11 @@
     {
       "id": "mixer",
       "category": "Animation",
-      "three": "AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt)",
+      "three": "AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / time / setEffectiveWeight / timeScale / mixer.update(dt)",
       "status": "changed",
       "since": "0.2",
-      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
-      "notes": "No update call: the engine advances and blends every animator on its job workers. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask.",
+      "target": "const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed: 1 }); anim.crossFade('walk', 0.3); anim.play('walk', { time: 0.4, weight: 0.7 }); anim.setWeight('walk', 0.5); anim.setLayerWeight(1, 0.5); anim.setTimeScale(0.5); anim.onEvent('finished', handler)",
+      "notes": "No update call: the engine advances and blends every animator on its job workers. action.time = t before play() becomes play(name, { time: t }). setEffectiveWeight(w) on actions that play together becomes play(name, { weight: w }), then setWeight(name, w): a play with a weight joins its layer's clips, and a play without one fades them out. setWeight leaves a running fade in place, which multiplies the weight. A fade out starts from the clip's current weight, not from full weight. loop: false holds the last frame, as clampWhenFinished does. A clip with a negative speed starts at its end. Filtered clips for upper and lower body become layers with setLayerMask. Walk and run blends whose weights and time scales the code works out from a speed become playBlend and setBlend, which keep the clips in step. startAt has no counterpart: call play at that time.",
       "docs": "api/animation",
       "detect": "\\bAnimationMixer\\b|\\.clipAction\\s*\\(|\\.crossFade(To|From)\\s*\\(|\\.fade(In|Out)\\s*\\(|setEffectiveWeight|\\bmixer\\.update\\s*\\("
     },
@@ -1298,7 +1320,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit)",
-      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. A skinned mesh is tested in its bind pose, not its animated pose. camera.screenToRay uses the camera of the frame on screen at the pointer's event. For clicks and hover on objects, obj.on('click', fn) casts the ray itself. Acceleration structures are built in.",
+      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. A skinned mesh is tested in its bind pose, not its animated pose. camera.screenToRay uses the camera of the frame on screen at the pointer's event. For clicks and hover on objects, obj.on('click', fn) casts the ray itself. Acceleration structures are built in. Rays hit sprites, points and lines as they draw. params.Points.threshold and params.Line.threshold become the pointThreshold and lineThreshold options. Sprites, points and lines sized in pixels use the active camera, or the camera of the event's frame, in place of raycaster.camera. three.js's Line2 and LineSegments2 ignore raycaster.far; maxDistance limits every null3D hit, lines too.",
       "docs": "api/raycast",
       "detect": "\\bRaycaster\\b|\\.setFromCamera\\s*\\(|\\.intersectObjects?\\s*\\("
     },
@@ -1462,7 +1484,7 @@
       "three": "BokehPass / DepthOfFieldEffect",
       "status": "post-1.0",
       "since": null,
-      "target": "Skip it, or write a custom final effect (scene depth is available to it)",
+      "target": "Skip it, or write a custom effect with post.addEffect that reads effectDepth",
       "notes": "",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b"
@@ -1473,8 +1495,8 @@
       "three": "ShaderPass (custom full-screen GLSL)",
       "status": "manual",
       "since": "0.2",
-      "target": "post.addEffect({ name, wgsl, uniforms })",
-      "notes": "Rewrite the effect in WGSL; per-pixel effects merge into the final pass for free.",
+      "target": "post.addEffect({ wgsl, uniforms, order })",
+      "notes": "Rewrite the fragment shader in WGSL as fn effect(input: EffectInput) -> vec4f. texture2D(tDiffuse, vUv) becomes effectColor(input.uv), and pass.uniforms.x.value = v becomes post.setEffectUniform(effect, 'x', v). Each effect is a full-screen pass of its own, so put several per-pixel looks in one effect. Effects run on linear HDR color before the tone curve. A ShaderPass after OutputPass sees display color, so retune its numbers. The uv's y axis is flipped: replace vUv.y with 1.0 - input.uv.y where direction matters.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bShaderPass\\b"
     },
@@ -1484,8 +1506,8 @@
       "three": "FilmPass / GlitchPass / HalftonePass / AfterimagePass / DotScreenPass / RenderPixelatedPass",
       "status": "manual",
       "since": "0.2",
-      "target": "Custom effects with post.addEffect",
-      "notes": "The cookbook has recipes for film grain, pixelation and afterimage.",
+      "target": "A custom effect for each, with post.addEffect",
+      "notes": "Port each shader as a ShaderPass is ported. Grain and noise sized for display color look weaker on HDR color, so tune them by eye. Effects take no textures, so GlitchPass's random texture becomes noise from null3d::noise. AfterimagePass blends in the frame before, which an effect cannot read, so it has no port.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\b(Film|Glitch|Halftone|Afterimage|DotScreen|RenderPixelated|Bleach|Sobel)(Pass|Shader)\\b"
     },
@@ -1504,10 +1526,10 @@
       "id": "vignette",
       "category": "Post-processing",
       "three": "VignetteShader / VignetteEffect",
-      "status": "direct",
+      "status": "changed",
       "since": "0.2",
-      "target": "post.set({ vignette: { offset, darkness } })",
-      "notes": "VignetteShader's offset and darkness keep their meanings. The postprocessing library's VignetteEffect matches with its ESKIL technique; its default technique darkens with another curve, so tune the two numbers.",
+      "target": "post.set({ vignette: { intensity, size, falloff, roundness } })",
+      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; the default falloff of 2 and roundness of 0 give a close match. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bVignette(Shader|Effect)\\b"
     },
@@ -1536,13 +1558,13 @@
     {
       "id": "sky",
       "category": "Post-processing",
-      "three": "Sky (addons)",
+      "three": "Sky / SkyMesh (addons)",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })",
-      "notes": "A built-in analytic sky with the same parameters.",
+      "target": "scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, ... } })",
+      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js.",
       "docs": "api/scene",
-      "detect": "new\\s+Sky\\s*\\("
+      "detect": "new\\s+Sky(Mesh)?\\s*\\("
     },
     {
       "id": "lensflare",
@@ -1573,7 +1595,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "await scene.createSprites({ count, map, atlas, sizeAttenuation, center })",
-      "notes": "Camera-facing quads drawn in one batch, with typed arrays of positions, sizes, rotations, colors and atlas frames per sprite. The call is async, because the first one downloads the sprite code. Sprites blend by default, as three.js's do. Without size attenuation, sizes are in CSS pixels, not a fraction of the view's height. Raycasts do not find sprites yet.",
+      "notes": "Camera-facing quads drawn in one batch, with typed arrays of positions, sizes, rotations, colors and atlas frames per sprite. The call is async, because the first one downloads the sprite code. Sprites blend by default, as three.js's do. Without size attenuation, sizes are in CSS pixels, not a fraction of the view's height. Raycasts hit each sprite's quad, as Raycaster does, with the active camera in place of raycaster.camera. sprites.on('click', fn) takes pointer events, and the event's instance is the sprite.",
       "docs": "api/sprites",
       "detect": "\\bSprite(Material)?\\b"
     },
@@ -1583,8 +1605,8 @@
       "three": "Points / PointsMaterial",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createPoints({ positions, colors, size, sizeAttenuation, texture })",
-      "notes": "Point sizes above one pixel work on every backend.",
+      "target": "await scene.createPoints({ positions, colors, size, sizeAttenuation, map })",
+      "notes": "Points of one size drawn in one batch as squares that face the camera, at any size on every backend. The call is async, because the first one downloads the sprite code. Points are opaque by default, as three.js's are; transparent becomes alphaMode 'blend', and alphaTest becomes alphaMode 'mask' with alphaCutoff. With size attenuation, size is in world units: three.js's size times tan(fov / 2). Without it, size is in CSS pixels, as in three.js. A point does not vanish when its center leaves the screen, as a WebGL point does. Blended points sort back to front. Raycasts hit each point's square by default. The pointThreshold option gives Raycaster.params.Points.threshold's test instead: a hit within that distance of the point, whatever its size. points.on('click', fn) takes pointer events, and the event's instance is the point.",
       "docs": "api/points",
       "detect": "new\\s+(THREE\\.)?Points\\s*\\(|\\bPointsMaterial\\b"
     },
@@ -1595,7 +1617,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "await scene.createLines({ positions, colors, mode, width, worldUnits, dashed })",
-      "notes": "Segments between points drawn in one batch as quads with round ends, as Line2 draws them, at any width on every backend. mode 'strip', 'loop' or 'segments' replaces Line, LineLoop and LineSegments, and width replaces linewidth, in CSS pixels or with worldUnits. A one-pixel Line ports as width 1. Point colors are linear RGB, stored at 8 bits per channel. dashed and the dash values replace LineDashedMaterial and computeLineDistances. The call is async, because the first one downloads the line code. lit: true shades lines with the scene's lights. Raycasts do not find lines yet.",
+      "notes": "Segments between points drawn in one batch as quads with round ends, as Line2 draws them, at any width on every backend. mode 'strip', 'loop' or 'segments' replaces Line, LineLoop and LineSegments, and width replaces linewidth, in CSS pixels or with worldUnits. A one-pixel Line ports as width 1. Point colors are linear RGB, stored at 8 bits per channel. dashed and the dash values replace LineDashedMaterial and computeLineDistances. The call is async, because the first one downloads the line code. lit: true shades lines with the scene's lights. Raycasts hit a segment within half its width, as Line2 does, in pixels through the active camera or in world units. The lineThreshold option gives Raycaster.params.Line.threshold's test instead, as for Line. maxDistance limits line hits too, though three.js's Line2 ignores raycaster.far. lines.on('click', fn) takes pointer events, and the event's instance is the segment.",
       "docs": "api/lines",
       "detect": "new\\s+(THREE\\.)?(Line|LineSegments|LineLoop|Line2|LineSegments2)\\s*\\(|\\bLine(Basic|Dashed)?Material\\b|\\bLineGeometry\\b"
     },

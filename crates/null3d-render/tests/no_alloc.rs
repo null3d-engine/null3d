@@ -20,6 +20,7 @@ use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
 use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op, format};
+use null3d_render::background::{Background, BackgroundSource};
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
@@ -72,6 +73,7 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         filter: 3,
         far_interval: 2,
         follow_movers: true,
+        ..ShadowQuality::default()
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
     let shadow = SunShadow {
@@ -319,6 +321,30 @@ fn recording_frames_with_the_depth_prepass_allocates_nothing() {
             "WebGL2 two views, multi-draw {multi_draw}"
         );
     }
+}
+
+#[test]
+fn recording_frames_with_occlusion_culling_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    // Every object of the world is an occluder, so the camera culls in two phases.
+    let world = || {
+        let mut world = World::with_config(RendererConfig {
+            gpu_occlusion: true,
+            ..RendererConfig::default()
+        });
+        let occluder = 1 << 7;
+        let commands: Vec<Command> = world
+            .objects
+            .iter()
+            .map(|&object| Command::set_flags(object, occluder, occluder))
+            .collect();
+        world.scene.apply_commands(&commands, world.frame).unwrap();
+        world
+    };
+    assert_eq!(shadow_allocations(world()), 0, "shadows");
+    assert_eq!(two_view_allocations(world()), 0, "two views");
+    assert_eq!(scale_change_allocations(world()), 0, "render scale changes");
 }
 
 /// Records warm-up frames, then steady frames whose exposure changes every frame, so the final pass
@@ -677,7 +703,12 @@ fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     world
         .renderer
         .settings_mut()
-        .set_background_texture(background);
+        .set_background_source(Some(Background {
+            source: BackgroundSource::Texture(background),
+            intensity: 1.0,
+            blur: 0.0,
+            rotation: [0.0; 3],
+        }));
     world.record(true);
     let textures = world.renderer.settings_mut().textures_mut();
     textures.set_budget(16 * 1024);

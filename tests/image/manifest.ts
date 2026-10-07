@@ -15,8 +15,9 @@
 import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { AO_IMAGE } from '../../bench/scenes/ao.ts';
+import { BACKGROUND_SCENES, BACKGROUNDS_IMAGE } from '../../bench/scenes/backgrounds.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
-import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { FOG_IMAGE, FOG_SETTINGS, type FogName } from '../../bench/scenes/fog.ts';
 import {
 	MODEL_NAMES,
 	MODEL_SCENES,
@@ -30,6 +31,8 @@ import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
+import { POINT_IMAGE } from '../../bench/scenes/points.ts';
+import { ROOM_IMAGE } from '../../bench/scenes/room.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -40,7 +43,14 @@ import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
-import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
+import {
+	ALL_MODES,
+	type ImageRun,
+	type ImageTest,
+	imageRuns,
+	type Tier,
+	tiersOf,
+} from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 
@@ -148,6 +158,44 @@ function bloomTests(): ImageTest[] {
 			tiers: ['webgpu', 'webgl2'],
 			switches: ['hdr=off'],
 			reference: 'bloom-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
+/** The sketch of the custom effects' tests. */
+const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
+
+/**
+ * Two custom effects, one that reads the pixels beside each pixel and one that reads the scene's
+ * depth, and a custom tone curve, on every tier. Effects added in the other order with orders that
+ * restore it, and effects added during play, draw the same image. Compatibility mode starts on the
+ * 8-bit path for MSAA, and the effects move it to HDR color with FXAA, as bloom does. A device with
+ * no HDR target runs no effects: the page's switch that turns HDR off stands in for one, and must
+ * draw the scene without them. At half the render scale the effects draw into the corners of the
+ * same targets.
+ */
+function effectsTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${EFFECTS_SKETCH}${query}`,
+		hold: 1,
+	});
+	return [
+		test('effects-off', ''),
+		test('effects', '?effects'),
+		{ ...test('effects-reversed', '?effects&reversed'), reference: 'effects' },
+		{ ...test('effects-later', '?effects&later'), reference: 'effects' },
+		test('effects-curve', '?curve'),
+		test('effects-bloom-curve', '?effects&bloom&curve'),
+		test('effects-scale-50', '?scale=0.5&effects'),
+		{
+			...test('effects-8-bit', '?effects&curve'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'effects-off',
 			expect: { hdr: false },
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
@@ -292,6 +340,45 @@ function gradingTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the dark tone tests, where an 8-bit canvas shows bands first. */
+const DARK_TONES_SKETCH = 'tests/pages/sketches/dark-tones-sketch.ts';
+
+/**
+ * Dark tones on every tier. A strong vignette over a flat dark background: the dither runs last,
+ * after the vignette, so its noise keeps one step of depth in the dark corners. The 8-bit path
+ * darkens the linear value of display color instead of HDR color, and must still draw the HDR
+ * path's image: on 5 October 2026 no pixel differed past the threshold. A point light's
+ * falloff over a dark floor: a long dark gradient. On WebGL2 the packed small float format must
+ * draw the gradient as 16-bit floats do, with no bands. Core WebGPU draws in that format already
+ * where the device can.
+ */
+function darkToneTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${DARK_TONES_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('dark-vignette', '?vignette'),
+		{
+			...test('dark-vignette-8-bit', '?vignette'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'dark-vignette',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+		test('dark-gradient', '?gradient'),
+		{
+			...test('dark-gradient-small-float', '?gradient'),
+			tiers: ['webgl2'],
+			switches: ['scene-format=rg11b10'],
+			reference: 'dark-gradient',
+		},
+	];
+}
+
 /** The sketch of the outline tests: a sphere half behind a wall and a box (bench/scenes/outline.ts). */
 const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
 
@@ -408,8 +495,19 @@ const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.s
  */
 const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 
+/**
+ * S5's characters on SwiftShader. Its time grows with the crowd, and the software GPU on CI's
+ * slowest machines took nearly all of the run's limit for the full crowd. A smaller crowd still
+ * skins, blends and shadows every character in rings that fill the frame. The real GPU, Safari and
+ * Firefox draw the full crowd. .dev/decisions/D-88-software-gpu-loads.md gives the figures.
+ */
+const S5_SWIFTSHADER_COUNT = 100;
+
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
+
+/** The sketch of the room scene's tests. */
+const ROOM_SKETCH = 'tests/pages/sketches/room-sketch.ts';
 
 /** The tests of every feature, before the depth prepass and half precision draw some again. */
 const FEATURE_TESTS: readonly ImageTest[] = [
@@ -511,6 +609,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: [`compression=${family}`],
 		reference: 'ktx2',
 	})),
+	// A KTX2 file of UASTC HDR data beside the same values as half floats made in code: BC6H where
+	// the device has BC formats, and shared-exponent floats without them, as ?compression=none
+	// makes it. Both draw the half floats' image, so the second borrows the first's references.
+	{
+		name: 'ktx2-hdr',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'ktx2-hdr-rgb9e5',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['compression=none'],
+		reference: 'ktx2-hdr',
+	},
+	// glTF files whose texture is the same picture as PNG, as WebP and as AVIF through their
+	// extensions, as AVIF with a PNG fallback, and as AVIF named by address. Every square draws the
+	// PNG's picture.
+	{
+		name: 'gltf-image-formats',
+		sketch: 'tests/pages/sketches/gltf-image-formats-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
 	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates,
@@ -596,6 +720,37 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'texture-background',
 		expect: { hdr: false },
 	},
+	// The other backgrounds: three.js's sky with clouds, an environment that blurs, dims and turns
+	// behind spheres it lights, and a cube map of six pictures. The parity test compares each with
+	// three.js.
+	...BACKGROUND_SCENES.map(
+		(bg): ImageTest => ({
+			name: `background-${bg}`,
+			sketch: `tests/pages/sketches/backgrounds-sketch.ts?bg=${bg}`,
+			size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+			hold: 0,
+		}),
+	),
+	// The sky on the 8-bit path, where the sky's own shader tone maps its color. It must draw the
+	// HDR path's image.
+	{
+		name: 'background-sky-8-bit',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=sky',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		reference: 'background-sky',
+		expect: { hdr: false },
+	},
+	// The cube map through an orthographic camera, whose parallel rays all look toward one point
+	// of the cube: the view shows that point's color.
+	{
+		name: 'background-cubemap-ortho',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=cubemap&ortho',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
+	},
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.
@@ -660,12 +815,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
 	...outlineTests(),
 	...occlusionTests(),
 	...gradingTests(),
+	...darkToneTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
 	{
@@ -678,6 +835,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
 	// one box that its bounds hide, and one that is never culled.
 	{ name: 'objects', sketch: 'tests/pages/sketches/objects-sketch.ts', hold: 1 },
+	// The room scene: a room whose walls, its occluders, hide most of a field of detailed spheres,
+	// but for a few seen through a doorway. Drawn without occlusion culling, as the references of
+	// its culled copies, with MSAA and with FXAA, whose depth has one sample.
+	{
+		name: 'room',
+		sketch: ROOM_SKETCH,
+		hold: 0,
+		size: [ROOM_IMAGE.width, ROOM_IMAGE.height],
+		switches: ['occlusion=off'],
+	},
+	{
+		name: 'room-fxaa',
+		sketch: ROOM_SKETCH,
+		hold: 0,
+		size: [ROOM_IMAGE.width, ROOM_IMAGE.height],
+		switches: ['occlusion=off', 'antialias=fxaa'],
+	},
 	// A scene that spans grid cells, with a turned tree and a camera on a turned rig.
 	{ name: 'cells', sketch: 'tests/pages/sketches/cells-sketch.ts', hold: 1 },
 	// The same scene 100 km out, away from a cell's center, and about 1,000 km out at the center of a
@@ -778,6 +952,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'shadows-filter-5',
 		sketch: 'tests/pages/sketches/shadows-sketch.ts?filter=5',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The still shadow scene, whose wall throws one long shadow edge across the seam between the
+	// first two cascades. Over the band at the first cascade's far end, its shadow blends into the
+	// second cascade's, so the edge shows no line where they meet.
+	{
+		name: 'shadows-seam',
+		sketch: 'tests/pages/sketches/shadow-scene-sketch.ts',
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
@@ -1067,10 +1252,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
 	// references of its own.
 	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
-	// Towers on a floor that runs into linear fog and exponential squared fog, lit and unlit, and two
-	// towers whose materials turn fog off. The parity test compares each image with three.js's `Fog`
-	// and `FogExp2`.
-	...(['linear', 'exp2'] as const).map(
+	// Towers on a floor that runs into fog, lit and unlit, and two towers whose materials turn fog
+	// off: each fog curve, fog that thins with height, and fog that glows toward a low sun. The
+	// parity test compares the linear and exponential squared images with three.js's `Fog` and
+	// `FogExp2`.
+	...(Object.keys(FOG_SETTINGS) as FogName[]).map(
 		(fog): ImageTest => ({
 			name: `fog-${fog}`,
 			sketch: `tests/pages/sketches/fog-sketch.ts?fog=${fog}`,
@@ -1109,6 +1295,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// The same spheres lit by HDR files that the engine reads and filters itself at load. The
+	// sunset's Radiance file must draw as the tool's map of it does, so it borrows that test's
+	// references: the scene lights the same from either source. The studio's OpenEXR file has its
+	// own. A worker reads each file, and its panorama reaches the thread that draws in each thread
+	// mode's own way, so the sunset draws in every mode. The GPU filters the panorama in the held
+	// frame, which takes a software GPU as long as the room.
+	{
+		name: 'environment-venice-hdr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=venice&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		reference: 'environment-venice',
+		modes: ALL_MODES,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'environment-studio-exr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=studio&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
@@ -1241,6 +1449,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
+	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
+	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
+	// PointsMaterial.
+	{
+		name: 'points',
+		sketch: 'tests/pages/sketches/points-sketch.ts',
+		hold: 0,
+		size: [POINT_IMAGE.width, POINT_IMAGE.height],
+	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
 	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
@@ -1334,7 +1551,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
-	// their frame, so other devices may differ in fewer of their pixels.
+	// their frame, so other devices may differ in fewer of their pixels. S5 draws a smaller crowd on
+	// SwiftShader.
 	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
@@ -1343,6 +1561,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: ['pipelined', 'low latency'],
 			timeoutSeconds: 90,
+			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),
@@ -1382,10 +1601,10 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
  * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
  * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
  * cuts a slab, S2, and skinned characters with shadows. The depth debug view replaces every
- * material, and a background texture draws after the prepass in its render pass. Custom materials
- * draw their prepass depth with their own vertex shader, a vertex offset that samples a texture
- * among them. The shadows test's ground, which the near plane cuts, caught WebGL2's prepass when it
- * drew with a program of its own (D-43).
+ * material, and a background texture and the sky draw after the prepass, behind its depth, in its
+ * render pass. Custom materials draw their prepass depth with their own vertex shader, a vertex
+ * offset that samples a texture among them. The shadows test's ground, which the near plane cuts,
+ * caught WebGL2's prepass when it drew with a program of its own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1397,8 +1616,30 @@ const PREPASS_SCENES = [
 	'skinning-shadows',
 	'debug-view-depth',
 	'texture-background',
+	'background-sky',
 	'custom-textures',
 ];
+
+/**
+ * The scenes that GPU occlusion culling draws again on the WebGPU tiers, with ?occlusion=on, which
+ * must match their images without it. In the room scene, with MSAA and with FXAA, the walls are
+ * occluders: hold mode's frame keeps no occluder from a frame before, but the frame read back
+ * draws again, and its first phase draws the walls. The other scenes mark no occluder, so they
+ * check that a frame without one culls once and draws as before: shadows, see-through objects, an
+ * orthographic camera and S2. Every preset leaves GPU occlusion culling off.
+ */
+const GPU_OCCLUSION_SCENES = ['room', 'room-fxaa', 'shadows', 'transparency', 'ortho-camera', 's2'];
+
+/** An occlusion scene's test again with ?occlusion=on, in its first thread mode. */
+function withGpuOcclusion(name: string): ImageTest {
+	const test = copyWithSwitch(name, 'culled', 'occlusion=on');
+	return {
+		...test,
+		switches: test.switches?.filter((entry) => entry !== 'occlusion=off'),
+		tiers: tiersOf(test).filter((tier) => tier !== 'webgl2'),
+		...(test.modes && { modes: test.modes.slice(0, 1) }),
+	};
+}
 
 /** A prepass scene's test again with ?prepass=on, in its first thread mode. */
 function withPrepass(name: string): ImageTest {
@@ -1464,6 +1705,7 @@ function withIndexInstances(name: string): ImageTest {
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	...FEATURE_TESTS,
 	...PREPASS_SCENES.map(withPrepass),
+	...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
 ];

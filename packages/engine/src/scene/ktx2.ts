@@ -2,19 +2,21 @@
 // KTX2 identifier, so a page without KTX2 files downloads none of this, nor the transcoder.
 //
 // The sketch thread reads the file's header and picks the format that the device samples best:
-// ASTC, BC7 or ETC2 where the device has them, and RGBA8 elsewhere. The Basis Universal
-// transcoder then turns the file's ETC1S or UASTC data into that format in a worker of its own,
-// outside the sketch's frames, and hands back every mip level. The texels go into engine memory,
-// and upload a band of rows of blocks per frame as data does.
+// ASTC, BC7 or ETC2 where the device has them, and RGBA8 elsewhere. High dynamic range data
+// (UASTC HDR) becomes BC6H where the device has BC formats, and shared-exponent floats elsewhere.
+// The Basis Universal transcoder then turns the file's data into that format in a job worker, as a
+// task of the on-demand loader (shared/tasks.ts, scene/ktx2-transcode.ts), outside the sketch's
+// frames, and hands back every mip level. The texels go into engine memory, and upload a band of
+// rows of blocks per frame as data does.
 //
-// The loader imports no engine module but constants, types and the WebAssembly download, which no
+// The loader imports no engine module but constants, types, and the on-demand loader, which no
 // thread's first file shares with it. The bundler would move a module that this file shares with
 // its thread's first file into a file of its own, which every page would then download at its
 // start. So the caller hands it the engine's error class.
 //
-// The transcoder is the official build of Basis Universal v2.50 (github.com/BinomialLLC/
-// basis_universal, tag v2_50, webgl/transcoder/build), under the Apache License 2.0, kept
-// unchanged in packages/engine/vendor/basis with its licence and notice.
+// The transcoder is built from Basis Universal v2.50 (github.com/BinomialLLC/basis_universal, tag
+// v2_50) by tools/build-basis-transcoder.ts, under the Apache License 2.0, in
+// packages/engine/vendor/basis with its licence and notice.
 
 import type { EngineError } from '../errors/engine-error';
 import {
@@ -22,29 +24,29 @@ import {
 	CAPABILITY_TEXTURE_BC,
 	CAPABILITY_TEXTURE_ETC2,
 } from '../generated/core';
-import { onEngineStop } from '../shared/helper-workers';
-import { compileWasm } from '../shared/wasm';
+import { runTask, type Task, TaskFailure } from '../shared/tasks';
+import type { WasmError } from '../shared/wasm';
 import type { LoadTextureOptions } from './assets';
 import { FILE_LIMITS } from './file-limits';
-import type {
-	CompressedTextureFormat,
-	Texture,
-	TextureColorSpace,
-	TextureFormat,
-	Textures,
-} from './textures';
+import type { CompressedTextureFormat, Texture, TextureColorSpace, Textures } from './textures';
 
 /**
- * The transcoder's files. Bundlers copy each as it is and give the copy's address. `no-inline`
- * keeps Vite from turning a small file into a data: address: a worker from one has an opaque
- * origin, which may load no script of the page's origin.
+ * The transcoder's task. Its WebAssembly module goes to the workers under the name that the task
+ * (scene/ktx2-transcode.ts) reads it by.
  */
-const WORKER = new URL('../workers/transcoder-worker.js?no-inline', import.meta.url);
-const GLUE = new URL('../../vendor/basis/basis_transcoder.js?no-inline', import.meta.url);
-const WASM = new URL('../../vendor/basis/basis_transcoder.wasm?no-inline', import.meta.url);
+const TRANSCODER: Task = {
+	name: 'ktx2',
+	wasm: [
+		{
+			name: 'basis',
+			url: new URL('../../vendor/basis/basis_transcoder.wasm', import.meta.url),
+			what: 'the KTX2 transcoder',
+		},
+	],
+};
 
-/** The data that a KTX2 file holds: Basis Universal's two codecs. */
-export type Ktx2Codec = 'etc1s' | 'uastc';
+/** The data that a KTX2 file holds: Basis Universal's codecs of color, and UASTC HDR. */
+export type Ktx2Codec = 'etc1s' | 'uastc' | 'uastc-hdr';
 
 /** What the engine reads from a KTX2 file's header. */
 export interface Ktx2Header {
@@ -63,8 +65,15 @@ export interface Ktx2Header {
 
 /** A format that the transcoder writes: its name in the transcoder, and the texture's format. */
 export interface Ktx2Target {
-	transcoder: 'cTFASTC_4x4_RGBA' | 'cTFBC7_RGBA' | 'cTFETC1_RGB' | 'cTFETC2_RGBA' | 'cTFRGBA32';
-	format: TextureFormat | CompressedTextureFormat;
+	transcoder:
+		| 'cTFASTC_4x4_RGBA'
+		| 'cTFBC6H'
+		| 'cTFBC7_RGBA'
+		| 'cTFETC1_RGB'
+		| 'cTFETC2_RGBA'
+		| 'cTFRGBA32'
+		| 'cTFRGB_9E5';
+	format: 'rgba8unorm' | 'rgb9e5ufloat' | CompressedTextureFormat;
 }
 
 const ASTC: Ktx2Target = { transcoder: 'cTFASTC_4x4_RGBA', format: 'astc-4x4-unorm' };
@@ -73,6 +82,9 @@ const BC7: Ktx2Target = { transcoder: 'cTFBC7_RGBA', format: 'bc7-rgba-unorm' };
 const ETC2_RGB: Ktx2Target = { transcoder: 'cTFETC1_RGB', format: 'etc2-rgb8unorm' };
 const ETC2_RGBA: Ktx2Target = { transcoder: 'cTFETC2_RGBA', format: 'etc2-rgba8unorm' };
 const RGBA8: Ktx2Target = { transcoder: 'cTFRGBA32', format: 'rgba8unorm' };
+const BC6H: Ktx2Target = { transcoder: 'cTFBC6H', format: 'bc6h-rgb-ufloat' };
+/** Shared-exponent floats: half the memory of `rgba16float`, and every path filters them. */
+const RGB9E5: Ktx2Target = { transcoder: 'cTFRGB_9E5', format: 'rgb9e5ufloat' };
 
 /** Texels on each side of a block of every compressed format. */
 const BLOCK = 4;
@@ -80,6 +92,7 @@ const BLOCK = 4;
 /** Bytes of one block of each compressed format. */
 const BLOCK_BYTES: Record<CompressedTextureFormat, number> = {
 	'astc-4x4-unorm': 16,
+	'bc6h-rgb-ufloat': 16,
 	'bc7-rgba-unorm': 16,
 	'etc2-rgb8unorm': 8,
 	'etc2-rgba8unorm': 16,
@@ -98,6 +111,7 @@ const SUPERCOMPRESSION_ZSTANDARD = 2;
 const MODEL_ETC1S = 163;
 const MODEL_UASTC = 166;
 const MODEL_UASTC_HDR = 167;
+const VK_FORMAT_ASTC_4X4_SFLOAT = 1000066000;
 const TRANSFER_SRGB = 2;
 const ETC1S_CHANNEL_AAA = 15;
 const UASTC_CHANNEL_RGBA = 3;
@@ -115,7 +129,7 @@ function refuse(reason: string): never {
 
 /**
  * Reads a KTX2 file's header, and throws a `Ktx2Refusal` for a file that the engine does not
- * load: one without ETC1S or UASTC data, a cube map or a 3D texture.
+ * load: one without ETC1S, UASTC or UASTC HDR data, a cube map or a 3D texture.
  */
 export function readKtx2Header(file: Uint8Array): Ktx2Header {
 	if (file.length < HEADER_BYTES || IDENTIFIER.some((byte, k) => file[k] !== byte))
@@ -125,16 +139,17 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
 	const [vkFormat, width, height, depth] = [word(12), word(20), word(24), word(28)];
 	const [layers, faces, levels, supercompression] = [word(32), word(36), word(40), word(44)];
 	const [dfd, dfdBytes] = [word(48), word(52)];
-	if (vkFormat !== 0)
+	if (dfd + dfdBytes > file.length || dfdBytes < 4 + DESCRIPTOR_BYTES + SAMPLE_BYTES)
+		refuse('its data format descriptor is cut short');
+	const model = file[dfd + 12];
+	// UASTC HDR blocks are ASTC HDR blocks, so Basis Universal names that format for them.
+	if (vkFormat !== 0 && !(model === MODEL_UASTC_HDR && vkFormat === VK_FORMAT_ASTC_4X4_SFLOAT))
 		refuse(
-			`it holds texels in Vulkan format ${vkFormat}, and the engine loads KTX2 files of Basis Universal data, in ETC1S or UASTC`,
+			`it holds texels in Vulkan format ${vkFormat}, and the engine loads KTX2 files of Basis Universal data, in ETC1S, UASTC or UASTC HDR`,
 		);
 	if (depth > 0) refuse('it holds a 3D texture');
 	if (faces !== 1) refuse('it holds a cube map');
 	if (width === 0 || height === 0) refuse('it has no texels');
-	if (dfd + dfdBytes > file.length || dfdBytes < 4 + DESCRIPTOR_BYTES + SAMPLE_BYTES)
-		refuse('its data format descriptor is cut short');
-	const model = file[dfd + 12];
 	const blockBytes = word(dfd + 8) >>> 16;
 	const samples = Math.floor((blockBytes - DESCRIPTOR_BYTES) / SAMPLE_BYTES);
 	const channel = (sample: number) =>
@@ -145,19 +160,19 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
 		if (supercompression !== SUPERCOMPRESSION_BASIS_LZ) refuse('its ETC1S data is not in BasisLZ');
 		codec = 'etc1s';
 		alpha = samples > 1 && channel(1) === ETC1S_CHANNEL_AAA;
-	} else if (model === MODEL_UASTC) {
+	} else if (model === MODEL_UASTC || model === MODEL_UASTC_HDR) {
+		const hdr = model === MODEL_UASTC_HDR;
 		if (
 			supercompression !== SUPERCOMPRESSION_NONE &&
 			supercompression !== SUPERCOMPRESSION_ZSTANDARD
 		)
-			refuse(`its UASTC data has supercompression scheme ${supercompression}`);
-		codec = 'uastc';
-		alpha = channel(0) === UASTC_CHANNEL_RGBA || channel(0) === UASTC_CHANNEL_RRRG;
+			refuse(`its UASTC${hdr ? ' HDR' : ''} data has supercompression scheme ${supercompression}`);
+		codec = hdr ? 'uastc-hdr' : 'uastc';
+		// The formats that HDR data becomes hold no alpha.
+		alpha = !hdr && (channel(0) === UASTC_CHANNEL_RGBA || channel(0) === UASTC_CHANNEL_RRRG);
 	} else
 		refuse(
-			model === MODEL_UASTC_HDR
-				? 'it holds UASTC HDR data, and the engine loads ETC1S and UASTC LDR data'
-				: `it holds data of color model ${model}, and the engine loads ETC1S and UASTC data`,
+			`it holds data of color model ${model}, and the engine loads ETC1S, UASTC and UASTC HDR data`,
 		);
 	return {
 		width,
@@ -166,7 +181,8 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
 		levels: Math.max(1, levels),
 		codec,
 		alpha,
-		colorSpace: file[dfd + 14] === TRANSFER_SRGB ? 'srgb' : 'linear',
+		// HDR values are linear, whatever transfer function the file names.
+		colorSpace: codec !== 'uastc-hdr' && file[dfd + 14] === TRANSFER_SRGB ? 'srgb' : 'linear',
 	};
 }
 
@@ -174,18 +190,22 @@ export function readKtx2Header(file: Uint8Array): Ktx2Header {
  * The format that a file's data becomes on a device with `capabilities`: UASTC keeps the most
  * detail in ASTC, then BC7, then ETC2. ETC1S data is ETC1, so it becomes ETC2 first, at half the
  * memory without alpha, then BC7 and ASTC. A device without these, or a texture whose size is not
- * a whole number of blocks, gets RGBA8.
+ * a whole number of blocks, gets RGBA8. UASTC HDR data becomes BC6H on a device with BC, and
+ * shared-exponent floats elsewhere, which every path filters: WebGPU and WebGL2 have no ASTC HDR.
  *
  * On WebGL2, a device with BC takes BC7 first for both codecs. Desktop GPUs have BC, and some
  * desktop drivers (Mesa on Linux) offer ETC2 and ASTC on GPUs that lack them, then decode such
- * textures in software on the page's thread. WebGPU offers each family only where the GPU has it.
+ * textures in software on the page's thread. The choice reads the device's formats alone, never
+ * its GPU's name, which some browsers hide. WebGPU offers each family only where the GPU has it.
  */
 export function ktx2Target(
 	capabilities: number,
 	{ codec, alpha, width, height }: Pick<Ktx2Header, 'codec' | 'alpha' | 'width' | 'height'>,
 	webgl2 = false,
 ): Ktx2Target {
-	if (width % BLOCK !== 0 || height % BLOCK !== 0) return RGBA8;
+	const blocks = width % BLOCK === 0 && height % BLOCK === 0;
+	if (codec === 'uastc-hdr') return blocks && capabilities & CAPABILITY_TEXTURE_BC ? BC6H : RGB9E5;
+	if (!blocks) return RGBA8;
 	if (webgl2 && capabilities & CAPABILITY_TEXTURE_BC) return BC7;
 	const etc2 = alpha ? ETC2_RGBA : ETC2_RGB;
 	const order: readonly [number, Ktx2Target][] =
@@ -211,7 +231,7 @@ export function ktx2Target(
  */
 export function ktx2TooLarge(
 	header: Pick<Ktx2Header, 'width' | 'height' | 'layers' | 'levels'>,
-	format: TextureFormat | CompressedTextureFormat,
+	format: Ktx2Target['format'],
 	maxSize: number,
 	limits = FILE_LIMITS,
 ): string | undefined {
@@ -231,7 +251,7 @@ export function ktx2TooLarge(
 
 /** The bytes that the transcoder writes for `levels` mip levels of `layers` layers in `format`. */
 export function transcodedBytes(
-	format: TextureFormat | CompressedTextureFormat,
+	format: Ktx2Target['format'],
 	width: number,
 	height: number,
 	levels: number,
@@ -242,7 +262,7 @@ export function transcodedBytes(
 		const w = Math.max(1, width >> level);
 		const h = Math.max(1, height >> level);
 		bytes +=
-			format === 'rgba8unorm' || format === 'rgba16float'
+			format === 'rgba8unorm' || format === 'rgb9e5ufloat'
 				? w * h * 4
 				: Math.ceil(w / BLOCK) * Math.ceil(h / BLOCK) * BLOCK_BYTES[format];
 	}
@@ -259,139 +279,53 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
 
 /** Makes one of the engine's coded errors: the caller's `EngineError`. */
 export type Ktx2Error = (
-	code: 'E1406' | 'E1412' | 'E1418' | 'E1420',
+	code: Parameters<WasmError>[0] | 'E1412' | 'E1420',
 	message: string,
 ) => EngineError;
 
 /**
- * Downloads and compiles the transcoder's module. Fails with E1406 when it does not download, and
- * with E1418 when the page's Content-Security-Policy blocks WebAssembly.
+ * Transcodes a file, which moves to a job worker, into texels of every level and layer. A file that
+ * the transcoder cannot read fails with E1412, and a transcoder that does not load with E1406, or
+ * with the policy's or the server's code when its file does not download or compile. A file that
+ * waits when the engine stops fails with E1420.
  */
-async function compileTranscoder(error: Ktx2Error): Promise<WebAssembly.Module> {
-	return (await compileWasm(WASM, 'the KTX2 transcoder', error)).module;
-}
-
-/** A request that waits for the transcoder. */
-interface Waiting {
-	resolve(texels: ArrayBuffer): void;
-	reject(error: EngineError): void;
-	address: URL;
-	call: string;
-}
-
-/** What the transcoder's worker answers. */
-interface Answer {
-	id: number;
-	texels?: ArrayBuffer;
-	/** Where it failed: loading the transcoder, or transcoding the file. */
-	stage?: 'load' | 'transcode';
-	error?: string;
-}
-
-/**
- * The transcoder's worker and the requests that wait for it. The worker loads the transcoder's
- * script when it starts, while this thread downloads and compiles its module, which then goes to
- * the worker. A failed start fails every request with E1406, and a later load starts it again.
- */
-class Transcoder {
-	private readonly worker: Worker;
-	private readonly waiting = new Map<number, Waiting>();
-	private next = 0;
-	private failed = false;
-
-	constructor(
-		private readonly error: Ktx2Error,
-		private readonly stopped: () => void,
-	) {
-		this.worker = new Worker(WORKER, { name: 'null3d-transcoder' });
-		this.worker.onmessage = (event: MessageEvent<Answer>) => this.answer(event.data);
-		this.worker.onerror = (event) => {
-			event.preventDefault();
-			this.fail(event.message || 'its script did not load');
-		};
-		this.worker.postMessage({ glue: GLUE.href });
-		compileTranscoder(error).then(
-			(module) => this.worker.postMessage({ module }),
-			(error: EngineError) => this.fail(error),
+async function transcode(
+	file: ArrayBuffer,
+	target: Ktx2Target,
+	levels: number,
+	layers: number,
+	address: URL,
+	call: string,
+	error: Ktx2Error,
+): Promise<ArrayBuffer> {
+	try {
+		return await runTask<ArrayBuffer>(
+			TRANSCODER,
+			{ file, format: target.transcoder, levels, layers },
+			[file],
+			error,
 		);
-	}
-
-	/** Transcodes a file, which moves to the worker, into texels of every level and layer. */
-	transcode(
-		file: ArrayBuffer,
-		target: Ktx2Target,
-		levels: number,
-		layers: number,
-		address: URL,
-		call: string,
-	): Promise<ArrayBuffer> {
-		const id = ++this.next;
-		return new Promise((resolve, reject) => {
-			this.waiting.set(id, { resolve, reject, address, call });
-			this.worker.postMessage({ id, file, format: target.transcoder, levels, layers }, [file]);
-		});
-	}
-
-	private answer({ id, texels, stage, error }: Answer): void {
-		const waiting = this.waiting.get(id);
-		if (!waiting) return;
-		if (texels) {
-			this.waiting.delete(id);
-			waiting.resolve(texels);
-		} else if (stage === 'load') {
-			this.fail(error ?? 'it did not start');
-		} else {
-			this.waiting.delete(id);
-			waiting.reject(
-				this.error(
+	} catch (thrown) {
+		if (!(thrown instanceof TaskFailure)) throw thrown;
+		if (thrown.stage === 'stopped')
+			throw error('E1420', 'a KTX2 texture was still loading when the engine stopped.');
+		throw thrown.stage === 'run'
+			? error(
 					'E1412',
-					`${waiting.call}() could not decode ${waiting.address} as a KTX2 texture: ${error}.`,
-				),
-			);
-		}
+					`${call}() could not decode ${address} as a KTX2 texture: ${thrown.message}.`,
+				)
+			: error(
+					'E1406',
+					`the KTX2 transcoder did not load for ${call}(): ${thrown.message.replace(/\.$/, '')}.`,
+				);
 	}
-
-	/** Fails every waiting request with E1406, or with `reason`'s error, and stops the worker, once. */
-	fail(reason: string | EngineError): void {
-		if (this.failed) return;
-		this.failed = true;
-		this.worker.terminate();
-		this.stopped();
-		for (const { reject, call } of this.waiting.values())
-			reject(
-				typeof reason === 'string'
-					? this.error(
-							'E1406',
-							`the KTX2 transcoder did not load for ${call}(): ${reason.replace(/\.$/, '')}.`,
-						)
-					: reason,
-			);
-		this.waiting.clear();
-	}
-}
-
-/** This thread's transcoder, which starts with the first KTX2 file. */
-let transcoder: Transcoder | undefined;
-
-function transcoderOfThisThread(error: Ktx2Error): Transcoder {
-	if (!transcoder) {
-		const made: Transcoder = new Transcoder(error, () => {
-			forget();
-			if (transcoder === made) transcoder = undefined;
-		});
-		const forget = onEngineStop(() =>
-			made.fail(error('E1420', 'a KTX2 texture was still loading when the engine stopped.')),
-		);
-		transcoder = made;
-	}
-	return transcoder;
 }
 
 /**
- * Makes a texture from a KTX2 file, which moves to the transcoder's worker. The texture takes the
- * format of `ktx2Target`, the color space of the file unless the options give one, and the file's
- * mip levels unless `mipmaps` is false. Throws E1412 for a file that the engine does not load, and
- * E1406 when the transcoder does not load, each made by `error`.
+ * Makes a texture from a KTX2 file, which moves to a job worker for the transcoder. The texture
+ * takes the format of `ktx2Target`, the color space of the file unless the options give one, and
+ * the file's mip levels unless `mipmaps` is false. Throws E1412 for a file that the engine does not
+ * load, and E1406, E1418, E1422 or E1423 when the transcoder does not load, each made by `error`.
  */
 export async function loadKtx2(
 	textures: Textures,
@@ -416,19 +350,15 @@ export async function loadKtx2(
 	const tooLarge = ktx2TooLarge({ ...header, levels }, target.format, textures.maxSize);
 	if (tooLarge)
 		throw error('E1412', `${call}() could not load ${address} as a KTX2 texture: ${tooLarge}.`);
-	const compressed = CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_BC | CAPABILITY_TEXTURE_ETC2;
-	if (DEV && target === RGBA8 && textures.capabilities & compressed)
+	const compressed =
+		header.codec === 'uastc-hdr'
+			? CAPABILITY_TEXTURE_BC
+			: CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_BC | CAPABILITY_TEXTURE_ETC2;
+	if (DEV && (target === RGBA8 || target === RGB9E5) && textures.capabilities & compressed)
 		console.warn(
-			`${call}() loads ${address} as uncompressed RGBA8, which takes ${Math.ceil(transcodedBytes(RGBA8.format, width, height, levels, layers) / 1024)} KB: its size, ${width} x ${height}, is not a whole number of 4 x 4 blocks. Save it at a size whose sides are multiples of 4, as the asset tool does.`,
+			`${call}() loads ${address} as uncompressed ${target.format}, which takes ${Math.ceil(transcodedBytes(target.format, width, height, levels, layers) / 1024)} KB: its size, ${width} x ${height}, is not a whole number of 4 x 4 blocks. Save it at a size whose sides are multiples of 4, as the asset tool does.`,
 		);
-	const texels = await transcoderOfThisThread(error).transcode(
-		file,
-		target,
-		levels,
-		layers,
-		address,
-		call,
-	);
+	const texels = await transcode(file, target, levels, layers, address, call, error);
 	const expected = transcodedBytes(target.format, width, height, levels, layers);
 	if (texels.byteLength !== expected)
 		throw error(

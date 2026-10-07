@@ -8,6 +8,8 @@ import {
 	growthProblems,
 	growthSummary,
 	growthText,
+	MIN_GROWTH_BYTES,
+	overLimit,
 } from './size-check';
 
 /** A size record with the given Brotli sizes. */
@@ -33,14 +35,38 @@ describe('compareSizes', () => {
 describe('the growth limit', () => {
 	it('lets a file grow by 2% after Brotli, and fails more', () => {
 		const changes = compareSizes(
-			record({ 'at.wasm': 1000, 'over.wasm': 1000, 'shrunk.js': 1000 }),
-			record({ 'at.wasm': 1020, 'over.wasm': 1021, 'shrunk.js': 900 }),
+			record({ 'at.wasm': 10_000, 'over.wasm': 10_000, 'shrunk.js': 10_000 }),
+			record({ 'at.wasm': 10_200, 'over.wasm': 10_201, 'shrunk.js': 9_000 }),
 		);
 		expect(grownFiles(changes).map(({ file }) => file)).toEqual(['over.wasm']);
-		expect(growthOf(changes[1]!)).toBeCloseTo(0.021);
+		expect(growthOf(changes[1]!)).toBeCloseTo(0.0201);
 	});
 
-	it('counts a new file as growth over the limit, and a removed file as none', () => {
+	it("lets a small file's imported names change, which moves it by a few bytes", () => {
+		expect(overLimit({ file: 'js/early-core.js', base: 231, head: 239 })).toBe(false);
+		expect(overLimit({ file: 'js/page-preset-check.js', base: 477, head: 490 })).toBe(false);
+		expect(overLimit({ file: 'js/sketch-worker-call-timing.js', base: 924, head: 958 })).toBe(
+			false,
+		);
+	});
+
+	it('fails a small file that grows by the byte floor and more than 2%', () => {
+		const base = 231;
+		expect(overLimit({ file: 'js/early-core.js', base, head: base + MIN_GROWTH_BYTES })).toBe(true);
+		expect(overLimit({ file: 'js/early-core.js', base, head: base + MIN_GROWTH_BYTES - 1 })).toBe(
+			false,
+		);
+		expect(overLimit({ file: 'js/early-core.js', base, head: base + 2048 })).toBe(true);
+		expect(overLimit({ file: 'js/page-environment.js', base: 904, head: 996 })).toBe(true);
+	});
+
+	it('fails a large file on its share alone, since its 2% passes the byte floor', () => {
+		expect(overLimit({ file: 'js/page.js', base: 26_747, head: 26_747 + 2048 })).toBe(true);
+		expect(overLimit({ file: 'js/page.js', base: 26_747, head: 27_281 })).toBe(false);
+		expect(overLimit({ file: 'js/page.js', base: 26_747, head: 27_282 })).toBe(true);
+	});
+
+	it('counts a new file as growth over the limit, however small, and a removed file as none', () => {
 		const changes = compareSizes(record({ 'gone.js': 500 }), record({ 'new.js': 10 }));
 		expect(grownFiles(changes).map(({ file }) => file)).toEqual(['new.js']);
 	});
@@ -100,6 +126,7 @@ describe('the growth tables', () => {
 			'`5fefcdbe`, the merge base with origin/main',
 		);
 		expect(summary).toContain('The base is `5fefcdbe`, the merge base with origin/main.');
+		expect(summary).toContain('grows more than 2% and by 64 bytes or more needs');
 		expect(summary).toContain('| `js/page.js` | 13,709 | 14,203 | +3.6% | explained in a1b2c3d4 |');
 		expect(summary).toContain('| `js/job-worker.js` | 1,596 | 1,600 | +0.3% |  |');
 	});
@@ -113,10 +140,10 @@ describe('chooseBase', () => {
 		});
 	});
 
-	it('compares a push to main with the commit before', () => {
-		expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', GITHUB_REF_NAME: 'main' })).toEqual({
+	it('compares a push to main with the commit before, which the squash builds on', () => {
+		expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '' })).toEqual({
 			ref: 'HEAD^',
-			why: 'the commit before on main',
+			why: 'the commit before on the branch, which the squash builds on',
 		});
 	});
 

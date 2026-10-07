@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-R11.
 
+Summary: A `[first_use.<feature>]` table in the shader manifest gives a feature's templates and bits files of their own, which a page downloads on the feature's first use: sprites, lines, skinning, bloom, the texture background and the test template so far. A start shader file drops from 27.6 to 30.0 KB to 17.7 to 19.4 KB after Brotli. Full-screen passes and passes whose output others read keep to what they had until their pipelines are built. Each file has the limits of one start shader file, and a build holds one copy of each, 26.5 MB of shader files in place of 51.7 MB.
+
 ## Question
 
 Every M2 feature adds templates or permutation bits to the shader files that a page downloads at its start ([D-13](D-13-shader-variants.md)). So a page that never draws a sprite, a line or a skinned mesh still downloads their builds. It also parses them before its first frame. How do a feature's shader builds reach only the pages that use the feature? And what must a feature's passes do while its builds are on the way?
@@ -97,7 +99,7 @@ Three other ways were weighed:
 
 Review finding R8-09 found that a production build wrote each shader file twice: for the page's renderer and for the render worker. A fresh project held 24 such files of 1.7 to 3.4 MB, about 60 MB in all. Vite bundles each worker on its own. So a module that two bundles load with `import()` becomes a file in each. The two copies differed in 2 bytes.
 
-The shader build now writes each device module as plain JavaScript. The main module imports it by its address: `new URL('./shaders-wgsl.js?no-inline', import.meta.url)`. A bundler copies a file that an address names once, however many bundles name it. It does the same for the core's glue.
+The shader build now writes each device module as plain JavaScript. The main module imports it by its address: `new URL('./shaders-wgsl.js', import.meta.url)`. The null3D plugin keeps such a module from becoming a `data:` address (M2-R18 dropped the `?no-inline` query that did so before). A bundler copies a file that an address names once, however many bundles name it. It does the same for the core's glue.
 
 | Engine test page's production build | Shader files | Their size | Every file, without source maps |
 | --- | --- | --- | --- |
@@ -188,6 +190,7 @@ The owner decided on 4 October 2026 that a game can have every shader it needs b
 
 - Each file of a feature that loads on first use has the limits of one start shader file (`FIRST_USE_SHADER_BUDGET` in `tools/lib/size-report.ts`). The size report lists each such file in a section of its own, and no start counts it.
 - One copy of each shader file serves every bundle of a build, as "Copies in a production build" says.
+- Each device module writes once each paragraph that several of its sources share. So a file that loads on first use is about a third of its old size uncompressed ([D-13](D-13-shader-variants.md#addendum-2026-10-05-paragraphs-that-sources-share)).
 - A page that imports the engine but draws nothing still gets the files. Vite emits each worker and each address while it transforms the page's module, before it drops unused code. That needs the add-on and package work of [D-52](D-52-intent-parity.md), and stays open.
 - The engine's own test template, `texcoords`, loads on first use too, so no page downloads it. That settles review findings R7-04 and R5-16.
 

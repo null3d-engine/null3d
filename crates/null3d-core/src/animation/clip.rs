@@ -50,14 +50,16 @@ impl<T> Groups<T> {
     }
 }
 
-/// An animation clip for one skeleton, stored for sampling. [`super::resample`] builds it.
-#[derive(Clone, Debug)]
+/// An animation clip for one skeleton, stored for sampling. [`super::resample`] builds it. The
+/// default clip is empty: what a removed clip's place holds.
+#[derive(Clone, Debug, Default)]
 pub struct Clip {
     joints: u32,
     duration: f32,
     rate: f32,
     frames: u32,
     tracks: u32,
+    resampled_tracks: u32,
     /// The skeleton's rest pose, with each constant track's value in place.
     base: Pose,
     /// 1 where the clip has a track and 0 elsewhere: a row of lanes for translations, one for
@@ -76,6 +78,8 @@ pub(crate) struct ClipParts {
     pub rate: f32,
     pub frames: u32,
     pub tracks: u32,
+    /// The tracks that were evaluated at each frame, not copied.
+    pub resampled_tracks: u32,
     pub base: Pose,
     pub channels: Box<[f32]>,
     pub rotations: Groups<i16>,
@@ -92,6 +96,7 @@ impl Clip {
             rate,
             frames,
             tracks,
+            resampled_tracks,
             base,
             channels,
             rotations,
@@ -104,6 +109,7 @@ impl Clip {
             rate,
             frames,
             tracks,
+            resampled_tracks,
             base,
             channels,
             rotations,
@@ -144,6 +150,12 @@ impl Clip {
         self.tracks
     }
 
+    /// The number of tracks that [`super::resample`] evaluated at each frame. The others held one
+    /// key, or a key at each frame's time, and were copied.
+    pub fn resampled_tracks(&self) -> u32 {
+        self.resampled_tracks
+    }
+
     /// The number of tracks that change over time, and so store a key per frame.
     pub fn animated_tracks(&self) -> u32 {
         let distinct = |g: &[[u32; 4]]| {
@@ -170,11 +182,16 @@ impl Clip {
     }
 
     /// The frame before `time` and the fraction of the way to the next frame. Times outside the
-    /// clip take its first or last key, and NaN takes the first.
+    /// clip take its first or last key, and NaN takes the first. The clip's end gives the last
+    /// key exactly: its duration times its rate can round to just below the last frame in 32-bit
+    /// floats, which would leave a step track on the key before.
     #[inline]
     fn position(&self, time: f32) -> (usize, f32) {
-        let p = time.max(0.0).min(self.duration) * self.rate;
         let last = self.frames.saturating_sub(2);
+        if time >= self.duration {
+            return (last as usize, 1.0);
+        }
+        let p = time.max(0.0) * self.rate;
         // A cast to an integer saturates, and turns NaN into 0.
         let frame = (p as u32).min(last);
         (frame as usize, (p - frame as f32).clamp(0.0, 1.0))

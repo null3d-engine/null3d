@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build, createServer, type Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
+import { WGSL_UPDATE_EVENT } from './hot';
 import null3d, { type Null3dPluginOptions } from './index';
 import type { ShaderProblem } from './shader-compiler';
 import type { CompiledMaterial, CompiledShader } from './shader-types';
@@ -149,9 +150,9 @@ describe('the places of problems', () => {
 		);
 	});
 
-	it('refuses a substitution at its place, after a character of two code units', () => {
+	it('refuses a substitution at its place, after a character of two code units', async () => {
 		const code = `const a = 1;\nconst s = /* wgsl */ \`😀 ${SUBSTITUTION}\`;\n`;
-		const result = compileTaggedWgsl(code, '/project/src/sketch.ts', 'src/sketch.ts');
+		const result = await compileTaggedWgsl(code, '/project/src/sketch.ts', 'src/sketch.ts');
 		if (!('error' in result)) throw new Error('the substitution passed');
 		const at = placeOf(code, code.indexOf(SUBSTITUTION));
 		expect(at).toEqual({ line: 2, column: 26 });
@@ -208,8 +209,8 @@ function failure(result: WgslCompile): ShaderProblem {
 }
 
 describe.skipIf(!ENABLED)('compileWgsl', () => {
-	it('builds WGSL for WebGPU and GLSL for WebGL2 with the WEBGL2 shader def', () => {
-		const shader = compiled(compileWgsl('src/glow.wgsl', SHADER, HINT));
+	it('builds WGSL for WebGPU and GLSL for WebGL2 with the WEBGL2 shader def', async () => {
+		const shader = compiled(await compileWgsl('src/glow.wgsl', SHADER, HINT));
 		expect(shader.webgpu.glsl).toBeNull();
 		expect(shader.webgpu.wgsl?.source).toContain('fn square(x: f32) -> f32');
 		expect(shader.webgpu.wgsl?.source).toContain('square(0.5f)');
@@ -222,39 +223,94 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(program?.fragment.source).toContain('square(0.25)');
 	});
 
-	it('makes one pipeline for each fragment entry point, and none for compute alone', () => {
+	it('makes one pipeline for each fragment entry point, and none for compute alone', async () => {
 		const two = `${SHADER}\n@fragment\nfn fs_red() -> @location(0) vec4f {\n    return vec4f(1.0, 0.0, 0.0, 1.0);\n}\n`;
-		expect(Object.keys(compiled(compileWgsl('a.wgsl', two, HINT)).webgl2?.glsl ?? {})).toEqual([
-			'fs_main',
-			'fs_red',
-		]);
+		expect(
+			Object.keys(compiled(await compileWgsl('a.wgsl', two, HINT)).webgl2?.glsl ?? {}),
+		).toEqual(['fs_main', 'fs_red']);
 		const compute =
 			'@compute @workgroup_size(64)\nfn main(@builtin(global_invocation_id) id: vec3u) {\n}\n';
-		const shader = compiled(compileWgsl('a.wgsl', compute, HINT));
+		const shader = compiled(await compileWgsl('a.wgsl', compute, HINT));
 		expect(shader.webgl2).toBeNull();
 		expect(shader.webgpu.wgsl?.source).toContain('@compute @workgroup_size(64, 1, 1)');
 	});
 
-	it('explains WGSL whose entry points make no render pipeline', () => {
-		const none = failure(compileWgsl('a.wgsl', 'fn helper() -> f32 {\n    return 1.0;\n}\n', HINT));
+	it('explains WGSL whose entry points make no render pipeline', async () => {
+		const none = failure(
+			await compileWgsl('a.wgsl', 'fn helper() -> f32 {\n    return 1.0;\n}\n', HINT),
+		);
 		expect([none.line, none.column]).toEqual([1, 1]);
 		expect(none.message).toStartWith(
-			'the WGSL has no entry point and no function of a custom material.',
+			'the WGSL has no entry point and no function of a custom material or effect.',
 		);
 		expect(none.message).toEndWith(' HINT');
 		const twice = SHADER.replace(
 			'@fragment',
 			'@vertex\nfn vs_other() -> @builtin(position) vec4f {\n    return vec4f(0.0);\n}\n\n@fragment',
 		);
-		const second = failure(compileWgsl('a.wgsl', twice, HINT));
+		const second = failure(await compileWgsl('a.wgsl', twice, HINT));
 		expect([second.line, second.column]).toEqual([8, 1]);
 		expect(second.message).toContain('more than one `@vertex` entry point');
 		const alone = SHADER.slice(0, SHADER.indexOf('@fragment'));
-		expect(failure(compileWgsl('a.wgsl', alone, HINT)).message).toContain('no `@fragment` one');
+		expect(failure(await compileWgsl('a.wgsl', alone, HINT)).message).toContain(
+			'no `@fragment` one',
+		);
 	});
 
-	it('builds a surface function into every variant of the standard material', () => {
-		const built = material(compileWgsl('src/stripes.wgsl', SURFACE, HINT));
+	it('builds an effect into the effect template, with its uniforms and depth read', async () => {
+		const effect = /* wgsl */ `struct Uniforms { amount: f32, tint: vec3f }
+
+fn effect(input: EffectInput) -> vec4f {
+    let fade = clamp(effectDistance(input.uv) * 0.01, 0.0, 1.0);
+    return vec4f(mix(input.color.rgb, uniforms.tint, fade * uniforms.amount), input.color.a);
+}
+`;
+		const result = await compileWgsl('src/fog.wgsl', effect, HINT);
+		if (!result.ok) throw new Error(JSON.stringify(result.problems));
+		const built = result.shader;
+		if (built.kind !== 'effect') throw new Error(`a ${built.kind}`);
+		expect(built.uniforms.map((u) => [u.name, u.type, u.offset])).toEqual([
+			['amount', 'f32', 0],
+			['tint', 'vec3f', 4],
+		]);
+		expect(built.depth).toBe(true);
+		expect(Object.keys(built.variants).sort()).toEqual([
+			'webgl2',
+			'webgpu',
+			'webgpu_depth_multisampled',
+		]);
+		expect(built.variants.webgl2?.glsl?.main?.fragment.source).toContain('#version 300 es');
+	});
+
+	it("stops a script at the line of a bad effect's problem in the script", async () => {
+		const code = [
+			"import { defineSketch } from '@null3d/engine';",
+			'',
+			'const fade = /* wgsl */ `',
+			'fn effect(input: EffectInput) -> vec4f {',
+			'    return input.color * strength;',
+			'}',
+			'`;',
+			'',
+		].join('\n');
+		const result = await compileTaggedWgsl(code, '/project/src/sketch.ts', 'src/sketch.ts');
+		if (!('error' in result)) throw new Error('the bad effect compiled');
+		expect(result.error.loc).toEqual({ file: '/project/src/sketch.ts', line: 5, column: 26 });
+		expect(result.error.message).toContain('src/sketch.ts:5:26:');
+	});
+
+	it('builds a tone curve into the final pass, and names a bad effect line', async () => {
+		const curve = 'fn toneCurve(color: vec3f) -> vec3f {\n    return color / (1.0 + color);\n}\n';
+		const result = await compileWgsl('src/curve.wgsl', curve, HINT);
+		if (!result.ok) throw new Error(JSON.stringify(result.problems));
+		expect(result.shader.kind).toBe('toneCurve');
+		const bad = 'fn effect(input: EffectInput) -> vec4f {\n    return input.color * missing;\n}\n';
+		const problem = failure(await compileWgsl('src/bad.wgsl', bad, HINT));
+		expect([problem.file, problem.line]).toEqual(['src/bad.wgsl', 2]);
+	});
+
+	it('builds a surface function into every variant of the standard material', async () => {
+		const built = material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT));
 		expect(built.functions).toEqual(['surface']);
 		// Each WebGL2 build has a twin that skins, for skinned meshes.
 		const plain = [
@@ -315,28 +371,28 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(built.variants.webgl2?.glsl?.main?.fragment.source).toContain('#version 300 es');
 	});
 
-	it('gives the place of each uniform that struct Uniforms declares', () => {
+	it('gives the place of each uniform that struct Uniforms declares', async () => {
 		const tinted = `struct Uniforms { strength: f32, tint: vec3f }\n\n${SURFACE.replace(
 			'return s;',
 			's.baseColor = material.tint * material.strength;\n    return s;',
 		)}`;
-		const built = material(compileWgsl('src/tinted.wgsl', tinted, HINT));
+		const built = material(await compileWgsl('src/tinted.wgsl', tinted, HINT));
 		expect(built.uniforms).toEqual([
 			{ name: 'strength', type: 'f32', offset: 0 },
 			{ name: 'tint', type: 'vec3f', offset: 4 },
 		]);
-		expect(material(compileWgsl('src/stripes.wgsl', SURFACE, HINT)).uniforms).toEqual([]);
+		expect(material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT)).uniforms).toEqual([]);
 	});
 
-	it('builds a vertex offset alone as a custom material', () => {
+	it('builds a vertex offset alone as a custom material', async () => {
 		const wave =
 			'fn vertexOffset(input: VertexInput) -> vec3f {\n    return input.normal * sin(input.uv.x);\n}\n';
-		const built = material(compileWgsl('src/wave.wgsl', wave, HINT));
+		const built = material(await compileWgsl('src/wave.wgsl', wave, HINT));
 		expect(built.functions).toEqual(['vertexOffset']);
 		expect(built.variants.webgpu?.wgsl?.source).toContain('fn vertexOffset(');
 	});
 
-	it('builds a mesh shader of its own as a full shader of a custom material', () => {
+	it('builds a mesh shader of its own as a full shader of a custom material', async () => {
 		const full = `#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 
 @vertex
@@ -349,7 +405,7 @@ fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
     return finish(vec3f(0.5), pixel.xy);
 }
 `;
-		const built = material(compileWgsl('src/full.wgsl', full, HINT));
+		const built = material(await compileWgsl('src/full.wgsl', full, HINT));
 		expect(built.functions).toEqual([]);
 		expect(built.locations).toEqual([0, 2]);
 		expect(built.baseColor).toBe(false);
@@ -363,28 +419,28 @@ fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
 			'webgpu_tone_map',
 			'webgpu_tone_map_receive_shadows',
 		]);
-		expect(compiled(compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
+		expect(compiled(await compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
 	});
 
-	it('places problems of a surface function in its own lines', () => {
+	it('places problems of a surface function in its own lines', async () => {
 		const broken = SURFACE.replace('4.0));', '4.0)) 2.0;');
-		const syntax = failure(compileWgsl('src/stripes.wgsl', broken, HINT));
+		const syntax = failure(await compileWgsl('src/stripes.wgsl', broken, HINT));
 		expect(`${syntax.line}:${syntax.column}`).toBe(where(broken, '2.0;'));
 		const wrong = SURFACE.replace('-> Surface', '-> vec4f');
-		const signature = failure(compileWgsl('src/stripes.wgsl', wrong, HINT));
+		const signature = failure(await compileWgsl('src/stripes.wgsl', wrong, HINT));
 		expect([signature.line, signature.column]).toEqual([3, 4]);
 		expect(signature.message).toBe(
 			'`surface` does not have the signature that the engine calls. Declare it as `fn surface(input: SurfaceInput) -> Surface`.',
 		);
 		const clash = `${SURFACE}\nfn shade(x: f32) -> f32 {\n    return x;\n}\n`;
-		const twice = failure(compileWgsl('src/stripes.wgsl', clash, HINT));
+		const twice = failure(await compileWgsl('src/stripes.wgsl', clash, HINT));
 		expect(twice.line).toBe(9);
 		expect(twice.message).toContain('redefinition of `shade`');
 	});
 
-	it('names the build that a problem is in', () => {
+	it('names the build that a problem is in', async () => {
 		const broken = SHADER.replace('square(0.25)', 'square(0.25) 1.0');
-		const result = compileWgsl('src/glow.wgsl', broken, HINT);
+		const result = await compileWgsl('src/glow.wgsl', broken, HINT);
 		if (result.ok) throw new Error('the WGSL compiled, but it should fail');
 		const error = wgslError(
 			result,
@@ -515,6 +571,58 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		const at = where(sketch, SUBSTITUTION);
 		expect(error.message).toContain(`src/sketch.ts:${at}: a template literal`);
 	});
+
+	it('sends changed WGSL to the pages of the dev server without a reload', async () => {
+		const surface =
+			'fn surface(input: SurfaceInput) -> Surface {\n    return defaultSurface(input);\n}\n';
+		const sketch = `const tint = /* wgsl */ \`${surface}\`;\nexport default tint;\n`;
+		const root = project({ 'src/tint.wgsl': surface, 'src/tint.ts': sketch });
+		const server = await createServer({
+			root,
+			configFile: false,
+			logLevel: 'silent',
+			plugins: [null3d({ wgslDeclarations: false })],
+			server: { middlewareMode: true, watch: null },
+		});
+		const sent: { type: string; event?: string; data?: unknown; err?: { message: string } }[] = [];
+		const hot = server.environments.client.hot;
+		hot.send = (payload: unknown) => sent.push(payload as (typeof sent)[number]);
+		/** Changes a file, and returns what the dev server sent the pages about it. */
+		const change = async (path: string, text: string) => {
+			writeFileSync(join(root, path), text);
+			sent.length = 0;
+			server.watcher.emit('change', join(root, path));
+			for (let k = 0; k < 800 && sent.length === 0; k++) await Bun.sleep(25);
+			return sent.slice();
+		};
+		try {
+			const file = await server.transformRequest('/src/tint.wgsl');
+			expect(file?.code).toContain('"hot":"src/tint.wgsl"}');
+			const literal = await server.transformRequest('/src/tint.ts');
+			expect(literal?.code).toMatch(/"hot": ?"src\/tint\.ts#0"/);
+
+			const brighter = surface.replace('return', 'var s = defaultSurface(input);\n    return');
+			const [update] = await change('src/tint.wgsl', brighter);
+			expect(update?.type).toBe('custom');
+			expect(update?.event).toBe(WGSL_UPDATE_EVENT);
+			const updates = (data: unknown) =>
+				(data as { updates: { key: string; shader: CompiledMaterial }[] }).updates.map(
+					({ key, shader }) => [key, shader.kind],
+				);
+			expect(updates(update?.data)).toEqual([['src/tint.wgsl', 'material']]);
+			const [literalUpdate] = await change('src/tint.ts', sketch.replace(surface, brighter));
+			expect(updates(literalUpdate?.data)).toEqual([['src/tint.ts#0', 'material']]);
+
+			const [error] = await change('src/tint.wgsl', brighter.replace('input);', 'input) 2.0;'));
+			expect(error?.type).toBe('error');
+			expect(error?.err?.message).toContain('null3D could not compile the WGSL:\nsrc/tint.wgsl:2:');
+			// Code that changes outside the WGSL runs again, so Vite updates or reloads the page.
+			const moved = await change('src/tint.ts', `${sketch}export const more = 1;\n`);
+			expect(moved.some(({ type }) => type === 'custom')).toBe(false);
+		} finally {
+			await server.close();
+		}
+	}, 60_000);
 
 	it('compiles WGSL in the dev server, and gives Vite the place of a problem', async () => {
 		const root = project({ 'src/broken.ts': BROKEN_SKETCH });

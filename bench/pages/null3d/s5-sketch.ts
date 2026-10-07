@@ -1,7 +1,7 @@
 // The null3d version of S5, the crowd: copies of the optimized KayKit Knight walk in rings on a lit
-// ground, each blending a walk with a run, under a sun that casts shadows. The engine samples and
-// blends every character's clips on its job workers, and skins them on the GPU. The engine runs it
-// with the quality preset that it chooses, as S4 does.
+// ground, each blending a walk with a run by clip weights, under a sun that casts shadows. The
+// engine samples and blends every character's clips on its job workers, and skins them on the GPU.
+// The engine runs it with the quality preset that it chooses, as S4 does.
 //
 // Feature: an environment light. S5 lights its crowd with the sun and an ambient light until the
 // engine draws environment maps. The pull request that builds them adds the environment here and
@@ -64,11 +64,13 @@ export default defineSketch(async (context) => {
 			receiveShadows: true,
 		});
 		for (const name of S5_CHARACTER.removed) character.find(name)?.destroy();
-		// Layer 0 walks, and layer 1 runs over it by the ring's weight: the pose between the two.
+		// The walk and the run play side by side, at weights that add up to 1, from the character's
+		// start time: the three.js twin's two actions with their time and effective weight.
 		const animator = character.animator();
-		animator.play(S5_CHARACTER.walk);
-		animator.play(S5_CHARACTER.run, { layer: 1 });
-		animator.setLayerWeight(1, data.weight[i] as number);
+		const run = data.weight[i] as number;
+		const time = data.start[i] as number;
+		animator.play(S5_CHARACTER.walk, { time, weight: 1 - run });
+		animator.play(S5_CHARACTER.run, { time, weight: run });
 		animator.setTimeScale(still(i) ? 0 : (data.rate[i] as number));
 		characters.push(character);
 		animators.push(animator);

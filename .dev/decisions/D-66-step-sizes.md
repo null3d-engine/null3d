@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-05, the same day's earlier ruling replaced; built with M2-E9. Date: 2026-10-05. Task: M2-N1.
 
+Summary: On the cloud phones one whole map takes 39 to 116 ms of GPU time, and steps over frames cost 368 to 651 ms, so the room's generator and the HDR prefilters make each map at load, in one go. M2-E2's 32 fixed slices go. WebGL2 writes the packed format through the spare texture, with half floats only as a fallback.
+
 ## Question
 
 The built-in room is made on the GPU at first use, and M2-E4 prefilters HDR files the same way. Does the engine make a whole map at once, at load, or spread the work over frames during play? And if it spreads it, how large is each step, so that no step holds up a frame?

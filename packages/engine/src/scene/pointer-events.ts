@@ -28,7 +28,9 @@ import {
 	INPUT_RING_EVENTS,
 } from '../shared/control';
 import type { Ray } from './frame-cameras';
+import type { LineBatch } from './lines';
 import type { InstanceBatch, Object3D } from './scene';
+import type { PointBatch, SpriteBatch } from './sprites';
 
 /**
  * The pointer events that objects take, as `object.on` names them. The section on pointer events
@@ -54,20 +56,29 @@ export interface ObjectPointerEvent {
 	/** The event's type. */
 	readonly type: ObjectEventType;
 	/**
-	 * The object under the pointer: the closest object that the ray hits, or the instance batch of
-	 * a row. It can be a child of the object whose handler runs. For `pointerleave`, it is the
-	 * object that the pointer moved onto, or null when the pointer is over nothing.
+	 * The object under the pointer: the closest object that the ray hits, or the batch of a row:
+	 * an instance, sprite, point or line batch. It can be a child of the object whose handler runs.
+	 * For `pointerleave`, it is the object that the pointer moved onto, or null when the pointer is
+	 * over nothing.
 	 */
-	readonly object: Object3D | InstanceBatch | null;
-	/** The row of an instance batch, or -1 for an object. */
+	readonly object: Object3D | InstanceBatch | SpriteBatch | PointBatch | LineBatch | null;
+	/**
+	 * The row of a batch: an instance row, a sprite, a point or a line's segment. -1 for an object.
+	 */
 	readonly instance: number;
 	/** Where the ray hits `object`, in world space. */
 	readonly point: Vec3Like;
-	/** The unit normal of the hit triangle in world space, on the side that faces the camera. */
+	/**
+	 * The unit normal of the hit triangle in world space, on the side that faces the camera. A hit
+	 * on a sprite or a point faces the camera; on a line, it points back along the ray.
+	 */
 	readonly normal: Vec3Like;
 	/** The distance from the ray's origin to the hit, in meters. */
 	readonly distance: number;
-	/** The index of the hit triangle in its mesh, as three.js's `faceIndex`. */
+	/**
+	 * The index of the hit triangle in its mesh, as three.js's `faceIndex`, or -1 for a sprite, a
+	 * point or a line.
+	 */
 	readonly triangle: number;
 	/** The ray from the camera through the pointer, from the frame that was on screen at the event. */
 	readonly ray: Ray;
@@ -97,8 +108,21 @@ export interface ObjectPointerEvent {
  */
 export type ObjectEventHandler = (event: ObjectPointerEvent) => void;
 
-/** An object or an instance batch, which both take pointer events. */
-export type PointerTarget = Object3D | InstanceBatch;
+/** An object, or a batch whose rows rays hit, which all take pointer events. */
+export type PointerTarget = Object3D | InstanceBatch | SpriteBatch | PointBatch | LineBatch;
+
+/**
+ * What a sprite, point or line batch's pointer events need of the instance batch that holds its
+ * rows.
+ */
+export interface PointerRows {
+	/** The frame in which the batch was destroyed, or -1. */
+	readonly destroyedFrame: number;
+	/** Adds `handler` for events of `type` on `target`, the batch that hits name. */
+	listen(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void;
+	/** Removes a handler that `listen` added. */
+	unlisten(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void;
+}
 
 /** A target's handlers, one list for each event type, by its number. */
 export type PointerListeners = (readonly ObjectEventHandler[] | undefined)[];

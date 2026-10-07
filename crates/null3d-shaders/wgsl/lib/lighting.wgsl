@@ -1,5 +1,6 @@
 #define_import_path null3d::lighting
 #import null3d::math
+#import null3d::tables::{DFG_SIZE, dfg_entry}
 
 // Lighting in linear color: the Lambert model, and the physically based model of glTF's
 // metallic-roughness materials with the formulas of three.js's MeshStandardMaterial. Directions
@@ -65,28 +66,27 @@ fn brdf_ggx(
     return fresnel * (v_ggx_smith_correlated(alpha, n_dot_l, n_dot_v) * d_ggx(alpha, n_dot_h));
 }
 
-/// three.js's table of the split-sum terms of specular light from all directions: 16 x 16 texels
-/// over the perceptual roughness (across) and the cosine of the view angle (down the rows), with
-/// the scale in red and the bias in green. The engine binds it in the frame's group of its mesh
-/// pipelines. A shader that calls `dfg_lut` binds it at the same place.
-@group(0) @binding(3) var dfg_table: texture_2d<f32>;
+// three.js's table of the split-sum terms of specular light from all directions has 16 x 16
+// entries over the perceptual roughness (across) and the cosine of the view angle (down the rows),
+// with the scale in red and the bias in green. null3d::tables reads it where each GPU path keeps it.
 
 /// The scale and bias of the split-sum approximation of specular light from all directions, for a
 /// view at `n_dot_v` and a perceptual `roughness`. It reads three.js's table of these terms, as
 /// three.js does, filtered between the nearest four entries. The engine binds the table in group
 /// 0 at binding 3 of its mesh pipelines, and a shader that calls this function binds it there too.
+/// On WebGL2 the table sits in the material table's texture instead.
 /// The function reads the table with `textureLoad`, so the table needs no sampler and no
 /// filterable format.
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2f {
-    let size = vec2f(textureDimensions(dfg_table));
-    let at = clamp(vec2f(roughness, n_dot_v) * size - 0.5, vec2f(0.0), size - 1.0);
+    let size = f32(DFG_SIZE);
+    let at = clamp(vec2f(roughness, n_dot_v) * size - 0.5, vec2f(0.0), vec2f(size - 1.0));
     let low = vec2u(floor(at));
-    let high = min(low + 1u, vec2u(size) - 1u);
+    let high = min(low + 1u, vec2u(DFG_SIZE - 1u));
     let t = fract(at);
-    let a = textureLoad(dfg_table, low, 0).xy;
-    let b = textureLoad(dfg_table, vec2u(high.x, low.y), 0).xy;
-    let c = textureLoad(dfg_table, vec2u(low.x, high.y), 0).xy;
-    let d = textureLoad(dfg_table, high, 0).xy;
+    let a = dfg_entry(low);
+    let b = dfg_entry(vec2u(high.x, low.y));
+    let c = dfg_entry(vec2u(low.x, high.y));
+    let d = dfg_entry(high);
     return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
 }
 
@@ -180,12 +180,12 @@ struct PbrMaterial {
     base_color: vec3f,
     /// The color of diffuse light: the base color without its metallic part.
     diffuse: vec3f,
-    /// The dielectric reflectance at normal incidence, 0.04.
+    /// The dielectric reflectance at normal incidence: 0.04, unless `with_specular` changes it.
     specular: vec3f,
     /// The reflectance at normal incidence, blended from `specular` toward the base color by
     /// metalness.
     specular_blended: vec3f,
-    /// The reflectance at grazing angles.
+    /// The reflectance at grazing angles: 1, unless `with_specular` changes it.
     specular_grazing: f32,
     /// The perceptual roughness, from 0.0525 to 1.
     roughness: f32,
@@ -211,6 +211,19 @@ fn pbr_material(
     m.roughness = min(max(roughness, 0.0525) + geometry_roughness, 1.0);
     m.metalness = metalness;
     return m;
+}
+
+/// A PbrMaterial with the dielectric specular values of glTF's KHR_materials_ior and
+/// KHR_materials_specular. It sets them as three.js's MeshPhysicalMaterial does. `reflectance` is
+/// `((ior - 1) / (ior + 1))^2`, which the color tints up to a reflectance of 1, and `intensity`
+/// scales. Metals keep their base color, and their grazing reflectance stays 1. A reflectance of
+/// 0.04 with a white color at full intensity gives `m` back unchanged.
+fn with_specular(m: PbrMaterial, reflectance: f32, color: vec3f, intensity: f32) -> PbrMaterial {
+    var out = m;
+    out.specular = min(reflectance * color, vec3f(1.0)) * intensity;
+    out.specular_blended = mix(out.specular, m.base_color, m.metalness);
+    out.specular_grazing = intensity + (1.0 - intensity) * m.metalness;
+    return out;
 }
 
 /// Light that a surface reflects toward the camera, in its diffuse and specular parts.
