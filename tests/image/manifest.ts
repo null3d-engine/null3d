@@ -1154,6 +1154,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// The same spheres lit by HDR files that the engine reads and filters itself at load. The
+	// sunset's Radiance file must draw as the tool's map of it does, so it borrows that test's
+	// references: the scene lights the same from either source. The studio's OpenEXR file has its
+	// own. A worker reads each file, and its panorama reaches the thread that draws in each thread
+	// mode's own way, so the sunset draws in every mode. The GPU filters the panorama in the held
+	// frame, which takes a software GPU as long as the room.
+	{
+		name: 'environment-venice-hdr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=venice&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		reference: 'environment-venice',
+		modes: ALL_MODES,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'environment-studio-exr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=studio&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

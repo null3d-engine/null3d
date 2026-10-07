@@ -61,6 +61,7 @@ import {
 	deviceKind,
 } from '../../packages/engine/src/quality/chooser.ts';
 import type { Tier as EngineTier } from '../../packages/engine/src/shared/tier.ts';
+import { sampleUrl } from '../../tools/lib/sample-url.ts';
 import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
 import { type AnimationResult, animationProblems } from '../pages/lib/animation.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
@@ -205,6 +206,11 @@ export type Check =
 	| { kind: 'effect'; effect: CostedEffect; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
+	/**
+	 * The room light page: an environment asked for during play, the built-in room or an HDR file,
+	 * whose every frame must show its light; it times the load.
+	 */
+	| { kind: 'environment-load'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
@@ -948,6 +954,34 @@ export function environmentPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** The environments that the load plan asks for: the built-in room, and HDR files of each kind. */
+const LOAD_SOURCES = [
+	['room', undefined],
+	['hdr', sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr')],
+	['exr', sampleUrl('sources/hdri/polyhaven/studio_small_09/studio_small_09_1k.exr')],
+] as const;
+
+/**
+ * How long an environment takes to load during play on each GPU path, and that no frame draws the
+ * scene without its light: the built-in room, a Radiance file and an OpenEXR file, which the engine
+ * reads and filters itself. D-19 records the times.
+ */
+export function environmentLoadPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		LOAD_SOURCES.map(([name, url]) =>
+			pageItem(
+				`environment-load-${name}-${tier}`,
+				'room-light',
+				{ kind: 'environment-load', tier },
+				{
+					switches: [`gpu=${tier}`, url ? `source=${encodeURIComponent(url)}` : ''],
+					timeoutSeconds: 90,
+				},
+			),
+		),
+	);
+}
+
 /** How long the occlusion cost page may take: the city's start, the warm-up and six measurements. */
 const OCCLUSION_TIMEOUT_SECONDS = 90;
 
@@ -1292,6 +1326,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	ao: () => effectPlan('ao'),
 	effects: () => effectPlan('effects'),
 	environment: environmentPlan,
+	'environment-load': environmentLoadPlan,
 	occlusion: occlusionPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
@@ -1299,6 +1334,33 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
 };
+
+/**
+ * What is wrong with a room light page's result: a failure, an environment that never resolved, or
+ * a frame that used it without its light. Each frame that uses it must draw as the steady frame
+ * does, within a thousandth of the pixels, and the light must brighten the sphere's middle.
+ */
+function environmentLoadProblems(result: ItemResult): string[] {
+	const page = result as ItemResult & {
+		failures?: string[];
+		set?: boolean;
+		pixels?: number;
+		blueChanged?: number[];
+		litMiddle?: number;
+		unlitMiddle?: number | null;
+	};
+	const most = Math.ceil(0.001 * (page.pixels ?? 0));
+	const unlit = (page.blueChanged ?? []).filter((count) => count > most).length;
+	return [
+		...(page.failures ?? []).map((code) => `the engine failed with ${code}`),
+		...(page.set ? [] : ['the environment never resolved']),
+		...(page.blueChanged?.length ? [] : ['no frame that uses the environment was captured']),
+		...(unlit ? [`${unlit} frames that use the environment differ from the steady frame`] : []),
+		...((page.litMiddle ?? 0) > (page.unlitMiddle ?? 0) + 40
+			? []
+			: ["the environment's light did not brighten the sphere"]),
+	];
+}
 
 /**
  * The items that an item needs earlier in the same run, by name: the items whose results judging
@@ -1840,6 +1902,8 @@ export function judge(
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
 			];
 		}
+		case 'environment-load':
+			return environmentLoadProblems(result);
 		case 'occlusion': {
 			const occlusion = result as ItemResult & {
 				failures?: string[];

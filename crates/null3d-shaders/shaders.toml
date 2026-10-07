@@ -322,10 +322,11 @@ pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
-# Environment maps made on the GPU (D-19): the built-in room, traced from its center, blurred as
-# three.js's examples blur it, halved into a chain of levels, and filtered for each roughness, one
-# face of one level per draw. It loads on first use, with the generator code that the thread that
-# draws loads when a sketch first asks for the room.
+# Environment maps made on the GPU (D-19): the built-in room, traced from its center and blurred as
+# three.js's examples blur it, or a panorama from an HDR file mapped onto the cube; then halved into
+# a chain of levels, and filtered for each roughness, the six faces of one level per draw. It loads
+# on first use, with the generator code that the thread that draws loads when a sketch first asks
+# for the room or loads an HDR file.
 [shaders.environment]
 file = "environment.wgsl"
 first_use = true
@@ -333,6 +334,7 @@ pipelines.trace = { vertex = "vs_main", fragment = "fs_trace" }
 pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
 pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
 pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
+pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
