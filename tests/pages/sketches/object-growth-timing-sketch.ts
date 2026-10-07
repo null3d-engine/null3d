@@ -1,7 +1,7 @@
 // Times growths of the scene's object tables, for the object growth page's timing mode. The scene
 // starts with the default room. On the page's 'grow', it creates groups in two frames, and times
 // every create call. Each create that finds the tables full grows them, so with the default start
-// the creates of 1,024, 2,048 and each later power of two objects grow them. The second frame
+// the creates that make 1,024, 2,048 and each later power of two objects, the scene's camera included, grow them. The second frame
 // starts less than three quarters full, so no growth comes at a frame's start. The sketch posts
 // 'timing' with the time of each create that grew the tables, and the median create.
 import { defineSketch } from '@null3d/engine';
@@ -31,8 +31,9 @@ export default defineSketch(({ scene, page, time }) => {
 				scene.createGroup();
 				times[k] = performance.now() - before;
 			}
+			// The scene's camera takes a place too, so the create of group n makes n + 1 objects.
 			for (let k = 0; k < count; k++) {
-				const objects = created + k + 1;
+				const objects = created + k + 2;
 				if ((objects & (objects - 1)) === 0 && objects >= 1024)
 					growths.push({ objects, ms: times[k] as number });
 			}
