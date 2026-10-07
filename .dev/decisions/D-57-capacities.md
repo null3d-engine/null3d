@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-R13.
 
+Summary: The draw list grows, so no count of draws stops a scene. A frame that fails publishes no commands; one that fails after its first command halts the builder until a new GPU device. WebGPU skinning spreads its workgroups over rows and its vertices over up to 8 buffers within the storage binding, and a scene past its caps gets E1501 that names them. Animation tables hold at most 1,048,576 joints, so the joint texture fits WebGL2.
+
 ## Question
 
 Some of the renderer's capacities were fixed, and a scene past them failed with no error, or stopped drawing for good. The code review of 4 October found four:

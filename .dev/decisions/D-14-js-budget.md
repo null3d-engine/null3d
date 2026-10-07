@@ -2,6 +2,8 @@
 
 Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). Date: 2026-09-30.
 
+Summary: M1: up to 100 KB for the engine's JavaScript that a page downloads, per thread mode and GPU path. M2: up to 140 KB at a page's start, and up to 16 KB for each file that loads on first use or after the first frame. A feature that a page does not use loads its code on first use. Each first-use shader file may take about 24 KB. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The size report adds gzip and uncompressed columns: with gzip a WebGL2 page downloads 496 KB at its start.
+
 ## Question
 
 M1's exit gate holds the engine's JavaScript that a page downloads to 60 KB after Brotli in each thread mode. Only the owner can revise that budget, in writing. A pipelined page downloaded 36.9 KB early on 30 September and 49.5 KB that afternoon. Most of M1 has not merged yet. How does the rest of M1 fit, and what does each way cost?

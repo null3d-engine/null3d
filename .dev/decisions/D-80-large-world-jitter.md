@@ -2,6 +2,8 @@
 
 Status: decided; the iPad's and the S24+'s runs are pending. Date: 2026-10-05. Task: M2-H2.
 
+Summary: A camera flies sideways past six squares that face it, 16 frames, at the origin, 1,000 km and 6,378 km. Each object's motion from frame to frame must match the origin flight's within 0.05 px; large-world mode measures under 0.0001 px on every GPU path. The same flights with every cell taken, which is the engine without cells, jump 3.2 to 7.8 px. The engine warns once when the cells run out.
+
 ## Question
 
 [D-42](D-42-large-world.md) keeps positions precise far from the origin in still frames. A camera that moves is a harder case. Each frame rounds the camera's position again, and a rounding that changes from frame to frame makes the image jump. The question has three parts:

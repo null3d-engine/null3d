@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-09-30. Date: 2026-09-29. Test: T-07.
 
+Summary: Keep 1024 MiB as the default maximum, and let a page ask for up to 4096 MiB.
+
 ## Question
 
 What maximum should the engine declare for its shared WebAssembly memory? A shared memory cannot move, so the browser reserves address space for the whole maximum when the engine starts. Too small a maximum limits the scene; too large a one can fail to load on a phone or a tablet.
