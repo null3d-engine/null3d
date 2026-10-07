@@ -320,6 +320,7 @@ export class SketchRunner {
 			() => this.quality.own('uploadBytesPerFrame'),
 			(id) => imagesArrived(slots, id),
 			device.webgl2,
+			device.textureCache,
 			() => this.quality.own('textureMemoryMiB'),
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own

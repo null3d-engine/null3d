@@ -357,7 +357,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
 - Later: `textures.fromPass` (0.2). Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
-Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. A texture from a KTX2 file takes no `update`.
+Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
 
 On WebGL2 the maps of one standard material share six textures on the GPU. Maps of one size, format and sampling count once, but each KTX2 map counts on its own. Past six, the material draws without its specular maps, then its light map (`api/textures`). Pack occlusion, roughness and metalness into one map, as glTF does.
 

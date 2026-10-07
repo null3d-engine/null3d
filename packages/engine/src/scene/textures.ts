@@ -387,6 +387,11 @@ export class Textures {
 		private readonly arrived: (id: number) => Promise<void> = async () => {},
 		/** @internal True when the engine draws with WebGL2. */
 		readonly webgl2 = false,
+		/**
+		 * @internal True when KTX2 files keep their transcoded texels in the browser's Cache Storage,
+		 * so later loads of the same file skip the transcoder.
+		 */
+		readonly textureCache = false,
 		private readonly ownMemory: () => void = () => {},
 	) {
 		const stat = (field: number) => this.stat(field);

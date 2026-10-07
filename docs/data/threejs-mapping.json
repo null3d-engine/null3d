@@ -1111,7 +1111,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "assets.loadTexture('x.ktx2')",
-      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader. UASTC HDR files load too: as BC6H where the device has BC formats, else as rgb9e5ufloat, where three.js uses ASTC HDR or half floats. Both stay linear, so keep tone mapping on.",
+      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader. UASTC HDR files load too: as BC6H where the device has BC formats, else as rgb9e5ufloat, where three.js uses ASTC HDR or half floats. Both stay linear, so keep tone mapping on. The engine also keeps each transcoded texture in the browser's Cache Storage, so a repeat visit skips the transcoder; KTX2Loader transcodes on every visit.",
       "docs": "api/textures",
       "detect": "\\bKTX2Loader\\b|setTranscoderPath|\\.detectSupport\\s*\\("
     },
