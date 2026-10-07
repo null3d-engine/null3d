@@ -183,6 +183,12 @@ impl DrawKey {
         self.state & state_flags::BLEND != 0
     }
 
+    /// True when the pair writes depth wherever it draws, so a background drawn after the opaque
+    /// objects leaves its pixels alone.
+    pub const fn writes_depth(self) -> bool {
+        self.state & (state_flags::NO_DEPTH_WRITE | state_flags::NO_DEPTH_TEST) == 0
+    }
+
     /// The key of the pipeline that draws the pair's depth in the depth prepass with the depth
     /// template ([`Prepass::DepthTemplate`]), or `None` when the pair stays out of the prepass. The
     /// depth template places the vertices of the engine's templates as they do, with the same faces

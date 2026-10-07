@@ -170,7 +170,7 @@ post.set({ toneMapping: reinhard });
 post.set({ toneMapping: 'aces' });
 ```
 
-- The final pass calls the curve for each pixel, with its linear color after the exposure and bloom. It clamps what the curve returns to 0 to 1. Then it encodes sRGB, dithers, paints outlines and applies the color grading table and the vignette.
+- The final pass calls the curve for each pixel, with its linear color after the exposure, bloom and the vignette. It clamps what the curve returns to 0 to 1. Then it encodes sRGB, paints outlines, applies the color grading table and dithers.
 - A curve takes no uniforms. The exposure from `post.set` already scales its input.
 - A curve needs HDR color, as effects do. On a device with no HDR target, the built-in curve stays.
 - The final pass builds again with the curve, so the first frame with a new curve waits for its pipeline.

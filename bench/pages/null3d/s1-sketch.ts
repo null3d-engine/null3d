@@ -24,7 +24,7 @@
 // allocation sample of post.setEffectUniform and the effects' passes.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
-import { defineSketch, type Environment, type SketchContext } from '@null3d/engine';
+import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
@@ -50,7 +50,7 @@ export default defineSketch(async (context) => {
 	if (outlined) createOutlined(context);
 	const moveCasters = switches.has('tileShadows') ? createTileShadows(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
-	const vignette = { offset: 1, darkness: 1 };
+	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
 	const line = { width: 2 };
 	const outlineSettings = { outline: line };
@@ -76,6 +76,26 @@ export default defineSketch(async (context) => {
 	const turn: [number, number, number] = [0, 0, 0];
 	const lighting = { intensity: 1, rotation: turn };
 	let room: Environment | undefined;
+	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
+	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
+	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
+	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
+	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
+	// whose opaque material writes no depth, which makes any background draw before the objects
+	// with no depth test, and `extraBox` adds the same box with a material that writes depth.
+	const skyMode = switches.get('sky');
+	const sky = skyMode !== null && skyMode !== 'room' && skyMode !== 'texture';
+	if (skyMode === 'texture') context.scene.setBackground(createGradient(context));
+	if (switches.has('backgroundFirst')) addSmallBox(context, false);
+	if (switches.has('extraBox')) addSmallBox(context, true);
+	const sun: [number, number, number] = [0, 0.2, -1];
+	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
+	const skyBackground = { sky: skySettings };
+	if (sky) context.scene.setBackground(skyBackground);
+	if (skyMode === 'room')
+		void context.assets.builtinEnvironment('room').then((loaded) => {
+			context.scene.setBackground(loaded);
+		});
 	if (switches.has('environment'))
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
@@ -95,6 +115,11 @@ export default defineSketch(async (context) => {
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.scene.setEnvironment(room, lighting);
 		}
+		if (sky && skyMode !== 'still') {
+			sun[1] = 0.2 + 0.15 * Math.sin(t);
+			skySettings.time = t;
+			context.scene.setBackground(skyBackground);
+		}
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.post.set(occlusion);
@@ -111,7 +136,7 @@ export default defineSketch(async (context) => {
 		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
-		vignette.offset = 1 + 0.25 * Math.cos(t);
+		vignette.size = 1 + 0.25 * Math.cos(t);
 		context.post.set(settings);
 	};
 	pose(time.now);
@@ -247,4 +272,28 @@ function createLabels({ scene, ui }: SketchContext, count: number): void {
 		});
 		ui.trackLabel(anchor, `label-${k}`, { offset: [0, 1, 0] });
 	}
+}
+
+/** Adds a small unlit box at the swarm's center, whose material writes depth or not. */
+function addSmallBox({ scene, geometry, materials }: SketchContext, depthWrite: boolean): void {
+	scene.createMesh({
+		mesh: geometry.box({ width: 0.5, height: 0.5, depth: 0.5 }),
+		material: materials.unlit({ color: '#ffffff', depthWrite }),
+	});
+}
+
+/** A texture of a smooth gradient, made from data, about as large as the view it fills. */
+function createGradient({ textures }: SketchContext): Texture {
+	const width = 1024;
+	const height = 512;
+	const data = new Uint8Array(width * height * 4);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const at = (y * width + x) * 4;
+			data[at] = (x * 255) / (width - 1);
+			data[at + 1] = (y * 255) / (height - 1);
+			data[at + 2] = 160;
+			data[at + 3] = 255;
+		}
+	return textures.fromData({ width, height, data, colorSpace: 'srgb' });
 }

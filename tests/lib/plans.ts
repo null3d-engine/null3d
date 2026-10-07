@@ -1790,9 +1790,8 @@ export function restartProblems(
 			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
 		);
 	else if (start === 'frame' && fell > ROOM_LOST_ONCE)
-		// Safari can keep what a removed frame reached (D-92), and a dropped memory that held one of
-		// its fast slots while the page keeps asking for memory (D-94). Both cost room once. A leak
-		// in the engine would lose room in the second round too, which fails above.
+		// Safari can keep what a removed frame reached (D-92), which costs room once. A leak in the
+		// engine would lose room in the second round too, which fails above.
 		note?.(
 			`Safari kept memory from the first round of ${words.engines}, and the second round held the room: ${lostText}, and for ${again.roomLater} after ${again.cycles} more`,
 		);

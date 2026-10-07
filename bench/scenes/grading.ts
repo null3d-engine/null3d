@@ -63,8 +63,17 @@ export const GRADING_LUTS = {
 
 export type GradingLutName = keyof typeof GRADING_LUTS;
 
-/** The vignette that the tests draw, with three.js's `VignetteShader` meanings. */
-export const GRADING_VIGNETTE = { offset: 1.2, darkness: 1.1 } as const;
+/** The vignette that the twin draws with three.js's `VignetteShader`. */
+export const GRADING_VIGNETTE_THREE = { offset: 1.2, darkness: 1.1 } as const;
+
+/**
+ * The same vignette in null3D's settings, as the porting skill maps them: the offset becomes the
+ * size, and the darkness the intensity.
+ */
+export const GRADING_VIGNETTE = {
+	size: GRADING_VIGNETTE_THREE.offset,
+	intensity: GRADING_VIGNETTE_THREE.darkness,
+} as const;
 
 /** The table's intensity in the tests that draw it with the vignette. */
 export const GRADING_INTENSITY = 0.7;

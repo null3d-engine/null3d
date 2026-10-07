@@ -3,7 +3,8 @@
 //! - `ao`: ambient occlusion, as three.js's GTAOPass finds it, which darkens the ambient light of
 //!   the camera's opaque pass
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
-//! - `background`: a texture that the camera's view draws behind every object
+//! - `background`: what the camera's view draws behind every object: a texture, an environment, a
+//!   cube map or three.js's sky
 //! - `bloom`: light that spreads from the scene's brightest parts, as three.js's UnrealBloomPass
 //!   spreads it: a bright pass and five blurred levels that the final pass adds
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
@@ -47,7 +48,7 @@
 
 pub mod ao;
 pub mod arrays;
-mod background;
+pub mod background;
 pub mod bloom;
 pub mod camera;
 mod cells;

@@ -57,6 +57,7 @@ import { checkBrowser } from './browser-check';
 import { type CanvasWatch, watchCanvas } from './canvas-watch';
 import {
 	type CapabilityReport,
+	forgetWorkerProbe,
 	type PowerPreference,
 	probeCapabilities,
 	readDeviceHints,
@@ -283,10 +284,11 @@ export interface EngineOptions {
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
-	 * batch, `'background'` with a texture background, and `'occlusion'` with the first object that
-	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the
-	 * skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'`
-	 * shaders to load. Listed features download beside the engine's own
+	 * batch, `'background'` with a texture, environment or cube map background, `'sky'` with the
+	 * sky, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU
+	 * occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads
+	 * the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features
+	 * download beside the engine's own
 	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
@@ -687,6 +689,7 @@ export class EngineWorker {
 					events.labelSlot(reply.id, reply.slot, reply.generation);
 					return;
 				case 'lost':
+					forgetWorkerProbe();
 					events.failure(
 						new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
 					);
@@ -1254,6 +1257,17 @@ async function startEngine(
 	let localCore: CoreGlue | undefined;
 	/** The job workers' task ports that the page's on-demand loader uses, when the page runs the sketch. */
 	let jobTaskHost: JobTaskHost | undefined;
+	/**
+	 * The channels between the engine's threads, which the page keeps until the stop. Firefox drops
+	 * the unread messages of a port that moved to a worker once the page collects the port it moved,
+	 * if they hold image bitmaps or WebAssembly modules: the receiver then gets a messageerror event.
+	 */
+	const channels: MessageChannel[] = [];
+	const channel = () => {
+		const made = new MessageChannel();
+		channels.push(made);
+		return made;
+	};
 	let stopping: Promise<void> | undefined;
 	/** The marker of a start that may crash the tab, which the start sets once it knows the tier. */
 	let markerSet = false;
@@ -1308,6 +1322,7 @@ async function startEngine(
 			for (const worker of withCore)
 				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
 			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			channels.length = 0;
 			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
 			// list that the page's engine holds, so the engine stays until that worker has stopped.
@@ -1527,8 +1542,10 @@ async function startEngine(
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
 			notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
 		};
-		const pageLoss = (reason: string) =>
+		const pageLoss = (reason: string) => {
+			forgetWorkerProbe();
 			onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
+		};
 		let draw: DrawModule | undefined;
 		/**
 		 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
@@ -1573,7 +1590,7 @@ async function startEngine(
 		const startJobs = (jobs: readonly EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
 			return jobs.map((job, index) => {
-				const tasks = new MessageChannel();
+				const tasks = channel();
 				job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: tasks.port1 }, [
 					tasks.port1,
 				]);
@@ -1644,7 +1661,7 @@ async function startEngine(
 				render.ready().catch((error: unknown) => start.abort(error));
 				// Texture images and custom materials' shaders go from the page straight to the render
 				// worker.
-				const images = new MessageChannel();
+				const images = channel();
 				imagePort = images.port1;
 				startRenderWorker(render, images.port2);
 			}
@@ -1730,7 +1747,7 @@ async function startEngine(
 				rendererHost = sketch;
 			} else {
 				// Texture images go from the sketch worker straight to the thread that draws.
-				const images = new MessageChannel();
+				const images = channel();
 				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [
 					images.port1,
 					...taskPorts,
