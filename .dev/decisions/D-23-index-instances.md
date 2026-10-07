@@ -2,7 +2,7 @@
 
 Status: decided for now: the index path stays a test switch, off by default. The owner's iPad timing is still to come and can reopen it. Date: 2026-10-05. Task: M2-K1 (T-23).
 
-Summary: The culling pass writes a 4-byte source index per visible instance in place of a 64-byte copy, and the vertex shaders read the matrix, material and cell offset from storage buffers, behind `?instances=index` on core WebGPU only. Twelve scenes draw the same images both ways, to the pixel, on the Mac's GPU and SwiftShader. The builds load on first use, 15.1 to 16.7 KB after Brotli each. On the device cloud, S1 is 13% faster on a Galaxy S25 and 1.4% slower on an iPad, and S1-static changes by less than 2% on both; the Mac shows no change. No device saves the 5% of GPU time in S1-static that a capability flag needs, so it stays off by default.
+Summary: Behind `?instances=index` on core WebGPU only, the culling pass writes a 16-byte entry with the source's index in place of a 64-byte copy. The vertex shaders then read the matrix, material and cell offset from storage buffers. Twelve scenes draw the same images both ways, to the pixel, on the Mac's GPU and SwiftShader. The builds load on first use, 15.1 to 16.7 KB after Brotli each. On the device cloud, S1 is 13% faster on a Galaxy S25 and 1.4% slower on an iPad. S1-static changes by less than 2% on both, and the Mac shows no change. No device saves the 5% of GPU time in S1-static that a capability flag needs, so it stays off by default.
 
 ## Question
 
@@ -16,9 +16,9 @@ Adopt the index path behind a capability flag if it saves at least 5% of the GPU
 
 | | Copies (the default) | Indices (`?instances=index`) |
 | --- | --- | --- |
-| The culling pass writes, per visible instance and view | 64 bytes: three matrix rows, then the material and the first joint | 4 bytes: the source's index |
-| The vertex shader reads, per instance | 64 bytes of instance-rate attributes | 4 bytes of instance-rate attribute. Then from storage buffers: 48 bytes of matrix, a 4-byte bucket table entry and the bucket's record of 40 bytes, which the bucket's instances share. The cell's offset comes from a uniform block |
-| Each view's compacted buffer | 64 bytes per drawn source | 4 bytes per drawn source |
+| The culling pass writes, per visible instance and view | 64 bytes: three matrix rows, then the material and the first joint | 16 bytes: the source's index in a whole entry |
+| The vertex shader reads, per instance | 64 bytes of instance-rate attributes | 4 bytes of instance-rate attribute, at a stride of 16. Then from storage buffers: 48 bytes of matrix, a 4-byte bucket table entry and the bucket's record of 40 bytes, which the bucket's instances share. The cell's offset comes from a uniform block |
+| Each view's compacted buffer | 64 bytes per drawn source | 16 bytes per drawn source |
 | Compatibility mode | Yes | No: about 45% of those devices have no storage buffers in vertex shaders |
 
 How the engine builds the index path:
@@ -28,11 +28,12 @@ How the engine builds the index path:
 - The builds load on first use, as the feature `instance_index` of the shader manifest ([D-56](D-56-first-use-shader-files.md)). They sit in four shader files of their own, one for each value of the bits that a device fixes. They take 15.1 to 16.7 KB after Brotli each, about half the limit of a first-use file, and at most 85% of its gzip limit. A page without the switch downloads none of them.
 - Meshes that the vertex skinning switch skins in the vertex shader keep the copies, and no build has both the `SKIN` and the `INSTANCE_INDEX` bits. A build with both would load with the skinning feature, since a build goes with its lowest bit. So every WebGPU page with a skinned mesh would download them. They more than doubled the WebGPU skinning files: 2.2 to 2.5 MB uncompressed and 434 to 559 KB after gzip. The limits are 1,536 KB and 320 KB. The permutation module's `APART` list holds the pair, and the shader build makes no build with both bits of a pair in it.
 - A bucket reads indices when the switch is on and its template has the builds, unless the vertex shader skins it. Custom materials, sprites, lines, the debug views and the texture coordinates template keep the copies. So do the transparent pass's instances, which the CPU writes after it sorts them. Custom materials have no `INSTANCE_INDEX` builds, which would double what a project's bundle holds for each material.
-- Each bucket record has a word more, which tells the culling shader the bucket's form. A bucket that reads indices has its slice in the view's compacted index buffer, numbered apart from the copies' slices. The culling group binds that buffer at binding 8.
+- Each bucket record has a word more, which tells the culling shader the bucket's form. A bucket that reads indices has its slice in the view's compacted instance buffer, after every copy. So the culling group binds no buffer more. Culling may bind at most 8 storage buffers, the default limit. Occlusion culling takes the last of them for its depth pyramid. A unit test keeps every pipeline within that limit.
+- Each index fills a whole 16-byte entry, which the shader writes as one vector. Its base counts entries from the buffer's start. A first build wrote each index as one 32-bit word of a vector, four indices to an entry. That is a data race. WGSL may write one part of a vector in storage as a read and a write of the whole vector. So two threads that write neighbouring parts of one entry can lose a write on any GPU. SwiftShader drew every index image right, and Apple's GPUs showed the race. One index per entry ends it, as atomic writes would. The timings below come from an earlier build, with 4-byte indices in a buffer of their own. Occlusion culling has since taken that buffer's place in the culling group.
 - Each view has an index group of bind group layout `INSTANCE_INDEX`. It binds the view's culling parameters as a uniform block, for each cell's offset from the camera. Then it binds the matrices, and the bucket table and records of the layout that the view draws. The group is made again whenever the view's culling group is, since both bind the same buffers. It sits after the template's own groups: the frame's, the maps' and the joint texture's, where the template has them.
 - The vertex shader adds the cell's offset to each matrix row with the same 32-bit addition that the culling shader makes for a copy. So both ways give each vertex shader the same matrix, bit for bit.
 
-The default path changes too: each bucket record has a word more, each view a 4-byte buffer, and the culling group a ninth binding. The shader build makes 118 more WGSL builds.
+The default path changes too. Each bucket record has a word more, and the culling shader writes each copy as unsigned integers, which keeps every bit of the floats. The shader build makes 118 more WGSL builds.
 
 ## Data
 

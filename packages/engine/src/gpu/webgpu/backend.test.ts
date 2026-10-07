@@ -174,6 +174,39 @@ describe('WebGPUBackend', () => {
 		expect(made).not.toContain('instance index');
 	});
 
+	it('binds at most 8 storage buffers to each shader stage of a pipeline, the default limit', () => {
+		const { device } = fakeDevice();
+		const STAGES = { vertex: 1, fragment: 2, compute: 4 };
+		const storage = (layout: GPUBindGroupLayoutDescriptor, stage: number) =>
+			[...layout.entries].filter(
+				(entry) =>
+					(entry.visibility & stage) !== 0 &&
+					entry.buffer?.type !== undefined &&
+					entry.buffer.type !== 'uniform',
+			).length;
+		const pipelineLayouts: GPUBindGroupLayoutDescriptor[][] = [];
+		device.createBindGroupLayout = (descriptor: GPUBindGroupLayoutDescriptor) =>
+			descriptor as unknown as GPUBindGroupLayout;
+		device.createPipelineLayout = (descriptor: GPUPipelineLayoutDescriptor) => {
+			pipelineLayouts.push([
+				...descriptor.bindGroupLayouts,
+			] as unknown as GPUBindGroupLayoutDescriptor[]);
+			return {} as GPUPipelineLayout;
+		};
+		new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		const cull = pipelineLayouts.find((groups) => groups.some((g) => g.label === 'cull'));
+		// Culling sits at the limit: the scene's tables, the compacted instances, which hold the
+		// index entries too, the indirect draws, which hold occlusion culling's history too, and the
+		// depth pyramid.
+		expect(cull?.reduce((sum, group) => sum + storage(group, STAGES.compute), 0)).toBe(8);
+		for (const groups of pipelineLayouts)
+			for (const [name, stage] of Object.entries(STAGES)) {
+				const count = groups.reduce((sum, group) => sum + storage(group, stage), 0);
+				const labels = groups.map((group) => group.label).join(', ');
+				expect(count, `${name} stage of ${labels}`).toBeLessThanOrEqual(8);
+			}
+	});
+
 	it('destroys a copy buffer that a larger one replaced, once its copies are submitted', () => {
 		const { device, log } = fakeDevice();
 		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);

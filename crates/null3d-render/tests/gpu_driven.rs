@@ -1068,12 +1068,14 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
 }
 
 /// One draw of a bundle as the bundle has set it up: its pipeline's template and permutation, the
-/// buffer of its instances at vertex slot 1, and the groups after the frame's.
+/// buffer of its instances at vertex slot 1 with the byte range it binds, and the groups after the
+/// frame's.
 #[derive(Debug)]
 struct BundleDraw {
     template: u32,
     permutation: u32,
     instances: u32,
+    range: std::ops::Range<u32>,
     groups: [u32; 3],
 }
 
@@ -1085,12 +1087,16 @@ fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> Vec<BundleDraw> {
         .map(|(_, o)| (o[0], (o[1], o[2])))
         .collect();
     let (mut pipeline, mut instances, mut groups) = (0, 0, [0; 3]);
+    let mut range = 0..0;
     let mut draws = Vec::new();
     for (op, o) in commands {
         match op {
             Op::BeginBundle => (pipeline, instances, groups) = (0, 0, [0; 3]),
             Op::SetPipeline => pipeline = o[0],
-            Op::SetVertexBuffer if o[0] == 1 => instances = o[1],
+            Op::SetVertexBuffer if o[0] == 1 => {
+                instances = o[1];
+                range = o[2]..o[2] + o[3];
+            }
             Op::SetBindGroup if (1..=3).contains(&o[0]) => groups[o[0] as usize - 1] = o[1],
             Op::DrawIndexedIndirect => {
                 let (template, permutation) = pipelines[&pipeline];
@@ -1098,6 +1104,7 @@ fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> Vec<BundleDraw> {
                     template,
                     permutation,
                     instances,
+                    range: range.clone(),
                     groups,
                 });
             }
@@ -1109,7 +1116,7 @@ fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> Vec<BundleDraw> {
 
 #[test]
 fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_group() {
-    use null3d_gpu::drawlist::{permutation, template, vertex};
+    use null3d_gpu::drawlist::{permutation, sizes, template, vertex};
     use null3d_render::materials::{CustomShading, Shading};
 
     for index_instances in [false, true] {
@@ -1147,7 +1154,8 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
                 })
                 .collect()
         };
-        // Each view's culling group binds its compacted index buffer last.
+        // Each view's culling group binds the same nine buffers with the switch or without: the
+        // indices share the compacted instance buffer.
         let culling = groups_of(layout::CULL);
         assert_eq!(culling.len(), 3, "the camera and two cascades: {culling:?}");
         assert!(culling.iter().all(|group| group.len() == 1 + 9));
@@ -1165,18 +1173,40 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
             let reads_index = draw.permutation & permutation::INSTANCE_INDEX != 0;
             let engine_template = draw.template < template::CUSTOM_FIRST;
             assert_eq!(reads_index, index_instances && engine_template, "{draw:?}");
-            // A draw that reads indices draws its view's compacted index buffer, and binds its
-            // view's index group right after the frame's: these templates sample no maps.
+            // Every draw reads its view's compacted instance buffer. One that reads indices binds
+            // its view's index group right after the frame's: these templates sample no maps.
             let view = culling
                 .iter()
-                .find(|c| c[5] == draw.instances || c[9] == draw.instances)
+                .find(|c| c[5] == draw.instances)
                 .unwrap_or_else(|| panic!("a view's compacted buffer: {draw:?}"));
             if reads_index {
-                assert_eq!(draw.instances, view[9]);
                 let group = indexed.iter().find(|g| g[1] == view[1]).unwrap();
                 assert_eq!(draw.groups[0], group[0], "{draw:?}");
-            } else {
-                assert_eq!(draw.instances, view[5]);
+            }
+        }
+        // In each view's buffer, the index slices start after the last copy slice, at whole
+        // entries, and fit in the buffer.
+        for view in &culling {
+            let in_view = || draws.iter().filter(|d| d.instances == view[5]);
+            let reads_index = |d: &&BundleDraw| d.permutation & permutation::INSTANCE_INDEX != 0;
+            let copies_end = in_view()
+                .filter(|d| !reads_index(d))
+                .map(|d| d.range.end)
+                .max()
+                .unwrap_or(0);
+            let size = commands
+                .iter()
+                .filter(|(op, o)| *op == Op::CreateBuffer && o[0] == view[5])
+                .map(|(_, o)| o[1])
+                .next_back()
+                .unwrap();
+            for draw in in_view().filter(reads_index) {
+                assert!(
+                    draw.range.start >= copies_end,
+                    "{draw:?} after {copies_end}"
+                );
+                assert_eq!(draw.range.start % sizes::INDEX_STRIDE, 0);
+                assert!(draw.range.end <= size, "{draw:?} in {size} bytes");
             }
         }
         // The scene's lit and unlit buckets in the camera's bundle, and the casters' in each

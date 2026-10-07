@@ -15,9 +15,9 @@
 // test switch asks for) takes no copy: its slice gets each survivor's index, and the vertex shader
 // reads the matrix, the material and the cell's offset itself (decision record D-23). Those slices
 // follow the copies in the same buffer, so culling binds no storage buffer more. Each index fills a
-// whole 16-byte entry: a thread that wrote one 32-bit word of an entry could lose a neighbour's
-// word, as Apple's GPUs write such a word as its whole vector. The buffer is an array of `vec4u`,
-// and the copies' floats go into it bit for bit.
+// whole 16-byte entry. A write to one part of a vector in storage may be a read and a write of the
+// whole vector, so threads that wrote neighbouring words of one entry would race on any GPU. The
+// buffer is an array of `vec4u`, and the copies' floats go into it bit for bit.
 //
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
