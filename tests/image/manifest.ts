@@ -1050,6 +1050,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 		sameOnEveryTier: true,
 	},
+	// The characters with tangents and a normal map of grooves, which light alike only when every
+	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
+	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.
+	...(['', '-full'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-normal-map${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?normalmap',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=full'],
+						reference: 'skinning-normal-map',
+					}
+				: { sameOnEveryTier: true }),
+		}),
+	),
 	// The same characters from a quantized mesh, whose joints, weights and normals both paths
 	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
