@@ -54,10 +54,19 @@ async function countRoom(): Promise<number> {
 	let room = 0;
 	{
 		const memories: WebAssembly.Memory[] = [];
-		try {
-			while (memories.length < MOST_HELD) memories.push(allocate());
-		} catch {
-			// The refusal ends the count.
+		// A refusal ends the count only when it holds through asks after short pauses.
+		const pauses = [50, 100, 200, 400];
+		let refusedInRow = 0;
+		while (memories.length < MOST_HELD) {
+			try {
+				memories.push(allocate());
+				refusedInRow = 0;
+			} catch {
+				const pause = pauses[refusedInRow];
+				if (pause === undefined) break;
+				refusedInRow++;
+				await sleep(pause);
+			}
 		}
 		room = memories.length;
 	}
