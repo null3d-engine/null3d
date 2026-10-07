@@ -47,6 +47,7 @@ import { RUNS_DIR } from './report-collector.ts';
 import {
 	batchTimeoutMs,
 	currentItem,
+	handovers,
 	type ItemResult,
 	inLanes,
 	type Plan,
@@ -63,6 +64,7 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
+import { handoverName } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
 describe('turnBatches', () => {
@@ -178,6 +180,38 @@ describe('waitForRunners', () => {
 			expect(noStart).toEqual(['bspixel10-chrome']);
 		}));
 
+	it('opens a new runner page where a runner page handed the run over, once for each handover', () =>
+		withRun(['a', 'b', 'c'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			writeRunnerFile(plan.run, 'mac-safari', 'a', { ok: true });
+			writeRunnerFile(plan.run, 'mac-safari', handoverName(1), { from: 1 });
+			const handedAt: number[] = [];
+			const finished = await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 60_000,
+				onHandover: (runner, from) => {
+					handedAt.push(from);
+					// The new runner page runs b, hands over before c, and the next one finishes.
+					if (from === 1)
+						setTimeout(() => {
+							writeRunnerFile(plan.run, runner, 'b', { ok: true });
+							writeRunnerFile(plan.run, runner, handoverName(2), { from: 2 });
+						}, 50);
+					else setTimeout(() => writeRunnerFile(plan.run, runner, 'done', {}), 50);
+					return true;
+				},
+			});
+			expect(handedAt).toEqual([1, 2]);
+			expect(finished).toEqual(['mac-safari']);
+			expect(handovers(plan.run, 'mac-safari', new Set([1]))).toEqual([2]);
+		}));
+
+	it('ends the turn of a runner whose handover found no new runner page', () =>
+		withRun(['a', 'b'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			writeRunnerFile(plan.run, 'mac-safari', handoverName(1), { from: 1 });
+			expect(await waitForRunners(plan, ['mac-safari'], { onHandover: () => false })).toEqual([]);
+		}));
+
 	it('allows the current page its timeout, and time to open it', () => {
 		expect(quietLimitMs(item('a', 95))).toBe(125_000);
 	});
@@ -254,6 +288,15 @@ describe('QuietRecovery', () => {
 		expect(tablet.quiet.onQuiet('ipad-safari', 60, at(p, 0))).toBe(false);
 		expect(tablet.opened).toEqual([]);
 		expect(recovery(p).quiet.onQuiet('mac-safari', 60, undefined)).toBe(false);
+	});
+
+	it('opens a new runner page where one handed the run over, without using up its reopens', () => {
+		const p = plan(['a', 'b', 'c', 'd']);
+		const { quiet, opened } = recovery(p);
+		for (const from of [1, 2, 3]) expect(quiet.onHandover('mac-safari', from)).toBe(true);
+		expect(quiet.onQuiet('mac-safari', 60, at(p, 3))).toBe(true);
+		expect(opened).toEqual([1, 2, 3, 3]);
+		expect(quiet.onHandover('mac-safari', 4)).toBe(false);
 	});
 
 	it('records a page that ended its tab from its progress, and goes on after it', () => {
@@ -1030,6 +1073,55 @@ describe('the checks plan', () => {
 		).toEqual([
 			"start and stop in a frame 3 of 10 failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
 		]);
+		// Safari keeps a removed frame's page and what it reaches, so held room there is a note.
+		const destroyedNotes: string[] = [];
+		const heldInFrames = (again?: object) =>
+			result({
+				kinds: {
+					'frame-destroyed': {
+						...engine,
+						roomLater: 2,
+						...(again && { again: { ...engine, ...again } }),
+					},
+				},
+			});
+		const noteDestroyed = { ...context, note: (t: string) => destroyedNotes.push(t) };
+		expect(judge(destroyedInFrames.check, heldInFrames(), NONE_MISSING, noteDestroyed)).toEqual([]);
+		expect(
+			judge(
+				destroyedInFrames.check,
+				heldInFrames({ room: 2, roomLater: 2 }),
+				NONE_MISSING,
+				noteDestroyed,
+			),
+		).toEqual([]);
+		expect(destroyedNotes).toEqual([
+			'Safari kept the memory of stopped engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts and stops in frames, and for 2 after',
+			'Safari kept the memory of stopped engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts and stops in frames, and for 2 after, and for 2 after 10 more within 31 s',
+		]);
+		expect(
+			judge(
+				destroyedInFrames.check,
+				heldInFrames({ room: 2, ...failed, error: 'E1109: refused' }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop in a frame 3 of 10 in the second round failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
+	});
+
+	it('runs the restart pages with frames in runner pages of their own', () => {
+		const own = items.filter((item) => item.ownTab).map((item) => item.id);
+		expect(own).toEqual(
+			items
+				.filter(
+					(item) =>
+						item.check.kind === 'restarts' &&
+						(item.check.start === 'frame' || item.check.start === 'frame-destroyed'),
+				)
+				.map((item) => item.id),
+		);
+		expect(own.length).toBeGreaterThan(0);
 	});
 
 	it('quotes the last steps of a page that gave no result', () => {

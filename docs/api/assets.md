@@ -85,6 +85,21 @@ Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them o
 | `prefab.textures` | The textures that the materials sample |
 | `prefab.clips` | The names of the model's clips, which a copy's animator plays |
 | `prefab.url` | The address the model came from |
+| `prefab.destroy()` | Frees the model: [Freeing a model](#freeing-a-model) |
+
+### Freeing a model
+
+`prefab.destroy()` frees a model that the scene no longer needs. It frees every mesh, material and texture that the load made, and the model's skeleton and clips. First destroy the copies that `scene.instantiate` made and the batches of `scene.createInstances`. They can go in the same frame, just before the model:
+
+```ts
+for (const copy of levelCopies) copy.destroy();
+level.destroy();
+const next = await assets.loadGltf('/levels/two.glb');
+```
+
+The next model takes the memory that the old one gave back, so a game that loads and drops levels keeps the same memory. While an object or batch still uses one of the model's meshes or materials, or plays its clips, `destroy` throws [E1111](../errors/E1111.md) and keeps the model. That covers objects of your own that you made with a mesh or material from `prefab.find`. Your own materials that map one of the model's textures draw with their colors alone after it. Calls that pass a destroyed model throw [E1101](../errors/E1101.md).
+
+A load that fails frees everything that it made before the failure.
 
 ## Color grading tables
 
@@ -304,7 +319,7 @@ The colors that a table's first and last texels stand for along each axis: red, 
 
 Class `Prefab`.
 
-A model that `assets.loadGltf` loaded: a template whose meshes, materials and textures exist once, on the GPU. Every copy shares them. `scene.instantiate` creates a copy of its objects. `scene.createInstances` draws many copies with instance batches. A prefab does not change.
+A model that `assets.loadGltf` loaded: a template whose meshes, materials and textures exist once, on the GPU. Every copy shares them. `scene.instantiate` creates a copy of its objects. `scene.createInstances` draws many copies with instance batches. A prefab does not change until `destroy` frees it.
 
 | Member | Description |
 | --- | --- |
@@ -312,6 +327,7 @@ A model that `assets.loadGltf` loaded: a template whose meshes, materials and te
 | `readonly bounds: PrefabBounds` | The bounds of the whole model, around the origin of its copies. |
 | `readonly materials: readonly Material[]` | The model's materials, in the file's order. |
 | `readonly textures: readonly Texture[]` | The model's textures, in the order the file names their images. |
+| `destroy(): void` | Destroys the model, like calling three.js's `dispose()` on each geometry, material and texture of a loaded glTF scene. It frees the GPU memory and the engine data of every mesh, material and texture that the load made, and of its skeleton and animation clips. Destroy the copies that `scene.instantiate` and `scene.createInstances` made first, and the objects that use one of its meshes or materials, in the same frame or before. Throws E1111 while one still does, and E1101 for a model that is destroyed already. Materials of your own that map one of the model's textures draw with their colors alone afterwards. Later calls that pass the model throw E1101. |
 | `readonly clips: readonly string[]` | The names of the model's clips, which a copy's animator plays. |
 | `find(name: string): PrefabNode \| undefined` | The first node with `name`, in the file's order, or undefined when no node has it. The nodes of a copy have the same names, and its `find` gives them. |
 

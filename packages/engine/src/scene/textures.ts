@@ -232,6 +232,7 @@ export interface FileTexels {
  */
 export class Texture {
 	private size: [number, number];
+	private destroyed = false;
 
 	/** @internal */
 	constructor(
@@ -302,6 +303,12 @@ export class Texture {
 	 */
 	destroy(): void {
 		this.textures.destroy(this);
+		this.destroyed = true;
+	}
+
+	/** @internal True until `destroy` runs. */
+	get live(): boolean {
+		return !this.destroyed;
 	}
 }
 
