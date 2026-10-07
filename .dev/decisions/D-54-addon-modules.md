@@ -39,7 +39,7 @@ Facts from the web platform:
 
 - The [HTML standard](https://html.spec.whatwg.org/multipage/workers.html#dom-worker) runs a dedicated worker only from a URL of the page's origin. A `blob:` URL that the page makes has the page's origin. A module worker started from it may import modules from a CDN, which the CDN must serve with CORS.
 - A cross-origin isolated page (needed for shared memory) loads files from another origin only when they carry CORS or a `Cross-Origin-Resource-Policy` header.
-- A worker started from a `blob:` URL takes the page's policy. The policy must allow `blob:` in `worker-src`, the CDN in `script-src` and `connect-src`, and `'wasm-unsafe-eval'` for WebAssembly.
+- A worker started from a `blob:` URL takes the page's policy. The policy must allow `blob:` and the CDN in `worker-src` (Firefox checks a worker's imports there), the CDN in `script-src` and `connect-src`, and `'wasm-unsafe-eval'` for WebAssembly.
 - `WebAssembly.compileStreaming` compiles a module once. The page or a worker can post the compiled module to other workers, which then instantiate it without compiling again. PlayCanvas loads its decoders this way.
 
 Draco:
@@ -68,7 +68,7 @@ Draco:
 
 - The main path is bundled: the engine and its add-ons from npm, built with Vite and the null3D plugin.
 - CDN use works through one shared mechanism in the engine. Each worker starts from a small `blob:` bootstrap that the page makes, which imports the worker's code from the CDN. The core's own workers start the same way, so there is one way to start workers.
-- The docs state the policy that this needs (`worker-src blob:`, the CDN in `script-src` and `connect-src`, and `'wasm-unsafe-eval'`) and the headers (cross-origin isolation, and CORS or `Cross-Origin-Resource-Policy` on the CDN's files).
+- The docs state the policy that this needs (`blob:` and the CDN in `worker-src`, the CDN in `script-src` and `connect-src`, and `'wasm-unsafe-eval'`) and the headers (cross-origin isolation, and CORS or `Cross-Origin-Resource-Policy` on the CDN's files).
 - The engine gives a clear error, with a code and a fix, when the policy or a header is missing.
 - No self-hosted worker copies: a page never has to copy worker files to its own origin.
 
