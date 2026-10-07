@@ -10,9 +10,13 @@ run('destroy', async () => {
 	for (const [k, mode] of ['destroy', 'reference'].entries()) {
 		const canvas = canvases[k];
 		if (!canvas) throw new Error('the page has fewer than two canvases');
+		// The mode goes on after the address is made: Vite rewrites a template literal given to
+		// new URL with import.meta.url, and its query would reach the sketch unfilled.
+		const sketch = new URL('./sketches/destroy-sketch.ts', import.meta.url);
+		sketch.searchParams.set('mode', mode);
 		const engine = await createEngine({
 			canvas,
-			sketch: new URL(`./sketches/destroy-sketch.ts?mode=${mode}`, import.meta.url),
+			sketch,
 			maxPixelRatio: 1,
 		});
 		const failures: string[] = [];
