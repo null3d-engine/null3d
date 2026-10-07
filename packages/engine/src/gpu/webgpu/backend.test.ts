@@ -155,6 +155,25 @@ describe('WebGPUBackend', () => {
 		expect(log.filter((entry) => entry.startsWith('build'))).toEqual([]);
 	});
 
+	it('makes no layout with storage buffers in vertex shaders at the start, which compatibility mode refuses', () => {
+		const { device } = fakeDevice();
+		const made: string[] = [];
+		const vertexStorage = (entry: GPUBindGroupLayoutEntry) =>
+			(entry.visibility & GPUShaderStage.VERTEX) !== 0 &&
+			entry.buffer?.type !== undefined &&
+			entry.buffer.type !== 'uniform';
+		device.createBindGroupLayout = (descriptor: GPUBindGroupLayoutDescriptor) => {
+			const entries = [...descriptor.entries];
+			if (entries.some(vertexStorage))
+				throw new Error(`${descriptor.label}: no storage buffers in the vertex stage`);
+			made.push(descriptor.label ?? '');
+			return {} as GPUBindGroupLayout;
+		};
+		new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		expect(made.length).toBeGreaterThan(0);
+		expect(made).not.toContain('instance index');
+	});
+
 	it('destroys a copy buffer that a larger one replaced, once its copies are submitted', () => {
 		const { device, log } = fakeDevice();
 		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);

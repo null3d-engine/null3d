@@ -314,6 +314,8 @@ function scaleConstants(
 
 export class Pipelines {
 	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
+	/** The layouts that only some devices bind, which the first pipeline or bind group to use them makes. */
+	private readonly laterLayouts: (GPUBindGroupLayoutDescriptor | undefined)[] = [];
 	private readonly templates: (RenderTemplate | undefined)[] = [];
 	/**
 	 * Each template's pipeline layouts, made for their first pipelines, by the groups after the
@@ -423,14 +425,19 @@ export class Pipelines {
 		// The view's culling parameters, for the offset from the camera to each cell, the world
 		// matrices, the bucket table and the bucket records, which the vertex shaders of the builds
 		// that read their instances by index read. Compatibility mode may have no storage buffers
-		// in vertex shaders, so only core WebGPU binds the group.
+		// in vertex shaders, and refuses the layout itself, so only core WebGPU makes and binds it.
 		const vertex = GPUShaderStage.VERTEX;
-		this.defineLayout(LAYOUT_INSTANCE_INDEX, 'instance index', [
-			{ binding: 0, visibility: vertex, buffer: { type: 'uniform' } },
-			{ binding: 1, visibility: vertex, buffer: { type: 'read-only-storage' } },
-			{ binding: 2, visibility: vertex, buffer: { type: 'read-only-storage' } },
-			{ binding: 3, visibility: vertex, buffer: { type: 'read-only-storage' } },
-		]);
+		this.defineLayout(
+			LAYOUT_INSTANCE_INDEX,
+			'instance index',
+			[
+				{ binding: 0, visibility: vertex, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: vertex, buffer: { type: 'read-only-storage' } },
+				{ binding: 2, visibility: vertex, buffer: { type: 'read-only-storage' } },
+				{ binding: 3, visibility: vertex, buffer: { type: 'read-only-storage' } },
+			],
+			true,
+		);
 		// Light clustering's parameters, the light list, and the light grid that it fills.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -607,10 +614,21 @@ export class Pipelines {
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
-	/** Adds a bind group layout under an id that no other layout has. */
-	defineLayout(id: number, label: string, entries: GPUBindGroupLayoutEntry[]): void {
-		if (this.layouts[id]) throw new Error(`bind group layout ${id} already exists`);
-		this.layouts[id] = this.device.createBindGroupLayout({ label, entries });
+	/**
+	 * Adds a bind group layout under an id that no other layout has. With `onFirstUse`, the layout
+	 * is made only when a pipeline or a bind group first needs it, for a layout that some devices
+	 * cannot make.
+	 */
+	defineLayout(
+		id: number,
+		label: string,
+		entries: GPUBindGroupLayoutEntry[],
+		onFirstUse = false,
+	): void {
+		if (this.layouts[id] || this.laterLayouts[id])
+			throw new Error(`bind group layout ${id} already exists`);
+		if (onFirstUse) this.laterLayouts[id] = { label, entries };
+		else this.layouts[id] = this.device.createBindGroupLayout({ label, entries });
 	}
 
 	/**
@@ -659,8 +677,12 @@ export class Pipelines {
 
 	layout(id: number): GPUBindGroupLayout {
 		const layout = this.layouts[id];
-		if (!layout) throw new Error(`unknown bind group layout ${id}`);
-		return layout;
+		if (layout) return layout;
+		const later = this.laterLayouts[id];
+		if (!later) throw new Error(`unknown bind group layout ${id}`);
+		const made = this.device.createBindGroupLayout(later);
+		this.layouts[id] = made;
+		return made;
 	}
 
 	/** Creates the shader module of `shader` ahead of the pipelines that will share it. */
