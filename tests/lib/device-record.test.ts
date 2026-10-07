@@ -1,5 +1,5 @@
 // The browser that the runner page detects, the warning for a runner named for another browser,
-// and the row for the record of tested devices. The user agents and client hints of Safari, Chrome,
+// and the run's entry for the record of tested devices. The user agents and client hints of Safari, Chrome,
 // Brave and Firefox come from real runs; the others are the forms that those browsers send.
 import { describe, expect, it } from 'bun:test';
 import { summaryLine } from '../real-browsers.ts';
@@ -7,8 +7,8 @@ import {
 	browserMismatch,
 	type DeviceFacts,
 	detectBrowser,
-	RECORD_COLUMNS,
-	testedDeviceRow,
+	type TestedDeviceEntry,
+	testedDeviceEntry,
 } from './device-record.ts';
 
 /** Client hints as Chromium-based browsers give them, with the brands in their own order. */
@@ -153,14 +153,10 @@ describe('the warning for a runner named for another browser', () => {
 	});
 });
 
-describe('the row for the record of tested devices', () => {
-	const cells = (row: string) =>
-		row
-			.slice(1, -1)
-			.split('|')
-			.map((cell) => cell.trim());
+describe("the run's entry for the record of tested devices", () => {
+	const cells = ({ facts, plans, result }: TestedDeviceEntry) => [...facts, plans, result];
 
-	it('fills each column from the device file and the counts, and leaves the known issues empty', () => {
+	it('fills each fact from the device file, and the plans and result from the run', () => {
 		const pixel: DeviceFacts = {
 			userAgent: UA.androidChrome,
 			userAgentData: hints(
@@ -179,7 +175,7 @@ describe('the row for the record of tested devices', () => {
 			devicePixelRatio: 2.625,
 			origin: 'https://local.testingbot.com:3001',
 		};
-		const row = testedDeviceRow({
+		const row = testedDeviceEntry({
 			run: '20261003-004511-checks',
 			launch: 'lan',
 			device: pixel,
@@ -196,9 +192,7 @@ describe('the row for the record of tested devices', () => {
 			"TestingBot's device cloud",
 			'checks 2026-10-03',
 			'202 passed, 0 skipped, 338 failed',
-			'',
 		]);
-		expect(cells(row)).toHaveLength(RECORD_COLUMNS.length);
 	});
 
 	it("leaves the OS empty where the user agent freezes it, and finds an iPad behind a Mac's user agent", () => {
@@ -211,7 +205,7 @@ describe('the row for the record of tested devices', () => {
 			devicePixelRatio: 2,
 		};
 		const row = cells(
-			testedDeviceRow({
+			testedDeviceEntry({
 				run: '20261002-125319-checks',
 				launch: 'lan',
 				device: iPad,
@@ -224,7 +218,7 @@ describe('the row for the record of tested devices', () => {
 		// An older run's device file has no GPU facts, so those cells stay empty too.
 		expect(row.slice(3, 6)).toEqual(['', '', '']);
 		const mac = cells(
-			testedDeviceRow({
+			testedDeviceEntry({
 				run: '20260930-154610-checks',
 				launch: 'mac',
 				device: { ...iPad, maxTouchPoints: 0, userAgent: UA.macFirefox },
@@ -262,7 +256,7 @@ describe('the row for the record of tested devices', () => {
 		});
 		const row = (device: DeviceFacts) =>
 			cells(
-				testedDeviceRow({
+				testedDeviceEntry({
 					run: '20261004-090000-smoke',
 					launch: 'lan',
 					device,
@@ -292,7 +286,7 @@ describe('the row for the record of tested devices', () => {
 	});
 
 	it('marks a software renderer, which draws on the CPU because the machine has no GPU', () => {
-		const row = testedDeviceRow({
+		const row = testedDeviceEntry({
 			run: '20261004-090000-smoke',
 			launch: 'lan',
 			device: {
@@ -312,8 +306,8 @@ describe('the row for the record of tested devices', () => {
 		);
 	});
 
-	it('escapes a pipe in a value, so it cannot end its cell', () => {
-		const row = testedDeviceRow({
+	it("names the owner's phone, and keeps the GPU's name as the browser gives it", () => {
+		const { facts } = testedDeviceEntry({
 			run: '20261003-002933-checks',
 			launch: 'android',
 			device: {
@@ -324,7 +318,7 @@ describe('the row for the record of tested devices', () => {
 			skip: 0,
 			fail: 0,
 		});
-		expect(row).toContain('A \\| B');
-		expect(row).toContain("| the owner's phone |");
+		expect(facts[3]).toBe('A | B');
+		expect(facts[5]).toBe("the owner's phone");
 	});
 });

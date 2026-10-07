@@ -6,6 +6,8 @@
 // sketch's own query after it. ?stop-after= sets a pause in ms between the capture and the stop,
 // while the engine goes on drawing. ?frames= sets the fewest frames to measure: the page measures
 // again until its measurements hold that many, so a slow runner still gives a test enough frames.
+// It also measures again until they hold one frame at least and, where the device has timestamp
+// queries, the GPU's pass times.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import { measureUntil } from './lib/measure';
 import { run, toBase64 } from './lib/result';
@@ -22,11 +24,19 @@ const RECOVERY_MS = 1000;
  */
 const MAX_DOUBLINGS = 3;
 
+/** True when a measurement holds the GPU's time for a pass. */
+const hasPassTimes = (stats: FrameMetrics | undefined) => (stats?.gpuPassMs?.length ?? 0) > 0;
+
 /**
- * Measures the engine's frames until the measurements hold the fewest frames. The frames and the
- * rebuilds add up over the measurements; the other figures are the first measurement's.
+ * Measures the engine's frames until the measurements hold the fewest frames, one at least, and
+ * the GPU's pass times where the device has timestamp queries. The GPU timer samples only some
+ * frames, and after a loss of the GPU the new device starts its timer again, so a slow runner can
+ * measure frames without a pass time. The frames and the rebuilds add up over the measurements.
+ * The other figures are the first measurement with frames, and the pass times are the first
+ * measurement's that has them.
  */
 async function measureFrames(engine: Engine): Promise<FrameMetrics> {
+	const timed = engine.capabilities.features.includes('timestamp-query');
 	let stats: FrameMetrics | undefined;
 	await measureUntil(
 		engine,
@@ -34,12 +44,14 @@ async function measureFrames(engine: Engine): Promise<FrameMetrics> {
 		MAX_DOUBLINGS,
 		(more) => {
 			if (!stats) stats = more;
+			else if (stats.frames === 0) stats = { ...more, rebuilds: stats.rebuilds + more.rebuilds };
 			else {
 				stats.frames += more.frames;
 				stats.rebuilds += more.rebuilds;
+				if (!hasPassTimes(stats) && hasPassTimes(more)) stats.gpuPassMs = more.gpuPassMs;
 			}
 		},
-		() => (stats?.frames ?? 0) >= minFrames,
+		() => (stats?.frames ?? 0) >= Math.max(minFrames, 1) && (!timed || hasPassTimes(stats)),
 	);
 	if (!stats) throw new Error('the page took no measurement');
 	return stats;
