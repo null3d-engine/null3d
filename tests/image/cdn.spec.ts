@@ -30,7 +30,7 @@ const CDN = `http://127.0.0.1:${PORT}`;
 const CDN_POLICY = [
 	"default-src 'self'",
 	`script-src 'self' ${CDN} 'wasm-unsafe-eval'`,
-	"worker-src 'self' blob:",
+	`worker-src 'self' blob: ${CDN}`,
 	`connect-src 'self' ${CDN} data:`,
 	"style-src 'self' 'unsafe-inline'",
 ].join('; ');
