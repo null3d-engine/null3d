@@ -935,6 +935,8 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 							`scale=${scale}`,
 							`effect=${effect}`,
 							...(on ? ['prepass=on'] : []),
+							// One pass for each effect, so a quarter of the difference is one pass.
+							...(effect === 'effects' ? ['join=off'] : []),
 						],
 						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 					},
@@ -943,6 +945,39 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 		),
 	);
 	return [...pages, ...twin];
+}
+
+/**
+ * What joining custom effects saves on each GPU path (D-71): the effect cost page with 4 effects
+ * that each read their own pixel, which join and fold into the final pass, and the same with
+ * ?join=off, which keeps each in a pass of its own, at render scales of 1 and 0.5. Each page's
+ * difference from its own frames without effects is the effects' cost, so a pair's two differences
+ * give what joining saves. WebGL2 has no GPU timer on most phones, so a heavy pair there draws 8
+ * effects at the display's whole pixel ratio, which makes the GPU the limit, and compares frame
+ * intervals. Each joined page also reports how long each joined shader took to build.
+ */
+export function effectsJoinedPlan(): PlanItem<Check>[] {
+	const page = (id: string, tier: Tier, scale: number, switches: string[]) =>
+		pageItem(
+			id,
+			'effect-cost',
+			{ kind: 'effect', effect: 'effects', tier, scale },
+			{
+				switches: [`gpu=${tier}`, `scale=${scale}`, 'effect=effects', ...switches],
+				timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			},
+		);
+	const pairs = TIERS.flatMap((tier) =>
+		EFFECT_SCALES.flatMap((scale) => [
+			page(`effects-joined-${tier}-${scale * 100}`, tier, scale, []),
+			page(`effects-separate-${tier}-${scale * 100}`, tier, scale, ['join=off']),
+		]),
+	);
+	return [
+		...pairs,
+		page('effects-joined-webgl2-heavy', 'webgl2', 1, ['heavy']),
+		page('effects-separate-webgl2-heavy', 'webgl2', 1, ['heavy', 'join=off']),
+	];
 }
 
 /** The bases of bloom's chain that the bloom size plan times, in texels on the short side. */
@@ -1402,6 +1437,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
 	effects: () => effectPlan('effects'),
+	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	occlusion: occlusionPlan,

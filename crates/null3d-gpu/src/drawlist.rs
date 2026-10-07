@@ -692,13 +692,20 @@ pub mod layout {
     /// matrices, the bucket table and the bucket records of the layout that the view draws, which
     /// vertex shaders read.
     pub const INSTANCE_INDEX: u32 = 20;
-    /// Group 0 of a custom effect's pass: the effect's uniform block, the color it reads, a linear
-    /// sampler, and the scene's depth as unfilterable floats, or a blank texture for an effect that
-    /// reads no depth.
+    /// Group 0 of a custom effect's pass: the effect's uniform block, or every effect's block for a
+    /// group of joined effects, the color it reads, a linear sampler, and the scene's depth as
+    /// unfilterable floats, or a blank texture where no effect reads depth.
     pub const EFFECT: u32 = 21;
     /// [`EFFECT`] with a multisampled scene depth, whose sample 0 the effect reads. Only WebGPU has
     /// it: WebGL2 reads a copy of one sample that the backend keeps.
     pub const EFFECT_DEPTH_MS: u32 = 22;
+    /// The final pass with custom effects folded into it: [`FINAL`]'s bindings, then the effects'
+    /// uniform buffer at binding 4 and the scene's depth, or a blank texture, at binding 5, as
+    /// plain floats.
+    pub const FINAL_EFFECTS: u32 = 23;
+    /// [`FINAL_EFFECTS`] with a multisampled scene depth, whose sample 0 the effects read. Only
+    /// WebGPU has it.
+    pub const FINAL_EFFECTS_DEPTH_MS: u32 = 24;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1734,6 +1741,8 @@ pub fn typescript_constants() -> String {
                 ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
                 ("EFFECT", layout::EFFECT),
                 ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
+                ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
+                ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),

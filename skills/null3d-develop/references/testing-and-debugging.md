@@ -171,6 +171,8 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
 | Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
+| Offline, the engine runs single-threaded, or a development build warns that a service worker controls a page that is not isolated | The service worker answers the page without its COOP and COEP headers | Cache the page's own response with `cache.addAll`, which keeps the headers, or copy them into the response the worker makes | `getting-started/hosting` |
+| Offline, the start or a feature's first use fails to download a file | The service worker caches no copy of that feature's files | Cache the `start` group and each feature that the game uses from `null3d-files.json` | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
 | E1422 or E1423 at the start, with the build's files on a CDN | The policy lacks `blob:` or the CDN in `worker-src`, or the CDN in `connect-src`, or the CDN sends no CORS header | Add the policy items and `Access-Control-Allow-Origin` on every build file; `Cross-Origin-Resource-Policy` alone does not serve | `getting-started/hosting` |
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
@@ -212,6 +214,7 @@ Startup:
 
 - The host sends the isolation headers, and lets browsers keep the hashed files under `assets/` (`getting-started/hosting`).
 - With the build's files on a CDN, the CDN sends `Access-Control-Allow-Origin` on every file, and the page's policy allows `blob:` workers and the CDN (`getting-started/hosting`). The engine needs no `'unsafe-eval'`.
+- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
 - A cold load on Chrome's Slow 4G profile, with the cache off, reaches `engine.firstFrame` in a time you accept. The loading screen stays up until then.
 - `engine.measure(5)` reports no long tasks on the page's thread (`mainThread`) while the engine starts.
 

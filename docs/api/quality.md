@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, fram
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -58,6 +58,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `minRenderScale` | A number from 0.25 to 1, at most `maxRenderScale`: the lowest render scale that dynamic resolution may draw at. 1 keeps the whole canvas. | During play. |
 | `maxRenderScale` | A number from 0.25 to 1: the highest render scale, where the engine starts. | During play. |
 | `maxAnisotropy` | A whole number from 1 to 16. A texture whose `anisotropy` option is higher samples at this value. | During play. Textures sample with the new cap from the next frame. |
+| `textureMemoryMiB` | A whole number of MiB from 64 to 16,384: the GPU memory that textures may take. Phones and tablets cap a preset's value at 1,008. | During play. Past it, the engine drops the largest mip levels of textures from files. |
 | `uploadBytesPerFrame` | A whole number of texel bytes from 65,536 (64 KiB) to 67,108,864 (64 MiB). | During play, from the next frame. |
 | `shadowFilter` | 3 or 5: the texels on each side of the square that blends each shadow's edge. 5 gives softer edges and costs more for each pixel that receives shadows. | During play. |
 | `farCascadeInterval` | A whole number from 1 to 8: each far shadow cascade draws once in this many frames. The nearest cascade draws in every frame. | During play. |
@@ -134,9 +135,22 @@ export default defineSketch(({ quality }) => {
 
 A step of the render scale does not call the handlers: read `quality.renderScale` for it. Turn the governor off where every frame must draw the same way, such as a benchmark or a recorded video: `quality.set({ governor: false })`.
 
+## Texture memory
+
+The `quality.textureMemory` object reports the GPU memory of textures against their budget, the `textureMemoryMiB` setting. Its `bytes` are the GPU bytes that every texture takes, with the free layers of texture arrays. Its `budgetBytes` give the budget in bytes. Its `droppedLevels` count the mip levels that the engine dropped from every texture to stay under the budget. Its `droppedTextures` count the textures that hold fewer levels than their own. Each texture's `droppedLevels` gives its own count. [Quality presets](../concepts/quality-presets.md#texture-memory) explains which levels drop and how they come back.
+
+```ts
+quality.onChange(({ textureMemory }) => {
+	if (textureMemory.droppedLevels > 0)
+		console.log(`textures: ${textureMemory.bytes} of ${textureMemory.budgetBytes} bytes`);
+});
+```
+
+Some textures never drop levels: those that the sketch made from images or data, and those under 64 KiB. A scene whose textures stay over the budget holds too many of them. Destroy the textures that the scene no longer shows, or load large ones from KTX2 files.
+
 ## Quality events
 
-`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
+`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor, and after the texture memory budget drops levels or asks for them again. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
 
 ## Related pages
 

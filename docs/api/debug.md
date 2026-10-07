@@ -205,7 +205,7 @@ for (const part of stats.gpuPassMs ?? []) {
 
 ### GPU time
 
-`gpuMs` and `gpuPassMs` need timestamp queries, which some WebGPU devices offer and WebGL2 never does. Without them both are null. `gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
+`gpuMs` and `gpuPassMs` need GPU timer queries. Some WebGPU devices offer timestamp queries. On WebGL2, most desktop browsers offer `EXT_disjoint_timer_query_webgl2` and most phones do not; there `gpuMs` covers the frame as a whole, and `gpuPassMs` is empty. Without timer queries both are null. `gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
 
 | Part | What it is |
 | --- | --- |

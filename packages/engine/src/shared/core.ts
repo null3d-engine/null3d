@@ -374,8 +374,20 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setTextureData(texture: number, width: number, height: number): number;
 	destroyTexture(texture: number, frame: number): number;
-	/** Tells the texture store what the thread that draws has: images received, and frames taken. */
+	/**
+	 * Tells the texture store what the thread that draws has: images received, and frames taken.
+	 * Then the store fits the textures to their memory budget.
+	 */
 	syncTextures(imagesArrived: number, framesTaken: number): void;
+	/** Notes that the page can load a texture's texels again from its file, at any mip level. */
+	setTextureReloadable(texture: number): number;
+	/**
+	 * The next texture whose texels the page should load again, or 0 for none. `textureStat` gives
+	 * the levels to leave out and the hidden texture that takes the texels.
+	 */
+	takeTextureReload(): number;
+	/** Stops a texture's load again for good: it keeps the levels it holds and drops no more. */
+	failTextureReload(texture: number): void;
 	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
 	textureStat(field: number, texture: number): number;
 	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
@@ -479,6 +491,18 @@ export interface CoreGlue extends CoreErrors {
 	 * removes the effect at the place and every one after it.
 	 */
 	setEffect(index: number, template: number, flags: number): number;
+	/**
+	 * Draws the `length` custom effects from a place on as one group, with the joined shader of
+	 * render pipeline template `template`, from the next frame on, once its pipeline is built.
+	 * Template 0 ends the group that starts at the place.
+	 */
+	setEffectGroup(index: number, length: number, template: number): number;
+	/**
+	 * Folds the custom effects from a place on into the final pass, with the final pass's build of
+	 * render pipeline template `template`, from the next frame on, while nothing reads the image
+	 * between them. Template 0 folds none.
+	 */
+	setEffectFold(index: number, template: number): number;
 	/**
 	 * Maps HDR color with the custom tone curve whose builds take the render pipeline templates from
 	 * `template` on, or with the curve that `setOutput` sets for 0, from the next frame on.
@@ -721,6 +745,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
+	'setTextureReloadable',
+	'takeTextureReload',
+	'failTextureReload',
 	'textureStat',
 	'setTextureOption',
 	'setShadowTiles',
@@ -748,6 +775,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutline',
 	'effectValues',
 	'setEffect',
+	'setEffectGroup',
+	'setEffectFold',
 	'setToneCurve',
 	'setCanvasOutput',
 	'setRenderScaling',

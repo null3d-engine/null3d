@@ -76,6 +76,16 @@ export interface LoadGltfOptions {
 	rewriteUrl?: (address: URL) => URL | string | null;
 }
 
+/**
+ * @internal Where a texture's file lies, so the engine can load it again: an address, and for an
+ * image inside another file, such as a model's, the bytes it takes there.
+ */
+export interface FileSource {
+	url: URL;
+	offset?: number;
+	length?: number;
+}
+
 /** @internal What `loadGltf` makes a model's meshes, materials and skeleton with. */
 export interface ModelMakers {
 	core: CoreMemory;
@@ -135,9 +145,49 @@ export class Assets {
 		const call = 'assets.loadTexture';
 		const address = this.resolve(url);
 		const blob = await this.file(address, call);
-		if (await isKtx2(blob)) return loadKtx2(this.textures, blob, address, options, call);
-		const image = await decode(blob, address, options, call, this.textures.maxSize);
-		return this.textures.fromImage(image, options, options.premultipliedAlpha ? 1 : 0, call);
+		const texture = (await isKtx2(blob))
+			? await loadKtx2(this.textures, blob, address, options, call)
+			: this.textures.fromImage(
+					await decode(blob, address, options, call, this.textures.maxSize),
+					options,
+					options.premultipliedAlpha ? 1 : 0,
+					call,
+				);
+		this.reloadsFrom(texture, { url: address }, options, call);
+		return texture;
+	}
+
+	/**
+	 * @internal Lets the texture memory budget drop a texture's largest mip levels: the engine
+	 * loads them again from `source`, a KTX2 file or an image that decodes with `options`.
+	 */
+	reloadsFrom(
+		texture: Texture,
+		source: FileSource,
+		options: LoadTextureOptions,
+		call: string,
+	): void {
+		const { textures } = this;
+		textures.reloadsFrom(texture, async (level, target) => {
+			const blob = await fetchAgain(source, call);
+			if (await isKtx2(blob)) {
+				const ktx2 = await ktx2Module(source.url, call);
+				const texels = await ktx2.reloadKtx2(
+					textures,
+					await blob.arrayBuffer(),
+					source.url,
+					options,
+					level,
+					call,
+					(code, message) => new EngineError(code, message),
+				);
+				textures.setTexels(target, texels, call);
+			} else {
+				const size = [target.width, target.height] as const;
+				const image = await decode(blob, source.url, options, call, textures.maxSize, size);
+				textures.setImage(target, image, options.premultipliedAlpha ? 1 : 0, call);
+			}
+		});
 	}
 
 	/**
@@ -167,6 +217,16 @@ export class Assets {
 				download: (at, during) => this.file(rewritten(at, address, options, during), during),
 				decode: (blob, at, colorSpace, during) =>
 					decode(blob, at, { colorSpace, flipY: false }, during, this.textures.maxSize),
+				reloadsFrom: (texture, source, colorSpace, during) => {
+					// A load again reads the address that the first load read, as rewriteUrl gave it.
+					const url = source.url.href === address.href ? address : source.url;
+					this.reloadsFrom(
+						texture,
+						{ ...source, url: rewritten(url, address, options, during) },
+						{ colorSpace, flipY: false },
+						during,
+					);
+				},
 				error: (code, message) => new EngineError(code, message),
 			},
 			file,
@@ -514,6 +574,42 @@ export class Assets {
 /** The identifier that starts every KTX2 file. */
 const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
 
+/** The KTX2 loader, which this imports the first time. Throws E1406 when it does not download. */
+async function ktx2Module(address: URL, call: string): Promise<typeof import('./ktx2')> {
+	try {
+		return await import('./ktx2');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the KTX2 loader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/**
+ * Downloads a texture's file again for a load of its levels again, from the HTTP cache where it
+ * holds the file, and takes the bytes of an image inside another file. A load again counts for no
+ * `onProgress` handler. Throws E1411 when the file does not download.
+ */
+async function fetchAgain({ url, offset = 0, length }: FileSource, call: string): Promise<Blob> {
+	let response: Response;
+	try {
+		response = await fetch(url, { cache: 'force-cache' });
+	} catch (error) {
+		throw new EngineError(
+			'E1411',
+			`${call}() could not download ${url} again: ${reasonOf(error)}.`,
+		);
+	}
+	if (!response.ok)
+		throw new EngineError(
+			'E1411',
+			`${call}() could not download ${url} again: HTTP ${response.status}.`,
+		);
+	const blob = await response.blob();
+	return length === undefined ? blob : blob.slice(offset, offset + length);
+}
+
 /** True for a file that starts with the KTX2 identifier. */
 async function isKtx2(blob: Blob): Promise<boolean> {
 	if (blob.size < KTX2_IDENTIFIER.length) return false;
@@ -547,15 +643,7 @@ async function loadKtx2(
 				'Its compressed colors cannot change: encode the file from colors multiplied by alpha.',
 			);
 	}
-	let ktx2: typeof import('./ktx2');
-	try {
-		ktx2 = await import('./ktx2');
-	} catch (error) {
-		throw new EngineError(
-			'E1406',
-			`the KTX2 loader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
-		);
-	}
+	const ktx2 = await ktx2Module(address, call);
 	return ktx2.loadKtx2(
 		textures,
 		await blob.arrayBuffer(),
@@ -643,6 +731,7 @@ async function decode(
 	options: LoadImageOptions,
 	call: string,
 	maxSide: number,
+	size?: readonly [number, number],
 ): Promise<ImageBitmap> {
 	const head = new Uint8Array(await blob.slice(0, HEADER_BYTES).arrayBuffer());
 	const refused = imageTooLarge(imageSize(head), maxSide);
@@ -658,6 +747,10 @@ async function decode(
 	};
 	// Without an orientation, the image keeps its own, which every browser takes.
 	if (flipY) decoding.imageOrientation = 'flipY';
+	if (size) {
+		[decoding.resizeWidth, decoding.resizeHeight] = size;
+		decoding.resizeQuality = 'high';
+	}
 	try {
 		return await createImageBitmap(blob, decoding);
 	} catch (error) {

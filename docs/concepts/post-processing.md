@@ -14,7 +14,7 @@ summary: "HDR scene color, ambient occlusion at half size, custom effects, bloom
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
     ao --> scene
-    scene["Scene passes:<br/>linear HDR color"] --> custom["Custom effects:<br/>one pass each"]
+    scene["Scene passes:<br/>linear HDR color"] --> custom["Custom effects:<br/>joined into few passes"]
     custom --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
     down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
     custom --> final["Final pass: blends in bloom,<br/>then the vignette,<br/>FXAA and tone mapping"]
@@ -110,7 +110,7 @@ post.addEffect({ wgsl: warm });
 - Each effect reads the color that the effect before it wrote. It can read any pixel, and the scene's depth on every GPU path.
 - Effects run from the lowest `order` to the highest, at most 8 at once.
 - Two targets of the render size serve all the effects. The render graph lets them share memory, because each effect's target lives only until the next effect has read it.
-- Each effect costs a full-screen pass: a read and a write of 8 bytes per pixel. Join effects that read only their own pixel into one function.
+- A full-screen pass reads and writes 8 bytes per pixel. The engine joins an effect that reads only its own pixel into the pass of the effect before it. With bloom and FXAA off, the last of these passes folds into the final pass. [Custom passes](../guides/custom-passes.md#cost) gives the rules.
 
 A custom tone curve replaces the built-in curves. Its WGSL declares `fn toneCurve(color: vec3f) -> vec3f`, and `post.set({ toneMapping })` takes it. The final pass calls it in place of the built-in curve, after bloom and before FXAA and dithering.
 
