@@ -23,6 +23,7 @@ describe('parseSwitches', () => {
 			prepass: undefined,
 			occlusion: undefined,
 			vertexSkinning: false,
+			indexInstances: false,
 			shadowDepthBits: 16,
 			fps: undefined,
 			queue: undefined,
@@ -38,6 +39,8 @@ describe('parseSwitches', () => {
 	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
 		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
 		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
+		expect(parseSwitches('?instances=index').indexInstances).toBe(true);
+		expect(parseSwitches('?instances=copy').indexInstances).toBe(false);
 	});
 
 	it('keeps shadow cascades in 16-bit depth unless ?shadowdepth=32 asks for 32-bit floats', () => {

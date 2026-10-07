@@ -279,6 +279,32 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
 }
 
 #[test]
+fn with_vertex_skinning_and_index_instances_a_skinned_mesh_reads_the_culling_shaders_copies() {
+    let config = RendererConfig {
+        vertex_skinning: true,
+        index_instances: true,
+        ..RendererConfig::default()
+    };
+    let mut world = World::with_config(config);
+    world.add_skinned([0.0, 0.0, 0.0]);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    let pipelines = operands(&first, Op::CreateRenderPipeline);
+    let skinned: Vec<_> = pipelines
+        .iter()
+        .filter(|p| p[2] & permutation::SKIN != 0)
+        .collect();
+    assert!(!skinned.is_empty(), "the mesh's SKIN builds");
+    assert!(
+        skinned
+            .iter()
+            .all(|p| p[2] & permutation::INSTANCE_INDEX == 0),
+        "{skinned:?}"
+    );
+}
+
+#[test]
 fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning() {
     for vertex_skinning in [false, true] {
         let mut world = World::with_config(RendererConfig {
