@@ -1,8 +1,8 @@
 # D-20: WebGPU skinning
 
-Status: proposed. The lean skinning pass is built (M2-C8). The Mac's Chrome figures are in; the Mac's Safari, the iPad and the Android phones are pending. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
+Status: proposed. The lean skinning pass is built (M2-C8). The figures of the Mac's Chrome and the Galaxy S25 are in. The Mac's Safari, the iPad, the Pixel 9 and the Pixel 11 are pending. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
 
-Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%.
+Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. On the Galaxy S25 it costs 5.6% more GPU time than the vertex shaders in S5. So it fails the rule on both devices measured so far.
 
 ## Question
 
@@ -153,3 +153,39 @@ Checks of the rebuilt branch on the Mac's GPU, on 8 October 2026:
 - The image tests of skinning, morph targets and glTF passed 115 of 120 on every GPU path. The 5 others were the new normal-map test below, which had no references yet. No existing reference moved.
 - The skinning, skinning pass and animation browser tests passed 13 of 13. The skinning pass page checks both layouts against the CPU.
 - A new image test, `skinning-normal-map`, lights the characters through a normal map of grooves, so the light shows each skinned tangent. With 8-bit tangents and with 32-bit ones, the images differ by at most 4 levels in any pixel, on the Mac's GPU and on SwiftShader. WebGL2's vertex shaders, which skin in floats, match the same reference.
+
+## Addendum, 2026-10-08: A1 on the Galaxy S25
+
+BrowserStack's Galaxy S25 (Adreno 830, Chrome 152) ran the rebuilt branch at 27cccd28d on 7 October 2026. Its screen ran at 30 Hz, so the frame times show only the screen's pace. The figures below are GPU times from the GPU's timer, and the main thread's CPU times. The run files are in the [S25's folder](../tested-devices/galaxy-s25-sm-s931b-chrome/README.md).
+
+The checks passed 21 of 21 (run `20261007-213008-checks`). They cover the skinning pass page on both WebGPU tiers, and the skinning, morph and glTF images with 8-bit and 32-bit directions.
+
+S5 drew 150 knights at High, with 3 cascades and the governor off. Each page had 3 runs in turns. Each figure is the middle of the 3 runs' medians (runs `20261007-213535-bench` and `20261007-215025-bench`).
+
+| Page | GPU ms, every knight walks | CPU ms | GPU ms, half the knights still | CPU ms |
+| --- | --- | --- | --- | --- |
+| Lean pass (default) | 22.28 | 3.42 | 20.94 | 4.36 |
+| `full`: neither saving | 22.28 | 3.48 | 20.84 | 4.21 |
+| `skip`: pose skip only | 22.12 | 3.41 | 20.71 | 4.28 |
+| `narrow`: 8-bit directions only | 22.28 | 3.39 | 21.10 | 4.26 |
+| `vertex`: the vertex shaders skin | 21.10 | 2.99 | 23.72 | 3.38 |
+
+The timing page drew 200 characters at 20 bytes per skinned vertex (run `20261007-220602-skinning-webgpu`). The two ways' images differed in 0 of 921,600 pixels.
+
+| Cascades | Vertex shaders, GPU ms | Compute pass, GPU ms | Compute pass against the vertex shaders |
+| --- | --- | --- | --- |
+| 2 | 1.98 | 2.73 | 38% more |
+| 4 | 3.37 | 3.68 | 9% more |
+
+What the figures show:
+
+- With every knight walking, the compute pass takes 5.6% more GPU time than the vertex shaders. It also takes 0.43 ms more CPU time. On the timing page it takes 9% to 38% more GPU time.
+- The lean savings change nothing on the S25. In each set, the lean, `full`, `skip` and `narrow` pages lie within 0.4 ms of each other.
+- With half the knights still, the compute pass takes 12% less GPU time than the vertex shaders. The pose skip gives none of that: `full`, which skins every knight in every frame, takes 20.84 ms. The vertex shaders took 2.6 ms more than with every knight walking, and the run does not show why. So this reading does not count as a saving of the compute pass until a repeat explains it.
+- The first addendum expected Adreno's binning pass to favor the compute pass, since it runs the joint blend twice in the vertex shaders. On the S25 the vertex shaders are faster all the same.
+
+### What this means for the rule
+
+The rule keeps the compute pass only if it saves at least 10% of the frame time on every device that decides it. On the Mac's Chrome it saved 1%. On the S25 it costs more than the vertex shaders, in S5 with every knight walking and on the timing page. So the compute pass fails the rule on both devices measured so far. No run on the iPad, the Pixel 9 or the Pixel 11 can make it pass. By the rule, the vertex shaders become the WebGPU default, and the compute pass leaves the engine.
+
+This branch does not make that change. The compute pass stays the default until the owner rules on this record. The Pixel 9 and Pixel 11 runs, now running, and the iPad's run add their figures first.
