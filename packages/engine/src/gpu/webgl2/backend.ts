@@ -981,15 +981,18 @@ export class WebGL2Backend {
 			const glsl = this.need(this.templates, template, 'render pipeline template');
 			program = createProgram(this.gl, glsl, permutation);
 			this.programs.set(key, program);
-			const joined = this.joins.joined(template);
-			if (joined) program.joined = { template, start: performance.now(), failed: false };
+			const joined = this.joins.joined(template)
+				? { template, start: performance.now(), failed: false }
+				: undefined;
+			if (joined) program.joined = joined;
 			if ((background || joined) && this.parallel) {
 				program.background = true;
 				this.compiling.push(program);
 			} else if (joined && this.replayed) {
 				// Without background compiles, the first draw would wait for the compile, so the
 				// effects stay one pass each after the first frame, which waits for every program.
-				this.joinFailed(program, 'this device compiles programs only while a draw waits');
+				joined.failed = true;
+				this.joins.keptApart(template);
 			}
 		}
 		return program;

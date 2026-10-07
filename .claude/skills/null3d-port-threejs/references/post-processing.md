@@ -126,7 +126,7 @@ A custom effect is WGSL that declares `fn effect(input: EffectInput) -> vec4f`. 
 5. Pass the WGSL to `post.addEffect({ wgsl, uniforms, order })`. It must be a template literal after `/* wgsl */`, or a `.wgsl` import; plain text throws E1215. A wrong uniform name fails the type check, and throws E1216 at run time.
 6. `pass.uniforms.x.value = v` becomes `post.setEffectUniform(fx, 'x', v)`, which allocates nothing. `pass.enabled = false` becomes `post.removeEffect(fx)`.
 7. Keep the chain's order with `order`: effects run from the lowest to the highest, and ties in the order they were added. At most 8 run at once; a ninth throws E1213.
-8. Keep each look an effect of its own: the engine joins the ones that read only their own pixel. Put an effect that reads other pixels, such as a blur, first in its chain, since it starts a new pass.
+8. Keep each look an effect of its own: the engine joins the ones that read only their own pixel. Put an effect that reads other pixels, such as a blur, first in its chain, since it starts a new pass. Add the effects before the first frame: on WebGL2 in Chrome on Android, effects added later stay a pass each.
 
 ```ts
 // three.js ShaderPass: uniform float amount; tDiffuse; vUv

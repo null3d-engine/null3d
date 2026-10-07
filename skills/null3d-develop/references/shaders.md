@@ -268,7 +268,7 @@ post.removeEffect(vignette);
 - Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects take no textures.
 - Library imports work: `#import null3d::noise::{random2}`. Do not declare `uniforms`, or names that start with `effect`.
 - `order` sets the run order, lowest first; ties run in the order added. At most 8 effects; a ninth throws E1213.
-- A full-screen pass reads and writes 8 bytes per pixel. An effect that reads only its own pixel joins the pass of the effect before it, and the last pass folds into the final pass when bloom and FXAA are off. An effect that calls `effectPixel` or `effectColor` starts a pass of its own, so put neighbor reads first in a chain.
+- A full-screen pass reads and writes 8 bytes per pixel. An effect that reads only its own pixel joins the pass of the effect before it, and the last pass folds into the final pass when bloom and FXAA are off. An effect that calls `effectPixel` or `effectColor` starts a pass of its own, so put neighbor reads first in a chain. Add effects before the first frame: on WebGL2 in a browser that cannot compile shaders in the background, such as Chrome on Android, effects added later draw a pass each.
 - Effects need HDR color, as bloom does. In compatibility mode with MSAA, the first effect moves the engine to HDR with FXAA. On a WebGL2 device with no float target they stay off, with a warning in development builds.
 - Return premultiplied color: keep `input.color.a`, and multiply colors you mix in by it, as `mix(c.rgb, fogColor * c.a, t)` does.
 

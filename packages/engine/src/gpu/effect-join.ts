@@ -26,14 +26,22 @@ export interface JoinTimingReport {
 	readonly builds: readonly { template: number; kind: string; ms: number }[];
 	/** The templates whose builds failed. */
 	readonly failed: readonly number[];
+	/**
+	 * The templates that a device without background compiles never built, so their effects draw one
+	 * pass each by design.
+	 */
+	readonly keptApart: readonly number[];
 }
 
 /** The joined builds' times of every backend on this thread, which development builds keep. */
-const timing: { builds: JoinTimingReport['builds'][number][]; failed: number[] } = {
-	builds: [],
-	failed: [],
-};
+const timing: {
+	builds: JoinTimingReport['builds'][number][];
+	failed: number[];
+	keptApart: number[];
+} = { builds: [], failed: [], keptApart: [] };
 let answering = false;
+/** True once a development build has said that a device keeps effects apart. */
+let toldKeptApart = false;
 
 /** Answers requests for the joined builds' times on the broadcast channel, from the first on. */
 function answer(): void {
@@ -53,7 +61,7 @@ function answer(): void {
  * engine: its effects still draw, one pass each.
  */
 export class JoinedBuilds {
-	/** Hears each joined template whose build failed. */
+	/** Hears each joined template whose build failed or that stays unbuilt. */
 	onFailed: (template: number) => void = () => {};
 
 	constructor(private readonly shaders: ReadonlyMap<number, CustomShader>) {}
@@ -79,6 +87,25 @@ export class JoinedBuilds {
 			console.warn(
 				`null3D: a shader of joined custom effects failed to build, so those effects draw one pass each: ${reason instanceof Error ? reason.message : String(reason)}`,
 			);
+		}
+		this.onFailed(template);
+	}
+
+	/**
+	 * Notes that joined template `template` stays unbuilt because the device would wait for its
+	 * compile at its first draw. Its effects draw one pass each, as on a failure, but that is the
+	 * design on such a device. Development builds say so once, with what the sketch can do.
+	 */
+	keptApart(template: number): void {
+		if (DEV) {
+			timing.keptApart.push(template);
+			answer();
+			if (!toldKeptApart) {
+				toldKeptApart = true;
+				console.warn(
+					'null3D: this browser cannot compile WebGL2 shaders in the background, so custom effects added after the first frame draw one pass each instead of joining. Add them before the first frame to join them.',
+				);
+			}
 		}
 		this.onFailed(template);
 	}
