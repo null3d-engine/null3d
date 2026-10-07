@@ -954,7 +954,7 @@ impl GpuDrivenRenderer {
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
-            dfg::upload(list, arena, ids::DFG)?;
+            dfg::upload(list, arena, ids::DFG, 0)?;
         }
         let pages_remade = self
             .meshes

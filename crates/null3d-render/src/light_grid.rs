@@ -897,7 +897,9 @@ impl CameraLights {
         if self.grid.uniform().grid[2] == 0.0 {
             return 0;
         }
-        held_source(self.on_gpu, &self.params, &self.grid).len() * 4 + self.lights_bytes().len()
+        // WebGL2 uploads the words in whole texels of four.
+        (held_source(self.on_gpu, &self.params, &self.grid).len() * 4).next_multiple_of(16)
+            + self.lights_bytes().len()
     }
 
     /// The room to keep in a frame's arena for the upload, at least [`CameraLights::upload_bytes`]
@@ -971,11 +973,15 @@ mod tests {
             format!("const START_BITS: u32 = {START_BITS}u;"),
             format!(
                 "const WORD_ROW_SHIFT: u32 = {}u;",
-                shift(sizes::INDICES_PER_TEXTURE_ROW)
+                shift(sizes::GRID_WORDS_PER_TEXTURE_ROW)
             ),
             format!(
                 "const LIGHT_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::LIGHTS_PER_TEXTURE_ROW)
+            ),
+            format!(
+                "const GRID_COLUMN: u32 = {}u;",
+                sizes::LIGHTS_PER_TEXTURE_ROW * 4
             ),
         ] {
             assert!(lights.contains(&line), "lib/lights.wgsl lacks {line}");
