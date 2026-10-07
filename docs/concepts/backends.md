@@ -45,7 +45,7 @@ Every feature works on both paths, or its page describes its WebGL2 fallback. Th
 | Sorting see-through objects back to front | The job workers | The job workers |
 | [Skinning](../api/animation.md#skinned-meshes) | A compute pass, once per frame for every pass that draws the mesh | The vertex shader of each pass that draws the mesh |
 | [Morph targets](../api/animation.md#morph-targets) | The skinning pass, once per frame, with every weight | The vertex shader of each pass, with the preset's count of each object's largest weights. Its shaders load with the first morphed mesh |
-| The [depth prepass](quality-presets.md#the-depth-prepass) | Drawn when `depthPrepass` is on, with a shader that computes positions only | Drawn when `depthPrepass` is on, with each material's own vertex shader |
+| The [depth prepass](quality-presets.md#the-depth-prepass) | Off on every preset. Drawn when `depthPrepass` is on, with a shader that computes positions only | On for every preset, as it restores early rejection of hidden pixels on Apple GPUs. Drawn with each material's own vertex shader |
 | [Occlusion culling](culling.md#gpu-occlusion-culling-on-webgpu) | On the GPU, in two phases, when `gpuOcclusion` is on | Not on the GPU |
 | GPU time in `engine.measure` | Where the device has timestamp queries | Not measured |
 
