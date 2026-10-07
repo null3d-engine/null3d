@@ -51,6 +51,7 @@ pub mod format;
 pub mod mesh;
 pub mod morton;
 pub mod query;
+pub mod rows;
 pub mod scene;
 pub mod top;
 
@@ -380,14 +381,94 @@ impl Node {
     }
 }
 
-/// A ray prepared for the four-box test: its origin and inverse direction in every lane, and for
-/// each axis whether the box's minimum is the near side.
+/// How far past their stored bounds a query's boxes reach: by `base`, plus `slope` times the
+/// depth of each box's farthest point in front of a camera at `eye`, which looks along `forward`.
+/// Rows sized in pixels of the screen take more room in the world the farther they lie from the
+/// camera, and a threshold reaches past what rows draw, so their stored boxes hold only their
+/// anchors and the query grows every box by its reach.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Reach {
+    /// The distance that every box grows by on each side.
+    pub base: f32,
+    /// The distance that a box grows by per unit of its depth in front of the camera.
+    pub slope: f32,
+    /// The camera's position in the world.
+    pub eye: [f64; 3],
+    /// The unit direction that the camera looks along.
+    pub forward: [f32; 3],
+}
+
+/// The share that a reach grows by, so rounding in the depth of a box never makes it fall short.
+const REACH_MARGIN: f32 = 1.0 + 1.0 / 4096.0;
+
+impl Reach {
+    /// No reach: boxes stay as they are stored.
+    pub const NONE: Reach = Reach {
+        base: 0.0,
+        slope: 0.0,
+        eye: [0.0; 3],
+        forward: [0.0; 3],
+    };
+
+    /// True when the reach grows no box.
+    #[inline(always)]
+    pub fn is_none(&self) -> bool {
+        self.base == 0.0 && self.slope == 0.0
+    }
+
+    /// The reach in the frame of a cell, whose centre `offset` gives, for the four-box tests.
+    fn lanes(&self, offset: [f64; 3]) -> ReachLanes {
+        let eye: [f64; 3] = std::array::from_fn(|k| self.eye[k] - offset[k]);
+        let depth: f64 = (0..3).map(|k| eye[k] * f64::from(self.forward[k])).sum();
+        ReachLanes {
+            base: f32x4::splat(self.base * REACH_MARGIN),
+            slope: f32x4::splat(self.slope * REACH_MARGIN),
+            forward: self.forward.map(f32x4::splat),
+            far_max: self.forward.map(|f| f >= 0.0),
+            eye_depth: f32x4::splat(depth as f32),
+        }
+    }
+}
+
+/// A [`Reach`] in every lane, in a cell's frame.
+#[derive(Clone, Copy, Debug)]
+struct ReachLanes {
+    base: f32x4,
+    slope: f32x4,
+    forward: [f32x4; 3],
+    /// For each axis, whether a box's maximum lies farther along the view than its minimum.
+    far_max: [bool; 3],
+    /// The eye's place along the view in the cell's frame, which each depth counts from.
+    eye_depth: f32x4,
+}
+
+impl ReachLanes {
+    /// Grows four boxes by the reach at each one's farthest depth. It stays out of line, so each
+    /// tree walk keeps one call, not its own copy, and walks without a reach skip it.
+    #[inline(never)]
+    fn grow(&self, min: &mut [f32x4; 3], max: &mut [f32x4; 3]) {
+        let mut depth = -self.eye_depth;
+        for k in 0..3 {
+            let far = if self.far_max[k] { max[k] } else { min[k] };
+            depth += far * self.forward[k];
+        }
+        let pad = self.base + self.slope * depth.simd_max(f32x4::splat(0.0));
+        for k in 0..3 {
+            min[k] -= pad;
+            max[k] += pad;
+        }
+    }
+}
+
+/// A ray prepared for the four-box test: its origin and inverse direction in every lane, for each
+/// axis whether the box's minimum is the near side, and the reach that grows each box.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RayBoxes {
     origin: [f32x4; 3],
     inverse: [f32x4; 3],
     min_near: [bool; 3],
     t_min: f32x4,
+    reach: Option<ReachLanes>,
 }
 
 impl RayBoxes {
@@ -407,6 +488,17 @@ impl RayBoxes {
             inverse: inverse.map(f32x4::splat),
             min_near: inverse.map(|i| i >= 0.0),
             t_min: f32x4::splat(ray.t_min),
+            reach: None,
+        }
+    }
+
+    /// The ray with each box grown by `reach`, for a ray in the frame of the cell whose centre
+    /// `offset` gives. Walks make it once per cell, so it stays out of line.
+    #[inline(never)]
+    pub(crate) fn reaching(ray: &Ray, reach: &Reach, offset: [f64; 3]) -> RayBoxes {
+        RayBoxes {
+            reach: (!reach.is_none()).then(|| reach.lanes(offset)),
+            ..RayBoxes::new(ray)
         }
     }
 
@@ -414,22 +506,39 @@ impl RayBoxes {
     /// distance at which it enters each.
     #[inline(always)]
     pub(crate) fn test(&self, node: &Node, t_max: f32) -> (Mask<i32, 4>, f32x4) {
+        let mut min = node.min.map(f32x4::from_array);
+        let mut max = node.max.map(f32x4::from_array);
+        if let Some(reach) = &self.reach {
+            reach.grow(&mut min, &mut max);
+        }
         let mut near = self.t_min;
         let mut far = f32x4::splat(t_max);
         let scale = f32x4::splat(FAR_SCALE);
         for k in 0..3 {
             let (lo, hi) = if self.min_near[k] {
-                (node.min[k], node.max[k])
+                (min[k], max[k])
             } else {
-                (node.max[k], node.min[k])
+                (max[k], min[k])
             };
-            let t0 = (f32x4::from_array(lo) - self.origin[k]) * self.inverse[k];
-            let t1 = (f32x4::from_array(hi) - self.origin[k]) * self.inverse[k] * scale;
+            let t0 = (lo - self.origin[k]) * self.inverse[k];
+            let t1 = (hi - self.origin[k]) * self.inverse[k] * scale;
             // Compare and select: a NaN slab, from a box with NaN bounds, leaves the span alone.
             near = near.simd_lt(t0).select(t0, near);
             far = t1.simd_lt(far).select(t1, far);
         }
         (near.simd_le(far), near)
+    }
+
+    /// The distance at which the ray enters the box before `t_max`, or `None`.
+    #[inline(always)]
+    pub(crate) fn entry(&self, b: &Aabb, t_max: f32) -> Option<f32> {
+        let mut node = Node::EMPTY;
+        for k in 0..3 {
+            node.min[k][0] = b.min[k];
+            node.max[k][0] = b.max[k];
+        }
+        let (mask, near) = self.test(&node, t_max);
+        mask.test(0).then(|| near[0])
     }
 }
 
@@ -632,10 +741,21 @@ pub(crate) fn walk_near_first(
     nodes: &[Node],
     root: u32,
     ray: &Ray,
+    leaf: impl FnMut(u32, u32, f32) -> f32,
+) {
+    walk_boxes_near_first(nodes, root, &RayBoxes::new(ray), ray.t_max, leaf);
+}
+
+/// Walks the tree as [`walk_near_first`] does, with the ray prepared as `boxes`, up to `t_max`.
+#[inline(always)]
+pub(crate) fn walk_boxes_near_first(
+    nodes: &[Node],
+    root: u32,
+    boxes: &RayBoxes,
+    t_max: f32,
     mut leaf: impl FnMut(u32, u32, f32) -> f32,
 ) {
-    let boxes = RayBoxes::new(ray);
-    let mut t_max = ray.t_max;
+    let mut t_max = t_max;
     let mut stack: Stack<(u32, f32)> = Stack::new();
     let mut node = &nodes[root as usize];
     loop {
@@ -668,8 +788,19 @@ pub(crate) fn walk_any(
     ray: &Ray,
     leaf: impl FnMut(u32, u32) -> bool,
 ) -> bool {
-    let boxes = RayBoxes::new(ray);
-    walk_overlap(nodes, root, |node| boxes.test(node, ray.t_max).0, leaf)
+    walk_boxes_any(nodes, root, &RayBoxes::new(ray), ray.t_max, leaf)
+}
+
+/// Walks the tree as [`walk_any`] does, with the ray prepared as `boxes`, up to `t_max`.
+#[inline(always)]
+pub(crate) fn walk_boxes_any(
+    nodes: &[Node],
+    root: u32,
+    boxes: &RayBoxes,
+    t_max: f32,
+    leaf: impl FnMut(u32, u32) -> bool,
+) -> bool {
+    walk_overlap(nodes, root, |node| boxes.test(node, t_max).0, leaf)
 }
 
 /// Walks the leaves of the tree under `root` whose boxes `test` marks, until `leaf` returns
@@ -708,13 +839,7 @@ pub(crate) fn walk_overlap(
 /// The distance at which the ray enters the box before `ray.t_max`, by the same robust test
 /// that tree walks use, or `None`. A ray that starts inside the box enters it at `ray.t_min`.
 pub fn ray_box_entry(ray: &Ray, b: &Aabb) -> Option<f32> {
-    let mut node = Node::EMPTY;
-    for k in 0..3 {
-        node.min[k][0] = b.min[k];
-        node.max[k][0] = b.max[k];
-    }
-    let (mask, near) = RayBoxes::new(ray).test(&node, ray.t_max);
-    mask.test(0).then(|| near[0])
+    RayBoxes::new(ray).entry(b, ray.t_max)
 }
 
 #[cfg(test)]

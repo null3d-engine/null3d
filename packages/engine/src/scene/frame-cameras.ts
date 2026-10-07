@@ -11,6 +11,7 @@
 // stands. Pointer events on objects name the frame of each event. Everything lives in typed arrays
 // made once, so neither call nor the per-frame record allocates.
 
+import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
 import { type ControlViews, frameAfter, previousFrame, Slot } from '../shared/control';
 import type { CoreMemory } from './memory';
@@ -102,6 +103,9 @@ export class FrameCameras {
 	private readonly current = new Float64Array(ENTRY);
 	/** The view of the frame being kept, before it joins the ring. */
 	private readonly incoming = new Float64Array(ENTRY);
+	/** The entry that the last `frameRay` cast its ray from, and where it starts in it. */
+	private rayEntry: Float64Array = this.current;
+	private rayAt = -1;
 	private readonly matrix = new Float64Array(MATRIX_FLOATS);
 	/** The point of a `screenToRay` call, which the ray's math reads from an array. */
 	private readonly point = new Float64Array(2);
@@ -170,6 +174,7 @@ export class FrameCameras {
 	frameRay(frame: number, point: Float64Array, out: Ray, fallback: FrameLens | undefined): number {
 		let entry: Float64Array = this.ring;
 		let at = this.entryOf(frame, undefined);
+		this.rayAt = -1;
 		if (at < 0) {
 			if (fallback === undefined || this.core.readWorldMatrix(fallback.handle, this.matrix) !== 0)
 				return -1;
@@ -177,7 +182,27 @@ export class FrameCameras {
 			at = 0;
 		}
 		writeRay(entry, at, point, out);
+		this.rayEntry = entry;
+		this.rayAt = at;
 		return (entry[at + LAYERS] as number) >>> 0;
+	}
+
+	/**
+	 * Writes the camera that the last `frameRay` cast its ray from into a query's input, as
+	 * `writeQueryCamera` does, so the ray hits sprites, points and lines as that frame drew them.
+	 */
+	rayCamera(input: Float64Array): void {
+		writeQueryCamera(this.rayEntry, this.rayAt, input);
+	}
+
+	/**
+	 * Writes `camera` as it stands into a query's input, or no camera when it is undefined or gone,
+	 * as `writeQueryCamera` does.
+	 */
+	queryCamera(camera: FrameLens | undefined, input: Float64Array): void {
+		if (camera === undefined || this.core.readWorldMatrix(camera.handle, this.matrix) !== 0)
+			writeQueryCamera(this.current, -1, input);
+		else writeQueryCamera(this.standing(camera), 0, input);
 	}
 
 	/**
@@ -362,6 +387,57 @@ function writeScaleX(e: Float64Array, at: number, out: Float64Array, index: numb
 			? halfWidth
 			: (e[at + LENS + LENS_HALF_HEIGHT] as number) *
 				((e[at + WIDTH] as number) / (e[at + HEIGHT] as number));
+}
+
+/** The half width of a view that `writeQueryCamera` reads, filled again on each call. */
+const axisScale = new Float64Array(1);
+
+/**
+ * Writes the camera of the entry at `at` into a query's input at the `QUERY_INPUT_*` offsets: its
+ * kind, its position, its unit axes, the world units of a CSS pixel across and up the view (at a
+ * depth of 1 for a perspective camera), and its near and far distances. An entry at -1, or a
+ * canvas with no size, writes no camera, and rays then miss sprites, points and lines that need
+ * one.
+ */
+function writeQueryCamera(e: Float64Array, at: number, input: Float64Array): void {
+	const width = at < 0 ? 0 : (e[at + CSS_WIDTH] as number);
+	const height = at < 0 ? 0 : (e[at + CSS_HEIGHT] as number);
+	if (!(width > 0 && height > 0)) {
+		input[C.QUERY_INPUT_CAMERA] = C.QUERY_CAMERA_NONE;
+		return;
+	}
+	const lens = at + LENS;
+	const m = at + MATRIX;
+	input[C.QUERY_INPUT_CAMERA] =
+		e[lens + LENS_ORTHO] !== 0 ? C.QUERY_CAMERA_ORTHOGRAPHIC : C.QUERY_CAMERA_PERSPECTIVE;
+	for (let row = 0; row < 3; row++) input[C.QUERY_INPUT_EYE + row] = e[m + row * 4 + 3] as number;
+	// The matrix's columns are the camera's right, up and backward axes.
+	writeAxis(e, m, 0, 1, input, C.QUERY_INPUT_RIGHT);
+	writeAxis(e, m, 1, 1, input, C.QUERY_INPUT_UP);
+	writeAxis(e, m, 2, -1, input, C.QUERY_INPUT_FORWARD);
+	writeScaleX(e, at, axisScale, 0);
+	input[C.QUERY_INPUT_PIXEL] = (2 * (axisScale[0] as number)) / width;
+	input[C.QUERY_INPUT_PIXEL + 1] = (2 * (e[lens + LENS_HALF_HEIGHT] as number)) / height;
+	input[C.QUERY_INPUT_NEAR] = e[lens + LENS_NEAR] as number;
+	input[C.QUERY_INPUT_FAR] = e[lens + LENS_FAR] as number;
+}
+
+/** Writes column `column` of the matrix at `m`, times `sign`, as a unit vector at `out[at]`. */
+function writeAxis(
+	e: Float64Array,
+	m: number,
+	column: number,
+	sign: number,
+	out: Float64Array,
+	at: number,
+): void {
+	const x = e[m + column] as number;
+	const y = e[m + 4 + column] as number;
+	const z = e[m + 8 + column] as number;
+	const scale = sign / Math.sqrt(x * x + y * y + z * z);
+	out[at] = x * scale;
+	out[at + 1] = y * scale;
+	out[at + 2] = z * scale;
 }
 
 /** The half width that `writeRay` reads, filled again on each call. */
