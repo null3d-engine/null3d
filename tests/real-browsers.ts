@@ -991,6 +991,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'environment',
 	'ao',
 	'occlusion',
+	'gpu-occlusion',
 	'overload',
 	'soak',
 ]);

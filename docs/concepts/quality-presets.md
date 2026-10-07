@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow settings, texture settings, anti-aliasing mode, depth prepass and memory maximum, and reports it. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -181,6 +181,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Ambient occlusion (`aoScale`) | off | off | half resolution | half resolution | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
+| GPU occlusion culling (WebGPU) (`gpuOcclusion`) | no | no | no | no | at the start | built |
 | Morph targets per object on WebGL2 (`morphTargets`) | 8 | 16 | 32 | 64 | at the start | built |
 | Software occlusion culling (WebGL2) (`softwareOcclusion`) | no | yes | yes | yes | during play | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
@@ -224,6 +225,12 @@ One case differs: two opaque surfaces at exactly the same depth. Without the pre
 ```ts
 const engine = await createEngine({ canvas, sketch, depthPrepass: true });
 ```
+
+### GPU occlusion culling
+
+With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the marked occluders that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. Every preset leaves it off. Its passes cost GPU time in each frame with marked occluders. On a fast desktop GPU they cost more than skipping hidden objects saved, in every scene measured.
+
+The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, and not with the depth prepass, so `quality.settings.gpuOcclusion` is false on WebGL2 and when the page turns the prepass on.
 
 ## Dynamic resolution
 

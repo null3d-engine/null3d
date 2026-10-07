@@ -9,6 +9,10 @@
 //! instances and indirect draws, with each bucket's depth pipeline, and leaves out the buckets that
 //! have none. It binds the view's frame uniform through a group of the depth template's layout.
 //!
+//! A camera view that culls in two phases replays the depth bundle in its occluders' pass, a render
+//! pass of its own with no color target, from the first set of indirect draws. Its bundle then
+//! draws from the second set, which follows the first in the view's indirect buffer.
+//!
 //! The outline view's bundle draws the outlined layout's buckets into the outline mask, twice: once
 //! to mark every part of each object, then again to mark the parts that nothing hides. It binds
 //! the outline view's frame uniform through a group of the depth template's layout too.
@@ -95,9 +99,10 @@ pub(super) fn upload(
 /// What a view's bundle draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Bundle {
-    /// The view's objects, each bucket with its pipeline and its material's maps.
+    /// The view's objects, each bucket with its pipeline and its material's maps: a camera view's
+    /// opaque pass, or a shadow pass.
     Opaque,
-    /// The depth of the camera view's opaque objects, for the depth prepass.
+    /// The depth of the camera view's opaque objects, for the depth prepass or the occluders' pass.
     Prepass,
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
@@ -107,10 +112,19 @@ pub(super) enum Bundle {
     Tile,
 }
 
+impl Bundle {
+    fn id(self, view: ViewId) -> u32 {
+        match self {
+            Self::Opaque | Self::Outline | Self::Tile => ids::bundle(view),
+            Self::Prepass => ids::prepass_bundle(view),
+        }
+    }
+}
+
 /// Records a view's bundle of `kind`: each draw of every bucket of the layout, with the bucket's
 /// slice of the view's compacted instances and, where the bucket shades or its prepass draws with
 /// its own vertex shader, the bind group of its material's map, from its mesh page's buffers in
-/// `meshes`, into `targets`.
+/// `meshes`, into `targets`. Its draws start `first_draw` draws into the view's indirect buffer.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
@@ -118,155 +132,132 @@ pub(super) fn record_bundle(
     meshes: &MeshBuffers,
     targets: PassTargets,
     kind: Bundle,
+    first_draw: u32,
 ) -> Result<(), RecordError> {
-    let (bundle, frame_group) = if kind == Bundle::Prepass {
-        (ids::prepass_bundle(view), ids::prepass_group(view))
+    let frame_group = if kind == Bundle::Prepass {
+        ids::prepass_group(view)
     } else {
-        (ids::bundle(view), ids::frame_group(view))
+        ids::frame_group(view)
     };
     list.push(
         Op::BeginBundle,
         &[
-            bundle,
+            kind.id(view),
             targets.color_format,
             targets.depth_format,
             targets.samples,
         ],
     )?;
+    let draws = Draws {
+        view,
+        layout,
+        meshes,
+        frame_group,
+        first_draw,
+    };
     match kind {
-        Bundle::Opaque => {
-            draw_buckets(
-                list,
-                view,
-                layout,
-                meshes,
-                frame_group,
-                |b| b.pipeline,
-                |_| true,
-            )?;
-        }
-        Bundle::Prepass => {
-            let pipeline = |b: &Bucket| b.prepass;
-            draw_buckets(list, view, layout, meshes, frame_group, pipeline, |b| {
-                b.prepass_own
-            })?;
-        }
-        Bundle::Tile => {
-            draw_buckets(
-                list,
-                view,
-                layout,
-                meshes,
-                frame_group,
-                |b| b.prepass,
-                |_| true,
-            )?;
-        }
+        Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
+        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
         Bundle::Outline => {
-            draw_buckets(
-                list,
-                view,
-                layout,
-                meshes,
-                frame_group,
-                |b| b.pipeline,
-                |_| false,
-            )?;
-            draw_buckets(
-                list,
-                view,
-                layout,
-                meshes,
-                frame_group,
-                |b| b.prepass,
-                |_| false,
-            )?;
+            draws.record(list, |b| b.pipeline, |_| false)?;
+            draws.record(list, |b| b.prepass, |_| false)?;
         }
     }
     list.push(Op::EndBundle, &[])?;
     Ok(())
 }
 
-/// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
-/// leaving out the buckets for which it gives 0. A bucket for which `own_of` is true draws with its
-/// own template's vertex shader: it reads the view's frame group and its maps' group as its
-/// shading does. The others read `frame_group` alone, as the depth and mask templates do.
-#[allow(clippy::too_many_arguments)]
-fn draw_buckets(
-    list: &mut DrawList,
+/// What a bundle's buckets draw from: the view, its layout and the mesh pages' buffers, the
+/// group that the depth and mask templates read, and the first of the view's indirect draws.
+struct Draws<'a> {
     view: ViewId,
-    layout: &Layout,
-    meshes: &MeshBuffers,
+    layout: &'a Layout,
+    meshes: &'a MeshBuffers,
     frame_group: u32,
-    pipeline_of: impl Fn(&Bucket) -> u32,
-    own_of: impl Fn(&Bucket) -> bool,
-) -> Result<(), RecordError> {
-    let (mut pipeline, mut vertices, mut indices) = (None, None, None);
-    let mut groups = DrawGroups::default();
-    let mut bound = None;
-    for bucket in &layout.buckets {
-        let id = pipeline_of(bucket);
-        if id == 0 {
-            continue;
-        }
-        let own = own_of(bucket);
-        let group = if own {
-            ids::frame_group(view)
-        } else {
-            frame_group
-        };
-        if bound != Some(group) {
-            list.push(Op::SetBindGroup, &[0, group, 0])?;
-            bound = Some(group);
-        }
-        if pipeline != Some(id) {
-            list.push(Op::SetPipeline, &[id])?;
-            pipeline = Some(id);
-        }
-        let maps = if own { bucket.group } else { 0 };
-        groups.set(list, maps, bucket.skins)?;
-        list.push(
-            Op::SetVertexBuffer,
-            &[
-                1,
-                ids::visible(view),
-                bucket.base * sizes::INSTANCE_STRIDE,
-                bucket.capacity.max(1) * sizes::INSTANCE_STRIDE,
-            ],
-        )?;
-        for index in bucket.first_draw..bucket.first_draw + bucket.draws {
-            let draw = layout.draws[index as usize];
-            let (page_vertices, page_indices) = meshes.ids(draw.page);
-            // A skinned part draws its own region of skinned vertices with its page's indices.
-            let source = draw.vertices.unwrap_or((page_vertices, 0));
-            if vertices != Some(source) {
-                list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
-                vertices = Some(source);
-            }
-            if indices != Some(page_indices) {
-                list.push(
-                    Op::SetIndexBuffer,
-                    &[page_indices, index_format::UINT16, 0, 0],
-                )?;
-                indices = Some(page_indices);
-            }
-            list.push(
-                Op::DrawIndexedIndirect,
-                &[ids::indirect(view), index * INDIRECT_BYTES],
-            )?;
-        }
-    }
-    Ok(())
+    first_draw: u32,
 }
 
-/// Records a view's pass: its bundle, or with `prepass` its bundle of the depth prepass, inside
-/// the render pass that the render graph began.
-pub(super) fn record(list: &mut DrawList, view: ViewId, prepass: bool) -> Result<(), RecordError> {
-    let bundle = if prepass {
-        ids::prepass_bundle(view)
-    } else {
-        ids::bundle(view)
-    };
-    list.push(Op::ExecuteBundles, &[1, bundle])?;
+impl Draws<'_> {
+    /// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
+    /// leaving out the buckets for which it gives 0. A bucket for which `own_of` is true draws with
+    /// its own template's vertex shader: it reads the view's frame group and its maps' group as its
+    /// shading does. The others read the depth group alone, as the depth and mask templates do.
+    fn record(
+        &self,
+        list: &mut DrawList,
+        pipeline_of: impl Fn(&Bucket) -> u32,
+        own_of: impl Fn(&Bucket) -> bool,
+    ) -> Result<(), RecordError> {
+        let Self {
+            view,
+            layout,
+            meshes,
+            frame_group,
+            first_draw,
+        } = *self;
+        let (mut pipeline, mut vertices, mut indices) = (None, None, None);
+        let mut groups = DrawGroups::default();
+        let mut bound = None;
+        for bucket in &layout.buckets {
+            let id = pipeline_of(bucket);
+            if id == 0 {
+                continue;
+            }
+            let own = own_of(bucket);
+            let group = if own {
+                ids::frame_group(view)
+            } else {
+                frame_group
+            };
+            if bound != Some(group) {
+                list.push(Op::SetBindGroup, &[0, group, 0])?;
+                bound = Some(group);
+            }
+            if pipeline != Some(id) {
+                list.push(Op::SetPipeline, &[id])?;
+                pipeline = Some(id);
+            }
+            let maps = if own { bucket.group } else { 0 };
+            groups.set(list, maps, bucket.skins)?;
+            list.push(
+                Op::SetVertexBuffer,
+                &[
+                    1,
+                    ids::visible(view),
+                    bucket.base * sizes::INSTANCE_STRIDE,
+                    bucket.capacity.max(1) * sizes::INSTANCE_STRIDE,
+                ],
+            )?;
+            for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+                let draw = layout.draws[index as usize];
+                let (page_vertices, page_indices) = meshes.ids(draw.page);
+                // A skinned part draws its own region of skinned vertices with its page's indices.
+                let source = draw.vertices.unwrap_or((page_vertices, 0));
+                if vertices != Some(source) {
+                    list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
+                    vertices = Some(source);
+                }
+                if indices != Some(page_indices) {
+                    list.push(
+                        Op::SetIndexBuffer,
+                        &[page_indices, index_format::UINT16, 0, 0],
+                    )?;
+                    indices = Some(page_indices);
+                }
+                list.push(
+                    Op::DrawIndexedIndirect,
+                    &[ids::indirect(view), (first_draw + index) * INDIRECT_BYTES],
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Records a view's pass, which replays one of its bundles inside the render pass that the
+/// render graph began.
+pub(super) fn record(list: &mut DrawList, view: ViewId, bundle: Bundle) -> Result<(), RecordError> {
+    list.push(Op::ExecuteBundles, &[1, bundle.id(view)])?;
     Ok(())
 }
