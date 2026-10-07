@@ -1,7 +1,7 @@
 # iPad Pro 11-inch in Safari
 
-- Device: iPad Pro 11-inch, 834 x 1194 at 2x, 8 cores
-- OS: iPadOS
+- Device: iPad Pro 11-inch (2018, iPad8,1), A12X Bionic, 834 x 1194 at 2x, 8 cores
+- OS: iPadOS 26.7
 - Browser: Safari 26.6.2, with a Mac user agent
 - GPU: Apple GPU
 - GPU paths: WebGPU, compatibility mode, WebGL2
