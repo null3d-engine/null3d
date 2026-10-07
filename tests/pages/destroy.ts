@@ -10,11 +10,9 @@ run('destroy', async () => {
 	for (const [k, mode] of ['destroy', 'reference'].entries()) {
 		const canvas = canvases[k];
 		if (!canvas) throw new Error('the page has fewer than two canvases');
-		const engine = await createEngine({
-			canvas,
-			sketch: new URL(`./sketches/destroy-sketch.ts?mode=${mode}`, import.meta.url),
-			maxPixelRatio: 1,
-		});
+		const sketch = new URL('./sketches/destroy-sketch.ts', import.meta.url);
+		sketch.searchParams.set('mode', mode);
+		const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 		const failures: string[] = [];
 		engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 		const ready = await new Promise<{ meshBytes: number }>((resolve) =>
