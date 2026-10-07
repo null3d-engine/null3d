@@ -78,7 +78,7 @@ Prototype L3 compares three.js's term, M2-E7's shader filter, this bake, and the
 
 - Add a glTF scene to the shimmer page, beside its `bumps` scene. It holds the same metal sphere of roughness 0.2, under the same normal map of 16 bumps on 256 texels. A metal-rough map gives it that roughness.
 - Build the file in code, as the asset test scene is built. Optimize it twice, with and without `--no-roughness-bake`, and commit both outputs, as the asset test scene's outputs are.
-- Measure the flicker of each file with the filter on and off, on the Mac, the iPad and the cloud phones of L3. The result settles whether the bake stays on by default, and the filter's settings.
+- Measure the flicker of each file with the filter on and off, on the Mac, the iPad and the cloud phones of L3. The page's reference frames, drawn at 4 times the size, read a sharper level of the normal map, whose bumps alias. On the code-built bump scene they flickered more than the frames they check. So the bake scene's reference takes more samples per pixel, or a coarser camera step (M2-E7's helper, 8 October 2026). The result settles whether the bake stays on by default, and the filter's settings.
 
 ## Consequences
 
