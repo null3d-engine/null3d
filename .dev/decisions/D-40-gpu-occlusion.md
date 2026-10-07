@@ -1,6 +1,6 @@
 # D-40: Two-phase GPU occlusion culling on WebGPU
 
-Status: method decided, 2026-10-04; off on every preset (D-22); the stall between passes open for the owner; the iPad's timings 2026-10-07 (D-22). Task: M2-I1.
+Status: method decided, 2026-10-04; off on every preset (D-22); the stall between passes open for the owner; the iPad's timings 2026-10-07 (D-22). Prototype G1 on the Mac, 2026-10-08: off on desktops, and the quarter-size first level rejected. Task: M2-I1.
 
 Summary: Marked occluders that showed last frame and look large draw their depth at one sample per pixel. A compute pass builds a depth pyramid in a storage buffer, and a second culling phase tests every object against it, so the image equals culling without it and no object shows a frame late. Its shaders load on first use, once a scene marks an occluder.
 
@@ -116,3 +116,36 @@ The preset rules for it were decided in [D-53](D-53-technique-defaults.md) on 4 
 
 - Desktops: High and Ultra turn GPU occlusion culling on only if a second run on a quiet Mac saves time, and a run with another program loading the GPU loses no more than 5%. Today's loaded runs lose 19 to 40%, so it stays off for now.
 - Android: it stays off until prototype G1 passes on the GPUs whose drivers Bevy and Unity block for GPU culling. These are Adreno 730 and older, Mali drivers before r48, and the PowerVR GPUs of the Pixel 10 and 11.
+
+## Addendum, 2026-10-08: prototype G1 on the Mac
+
+Prototype G1 timed the room scene again on the quiet Mac, and tried a quarter-size first level of the pyramid. Each build ran from main at 62a125187. The quarter-size build changed only the pyramid's level sizes, its first level's reads and the second phase's level choice, and never merged.
+
+How it ran: Chrome 155 on the Mac (Apple M5 Max) drew the `gpu-occlusion` page on WebGPU. It used 96-segment spheres, MSAA and 1280 x 720 at a pixel ratio of 1. Each build had 3 runs of 3 rounds of 4 s with nothing else heavy on the GPU. Then it had 3 runs with a second Chrome that drew a heavy shader in 4 passes per frame. That load page held 120 frames per second throughout. Chrome started with `--enable-webgpu-developer-features`, which turns off the rounding of GPU timestamps to steps of 0.066 ms. The Mac's 1-minute load was 3.8 to 9.3 during the runs. It ran in a quiet window, with other helpers' builds and browser runs held back.
+
+GPU time per frame, the mean of the 3 runs' medians:
+
+| Build | Run | Culling off | Culling on | Change |
+| --- | --- | --- | --- | --- |
+| Main (first level at half size) | Quiet | 2.31 ms | 2.14 ms | 7% less |
+| Main | With the load page | 2.53 ms | 3.83 ms | 38% to 66% more |
+| Quarter-size first level | Quiet | 2.30 ms | 2.38 ms | 3% more |
+| Quarter-size first level | With the load page | 2.41 ms | 3.88 ms | 57% to 66% more |
+
+The quiet runs agreed within 0.01 ms. All six views matched culling off in every pixel, in every run of both builds.
+
+Pass times on the quiet GPU, main build. As before, they are medians of each part and overlap, so read them as shares:
+
+| Part of the frame | Culling off | Culling on |
+| --- | --- | --- |
+| The occluders' pass | none | 0.08 ms |
+| The compute pass of the pyramid and the second phase | none | 0.48 ms |
+| The opaque pass | 1.91 ms | 1.16 ms |
+| The final pass | 1.18 ms | 1.07 ms |
+
+- The culling still does its job. The opaque pass is 0.75 ms shorter, close to the 0.83 ms of 4 October. But the frame with culling off now takes 2.31 ms, against 1.64 ms then, and the pyramid and the second phase take 0.48 ms. So the saving is 7% of the frame, not 37%. This run does not show which change between the two dates moved these times.
+- The quarter-size first level saves nothing. Its opaque pass is the same (1.14 ms), so the coarser pyramid hides as much. But its compute pass takes 0.72 ms, against 0.48 ms. Fewer threads each make 36 dependent depth reads in place of 16. That is the likely cause, but it is not measured. The pyramid keeps a first level at half size.
+- Under load, culling still costs 38% to 66% more, as in the 4 October runs (19% to 40%). The frame with culling grows outside the culling passes, so the stall between passes is still there.
+- A run on 7 October, with rounded timestamps, gave the same pattern. Culling saved 6% to 7% quiet, and cost 25% to 62% more with the load page.
+
+So prototype G1 fails on the Mac by both of its desktop rules. It saves less than 10% quiet, and it loses more than 5% under load. Desktops keep GPU occlusion culling off ([D-22](D-22-occlusion-presets.md#addendum-2026-10-08-the-macs-g1-run)).
