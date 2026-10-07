@@ -1,10 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
-import {
-	isFirstUseShaderPart,
-	LATER_PARTS,
-	TRANSCODER_FILES,
-} from '../../tools/lib/size-report.ts';
+import { FIRST_USE_WASM, isFirstUseShaderPart, LATER_PARTS } from '../../tools/lib/size-report.ts';
 import { ALONE } from '../lib/alone.ts';
 import {
 	ENGINE_MODES,
@@ -102,8 +98,7 @@ for (const mode of ENGINE_MODES) {
 		const files: Record<string, RegExp> = { 'the sketch module': /\/empty-sketch[^/]*\.[jt]s$/ };
 		// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
 		// the characters of URL-safe base64, the underscore among them.
-		if (mode.sketchThread === 'main')
-			files["the core's loader"] = /\/null3d(-[\w-]+)?\.js(\?no-inline)?$/;
+		if (mode.sketchThread === 'main') files["the core's loader"] = /\/null3d(-[\w-]+)?\.js$/;
 		if (mode.renderThread === 'main') files['the renderer'] = /\/draw(-[^/]*)?\.[jt]s$/;
 		for (const [what, file] of Object.entries(files)) {
 			const asked = result.downloads?.find(({ name }) => file.test(name))?.startTime;
@@ -238,7 +233,8 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
  * The address of each file that loads only when a sketch first uses its feature, on the dev server
  * and in a production build, which names a file after its module and adds a hash. The size report
- * lists these files apart from the start, and the transcoder's files with them.
+ * lists these files apart from the start, and the WebAssembly modules that load on first use with
+ * them.
  */
 const FIRST_USE_FILES: readonly RegExp[] = [
 	...[
@@ -249,7 +245,7 @@ const FIRST_USE_FILES: readonly RegExp[] = [
 		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
 		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
 	}),
-	...TRANSCODER_FILES.map((file) => {
+	...FIRST_USE_WASM.map((file) => {
 		const dot = file.lastIndexOf('.');
 		return new RegExp(`/${escaped(file.slice(0, dot))}(-[\\w-]{8})?${escaped(file.slice(dot))}$`);
 	}),

@@ -26,7 +26,7 @@ use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
-use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
@@ -560,11 +560,33 @@ pub fn destroy_engine() {
     unsafe { *ENGINE.0.get() = None };
 }
 
-/// Serves the job system on a job worker until the page sets its stop flag. It first waits for
-/// the sketch thread to create the job system.
+// Each doc comment below stays short: wasm-bindgen copies it into the glue.
+/// Serves the job system on job worker `index`: true when a call made it return, false at stop.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
-pub fn job_worker_loop(index: u32) {
-    JOBS.wait().worker_loop(index);
+pub fn job_worker_loop(index: u32) -> bool {
+    JOBS.wait().worker_loop(index) == LoopExit::Called
+}
+
+/// Asks job worker `index` to leave its loop to run a task.
+#[wasm_bindgen(js_name = callJobWorker)]
+pub fn call_job_worker(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.call_worker(index);
+    }
+}
+
+/// Ends one task call of job worker `index`.
+#[wasm_bindgen(js_name = jobWorkerCallDone)]
+pub fn job_worker_call_done(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.call_done(index);
+    }
+}
+
+/// The task calls of job worker `index` that it has not finished.
+#[wasm_bindgen(js_name = jobWorkerCalls)]
+pub fn job_worker_calls(index: u32) -> u32 {
+    JOBS.get().map_or(0, |jobs| jobs.pending_calls(index))
 }
 
 /// Counts the frame chunk that job worker `index` held when its loop failed as done and as
