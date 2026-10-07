@@ -1,8 +1,9 @@
 // The reader of environment map files, which `assets.loadEnvironment` imports the first time, so
-// a page without an environment file never downloads it. An environment map is a KTX2 file that `bunx @null3d/cli assets env` writes (D-19):
-// a cube map of `rgb9e5ufloat` or `rgba16float` texels with no supercompression, one roughness per
-// mip level, and the nine coefficients of its diffuse light in the key-value data under
-// `null3d.environment`.
+// a page without an environment file never downloads it. An environment map is a KTX2 file that
+// `bunx @null3d/cli assets env` writes (D-19): a cube map of `rgb9e5ufloat` or `rgba16float` texels
+// with no supercompression, one roughness per mip level, and the nine coefficients of its diffuse
+// light in the key-value data under `null3d.environment`. A Radiance or OpenEXR file goes to the
+// panorama loader (panorama.ts) instead, which this reader tells apart by the file's first bytes.
 
 /** The texel formats of environment maps, by their Vulkan format number in the file. */
 const FORMATS = { 123: 'rgb9e5ufloat', 97: 'rgba16float' } as const;
@@ -19,6 +20,16 @@ const IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 
 /** The fewest and the most texels a side of the largest faces. */
 const MIN_SIZE = 8;
 const MAX_SIZE = 2048;
+
+/** The identifier that starts every OpenEXR file. */
+const EXR_IDENTIFIER = [0x76, 0x2f, 0x31, 0x01];
+
+/** True when `head` starts as a Radiance file, `#?`, or an OpenEXR file. */
+export function isPanoramaFile(head: Uint8Array): boolean {
+	return (
+		(head[0] === 0x23 && head[1] === 0x3f) || EXR_IDENTIFIER.every((byte, k) => head[k] === byte)
+	);
+}
 
 /** An environment map as its file gives it. */
 export interface EnvironmentFile {
@@ -37,7 +48,9 @@ export interface EnvironmentFile {
 export function readEnvironmentFile(bytes: ArrayBuffer): EnvironmentFile {
 	const file = new Uint8Array(bytes);
 	if (file.length < 80 || !IDENTIFIER.every((byte, k) => file[k] === byte))
-		throw new Error('it is not a KTX2 file');
+		throw new Error(
+			'it is neither a KTX2 file from bunx @null3d/cli assets env nor a Radiance (.hdr) or OpenEXR (.exr) file',
+		);
 	const view = new DataView(bytes);
 	const word = (at: number) => view.getUint32(at, true);
 	const long = (at: number) => Number(view.getBigUint64(at, true));
