@@ -270,7 +270,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 ### What S6 found
 
 - `GTAONode` on WebGPURenderer reads depth with `textureGather`, which takes no multisampled texture. With the renderer's MSAA, its shader failed to build. The twin's scene pass draws without MSAA when it feeds ambient occlusion, as three.js's own example does.
-- The first build on a machine generates the city files in about 27 seconds and optimizes them in about 100 seconds on the owner's Mac. Later builds take both from their caches. The benchmark pages' build server in `bench/playwright.config.ts` waits up to 10 minutes.
+- The first build on a machine generates the city files in about 27 seconds and optimizes them in about 100 seconds on the owner's Mac. Later builds take both from their caches. The benchmark pages' build server in `bench/playwright.config.ts` waits up to 10 minutes. CI keeps both in the Actions cache. The jobs of `ci.yml` that load S6 run `.github/actions/city` ([Sample content](sample-content.md#the-city-of-s6)). The Mac shards of the benchmark job build each compared build's city files into one cache folder, linked into each build's copy. The asset tool keys each optimized model by its inputs, so one folder serves both builds.
 
 ### Run S6
 
