@@ -26,7 +26,7 @@ The engine reports a problem in one of four places, as the diagram shows. Each m
 Every error that the engine throws is an `EngineError`. Its message starts with a code. It says what failed and how to fix it, and it links to the code's page:
 
 ```text
-E1203: setPosition() got NaN for x on an object (slot 2). Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector. See https://github.com/null3d-engine/null3d/blob/main/docs/errors/E1203.md
+E1203: setPosition() got NaN for x on an object (slot 2). Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector. See https://github.com/null3d-engine/null3d/blob/generated/docs/errors/E1203.md
 ```
 
 The error also holds the code in `error.code` and the page's address in `error.docs`. [Error codes](../errors/index.md) lists every code with its cause and fix.
