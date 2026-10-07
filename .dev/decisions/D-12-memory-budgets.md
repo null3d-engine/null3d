@@ -2,6 +2,8 @@
 
 Status: decided for the texture budgets, 2026-10-03, and applied by [D-69](D-69-texture-budget.md) on 2026-10-05. The iPad's WebAssembly row is pending. Task: M1-L3. Test: T-25.
 
+Summary: Keep the texture budgets of 256 to 2048 MiB and the 1024 MiB WebAssembly maximum. The iPad's tab died at 2016 MiB of GPU textures, so Low and Medium stay under half; the S24+ held 7296 MiB.
+
 ## Question
 
 How much GPU texture memory may each quality preset plan for, and how large a WebAssembly memory maximum may it declare? Phone and tablet browsers close a tab that uses too much memory. The presets' values must keep a scene well below that point on the weakest device that each preset serves.

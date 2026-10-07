@@ -113,14 +113,22 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
-	// Whether a far cascade draws in every frame while a moving caster touches it. Low keeps each
-	// far cascade to its turns, so a moving shadow far from the camera can trail its caster by the
-	// frames between turns, and phones draw fewer shadow passes where cars or crowds fill the far
+	// Whether a far cascade draws in every frame while a moving caster touches it. Every preset
+	// turns it on: a far cascade that keeps its turns leaves each moving shadow behind its caster
+	// until the next turn, and a camera high above a town sees nothing nearer than the far
 	// cascades. D-16 gives the figures.
 	followMovingCasters: {
-		presets: [false, true, true, true],
+		presets: [true, true, true, true],
 		changes: 'live',
 		values: 'flag',
+	},
+	// The share of each shadow cascade's length, at its far end, over which its shadow blends into
+	// the next cascade's, so no line shows where they meet. Only the band's pixels read a second
+	// layer of the shadow map. D-73 gives the figures.
+	shadowCascadeBlend: {
+		presets: [0.1, 0.1, 0.1, 0.1],
+		changes: 'live',
+		values: { min: 0, max: 0.5 },
 	},
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
@@ -297,11 +305,19 @@ export interface QualitySettings {
 	/**
 	 * True when a far shadow cascade draws in every frame while a dynamic object that casts shadows
 	 * touches it, so moving shadows stay under their casters. False keeps each far cascade to its
-	 * turns of `farCascadeInterval` frames: a moving shadow far from the camera then trails its
-	 * caster by up to that many frames less one, and the frames draw fewer shadow passes. Low turns
-	 * it off. It changes during play.
+	 * turns of `farCascadeInterval` frames: a moving shadow in a far cascade then trails its
+	 * caster by up to that many frames less one, and the frames draw fewer shadow passes. The
+	 * governor then leaves `farCascadeInterval` as set, so the trail never grows. Every preset turns
+	 * it on. It changes during play.
 	 */
 	followMovingCasters: boolean;
+	/**
+	 * The share of each shadow cascade's length, at its far end, over which its shadow blends into
+	 * the next cascade's, from 0 to 0.5. The blend hides the line where a near cascade's sharper
+	 * shadows hand over to a far cascade's softer ones. Pixels in the band read both cascades, so a
+	 * wider band costs a little more. 0 hands over at once. It changes during play.
+	 */
+	shadowCascadeBlend: number;
 	/**
 	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
 	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes

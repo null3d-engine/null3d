@@ -233,6 +233,7 @@ describe('SketchQuality.lower', () => {
 			shadowFilter: low.shadowFilter,
 			farCascadeInterval: low.farCascadeInterval,
 			followMovingCasters: low.followMovingCasters,
+			shadowCascadeBlend: low.shadowCascadeBlend,
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
 			softwareOcclusion: low.softwareOcclusion,
@@ -250,14 +251,13 @@ describe('SketchQuality.lower', () => {
 			morphTargets: MEDIUM.morphTargets,
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
-		// budget, the shadow filter, the far cascades' interval, whether they follow moving casters,
-		// bloom's size and software occlusion culling did.
+		// budget, the shadow filter, the far cascades' interval, bloom's size and software occlusion
+		// culling did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
 			'shadowFilter',
 			'farCascadeInterval',
-			'followMovingCasters',
 			'bloomSize',
 			'softwareOcclusion',
 		]);
@@ -289,9 +289,15 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale and governor, and Low and Medium the same
-		// ambient occlusion scale.
-		const same = ['maxRenderScale', 'aoScale', 'governor'];
+		// Every preset has the same highest render scale, following of moving casters, cascade blend
+		// and governor, and Low and Medium the same ambient occlusion scale.
+		const same = [
+			'maxRenderScale',
+			'followMovingCasters',
+			'shadowCascadeBlend',
+			'aoScale',
+			'governor',
+		];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);
 		// The next frame holds for its pipelines, and its handlers hear of a new preset.

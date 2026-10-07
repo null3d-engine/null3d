@@ -13,20 +13,25 @@ import {
 	type ExpectedChange,
 	judge,
 	judgeRecord,
+	type Measure,
 	MIN_ROUNDS,
 	measurementChanges,
 	mergeRecords,
+	NOISE_TIMES,
 	PAGE_SOURCES,
 	type PlanPage,
 	pageName,
 	qualityLines,
 	RULES,
+	type Rule,
 	readExpectedChanges,
+	roundNoise,
 	roundOrder,
 	runQualities,
 	selectRuns,
 	shardPages,
 } from './compare';
+import identicalBuilds from './fixtures/identical-builds.json';
 import type { BenchResult } from './report';
 
 interface RunFacts {
@@ -174,19 +179,32 @@ describe('bad runs', () => {
 });
 
 describe('the rules', () => {
-	test('allow the busiest thread 5%, and at least two steps of the 5-microsecond timer', () => {
+	test('allow the busiest thread 8%, and at least 0.05 ms on pages whose frames are short', () => {
 		const rule = RULES['busiest-thread'];
-		expect(rule).toEqual({ share: 0.05, floorMs: 0.01 });
-		expect(allowedMs(2, rule)).toBeCloseTo(0.1);
-		expect(allowedMs(0.1, rule)).toBe(0.01);
-		expect(allowedMs(0, rule)).toBe(0.01);
+		expect(rule).toEqual({ share: 0.08, floorMs: 0.05 });
+		expect(allowedMs(2, rule)).toBeCloseTo(0.16);
+		expect(allowedMs(0.4, rule)).toBe(0.05);
+		expect(allowedMs(0, rule)).toBe(0.05);
 	});
 
-	test('allow own work, a small difference of two larger times, a wider margin', () => {
+	test('allow own work, a small difference of two larger times, a wider share', () => {
 		const rule = RULES['own-work'];
-		expect(rule).toEqual({ share: 0.15, floorMs: 0.02 });
+		expect(rule).toEqual({ share: 0.15, floorMs: 0.05 });
 		expect(allowedMs(1, rule)).toBeCloseTo(0.15);
-		expect(allowedMs(0.1, rule)).toBe(0.02);
+		expect(allowedMs(0.1, rule)).toBe(0.05);
+	});
+
+	test("measure the noise of a change as the standard error of the rounds' median", () => {
+		expect(NOISE_TIMES).toBe(2);
+		expect(roundNoise([])).toBe(0);
+		expect(roundNoise([1.1])).toBe(0);
+		expect(roundNoise([1.05, 1.05, 1.05])).toBe(0);
+		// Four ratios that lie 0.1 from their median of 1: the deviation is 0.1, over a root of 2.
+		expect(roundNoise([0.9, 0.9, 1.1, 1.1])).toBeCloseTo((1.4826 * 1.2533 * 0.1) / 2);
+		// One far round moves the noise no more than a near one does.
+		expect(roundNoise([1, 1.02, 0.98, 1.01, 3])).toBeCloseTo(
+			roundNoise([1, 1.02, 0.98, 1.01, 1.03]),
+		);
 	});
 });
 
@@ -228,7 +246,7 @@ describe('comparing two builds', () => {
 		// The busiest thread goes from 2 ms to 2.2 ms, 10% slower. The scene's update takes 1.5 ms of
 		// it, so own work goes from 0.5 ms to 0.7 ms, 40% slower.
 		const [busiest, own] = compare(page([2, 2, 2], [2.2, 2.2, 2.2], { update: 1.5 })).comparisons;
-		expect(busiest).toMatchObject({ result: 'slower', allowedMs: expect.closeTo(0.1) });
+		expect(busiest).toMatchObject({ result: 'slower', allowedMs: expect.closeTo(0.16) });
 		expect(busiest?.change).toBeCloseTo(0.1);
 		expect(busiest?.deltaMs).toBeCloseTo(0.2);
 		expect(own).toMatchObject({ result: 'slower', allowedMs: expect.closeTo(0.075) });
@@ -248,13 +266,28 @@ describe('comparing two builds', () => {
 		expect(beyond.map((c) => c.result)).toEqual(['same', 'slower']);
 	});
 
-	test('lets a small time move by the timer steps that the rules allow', () => {
-		// 0.1 ms to 0.109 ms is 9% slower, but under two steps of the browser's timer.
-		const { comparisons } = compare(page([0.1, 0.1, 0.1], [0.109, 0.109, 0.109]));
+	test('judges a page whose frames are short on the time that the rules allow', () => {
+		// 0.15 ms to 0.195 ms is 30% slower, but 0.045 ms, within the floor of both measures.
+		const { comparisons } = compare(page([0.15, 0.15, 0.15], [0.195, 0.195, 0.195]));
 		expect(comparisons.map((c) => c.result)).toEqual(['same', 'same']);
-		// 0.115 ms is beyond the busiest thread's floor, and within own work's.
-		const beyond = compare(page([0.1, 0.1, 0.1], [0.115, 0.115, 0.115]));
-		expect(beyond.comparisons.map((c) => c.result)).toEqual(['slower', 'same']);
+		// 0.21 ms is 0.06 ms slower, beyond the floor.
+		const beyond = compare(page([0.15, 0.15, 0.15], [0.21, 0.21, 0.21]));
+		expect(beyond.comparisons.map((c) => c.result)).toEqual(['slower', 'slower']);
+	});
+
+	test("calls a change slower or faster only beyond twice its rounds' noise", () => {
+		// The median round is 10% slower, but the rounds spread from 10% faster to 30% slower: the
+		// noise is about 8.3%, so a change of 10% is within twice it.
+		const baseline = [2, 2, 2, 2, 2];
+		const noisy = compare(page(baseline, [1.8, 2, 2.2, 2.4, 2.6])).comparisons[0];
+		expect(noisy?.change).toBeCloseTo(0.1);
+		expect(noisy?.noise).toBeCloseTo(0.0831, 3);
+		expect(noisy?.result).toBe('same');
+		// The same change from quiet rounds is slower, and as quiet a gain is faster.
+		const quiet = compare(page(baseline, [2.16, 2.18, 2.2, 2.22, 2.24])).comparisons[0];
+		expect(quiet?.result).toBe('slower');
+		const gain = compare(page(baseline, [1.76, 1.78, 1.8, 1.82, 1.84])).comparisons[0];
+		expect(gain?.result).toBe('faster');
 	});
 
 	test('takes medians, so one slow run does not decide', () => {
@@ -397,8 +430,8 @@ describe('the verdict', () => {
 		const verdict = judge(compare(runs, [other]));
 		expect(verdict.pass).toBe(false);
 		expect(verdict.failures).toEqual([
-			's1 null3d-webgpu, busiest thread: +25.0% slower (medians 2.000 ms and 2.500 ms)',
-			's1 null3d-webgpu, own work: +25.0% slower (medians 2.000 ms and 2.500 ms)',
+			's1 null3d-webgpu, busiest thread: +25.0% slower, noise 0.0% (medians 2.000 ms and 2.500 ms)',
+			's1 null3d-webgpu, own work: +25.0% slower, noise 0.0% (medians 2.000 ms and 2.500 ms)',
 		]);
 	});
 
@@ -555,16 +588,16 @@ describe('the report', () => {
 		);
 		expect(text).toContain('**Failed**: one problem.');
 		expect(text).toContain(
-			'- s1 null3d-webgpu, own work: +25.0% slower (medians 2.000 ms and 2.500 ms)',
+			'- s1 null3d-webgpu, own work: +25.0% slower, noise 0.0% (medians 2.000 ms and 2.500 ms)',
 		);
 		expect(text).toContain(
-			'| s1 | null3d-webgpu | busiest thread | 2.000 (2.000 to 2.000) | 2.500 (2.500 to 2.500) | +25.0% | slower, expected: culling tests every box |',
+			'| s1 | null3d-webgpu | busiest thread | 2.000 (2.000 to 2.000) | 2.500 (2.500 to 2.500) | +25.0% | 0.0% | slower, expected: culling tests every box |',
 		);
 		expect(text).toContain(
-			'| s1 | null3d-webgpu | own work | 2.000 (2.000 to 2.000) | 2.500 (2.500 to 2.500) | +25.0% | **slower** |',
+			'| s1 | null3d-webgpu | own work | 2.000 (2.000 to 2.000) | 2.500 (2.500 to 2.500) | +25.0% | 0.0% | **slower** |',
 		);
 		expect(text).toContain(
-			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 1.000 (1.000 to 1.000) | +0.0% | same |',
+			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 1.000 (1.000 to 1.000) | +0.0% | 0.0% | same |',
 		);
 		expect(text).toContain(
 			'GPU time per frame, reported and not judged: s1 null3d-webgpu 3.000 ms to 3.000 ms.',
@@ -597,7 +630,7 @@ describe('the report', () => {
 			'**Passed**: no page is slower than its rule allows without a Bench-Expected trailer that names it.',
 		);
 		expect(text).toContain(
-			'a page fails when its busiest thread is more than 5% and 0.01 ms slower, or its own work more than 15% and 0.02 ms slower.',
+			'A page fails when its busiest thread is more than 8% and 0.05 ms slower, or its own work more than 15% and 0.05 ms slower, and the change is more than 2 times its noise.',
 		);
 		expect(text).toContain(
 			'Not compared: s2 null3d-webgpu, as the new build kept 2 runs of 2 and the baseline 0 runs of 2, so 0 rounds have a run of each, and a comparison needs 2.',
@@ -618,7 +651,7 @@ describe('the report', () => {
 			"**Measurement changed**: the run reports every page and judges none, because the two builds measure in different ways. Main's next run compares with this commit.\n- the comparison's switches changed from none to `x=1`",
 		);
 		expect(text).toContain(
-			'Not judged: 2 problems.\n- s1 null3d-webgpu, busiest thread: +25.0% slower (medians 2.000 ms and 2.500 ms)',
+			'Not judged: 2 problems.\n- s1 null3d-webgpu, busiest thread: +25.0% slower, noise 0.0% (medians 2.000 ms and 2.500 ms)',
 		);
 		expect(text).not.toContain('**Failed**');
 	});
@@ -682,14 +715,14 @@ describe('shards of a comparison', () => {
 		expect(verdict).toEqual({
 			pass: false,
 			failures: [
-				's2 null3d-webgpu, busiest thread: +100.0% slower (medians 1.000 ms and 2.000 ms)',
-				's2 null3d-webgpu, own work: +100.0% slower (medians 1.000 ms and 2.000 ms)',
+				's2 null3d-webgpu, busiest thread: +100.0% slower, noise 0.0% (medians 1.000 ms and 2.000 ms)',
+				's2 null3d-webgpu, own work: +100.0% slower, noise 0.0% (medians 1.000 ms and 2.000 ms)',
 			],
 			measurementChanges: [],
 		});
 		expect(report.slice(3)).toEqual(alone.report.slice(3));
 		expect(report.join('\n')).toContain(
-			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 2.000 (2.000 to 2.000) | +100.0% | slower, expected: the trees now have one more level |',
+			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 2.000 (2.000 to 2.000) | +100.0% | 0.0% | slower, expected: the trees now have one more level |',
 		);
 		expect(summary).toMatchObject({ shard: null, verdict });
 		expect((summary as { quality: unknown[] }).quality).toHaveLength(plan.length * 4);
@@ -712,5 +745,93 @@ describe('shards of a comparison', () => {
 		expect(() =>
 			mergeRecords([record(1, 2), record(2, 2, { measurementChanges: ['the pages changed'] })]),
 		).toThrow('the shard records differ in their measurement changes');
+	});
+});
+
+describe('recorded comparisons of identical builds', () => {
+	/** Each page's paired rounds: the round, then each build's busiest thread and own work in ms. */
+	interface Recorded {
+		run: number;
+		commits: string;
+		pages: Record<string, [number, number, number, number, number][]>;
+	}
+	const { comparisons: recorded } = identicalBuilds as unknown as { comparisons: Recorded[] };
+
+	/** A run whose busiest thread takes `busy` ms per frame, of which the engine's own work is `own`. */
+	const measured = (busy: number, own: number) => result(busy, { update: busy - own, frames: 300 });
+
+	/** The recorded runs, with `slow` applied to the new build's times on each page. */
+	function runsOf(comparison: Recorded, slow: (ms: number, page: string) => number = (ms) => ms) {
+		return Object.entries(comparison.pages).flatMap(([name, rounds]) => {
+			const [scene = '', kind = ''] = name.split(' ');
+			return rounds.flatMap(([round, baseBusy, baseOwn, newBusy, newOwn]) => [
+				run('baseline', round, measured(baseBusy, baseOwn), scene, kind),
+				run('new', round, measured(slow(newBusy, name), slow(newOwn, name)), scene, kind),
+			]);
+		});
+	}
+
+	/** The pages and measures that each comparison calls slower. */
+	const slowerPages = (slow?: (ms: number, page: string) => number) =>
+		recorded.map((comparison) =>
+			compare(runsOf(comparison, slow))
+				.comparisons.filter((c) => c.result === 'slower')
+				.map((c) => `${pageName(c)} ${c.measure}`),
+		);
+
+	const isS1 = (page: string) => page.startsWith('s1 ');
+
+	test('hold 18 comparisons, with S1 and S2 on both GPU paths in each', () => {
+		expect(recorded).toHaveLength(18);
+		for (const comparison of recorded)
+			expect(Object.keys(comparison.pages)).toEqual(
+				expect.arrayContaining(['s1 null3d-webgpu', 's1 null3d-webgl2', 's2 null3d-webgpu']),
+			);
+	});
+
+	test('pass, with no page slower', () => {
+		expect(slowerPages().filter((pages) => pages.length > 0)).toEqual([]);
+		for (const comparison of recorded) expect(judge(compare(runsOf(comparison))).pass).toBe(true);
+	});
+
+	test('failed in most cases under the rules without the floor and the noise check', () => {
+		const before: Record<Measure, Rule> = {
+			'busiest-thread': { share: 0.05, floorMs: 0.01 },
+			'own-work': { share: 0.15, floorMs: 0.02 },
+		};
+		const failed = recorded.filter((comparison) =>
+			compareBuilds(selectRuns(runsOf(comparison)), [], before, 0).comparisons.some(
+				(c) => c.result === 'slower',
+			),
+		);
+		expect(failed).toHaveLength(11);
+	});
+
+	/** Whether a comparison calls the page slower on either measure. */
+	const caught = (pages: readonly string[], page: string) =>
+		pages.some((entry) => entry.startsWith(`${page} `));
+
+	test('fail on S1, and on no other page, when S1 gets 20% slower, but in the noisiest run', () => {
+		const slower = slowerPages((ms, page) => (isS1(page) ? ms * 1.2 : ms));
+		expect(slower.every((pages) => pages.every(isS1))).toBe(true);
+		// One run's S1 rounds on WebGL2 spread from 0.38 to 1.42 times the baseline, and miss it.
+		const both = slower.filter(
+			(pages) => caught(pages, 's1 null3d-webgpu') && caught(pages, 's1 null3d-webgl2'),
+		);
+		expect(both).toHaveLength(recorded.length - 1);
+		expect(slower.every((pages) => pages.some(isS1))).toBe(true);
+	});
+
+	test('fail on the pages whose frames are short when they get 0.1 ms slower, but in the noisiest', () => {
+		const slower = slowerPages((ms, page) => (isS1(page) ? ms : ms + 0.1));
+		const pages = recorded.flatMap((comparison, k) =>
+			Object.keys(comparison.pages)
+				.filter((page) => !isS1(page))
+				.map((page) => caught(slower[k] ?? [], page)),
+		);
+		// One run's S2 rounds on WebGL2 spread from 0.61 to 1.64 times the baseline, so a change of
+		// 0.1 ms stays within twice their noise.
+		expect(pages.filter((hit) => !hit)).toHaveLength(1);
+		expect(pages.length).toBeGreaterThan(150);
 	});
 });

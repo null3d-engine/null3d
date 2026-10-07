@@ -17,7 +17,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |
 | `bench/`, `templates/`, `porting-corpus/` | Benchmarks, starter projects and the three.js porting corpus, as the milestones add them. `bench/results` keeps a small record of each benchmark run ([Benchmarks](.dev/benchmarks.md#the-results-archive)) |
 | `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [benchmark results](.dev/benchmark-results.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md), [pull requests and parallel work](.dev/pull-requests.md), [releases](.dev/releases.md), [sample content](.dev/sample-content.md) and [tested devices](.dev/tested-devices.md) |
-| `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
+| `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. `bun run decisions` lists them. Read the record before you change a choice it settled |
 
 ## Commands
 
@@ -27,7 +27,8 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, the shader compiler for the Vite plugin, and the asset tool's formats for the command-line tool. Print their sizes and the sizes of the engine's JavaScript in a production build |
 | `bun run build:check-size` | Build, then compare each file's size after Brotli compression with main's build. Fail when a file grew more than 2% and by 64 bytes or more, and no `Size-Growth:` trailer explains it. `--base <ref>` compares with another commit |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
-| `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine, errors and sketch shaders tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2` |
+| `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine, errors and sketch shaders tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2`, and runs the tests that check times and allocations alone, with `--grep @alone --workers=1`, as [image tests](.dev/image-tests.md#tests-that-run-alone) says |
+| `bun run test:browser-weights` | Work out the shard weights of CI's `browser` job from the test times in recent merge queue runs, with the GitHub CLI, and print each shard's modelled time. [Image tests](.dev/image-tests.md#ci) says when to retune them |
 | `bun run test:images` | The image test manifest alone. Add Playwright's options, such as `-g scene` for the tests whose names hold scene |
 | `bun run images:review` | Show the images that runs saved because they have no reference or differ from it, each beside its reference and diff. `--accept` makes them references, and `--ci <run>` fetches a CI run's images first |
 | `bun run test:shader-compiler` | Run the shader crate's build tests again through the shader compiler, which must give the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests. Run `bun run build` first |
@@ -49,7 +50,8 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
 | `bun run docs` | Regenerate placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, and the mapping page and copies |
-| `bun run docs:check` | Check the API reference's doc comments, front matter, generated files and links, and that this table lists every command |
+| `bun run docs:check` | Check the API reference's doc comments, front matter, generated files and links, that this table lists every command, and that every decision record has a title, a status and a summary under its own number |
+| `bun run decisions` | List the decision records, each with its status and summary, read from the records themselves |
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
@@ -95,6 +97,7 @@ Code review enforces these rules.
 12. Float textures that need filtering use 16-bit floats. 32-bit float data textures are read without filtering (`textureLoad`, `texelFetch`).
 13. On WebGL2, request each extension by name with `getExtension()`. Never trust `getSupportedExtensions()`, because Brave shuffles it.
 14. Never decide anything from GPU names or user agents. Firefox and Brave can hide GPU names.
+    - One exception, until Safari ships WebKit's fix: the WebGPU backend copies indirect draw arguments only in Apple's WebKit ([D-87](.dev/decisions/D-87-webkit-indirect-arguments.md), which says how to remove it).
 15. Core Rust code never calls APIs that fail on `wasm32-unknown-unknown`, such as `std::time::SystemTime::now()`. Time comes from the engine clock, and a lint enforces this.
 16. Tests read pixels back through the engine. They never encode images through a canvas in the page and never rely on browser screenshots.
 17. A change that makes a benchmark median more than 3% slower does not merge without a written reason, given in a `Bench-Expected:` trailer.
@@ -165,6 +168,7 @@ Before each commit:
 - When Rust files or Cargo settings are staged: `cargo fmt --check` and Clippy, with warnings treated as errors.
 - Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes. It also fails when a public export lacks the doc comments that the API reference needs.
 - Every command in `package.json` is in the table under "Commands", and every command that this file, the README and the guides in `.dev/` run with `bun run` exists.
+- Every decision record starts with its title, then a `Status:` and a `Summary:` paragraph, and no two records share a number.
 
 On each commit message:
 

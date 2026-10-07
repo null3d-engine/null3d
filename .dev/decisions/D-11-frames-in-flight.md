@@ -2,6 +2,8 @@
 
 Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3, the governor's thresholds by M1-G5 and kept by M1-G6. The preset values set by M1-G6 from the S24+ and iPad runs. Once warm, the iPad misses its gate at Medium. So the owner decided on 2026-10-03 to judge the iPad at Low, where it passed. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
+Summary: Hold new frames while two are unfinished on the GPU, on both paths. The preset check targets the refresh rate up to 60, held at 90%. Low draws 2 shadow cascades of 1,024 texels, and Medium 3 of 2,048 with the 5 x 5 filter. The S24+ held 60 fps at Low. Warm, the iPad held about 45 fps at Medium, so its gate is judged at Low (the owner, 2026-10-03), where it held 60 fps in 298 of 299 seconds. The iPad rows of the GPU-bound page are pending.
+
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
 ## Where each part stands

@@ -6,6 +6,7 @@ import {
 	blenderMorphBuilder,
 	boxArrays,
 	boxPrimitive,
+	colorMorphBuilder,
 	faceTargets,
 	GltfBuilder,
 	type GltfJson,
@@ -29,6 +30,9 @@ const URL_OF = 'https://example.com/models/test.glb';
 function parse(file: Uint8Array, url = URL_OF): GltfData {
 	return parseGltf(readContainer(file, url), new Map(), url);
 }
+
+/** A number rounded to a thousandth, past the steps of 8-bit and 16-bit fractions. */
+const rounded = (value: number) => Math.round(value * 1000) / 1000;
 
 /** The code and message of the error that parsing a file throws. */
 function refusal(file: Uint8Array): [string, string] {
@@ -878,6 +882,50 @@ describe('morph targets', () => {
 		expect(data.animation?.clips.map((c) => c.name)).toEqual(['Talk']);
 	});
 
+	test('COLOR_0 targets read as deltas of as many numbers per vertex as the colors hold', () => {
+		const data = parse(colorMorphBuilder().glb());
+		expect(data.notes).toEqual([]);
+		const [left, middle, right] = data.meshes[0]?.primitives ?? [];
+		const plain = (deltas: Float32Array | undefined) => Array.from(deltas ?? []).map(rounded);
+		// The left panel's colors have alpha and its targets do not, so their alpha deltas are 0.
+		// Its second target is sparse and moves only the right half.
+		expect(left?.morph?.colors).toHaveLength(2);
+		const warm = left?.morph?.colors?.[0] ?? new Float32Array();
+		expect(warm).toHaveLength(49 * 4);
+		expect(plain(warm.subarray(48 * 4, 49 * 4))).toEqual([0.8, -0.5, 0, 0]);
+		const blue = left?.morph?.colors?.[1] ?? new Float32Array();
+		expect(plain(blue.subarray(0, 4))).toEqual([0, 0, 0, 0]);
+		expect(plain(blue.subarray(6 * 4, 7 * 4))).toEqual([-0.2, 0, 0.8, 0]);
+		// The middle panel's deltas of normalized 16-bit integers read as fractions, alpha too.
+		const fade = middle?.morph?.colors?.[0] ?? new Float32Array();
+		expect(plain(fade.subarray(48 * 4, 49 * 4))).toEqual([-0.8, 0.6, 0, -0.5]);
+		// The right panel's targets move only positions.
+		expect(right?.morph?.colors).toBeUndefined();
+		expect(right?.morph?.positions).toHaveLength(2);
+	});
+
+	test('a COLOR_0 target of colors without alpha keeps no alpha delta', () => {
+		const b = colorMorphBuilder();
+		const right = b.json.meshes[0].primitives[2];
+		right.attributes.COLOR_0 = b.accessor(new Float32Array(49 * 3).fill(0.5), 3);
+		right.targets[1].COLOR_0 = b.accessor(
+			new Float32Array(49 * 4).map((_, k) => k % 4),
+			4,
+		);
+		const colors = parse(b.glb()).meshes[0]?.primitives[2]?.morph?.colors;
+		expect(Array.from(colors?.[0] ?? [])).toEqual(new Array(49 * 3).fill(0));
+		expect(Array.from(colors?.[1]?.subarray(0, 6) ?? [])).toEqual([0, 1, 2, 0, 1, 2]);
+	});
+
+	test('a target that leaves out an attribute that another target moves moves it by nothing', () => {
+		const b = morphBuilder();
+		const [up] = b.json.meshes[0].primitives[0].targets;
+		b.json.meshes[0].primitives[0].targets = [{}, up];
+		const morph = parse(b.glb()).meshes[0]?.primitives[0]?.morph;
+		expect(morph?.positions?.[0]?.every((d) => d === 0)).toBe(true);
+		expect(morph?.positions?.[1]?.some((d) => d !== 0)).toBe(true);
+	});
+
 	test('broken morph targets are refused with E1416', () => {
 		const b = morphBuilder();
 		b.json.meshes[0].weights = [1];
@@ -887,7 +935,13 @@ describe('morph targets', () => {
 		expect(refusal(c.glb())[1]).toContain('3 values for 2 keys of 2');
 		const e = morphBuilder();
 		e.json.meshes[0].primitives[0].targets[1].COLOR_0 = e.accessor(new Float32Array(96), 4);
-		expect(parse(e.glb()).notes.join()).toContain('move COLOR_0, which the engine does not morph');
+		expect(parse(e.glb()).notes.join()).toContain(
+			"move COLOR_0, which the engine does not morph (COLOR_0 needs the primitive's own COLOR_0)",
+		);
+		const f = colorMorphBuilder();
+		const quantized = f.accessor(new Uint8Array(49 * 3), 3);
+		f.json.meshes[0].primitives[0].targets[0].COLOR_0 = quantized;
+		expect(refusal(f.glb())[1]).toContain('COLOR_0 deltas are integers that are not normalized');
 		const d = morphBuilder();
 		d.json.nodes[0].weights = [1, 2, 3];
 		expect(refusal(d.glb())[1]).toContain("node 0's weights is not 2 numbers");

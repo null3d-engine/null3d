@@ -812,7 +812,7 @@ export class Textures {
 		return this.stat(TEXTURE_STAT_MAX_SIZE);
 	}
 
-	/** @internal The images sent to the thread that draws so far. */
+	/** @internal The last image id sent to the thread that draws, or 0 before the first. */
 	get imagesSent(): number {
 		return this.stat(TEXTURE_STAT_IMAGES_SENT);
 	}

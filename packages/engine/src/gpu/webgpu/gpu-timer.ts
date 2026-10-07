@@ -1,9 +1,13 @@
 // GPU time per frame and per pass from WebGPU timestamp queries. A timed frame's commands open with
 // a start mark, a compute pass of one invocation that does nothing, and each pass writes a timestamp
 // when it begins and when it ends. So the timer covers the whole frame: the copies recorded before
-// the first pass, each pass, and the time between passes. Results come back through mappable
-// buffers a few frames later. A frame that finds no free buffer goes untimed instead of stalling the
-// GPU. Timing runs only while the page measures, on one drawn frame in every SAMPLED_EVERY.
+// the first pass, each pass, and the time between passes. The timer copies a frame's timestamps out
+// only once the GPU has finished the frame, in a submit of their own: Firefox writes a frame's
+// timestamps when the frame's work completes, so a copy in the frame's own commands reads the
+// values of an earlier frame. Results come back through mappable buffers a few frames later. A
+// frame that finds no free buffer goes untimed instead of stalling the GPU. A pass that the GPU
+// left untimed stays out of the frame's parts, and the frame keeps the others. Timing runs only
+// while the page measures, on one drawn frame in every SAMPLED_EVERY.
 
 import { TIMER_MARK_SHADER } from '../../generated/shaders';
 import {
@@ -28,6 +32,26 @@ const NS_PER_MS = 1e6;
 /** A timestamp's high 32 bits count this many nanoseconds. */
 const HIGH_WORD_NS = 2 ** 32;
 
+/**
+ * Whether the GPU wrote timestamp `q`. Metal skips a pass that holds no work, and leaves its
+ * timestamps at zero or at its error value, all ones.
+ */
+function written(words: Uint32Array, q: number): boolean {
+	const low = words[2 * q] as number;
+	const high = words[2 * q + 1] as number;
+	return (low !== 0 || high !== 0) && (low !== 0xffffffff || high !== 0xffffffff);
+}
+
+/** Whether the GPU timed the pass whose beginning is timestamp `q`: both written, in order. */
+function timedPass(words: Uint32Array, q: number): boolean {
+	if (!written(words, q) || !written(words, q + 1)) return false;
+	const [beginHigh, endHigh] = [words[2 * q + 1] as number, words[2 * q + 3] as number];
+	return (
+		endHigh > beginHigh ||
+		(endHigh === beginHigh && (words[2 * q + 2] as number) >= (words[2 * q] as number))
+	);
+}
+
 export class GpuTimer {
 	private readonly querySet: GPUQuerySet;
 	private readonly resolveBuffer: GPUBuffer;
@@ -39,6 +63,7 @@ export class GpuTimer {
 	/** Per slot, the writes of the passes after those: each moves the last timed pass's end. */
 	private readonly laterWrites: GPURenderPassTimestampWrites[] = [];
 	private readonly markPass: GPUComputePassDescriptor = {};
+	private readonly onDone: (() => void)[] = [];
 	private readonly onMapped: (() => void)[] = [];
 	private readonly onFailed: (() => void)[] = [];
 	private readonly pending = new Uint8Array(SLOTS);
@@ -52,9 +77,10 @@ export class GpuTimer {
 	private renderMask = 0;
 	private next = 0;
 	private drawn = 0;
+	private destroyed = false;
 
 	private constructor(
-		device: GPUDevice,
+		private readonly device: GPUDevice,
 		private readonly recorder: FrameRecorder,
 	) {
 		this.querySet = device.createQuerySet({ type: 'timestamp', count: SLOTS * QUERIES });
@@ -86,6 +112,7 @@ export class GpuTimer {
 				);
 			this.passWriteSets.push(passWrites);
 			this.laterWrites.push(this.writes(undefined, base + QUERIES - 1));
+			this.onDone.push(() => this.copyOut(slot));
 			this.onMapped.push(() => this.read(slot));
 			this.onFailed.push(() => {
 				this.pending[slot] = 0;
@@ -137,37 +164,38 @@ export class GpuTimer {
 		return this.passWriteSets[this.slot]?.[pass];
 	}
 
-	/** Copies the frame's timestamps to its readback buffer. Call it before finishing the encoder. */
-	resolve(encoder: GPUCommandEncoder): void {
+	/** Ends the frame's timing. Call it before finishing the frame's encoder. */
+	endFrame(): void {
 		const slot = this.slot;
 		if (slot < 0) return;
 		if (this.passes === 0) {
 			this.slot = -1;
 			return;
 		}
-		const count = FIRST_PASS + 2 * Math.min(this.passes, GPU_TIMED_PASSES);
-		const offset = slot * RESOLVE_STRIDE;
-		encoder.resolveQuerySet(this.querySet, slot * QUERIES, count, this.resolveBuffer, offset);
-		encoder.copyBufferToBuffer(
-			this.resolveBuffer,
-			offset,
-			this.readbacks[slot] as GPUBuffer,
-			0,
-			count * TIMESTAMP_BYTES,
-		);
 		this.passCounts[slot] = this.passes;
 		this.renderMasks[slot] = this.renderMask;
 	}
 
-	/** Starts reading the frame's timestamps back. Call it after the submit. */
+	/** Reads the frame's timestamps back once the GPU has finished it. Call it after the submit. */
 	afterSubmit(): void {
 		const slot = this.slot;
 		if (slot < 0) return;
 		this.slot = -1;
 		this.pending[slot] = 1;
-		(this.readbacks[slot] as GPUBuffer)
-			.mapAsync(GPUMapMode.READ)
-			.then(this.onMapped[slot], this.onFailed[slot]);
+		this.device.queue.onSubmittedWorkDone().then(this.onDone[slot], this.onFailed[slot]);
+	}
+
+	/** Copies a finished frame's timestamps to its readback buffer, and maps the buffer. */
+	private copyOut(slot: number): void {
+		if (this.destroyed) return;
+		const count = FIRST_PASS + 2 * Math.min(this.passCounts[slot] as number, GPU_TIMED_PASSES);
+		const offset = slot * RESOLVE_STRIDE;
+		const readback = this.readbacks[slot] as GPUBuffer;
+		const encoder = this.device.createCommandEncoder();
+		encoder.resolveQuerySet(this.querySet, slot * QUERIES, count, this.resolveBuffer, offset);
+		encoder.copyBufferToBuffer(this.resolveBuffer, offset, readback, 0, count * TIMESTAMP_BYTES);
+		this.device.queue.submit([encoder.finish()]);
+		readback.mapAsync(GPUMapMode.READ).then(this.onMapped[slot], this.onFailed[slot]);
 	}
 
 	private read(slot: number): void {
@@ -175,43 +203,49 @@ export class GpuTimer {
 		const passes = this.passCounts[slot] as number;
 		const timed = Math.min(passes, GPU_TIMED_PASSES);
 		const count = FIRST_PASS + 2 * timed;
-		// Each timestamp is two 32-bit words, low word first. Differences from the first pass's
-		// beginning stay exact as numbers, where whole timestamps may not.
 		const words = new Uint32Array(buffer.getMappedRange(0, count * TIMESTAMP_BYTES));
-		const low = words[2 * FIRST_PASS] as number;
-		const high = words[2 * FIRST_PASS + 1] as number;
+		// The frame's times count from the beginning of its first pass that the GPU timed. Each
+		// timestamp is two 32-bit words, low word first. Differences from that beginning stay exact
+		// as numbers, where whole timestamps may not.
+		let first = FIRST_PASS;
+		while (first < count && !timedPass(words, first)) first += 2;
 		const times = this.times;
+		const low = words[2 * first] as number;
+		const high = words[2 * first + 1] as number;
 		for (let q = 0; q < count; q++)
-			times[q] =
-				((words[2 * q + 1] as number) - high) * HIGH_WORD_NS + ((words[2 * q] as number) - low);
+			times[q] = written(words, q)
+				? ((words[2 * q + 1] as number) - high) * HIGH_WORD_NS + ((words[2 * q] as number) - low)
+				: Number.NaN;
 		buffer.unmap();
 		this.pending[slot] = 0;
-		// Some drivers report a pass ending before it began, or a pass beginning before the first;
-		// such a frame goes unrecorded. Passes that do not depend on each other may overlap.
-		let last = 0;
-		for (let q = FIRST_PASS; q < count; q += 2) {
-			const begin = times[q] as number;
-			const end = times[q + 1] as number;
-			if (begin < 0 || end < begin) return;
-			if (end > last) last = end;
-		}
-		// A start mark that a browser left unwritten, or wrote out of order, leaves the frame starting
-		// at its first pass, with its copies untimed.
+		// A frame with no timed pass goes unrecorded.
+		if (first >= count) return;
+		// A start mark that a browser left unwritten, or that ends after the first pass begins, as
+		// Firefox's passes on the Mac can, leaves the frame starting at its first timed pass, with its
+		// copies untimed.
 		const markBegin = times[0] as number;
 		const markEnd = times[1] as number;
-		const marked = markBegin <= markEnd && markEnd <= 0 && (words[0] !== 0 || words[1] !== 0);
+		const marked = markBegin <= markEnd && markEnd <= 0;
 		const recorder = this.recorder;
 		recorder.begin(this.frames[slot] as number);
 		recorder.gpuPasses(passes, this.renderMasks[slot] as number);
 		recorder.gpuTime(0, marked ? -markEnd / NS_PER_MS : UNTIMED);
+		// Passes that do not depend on each other may overlap. A pass that the GPU left untimed, or
+		// timed out of order, stays out of the frame's parts, and the frame keeps the others.
+		let last = 0;
 		for (let pass = 0; pass < timed; pass++) {
 			const at = FIRST_PASS + 2 * pass;
-			recorder.gpuTime(1 + pass, ((times[at + 1] as number) - (times[at] as number)) / NS_PER_MS);
+			const begin = times[at] as number;
+			const end = times[at + 1] as number;
+			const ordered = begin >= 0 && end >= begin;
+			recorder.gpuTime(1 + pass, ordered ? (end - begin) / NS_PER_MS : UNTIMED);
+			if (ordered && end > last) last = end;
 		}
 		recorder.commit((last - (marked ? markBegin : 0)) / NS_PER_MS);
 	}
 
 	destroy(): void {
+		this.destroyed = true;
 		this.querySet.destroy();
 		this.resolveBuffer.destroy();
 		for (const buffer of this.readbacks) buffer.destroy();

@@ -210,9 +210,9 @@ for (const part of stats.gpuPassMs ?? []) {
 | Part | What it is |
 | --- | --- |
 | `copies` | Copies recorded before the frame's first pass, where the browser times them |
-| `compute 1`, `compute 2` and so on | Each compute pass, such as the culling pass on WebGPU |
-| `render 1`, `render 2` and so on | Each render pass, such as the main pass |
-| `between passes` | The time from the end of one pass to the start of the next, in a frame of more than one pass |
+| `compute 1`, `compute 2` and so on | Each compute pass, such as the culling pass on WebGPU, where the browser times it |
+| `render 1`, `render 2` and so on | Each render pass, such as the main pass, where the browser times it |
+| `between passes` | The time from the end of one pass to the start of the next, in a frame of more than one pass where the browser times every pass |
 
 These figures time the GPU's work only. Work that the browser does outside the passes shows in `gpuLatencyMs` and in the frame rates.
 
@@ -341,7 +341,7 @@ Per-frame figures of a measurement: CPU time by thread, GPU time, frame interval
 | `cpuMsAllThreads: Percentiles` | CPU time per frame summed over every thread. |
 | `threads: Record<string, ThreadStats>` | Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. |
 | `gpuMs: Percentiles \| null` | GPU time per frame, where the device has timestamp queries: from the frame's first command to the end of its last pass. Where the browser cannot time the commands before the first pass, the time starts at the first pass. The engine times one frame in eleven, which keeps the cost of measuring small and takes in every turn of the far shadow cascades. |
-| `gpuPassMs: GpuPassStats[] \| null` | The parts of the GPU time per frame, in the order the frame runs them: the copies before the first pass, where the browser times them, each pass, and the time between passes. In a frame with more passes than the engine times one by one, the last pass it times also counts the passes after it. Null where `gpuMs` is. |
+| `gpuPassMs: GpuPassStats[] \| null` | The parts of the GPU time per frame, in the order the frame runs them: the copies before the first pass, where the browser times them, each pass that the browser times, and the time between passes in frames where it times every pass. In a frame with more passes than the engine times one by one, the last pass it times also counts the passes after it. Null where `gpuMs` is. |
 | `gpuStepMs: number \| null` | The step between GPU times when the browser rounds its timestamps, or null when they look exact. Chrome rounds them unless its WebGPU developer features are turned on. |
 | `intervalMs: Percentiles` | Time between presented frames. |
 | `presentedFps: number` | Frames per second that the renderer presented. |

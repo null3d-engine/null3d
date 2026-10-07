@@ -54,12 +54,13 @@ const CHAINS_SHOWN = 2;
 
 /**
  * Collects garbage and counts the shared memories and the workers that the page reaches, again
- * and again until it reaches `memories` memories and no worker, within the bound. When the page
- * still holds more, the failure names what keeps them alive, from a heap snapshot.
+ * and again until it reaches `memories` memories and `workers` workers, none by default, within the
+ * bound. When the page still holds more, the failure names what keeps them alive, from a heap
+ * snapshot.
  */
-async function expectReleased(page: Page, memories: number): Promise<void> {
+async function expectReleased(page: Page, memories: number, workers = 0): Promise<void> {
 	const cdp = await page.context().newCDPSession(page);
-	const expected = { memories, workers: 0 };
+	const expected = { memories, workers };
 	const count = async () => {
 		await cdp.send('HeapProfiler.collectGarbage');
 		return {
@@ -69,16 +70,16 @@ async function expectReleased(page: Page, memories: number): Promise<void> {
 	};
 	const deadline = performance.now() + RELEASE_TIMEOUT_MS;
 	let held = await count();
-	while (held.memories !== memories || held.workers !== 0) {
+	while (held.memories !== memories || held.workers !== workers) {
 		if (performance.now() > deadline) break;
 		await new Promise((resolve) => setTimeout(resolve, RELEASE_POLL_MS));
 		held = await count();
 	}
-	if (held.memories === memories && held.workers === 0) return;
+	if (held.memories === memories && held.workers === workers) return;
 	const heap = await takeHeapSnapshot(cdp);
 	const chains = [
 		...(held.memories > memories ? retainerChains(heap, 'Memory').slice(0, CHAINS_SHOWN) : []),
-		...(held.workers > 0 ? retainerChains(heap, 'Worker').slice(0, CHAINS_SHOWN) : []),
+		...(held.workers > workers ? retainerChains(heap, 'Worker').slice(0, CHAINS_SHOWN) : []),
 	];
 	expect(held, `what keeps them alive:\n\n${chains.join('\n\n')}`).toEqual(expected);
 }
@@ -105,6 +106,25 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			await expectReleased(page, mode.build === 'single' ? 1 : 0);
 		});
 	}
+}
+
+// A stopped engine whose canvas stays in the page leaves its drawing worker with the canvas, for the
+// next engine. The page then reaches that worker, one for each kept canvas, but none of the stopped
+// engines' memories: a parked worker whose handlers still reached its engine kept that engine's
+// shared memory for as long as the canvas stayed.
+for (const mode of THREADED_MODES.filter(({ renderThread }) => renderThread !== 'main')) {
+	test(`a stopped engine whose canvas stays lets go of its memory, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.goto(
+			`shared-memory.html?room=off&cycles=${CYCLES}&kinds=canvas-kept&gpu=webgl2&${mode.query}`,
+		);
+		const result = await pageResult<RestartResult & { error?: string }>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(result.kinds['canvas-kept']?.error).toBeUndefined();
+		expect(result.kinds['canvas-kept']?.cycles).toBe(CYCLES);
+		await expectReleased(page, 0, CYCLES);
+	});
 }
 
 /**

@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04: the file and the tool with M2-B2, then the lookup, the built-in environment's name and the lit scenes' parity with M2-E2. The same day, the owner moved the built-in room out of the engine's package: the GPU makes it at first use. That is now the rule for every built-in asset. D-53 then decided the lookup: each material reads its own roughness. A later task makes that change, so the table of three.js's roughness below stays until then. On 2026-10-05 the owner ruled that the GPU makes the room whole at load, in one submit (D-66), and M2-E9 built it. The lookup's cost on the iPad and the S24+ is pending. Date: 2026-10-04. Tasks: M2-B2, M2-E2, M2-E9.
 
+Summary: The asset tool prefilters once, the same bytes everywhere: a KTX2 cube map of `rgb9e5ufloat`, 256 x 256 faces, six GGX levels down to 8 x 8 (2.0 MiB), and nine spherical harmonics coefficients. The lit template reads each roughness from the level that matches three.js's PMREM, which brings lit spheres within three.js's image rule on every tier (0.000% to 0.064% of pixels on WebGPU). The built-in environment is `room`, after three.js's `RoomEnvironment`. The lookup is a value of each frame, not a shader build.
+
 ## Question
 
 Image-based light needs the environment's light filtered for each roughness of the engine's materials, and its diffuse light. Which texture format, face size and levels hold the filtered light? Where does the filtering run: in the asset tool before release, or in the browser at load? And how far may the result lie from three.js's `PMREMGenerator` for the same file?
@@ -165,7 +167,7 @@ The whole map in one go, from the call until the GPU had finished it, in Chrome.
 | Galaxy S25, Pixel 9, 10 and 11, WebGPU | 92.7 to 128.7 ms | 47.8 to 99.7 ms | 16.6 to 95.0 ms |
 | The same phones, WebGL2 | 100.3 to 225.5 ms | 57.7 to 107.3 ms | 42.8 to 111.6 ms |
 
-The thread that draws spends under 1 ms of its own time in the call on the Mac; the rest is the GPU's. The engine makes no such one-texel draws. On the Mac its first map on WebGL2 showed no wait for the driver, since the pipelines build in the background first. SwiftShader on the Mac took 0.8 to 0.9 s for the whole room.
+The thread that draws spends under 1 ms of its own time in the call on the Mac; the rest is the GPU's. Since 6 October 2026, the WebGL2 generator waits for the GPU after each step's pack. Firefox fills the pack buffer late ([implementation notes](../implementation-notes.md#browser-faults)). The thread that draws then waits in the call for most of the map. In Firefox on the Mac it waited 15.4 ms of the 20.8 ms map. The table's WebGL2 times above were taken before that wait. The engine makes no such one-texel draws. On the Mac its first map on WebGL2 showed no wait for the driver, since the pipelines build in the background first. SwiftShader on the Mac took 0.8 to 0.9 s for the whole room.
 
 Before M2-E9, M2-E2 made the room in 32 slices, one a frame. The Mac timed each slice from its call until the GPU had finished it:
 

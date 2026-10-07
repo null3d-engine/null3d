@@ -102,6 +102,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'followMovingCasters',
+			'shadowCascadeBlend',
 			'shadowTiles',
 			'shadowTileSize',
 			'pointLightShadows',
@@ -140,6 +141,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'followMovingCasters',
+			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
 			'softwareOcclusion',
@@ -163,6 +165,7 @@ describe('the preset table', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'followMovingCasters',
+			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
 			'softwareOcclusion',
@@ -215,7 +218,8 @@ describe('presetSettings', () => {
 			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
-			followMovingCasters: false,
+			followMovingCasters: true,
+			shadowCascadeBlend: 0.1,
 			maxAnisotropy: 2,
 			textureMemoryMiB: 256,
 			uploadBytesPerFrame: 2 * MIB,
@@ -237,6 +241,7 @@ describe('presetSettings', () => {
 			shadowFilter: 5,
 			farCascadeInterval: 3,
 			followMovingCasters: true,
+			shadowCascadeBlend: 0.1,
 			maxAnisotropy: 4,
 			textureMemoryMiB: 512,
 			uploadBytesPerFrame: 4 * MIB,
@@ -258,6 +263,7 @@ describe('presetSettings', () => {
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			followMovingCasters: true,
+			shadowCascadeBlend: 0.1,
 			maxAnisotropy: 8,
 			textureMemoryMiB: 1024,
 			uploadBytesPerFrame: 8 * MIB,
@@ -279,6 +285,7 @@ describe('presetSettings', () => {
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			followMovingCasters: true,
+			shadowCascadeBlend: 0.1,
 			maxAnisotropy: 16,
 			textureMemoryMiB: 2048,
 			uploadBytesPerFrame: 16 * MIB,
@@ -348,7 +355,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, bloomSize, aoScale, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

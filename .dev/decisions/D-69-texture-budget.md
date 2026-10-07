@@ -2,6 +2,8 @@
 
 Status: decided for the method, 2026-10-05; the drop order waits for prototype A6's device runs. Task: M2-A4.
 
+Summary: Past each preset's budget, textures from files drop up to 3 mip levels, with a band of 5%. The order is Godot's: more detail than any view needs, then unseen the longest, then the largest. Levels come back by loading the file again into a hidden texture. Arrays start at 8 MiB, stop at 128 MiB and shrink. The 129th texture of 1,024 texels now holds 768 MiB for a frame, not 2,048.
+
 ## Question
 
 How does the engine hold the GPU memory of textures under each preset's budget from [D-12](D-12-memory-budgets.md), and give detail back when room returns? And how do texture arrays stop holding twice their memory while they grow, and memory they no longer need (review finding R5-05)?
