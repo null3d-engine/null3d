@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		cellCulling: boolean,
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
+		indexInstances: boolean,
 		largeWorld: boolean,
 		gpuOcclusion: boolean,
 		shadowDepthBits: number,
@@ -168,7 +169,8 @@ export interface CoreGlue extends CoreErrors {
 	): number;
 	/**
 	 * Creates a sprite batch of a quad mesh and a sprite material, with an atlas of `columns` by
-	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`.
+	 * `rows` frames, sized in CSS pixels of the screen with `screenSize`. `points` marks a batch of
+	 * points, which a raycast's point threshold reaches.
 	 */
 	createSpriteBatch(
 		capacity: number,
@@ -178,6 +180,7 @@ export interface CoreGlue extends CoreErrors {
 		columns: number,
 		rows: number,
 		screenSize: boolean,
+		points: boolean,
 	): number;
 	/**
 	 * Creates a line batch of `points` points of the segment mesh and a line material, joined as

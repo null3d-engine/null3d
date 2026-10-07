@@ -70,6 +70,8 @@ document.querySelector('#loading')?.remove();
 
 A handler that `engine.onSketchMessage` adds after `createEngine` resolves hears the setup's messages late, once the setup ends. That is too late for a progress bar.
 
+A start can also wait for memory. When the browser has refused the engine's memory for 10 seconds, `onProgress` reports `memory-wait`. The engine then tries for about 35 seconds more, so tell the user that the start takes longer than usual.
+
 ## Pipelines and warm-up
 
 The GPU draws each object with a pipeline: compiled shaders, and the drawing state that goes with them. One pipeline serves every object with the same shading model and the same vertex format of mesh. A thousand materials of one shading model share it, so a scene needs few pipelines, often fewer than ten. [Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames) lists what sets pipelines apart.

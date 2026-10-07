@@ -8,6 +8,7 @@ import { CoreMemory } from './memory';
 import type { OverlapHit, RaycastHit } from './queries';
 import { Material, MeshGeometry } from './resources';
 import { InstanceBatch, Scene } from './scene';
+import type { SpriteBatch } from './sprites';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -262,6 +263,41 @@ describe('raycasts', () => {
 		}
 	});
 
+	test('a row of a sprite, point or line batch names that batch', () => {
+		const { scene, script } = fakeCore();
+		const rows = new InstanceBatch(scene, 5, 4, false);
+		(scene as unknown as { rememberBatch(batch: InstanceBatch): void }).rememberBatch(rows);
+		const sprites = { kind: 'sprites' } as unknown as SpriteBatch;
+		rows.face = sprites;
+		const hit = newHit();
+		script([{ batch: 5, row: 2, distance: 1, triangle: -1 }]);
+		scene.raycast([0, 0, 0], [0, 1, 0], undefined, hit);
+		expect([hit.object, hit.instance, hit.triangle]).toEqual([sprites, 2, -1]);
+	});
+
+	test('a raycast writes its thresholds, or none, and no camera without an active one', () => {
+		const { scene, calls } = fakeCore();
+		scene.raycastAny([0, 0, 0], [1, 0, 0], { pointThreshold: 0.25, lineThreshold: 2 });
+		scene.raycastAny([0, 0, 0], [1, 0, 0]);
+		const read = (k: number, at: number) => calls[k]?.input[at];
+		expect([read(0, C.QUERY_INPUT_POINT_THRESHOLD), read(0, C.QUERY_INPUT_LINE_THRESHOLD)]).toEqual(
+			[0.25, 2],
+		);
+		expect([read(1, C.QUERY_INPUT_POINT_THRESHOLD), read(1, C.QUERY_INPUT_LINE_THRESHOLD)]).toEqual(
+			[-1, -1],
+		);
+		expect(read(1, C.QUERY_INPUT_CAMERA)).toBe(C.QUERY_CAMERA_NONE);
+		// A batch of rays takes the same options.
+		scene.raycastBatch(
+			[0, 0, 0, 1, 0, 0],
+			{ lineThreshold: 0.5 },
+			{
+				distances: new Float32Array(1),
+			},
+		);
+		expect(read(2, C.QUERY_INPUT_LINE_THRESHOLD)).toBe(0.5);
+	});
+
 	test('raycastAny returns whether the ray hit anything', () => {
 		const { scene, box, paint, calls, script } = fakeCore();
 		const target = scene.createMesh({ mesh: box, material: paint });
@@ -395,6 +431,18 @@ describe('query errors', () => {
 			(s) => s.raycastAll([0, 0, 0], [1, 0, 0], { maxDistance: -1 }, []),
 			'E1108',
 			'raycastAll() got -1 for maxDistance',
+		],
+		[
+			'a negative point threshold',
+			(s) => s.raycast([0, 0, 0], [1, 0, 0], { pointThreshold: -0.5 }, hit),
+			'E1108',
+			'raycast() got -0.5 for pointThreshold',
+		],
+		[
+			'a line threshold that is not a number',
+			(s) => s.raycastAny([0, 0, 0], [1, 0, 0], { lineThreshold: Number.NaN }),
+			'E1108',
+			'raycastAny() got NaN for lineThreshold',
 		],
 		[
 			'a mask that is not 32 bits',
