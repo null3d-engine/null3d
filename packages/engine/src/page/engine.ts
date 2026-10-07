@@ -57,6 +57,7 @@ import { checkBrowser } from './browser-check';
 import { type CanvasWatch, watchCanvas } from './canvas-watch';
 import {
 	type CapabilityReport,
+	forgetWorkerProbe,
 	type PowerPreference,
 	probeCapabilities,
 	readDeviceHints,
@@ -681,6 +682,7 @@ export class EngineWorker {
 					events.labelSlot(reply.id, reply.slot, reply.generation);
 					return;
 				case 'lost':
+					forgetWorkerProbe();
 					events.failure(
 						new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
 					);
@@ -1500,8 +1502,10 @@ async function startEngine(
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
 			notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
 		};
-		const pageLoss = (reason: string) =>
+		const pageLoss = (reason: string) => {
+			forgetWorkerProbe();
 			onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
+		};
 		let draw: DrawModule | undefined;
 		/**
 		 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
