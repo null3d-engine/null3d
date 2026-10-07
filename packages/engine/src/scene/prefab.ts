@@ -47,10 +47,11 @@ export interface TemplateNode {
 	 */
 	skinned?: boolean;
 	/**
-	 * For a mesh that one joint moves, the joint's place at rest in the copy's space: where an
-	 * instance batch of the model draws it, and where it counts for the model's bounds.
+	 * For a mesh that joints move, where it lies at rest without skinning: a 3 × 4 matrix by rows
+	 * in the copy's space, which an instance batch of the model draws it with. `exact` is false
+	 * for a skinned mesh whose rest pose is not its bind pose, which a batch draws in its bind pose.
 	 */
-	rest?: ArrayLike<number>;
+	rest?: { readonly matrix: ArrayLike<number>; readonly exact: boolean };
 	/** The weights of the mesh's morph targets, for a mesh that has any. */
 	morph?: MorphTemplate;
 }
@@ -69,6 +70,8 @@ export interface PartTemplate {
 	material: Material;
 	/** The 3 × 4 matrix, by rows, that places the mesh in the model's space. */
 	matrix: Float32Array;
+	/** True for a skinned mesh that the batch draws in its bind pose, since its rest pose differs. */
+	bindPose?: boolean;
 }
 
 /** @internal A node with instancing of its own: the batch that each copy of the model makes. */

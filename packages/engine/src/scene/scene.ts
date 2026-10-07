@@ -2945,6 +2945,10 @@ export class Scene {
 						: undefined;
 			if (problem)
 				throw new EngineError('E1417', `${call}() got ${source.describe()}, which ${problem}.`);
+			if (DEV && source.parts.some((part) => part.bindPose))
+				console.warn(
+					`${call}() draws the skinned meshes of ${source.describe()} in their bind pose, because their rest pose differs from it and batches do not skin. Use scene.instantiate to draw them at rest.`,
+				);
 			return this.createParts(source.parts, count, options, call);
 		}
 		const mesh = source;

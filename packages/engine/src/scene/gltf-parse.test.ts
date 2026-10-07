@@ -722,6 +722,104 @@ describe('skins and clips', () => {
 		expect(new Set(array.filter((_, i) => i % 4 === 0))).toEqual(new Set([5, 1]));
 	});
 
+	/** The box and the place at rest of a node's copy that joints move, rounded. */
+	const restOf = (b: GltfBuilder, name = 'Sleeve') => {
+		const data = parse(b.glb());
+		const node = data.nodes.find((n) => n.name === name);
+		const p = data.meshes[node?.mesh ?? -1]?.primitives[0];
+		return {
+			box: [p?.min.map(rounded), p?.max.map(rounded)],
+			matrix: p?.rest?.matrix.map((v) => rounded(v) + 0),
+			exact: p?.rest?.exact,
+		};
+	};
+	const IDENTITY_ROWS = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+
+	test("a skinned copy's box holds its vertices where its joints place them at rest", () => {
+		expect(restOf(armBuilder())).toEqual({
+			box: [
+				[-0.2, 1, -0.2],
+				[0.2, 3, 0.2],
+			],
+			matrix: IDENTITY_ROWS,
+			exact: true,
+		});
+		// The joints carry the sleeve 2 m further along z, and the skinned node's own place counts
+		// for nothing, as glTF says.
+		const b = armBuilder();
+		b.json.nodes.find((n: GltfJson) => n.name === 'Arm').translation = [0, 0, 3];
+		b.json.nodes.find((n: GltfJson) => n.name === 'Sleeve').translation = [5, 5, 5];
+		expect(restOf(b)).toEqual({
+			box: [
+				[-0.2, 1, 1.8],
+				[0.2, 3, 2.2],
+			],
+			matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 2],
+			exact: true,
+		});
+	});
+
+	test('positions stored as integers, with their scale in the inverse bind matrices, give the same box', () => {
+		// The asset tool's quantization: 14-bit steps of the mesh's volume, with the transform that
+		// turns them back into meters folded into each inverse bind matrix.
+		const b = armBuilder();
+		const tall = boxArrays(0.4).positions.map((p, i) => (i % 3 === 1 ? p * 5 + 2 : p));
+		const offset = [-0.2, 1, -0.2] as const;
+		const step = 2 / 16383;
+		const steps = Uint16Array.from(tall, (p, i) =>
+			Math.round((p - (offset[i % 3] as number)) / step),
+		);
+		b.json.meshes[1].primitives[0].attributes.POSITION = b.positions(steps);
+		const binds = [
+			[0, 2, 1],
+			[0, 1, 1],
+			[0, 3, 1],
+		].flatMap(([x = 0, y = 0, z = 0]) => [
+			...[step, 0, 0, 0, 0, step, 0, 0, 0, 0, step, 0],
+			...[offset[0] - x, offset[1] - y, offset[2] - z, 1],
+		]);
+		b.json.skins[0].inverseBindMatrices = b.accessor(new Float32Array(binds), 16, {
+			type: 'MAT4',
+			count: 3,
+		});
+		const { box, matrix, exact } = restOf(b);
+		expect(box).toEqual([
+			[-0.2, 1, -0.2],
+			[0.2, 3, 0.2],
+		]);
+		// A batch draws the integers through the scale and offset that turn them back.
+		expect(exact).toBe(true);
+		expect(matrix).toEqual([0, 0, 0, -0.2, 0, 0, 0, 1, 0, 0, 0, -0.2]);
+	});
+
+	test('a skinned copy whose rest pose is not its bind pose has no exact place', () => {
+		// Elbow turns a quarter about z at rest, and the skin binds it straight. Shoulder carries
+		// most of the sleeve's weight, and rests where it binds.
+		const b = armBuilder();
+		b.json.nodes.find((n: GltfJson) => n.name === 'Elbow').rotation = [
+			0,
+			0,
+			Math.SQRT1_2,
+			Math.SQRT1_2,
+		];
+		const { box, matrix, exact } = restOf(b);
+		expect(exact).toBe(false);
+		expect(matrix).toEqual(IDENTITY_ROWS);
+		// The upper half swings toward -x.
+		expect(box[0]?.[0]).toBeLessThan(-0.2);
+	});
+
+	test('a copy that one joint moves rests where the joint does', () => {
+		expect(restOf(armBuilder(), 'Sword')).toEqual({
+			box: [
+				[-0.05, 3, 0.95],
+				[0.05, 4, 1.05],
+			],
+			matrix: [0.1, 0, 0, 0, 0, 1, 0, 3.5, 0, 0, 0.1, 1],
+			exact: true,
+		});
+	});
+
 	test('a file without skins or clips has no animation data', () => {
 		expect(parse(shipBuilder().glb()).animation).toBeUndefined();
 	});
