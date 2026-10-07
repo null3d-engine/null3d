@@ -50,9 +50,13 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s3: 0.1,
 	s4: 0.5,
 	s5: 0.3,
+	s6: 0.5,
 };
-/** Each scene's background color. S4's is its fog's color. */
-const BACKGROUNDS: Record<(typeof SCENES)[number], string> = {
+/**
+ * Each scene's background color. S4's is its fog's color. S6's sky covers its background, so its
+ * frame has none: the test then checks that the frame holds more than a sky.
+ */
+const BACKGROUNDS: Record<(typeof SCENES)[number], string | null> = {
 	s1: BACKGROUND,
 	's1-static': BACKGROUND,
 	's1-cells': BACKGROUND,
@@ -60,6 +64,7 @@ const BACKGROUNDS: Record<(typeof SCENES)[number], string> = {
 	s3: BACKGROUND,
 	s4: S4_FOG.color,
 	s5: S5_BACKGROUND,
+	s6: null,
 };
 /**
  * Pages whose renderer cannot draw their scene on the GPU that the tests draw with. WebGLRenderer's
@@ -78,7 +83,7 @@ const S5_SHORT_RUN_COUNT = 20;
  * The scenes whose canvas fills the window at the quality preset's pixel ratio, as a full-screen
  * app on a phone does, and whose pages record a trace of each second.
  */
-const PHONE_SCENES: readonly (typeof SCENES)[number][] = ['s4', 's5'];
+const PHONE_SCENES: readonly (typeof SCENES)[number][] = ['s4', 's5', 's6'];
 const isPhoneScene = (scene: (typeof SCENES)[number]) => PHONE_SCENES.includes(scene);
 /**
  * Pages that SwiftShader draws too slowly for the tests: S4's three.js twins take minutes over their
@@ -105,7 +110,7 @@ function shortRunSeconds(scene: (typeof SCENES)[number], kind: PageKind): number
 	if (scene === 's3' && kind === 'threejs-webgpu') return 5;
 	return 2;
 }
-/** S4's and S5's canvas fills the window. A small window keeps their frames short on SwiftShader. */
+/** S4's to S6's canvas fills the window. A small window keeps their frames short on SwiftShader. */
 const PHONE_VIEWPORT = { width: 480, height: 320 };
 /** The object count that a scene's short runs ask for. */
 const shortRunAsked = (scene: (typeof SCENES)[number]): number =>
@@ -227,6 +232,23 @@ function countBackground(pixels: Uint8Array, background: string): number {
 	return count;
 }
 
+/**
+ * The share of pixels whose color differs from the pixel to their right by more than a sky's
+ * gradient ever does: the edges of what the frame shows.
+ */
+function edgeShare(pixels: Uint8Array, width: number, height: number): number {
+	let edges = 0;
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x + 1 < width; x++) {
+			const i = (y * width + x) * 4;
+			let step = 0;
+			for (let c = 0; c < 3; c++)
+				step = Math.max(step, Math.abs((pixels[i + c] ?? 0) - (pixels[i + 4 + c] ?? 0)));
+			if (step > 24) edges++;
+		}
+	return edges / (width * height);
+}
+
 /** The mean of the RGB channels in rows `fromRow` up to, but not including, `toRow`. */
 function meanBrightness(pixels: Uint8Array, width: number, fromRow: number, toRow: number): number {
 	let sum = 0;
@@ -265,11 +287,17 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 				writePng(join(IMAGE_DIR, `${scene}-${kind}.png`), { width, height, data: pixels });
 
 				const total = width * height;
-				const background = countBackground(pixels, BACKGROUNDS[scene]);
-				// The background must read back as its own color: with wrong color handling, every pixel
-				// would differ from it and the blank check below would pass on any image.
-				expect(background).toBeGreaterThan(0);
-				expect((total - background) / total).toBeGreaterThan(MIN_DRAWN_SHARE[scene]);
+				const color = BACKGROUNDS[scene];
+				if (color === null) {
+					// A sky changes smoothly, so its frame holds few sharp edges; a city holds many.
+					expect(edgeShare(pixels, width, height)).toBeGreaterThan(MIN_DRAWN_SHARE[scene] / 10);
+				} else {
+					const background = countBackground(pixels, color);
+					// The background must read back as its own color: with wrong color handling, every
+					// pixel would differ from it and the blank check below would pass on any image.
+					expect(background).toBeGreaterThan(0);
+					expect((total - background) / total).toBeGreaterThan(MIN_DRAWN_SHARE[scene]);
+				}
 
 				if (scene === 's1-static') {
 					// Rows must arrive top first. The sun shines from above, so the lit tops of the boxes
@@ -367,7 +395,7 @@ function s4LowPassesTest(): void {
 
 for (const scene of SCENES) {
 	if (isPhoneScene(scene))
-		// S4 and S5 keep SwiftShader's processor busy, so two runs of one side by side can measure no
+		// S4, S5 and S6 keep SwiftShader's processor busy, so two runs of one side by side can measure no
 		// whole second. Each one's pages take turns in one worker, while other tests run beside them.
 		test.describe(`${scene.toUpperCase()}'s pages take turns`, () => {
 			test.describe.configure({ mode: 'default' });

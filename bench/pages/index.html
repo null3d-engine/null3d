@@ -25,16 +25,16 @@
 			</li>
 			<li>
 				<code>?n=1000</code>: the instance count of S1, S1-static and S1-cells, the box count of S3,
-				or the character count of S5, instead of the full count. S2 rounds it up to whole trees,
-				and S4 ignores it.
+				the character count of S5, or the count of S6's objects nearest the camera's start, instead
+				of the full count. S2 rounds it up to whole trees, and S4 ignores it.
 			</li>
 			<li>
-				<code>?preset=low</code>: the quality preset of S4, S5 and their twins, instead of the one
+				<code>?preset=low</code>: the quality preset of S4, S5, S6 and their twins, instead of the one
 				that null3D chooses for the device.
 			</li>
 			<li>
-				<code>?demo</code>: run the scene until the page closes, with no measurement. S5's null3D
-				page is then a playable demo with the stats overlay.
+				<code>?demo</code>: run the scene until the page closes, with no measurement. S5's and S6's
+				null3D pages are then playable demos with the stats overlay.
 			</li>
 			<li>
 				<code>?seconds=2</code>: warm up and measure for this many seconds each, for quick checks.
@@ -108,6 +108,17 @@
 				<a href="threejs/s5.html?renderer=webgl&amp;seconds=2&amp;n=50">WebGL</a>,
 				<a href="threejs/s5.html?renderer=webgpu&amp;seconds=2&amp;n=50">WebGPU</a>
 			</li>
+			<li>
+				S6, the city (19,173 objects from two optimized glTF files, streamed in, with shadows,
+				street lights, an environment, a sky, bloom and ambient occlusion; a drive through the
+				streets):
+				<a href="threejs/s6.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s6.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s6.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s6.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s6.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
+				<a href="threejs/s6.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
+			</li>
 		</ul>
 
 		<h2>Playable demos</h2>
@@ -119,6 +130,14 @@
 				<a href="null3d/s5.html?demo&amp;gpu=webgl2">WebGL2</a>; its three.js twin on
 				<a href="threejs/s5.html?renderer=webgl&amp;demo">WebGL</a>,
 				<a href="threejs/s5.html?renderer=webgpu&amp;demo">WebGPU</a>
+			</li>
+			<li>
+				S6, the city, in null3D with the stats overlay: click a building to name it, and press
+				Space to pause the drive.
+				<a href="null3d/s6.html?demo">WebGPU or WebGL2</a>,
+				<a href="null3d/s6.html?demo&amp;gpu=webgl2">WebGL2</a>; its three.js twin on
+				<a href="threejs/s6.html?renderer=webgl&amp;demo">WebGL</a>,
+				<a href="threejs/s6.html?renderer=webgpu&amp;demo">WebGPU</a>
 			</li>
 		</ul>
 

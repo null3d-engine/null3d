@@ -8,7 +8,7 @@
 // base64, so people can see what the device drew at full speed. The engine's own switches, such
 // as `?gpu=webgpu`, `?latency=low` or `?preset=low`, pick the GPU path, the thread mode and the
 // quality preset. `?governor=off` keeps the quality governor off in a scene that turns it on.
-import { createEngine, type Engine, type SecondRates } from '@null3d/engine';
+import { createEngine, type Engine, type EngineOptions, type SecondRates } from '@null3d/engine';
 import { timedRun } from '../../../packages/cli/src/protocol.js';
 import {
 	GL_TIMING_CHANNEL,
@@ -35,6 +35,13 @@ export interface Null3dPageOptions {
 	fillWindow?: boolean;
 	/** Record the trace of each measured second: frame rates, render scale and quality steps. */
 	trace?: boolean;
+	/** Options of `createEngine` that the scene needs beyond the protocol's. */
+	engine?: Partial<EngineOptions>;
+	/**
+	 * Work on the page once the engine has started, such as binding labels, which resolves when the
+	 * scene is whole, with figures for the report. A timed run warms up only after it resolves.
+	 */
+	started?: (engine: Engine) => Promise<Record<string, unknown>>;
 }
 
 /**
@@ -114,6 +121,8 @@ export function runNull3dPage(
 		if (!options.governor) sketchUrl.searchParams.set('governor', 'off');
 		// A scene with a playable demo, such as S5, reads `demo` to take the user's input.
 		if (options.demo) sketchUrl.searchParams.set('demo', '');
+		// A scene that loads in stages, such as S6, loads everything before its held frame.
+		if (held) sketchUrl.searchParams.set('hold', '');
 		// The allocation check's switches, which only some sketches read.
 		for (const name of SKETCH_SWITCHES) {
 			const value = params.get(name);
@@ -124,6 +133,7 @@ export function runNull3dPage(
 		// A page that fills the window leaves the pixel ratio's cap to the quality preset, unless
 		// `?maxPixelRatio=` names one.
 		const engine = await createEngine({
+			...pageOptions.engine,
 			canvas,
 			sketch: sketchUrl,
 			...(!filled && { maxPixelRatio: CANVAS.pixelRatio }),
@@ -135,6 +145,7 @@ export function runNull3dPage(
 			hold: options.hold ?? undefined,
 		});
 		bindLabels(engine, Number(params.get('labels') ?? 0));
+		const whole = pageOptions.started?.(engine);
 		const log = pageOptions.trace ? new QualityLog() : undefined;
 		if (log) engine.onSketchMessage((name, data) => name === QUALITY_MESSAGE && log.add(data));
 		if (!filled) fitToWindow(canvas, size.width, size.height);
@@ -162,6 +173,7 @@ export function runNull3dPage(
 			return report;
 		}
 		try {
+			if (whole) Object.assign(report, await whole);
 			if (options.soak !== null) return { ...report, soak: await soakEngine(engine, options.soak) };
 			if (options.hold !== null) {
 				const { width, height, pixels } = await engine.captureFrame();

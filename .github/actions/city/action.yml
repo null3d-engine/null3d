@@ -1,0 +1,29 @@
+name: Build S6's city files
+description: >-
+  Builds the model files of S6, the city, from the sample content's layout, and optimizes them into
+  the null3D plugin's cache, as .dev/sample-content.md says. The Actions cache keeps both, keyed on
+  the pinned sample content, the module that builds the files and the asset tool, so a job builds
+  them again only when one of those changes. Without it, the first page that imports the city waits
+  about two minutes. Run it after the samples action and after the asset tool is built. The cache
+  saves only when the workflow's SAVE_CACHES is true.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@v4
+      id: restore
+      with:
+        path: |
+          ~/.cache/null3d/samples/city
+          node_modules/.cache/null3d-assets
+        key: null3d-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts', 'packages/cli/package.json', 'packages/cli/src/**', 'crates/null3d-assets-wasm/**', 'packages/vite-plugin/src/assets.ts') }}
+    - name: Build and optimize the city's files
+      shell: bash
+      run: bun bench/lib/city-files.ts
+    - uses: actions/cache/save@v4
+      if: env.SAVE_CACHES == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ~/.cache/null3d/samples/city
+          node_modules/.cache/null3d-assets
+        key: null3d-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts', 'packages/cli/package.json', 'packages/cli/src/**', 'crates/null3d-assets-wasm/**', 'packages/vite-plugin/src/assets.ts') }}
