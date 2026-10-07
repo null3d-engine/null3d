@@ -3,10 +3,11 @@
 // and JSON, and asks for the buffers that the file names by address, which the loader downloads.
 // It also asks for the decoders that the file needs and that it has not had yet, such as
 // meshoptimizer's, whose modules the on-demand loader compiles once per page (shared/tasks.ts).
-// Then it parses the file, decoding its meshopt data. It decodes the PNG, JPEG and WebP images that the file holds
-// with createImageBitmap, once for each way a material uses them, and hands everything back in one
-// message that moves the arrays and images rather than copying them. A file it refuses comes back
-// as an error with the engine's code, so no load ever waits for an answer that does not come.
+// Then it parses the file, decoding its meshopt data. It decodes the PNG, JPEG, WebP and AVIF
+// images that the file holds with createImageBitmap, once for each way a material uses them, and
+// hands everything back in one message that moves the arrays and images rather than copying them.
+// A file it refuses comes back as an error with the engine's code, so no load ever waits for an
+// answer that does not come.
 
 import {
 	type GltfContainer,

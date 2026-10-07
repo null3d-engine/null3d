@@ -47,6 +47,8 @@ export { type AccessorArray, GltfError, type GltfErrorCode } from './gltf-json';
 export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_mesh_quantization',
 	'KHR_texture_basisu',
+	'EXT_texture_webp',
+	'EXT_texture_avif',
 	'KHR_texture_transform',
 	'KHR_materials_unlit',
 	'KHR_materials_emissive_strength',
@@ -57,6 +59,14 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_meshopt_compression',
 	'EXT_meshopt_compression',
 ];
+
+/**
+ * The extensions that give a texture an image in another format, in the order the loader takes
+ * them, as three.js's GLTFLoader does: KTX2 first, which stays compressed on the GPU, then WebP,
+ * which decodes faster than AVIF. Every browser that runs the engine decodes both, so the
+ * texture's own `source`, a fallback for loaders without them, is used only when none is given.
+ */
+const IMAGE_EXTENSIONS = ['KHR_texture_basisu', 'EXT_texture_webp', 'EXT_texture_avif'] as const;
 
 /**
  * The two names of meshopt compression. The Khronos extension reads the vendor one's data, and
@@ -675,10 +685,15 @@ export function parseGltf(
 		const slot = entry(info, what);
 		const t = index(slot.index, textureDefs.length, `${what}'s texture`);
 		const texture = textureDefs[t] as Entry;
-		const basisu = (texture.extensions as Entry | undefined)?.KHR_texture_basisu as
-			| Entry
-			| undefined;
-		const source = basisu?.source ?? texture.source;
+		const extensions = texture.extensions as Entry | undefined;
+		let source = texture.source;
+		for (const name of IMAGE_EXTENSIONS) {
+			const given = (extensions?.[name] as Entry | undefined)?.source;
+			if (given !== undefined) {
+				source = given;
+				break;
+			}
+		}
 		if (source === undefined) broken(`texture ${t} has no image`);
 		const image = index(source, imageCount, `texture ${t}'s image`);
 		const transform = (slot.extensions as Entry | undefined)?.KHR_texture_transform as
@@ -858,7 +873,7 @@ export function parseGltf(
 }
 
 /**
- * Checks the size that each PNG and JPEG image of the file gives in its header, before the worker
+ * Checks the size that each PNG, JPEG, WebP and AVIF image of the file gives in its header, before the worker
  * decodes it: each side within the engine's largest texture, and the pixels of every decode, one
  * for each way a material uses the image, within the cap on what one file may decode to. Images
  * take a budget of their own: a photo compresses far more than a mesh, so a ratio to the file's

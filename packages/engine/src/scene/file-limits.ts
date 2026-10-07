@@ -98,15 +98,18 @@ function describe(bytes: number): string {
 }
 
 /**
- * The width and height that a PNG or JPEG file's header gives, or undefined for another format or
- * a header that is cut short. A PNG gives them in its IHDR chunk, and a JPEG in its frame header
- * (SOF), after any segments before it. A decoder reads them before it decodes, so a small file
- * that claims a huge image fails before the browser allocates its pixels.
+ * The width and height that a PNG, JPEG, WebP or AVIF file's header gives, or undefined for
+ * another format or a header that is cut short. A PNG gives them in its IHDR chunk, a JPEG in its
+ * frame header (SOF), after any segments before it, a WebP in its first chunk, and an AVIF in the
+ * image spatial extents (`ispe`) of its item properties. A decoder reads them before it decodes,
+ * so a small file that claims a huge image fails before the browser allocates its pixels.
  */
 export function imageSize(bytes: Uint8Array): [width: number, height: number] | undefined {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	const word = (at: number) => (at + 4 <= bytes.length ? view.getUint32(at) : -1);
 	const half = (at: number) => (at + 2 <= bytes.length ? view.getUint16(at) : -1);
+	if (word(0) === RIFF && word(8) === WEBP) return webpSize(bytes, view);
+	if (word(4) === FTYP) return avifSize(bytes, view);
 	if (word(0) === PNG_SIGNATURE[0] && word(4) === PNG_SIGNATURE[1]) {
 		if (word(12) !== IHDR) return undefined;
 		const [width, height] = [word(16), word(20)];
@@ -132,6 +135,89 @@ export function imageSize(bytes: Uint8Array): [width: number, height: number] | 
 	}
 	return undefined;
 }
+
+/**
+ * The size of a WebP file: from the frame header of lossy data (`VP8 `), the header of lossless
+ * data (`VP8L`), or the canvas of the extended format (`VP8X`).
+ */
+function webpSize(bytes: Uint8Array, view: DataView): [number, number] | undefined {
+	const kind = bytes.length >= 30 ? view.getUint32(12) : -1;
+	if (kind === VP8 && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a)
+		return [view.getUint16(26, true) & 0x3fff, view.getUint16(28, true) & 0x3fff];
+	if (kind === VP8L && bytes[20] === 0x2f) {
+		const bits = view.getUint32(21, true);
+		return [(bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1];
+	}
+	if (kind === VP8X) {
+		const side = (at: number) =>
+			((bytes[at] as number) |
+				((bytes[at + 1] as number) << 8) |
+				((bytes[at + 2] as number) << 16)) +
+			1;
+		return [side(24), side(27)];
+	}
+	return undefined;
+}
+
+/**
+ * The size of an AVIF file: the largest width and the largest height of the image spatial
+ * extents in its item properties (`meta`, `iprp`, `ipco`, then `ispe`). A file has one for each
+ * image it holds, such as an alpha plane or the tiles of a grid, and the largest is the image that
+ * shows. Undefined for a file of another brand, or one whose boxes give no size.
+ */
+function avifSize(bytes: Uint8Array, view: DataView): [number, number] | undefined {
+	const end = bytes.length;
+	const word = (at: number) => (at + 4 <= end ? view.getUint32(at) : -1);
+	// The file type box lists its major brand, a version, then its compatible brands.
+	const ftypEnd = Math.min(end, word(0));
+	let avif = false;
+	for (let at = 8; at + 4 <= ftypEnd; at += at === 8 ? 8 : 4)
+		if (word(at) === AVIF || word(at) === AVIS) avif = true;
+	if (!avif) return undefined;
+	let width = 0;
+	let height = 0;
+	/** Walks the boxes from `from` to `to`, and goes into each that `path` names in turn. */
+	const walk = (from: number, to: number, path: readonly number[]): void => {
+		for (let at = from; at + 8 <= to; ) {
+			let size = word(at);
+			const type = word(at + 4);
+			let header = 8;
+			if (size === 1) {
+				// A 64-bit size, which no image header needs past 4 GiB.
+				if (word(at + 8) !== 0) return;
+				size = word(at + 12);
+				header = 16;
+			} else if (size === 0) size = to - at;
+			if (size < header || at + size > to) size = to - at;
+			if (type === ISPE && path.length === 0 && size >= header + 12) {
+				width = Math.max(width, word(at + header + 4));
+				height = Math.max(height, word(at + header + 8));
+			} else if (type === path[0]) {
+				// The meta box is a full box, with four bytes of version and flags first.
+				const skip = type === META ? 4 : 0;
+				walk(at + header + skip, at + size, path.slice(1));
+			}
+			if (size <= 0) return;
+			at += size;
+		}
+	};
+	walk(ftypEnd > 0 ? ftypEnd : end, end, [META, IPRP, IPCO]);
+	return width > 0 && height > 0 ? [width, height] : undefined;
+}
+
+// The four-character codes of the WebP and AVIF headers, as big-endian words.
+const RIFF = 0x52494646;
+const WEBP = 0x57454250;
+const VP8 = 0x56503820;
+const VP8L = 0x5650384c;
+const VP8X = 0x56503858;
+const FTYP = 0x66747970;
+const AVIF = 0x61766966;
+const AVIS = 0x61766973;
+const META = 0x6d657461;
+const IPRP = 0x69707270;
+const IPCO = 0x6970636f;
+const ISPE = 0x69737065;
 
 /** The eight bytes that start every PNG file, as two big-endian words. */
 const PNG_SIGNATURE = [0x89504e47, 0x0d0a1a0a] as const;

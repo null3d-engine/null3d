@@ -824,6 +824,7 @@ pub fn typescript() -> String {
                 ("FORMAT_ASTC_SRGB", format::ASTC_4X4_UNORM_SRGB),
                 ("FORMAT_BC7", format::BC7_RGBA_UNORM),
                 ("FORMAT_BC7_SRGB", format::BC7_RGBA_UNORM_SRGB),
+                ("FORMAT_BC6H", format::BC6H_RGB_UFLOAT),
                 ("FORMAT_ETC2_RGB", format::ETC2_RGB8_UNORM),
                 ("FORMAT_ETC2_RGB_SRGB", format::ETC2_RGB8_UNORM_SRGB),
                 ("FORMAT_ETC2_RGBA", format::ETC2_RGBA8_UNORM),
