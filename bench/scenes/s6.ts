@@ -52,6 +52,17 @@ export interface S6Material {
 /** A model of -1 marks a unit box, and a building of -1 an object of no building. */
 export const S6_BOX = -1;
 
+/**
+ * The street tiles: the road models that cover the streets edge to edge, one tile wide at their
+ * row's scale. Where two tiles meet, a pixel on their shared edge can fall inside both at the same
+ * depth, and WebGPU draws the copies of one mesh in any order, so either tile could win it in any
+ * frame. Every other tile stands a step higher, so the higher one wins such a pixel in every frame.
+ */
+export const S6_STREET_TILES = /\/road-(straight|crossroad)\.glb$/;
+
+/** The step between neighbouring street tiles, in metres: far below what a pixel shows. */
+export const S6_TILE_STEP = 0.01;
+
 /** The objects of the whole city: the pinned layout's rows. */
 export const S6_FULL_COUNT = 19_173;
 
@@ -221,11 +232,21 @@ export function createS6(layout: S6Layout, count = layout.objects.rows.length): 
 		labels: [],
 		lights: layout.lights,
 	};
+	const streetTile = layout.models.map((path) => S6_STREET_TILES.test(path));
 	rows.forEach((row, i) => {
-		data.model[i] = row[f.model] as number;
+		const model = row[f.model] as number;
+		const x = row[f.x] as number;
+		const z = row[f.z] as number;
+		// Neighbouring tiles differ by one in one of their grid places, so they get different steps.
+		const step =
+			streetTile[model] &&
+			(Math.round(x / (row[f.sx] as number)) + Math.round(z / (row[f.sz] as number))) % 2 !== 0
+				? S6_TILE_STEP
+				: 0;
+		data.model[i] = model;
 		data.material[i] = row[f.material] as number;
 		data.building[i] = row[f.building] as number;
-		data.position.set([row[f.x] as number, row[f.y] as number, row[f.z] as number], i * 3);
+		data.position.set([x, (row[f.y] as number) + step, z], i * 3);
 		data.rotationY[i] = row[f.rotationY] as number;
 		data.scale.set([row[f.sx] as number, row[f.sy] as number, row[f.sz] as number], i * 3);
 	});

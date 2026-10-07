@@ -7,7 +7,9 @@ import {
 	S6_BOX,
 	S6_FULL_COUNT,
 	S6_LOOK,
+	S6_STREET_TILES,
 	S6_SUN_POSITION,
+	S6_TILE_STEP,
 	type S6Layout,
 	s6Camera,
 	s6LoopSeconds,
@@ -99,6 +101,29 @@ describe('S6', () => {
 			);
 			expect(onLine).toBe(true);
 		}
+	});
+
+	test('neighbouring street tiles stand a step apart, so no shared edge is a tie', () => {
+		const tiles = new Map<string, number>();
+		for (let row = 0; row < data.count; row++) {
+			const model = data.model[row] as number;
+			if (model < 0 || !S6_STREET_TILES.test(layout.models[model] as string)) continue;
+			const size = data.scale[row * 3] as number;
+			const key = `${Math.round((data.position[row * 3] as number) / size)},${Math.round((data.position[row * 3 + 2] as number) / size)}`;
+			tiles.set(key, data.position[row * 3 + 1] as number);
+		}
+		expect(tiles.size).toBeGreaterThan(1000);
+		let pairs = 0;
+		for (const [key, y] of tiles) {
+			const [i, j] = key.split(',').map(Number) as [number, number];
+			for (const next of [`${i + 1},${j}`, `${i},${j + 1}`]) {
+				const other = tiles.get(next);
+				if (other === undefined) continue;
+				expect(Math.abs(other - y)).toBeCloseTo(S6_TILE_STEP, 6);
+				pairs++;
+			}
+		}
+		expect(pairs).toBeGreaterThan(1000);
 	});
 
 	test('labels sit on the tops of their towers', () => {
