@@ -61,6 +61,8 @@
 //   --uncapped        Chrome draws without waiting for the display's refresh, so a page that the
 //                     GPU holds back shows its GPU's cost in its frame interval on both GPU paths;
 //                     WebGL2 reports no GPU time of its own
+//   --scale <n>       the pages' device pixel ratio, 1 by default, so a page that fills the window
+//                     draws n times as many pixels along each side
 // Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -180,6 +182,8 @@ export interface BenchOptions {
 	switches: string;
 	/** Chrome draws without waiting for the display's refresh, with no frame rate limit. */
 	uncapped: boolean;
+	/** The pages' device pixel ratio. */
+	scale: number;
 }
 
 /** A run's warm-up and measured seconds: `--seconds` for both, or the protocol's. */
@@ -226,6 +230,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		dev: false,
 		switches: '',
 		uncapped: false,
+		scale: 1,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -253,12 +258,15 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		else if (arg === DEV_OPTION) options.dev = true;
 		else if (arg === '--switches') options.switches = readSwitches(value(), '--switches');
 		else if (arg === '--uncapped') options.uncapped = true;
+		else if (arg === '--scale') options.scale = Number(value());
 		else throw new Error(`unknown option ${arg}`);
 	}
 	if (!(Number.isInteger(options.runs) && options.runs > 0))
 		throw new Error('--runs: use a whole number above 0');
 	if (options.seconds !== null && !(options.seconds > 0))
 		throw new Error('--seconds: use a number above 0');
+	if (!(options.scale >= 1 && options.scale <= 4))
+		throw new Error('--scale: use a device pixel ratio from 1 to 4');
 	if (
 		[options.jobs, options.sweep || null, options.compare, options.merge].filter(Boolean).length > 1
 	)
@@ -296,8 +304,16 @@ function launchBrowser(name: BenchOptions['browser'], uncapped: boolean): Promis
 }
 
 /** Opens one benchmark page in a fresh parked window and waits for its result. */
-async function runPage(browser: Browser, url: string, timeoutMs: number): Promise<BenchResult> {
-	const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
+async function runPage(
+	browser: Browser,
+	url: string,
+	timeoutMs: number,
+	scale = 1,
+): Promise<BenchResult> {
+	const page = await newParkedPage(browser, {
+		viewport: { width: 1400, height: 800 },
+		deviceScaleFactor: scale,
+	});
 	try {
 		await page.goto(url);
 		return await pageResult<BenchResult>(page, timeoutMs);
@@ -336,6 +352,7 @@ async function runProtocol(
 						browser,
 						`${baseUrl}${pagePath(scene, kind, switches)}`,
 						timeoutMs,
+						options.scale,
 					);
 					writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
 					// A page that ran with another job worker count would put its times under the wrong count.
