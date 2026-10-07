@@ -136,6 +136,9 @@ run('replay', async () => {
 		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
 		// The shadow atlas's tiles, which the frame group binds; no light casts shadows here.
 		[16, G.SIZE_SHADOW_TILES_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
+		// The compacted indices of the buckets whose vertex shaders read instances by index, which
+		// the culling group binds; both buckets here read the culling shader's copies.
+		[17, positions.length * 4, U.STORAGE, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -304,8 +307,8 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		8,
-		...[10, 5, 6, 7, 8, 9, 11, 12].flatMap((buffer, binding) => [
+		9,
+		...[10, 5, 6, 7, 8, 9, 11, 12, 17].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
 			buffer,
