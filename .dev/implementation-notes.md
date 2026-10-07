@@ -571,6 +571,7 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 - So at its start the engine doubles the canvas's buffer for a moment and reads its computed CSS size. A side whose CSS size follows the buffer keeps the size it showed, as an inline style. A canvas that CSS sizes keeps its shape and gets no style.
 - The drawing buffer stays within the GPU's largest texture: WebGPU's default limit of 8192, or WebGL2's `MAX_TEXTURE_SIZE`. A larger canvas draws at a lower pixel ratio, which `engine.viewport.pixelRatio` reports.
 - CI's browsers run at a pixel ratio of 1, where such a canvas never grows. The browser tests run a project on a high-density screen to cover it.
+- When the canvas changes size, the render graph makes its textures again under the same ids. A bind group that names one of them must be made again too, even when the id it names is the same. Until 8 October 2026, the occlusion culling pyramid's group was made again only when its buffer grew or its depth target's id changed. So after the canvas shrank, it still bound the destroyed depth texture, and WebGPU refused the frame. Phones, where occlusion culling is on, meet this when the page or the screen turns. Now the group is made again whenever the graph makes its textures again. A Rust test shrinks the canvas and checks that the group binds the new texture.
 
 ## Writes to storage in WGSL
 
