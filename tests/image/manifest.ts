@@ -257,7 +257,9 @@ const AO_SKETCH = 'tests/pages/sketches/ao-sketch.ts';
  * every tier. The parity test compares the two with three.js's GTAOPass. The sun's test shows that
  * the occlusion darkens only the ambient light, beside the sun's shadows. Ambient occlusion at half
  * the render scale draws into the corners of the same targets, and a quarter-size scale into a
- * smaller corner.
+ * smaller corner. A custom effect that returns each pixel as it reads it must leave the occlusion's
+ * image as it was. Compatibility mode starts on the 8-bit path with MSAA, and the effect moves it to
+ * HDR color with FXAA, which smooths edges differently, so that test leaves it out.
  */
 function aoTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -274,6 +276,11 @@ function aoTests(): ImageTest[] {
 		test('ao-scale-50', '?scale=0.5&ao=wide'),
 		test('ao-quarter', '?ao=wide&aoscale=0.25'),
 		test('ao-custom', '?ao=wide&custom'),
+		{
+			...test('ao-identity-effect', '?ao=wide&identity'),
+			tiers: ['webgpu', 'webgl2'],
+			reference: 'ao-wide',
+		},
 	];
 }
 
