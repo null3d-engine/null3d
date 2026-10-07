@@ -20,7 +20,7 @@ flowchart LR
 
 A line batch draws line segments of any width between points, such as paths, outlines, graphs, trails, laser beams and the edges of a map. Each segment is a quad with round ends that faces the camera, so lines look the same on WebGPU and WebGL2 at every width. Where two segments meet, their round ends overlap and make a round join.
 
-Each point is a row in the batch's typed arrays, with its own position and color. Sketch code writes the points straight into engine memory, with no call per point, as it does for [instance batches](../concepts/instances.md). A batch is one draw for the GPU, whatever its size. The engine culls each segment and sorts blended segments back to front, as it does for instance rows.
+Each point is a row in the batch's typed arrays, with its own position and color. Sketch code writes the points straight into engine memory, with no call per point, as it does for [instance batches](../concepts/instances.md). A batch is one draw for the GPU, whatever its size. The engine culls each segment and sorts blended segments back to front, as it does for instance rows. The [sprites and lines demo](https://github.com/null3d-engine/null3d/tree/main/examples/sprites-lines) draws a lit helix in world units and a ring of moving dashes.
 
 ```ts
 import { color, defineSketch } from '@null3d/engine';

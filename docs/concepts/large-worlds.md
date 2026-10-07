@@ -123,3 +123,4 @@ three.js offers logarithmic depth for large scenes. It writes depth from the fra
 - [Objects and transforms](../api/objects.md): the position setters and getters.
 - [Engine](../api/engine.md): the `largeWorld` option of `createEngine`.
 - [GPU tiers and backends](backends.md#depth-on-each-tier): depth on each tier.
+- [The large world demo](https://github.com/null3d-engine/null3d/tree/main/examples/large-world): a drive along a road on the Earth's surface, in large-world mode with batch origins.

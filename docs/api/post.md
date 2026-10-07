@@ -280,6 +280,7 @@ post.set({ toneMapping: reinhard });
 - [Quality presets](../concepts/quality-presets.md): `aoScale` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables.
+- [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene.
 
 ## API reference
 

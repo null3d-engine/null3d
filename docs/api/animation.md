@@ -24,7 +24,7 @@ Characters animate on the job workers, in the engine's WebAssembly core. Each fr
 
 ## Models from glTF files
 
-`assets.loadGltf` reads a model's skins, its clips and its morph targets. Each copy that `scene.instantiate` makes gets an animator on its group, which plays the model's clips. `prefab.clips` lists their names.
+`assets.loadGltf` reads a model's skins, its clips and its morph targets. Each copy that `scene.instantiate` makes gets an animator on its group, which plays the model's clips. `prefab.clips` lists their names. The [character demo](https://github.com/null3d-engine/null3d/tree/main/examples/character) blends a character's clips by its speed, and swings its sword on an upper-body layer.
 
 ```ts
 const knight = await assets.loadGltf('/models/knight.glb');

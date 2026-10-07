@@ -32,6 +32,22 @@ This guide covers the image test manifest, its references, and the review that m
 
 A CI run that finds a missing or changed image saves it too. `bun run images:review --ci <run>` fetches those images for review.
 
+## The feature demos
+
+Each demo in `examples/` is a sketch that the examples page runs live and the manifest holds at one time. These rules keep the held frame and the live page in step:
+
+- A demo computes its motion from `time.now`, not by adding up each frame's step. The character's walk uses the integral of its speed, and the sparks use their flight formula. The held frame is then the same on every machine. Seeded `math.random` calls at setup are safe, because hold mode seeds the generator.
+- A demo that starts the engine in large-world mode sets `largeWorld` in `examples/demos.ts`. The examples page passes it to `createEngine`, and the manifest adds the image page's `largeWorld` switch.
+- A demo that loads large files sets `timeoutSeconds`, which its image test takes. The glTF model, the character and the environment demos load files of 4 to 11 MB, or filter HDR images on the GPU. On SwiftShader on the Mac they took 14 to 21 s each, with four tests at once, against the default limit of 30 s. CI's machines are slower, so they take 60 s, as the environment tests do.
+- Demos load sample content through `sampleUrl('...')` with a string literal, so the sample check finds each file. On a new machine, run `bun run samples:fetch` before the dev server shows them.
+- A demo can post a `label` message with `{ id, text, active }`. The examples page then makes an element for the label, binds it with `engine.labels.bind`, and shows the text. The picking demo uses this. The image tests read only the engine's pixels, so they do not show labels.
+- The demos use only lights that light surfaces now: no hemisphere lights, which are stored but do not light yet. On 8 October 2026, three demos with hemisphere lights drew their scenes much darker than planned.
+
+Known faults that the demos show, found on 8 October 2026 while M2-L5 made them:
+
+- With ambient occlusion and a custom effect both on, the scene's colors are wrong on all three GPU paths. Crates that draw blue and pink with either one alone draw red and olive with both. So the post effects demo leaves out its custom effect until the fault is fixed.
+- Ambient occlusion draws dark dots along the bottom row and the right column of the image. The post effects demo's references hold these dots. A fix changes those references.
+
 ## Visual checks
 
 Image tests compare one frame with its reference. So they catch a change, but not a fault that shows only over time, or a fault in the reference itself. Three shadow faults reached main, and only the eye caught them. Cascades shimmered as the camera turned (fixed by #198). Shadow edges in the middle distance were jagged (fixed by #211). Moving cars' shadows trailed their cars. The visual checks measure the first two faults as figures with limits. The lag of far cascades that skip frames shows only in live frames, so it has a test of its own: `tests/image/moving-shadow.spec.ts`. It runs each preset with that preset's own `followMovingCasters` and far cascades every 8th frame, and reads 60 frames, or 24 on SwiftShader ([D-88](decisions/D-88-software-gpu-loads.md)). A fourth fault reached main that way. On 5 October 2026, Low kept its far cascade's turns around moving casters. The test set that setting itself, so it never saw Low's own value ([D-16](decisions/D-16-moving-casters-and-bias.md#the-ipad-soak-and-the-second-ruling-5-october-2026)).

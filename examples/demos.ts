@@ -13,6 +13,10 @@ export interface Demo {
 	controls?: string;
 	/** The sketch time, in seconds, that the demo's image test holds at. */
 	hold: number;
+	/** True for a demo that starts the engine in large-world mode. */
+	largeWorld?: boolean;
+	/** How long the demo's image test may take, in seconds, for a demo that loads large files. */
+	timeoutSeconds?: number;
 }
 
 export const DEMOS: readonly Demo[] = [
@@ -79,5 +83,62 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'400 balls drop from random places and bounce. Each live run differs, and the held frame is the same on every run.',
 		hold: 3,
+	},
+	{
+		name: 'gltf-model',
+		title: 'A glTF model',
+		summary:
+			'The Khronos BoomBox, loaded with assets.loadGltf and lit by the built-in room environment. Its base color, normal, occlusion, roughness, metalness and emissive maps all come from the file.',
+		controls: 'Drag to turn the camera, and scroll or pinch to zoom.',
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'character',
+		title: 'An animated character',
+		summary:
+			'The KayKit Knight walks a circle at a speed that rises and falls. A blend mixes its idle, walk and run clips by speed, and an upper-body layer swings its sword every 4 seconds.',
+		controls: 'Drag to turn the camera, and scroll or pinch to zoom.',
+		hold: 4.5,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'picking',
+		title: 'Picking with labels',
+		summary:
+			'Six shapes turn on a table, each with an HTML label that follows it. The pointer lights up the shape under it, and a click outlines it and marks the point that the ray hit.',
+		controls: 'Point at a shape to light it up, and click or tap it to select it.',
+		hold: 2,
+	},
+	{
+		name: 'environment',
+		title: 'Environment light',
+		summary:
+			'Plastic and metal spheres, from rough to smooth, lit only by an environment. Every 4 seconds it changes: a sunset from an HDR file, a studio from an EXR file, then the built-in room.',
+		controls: 'Drag to turn the camera, and scroll or pinch to zoom.',
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'post-effects',
+		title: 'Post effects',
+		summary:
+			'Crates under neon lights, with bloom, ambient occlusion, an outline and a vignette. Every 3 seconds the color grading table changes: none, warm, then cool.',
+		hold: 4,
+	},
+	{
+		name: 'sprites-lines',
+		title: 'Sprites and lines',
+		summary:
+			'A fountain of 2,000 sparks in one sprite batch, a lit helix of wide lines in world units, and dashes that run around a ring.',
+		hold: 2,
+	},
+	{
+		name: 'large-world',
+		title: 'A large world',
+		summary:
+			"A drive along a road on the Earth's surface, 6,378 km from the origin, under a sky with fog. Large-world mode keeps the 15 cm lane marks sharp and the camera smooth.",
+		hold: 3,
+		largeWorld: true,
 	},
 ];
