@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { WGSL_UPDATE_EVENT as ENGINE_EVENT } from '../../engine/src/shared/wgsl-updates';
 import { changedLiterals, contractOf, HOT_CLIENT_CODE, HotState, WGSL_UPDATE_EVENT } from './hot';
-import type { CompiledMaterial, CompiledShader } from './shader-types';
+import type {
+	CompiledEffect,
+	CompiledMaterial,
+	CompiledShader,
+	CompiledToneCurve,
+} from './shader-types';
 
 /** A script with two tagged literals, whose WGSL the tests change. */
 const SCRIPT = `const a = /* wgsl */ \`fn surface() {}\`;
@@ -62,6 +67,17 @@ describe('hot state', () => {
 		const hot = new HotState();
 		hot.remember('a.wgsl', shader);
 		expect(hot.swaps('a.wgsl', shader)).toBe(false);
+	});
+
+	it('never swaps a custom effect or tone curve, so their edits reload the page', () => {
+		const effect = { kind: 'effect', uniforms: [], depth: false, variants: {} } as CompiledEffect;
+		const curve = { kind: 'toneCurve', variants: {} } as CompiledToneCurve;
+		const hot = new HotState();
+		for (const shader of [effect, curve]) {
+			expect(contractOf(shader)).toBeNull();
+			hot.remember('a.wgsl', shader);
+			expect(hot.swaps('a.wgsl', shader)).toBe(false);
+		}
 	});
 });
 

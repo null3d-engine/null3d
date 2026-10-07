@@ -2,7 +2,7 @@
 
 Status: decided. Date: 2026-10-05. Task: M2-J2.
 
-Summary: The Vite plugin compiles WGSL on up to 8 worker threads, with each custom material split among them (960 ms on one thread, 269 ms on 8). On the dev server, WGSL edits go to the page under a key per file or tagged literal, and each backend builds the new pipelines in the background while the old ones draw. An edit that changes a material's uniforms, textures or vertex inputs reloads the page.
+Summary: The Vite plugin compiles WGSL on up to 8 worker threads, and splits each custom material among them. One material takes 960 ms on one thread and 269 ms on 8. On the dev server, WGSL edits go to the page under a key per file or tagged literal. Each backend builds the new pipelines in the background while the old ones draw. An edit that changes a material's uniforms, textures or vertex inputs reloads the page. So does an edit to a custom effect or tone curve.
 
 ## Question
 
@@ -58,5 +58,5 @@ How the data was produced: `NULL3D_PORT=17473 bun run --cwd tests test hot-reloa
 - The plugin has `compile-pool.ts`, `compile-worker.js`, `compiler-calls.js` and `hot.ts`. The worker and the calls are plain JavaScript, so Node runs them without type stripping. The compile functions in `wgsl.ts` are async.
 - The engine has `shared/wgsl-updates.ts`, `Materials.updateShaders`, `ImageTable.setShader` and its list of replaced templates, and the backends' swaps.
 - Cached spot and point light shadows of a still scene keep the old shape of a vertex offset until something in their view moves. A uniform change through `set()` behaves the same way.
-- Custom effects (M2-F5) take the same keys when they land: an effect's WGSL needs only its own contract in `hot.ts` and a consumer of `updateShaders`.
+- Custom effects and tone curves (M2-F5) take the same keys, but they have no contract yet, so an edit to their WGSL reloads the page. A hot swap needs only their own contract in `hot.ts` and a consumer of `updateShaders`.
 - Docs: `guides/custom-shaders` (hot reload) and `getting-started/install`. Skill: `null3d-develop` `shaders.md` and `testing-and-debugging.md`.

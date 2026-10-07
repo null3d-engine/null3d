@@ -46,7 +46,8 @@ export function hotKey(path: string, literal?: number): string {
 /**
  * What a running page keeps of compiled WGSL, as text: everything of a custom material but its
  * builds. A material whose new WGSL keeps it can swap its shader. Null for a whole shader, which
- * code outside the engine uses as it likes, so only a reload brings it a new one.
+ * code outside the engine uses as it likes, and for a custom effect or tone curve, which the
+ * engine does not swap. Only a reload brings either a new one.
  */
 export function contractOf(shader: CompiledWgsl): string | null {
 	if (shader.kind !== 'material') return null;

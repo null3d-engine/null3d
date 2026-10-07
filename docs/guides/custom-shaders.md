@@ -186,6 +186,7 @@ These rules apply:
 - WGSL that does not compile shows in Vite's overlay and in the terminal. The page keeps drawing with the last shader that compiled. The overlay closes when your fix compiles.
 - A change to the uniforms, the textures or the vertex attributes of a custom material reloads the page. So does a change between a surface function and a full shader. The materials keep their values in a layout that these set.
 - A whole shader reloads the page, because your own code draws it.
+- A change to the WGSL of a custom post effect or a custom tone curve reloads the page.
 - Spot and point light shadows of a still scene keep the old shape of a vertex offset until something in their view moves.
 
 The plugin compiles WGSL on worker threads, so the dev server answers the page's other requests while a shader compiles. It starts one thread for each core but one, at most 8, and each takes about 20 MB. It splits each custom material's variants among the threads.
