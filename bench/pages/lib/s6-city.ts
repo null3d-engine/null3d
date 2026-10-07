@@ -11,3 +11,18 @@ export const S6_KIT_URL: string = kit;
 
 /** The optimized tower file's address. */
 export const S6_TOWERS_URL: string = towers;
+
+/** A downloaded file of code, which the load's figures leave out: the engines' own files. */
+const CODE = /\.(m?js|wasm|css|html)(\?|#|$)/;
+
+/**
+ * The bytes of content that this thread downloaded, from its resource timings: the scene's files
+ * and none of the engine's code. Each engine fetches the scene's files on one thread: null3D on
+ * the sketch's, and three.js on the page's.
+ */
+export function loadedBytes(): number {
+	let bytes = 0;
+	for (const entry of performance.getEntriesByType('resource') as PerformanceResourceTiming[])
+		if (!CODE.test(entry.name)) bytes += entry.encodedBodySize;
+	return bytes;
+}
