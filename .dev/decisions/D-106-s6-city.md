@@ -1,6 +1,6 @@
 # D-106: How S6, the city, gets its models, loads, and draws in its three.js twin
 
-Status: decided by the owner on 2026-10-08 (UTC+8) for the object limit, the load and the layout fix. Load times on a network, and the timed runs, follow in later runs. Date: 2026-10-08. Task: M2-L3.
+Status: decided by the owner on 2026-10-08 (UTC+8) for the object limit, the load and the layout fix. Pending: the Mac timing, which waits for a quiet Mac, the device runs on the iPad, the S24+ and the cloud phones, and load times on a network. Date: 2026-10-08. Task: M2-L3.
 
 Summary: S6 builds two model files from the sample content's city layout. It loads them in two stages, kit models first and towers second, with no engine change. Its 20,738 objects needed more than the 16,383 that one engine held. So the engine's object tables grow on demand ([D-103](D-103-growing-object-tables.md)), and S6's page asks for room for 21,000 at its start. The optimized city takes 37.5 MB to download and 87 MB of GPU memory as ETC2 or ASTC. Texture sharing between model files becomes a task of its own.
 
