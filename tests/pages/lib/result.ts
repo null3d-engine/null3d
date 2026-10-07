@@ -4,6 +4,8 @@
 // each worker the page starts and each reply or failure of one, the errors the page logs, and the
 // steps the page notes itself.
 
+import { MEMORY_REFUSED } from './room';
+
 declare global {
 	interface Window {
 		__null3dResult?: unknown;
@@ -19,6 +21,24 @@ window.__null3dProgress = trail;
 export function progress(step: string): void {
 	trail.push(`${Math.round(performance.now())} ms ${step}`);
 }
+
+// The trail notes the first shared memory that the browser refuses the page, the engine's included.
+// The browser's own constructor still makes each memory, so every memory keeps the browser's
+// prototype, which the memory counts of the tests look for.
+let memoryRefused = false;
+WebAssembly.Memory = new Proxy(WebAssembly.Memory, {
+	construct(BrowserMemory, args: [WebAssembly.MemoryDescriptor]) {
+		try {
+			return Reflect.construct(BrowserMemory, args);
+		} catch (error) {
+			if (args[0]?.shared && !memoryRefused) {
+				memoryRefused = true;
+				progress(`${MEMORY_REFUSED}: ${(error as Error).message}`);
+			}
+			throw error;
+		}
+	},
+});
 
 addEventListener('error', (event) => progress(`error: ${event.message}`));
 addEventListener('unhandledrejection', (event) =>
