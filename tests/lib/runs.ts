@@ -72,10 +72,23 @@ export interface Plan<Check = unknown> {
 	 * where `allowed` lets it lack that path, and posts a skip as the page's result.
 	 */
 	skipMissing?: { report: string; allowed: MissingAllowed };
+	/**
+	 * Where the runner tool can open runner pages, a runner page hands the run to a new one after it
+	 * has run this many pages. Each engine start in Safari can take one of the 8 fast slots that
+	 * its process has for WebAssembly memories, and Safari can keep a dropped one held while later
+	 * pages ask for memory. A new runner page starts with none of what the pages before it kept.
+	 */
+	tabEvery?: number;
 }
 
 /** How the runner page runs a plan's pages. */
-export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing'>;
+export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing' | 'tabEvery'>;
+
+/**
+ * The pages that a runner page runs before it hands the run to a new one: fewer than Safari's 8 fast
+ * slots, so the engines of one runner page never use them all up (D-94).
+ */
+export const PAGES_PER_TAB = 6;
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {

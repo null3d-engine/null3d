@@ -50,6 +50,7 @@ import {
 	handovers,
 	type ItemResult,
 	inLanes,
+	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
 	pickItems,
@@ -64,7 +65,7 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
-import { handoverName } from './tab-end.ts';
+import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
 describe('turnBatches', () => {
@@ -204,6 +205,18 @@ describe('waitForRunners', () => {
 			expect(finished).toEqual(['mac-safari']);
 			expect(handovers(plan.run, 'mac-safari', new Set([1]))).toEqual([2]);
 		}));
+
+	it('hands the run to a new runner page around pages of their own and after a set number of pages', () => {
+		const ran = (pages: number, lastOwnTab = false) => ({ pages, lastOwnTab });
+		expect(handsOver({ ownTab: true }, ran(0))).toBe(false);
+		expect(handsOver({ ownTab: true }, ran(1))).toBe(true);
+		expect(handsOver({}, ran(1, true))).toBe(true);
+		expect(handsOver({}, ran(5))).toBe(false);
+		expect(handsOver({}, ran(5), PAGES_PER_TAB)).toBe(false);
+		expect(handsOver({}, ran(PAGES_PER_TAB), PAGES_PER_TAB)).toBe(true);
+		// Fewer pages than Safari's 8 fast slots, so one runner page never uses them all up.
+		expect(PAGES_PER_TAB).toBeLessThan(8);
+	});
 
 	it('ends the turn of a runner whose handover found no new runner page', () =>
 		withRun(['a', 'b'], async (plan) => {

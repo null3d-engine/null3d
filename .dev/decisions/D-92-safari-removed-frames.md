@@ -71,3 +71,7 @@ A leak in the engine loses room in every round, since each of the 43 engines wou
 
 So in `frame-restarts-*`, a fall that the second round held is now a note, as held room is in `frame-destroyed-restarts-*`. Room that the second round loses too still fails, and so does a start or a stop that fails. The restarts on the page keep the old rule. Their engines stop with no frame, so a fall there points at the engine.
 
+### Every runner page runs a few pages
+
+Where the runner tool opens runner pages, a runner page now also hands the run to a new one after 6 pages. It does the same around a page of its own. Each engine start in Safari can take one of the 8 fast slots that a Safari process has for its WebAssembly memories. Safari can keep a dropped one held while later pages ask for memory ([D-94](D-94-memory-retry-window.md#open)). The merge queue's Safari runs failed late in their long runs. They hit E1109 and held room, and on 7 October 2026 a lost WebGL2 context on S1 (run 37593573711). A new runner page starts with none of what the pages before it kept. Six pages stay below the 8 slots, even when every page leaves one held. Pages that a runner page only skips do not count.
+

@@ -188,6 +188,7 @@ import {
 	keepsRefusingMemory,
 	OOM_WINDOW_PAGES,
 	outOfMemory,
+	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
 	type PlanPlace,
@@ -1265,6 +1266,7 @@ async function runPlan(
 	const plan = writePlan(run, paths.items, {
 		...(REPORT_ON_TOP_PLANS.has(options.plan) && { reportOnTop: true }),
 		...(timed && { measureRefresh: true }),
+		tabEvery: PAGES_PER_TAB,
 		...paths.flags,
 	});
 	const recovery = new QuietRecovery(plan, deviceReopener(run, launches, local.url));
