@@ -1,6 +1,6 @@
 # D-71: Custom effects and the tone-curve hook
 
-Status: decided. Date: 2026-10-05; the Mac's timings 2026-10-06, the iPad's pending. Task: M2-F5.
+Status: decided. Date: 2026-10-05; the Mac's timings 2026-10-06, the iPad's 2026-10-07. Task: M2-F5.
 
 Summary: `post.addEffect` runs a sketch's WGSL as a full-screen pass on HDR color, after the scene and before bloom and the tone curve. One pass per effect in `order`, at most 8, through two shared targets. Effects read any pixel and the scene's depth on all three tiers, with up to 32 floats of typed uniforms. `post.set({ toneMapping })` takes WGSL with `fn toneCurve`, built into the final pass. Both need HDR color, as bloom does: compatibility mode with MSAA moves to HDR with FXAA.
 
@@ -69,7 +69,7 @@ The Mac ran both figures on 6 October 2026, in headless Chrome 154 on its GPU, a
 | Default | 0.242 ms | 0.510 ms | 0.268 ms |
 | Low | 0.229 ms | 0.508 ms | 0.279 ms |
 
-Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 ms. The iPad's run of the `effects` plan is still pending: `bun tests/real-browsers.ts --plan effects --lan ipad-safari`.
+Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 ms.
 
 ### Timings on the cloud Pixel 10
 
@@ -83,6 +83,21 @@ The cloud Pixel 10 (PowerVR, Chrome 149) ran the `effects` plan on the branch's 
 | WebGL2, scale 0.5 | | | | 0.51 ms | 0.49 ms |
 
 With the framebuffer fix (CPU time on WebGL2, above), 4 effects add no CPU time on WebGL2. The run of 5 October 2026 had found 0.33 ms a pass on WebGPU.
+
+### Timings on the owner's iPad
+
+The owner's iPad Pro 11-inch (A12X) ran the `effects` plan in Safari 26.6.2 on 7 October 2026, on main at eff499ea4, which holds this work. The command was `bun tests/real-browsers.ts --plan effects --lan ipad-safari` (run `20261007-054211-effects`). All 4 pages passed, with no memory refusal. The page was 1194 x 722 at a pixel ratio of 2, and every page held 15.4 to 15.6 ms frames (59 Hz).
+
+| Page | GPU time, no effects | 4 effects | One pass | CPU time, no effects | 4 effects |
+| --- | --- | --- | --- | --- | --- |
+| WebGPU, scale 1 | 6.55 ms | 6.94 ms | 0.10 ms | 0.14 to 0.18 ms | 0.14 to 0.18 ms |
+| WebGPU, scale 0.5 | 7.60 ms | 7.53 ms | none above the noise | 0.14 to 0.18 ms | 0.14 to 0.18 ms |
+| WebGL2, scale 1 | | | | 0.58 ms | 0.72 ms |
+| WebGL2, scale 0.5 | | | | 0.62 ms | 0.80 ms |
+
+- A pass costs about 0.1 ms of GPU time on the A12X at full size. That lies between the Mac's 0.05 ms and the Pixel 10's 0.25 to 0.31 ms.
+- WebGL2 has no GPU timer in Safari. The render worker's CPU time grows by 0.14 to 0.18 ms with 4 effects, about 0.04 ms a pass. That is the range of the Pixel 10 after the framebuffer fix, 0.02 to 0.15 ms.
+- These figures do not change the decision.
 
 ## Decision
 
@@ -107,7 +122,7 @@ The move to HDR costs less. Compatibility mode with MSAA is the only 8-bit path 
 ## Options rejected
 
 - Effects after the tone curve, on display color, as three.js's `ShaderPass` after `OutputPass` sees it. Bloom would not see what the effects add, the 8-bit color would band in dark effects, and the October review placed effects in HDR. A port of a three.js pass that assumes display color adjusts its numbers instead (porting docs).
-- Merging per-pixel effects into the final pass now. Each set of effects would need a final pass built with their functions together. The plugin builds each WGSL alone, at build time, so the build cannot know which effects a sketch runs at once. A run-time merge needs the engine to join WGSL at run time on both paths. That is a larger change. A pass costs about 0.05 ms of GPU time on the Mac and about 0.33 ms on the Pixel 10 (Timings on the Mac), which decide whether it pays.
+- Merging per-pixel effects into the final pass now. Each set of effects would need a final pass built with their functions together. The plugin builds each WGSL alone, at build time, so the build cannot know which effects a sketch runs at once. A run-time merge needs the engine to join WGSL at run time on both paths. That is a larger change. A pass costs about 0.05 ms of GPU time on the Mac, about 0.1 ms on the iPad and about 0.33 ms on the Pixel 10 (Timings on the Mac), which decide whether it pays.
 - An effect `stage` option (`'hdr'` or `'final'`), as the early docs drew it. One stage keeps one model: every effect sees HDR color, and the tone curve hook covers what a `'final'` effect would map.
 - A `name` option. The returned `Effect` is the handle, so a name added nothing.
 - A curve with uniforms. Its build joins the final pass, whose uniform block is fixed. Curves that three.js offers need no uniforms beyond the exposure, which the engine applies earlier.
