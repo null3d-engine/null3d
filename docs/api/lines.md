@@ -8,7 +8,7 @@ summary: "createLines; strips, loops and pairs; pixel and world widths; dashes; 
 
 # Lines
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Lines do not cast or receive shadows, and raycasts and overlap queries do not find them. Coding agents must not rely on either.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Lines do not cast or receive shadows, and overlap queries do not find them. Coding agents must not rely on either.
 
 ```mermaid
 flowchart LR
@@ -148,6 +148,10 @@ Blended lines draw after the opaque objects, farthest first, in the same transpa
 
 `debug.line` and the other [debug](debug.md) calls draw lines one pixel wide in development builds only, with no culling and no batch to manage. Use them while you build a scene, and line batches for lines that ship with it.
 
+## Clicks and raycasts
+
+A raycast hits a segment when the ray passes within half the line's width of it, as three.js's `Raycaster` hits a `Line2`. The width counts in pixels on the screen or in world units, as the line draws. The hit's `object` is the batch, and its `instance` is the segment. A line batch takes `lines.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. The `lineThreshold` option changes the test: a ray then hits a segment within that many meters, whatever the line's width. A ray hits a dashed line in its gaps too. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+
 ## Speed
 
 A segment costs about as much as an instance row on the GPU and in culling. The engine packs each segment into the data that it keeps for an instance row. So segments share the culling, sorting and drawing of instance batches. One batch of 100,000 segments draws in one draw on WebGPU and WebGL2.
@@ -169,7 +173,7 @@ Every segment counts toward the device's limit of objects and instance rows, as 
 | `LineDashedMaterial` with `line.computeLineDistances()` | `dashed: true`; the engine keeps the distances |
 | `material.resolution` | Not needed: the engine knows the canvas size |
 
-three.js's `Line`, `LineSegments` and `LineLoop` draw lines one pixel wide on most GPUs, whatever `linewidth` says, and its `Line2` draws wider ones. null3D draws every width with the same quads, so a port of either keeps its look. three.js makes one object and one draw per line, and null3D draws a whole batch in one draw. three.js's `Raycaster` can hit lines; null3D's raycasts do not find them yet.
+three.js's `Line`, `LineSegments` and `LineLoop` draw lines one pixel wide on most GPUs, whatever `linewidth` says, and its `Line2` draws wider ones. null3D draws every width with the same quads, so a port of either keeps its look. three.js makes one object and one draw per line, and null3D draws a whole batch in one draw. three.js's `Raycaster` hits a `Line` within `params.Line.threshold`, 1 meter by default, whatever its width, and a `Line2` within half its width. null3D hits each line as `Line2` does, and the `lineThreshold` option gives the test for `Line`.
 
 <!-- null3d:api:start -->
 
@@ -189,6 +193,8 @@ Lines of any width: segments between points, each drawn as a quad with round end
 | `setActiveCount(count: number): void` | Draws only the segments between the first `count` points. |
 | `setLayers(mask: number): void` | Puts every segment on the layers of a 32-bit mask. A new mask needs no rebuild. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks points of a static batch to update and upload, with the segments that use them. On a dashed line, the segments after them update too, as their distances along the line change. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on a segment of the batch, as `Object3D.on` does. A ray hits a segment within half its width. The event's `instance` names the segment. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 | `destroy(): void` | Removes the batch and frees its points. Its typed arrays are not valid after this: another batch can take their memory. |
 
 ### `LineMaterial`
