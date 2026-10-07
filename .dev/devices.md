@@ -239,6 +239,13 @@ To collect the numbers, rest each device first and close its other tabs:
 - Then the scene fills the window at the High preset, with the render scale fixed at 1 and the governor off. The page measures 4 seconds with culling off and 4 with it on, three times each, each in a new engine. It reports the medians of each side's GPU time, frame interval and CPU time per frame. It also reports the GPU time of each pass and the share of the spheres that the walls hide.
 - Run it on the iPad: `bun tests/real-browsers.ts --plan gpu-occlusion --lan ipad-safari`. Turn on Limit Frame Rate first, and start cool. The S24+ has no WebGPU, so it has no figure.
 
+## The jitter plan
+
+- The `jitter` plan runs the large-world jitter check on each GPU path: 2 pages. [Image tests](image-tests.md#large-world-jitter) says what the page measures, and [D-80](decisions/D-80-large-world-jitter.md) records the results by device.
+- Each page starts five engines, one after another, and takes a few seconds on the Mac. The runner saves each flight's first and last frames, and the figures, under the run's `frames/jitter-<path>/` folder. Its summary gives a table of each flight's figures.
+- Run it on the Mac, the iPad and the phone: `bun tests/real-browsers.ts --plan jitter Safari`, then `bun tests/real-browsers.ts --plan jitter --allow-no-webgpu --android chrome --lan ipad-safari`. It times nothing, so heat and the display's rate do not matter.
+- On BrowserStack Automate: `bun run devices:cloud --plan jitter --only <runners>`.
+
 ## The animation plan
 
 - The `animation` plan times the core's animation step on the job workers, for [D-26](decisions/D-26-animation-clips.md). The page (`tests/pages/animation.html`) draws nothing. It runs the core on its own thread, as the sketch worker does, and starts its own job workers.

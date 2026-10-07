@@ -42,12 +42,18 @@ export type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from './math/types';
  * @category api/math
  */
 export * as vec3 from './math/vec3';
-export type { CapabilityReport, WebGL2Report, WebGPUReport } from './page/capabilities';
+export type {
+	CapabilityReport,
+	WebGL2Report,
+	WebGPUReport,
+	WorkerProbeFailure,
+} from './page/capabilities';
 export type {
 	Engine,
 	EngineCapabilities,
 	EngineMode,
 	EngineOptions,
+	RenderFallback,
 	StartupStage,
 } from './page/engine';
 export { createEngine } from './page/engine';
