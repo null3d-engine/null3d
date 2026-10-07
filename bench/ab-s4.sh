@@ -2,7 +2,9 @@
 # Measurement only: S4 on one browser, with one setting changed at a time, in two rounds (the second
 # in reverse order), so heat and other load slow each variant alike.
 # Usage, from the repository root of a built checkout:
-#   zsh bench/ab-s4.sh [--set pixel|pixel-webgpu|pixel-bound|pixel-quick|pixel-count|medium] [--uncapped [--scale <n>]] <runner options...>
+#   zsh bench/ab-s4.sh [--set <set>] [--rounds <n>] [--uncapped [--scale <n>]] <runner options...>
+# The sets: pixel (the default), pixel-webgpu, pixel-bound, pixel-quick, pixel-count, derivatives,
+# derivatives-quick and medium. --rounds 1 runs one round only.
 # For example: zsh bench/ab-s4.sh --lan ipad-safari    or    zsh bench/ab-s4.sh --set medium Safari
 # The pixel set runs S4 at Low, so edge smoothing and the larger shadow filter stay out of the way,
 # and takes one per-pixel cost away from WebGL2 in each variant. The pixel-webgpu set takes the same
@@ -15,13 +17,17 @@
 # are not used, and --scale sets the pages' device pixel ratio. The pixel-quick set is the
 # pixel-bound set's controls, unlit materials and no sun shadows. The pixel-count set draws both
 # paths at pixel ratios of 2 and 1, to show whether a path's frame time follows the pixel count;
-# run it with --scale 2. It writes one line per run to target/ab-s4-<set>.tsv, or ab-s4-<set>-uncapped.tsv.
+# run it with --scale 2. The derivatives set takes the screen derivatives out of WebGL2's fragment
+# shaders (?glderiv=off), or turns the depth prepass on, at Low and at Medium; derivatives-quick
+# runs only the switch at Low, and Medium with and without it. It writes one line per run to target/ab-s4-<set>.tsv, or ab-s4-<set>-uncapped.tsv.
 emulate -L zsh
 set=pixel
 ratio=''
 uncapped=''
 if [[ $1 == --set ]]; then set=$2; shift 2; fi
 scale=1
+rounds=2
+if [[ $1 == --rounds ]]; then rounds=$2; shift 2; fi
 if [[ $1 == --uncapped ]]; then uncapped=1; shift; fi
 if [[ $1 == --scale ]]; then scale=$2; shift 2; fi
 case $set in
@@ -29,6 +35,23 @@ case $set in
 		base='preset=low&governor=off&render=main'
 		ratio='maxPixelRatio=2'
 		variants=('webgpu|' 'webgl2|' 'webgl2|material=unlit' 'webgl2|sunShadows=off')
+		;;
+	derivatives)
+		base='preset=low&governor=off&render=main'
+		variants=(
+			'webgpu|'
+			'webgl2|'
+			'webgl2|glderiv=off'
+			'webgl2|prepass=on'
+			'webgpu|preset=medium'
+			'webgl2|preset=medium'
+			'webgl2|preset=medium&glderiv=off'
+			'webgl2|preset=medium&prepass=on'
+		)
+		;;
+	derivatives-quick)
+		base='preset=low&governor=off&render=main'
+		variants=('webgl2|glderiv=off' 'webgl2|preset=medium' 'webgl2|preset=medium&glderiv=off')
 		;;
 	pixel-count)
 		base='preset=low&governor=off&render=main'
@@ -69,11 +92,11 @@ case $set in
 			'webgl2|preset=low'
 		)
 		;;
-	*) print -u2 "unknown set $set: use pixel, pixel-webgpu, pixel-bound, pixel-quick, pixel-count or medium"; exit 2 ;;
+	*) print -u2 "unknown set $set: use pixel, pixel-webgpu, pixel-bound, pixel-quick, pixel-count, derivatives, derivatives-quick or medium"; exit 2 ;;
 esac
 out=target/ab-s4-$set${uncapped:+-uncapped}${${scale:#1}:+-x$scale}.tsv
 [[ -f $out ]] || print -r -- $'round\tpage\tswitches\trun\tfps\tinterval_ms\tgpu_delay_ms\tgpu_ms\tcpu_ms' > $out
-for round in 1 2; do
+for round in {1..$rounds}; do
 	order=($variants)
 	(( round == 2 )) && order=(${(Oa)variants})
 	for v in $order; do

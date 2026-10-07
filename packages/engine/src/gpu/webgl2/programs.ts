@@ -220,6 +220,40 @@ export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'
 	return { shader: shaders.mipmap, pipeline };
 }
 
+/**
+ * Measurement only: true with ?glderiv=off in the page's address, so only with render=main. The
+ * fragment shaders then take no screen derivatives: each derivative reads as zero, and each read
+ * with explicit gradients takes the texture's own gradients instead. The image changes a little.
+ */
+export const NO_DERIVATIVES: boolean = (() => {
+	try {
+		return new URLSearchParams(globalThis.location?.search ?? '').get('glderiv') === 'off';
+	} catch {
+		return false;
+	}
+})();
+
+/** Lines after a fragment shader's version line that take every derivative out of it. */
+const NO_DERIVATIVE_MACROS = [
+	'#define dFdx(x) ((x) * 0.0)',
+	'#define dFdy(x) ((x) * 0.0)',
+	'#define fwidth(x) ((x) * 0.0)',
+	'#define textureGrad(s, c, dx, dy) texture(s, c)',
+].join('\n');
+
+/** A program whose fragment shader takes no screen derivatives (see `NO_DERIVATIVES`). */
+export function withoutDerivatives(program: GlslProgram): GlslProgram {
+	const text = program.fragment.source;
+	const line = text.indexOf('\n');
+	return {
+		...program,
+		fragment: {
+			...program.fragment,
+			source: `${text.slice(0, line + 1)}${NO_DERIVATIVE_MACROS}\n${text.slice(line + 1)}`,
+		},
+	};
+}
+
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
 	const shader = gl.createShader(type);
 	if (!shader) throw new Error('WebGL2 could not create a shader');
@@ -260,8 +294,9 @@ export function createProgram(
 ): Program {
 	const build = buildPermutation(template, permutation);
 	const shading = variantFor(template.shader, build, 'glsl')?.glsl?.[template.pipeline];
-	const source =
+	const shaded =
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
+	const source = shaded && (NO_DERIVATIVES ? withoutDerivatives(shaded) : shaded);
 	if (!source)
 		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
 	const { program, shaders } = link(gl, source, '');

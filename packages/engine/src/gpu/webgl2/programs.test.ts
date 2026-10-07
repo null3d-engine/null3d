@@ -18,6 +18,7 @@ import {
 	RELINK_TAIL,
 	slotOf,
 	UPLOAD_UNIT,
+	withoutDerivatives,
 } from './programs';
 
 const SHADERS = await everyShader();
@@ -236,5 +237,26 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 			"a WebGL2 program failed to link: ERROR: 'colour' : undeclared identifier",
 		);
 		expect(context.links()).toBe(1);
+	});
+});
+
+describe('withoutDerivatives', () => {
+	it('defines the derivatives away right after the version line of each fragment shader that takes them', () => {
+		const taking = glslPrograms().filter(([, p]) =>
+			/\b(dFdx|dFdy|fwidth)\b/.test(p.fragment.source),
+		);
+		expect(taking.length).toBeGreaterThan(0);
+		for (const [name, program] of taking) {
+			const out = withoutDerivatives(program);
+			const lines = out.fragment.source.split('\n');
+			expect(lines[0], name).toBe('#version 300 es');
+			expect(lines.slice(1, 5), name).toEqual([
+				'#define dFdx(x) ((x) * 0.0)',
+				'#define dFdy(x) ((x) * 0.0)',
+				'#define fwidth(x) ((x) * 0.0)',
+				'#define textureGrad(s, c, dx, dy) texture(s, c)',
+			]);
+			expect(out.vertex).toBe(program.vertex);
+		}
 	});
 });
