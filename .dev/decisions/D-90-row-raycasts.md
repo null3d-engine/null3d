@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-07. Task: M2-D7.
 
+Summary: A ray hits what each row draws: a sprite's quad as three.js's `Sprite`, a point's square, and a line within half its width as `Line2`. The `pointThreshold` and `lineThreshold` options give three.js's `Points` and `Line` tests, with no default. Rows sized in pixels use the active camera, or the camera of the event's frame. A raycast grows the trees' boxes by its reach only when its layers hold such rows.
+
 ## Question
 
 What should a raycast hit of a sprite, a point and a line, and how do three.js's `Raycaster.params.Points.threshold` and `Raycaster.params.Line.threshold` map onto that? Rows sized in pixels of the screen have no size in the world, so how do the scene's trees find them?

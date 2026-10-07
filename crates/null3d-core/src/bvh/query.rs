@@ -23,8 +23,9 @@
 //! # Mesh trees
 //!
 //! A sync builds the tree of each mesh that has none yet, on the job workers, so the first query
-//! after a mesh is created pays for its tree. Meshes are never destroyed, so each tree is built
-//! once. A mesh from a model file can bring the tree that the asset tool stored
+//! after a mesh is created pays for its tree. A removed mesh's tree goes with it
+//! ([`SceneQueries::forget_meshes`]), and the next mesh with its id gets a tree of its own. A mesh
+//! from a model file can bring the tree that the asset tool stored
 //! ([`SceneQueries::store_mesh_bvh`]), which the sync then uses instead of building one.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -145,6 +146,8 @@ pub struct SceneQueries {
     trees: Vec<MeshBvh>,
     /// Stored trees of meshes that have no tree in `trees` yet, by mesh id.
     stored: Vec<(u32, MeshBvh)>,
+    /// The ids of removed meshes whose places in `trees` wait for the next mesh with the id.
+    forgotten: Vec<u32>,
     raw: Vec<RawHit>,
     hits: Vec<QueryHit>,
     batch: Vec<Option<QueryHit>>,
@@ -334,7 +337,7 @@ impl SceneQueries {
         let Some(index) = id.checked_sub(1) else {
             return Ok(());
         };
-        if (index as usize) < self.trees.len() {
+        if (index as usize) < self.trees.len() && !self.forgotten.contains(&id) {
             return Ok(());
         }
         self.stored
@@ -345,6 +348,24 @@ impl SceneQueries {
         self.stored.retain(|(m, _)| *m != id);
         self.stored.push((id, tree));
         Ok(())
+    }
+
+    /// Frees the trees of the meshes with `ids`, which a removal took out, by their ids that count
+    /// from 1. The next mesh with one of the ids gets a tree of its own at a sync.
+    pub fn forget_meshes(&mut self, ids: &[u32]) {
+        for &id in ids {
+            self.stored.retain(|(m, _)| *m != id);
+            let Some(tree) = id
+                .checked_sub(1)
+                .and_then(|index| self.trees.get_mut(index as usize))
+            else {
+                continue;
+            };
+            *tree = MeshBvh::default();
+            if !self.forgotten.contains(&id) {
+                self.forgotten.push(id);
+            }
+        }
     }
 
     /// Builds the trees of the meshes that have none, on the job workers, and brings the
@@ -373,54 +394,66 @@ impl SceneQueries {
         jobs: &JobSystem,
     ) -> Result<(), CoreError> {
         let first = self.trees.len() as u32;
-        let count = meshes.count();
-        if count <= first {
+        let count = meshes.count().max(first);
+        // The ids to build: those of removed meshes that new meshes took, then the new ones.
+        let mut ids: Vec<u32> = self
+            .forgotten
+            .iter()
+            .copied()
+            .filter(|&id| meshes.mesh(id).is_some())
+            .collect();
+        let reused = ids.len();
+        if reused == 0 && count == first {
             return Ok(());
         }
         let more = (count - first) as usize;
-        self.trees
-            .try_reserve_exact(more)
-            .map_err(|_| CoreError::OutOfMemory {
-                bytes: u32::try_from(more * std::mem::size_of::<MeshBvh>()).unwrap_or(u32::MAX),
-            })?;
+        let oom = |items: usize| CoreError::OutOfMemory {
+            bytes: u32::try_from(items * std::mem::size_of::<MeshBvh>()).unwrap_or(u32::MAX),
+        };
+        self.trees.try_reserve_exact(more).map_err(|_| oom(more))?;
+        ids.try_reserve_exact(more).map_err(|_| oom(more))?;
         self.trees.resize_with(count as usize, MeshBvh::default);
+        ids.extend(first + 1..=count);
         // Stored trees take their places, and the jobs build the others.
-        let mut built = vec![false; more];
+        let mut built = vec![false; ids.len()];
         for (id, tree) in self.stored.drain(..) {
-            let Some(k) = (id - 1).checked_sub(first) else {
-                continue;
+            let k = match id.checked_sub(first + 1) {
+                Some(new) => Some(reused + new as usize),
+                None => ids[..reused].iter().position(|&i| i == id),
             };
-            if let (Some(slot), Some(done)) = (
-                self.trees.get_mut((first + k) as usize),
-                built.get_mut(k as usize),
-            ) {
-                *slot = tree;
+            if let Some(done) = k.and_then(|k| built.get_mut(k)) {
+                self.trees[id as usize - 1] = tree;
                 *done = true;
             }
         }
         let failed = AtomicBool::new(false);
-        let out = SharedMut::new(&mut self.trees[first as usize..]);
-        let built = &built;
-        jobs.parallel_for(count - first, 1, &|range, _| {
+        let out = SharedMut::new(&mut self.trees[..]);
+        let (ids, built) = (&ids, &built);
+        jobs.parallel_for(ids.len() as u32, 1, &|range, _| {
             for k in range {
                 if built[k as usize] {
                     continue;
                 }
+                let id = ids[k as usize];
                 let tree = meshes
-                    .mesh(first + k + 1)
+                    .mesh(id)
                     .map_or(Ok(MeshBvh::default()), |mesh| MeshBvh::build(&mesh));
                 match tree {
-                    // SAFETY: each chunk writes only the trees of its own meshes, whose empty
-                    // trees hold no memory to drop.
-                    Ok(tree) => unsafe { out.write(k as usize, tree) },
+                    // SAFETY: each chunk writes only the trees of its own meshes. New ids and the
+                    // ids of removed meshes hold empty trees, with no memory to drop.
+                    Ok(tree) => unsafe { out.write(id as usize - 1, tree) },
                     Err(_) => failed.store(true, Ordering::Relaxed),
                 }
             }
         });
         if failed.into_inner() {
             self.trees.truncate(first as usize);
+            for &id in &ids[..reused] {
+                self.trees[id as usize - 1] = MeshBvh::default();
+            }
             return Err(CoreError::OutOfMemory { bytes: u32::MAX });
         }
+        self.forgotten.retain(|id| !ids[..reused].contains(id));
         Ok(())
     }
 

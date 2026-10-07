@@ -2,12 +2,14 @@
 // which null3D's environment image tests draw: MeshStandardMaterial spheres over metalness and
 // roughness, lit by `scene.environment` alone, a texture of PMREMGenerator. `?env=room` prefilters
 // three.js's RoomEnvironment as its examples do, with `fromScene(room, 0.04)`. `?env=venice` loads
-// the HDR file with HDRLoader and prefilters it with `fromEquirectangular`. `&rotate` sets
+// the Radiance file with HDRLoader, and `?env=studio` the OpenEXR file with EXRLoader, and each
+// prefilters it with `fromEquirectangular`. `&rotate` sets
 // `scene.environmentRotation`. It draws the scene once into an offscreen target of the image's size
 // and publishes the pixels, as the hold pages do. `?renderer=webgl` draws with WebGLRenderer, and
 // `?renderer=webgpu` with WebGPURenderer.
 import type * as ThreeModule from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import {
@@ -45,7 +47,8 @@ run('hold', async () => {
 	if ('builtin' in source) {
 		scene.environment = pmrem.fromScene(new RoomEnvironment(), ROOM_SIGMA).texture;
 	} else {
-		const hdr = await new HDRLoader().setDataType(build.FloatType).loadAsync(source.hdr);
+		const loader = source.hdr.endsWith('.exr') ? new EXRLoader() : new HDRLoader();
+		const hdr = await loader.setDataType(build.FloatType).loadAsync(source.hdr);
 		scene.environment = pmrem.fromEquirectangular(hdr).texture;
 	}
 	if (params.has('rotate')) scene.environmentRotation.set(...GRID_ENVIRONMENT_ROTATION);

@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03. Task: M2-D3.
 
+Summary: The sketch thread keeps the cameras of the last four frames. A ray through the pointer's or a finger's position uses the frame on screen at that event; other points and `worldToScreen` use the camera of the frame that last ran. Orthographic rays start on the near plane, where three.js starts them on the camera's plane. World matrices reach TypeScript through the core's memory, with no allocation.
+
 ## Question
 
 `camera.screenToRay(x, y, ray)` turns a point on the canvas into a ray, and `camera.worldToScreen(point, out)` turns a point in the world into a place on the canvas. In pipelined mode the thread that draws shows an older frame than the one the sketch computes. Under GPU backpressure the frame on screen can be older still. Which camera should each call use, and how does the engine keep it?

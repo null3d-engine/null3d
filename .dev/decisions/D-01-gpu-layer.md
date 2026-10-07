@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-09-29. Task: M0-G1.
 
+Summary: Keep the engine's own GPU layer: wgpu would ship over five times the code.
+
 ## Question
 
 Does null3D keep its own GPU layer (Rust draw lists replayed by a thin TypeScript layer into WebGPU or WebGL2), or adopt wgpu with its `webgpu` and `webgl` features?

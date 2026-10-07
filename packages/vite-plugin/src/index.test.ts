@@ -7,6 +7,7 @@ import { fixture } from '../../../tools/lib/fixture';
 import null3d, {
 	CORE_FILES,
 	earlyCoreTag,
+	inlineLimit,
 	missingCoreFiles,
 	NOTICES_FILE,
 	thirdPartyNotices,
@@ -219,5 +220,41 @@ describe('the test switches in the address', () => {
 			__NULL3D_DEV__: 'false',
 			__NULL3D_URL_SWITCHES__: 'true',
 		});
+	});
+});
+
+describe('inlineLimit', () => {
+	type Limit = (file: string, content: Buffer) => boolean | undefined;
+	const small = Buffer.alloc(100);
+	/**
+	 * A project with the engine installed, and a copy of the repository with the engine's source and
+	 * a private workspace of the scope.
+	 */
+	const root = fixture({
+		'app/package.json': '{"name":"demo","private":true}',
+		'app/node_modules/@null3d/engine/package.json': '{"name":"@null3d/engine"}',
+		'repo/packages/engine/package.json': '{"name":"@null3d/engine"}',
+		'repo/tests/package.json': '{"name":"@null3d/tests","private":true}',
+	});
+
+	it('never inlines a file of a null3D package, and keeps the project setting for the rest', () => {
+		const limit = inlineLimit(4096) as Limit;
+		const engine = join(root, 'app/node_modules/@null3d/engine');
+		expect(limit(join(engine, 'lib/workers/job-worker.js'), small)).toBe(false);
+		const source = join(root, 'repo/packages/engine');
+		expect(limit(join(source, 'src/generated/shaders-background-glsl.js'), small)).toBe(false);
+		expect(limit(join(source, 'vendor/meshopt/meshopt_decoder.wasm'), small)).toBe(false);
+		expect(limit(join(root, 'repo/tests/pages/icon.png'), small)).toBe(true);
+		expect(limit(join(root, 'app/src/icon.png'), small)).toBe(true);
+		expect(limit(join(root, 'app/src/photo.png'), Buffer.alloc(5000))).toBe(false);
+	});
+
+	it("passes other files to the project's own function, or to Vite's default", () => {
+		const own = inlineLimit((file) => file.endsWith('.svg')) as Limit;
+		expect(own(join(root, 'app/src/logo.svg'), small)).toBe(true);
+		expect(own(join(root, 'app/node_modules/@null3d/engine/lib/x.svg'), small)).toBe(false);
+		expect(
+			(inlineLimit(undefined) as Limit)(join(root, 'app/src/icon.png'), small),
+		).toBeUndefined();
 	});
 });

@@ -31,20 +31,21 @@ use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::environment::{Environment, EnvironmentUniform};
-use crate::fog::Fog;
+use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale, Size};
 use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
-use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
-    CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades,
+    CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
+    fit_cascades,
 };
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -290,6 +291,19 @@ pub trait FrameBuilder {
     fn casts_tile_shadows(&self) -> bool {
         false
     }
+    /// Removes the live meshes among `ids`, which no object or batch names any more, packs the
+    /// storage over their data, and makes the next frame upload the data that moved. The next
+    /// frame rebuilds the draw tables, as after any structure change.
+    fn remove_meshes(&mut self, ids: &[u32]) {
+        let moves = self.settings_mut().meshes_mut().remove(ids);
+        self.meshes_moved(ids, &moves);
+    }
+    /// Makes the GPU copies of the meshes follow a removal: the pages and the delta texels upload
+    /// again from where `moves` says they changed, and the removed `ids` lose what the builder
+    /// kept for them.
+    fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves);
+    /// The GPU bytes of the meshes: the buffers of every page and the texture of morph deltas.
+    fn mesh_gpu_bytes(&self) -> u64;
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.
@@ -568,7 +582,7 @@ struct Lighting {
     shadow_quality: ShadowQuality,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
-    fog: Fog,
+    fog: Option<Fog>,
 }
 
 /// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
@@ -602,6 +616,8 @@ pub struct SceneSettings {
     lighting: Lighting,
     /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
     shadow_schedule: CascadeSchedule,
+    /// How the cascades' shadow map stores depth.
+    cascade_depth: CascadeDepth,
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
@@ -642,11 +658,13 @@ pub struct SceneSettings {
 }
 
 impl SceneSettings {
+    /// Settings with no scene content yet, whose cascades' shadow map stores `cascade_depth`.
     pub fn new(
         meshes: MeshStorage,
         max_materials: u32,
         textures: TextureStore,
         canvas: CanvasOutput,
+        cascade_depth: CascadeDepth,
     ) -> Self {
         Self {
             meshes,
@@ -663,9 +681,10 @@ impl SceneSettings {
                 sun_shadow: None,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
-                fog: Fog::None,
+                fog: None,
             },
             shadow_schedule: CascadeSchedule::default(),
+            cascade_depth,
             moving_casters: MovingCasters::default(),
             canvas,
             output: Output::default(),
@@ -1182,6 +1201,11 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
+    /// How the cascades' shadow map stores depth.
+    pub fn cascade_depth(&self) -> CascadeDepth {
+        self.cascade_depth
+    }
+
     /// The shadow filter and how the far cascades update.
     pub fn shadow_quality(&self) -> ShadowQuality {
         self.lighting.shadow_quality
@@ -1255,6 +1279,7 @@ impl SceneSettings {
             camera: position,
             layers: shadow.layers,
             drawn,
+            depth: self.cascade_depth,
         })
     }
 
@@ -1301,9 +1326,9 @@ impl SceneSettings {
         self.lighting.background = Some(color);
     }
 
-    /// The fog that every view's objects take, apart from materials that opt out. The background
-    /// takes none.
-    pub fn set_fog(&mut self, fog: Fog) {
+    /// The fog that every view's objects take, apart from materials that opt out, or none. The
+    /// background takes none.
+    pub fn set_fog(&mut self, fog: Option<Fog>) {
         self.lighting.fog = fog;
     }
 
@@ -1404,7 +1429,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
             output: output.uniform(),
-            fog: self.lighting.fog.uniform(camera.forward, output.exposure),
+            fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
@@ -1605,6 +1630,25 @@ impl MeshBuffers {
             }
         }
         Ok(remade)
+    }
+
+    /// Makes the next upload send each page's data again from where a removal of meshes changed
+    /// it.
+    pub(crate) fn moved(&mut self, moves: &MeshMoves) {
+        for &(page, vertices, indices) in &moves.pages {
+            if let Some(buffers) = self.pages.get_mut(page as usize) {
+                buffers.vertices = buffers.vertices.min(vertices);
+                buffers.indices = buffers.indices.min(indices);
+            }
+        }
+    }
+
+    /// The bytes of every page's buffers on the GPU.
+    pub(crate) fn gpu_bytes(&self) -> u64 {
+        self.pages
+            .iter()
+            .map(|buffers| u64::from(buffers.vertex_bytes) + u64::from(buffers.index_bytes))
+            .sum()
     }
 
     /// Forgets every buffer, after the thread that draws replaced the GPU, so the next upload

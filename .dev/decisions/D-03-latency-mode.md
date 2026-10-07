@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-09-30. Date: 2026-09-30.
 
+Summary: Pipelined stays the default; low latency stays an option for pages that need input to show one frame sooner.
+
 ## Question
 
 Should the engine run pipelined by default, or in low-latency mode?

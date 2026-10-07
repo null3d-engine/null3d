@@ -90,8 +90,11 @@ pub(super) enum Shading {
     /// without one are left out.
     Prepass { light_slot: u32 },
     /// Each draw's own pipeline, which reads no lights, with the single frame group of a shadow
-    /// cascade's, a shadow tile's or the outline mask's view.
+    /// cascade's or the outline mask's view.
     Depth,
+    /// Each caster's pipeline for the shadow atlas, with the single frame group of a shadow tile's
+    /// view.
+    Tile,
 }
 
 /// Each view's rings, and how the device draws many buckets. The views are of one kind, in order
@@ -565,10 +568,12 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
-        let (light_slot, prepass) = match shading {
+        // The prepass's pipelines and the tiles' pipelines both sit in each draw's second slot.
+        let (light_slot, second) = match shading {
             Shading::Lit { light_slot } => (light_slot, false),
             Shading::Prepass { light_slot } => (light_slot, true),
             Shading::Depth => (0, false),
+            Shading::Tile => (0, true),
         };
         self.bind_view(list, view, light_slot)?;
         let mut pipeline = None;
@@ -576,7 +581,7 @@ impl Opaque {
         let mut run = usize::MAX;
         for_each_call(draws, &visible, multi_draw, |index, call| {
             let first = draws[call.run];
-            let id = if prepass {
+            let id = if second {
                 first.prepass
             } else {
                 first.pipeline

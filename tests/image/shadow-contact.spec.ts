@@ -8,6 +8,7 @@
 // limit sits where it does.
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { readSwitches } from '../../bench/lib/parity.ts';
 import { pageResult } from '../lib/page-result.ts';
 import { REPO_ROOT } from '../lib/server.ts';
 import {
@@ -19,6 +20,10 @@ import {
 } from '../lib/visual-checks.ts';
 
 const SCENE = '/tests/pages/sketches/shadow-contact-sketch.ts';
+
+/** The switches that NULL3D_SWITCHES adds to every page, such as shadowdepth=32, or none. */
+const extraSwitches =
+	process.env.NULL3D_SWITCHES && readSwitches(process.env.NULL3D_SWITCHES, 'NULL3D_SWITCHES');
 
 for (const name of Object.keys(CONTACT_LIMITS) as ContactCase[])
 	for (const gpu of ['webgpu', 'webgl2'] as const)
@@ -33,7 +38,8 @@ for (const name of Object.keys(CONTACT_LIMITS) as ContactCase[])
 				at: '0',
 				moving: '0',
 			});
-			await page.goto(`visual.html?${pageQuery}&images`);
+			const switches = extraSwitches ? `&${extraSwitches}` : '';
+			await page.goto(`visual.html?${pageQuery}&images${switches}`);
 			const result = await pageResult<VisualResult>(page, 150_000);
 			expect(result.error).toBeUndefined();
 			saveVisualResult(join(REPO_ROOT, 'test-results', 'visual', `contact-${name}`, gpu), result);

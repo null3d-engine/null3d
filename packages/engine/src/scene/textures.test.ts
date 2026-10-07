@@ -16,6 +16,7 @@ import {
 	TEXTURE_WRAP_REPEAT,
 } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import type { GeneratorSource } from '../shared/images';
 import { CoreMemory } from './memory';
 import { type TextureOptions, Textures } from './textures';
 
@@ -47,7 +48,7 @@ function fakeCore(arrived?: (id: number) => Promise<void>) {
 	const images: number[][] = [];
 	const data: number[][] = [];
 	const destroyed: number[] = [];
-	const sent: [number, ImageBitmap | string][] = [];
+	const sent: [number, ImageBitmap | GeneratorSource][] = [];
 	let nextImage = 0;
 	const glue = {
 		createTexture: (...args: (number | boolean)[]) => {
@@ -85,7 +86,7 @@ function fakeCore(arrived?: (id: number) => Promise<void>) {
 	} as unknown as CoreGlue;
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue, memory);
-	const send = (id: number, bitmap: ImageBitmap | string) => sent.push([id, bitmap]);
+	const send = (id: number, bitmap: ImageBitmap | GeneratorSource) => sent.push([id, bitmap]);
 	const textures = new Textures(core, send, { frame: 3 }, 0, undefined, arrived);
 	return { textures, created, images, data, destroyed, sent, memory };
 }

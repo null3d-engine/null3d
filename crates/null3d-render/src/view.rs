@@ -19,7 +19,7 @@ use null3d_core::scene::SceneStorage;
 
 use null3d_core::layers::DEFAULT_LAYERS;
 
-use crate::camera::{Affine, Lens, Mat4, ViewDepth, view_direction};
+use crate::camera::{Affine, Lens, Mat4, ViewDepth};
 use crate::frame_data::FrameUniform;
 use crate::shadow_tiles::MAX_TILES;
 use crate::shadows::MAX_CASCADES;
@@ -151,7 +151,6 @@ impl View {
         Some(CameraTransform {
             view_proj: lens.relative_view_projection(&world, aspect),
             eye: lens.eye(&world),
-            forward: view_direction(&world),
             cell: scene.cell_position(slot, parity),
             depth: lens.depth(&world),
         })
@@ -164,8 +163,6 @@ pub(crate) struct CameraTransform {
     pub view_proj: Mat4,
     /// The camera's place for those positions, as [`Lens::eye`] gives it.
     pub eye: [f32; 4],
-    /// The direction the camera looks along.
-    pub forward: [f32; 3],
     /// The camera's cell, and its position in the cell.
     pub cell: CellPosition,
     /// How far positions relative to the camera lie along the view.

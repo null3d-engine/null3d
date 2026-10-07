@@ -19,7 +19,7 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
-import type { CompressionFamily, DepthMode, Switches } from './switches';
+import type { CompressionFamily, DepthMode, ShadowDepthBits, Switches } from './switches';
 
 /** The anti-aliasing mode, as the quality settings name it. */
 export type AntialiasMode = QualitySettings['antialias'];
@@ -121,6 +121,8 @@ export interface CoreDevice {
 	 * each once per frame in a compute pass.
 	 */
 	vertexSkinning: boolean;
+	/** The bits per texel of the shadow cascades' depth: 16, or 32 for floats. */
+	shadowDepthBits: ShadowDepthBits;
 	/**
 	 * True when each object's position holds whole cells besides its 32-bit part, so positions keep
 	 * their precision at any distance from the origin.
@@ -174,6 +176,7 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'vertexSkinning'
+	| 'shadowDepthBits'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -309,6 +312,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		depthPrepass: options.depthPrepass,
 		vertexSkinning: options.vertexSkinning,
+		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
 	};
 	if (tier !== 'webgl2') {

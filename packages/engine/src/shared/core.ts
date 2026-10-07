@@ -42,13 +42,21 @@ export interface CoreGlue extends CoreErrors {
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
 		largeWorld: boolean,
+		shadowDepthBits: number,
 	): number;
-	jobWorkerLoop(index: number): void;
 	/**
 	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
 	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
 	 */
 	jobWorkerFailed(index: number): void;
+	/** Serves the job system on a job worker: true when a task call made it return, false at stop. */
+	jobWorkerLoop(index: number): boolean;
+	/** Asks a job worker to leave the job loop for one more task. */
+	callJobWorker(index: number): void;
+	/** Ends one task call of a job worker. */
+	jobWorkerCallDone(index: number): void;
+	/** The task calls of a job worker that it has not finished. */
+	jobWorkerCalls(index: number): number;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
@@ -257,6 +265,13 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/**
+	 * Destroys `count` meshes whose ids `meshArrays`'s words hold: their data goes at once, and the
+	 * next frame gives their ids to later meshes once no object or batch names them.
+	 */
+	destroyMeshes(count: number): number;
+	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
+	meshMemoryBytes(): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
@@ -476,17 +491,22 @@ export interface CoreGlue extends CoreErrors {
 	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
 	setBackgroundTexture(texture: number): number;
 	/**
-	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
-	 * linear fog, and the density of exponential squared fog.
+	 * The scene's fog: its curve (`FOG_CURVE_*`), or none, its linear color, the density of
+	 * exponential and exponential squared fog, the near and far distances of linear fog, the height
+	 * where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 	 */
 	setFog(
-		kind: number,
+		curve: number,
 		r: number,
 		g: number,
 		b: number,
+		density: number,
 		near: number,
 		far: number,
-		density: number,
+		height: number,
+		heightFalloff: number,
+		sunGlow: number,
+		sunGlowExponent: number,
 	): number;
 	/**
 	 * Draws the scene with a debug view (`DEBUG_VIEW_*`), or with its materials with
@@ -504,6 +524,11 @@ export interface CoreGlue extends CoreErrors {
 	 * (`ANIMATION_REST_FLOATS` floats), then its inverse bind matrix (12 floats, row-major 3 × 4).
 	 */
 	createSkeleton(joints: number): number;
+	/**
+	 * Destroys a skeleton with its clips and joint masks. Fails with 1111 while an animated
+	 * instance uses it.
+	 */
+	destroySkeleton(skeleton: number): number;
 	/**
 	 * Creates a clip from the staging words: `tracks` headers of `ANIMATION_TRACK_WORDS` words
 	 * (joint, channel, interpolation, key count), then each track's key times and values, resampled
@@ -586,6 +611,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initEngine',
 	'jobWorkerLoop',
 	'jobWorkerFailed',
+	'callJobWorker',
+	'jobWorkerCallDone',
+	'jobWorkerCalls',
 	'takeJobBusyMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',
@@ -635,6 +663,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'meshRadius',
+	'destroyMeshes',
+	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
 	'setMaterialValues',
@@ -684,6 +714,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initAnimations',
 	'animationStaging',
 	'createSkeleton',
+	'destroySkeleton',
 	'createClip',
 	'createClipLater',
 	'clipReady',
@@ -718,20 +749,21 @@ export interface CoreFiles {
 }
 
 /**
- * Each build's files. Every path is written out in full, so a bundler finds the files, ships them
- * with the app and rewrites the addresses to the shipped copies. `no-inline` keeps Vite from
- * turning a file into a data: address when a project raises its inline limit: a Content-Security-
- * Policy that allows only the page's origin blocks the import or the download of one.
+ * Each build's files. Every path is written out in full in the standard form, `new URL('<file>',
+ * import.meta.url)`, so a bundler finds the files, ships them with the app and rewrites the
+ * addresses to the shipped copies. The null3D Vite plugin keeps Vite from turning an engine file
+ * into a data: address: a Content-Security-Policy that allows only the page's origin blocks the
+ * import or the download of one.
  */
 export function coreUrls(build: Build): CoreFiles {
 	return build === 'threaded'
 		? {
-				glue: new URL('../../dist/wasm/threaded/null3d.js?no-inline', import.meta.url),
-				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm?no-inline', import.meta.url),
+				glue: new URL('../../dist/wasm/threaded/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url),
 			}
 		: {
-				glue: new URL('../../dist/wasm/single/null3d.js?no-inline', import.meta.url),
-				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm?no-inline', import.meta.url),
+				glue: new URL('../../dist/wasm/single/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url),
 			};
 }
 

@@ -17,7 +17,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |
 | `bench/`, `templates/`, `porting-corpus/` | Benchmarks, starter projects and the three.js porting corpus, as the milestones add them. `bench/results` keeps a small record of each benchmark run ([Benchmarks](.dev/benchmarks.md#the-results-archive)) |
 | `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [benchmark results](.dev/benchmark-results.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md), [pull requests and parallel work](.dev/pull-requests.md), [releases](.dev/releases.md), [sample content](.dev/sample-content.md) and [tested devices](.dev/tested-devices.md) |
-| `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
+| `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. `bun run decisions` lists them. Read the record before you change a choice it settled |
 
 ## Commands
 
@@ -50,7 +50,8 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
 | `bun run docs` | Regenerate placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, and the mapping page and copies |
-| `bun run docs:check` | Check the API reference's doc comments, front matter, generated files and links, and that this table lists every command |
+| `bun run docs:check` | Check the API reference's doc comments, front matter, generated files and links, that this table lists every command, and that every decision record has a title, a status and a summary under its own number |
+| `bun run decisions` | List the decision records, each with its status and summary, read from the records themselves |
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
@@ -127,6 +128,8 @@ The owner set these rules on 4 October 2026. [D-52](.dev/decisions/D-52-intent-p
 5. Pixel tests against three.js cover only shared building blocks: lighting terms, tone curves that both engines offer, skinning poses, animation sampling and glTF interpretation. A feature with a better technique gets null3D's own references, and a looser sanity comparison with three.js.
 6. Built-in assets are made at run time. The engine's package never ships them as files.
 7. Heavy or niche features ship as add-on modules. Each takes one install and one import, with no manual file copying. It works with Vite and the null3D plugin, the one supported bundler, and from CDNs, under a strict Content Security Policy. Its code loads files the standard way (`new URL('<file>', import.meta.url)`), so other bundlers stay possible ([D-54](.dev/decisions/D-54-addon-modules.md#bundlers)). Its version stays in step with the engine's, and its code loads on first use.
+8. Add-ons and the engine's first-use decoders load through the one on-demand loader (`shared/tasks.ts`). It compiles each WebAssembly module once per page and sends it to the workers that run it. Add-ons run in the job workers and start no workers of their own. A decoder's task never holds up a frame. [D-54](.dev/decisions/D-54-addon-modules.md#built) gives the detail.
+9. Every engine worker starts through `spawnWorker`, in the form `new Worker(new URL('<file>', import.meta.url), options)`, which adds a `blob:` bootstrap for a script on a CDN. Engine code names every file it loads with `new URL('<file>', import.meta.url)` and no Vite-only query. A third-party script that the engine ships makes no code from strings, so a policy without `'unsafe-eval'` runs it.
 8. What a glTF file or a standard scene needs stays in the core and loads on first use. Examples are morph targets, environment light and Draco. Optional features with heavy machinery of their own are add-ons.
 9. One loader in the engine loads first-use WebAssembly, for the core and for add-ons, into the engine's job workers. An add-on starts no workers of its own.
 10. The bundled path comes first. From a CDN, every worker starts from one `blob:` bootstrap in the engine. The docs give the policy and the headers that it needs, and the engine names what is missing. [D-54](.dev/decisions/D-54-addon-modules.md) gives the detail.
@@ -167,6 +170,7 @@ Before each commit:
 - When Rust files or Cargo settings are staged: `cargo fmt --check` and Clippy, with warnings treated as errors.
 - Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes. It also fails when a public export lacks the doc comments that the API reference needs.
 - Every command in `package.json` is in the table under "Commands", and every command that this file, the README and the guides in `.dev/` run with `bun run` exists.
+- Every decision record starts with its title, then a `Status:` and a `Summary:` paragraph, and no two records share a number.
 
 On each commit message:
 
