@@ -3,7 +3,7 @@ id: shaders/wgsl-rules
 title: WGSL rules for portable shaders
 status: experimental
 since: "0.1"
-summary: "The three shared language features; optional features; flat interpolation; no atomic compare-exchange; limits budget; rules the build cannot check."
+summary: "The three shared language features; optional features; flat interpolation; a warning for atomic compare-exchange; limits budget; rules the build cannot check."
 ---
 
 # WGSL rules for portable shaders
@@ -58,7 +58,7 @@ Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of 
 
 ## Atomic compare-exchange
 
-The build rejects `atomicCompareExchangeWeak`. Safari 27.0 cannot compile a shader that calls it, on atomics in any address space. Such a shader fails to load on every Apple device with that version. WebKit has fixed the fault, but no Safari release that has the fix is out yet.
+The build warns when a shader calls `atomicCompareExchangeWeak`. Safari 27.0 cannot compile such a shader, on atomics in any address space, so it fails to load on every Apple device with that version. Other browsers run it. WebKit has fixed the fault (321006@main), but no Safari release that has the fix is out yet. The shader still builds, so you choose whether to keep the call. The engine's own shaders never call it.
 
 To claim a slot, store your value into a free slot with `atomicStore`. Then call `workgroupBarrier()`, and read which value the slot holds with `atomicLoad`. `atomicExchange`, `atomicMin` and `atomicMax` also compile on every target browser.
 

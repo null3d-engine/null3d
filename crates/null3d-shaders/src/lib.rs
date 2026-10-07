@@ -144,6 +144,7 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             .collect::<BuildError>()
     })?;
     let mut compiler = Compiler::new(&inputs.files)?;
+    compiler.engine = true;
     check_files(inputs, &manifest).or(())?;
 
     let mut errors = BuildError::default();
@@ -244,6 +245,11 @@ pub struct Compiler {
     library: Library,
     preprocessor: Preprocessor,
     composers: Composers,
+    /// True for the engine's own shaders, which fail on calls that a target browser cannot
+    /// compile. Users' shaders build with a warning instead.
+    engine: bool,
+    /// Warnings of the builds since the last [`Compiler::take_warnings`].
+    warnings: BuildError,
 }
 
 impl Compiler {
@@ -254,7 +260,15 @@ impl Compiler {
             library: Library::load(files).map_err(BuildError::from_iter)?,
             preprocessor: Preprocessor::default(),
             composers: Composers::default(),
+            engine: false,
+            warnings: BuildError::default(),
         })
+    }
+
+    /// The warnings of the builds since the last call, each once with every build that has it:
+    /// calls that a target browser cannot compile, in users' shaders.
+    pub fn take_warnings(&mut self) -> Vec<Problem> {
+        std::mem::take(&mut self.warnings).problems
     }
 
     /// Compiles every variant of a shader. The same problem in several variants is listed once,
@@ -308,7 +322,8 @@ impl Compiler {
                     continue;
                 }
                 match self.variant(path, source, pipelines, variant, &build) {
-                    Ok(output) => {
+                    Ok((output, warnings)) => {
+                        self.warnings.add(warnings, Some(&label(&build.name)));
                         built.insert(build.name, output);
                     }
                     Err(problems) => errors.add(problems, Some(&label(&build.name))),
@@ -319,7 +334,7 @@ impl Compiler {
     }
 
     /// Builds one build of a variant of an entry shader: checks its source, composes and
-    /// validates it, and writes each target.
+    /// validates it, and writes each target. It gives the build's warnings with its output.
     fn variant(
         &mut self,
         path: &str,
@@ -327,7 +342,7 @@ impl Compiler {
         pipelines: &BTreeMap<String, Pipeline>,
         variant: &Variant,
         build: &Build,
-    ) -> Result<VariantOutput, Vec<Problem>> {
+    ) -> Result<(VariantOutput, Vec<Problem>), Vec<Problem>> {
         let defs: HashMap<String, ShaderDefValue> = build
             .defs
             .iter()
@@ -349,6 +364,10 @@ impl Compiler {
             .prepare(&self.preprocessor, path, source, &defs);
         let views: Vec<View> = prepared.iter().map(View::new).collect();
         fail_on(features::scan(&views))?;
+        let mut warnings = features::browser_faults(&views);
+        if self.engine {
+            fail_on(std::mem::take(&mut warnings))?;
+        }
 
         let composer = self
             .composers
@@ -418,11 +437,12 @@ impl Compiler {
         } else {
             None
         };
-        Ok(VariantOutput {
+        let output = VariantOutput {
             permutation: build.permutation,
             wgsl,
             glsl,
-        })
+        };
+        Ok((output, warnings))
     }
 }
 

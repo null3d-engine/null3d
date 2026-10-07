@@ -11,6 +11,7 @@ import {
 	codeFrame,
 	compileTaggedWgsl,
 	compileWgsl,
+	compileWgslFile,
 	findTaggedWgsl,
 	placeOf,
 	type WgslCompile,
@@ -451,6 +452,24 @@ fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
 		);
 		expect(error.message).toContain(`src/glow.wgsl:${where(broken, '1.0);\n#else')}: `);
 		expect(error.message).toEndWith('(in the WebGL2 build)');
+	});
+
+	it("builds a user's compare-exchange with a warning that Safari 27.0 cannot compile it", async () => {
+		const claim = `var<workgroup> slots: array<atomic<u32>, 64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(local_invocation_index) lane: u32) {
+    let claim = atomicCompareExchangeWeak(&slots[lane], 0u, 1u);
+}
+`;
+		const result = await compileWgslFile('src/claim.wgsl', 'x', claim);
+		if (!('shader' in result)) throw new Error(result.error.message);
+		expect(result.warnings).toHaveLength(1);
+		const [warning] = result.warnings;
+		expect(warning).toStartWith(
+			`null3D: src/claim.wgsl:${where(claim, 'atomicCompareExchangeWeak')}: \`atomicCompareExchangeWeak\` does not compile on Safari 27.0`,
+		);
+		expect(warning).toContain('321006@main');
 	});
 });
 

@@ -1,7 +1,7 @@
 //! The portability check: shaders use only the WGSL language features that every target browser
-//! supports (AGENTS.md hard rule 10), no extension that needs an optional WebGPU feature, no
-//! built-in function that a target browser fails to compile, and write flat interpolation as
-//! `@interpolate(flat, either)`.
+//! supports (AGENTS.md hard rule 10), no extension that needs an optional WebGPU feature, and
+//! write flat interpolation as `@interpolate(flat, either)`. It also finds calls of built-in
+//! functions that a target browser fails to compile.
 //!
 //! WGSL does not require a `requires` directive before code uses a language feature, so reading
 //! `requires` lines is not enough. The check works in three layers:
@@ -388,15 +388,6 @@ fn scan_file(
             {
                 found(index, "atomic_vec2u_min_max", &format!("`{name}`"));
             }
-            name @ "atomicCompareExchangeWeak" if next(1) == "(" && !declared.contains(name) => {
-                problems.push(Problem::at(
-                    path,
-                    Some(view.position(index)),
-                    format!(
-                        "`{name}` does not compile on Safari 27.0: WebKit turns it into a Metal helper that the Metal compiler of the 27 releases rejects, for atomics in any address space. Claim a value with `atomicLoad` and `atomicStore` between barriers, or with `atomicExchange`, `atomicMin` or `atomicMax`. See {RULES_PAGE}"
-                    ),
-                ));
-            }
             name if name.starts_with("texture_storage_")
                 && next(1) == "<"
                 && TIER1_TEXEL_FORMATS.contains(&next(2)) =>
@@ -418,6 +409,39 @@ fn scan_file(
         };
         problems.push(half_float_problem(path, view.position(index), &what));
     }
+}
+
+/// The built-in function that Safari 27.0 cannot compile.
+const COMPARE_EXCHANGE: &str = "atomicCompareExchangeWeak";
+
+/// Calls of built-in functions that a target browser fails to compile, in the files of one
+/// variant. WebKit turns `atomicCompareExchangeWeak` into a Metal helper that the Metal compiler of
+/// the 27 releases rejects, for atomics in any address space (decision record D-100). The engine's
+/// own shaders fail on such a call, and users' shaders build with a warning.
+pub(crate) fn browser_faults(views: &[View]) -> Vec<Problem> {
+    let mut members = BTreeSet::new();
+    let mut declared = BTreeSet::new();
+    for view in views {
+        collect_declarations(&view.tokens, &mut members, &mut declared);
+    }
+    if declared.contains(COMPARE_EXCHANGE) {
+        return Vec::new();
+    }
+    let mut problems = Vec::new();
+    for view in views {
+        for (index, pair) in view.tokens.windows(2).enumerate() {
+            if pair[0].text == COMPARE_EXCHANGE && pair[1].text == "(" {
+                problems.push(Problem::at(
+                    view.path,
+                    Some(view.position(index)),
+                    format!(
+                        "`{COMPARE_EXCHANGE}` does not compile on Safari 27.0, so the shader fails on Apple devices with that version. WebKit turns it into a Metal helper that the Metal compiler of the 27 releases rejects, for atomics in any address space. WebKit fixed this in 321006@main, which no Safari release holds yet. Claim a value with `atomicLoad` and `atomicStore` between barriers, or with `atomicExchange`, `atomicMin` or `atomicMax`. See {RULES_PAGE}"
+                    ),
+                ));
+            }
+        }
+    }
+    problems
 }
 
 /// The names that the directive at `index` lists before its `;`.
@@ -761,7 +785,7 @@ mod tests {
             "{page} lacks the flat rule"
         );
         assert!(
-            text.contains("`atomicCompareExchangeWeak`"),
+            text.contains(&format!("`{COMPARE_EXCHANGE}`")),
             "{page} lacks the compare-exchange rule"
         );
         for (extension, _) in OPTIONAL_EXTENSIONS {

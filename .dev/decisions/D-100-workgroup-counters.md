@@ -1,8 +1,8 @@
 # D-100: The culling shader counts each workgroup's survivors before it adds to the indirect draws
 
-Status: proposed. Date: 8 October 2026. Task: M2-I5. The Mac's run of prototype G2 is in. The runs on the Galaxy S25, the Pixel 9 and the iPads are pending.
+Status: proposed. Date: 8 October 2026. Task: M2-I5. The runs of prototype G2 on the Mac, the Galaxy S25, the Pixel 9 and a cloud iPad are in, of the first form. The first form failed on the iPad's Safari 27.0, so the claim changed ("Safari 27.0 and the slot claim"). The Mac's run of the new form is in. Its runs on phones and iPads are pending.
 
-Summary: Each workgroup of the culling shader counts its visible instances per bucket in workgroup memory. One thread per bucket then adds the workgroup's count to each of the bucket's indirect draws. Before, every visible instance added 1 to the same word, one thread after another. On the Mac the culling pass of 240,000 boxes went from 0.62 ms to 0.14 ms in S1, and from 0.37 ms to 0.10 ms in S1-static. The phones' and tablets' figures of prototype G2 are pending.
+Summary: Each workgroup of the culling shader counts its visible instances per bucket in workgroup memory. One thread per bucket then adds the workgroup's count to each of the bucket's indirect draws. Before, every visible instance added 1 to the same word, one thread after another. On the Mac the culling pass of 240,000 boxes went from 0.62 ms to 0.14 ms in S1, and from 0.37 ms to 0.10 ms in S1-static. On the Galaxy S25 it went from 2.23 ms to 1.05 ms in S1. The new form, which Safari 27.0 compiles, cut the Mac's culling pass by 75% and 72% against main. The phones' and tablets' figures of the new form are pending.
 
 ## Question
 
@@ -26,16 +26,28 @@ The culling pass is the frame's one compute pass in these scenes. Each figure is
 | Culling pass, S1-static | 0.885 to 0.918 ms | 0.918 ms | Same, within one step of the timer | Galaxy S25 (Adreno 830), Chrome 152 |
 | Whole frame's GPU time, S1 | 18.45 to 18.48 ms | 17.30 ms | -6% | Galaxy S25 (Adreno 830), Chrome 152 |
 | Whole frame's GPU time, S1-static | 9.47 to 9.54 ms | 9.57 ms | Same | Galaxy S25 (Adreno 830), Chrome 152 |
+| Culling pass, S1 | 1.901 ms | 1.835 ms | -3% | Pixel 9 (Mali-G715), Chrome 152 |
+| Culling pass, S1-static | 0.852 ms | 0.852 to 0.918 ms | Same, within one step of the timer | Pixel 9 (Mali-G715), Chrome 152 |
+| Whole frame's GPU time, S1 | 19.73 to 20.12 ms | 19.60 to 19.86 ms | -1% | Pixel 9 (Mali-G715), Chrome 152 |
+| Whole frame's GPU time, S1-static | 7.90 to 8.26 ms | 8.26 to 8.45 ms | Same | Pixel 9 (Mali-G715), Chrome 152 |
+| Culling pass, S1 | 1.299 to 1.312 ms | Did not compile | | iPad (10th generation, A14), Safari 27.0 |
+| Culling pass, S1-static | 0.932 to 0.947 ms | Did not compile | | iPad (10th generation, A14), Safari 27.0 |
+| Whole frame's GPU time, S1 | 24.98 to 26.10 ms, at 20.6 fps | Did not compile | | iPad (10th generation, A14), Safari 27.0 |
+| Whole frame's GPU time, S1-static | 7.98 to 8.40 ms, at 41.6 to 41.7 fps | Did not compile | | iPad (10th generation, A14), Safari 27.0 |
 
 - The culling pass was faster in each of the 10 rounds of both scenes. Main's slowest round took 0.79 ms in S1 and the branch's 0.14 ms.
 - In S1, main's render passes took 3.5 to 4.0 ms by round, and the branch's 4.0 ms in each round. Main's rounds with the faster render passes also had its fastest culling, 0.56 ms against 0.79 ms. So the GPU ran at a higher clock speed in those rounds, with more work to do. In the rounds that ran at the same speed, the render passes took the same time on both builds, so the order of instances in the slices costs nothing.
 - The CPU figures did not change: the comparison judged both pages the same.
 - On the Galaxy S25, the timer gives GPU times in steps of about 0.033 ms. The culling pass in S1 took the same time in every run of each build. In S1-static the two builds' runs took the same two values, 0.852 and 0.918 ms.
 - The S25's render passes took the same time on both builds, so the order of instances in the slices costs nothing there either.
+- On the Pixel 9 the culling pass took 1.901 ms in both of main's runs and 1.835 ms in both of the branch's, one step of its timer apart. Arm's GPU gained little, but lost nothing. Its frame's GPU time stayed within the spread of the runs.
+- The cloud iPad failed every page of the branch: Safari 27.0 could not compile the first form ("Safari 27.0 and the slot claim"). Main's two runs give the iPad's baseline. Its frame rates come from a BrowserStack session, which holds the GPU for its own video, so only its GPU times compare between commits.
 
 How the data was produced, on the Mac: `bun run bench:run --compare <main>,<branch> --scenes s1,s1-static --pages null3d-webgpu --switches n=240000 --runs 10 --seconds 5` in a quiet window on 8 October 2026, 00:44 to 00:51, at 120 Hz. Main was efead8b5d and the branch 2ed8971bc. One run of the branch in S1 was dropped, as it measured 125 Hz. The run's record is `bench/results/20261007-164404-compare.json`, which keeps each run's GPU time per pass from this change on.
 
 On the Galaxy S25, through BrowserStack Automate on 8 October 2026, 01:04 to 01:40: `bun tests/real-browsers.ts --plan bench --scenes s1,s1-static --pages null3d-webgpu --runs 3 --n 240000 --cloud bsgalaxys25-chrome`, 4 times, in the order main, branch, branch, main. The runs are `20261007-170521-bench`, `20261007-171416-bench`, `20261007-172307-bench` and `20261007-173144-bench`. Its screen ran at 30 Hz, so only the GPU times count.
+
+On the Pixel 9 and the cloud iPad (10th generation), through BrowserStack Automate on 8 October 2026, 03:54 to 04:50, with the same command and `--cloud bspixel9-chrome` or `--cloud bsipad10-safari`, in the same order. The Pixel 9's runs are `20261007-195432-bench`, `20261007-200338-bench`, `20261007-201359-bench` and `20261007-202312-bench`. The iPad's are `20261007-203239-bench`, `20261007-204114-bench` and `20261007-204317-bench`, which failed, and `20261007-204559-bench`.
 
 ## Options weighed
 
@@ -81,7 +93,7 @@ The Mac's figures for this form, against main ebd64cc21, in Chrome 155 at 120 Hz
 - The run's record is `bench/results/20261007-221015-compare.json`, made with `bun run bench:run --compare ../m2-i5-main,. --runs 10 --seconds 5 --scenes s1,s1-static --pages null3d-webgpu --switches n=240000` on 8 October 2026, 06:10 to 06:18.
 - The Galaxy S25's figures in Data come from the compare-exchange form. The runs on phones and iPads of this form are pending.
 
-The shader build now rejects `atomicCompareExchangeWeak` in every shader, the engine's and users' alike, with the reason and the forms that compile (`crates/null3d-shaders/src/features.rs`, `docs/shaders/wgsl-rules.md`). A test in the shader crate checks the rule. Users' shaders would fail on Safari 27.0 the same way, and the build cannot tell which address space a call uses before naga reads the module. The rule can go once the oldest Safari that null3D supports has WebKit's fix.
+The engine's shader build now fails on `atomicCompareExchangeWeak` in any of the engine's own shaders, with the reason and the forms that compile (`crates/null3d-shaders/src/features.rs`). A test in the shader crate checks it. Users' shaders, which the Vite plugin compiles, build with a warning that names Safari 27.0 and WebKit's fix, 321006@main, and the Vite plugin prints it. Refusing users' shaders would change the public API for one Safari release's fault that WebKit has already fixed, so the coordinator chose the warning on 8 October 2026, until the owner rules. The owner's choice is between the warning, an error, and saying nothing. A test in the shader crate and one in the Vite plugin check the warning, and the WGSL rules page (`docs/shaders/wgsl-rules.md`) states it. The check can go once the oldest Safari that null3D supports has WebKit's fix.
 
 ## Decision
 

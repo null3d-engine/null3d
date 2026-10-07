@@ -72,9 +72,16 @@ export interface ShaderProblem {
 	readonly variants: readonly string[];
 }
 
-/** The result of a compile: each variant by name, or the problems that stopped it. */
+/**
+ * The result of a compile: each variant by name, or the problems that stopped it. A compile that
+ * succeeds also gives its warnings: calls that a target browser cannot compile.
+ */
 export type CompileResult =
-	| { readonly ok: true; readonly variants: Readonly<Record<string, ShaderVariant>> }
+	| {
+			readonly ok: true;
+			readonly variants: Readonly<Record<string, ShaderVariant>>;
+			readonly warnings: readonly ShaderProblem[];
+	  }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
 /**
@@ -87,7 +94,9 @@ export function compileShader(shader: ShaderSource): CompileResult {
 
 /** A shader compile's result from the module's response. */
 export function shaderResult(response: Response<Record<string, ShaderVariant>>): CompileResult {
-	return response.ok ? { ok: true, variants: response.output } : response;
+	return response.ok
+		? { ok: true, variants: response.output, warnings: response.warnings ?? [] }
+		: response;
 }
 
 /** The WGSL of a custom material: functions that the engine's standard material calls. */
@@ -121,9 +130,13 @@ export interface MaterialBuild {
 	readonly baseColor: boolean;
 }
 
-/** The result of a custom material's compile. */
+/** The result of a custom material's compile, with its warnings when it succeeds. */
 export type MaterialResult =
-	| { readonly ok: true; readonly material: MaterialBuild }
+	| {
+			readonly ok: true;
+			readonly material: MaterialBuild;
+			readonly warnings: readonly ShaderProblem[];
+	  }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
 /**
@@ -136,7 +149,9 @@ export function compileMaterial(material: MaterialSource): MaterialResult {
 
 /** A custom material's result from the module's response. */
 export function materialResult(response: Response<MaterialBuild>): MaterialResult {
-	return response.ok ? { ok: true, material: response.output } : response;
+	return response.ok
+		? { ok: true, material: response.output, warnings: response.warnings ?? [] }
+		: response;
 }
 
 /** A custom effect or tone curve, built into the engine's effect template or its final pass. */
@@ -151,9 +166,13 @@ export interface EffectBuild {
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 }
 
-/** The result of a custom effect's or tone curve's compile. */
+/** The result of a custom effect's or tone curve's compile, with its warnings when it succeeds. */
 export type EffectResult =
-	| { readonly ok: true; readonly effect: EffectBuild }
+	| {
+			readonly ok: true;
+			readonly effect: EffectBuild;
+			readonly warnings: readonly ShaderProblem[];
+	  }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
 /**
@@ -166,28 +185,26 @@ export function compileEffect(effect: MaterialSource): EffectResult {
 
 /** A custom effect's or tone curve's result from the module's response. */
 export function effectResult(response: Response<EffectBuild>): EffectResult {
-	return response.ok ? { ok: true, effect: response.output } : response;
+	return response.ok
+		? { ok: true, effect: response.output, warnings: response.warnings ?? [] }
+		: response;
 }
 
 /**
  * The result of a custom material from the results of its shares: every build, by name in the
- * order that the compiler gives them, or every problem of every share, each once with every
- * build that has it.
+ * order that the compiler gives them, with every warning, or every problem of every share. Each
+ * problem and warning comes once, with every build that has it.
  */
 export function joinShares(shares: readonly MaterialResult[]): MaterialResult {
 	const problems = new Map<string, ShaderProblem>();
+	const warnings = new Map<string, ShaderProblem>();
 	const builds: MaterialBuild[] = [];
 	for (const share of shares) {
 		if (share.ok) {
 			builds.push(share.material);
-			continue;
-		}
-		for (const problem of share.problems) {
-			const { file, line, column, feature, message } = problem;
-			const key = JSON.stringify([file, line, column, feature, message]);
-			const known = problems.get(key);
-			const variants = known ? [...new Set([...known.variants, ...problem.variants])] : [];
-			problems.set(key, known ? { ...known, variants: variants.sort() } : problem);
+			addOnce(warnings, share.warnings);
+		} else {
+			addOnce(problems, share.problems);
 		}
 	}
 	const [first] = builds;
@@ -196,7 +213,18 @@ export function joinShares(shares: readonly MaterialResult[]): MaterialResult {
 	const variants: Record<string, ShaderVariant> = {};
 	// The compiler's builds come in the byte order of their names, as Rust's sorted map gives them.
 	for (const name of Object.keys(all).sort()) variants[name] = all[name];
-	return { ok: true, material: { ...first, variants } };
+	return { ok: true, material: { ...first, variants }, warnings: [...warnings.values()] };
+}
+
+/** Adds problems to a map of them, each once with the builds of every copy, sorted. */
+function addOnce(known: Map<string, ShaderProblem>, problems: readonly ShaderProblem[]): void {
+	for (const problem of problems) {
+		const { file, line, column, feature, message } = problem;
+		const key = JSON.stringify([file, line, column, feature, message]);
+		const before = known.get(key);
+		const variants = before ? [...new Set([...before.variants, ...problem.variants])] : [];
+		known.set(key, before ? { ...before, variants: variants.sort() } : problem);
+	}
 }
 
 /**
@@ -242,10 +270,17 @@ export function buildShaders(inputs: ShaderBuildInputs): ShaderBuildResult {
 	return call<ShaderBuildOutput>('build', inputs);
 }
 
-/** The module's response to a call: its output, or the problems that stopped the call. */
+/**
+ * The module's response to a call: its output, or the problems that stopped the call. The calls
+ * that compile users' shaders add their warnings when they have any.
+ */
 export type Response<T> =
-	| { readonly ok: true; readonly output: T }
-	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
+	| { readonly ok: true; readonly output: T; readonly warnings?: readonly ShaderProblem[] }
+	| {
+			readonly ok: false;
+			readonly problems: readonly ShaderProblem[];
+			readonly warnings?: readonly ShaderProblem[];
+	  };
 
 /** The name of one of the module's exports that takes a request. */
 export type CallName = 'compile' | 'compile_material' | 'compile_effect' | 'build';

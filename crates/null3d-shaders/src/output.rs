@@ -8,7 +8,8 @@ use serde::Serialize;
 use crate::{BuildError, Pipeline, Problem};
 
 /// A result as the WebAssembly module returns it: `{"ok": true, "output": ...}` on success, and
-/// `{"ok": false, "problems": [...]}` otherwise.
+/// `{"ok": false, "problems": [...]}` otherwise, each with `"warnings": [...]` when the build
+/// found any.
 #[derive(Serialize)]
 pub struct Response<'a, T> {
     ok: bool,
@@ -16,6 +17,16 @@ pub struct Response<'a, T> {
     output: Option<&'a T>,
     #[serde(skip_serializing_if = "Option::is_none")]
     problems: Option<&'a [Problem]>,
+    #[serde(skip_serializing_if = "<[Problem]>::is_empty")]
+    warnings: &'a [Problem],
+}
+
+impl<'a, T> Response<'a, T> {
+    /// The response with the build's warnings.
+    #[must_use]
+    pub fn with_warnings(self, warnings: &'a [Problem]) -> Self {
+        Self { warnings, ..self }
+    }
 }
 
 impl<'a, T> From<&'a Result<T, BuildError>> for Response<'a, T> {
@@ -24,6 +35,7 @@ impl<'a, T> From<&'a Result<T, BuildError>> for Response<'a, T> {
             ok: result.is_ok(),
             output: result.as_ref().ok(),
             problems: result.as_ref().err().map(|error| error.problems.as_slice()),
+            warnings: &[],
         }
     }
 }

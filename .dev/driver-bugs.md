@@ -13,7 +13,7 @@ What happens: pipeline creation fails. The Metal compiler rejects WebKit's trans
 
 Smallest known case: any compute shader with one `atomicCompareExchangeWeak` call.
 
-Workaround in the engine: no shader calls it, and the shader build rejects it ([D-100](decisions/D-100-workgroup-counters.md), [Browser faults](implementation-notes.md#browser-faults)).
+Workaround in the engine: no engine shader calls it, and the engine's shader build fails on it. Users' shaders build with a warning ([D-100](decisions/D-100-workgroup-counters.md), [Browser faults](implementation-notes.md#browser-faults)).
 
 ## Adreno 830: a uniform array read at a per-thread index returns one thread's entry
 

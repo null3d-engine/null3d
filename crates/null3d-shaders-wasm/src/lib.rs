@@ -17,7 +17,9 @@
 //!   the manifest and every file, the library modules too, as [`Inputs`], and the output is an
 //!   [`Output`](null3d_shaders::Output).
 //! - `response()` and `response_length()` give the last call's response:
-//!   `{"ok": true, "output": ...}` or `{"ok": false, "problems": [...]}`.
+//!   `{"ok": true, "output": ...}` or `{"ok": false, "problems": [...]}`. A response of `compile`,
+//!   `compile_material` or `compile_effect` also holds `"warnings": [...]` when the shader calls
+//!   a built-in function that a target browser cannot compile.
 //!
 //! A panic stops a call with a trap. The panic hook first writes a response that describes the
 //! panic. The caller then drops the instance, whose memory may be in any state after a trap.
@@ -46,6 +48,8 @@ thread_local! {
     /// The compiler for `compile` and `compile_material`, made on the first call. It keeps the
     /// library modules it composed, so later calls are faster.
     static COMPILER: RefCell<Option<Compiler>> = const { RefCell::new(None) };
+    /// The warnings of the call in progress.
+    static WARNINGS: RefCell<Vec<Problem>> = const { RefCell::new(Vec::new()) };
     /// The template of custom materials, read on the first call of `compile_material`.
     static TEMPLATE: RefCell<Option<MaterialTemplate>> = const { RefCell::new(None) };
     /// The templates of custom effects and tone curves, read on the first call of
@@ -117,6 +121,7 @@ fn with_compiler<T>(
             None => Compiler::new(&inputs().files)?,
         };
         let result = call(&mut compiler);
+        WARNINGS.set(compiler.take_warnings());
         *slot = Some(compiler);
         result
     })
@@ -164,8 +169,12 @@ fn parse<T: DeserializeOwned>(request: &[u8]) -> Result<T, BuildError> {
 fn respond<T: Serialize>(call: impl FnOnce(&[u8]) -> Result<T, BuildError>) {
     install_panic_hook();
     RESPONSE.with_borrow_mut(Vec::clear);
+    WARNINGS.with_borrow_mut(Vec::clear);
     let result = REQUEST.with_borrow(|request| call(request));
-    RESPONSE.set(to_json(&result));
+    let json = WARNINGS.with_borrow(|warnings| {
+        serde_json::to_vec(&Response::from(&result).with_warnings(warnings)).unwrap_or_default()
+    });
+    RESPONSE.set(json);
 }
 
 fn to_json<T: Serialize>(result: &Result<T, BuildError>) -> Vec<u8> {

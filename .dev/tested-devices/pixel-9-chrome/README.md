@@ -2,7 +2,7 @@
 
 - Device: Pixel 9, 412 x 924 at 2.625x, 8 cores
 - OS: Android 17
-- Browser: Chrome 149.0.7827.160
+- Browser: Chrome 152.0.7977.54 (149.0.7827.160 before 2026-10-08)
 - GPU: Mali-G715; WebGPU adapter: arm valhall
 - GPU paths: WebGPU, compatibility mode, WebGL2
 - Where: BrowserStack Automate

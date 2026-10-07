@@ -16,3 +16,4 @@ The other 1,116 programs link.
 BrowserStack offers no iPad with the A12X on a system that runs the gate's pages.
 Its A12Z iPad Pro runs iOS 14 only.
 The A14 is the closest chip with a current Safari
+Safari 27.0 cannot compile a shader that calls `atomicCompareExchangeWeak`; the engine's shaders do not call it ([Browser faults](../../implementation-notes.md#browser-faults))

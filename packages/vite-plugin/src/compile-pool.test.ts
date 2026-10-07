@@ -44,9 +44,19 @@ describe('joinShares', () => {
 	});
 
 	it('fails when one share fails, with its problems', () => {
-		const built = { ok: true, material: {} } as unknown as MaterialResult;
+		const built = { ok: true, material: {}, warnings: [] } as unknown as MaterialResult;
 		const failed: MaterialResult = { ok: false, problems: [problem('one', ['webgpu'])] };
 		expect(joinShares([built, failed])).toEqual(failed);
+	});
+
+	it('lists each warning once, with every build of every share that has it', () => {
+		const share = (warnings: ShaderProblem[]) =>
+			({ ok: true, material: { variants: {} }, warnings }) as unknown as MaterialResult;
+		const joined = joinShares([
+			share([problem('slow', ['webgpu'])]),
+			share([problem('slow', ['webgpu_skin'])]),
+		]);
+		expect(joined.ok && joined.warnings).toEqual([problem('slow', ['webgpu', 'webgpu_skin'])]);
 	});
 });
 
