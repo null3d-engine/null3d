@@ -1,27 +1,18 @@
-// Generates the docs files that come from a single source, which git does not keep, or checks the
-// docs. Run from the repository root:
-//   bun tools/gen-docs.ts           write every generated file that changed, then fail on exports
-//                                   that the API reference cannot show, and on shader library
-//                                   items without doc comments
-//   bun tools/gen-docs.ts --check   write every generated file, the skills copy too, then report
-//                                   those exports, missing pages, bad front matter, broken links,
-//                                   files of the record of tested devices that break its rules,
-//                                   and generated files that git keeps
-import { readApi } from './lib/api-docs';
-import {
-	checkDocs,
-	generateDocs,
-	libraryProblems,
-	PAGES,
-	referenceProblems,
-	writeGeneratedDocs,
-} from './lib/docs';
+// Writes the generated files, which git does not keep (tools/lib/generated.ts), or checks the docs.
+// Run from the repository root:
+//   bun tools/gen-docs.ts           write every generated file that changed, the skills copy too,
+//                                   then fail on exports that the API reference cannot show, shader
+//                                   library items without doc comments, and files of the record of
+//                                   tested devices that break its rules
+//   bun tools/gen-docs.ts --check   write them, then report those problems, missing pages, bad
+//                                   front matter, broken links, and generated files that git keeps
+import { checkDocs, PAGES } from './lib/docs';
 import { gitProblems, isWorkTree, writeGenerated } from './lib/generated';
 
 const root = process.cwd();
+const generated = writeGenerated(root);
 
 if (process.argv.includes('--check')) {
-	const generated = writeGenerated(root);
 	const problems = [...checkDocs(root), ...(isWorkTree(root) ? gitProblems(root, generated) : [])];
 	for (const p of problems) console.log(`error: ${p}`);
 	console.log(
@@ -32,10 +23,7 @@ if (process.argv.includes('--check')) {
 	process.exit(problems.length ? 1 : 0);
 }
 
-const api = readApi(root);
-const written = writeGeneratedDocs(root, generateDocs(root, api));
-for (const path of written) console.log(`wrote ${path}`);
-console.log(`docs generated: ${written.length} file(s) changed`);
-const problems = [...referenceProblems(api), ...libraryProblems(root)];
-for (const p of problems) console.log(`error: ${p}`);
-if (problems.length) process.exit(1);
+for (const path of generated.written) console.log(`wrote ${path}`);
+console.log(`docs generated: ${generated.written.length} file(s) changed`);
+for (const p of generated.problems) console.log(`error: ${p}`);
+if (generated.problems.length) process.exit(1);

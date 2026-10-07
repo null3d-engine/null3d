@@ -50,7 +50,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run dev` | Serve the test pages, the benchmark pages and the demos with the isolation headers on port 5173, or on the port that `NULL3D_PORT` names |
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
-| `bun run docs` | Write the generated docs: placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, the tables of the quality presets page and of tested devices, and the mapping page and copies. Git keeps none of them |
+| `bun run docs` | Write the generated files: placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, the tables of the quality presets page and of tested devices, the mapping page and copies, and the skills copy. Git keeps none of them |
 | `bun run docs:check` | Write the generated files, then check the API reference's doc comments, front matter and links, that git keeps no generated file, that this table lists every command, and that every decision record has a title, a status and a summary under its own number |
 | `bun run decisions` | List the decision records, each with its status and summary, read from the records themselves |
 | `bun run docs:style` | Check the writing rules in all published Markdown |
