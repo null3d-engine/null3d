@@ -1228,6 +1228,17 @@ async function startEngine(
 	let localCore: CoreGlue | undefined;
 	/** The job workers' task ports that the page's on-demand loader uses, when the page runs the sketch. */
 	let jobTaskHost: JobTaskHost | undefined;
+	/**
+	 * The channels between the engine's threads, which the page keeps until the stop. Firefox drops
+	 * the unread messages of a port that moved to a worker once the page collects the port it moved,
+	 * if they hold image bitmaps or WebAssembly modules: the receiver then gets a messageerror event.
+	 */
+	const channels: MessageChannel[] = [];
+	const channel = () => {
+		const made = new MessageChannel();
+		channels.push(made);
+		return made;
+	};
 	let stopping: Promise<void> | undefined;
 	/** The marker of a start that may crash the tab, which the start sets once it knows the tier. */
 	let markerSet = false;
@@ -1282,6 +1293,7 @@ async function startEngine(
 			for (const worker of withCore)
 				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
 			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			channels.length = 0;
 			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
 			// list that the page's engine holds, so the engine stays until that worker has stopped.
@@ -1526,7 +1538,7 @@ async function startEngine(
 		const startJobs = (jobs: readonly EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
 			return jobs.map((job, index) => {
-				const tasks = new MessageChannel();
+				const tasks = channel();
 				job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: tasks.port1 }, [
 					tasks.port1,
 				]);
@@ -1591,7 +1603,7 @@ async function startEngine(
 				render.ready().catch((error: unknown) => start.abort(error));
 				// Texture images and custom materials' shaders go from the page straight to the render
 				// worker.
-				const images = new MessageChannel();
+				const images = channel();
 				imagePort = images.port1;
 				startRenderWorker(render, images.port2);
 			}
@@ -1677,7 +1689,7 @@ async function startEngine(
 				rendererHost = sketch;
 			} else {
 				// Texture images go from the sketch worker straight to the thread that draws.
-				const images = new MessageChannel();
+				const images = channel();
 				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [
 					images.port1,
 					...taskPorts,
