@@ -230,6 +230,7 @@ async function start(
 				vertexSkinning: false,
 				shadowDepthBits: 16,
 				largeWorld: false,
+				gpuOcclusion: false,
 			},
 			capabilities: CAPABILITIES,
 			quality,

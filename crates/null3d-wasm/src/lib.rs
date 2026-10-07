@@ -401,6 +401,7 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
 /// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
 /// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid.
 /// The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
@@ -421,6 +422,7 @@ pub fn init_engine(
     depth_prepass: bool,
     vertex_skinning: bool,
     large_world: bool,
+    gpu_occlusion: bool,
     shadow_depth_bits: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
@@ -482,6 +484,7 @@ pub fn init_engine(
                 cell_culling,
                 depth_prepass,
                 vertex_skinning,
+                gpu_occlusion,
                 cascade_depth,
                 ..RendererConfig::default()
             }))

@@ -129,8 +129,8 @@ export interface Switches {
 	prepass: boolean | undefined;
 	/**
 	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
-	 * and undefined to leave it to the page's options and the quality preset. It sets software
-	 * occlusion culling on WebGL2.
+	 * and undefined to leave it to the page's options and the quality preset. It sets GPU occlusion
+	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
 	/**

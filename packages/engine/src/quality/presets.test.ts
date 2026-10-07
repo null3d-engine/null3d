@@ -110,6 +110,7 @@ describe('the preset table', () => {
 			'aoScale',
 			'governor',
 			'depthPrepass',
+			'gpuOcclusion',
 			'morphTargets',
 			'softwareOcclusion',
 			'maxAnisotropy',
@@ -153,6 +154,7 @@ describe('the preset table', () => {
 			'shadowTileSize',
 			'pointLightShadows',
 			'depthPrepass',
+			'gpuOcclusion',
 			'morphTargets',
 		]);
 		expect(LIVE_SETTINGS).toEqual([
@@ -229,6 +231,7 @@ describe('presetSettings', () => {
 			shadowTiles: 4,
 			shadowTileSize: 512,
 			pointLightShadows: false,
+			gpuOcclusion: false,
 			morphTargets: 8,
 		});
 		expect(presetSettings('medium')).toEqual({
@@ -251,6 +254,7 @@ describe('presetSettings', () => {
 			shadowTiles: 8,
 			shadowTileSize: 512,
 			pointLightShadows: false,
+			gpuOcclusion: false,
 			morphTargets: 16,
 		});
 		expect(presetSettings('high')).toEqual({
@@ -273,6 +277,7 @@ describe('presetSettings', () => {
 			shadowTiles: 16,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
+			gpuOcclusion: false,
 			morphTargets: 32,
 		});
 		expect(presetSettings('ultra')).toEqual({
@@ -295,6 +300,7 @@ describe('presetSettings', () => {
 			shadowTiles: 24,
 			shadowTileSize: 1024,
 			pointLightShadows: true,
+			gpuOcclusion: false,
 			morphTargets: 64,
 		});
 	});

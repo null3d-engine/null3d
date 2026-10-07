@@ -248,6 +248,7 @@ describe('SketchQuality.lower', () => {
 			shadowTileSize: MEDIUM.shadowTileSize,
 			pointLightShadows: MEDIUM.pointLightShadows,
 			depthPrepass: MEDIUM.depthPrepass,
+			gpuOcclusion: MEDIUM.gpuOcclusion,
 			morphTargets: MEDIUM.morphTargets,
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory

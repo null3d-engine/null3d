@@ -42,6 +42,7 @@ export interface CoreGlue extends CoreErrors {
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
 		largeWorld: boolean,
+		gpuOcclusion: boolean,
 		shadowDepthBits: number,
 	): number;
 	/**

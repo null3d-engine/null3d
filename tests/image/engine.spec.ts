@@ -310,6 +310,29 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${feature}-(wgsl|glsl)[^/]*$`));
 		});
 
+// GPU occlusion culling runs only on WebGPU. A scene whose walls are marked occluders downloads its
+// shader file once with the culling on, and none with it off.
+for (const occlusion of ['on', 'off'] as const)
+	test(`marked occluders download the occlusion shader file only with ?occlusion=${occlusion} on webgpu`, async ({
+		page,
+	}, testInfo) => {
+		test.skip(testInfo.project.name === 'production build', 'no image test page');
+		const requests: string[] = [];
+		page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
+		const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts');
+		await page.goto(
+			`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=${occlusion}&sketch=${sketch}`,
+		);
+		const result = await pageResult<{ error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		const shaderFiles = requests.filter(isFirstUseShaderFile);
+		if (occlusion === 'off') expect(shaderFiles).toEqual([]);
+		else {
+			expect(shaderFiles).toHaveLength(1);
+			expect(shaderFiles[0]).toMatch(/\/shaders-occlusion-wgsl[^/]*$/);
+		}
+	});
+
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
 		test(`the engine runs ${mode.name} on ${gpu}`, ALONE, async ({ page }) => {

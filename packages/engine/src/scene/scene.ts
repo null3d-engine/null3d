@@ -160,7 +160,7 @@ export interface MeshOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes the mesh block the view for software occlusion culling on WebGL2, like
+	 * True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like
 	 * `setOccluder(true)`. The default is false.
 	 */
 	occluder?: boolean;
@@ -272,9 +272,9 @@ export interface InstantiateOptions extends NodeOptions {
 	/** True makes shadows fall on every mesh of the copy. The default is false. */
 	receiveShadows?: boolean;
 	/**
-	 * True makes every mesh of the copy block the view for software occlusion culling on WebGL2,
-	 * like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset
-	 * tool gave blockers block, and the others do not.
+	 * True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on
+	 * WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the
+	 * asset tool gave blockers block, and the others do not.
 	 */
 	occluder?: boolean;
 	/**
@@ -1206,13 +1206,15 @@ export class Mesh extends Object3D {
 	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
 	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
 	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
-	 * frame, and the engine skips every object that lies wholly behind the blockers. Mark large,
-	 * solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most
-	 * 4,096 triangles. A mesh that the asset tool gave a blocker draws that blocker instead, a few
-	 * boxes inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what
-	 * the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
-	 * mask, use a custom material or are skinned never block, whatever this says. WebGPU culls
-	 * hidden objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
+	 * frame, and the engine skips every object that lies wholly behind the blockers. On WebGPU,
+	 * while the `gpuOcclusion` setting is on, the GPU draws the depth of the blockers that showed
+	 * in the last frame and skips every object wholly behind them. Mark large, solid meshes that
+	 * hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles.
+	 * On WebGL2, a mesh that the asset tool gave a blocker draws that blocker instead, a few boxes
+	 * inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what the
+	 * object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
+	 * mask or use a custom material never block, whatever this says, nor do skinned ones on
+	 * WebGL2. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
 		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
