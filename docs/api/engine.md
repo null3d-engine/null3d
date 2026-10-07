@@ -321,7 +321,7 @@ Options for `createEngine`.
 | `sketchThread?: SketchThread` | The thread that runs the sketch's code and the engine core: `worker`, the default, or `main` for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and the page draws in low-latency mode. The sketch's frames then share the page's thread with the page's own work, so each can slow the other. The single-threaded build always runs the sketch on the page's thread. The `?sketch-thread=` switch wins over this option. |
 | `memory?: { maximumMiB: number; }` | The engine's memory. `maximumMiB` sets the most memory that the engine's threads share, in MiB: a whole number from 256 to 4096, 1024 by default. Another value fails with E1409. The browser reserves address space for the whole maximum when the engine starts. So a larger maximum leaves less room for other engines and WebAssembly modules on the page. Ask for more only when a scene needs it. The single-threaded build's memory is not shared, so this option does not change it. The `?memory=<MiB>` switch wins over it. |
 | `maxLabels?: number` | The most HTML labels that the sketch can track at once with `ui.trackLabel`: a whole number from 1 to 65,536, 4,096 by default. Another value fails with E1213. The engine keeps three tables of 16 bytes per label in memory that its threads share, so 4,096 labels take 192 KB. |
-| `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
+| `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. Before `core`, `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. The engine then tries for about 35 seconds more before it fails with E1109. |
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 | `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
@@ -448,6 +448,7 @@ type ShaderFeature =
 	| 'coverage'
 	| 'cutout'
 	| 'hash'
+	| 'instance_index'
 	| 'lines'
 	| 'morph'
 	| 'occlusion'
@@ -469,7 +470,7 @@ The thread that runs the sketch's code and the engine core. With `worker`, the d
 ### `StartupStage`
 
 ```ts
-type StartupStage = 'core' | 'sketch' | 'first-frame';
+type StartupStage = 'memory-wait' | 'core' | 'sketch' | 'first-frame';
 ```
 
 A stage of the engine's start, as `onProgress` reports it.

@@ -122,7 +122,8 @@ pub struct Variant {
     #[serde(default)]
     pub defs: Vec<String>,
     /// Permutation bits by name, as the draw list's `permutation` module names them. The variant
-    /// builds once for each combination of them, with the names of the bits it has as more defs.
+    /// builds once for each combination of them that holds no pair of `permutation::APART`, with
+    /// the names of the bits it has as more defs.
     #[serde(default)]
     pub permutations: Vec<String>,
     /// The languages to write.
@@ -136,8 +137,9 @@ impl Variant {
     }
 
     /// Every build of the variant `name`, one for each combination of its permutation bits that
-    /// holds the bits each bit needs (`permutation::NEEDS`), in the order of their permutation
-    /// words. The build without any bit takes the variant's name,
+    /// holds the bits each bit needs (`permutation::NEEDS`) and no pair of bits kept apart
+    /// (`permutation::APART`), in the order of their permutation words. The build without any bit
+    /// takes the variant's name,
     /// and each other build adds the names of its bits in lowercase, in bit order: variant
     /// `webgl2` with `DRAW_INDEX` builds `webgl2` and `webgl2_draw_index`. The variant's names
     /// must be checked first.
@@ -166,7 +168,7 @@ impl Variant {
                 build.defs.sort();
                 build
             })
-            .filter(|build| permutation::complete(build.permutation))
+            .filter(|build| permutation::buildable(build.permutation))
             .collect();
         builds.sort_by_key(|build| build.permutation);
         builds
@@ -612,6 +614,20 @@ variants.lonely = { permutations = ["SAMPLE_MASK"], targets = ["wgsl"] }
                 "webgpu_alpha_mask_sample_mask_alpha_coverage"
             ]
         );
+    }
+
+    #[test]
+    fn a_variant_makes_no_build_with_both_bits_of_a_pair_kept_apart() {
+        let text = r#"
+[shaders.lit]
+file = "lit.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
+"#;
+        let manifest = Manifest::parse(text).unwrap();
+        let builds = manifest.shaders["lit"].variants["webgpu"].builds("webgpu");
+        let names: Vec<&str> = builds.iter().map(|b| b.name.as_str()).collect();
+        assert_eq!(names, ["webgpu", "webgpu_skin", "webgpu_instance_index"]);
     }
 
     #[test]

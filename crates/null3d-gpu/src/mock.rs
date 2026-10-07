@@ -1001,9 +1001,9 @@ impl MockBackend {
                     "alpha to coverage needs more than one sample and a color format with alpha",
                 )?;
                 check(
-                    permutation::complete(o[2]),
+                    permutation::buildable(o[2]),
                     op,
-                    "a render pipeline's permutation word holds every bit that its bits need",
+                    "a render pipeline's permutation word holds every bit that its bits need, and no pair kept apart",
                 )?;
                 self.render_pipelines.insert(
                     o[0],
@@ -1498,7 +1498,7 @@ mod tests {
             MockBackend::default().replay(lonely.words()),
             Err(MockError::Invalid {
                 op: Op::CreateRenderPipeline,
-                rule: "a render pipeline's permutation word holds every bit that its bits need"
+                rule: "a render pipeline's permutation word holds every bit that its bits need, and no pair kept apart"
             })
         );
     }

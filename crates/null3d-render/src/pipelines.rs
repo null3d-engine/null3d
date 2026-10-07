@@ -204,9 +204,10 @@ impl DrawKey {
             return None;
         }
         let faces = state_flags::CULL_NONE | state_flags::CULL_FRONT;
+        let kept = permutation::SKIN | permutation::INSTANCE_INDEX;
         Some(DrawKey {
             template: template::SHADOW_DEPTH,
-            permutation: permutation::PREPASS | (self.permutation & permutation::SKIN),
+            permutation: permutation::PREPASS | (self.permutation & kept),
             vertex_format: self.vertex_format,
             state: (self.state & faces) | state_flags::NO_COLOR_WRITE,
             bias: self.bias,
@@ -246,6 +247,32 @@ impl DrawKey {
         let culled = if front { 0 } else { state_flags::CULL_FRONT };
         DrawKey {
             state: (self.state & !(state_flags::CULL_NONE | state_flags::CULL_FRONT)) | culled,
+            ..self
+        }
+    }
+
+    /// True for a pair whose template has WebGPU builds that read each instance by index from
+    /// storage buffers ([`permutation::INSTANCE_INDEX`]): the engine's templates that the culling
+    /// shader draws, apart from those that only tests and development builds draw. Custom
+    /// materials, sprites, lines and meshes skinned in the vertex shader read the culling shader's
+    /// copies.
+    pub const fn reads_index(self) -> bool {
+        permutation::buildable(self.permutation | permutation::INSTANCE_INDEX)
+            && matches!(
+                self.template,
+                template::INSTANCED_LIT
+                    | template::INSTANCED_STANDARD_MAPS
+                    | template::INSTANCED_UNLIT
+                    | template::INSTANCED_UNLIT_MAP
+                    | template::SHADOW_DEPTH
+                    | template::OUTLINE_MASK
+            )
+    }
+
+    /// The same key with the build that reads each instance by index.
+    pub const fn by_index(self) -> DrawKey {
+        DrawKey {
+            permutation: self.permutation | permutation::INSTANCE_INDEX,
             ..self
         }
     }
@@ -914,7 +941,7 @@ mod tests {
             color_format: format::RG11B10_UFLOAT,
             ..TARGETS
         });
-        assert!(permutation::complete(key.permutation));
+        assert!(permutation::buildable(key.permutation));
         // A masked pair never joins the prepass.
         assert_eq!(covered.prepass(), None);
     }

@@ -11,6 +11,15 @@
 // the instance by its cell's offset from the camera before it tests it. The compacted instance
 // buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
 //
+// A bucket whose vertex shaders read their instances by index (the INSTANCE_INDEX builds, which a
+// test switch asks for) takes no copy: its slice gets each survivor's index, and the vertex shader
+// reads the matrix, the material and the cell's offset itself (decision record D-23). Those slices
+// follow the copies in the same buffer, so culling binds no storage buffer more. Each index fills a
+// whole 16-byte entry. WGSL may write one part of a vector in storage as a read and a write of the
+// whole vector, so two threads that write parts of one entry make a data race, which can lose a
+// write on any GPU. The buffer is an array of `vec4u`, and the copies' floats go into it bit for
+// bit.
+//
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
 //
@@ -90,7 +99,8 @@ struct CullParams {
 /// its indirect draws, one per part of the mesh, from `first_draw` on. Its instances are culled
 /// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A skinned
 /// object's bucket names the first joint of its skin, which the vertex shaders that skin read
-/// beside the material.
+/// beside the material. A bucket with `indices` 1 writes each survivor's index instead, one entry
+/// each, from entry `base` on.
 struct Bucket {
     base: u32,
     material: u32,
@@ -101,6 +111,7 @@ struct Bucket {
     center_y: f32,
     center_z: f32,
     first_joint: u32,
+    indices: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -108,7 +119,7 @@ struct Bucket {
 @group(0) @binding(1) var<storage, read> matrices: array<vec4f>;
 @group(0) @binding(2) var<storage, read> instance_buckets: array<u32>;
 @group(0) @binding(3) var<storage, read> buckets: array<Bucket>;
-@group(0) @binding(4) var<storage, read_write> visible: array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> visible: array<vec4u>;
 @group(0) @binding(5) var<storage, read_write> indirect: array<atomic<u32>>;
 @group(0) @binding(6) var<storage, read> instance_layers: array<u32>;
 /// The instances in cell order: each cell's still instances, then the ones that move.
@@ -151,12 +162,13 @@ fn instance_of(group: u32, lane: u32) -> u32 {
     return order[position];
 }
 
-/// An instance in the view: its bucket, whether the sketch marks it as an occluder, its matrix
-/// moved by its cell's offset, and its bounding sphere relative to the camera. The bucket is
-/// `HIDDEN` for an instance that draws nowhere in the view: hidden, on none of the view's layers,
-/// or outside the frustum.
+/// An instance in the view: its bucket and its own index, whether the sketch marks it as an
+/// occluder, its matrix moved by its cell's offset, and its bounding sphere relative to the camera.
+/// The bucket is `HIDDEN` for an instance that draws nowhere in the view: hidden, on none of the
+/// view's layers, or outside the frustum.
 struct Survivor {
     bucket: u32,
+    index: u32,
     occluder: bool,
     r0: vec4f,
     r1: vec4f,
@@ -169,6 +181,7 @@ struct Survivor {
 fn survivor(i: u32) -> Survivor {
     var out: Survivor;
     out.bucket = HIDDEN;
+    out.index = i;
     let entry = instance_buckets[i];
     if entry == HIDDEN || (instance_layers[i] & params.layers) == 0u {
         return out;
@@ -206,11 +219,15 @@ fn append(s: Survivor, draws_before: u32) {
     for (var d = 1u; d < bucket.draws; d++) {
         atomicAdd(&indirect[first + d * INDIRECT_WORDS], 1u);
     }
+    if bucket.indices != 0u {
+        visible[bucket.base + slot] = vec4u(s.index, 0u, 0u, 0u);
+        return;
+    }
     let dst = (bucket.base + slot) * 4u;
-    visible[dst] = s.r0;
-    visible[dst + 1u] = s.r1;
-    visible[dst + 2u] = s.r2;
-    visible[dst + 3u] = bitcast<vec4f>(vec4u(bucket.material, bucket.first_joint, 0u, 0u));
+    visible[dst] = bitcast<vec4u>(s.r0);
+    visible[dst + 1u] = bitcast<vec4u>(s.r1);
+    visible[dst + 2u] = bitcast<vec4u>(s.r2);
+    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, 0u, 0u);
 }
 
 #ifndef OCCLUSION

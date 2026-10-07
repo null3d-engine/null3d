@@ -103,6 +103,7 @@ export async function startCorePage(
 			false,
 			false,
 			false,
+			false,
 			16,
 		),
 	);

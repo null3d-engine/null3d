@@ -383,19 +383,23 @@ impl Compiler {
                 // WebGPU they draw skinned meshes from the skinning pass's vertices, so they need no
                 // SKIN builds there. WebGL2 skins in the vertex shader, so its builds keep the bit.
                 // They have no MORPH builds, which would double their WebGL2 builds again: on
-                // WebGL2 they draw morphed meshes at rest (decision record D-51). They have no
-                // builds of alpha to coverage or the alpha hash either: they test their alpha
-                // against the cutoff.
+                // WebGL2 they draw morphed meshes at rest (decision record D-51). They read their
+                // instances from the culling shader's copies on every path, so they have no
+                // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
+                // coverage or the alpha hash either: they test their alpha against the cutoff.
                 let skins = !variant.targets.contains(&Target::Wgsl);
+                let left_out = [
+                    "HALF",
+                    "MORPH",
+                    "INSTANCE_INDEX",
+                    "SAMPLE_MASK",
+                    "ALPHA_COVERAGE",
+                    "ALPHA_HASH",
+                ];
                 let permutations = variant
                     .permutations
                     .iter()
-                    .filter(|bit| {
-                        !matches!(
-                            bit.as_str(),
-                            "HALF" | "MORPH" | "SAMPLE_MASK" | "ALPHA_COVERAGE" | "ALPHA_HASH"
-                        ) && (skins || *bit != "SKIN")
-                    })
+                    .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
                     .cloned()
                     .collect();
                 let variant = Variant {

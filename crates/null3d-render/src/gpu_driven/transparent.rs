@@ -198,7 +198,7 @@ impl Transparent {
             let bucket = layout.buckets[draw.bucket as usize];
             let skinned = bucket.skinned_slot();
             let skins = skinned.is_some_and(|slot| skinning.skins_in_vertex_shader(slot));
-            groups.set(list, bucket.textures, skins)?;
+            groups.set(list, bucket.textures, skins, 0)?;
             let regions = skinned.and_then(|slot| skinning.parts_of(slot));
             list.push(
                 Op::SetVertexBuffer,

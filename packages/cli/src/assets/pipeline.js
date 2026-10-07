@@ -1,7 +1,8 @@
 // The asset tool's steps for one model, which the assets optimize command and the Vite plugin
-// share: read a glTF file, put its clips on the engine's frames, reorder, simplify and quantize
-// its meshes, encode its textures to KTX2, compress its buffers with meshopt unless told not to,
-// and write a binary glTF file with its texture files beside it. The same input and options
+// share: read a glTF file, put its clips on the engine's frames, merge its equal parts, simplify,
+// reorder and quantize its meshes, plan their levels of detail, encode its textures to KTX2,
+// compress its buffers with meshopt unless told not to, and write a binary glTF file with its
+// texture files beside it. The same input and options
 // give the same bytes on every machine.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -15,8 +16,10 @@ import {
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { VERSION } from '../version.js';
 import { bakeClips, MeshoptWithRotationFilter } from './clips.js';
-import { planLevels, quantizeMeshes, reorderMeshes, storeLevels } from './geometry.js';
+import { dedup, dedupAccessors } from './dedup.js';
+import { quantizeMeshes, reorderMeshes } from './geometry.js';
 import { MAX_TEXTURE_SIDE } from './images.js';
+import { planLevels, SIMPLIFY_MAX_ERROR, simplifyMeshes, storeLevels } from './levels.js';
 import { MSFTLod } from './lod-extension.js';
 import { modelReport } from './report.js';
 import { addSpatialData, BVH_MIN_TRIANGLES } from './spatial.js';
@@ -36,6 +39,10 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
 /**
  * @typedef {object} OptimizeOptions
  * @property {boolean} lod Make levels of detail.
+ * @property {number} simplify The share of each mesh's triangles to keep, from 0 to 1, as far
+ *   as the error limit allows. 1 keeps them all.
+ * @property {number} simplifyError The largest error of that simplification, as a share of each
+ *   mesh's longest side.
  * @property {number} maxTextureSize The largest side of a texture, a power of two up to 2048.
  * @property {TextureQuality} textureQuality
  * @property {boolean} meshopt Compress the model's buffers with meshopt, which the engine decodes
@@ -50,6 +57,8 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
 /** The options that a command gives when it says nothing. */
 export const DEFAULT_OPTIONS = /** @type {const} */ ({
 	lod: false,
+	simplify: 1,
+	simplifyError: SIMPLIFY_MAX_ERROR,
 	maxTextureSize: MAX_TEXTURE_SIDE,
 	textureQuality: 'size',
 	meshopt: true,
@@ -233,10 +242,13 @@ export async function optimizeModel(path, options, encode) {
 		)
 			extension.dispose();
 	bakeClips(doc);
+	const merged = dedup(doc);
+	if (options.simplify < 1) await simplifyMeshes(doc, options.simplify, options.simplifyError);
 	await reorderMeshes(doc);
-	const levels = options.lod ? await planLevels(doc) : new Map();
 	quantizeMeshes(doc);
+	const levels = options.lod ? await planLevels(doc) : new Map();
 	storeLevels(doc, levels);
+	merged.accessors = dedupAccessors(doc);
 	const spatial = addSpatialData(doc, {
 		blockers: options.blockers,
 		bvhMinTriangles: options.bvh > 0 ? options.bvh : Number.POSITIVE_INFINITY,
@@ -263,7 +275,8 @@ export async function optimizeModel(path, options, encode) {
 		modelBytes: glb.byteLength,
 		textures: records,
 		files,
-		lodMeshes: levels.size,
+		levels: [...levels.values()],
+		merged,
 		spatial,
 		ms: performance.now() - start,
 	});
