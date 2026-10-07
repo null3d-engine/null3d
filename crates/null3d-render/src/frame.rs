@@ -26,6 +26,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
+use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
@@ -615,8 +616,8 @@ pub struct SceneSettings {
     /// Scratch marks of the material ids that objects and batches use, for the release of
     /// destroyed materials' ids.
     used_materials: Vec<bool>,
-    /// The texture that the camera's view draws behind every object, or `Handle::NONE`.
-    background_texture: Handle,
+    /// What the camera's view draws behind every object, over the background color.
+    background: Option<Background>,
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
@@ -683,7 +684,7 @@ impl SceneSettings {
             map_groups: Vec::new(),
             shared_map_units: 0,
             used_materials: Vec::new(),
-            background_texture: Handle::NONE,
+            background: None,
             views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
@@ -1044,20 +1045,16 @@ impl SceneSettings {
         &mut self.textures
     }
 
-    /// The texture that the camera's view draws behind every object, or `Handle::NONE` for the
-    /// background color alone, as in every debug view.
-    pub fn background_texture(&self) -> Handle {
-        if self.debug_view.is_debug() {
-            Handle::NONE
-        } else {
-            self.background_texture
-        }
+    /// What the camera's view draws behind every object, or none for the background color alone,
+    /// as in every debug view.
+    pub fn background(&self) -> Option<Background> {
+        self.background.filter(|_| !self.debug_view.is_debug())
     }
 
-    /// Draws `texture` behind every object in the camera's view, or only the background color
-    /// with `Handle::NONE`.
-    pub fn set_background_texture(&mut self, texture: Handle) {
-        self.background_texture = texture;
+    /// Draws `background` behind every object in the camera's view, or only the background color
+    /// with none.
+    pub fn set_background_source(&mut self, background: Option<Background>) {
+        self.background = background;
     }
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a
@@ -1129,7 +1126,12 @@ impl SceneSettings {
             height: input.canvas.1 as f32,
             frame: input.frame,
             parity,
-            background: self.background_texture,
+            // Only a 2D background takes a layer that the budget may drop; cube textures keep
+            // their levels.
+            background: match self.background.map(|b| b.source) {
+                Some(BackgroundSource::Texture(texture)) => texture,
+                _ => Handle::NONE,
+            },
         })
     }
 

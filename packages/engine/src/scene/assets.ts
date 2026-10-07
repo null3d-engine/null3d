@@ -9,6 +9,7 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
+import { Cubemap } from './background';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { Lut } from './lut';
@@ -243,6 +244,44 @@ export class Assets {
 		const address = this.resolve(url);
 		const blob = await this.file(address, call);
 		return decode(blob, address, options, call, FILE_LIMITS.imageSide);
+	}
+
+	/**
+	 * Downloads six images and makes a `Cubemap` from them, a sky box for `scene.setBackground`, as
+	 * three.js's `CubeTextureLoader` does: the faces toward +X, -X, +Y, -Y, +Z and -Z, in that order,
+	 * each square and of one size, at most 2,048 pixels a side. The images decode off the sketch's
+	 * frames and upload in the frames after the call. A cube map does not light the scene: for
+	 * light, and for a background that blurs, make an environment with `bunx @null3d/cli assets
+	 * env`. Throws E1411, E1412 or E1413 as `loadTexture` does, E1412 also when the faces are not
+	 * square or not of one size, and E1208 when `urls` does not hold six addresses.
+	 */
+	async loadCubemap(urls: readonly (string | URL)[]): Promise<Cubemap> {
+		const call = 'assets.loadCubemap';
+		if (!Array.isArray(urls) || urls.length !== 6)
+			throw new EngineError(
+				'E1208',
+				`${call}() got ${String(urls)}, which takes the addresses of six images: +X, -X, +Y, -Y, +Z and -Z.`,
+			);
+		const limit = Math.min(this.textures.maxSize, CUBE_FACE_LIMIT);
+		const faces = await Promise.all(
+			urls.map(async (url) => {
+				const address = this.resolve(url);
+				const blob = await this.file(address, call);
+				// A face keeps its first row at the top, as three.js uploads a cube texture's images.
+				return decode(blob, address, { flipY: false }, call, limit);
+			}),
+		);
+		const size = (faces[0] as ImageBitmap).width;
+		const odd = faces.findIndex((face) => face.width !== size || face.height !== size);
+		if (odd >= 0) {
+			const face = faces[odd] as ImageBitmap;
+			for (const image of faces) image.close();
+			throw new EngineError(
+				'E1412',
+				`${call}() got a face of ${face.width} x ${face.height} pixels at ${urls[odd]}, after a first face of ${size} x ${(faces[0] as ImageBitmap).height}. Give six square faces of one size.`,
+			);
+		}
+		return new Cubemap(this.textures.fromCubeImages(faces, call), size);
 	}
 
 	/**
@@ -677,6 +716,9 @@ async function loadModule(address: URL, call: string): Promise<typeof import('./
  * after its other header segments, which rarely pass this.
  */
 const HEADER_BYTES = 1 << 20;
+
+/** The largest side of a cube map's faces that every GPU path allows: WebGL2's least cube map size. */
+const CUBE_FACE_LIMIT = 2048;
 
 /**
  * Decodes an image file as `options` ask, or throws E1412. A PNG, JPEG, WebP or AVIF file whose

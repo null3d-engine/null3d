@@ -171,6 +171,48 @@ pub mod environment_value {
     pub const COUNT: u32 = 31;
 }
 
+/// The places of the background's values in the block that `backgroundValues` gives: 32-bit floats
+/// that TypeScript writes before it calls `setBackgroundSource`, as the environment's values come.
+pub mod background_value {
+    /// The factor of the background's light.
+    pub const INTENSITY: u32 = 0;
+    /// An environment's blur, as a roughness from 0 to 1.
+    pub const BLUR: u32 = 1;
+    /// A cube map's or an environment's turn as Euler angles in radians, in the order X, Y, Z.
+    pub const ROTATION: u32 = 2;
+    /// The sky's values, with the names of three.js's `Sky` uniforms: a point toward the sun, then
+    /// one number each.
+    pub const SUN_POSITION: u32 = 5;
+    pub const TURBIDITY: u32 = 8;
+    pub const RAYLEIGH: u32 = 9;
+    pub const MIE_COEFFICIENT: u32 = 10;
+    pub const MIE_DIRECTIONAL_G: u32 = 11;
+    pub const CLOUD_SCALE: u32 = 12;
+    pub const CLOUD_SPEED: u32 = 13;
+    pub const CLOUD_COVERAGE: u32 = 14;
+    pub const CLOUD_DENSITY: u32 = 15;
+    pub const CLOUD_ELEVATION: u32 = 16;
+    pub const TIME: u32 = 17;
+    /// 1 where the sky shows the sun's disc, else 0.
+    pub const SUN_DISC: u32 = 18;
+    /// The values in the block.
+    pub const COUNT: u32 = 19;
+}
+
+/// What `setBackgroundSource` draws behind every object.
+pub mod background_kind {
+    /// Only the background color.
+    pub const NONE: u32 = 0;
+    /// A 2D texture that fills the view.
+    pub const TEXTURE: u32 = 1;
+    /// An environment map, which can blur.
+    pub const ENVIRONMENT: u32 = 2;
+    /// A cube map of six images.
+    pub const CUBEMAP: u32 = 3;
+    /// three.js's analytic sky.
+    pub const SKY: u32 = 4;
+}
+
 pub mod texture_stat {
     /// The GPU bytes that every texture array holds, free layers included.
     pub const MEMORY_BYTES: u32 = 0;
@@ -835,6 +877,37 @@ pub fn typescript() -> String {
                 ("ROTATION", environment_value::ROTATION),
                 ("SH", environment_value::SH),
                 ("COUNT", environment_value::COUNT),
+            ],
+        ),
+        (
+            "BACKGROUND_VALUE",
+            &[
+                ("INTENSITY", background_value::INTENSITY),
+                ("BLUR", background_value::BLUR),
+                ("ROTATION", background_value::ROTATION),
+                ("SUN_POSITION", background_value::SUN_POSITION),
+                ("TURBIDITY", background_value::TURBIDITY),
+                ("RAYLEIGH", background_value::RAYLEIGH),
+                ("MIE_COEFFICIENT", background_value::MIE_COEFFICIENT),
+                ("MIE_DIRECTIONAL_G", background_value::MIE_DIRECTIONAL_G),
+                ("CLOUD_SCALE", background_value::CLOUD_SCALE),
+                ("CLOUD_SPEED", background_value::CLOUD_SPEED),
+                ("CLOUD_COVERAGE", background_value::CLOUD_COVERAGE),
+                ("CLOUD_DENSITY", background_value::CLOUD_DENSITY),
+                ("CLOUD_ELEVATION", background_value::CLOUD_ELEVATION),
+                ("TIME", background_value::TIME),
+                ("SUN_DISC", background_value::SUN_DISC),
+                ("COUNT", background_value::COUNT),
+            ],
+        ),
+        (
+            "BACKGROUND_KIND",
+            &[
+                ("NONE", background_kind::NONE),
+                ("TEXTURE", background_kind::TEXTURE),
+                ("ENVIRONMENT", background_kind::ENVIRONMENT),
+                ("CUBEMAP", background_kind::CUBEMAP),
+                ("SKY", background_kind::SKY),
             ],
         ),
         (

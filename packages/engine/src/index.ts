@@ -87,6 +87,13 @@ export type {
 	LoadTextureOptions,
 	ProgressHandler,
 } from './scene/assets';
+export type {
+	BackgroundOptions,
+	BackgroundSource,
+	Cubemap,
+	SkyBackground,
+	SkyOptions,
+} from './scene/background';
 export type { ColorInput } from './scene/color';
 export type { Effect, EffectOptions } from './scene/effects';
 export type {
