@@ -13,6 +13,13 @@
 //! layers has an array of its own, with exactly its layers. So does a texture in a compressed
 //! format: compatibility mode copies no compressed texels, so its array could never grow.
 //!
+//! WebGL2 gives each shader stage only 16 texture units, so there a standard material's maps do
+//! not take a binding per map slot. They share a few units instead (see
+//! [`TextureStore::shared_map_group`]): maps whose textures share an array and a sampler share a
+//! unit, and the material's row names each map's unit beside its layer. A material whose maps
+//! need more units than there are draws without the maps that come last in
+//! [`MapSlot::SHARING_ORDER`].
+//!
 //! # Images, data and uploads
 //!
 //! A texture's texels come from an image or from data. An image travels to the thread that draws
@@ -77,6 +84,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::frame::{RecordError, address as memory_address, words_as_bytes};
+use crate::materials::MapSlot;
 
 /// The most layers in one texture array: WebGPU's default limit, which the iPad keeps.
 pub const MAX_LAYERS: u32 = 256;
@@ -759,6 +767,52 @@ impl TextureStore {
     /// maps share arrays and samplers share the group. A texture that moves to another array needs
     /// its material's group again.
     pub fn map_set_group(&mut self, maps: &[Handle; MAP_SET_SLOTS]) -> Result<u32, TextureError> {
+        let mut slots = [self.placeholder()?; MAP_SET_SLOTS];
+        for (slot, &map) in slots.iter_mut().zip(maps) {
+            if let Some(pair) = self.map_pair(map) {
+                *slot = pair;
+            }
+        }
+        Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(slots)))
+    }
+
+    /// The bind group of a standard material's maps where they share the group's first `units`
+    /// bindings, as WebGL2's standard material samples them to keep texture units free, with the
+    /// unit of each slot's map. Maps whose textures share an array and a sampler share a unit, and
+    /// the slots take units in [`MapSlot::SHARING_ORDER`]. A live map that finds every unit taken
+    /// by others gets none, and so does a slot without a live map. The group's other bindings hold
+    /// the white texel. Materials whose maps share arrays and samplers in the same order share the
+    /// group.
+    pub fn shared_map_group(
+        &mut self,
+        maps: &[Handle; MAP_SET_SLOTS],
+        units: usize,
+    ) -> Result<(u32, [Option<u8>; MAP_SET_SLOTS]), TextureError> {
+        let mut slots = [self.placeholder()?; MAP_SET_SLOTS];
+        let mut slot_units = [None; MAP_SET_SLOTS];
+        let mut used = 0;
+        for slot in MapSlot::SHARING_ORDER.map(|slot| slot as usize) {
+            let Some(pair) = self.map_pair(maps[slot]) else {
+                continue;
+            };
+            let unit = match slots[..used].iter().position(|&taken| taken == pair) {
+                Some(unit) => unit,
+                None if used < units.min(MAP_SET_SLOTS) => {
+                    slots[used] = pair;
+                    used += 1;
+                    used - 1
+                }
+                None => continue,
+            };
+            slot_units[slot] = Some(unit as u8);
+        }
+        let group = self.ids.first_group + self.group_of_key(GroupKey::Maps(slots));
+        Ok((group, slot_units))
+    }
+
+    /// The array and the sampler of the white texel that bind groups of maps bind where a slot
+    /// has no map, made on first use.
+    fn placeholder(&mut self) -> Result<(u32, u32), TextureError> {
         if !self.is_live(self.placeholder) {
             self.placeholder = self.create(TextureDesc {
                 width: 1,
@@ -772,16 +826,14 @@ impl TextureStore {
             let (texels, _) = self.set_data(self.placeholder, 1, 1)?;
             texels.fill(u32::MAX);
         }
-        let empty = *self.slot(self.placeholder)?;
-        let mut slots = [(empty.array, empty.sampler); MAP_SET_SLOTS];
-        for (slot, &map) in slots.iter_mut().zip(maps) {
-            if let Ok(texture) = self.slot(map)
-                && texture.group != NO_GROUP
-            {
-                *slot = (texture.array, texture.sampler);
-            }
-        }
-        Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(slots)))
+        let empty = self.slot(self.placeholder)?;
+        Ok((empty.array, empty.sampler))
+    }
+
+    /// The array and the sampler that a live map samples, or `None` for a slot without one.
+    fn map_pair(&self, map: Handle) -> Option<(u32, u32)> {
+        let texture = self.slot(map).ok()?;
+        (texture.group != NO_GROUP).then_some((texture.array, texture.sampler))
     }
 
     /// Gives a texture a new image of `width` x `height` pixels, uploaded with the
@@ -1791,6 +1843,53 @@ mod tests {
         assert_eq!(store.group_id(a), store.group_id(b));
         assert_ne!(store.group_id(a), store.group_id(repeat));
         assert_ne!(store.group_id(a), store.group_id(linear));
+    }
+
+    #[test]
+    fn maps_of_one_array_and_sampler_share_a_unit_and_late_maps_lose_theirs() {
+        let mut store = TextureStore::new(IDS, 4096);
+        let color = store.create(desc(64, 64)).unwrap();
+        let emissive = store.create(desc(64, 64)).unwrap();
+        let data = |store: &mut TextureStore, size: u32| {
+            store
+                .create(TextureDesc {
+                    format: format::RGBA8_UNORM,
+                    ..desc(size, size)
+                })
+                .unwrap()
+        };
+        let normal = data(&mut store, 64);
+        let metal_rough = data(&mut store, 64);
+        let occlusion = data(&mut store, 32);
+        let mut maps = [Handle::NONE; MAP_SET_SLOTS];
+        maps[MapSlot::BaseColor as usize] = color;
+        maps[MapSlot::Emissive as usize] = emissive;
+        maps[MapSlot::Normal as usize] = normal;
+        maps[MapSlot::MetalRough as usize] = metal_rough;
+        maps[MapSlot::Occlusion as usize] = occlusion;
+        let (group, units) = store.shared_map_group(&maps, 6).unwrap();
+        let unit = |slot: MapSlot| units[slot as usize];
+        // The sRGB maps share unit 0, the two linear maps of one size unit 1, and the smaller map
+        // takes a unit of its own.
+        assert_eq!(unit(MapSlot::BaseColor), Some(0));
+        assert_eq!(unit(MapSlot::Emissive), Some(0));
+        assert_eq!(unit(MapSlot::Normal), Some(1));
+        assert_eq!(unit(MapSlot::MetalRough), Some(1));
+        assert_eq!(unit(MapSlot::Occlusion), Some(2));
+        assert_eq!(
+            unit(MapSlot::Light),
+            None,
+            "a slot without a map has no unit"
+        );
+        let again = store.shared_map_group(&maps, 6).unwrap();
+        assert_eq!(again, (group, units), "the same maps share the group");
+        // With two units, the maps that come last in the sharing order lose theirs.
+        let (fewer, units) = store.shared_map_group(&maps, 2).unwrap();
+        assert_ne!(fewer, group);
+        assert_eq!(units[MapSlot::BaseColor as usize], Some(0));
+        assert_eq!(units[MapSlot::MetalRough as usize], Some(1));
+        assert_eq!(units[MapSlot::Occlusion as usize], None);
+        assert_eq!(units[MapSlot::Emissive as usize], Some(0));
     }
 
     #[test]

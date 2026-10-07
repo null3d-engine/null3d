@@ -79,10 +79,11 @@ It may name the page's origin in place of `*`. `Cross-Origin-Resource-Policy` al
 A worker that starts from a `blob:` address follows the page's policy. Add these parts to the page's policy, with your CDN's origin:
 
 ```http
-Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://cdn.example.com
+Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; worker-src 'self' blob: https://cdn.example.com; connect-src 'self' https://cdn.example.com
 ```
 
-- `worker-src blob:`: the engine starts each worker from a `blob:` address.
+- `blob:` in `worker-src`: the engine starts each worker from a `blob:` address.
+- The CDN in `worker-src`: Firefox checks the modules that a worker imports, such as your sketch, against `worker-src`.
 - The CDN in `script-src`: the page's and the workers' scripts come from there.
 - The CDN in `connect-src`: the engine downloads its `.wasm` files from there.
 
@@ -90,7 +91,7 @@ When an item is missing, `createEngine` rejects with a code that names it, or a 
 
 | Missing | Error |
 | --- | --- |
-| `blob:` in `worker-src`, or the CDN in `connect-src` | [E1422](../errors/E1422.md), which names the directive |
+| `blob:` or the CDN in `worker-src`, or the CDN in `connect-src` | [E1422](../errors/E1422.md), which names the directive |
 | `Access-Control-Allow-Origin` on a file | [E1423](../errors/E1423.md), which names the CDN |
 | `'wasm-unsafe-eval'` in `script-src` | [E1418](../errors/E1418.md) |
 
