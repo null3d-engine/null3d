@@ -31,12 +31,15 @@ export function docsFiles(root: string): string[] {
 	return walkFiles(root, 'docs', (p) => p.endsWith('.md'));
 }
 
-/** True for a maintainer guide or decision record: Markdown in `.dev/` or `.dev/decisions/`. */
+/**
+ * True for a maintainer guide, a decision record or a file of the record of tested devices:
+ * Markdown in `.dev/`, `.dev/decisions/` or a folder of `.dev/tested-devices/`.
+ */
 export function isGuide(path: string): boolean {
-	return /^\.dev\/(?:decisions\/)?[^/]+\.md$/.test(path);
+	return /^\.dev\/(?:decisions\/|tested-devices\/[^/]+\/)?[^/]+\.md$/.test(path);
 }
 
-/** The maintainer guides and decision records, which follow AGENTS.md's writing rules. */
+/** The maintainer guides, decision records and tested devices, which follow AGENTS.md's writing rules. */
 export function guideFiles(root: string): string[] {
 	return walkFiles(root, '.dev', isGuide);
 }
