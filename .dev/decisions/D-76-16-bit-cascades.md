@@ -1,6 +1,8 @@
 # D-76: 16-bit depth for the shadow cascades
 
-Status: decided. Date: 2026-10-06. Task: M2-R8. Pending: the Automate S25 and Pixel 9 stability rerun with the snap, and the iPad runs. The S25's shadow image tests with Chrome 149 and an older Chrome are pending too.
+Status: decided. Date: 2026-10-06. Task: M2-R8. Pending: the iPad runs, and the S25's shadow image tests with Chrome 149 and an older Chrome.
+
+Summary: The cascades store 16-bit depth and the tiles keep 32-bit floats. Each cascade floors the bias toward the light and the plane margin at 1.5 depth steps, 21.6 mm in S4's last cascade. Each also snaps along the light to whole steps. Without the snap S4's shadows flickered (0.095% of pixels); with it the S25 and Pixel 9 pass. Cascade memory halves: Ultra 256 to 128 MiB, Medium and High 48 to 24 MiB, with the same GPU time.
 
 ## Question
 
@@ -40,6 +42,8 @@ Image tests with 16-bit cascades against the references of 32-bit cascades, for 
 | --- | --- | --- |
 | Mac's GPU | 156 | 156 |
 | SwiftShader | 156 | 156 |
+
+The same tests ran again on 7 October 2026, with the depth snap and with the blend between cascades of D-73. The filter now matches 159 tests, and all 159 passed on each GPU set against the same references.
 
 The contact checks of S4's sun, 16-bit against 32-bit cascades on the Mac's GPU (Chrome 154, 5 October 2026). All 24 shadow checks passed with 16-bit cascades, and all 16 contact checks with 32-bit ones. The gap is the mean light between a box's foot and its shadow, in pixels. The acne is the mean shadow on the lit tops of slabs that cast shadows, in percent. D-16 gives 0.020 and 0.077 pixels for the near and far gaps:
 
@@ -83,13 +87,22 @@ The Mac's GPU gave the same failure, and the depth snap fixed it. The table give
 
 With the snap, S4's edge offset was 0.085 and 0.080 px, and its contact gap 0.030 and 0.033 px. Its acne was 0.032% and 0.009%. All are under their limits. The visual checks ran with `bun run --cwd bench test visual.spec.ts`, and with `NULL3D_SWITCHES=shadowdepth=32` for 32-bit.
 
+The Automate S25 (Chrome 149) and Pixel 9 ran S4 again with the snap and D-73's blend, on 7 October 2026, with the governor off. The run is `20261007-011242-bench`, of the build of commit 1bf8b65d8. Both phones passed on both paths:
+
+| Phone | Stability, WebGPU (limit 0.05%) | Stability, WebGL2 | WebGPU GPU time |
+| --- | --- | --- | --- |
+| Galaxy S25 | 0.000% | 0.000% | 7.63 ms |
+| Pixel 9 | 0.001% | 0.001% | 7.67 ms |
+
+Over both phones and paths, the edge offset was 0.081 to 0.086 px and the contact gap 0.030 to 0.034 px. The acne on flat surfaces was 0.011% to 0.073%. Each page held its target frame rate in every frame. The S25's screen ran at 30 Hz, so its timings are only a guide. The Pixel 9's GPU time is higher than on 5 October (6.36 ms). That run had the governor on and no cascade blend, so the two figures do not compare.
+
 How the data was produced: `bun run test:images -g "shadow|depth-bias|debug-view|vertex-types|ao-|grading|material-maps|outline|skinning|s4|s5|s1"`, with `CI=1` for SwiftShader. The contact checks ran with `bunx playwright test shadow-contact.spec.ts`, once as built and once with `NULL3D_SWITCHES=shadowdepth=32`.
 
 ## Decision
 
 - The cascades store `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2, on every preset. The tiles stay `depth32float`.
 - In each cascade, the receiver's bias toward the light is at least 1.5 steps of stored depth, in meters, before the one-texel cap. The receiver plane's margin is at least 1.5 steps of depth. The shader gets the step in the shadow uniform's spare `kernel.w` and the depth per meter from the cascade's matrix, so the block keeps its size. Both lookups of a receiver in the band between two cascades take each cascade's own floor. A step of 1.5 covers the half step of rounding on each side with room to spare. In S4's last cascade the floor is 21.6 mm. The one-texel cap there is 23 cm, so the cap never cuts the floor.
-- Each cascade's box snaps along the light to whole 16-bit steps, as it snaps across the light to whole texels. Without the snap, the steps slid with the camera, and S4's stability check failed on the Automate S25 and Pixel 9. The Mac's stability table under Data gives the figures with the snap.
+- Each cascade's box snaps along the light to whole 16-bit steps, as it snaps across the light to whole texels. Without the snap, the steps slid with the camera, and S4's stability check failed on the Automate S25 and Pixel 9. With it, both phones pass. The Mac's stability table under Data gives the figures with the snap.
 - `?shadowdepth=32` keeps 32-bit cascades, and the `-depth32` bench pages use it, so a device can time the two in one session.
 - WebGPU reads the cascades with `textureGather` through a plain sampler, not with the comparison sampler. So the Adreno comparison fault of decision 28 touches only the tiles there, and the format change does not widen it. WebGL2 reads the cascades through the comparison sampler, as before.
 
@@ -97,4 +110,4 @@ How the data was produced: `bun run test:images -g "shadow|depth-bias|debug-view
 
 - `crates/null3d-render/src/shadows.rs` holds `CascadeDepth` and `CasterPasses`. Each caster bucket has a pipeline for the cascades and one for the tiles, each only while that kind of shadow is on ([implementation notes](../implementation-notes.md#shadows)).
 - [Shadows](../../docs/concepts/shadows.md#bias) and [Quality presets](../../docs/concepts/quality-presets.md#the-settings-of-each-preset) give the format, the floor and the memory of each preset.
-- Pending device runs: S4 and S2 with 3 cascades, each page against its `-depth32` twin. They run on the iPad and the Automate S25 and Pixel 9, on WebGPU and WebGL2. The shadow image tests also run on the S25 with Chrome 149 or later and, if BrowserStack offers one, an older Chrome. Decision 28 adds a guard only if the older Chrome draws wrong shadows.
+- Pending device runs: S4 on the iPad, each page against its `-depth32` twin, on WebGPU and WebGL2. The shadow image tests also run on the S25 with Chrome 149 or later and, if BrowserStack offers one, an older Chrome. Decision 28 adds a guard only if the older Chrome draws wrong shadows.

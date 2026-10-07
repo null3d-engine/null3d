@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03. Task: M2-A2.
 
+Summary: A worker of the loader's own parses glTF files and decodes their images, loaded with the first file. A prefab is a template that `instantiate` creates with one core call and one batch of commands. A model's instance batches share one set of rows through batch parts. Ten sample models match three.js's `GLTFLoader` by its image rule, two under limits with reasons.
+
 ## Question
 
 `assets.loadGltf(url)` returns a prefab: a template whose meshes, materials and textures exist once on the GPU. Where does the file get parsed, so that no frame waits for it? How does `scene.instantiate` create a model's objects in one batch? How do `scene.createInstances(prefab, count)` and `scene.clone(object)` copy a model, or a tree of objects? And what does each part of a glTF file become, where the engine and three.js's `GLTFLoader` differ?

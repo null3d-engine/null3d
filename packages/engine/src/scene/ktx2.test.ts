@@ -1,15 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { transcodeTestFiles } from '../../../../tools/lib/basis-transcoder';
+import BASIS, { type BasisModule } from '../../vendor/basis/basis_transcoder.mjs';
 import {
 	CAPABILITY_MULTI_DRAW,
 	CAPABILITY_TEXTURE_ASTC,
 	CAPABILITY_TEXTURE_BC,
 	CAPABILITY_TEXTURE_ETC2,
 } from '../generated/core';
+import { serveTasks, type TaskAnswer, type TaskRequest, type TaskSource } from '../workers/tasks';
 import {
 	type Ktx2Header,
 	type Ktx2Target,
@@ -29,18 +30,52 @@ const TEXTURES = join(ENGINE, '../../tests/pages/assets/textures');
 const file = (name: string) => new Uint8Array(readFileSync(join(TEXTURES, `${name}.ktx2`)));
 
 /**
- * The files of the official Basis Universal v2.50 build (tag v2_50, commit 9bebe16, the folder
- * webgl/transcoder/build), by SHA-256. The engine ships them unchanged.
+ * The engine's build of the Basis Universal v2.50 transcoder (tag v2_50, commit 9bebe16), which
+ * tools/build-basis-transcoder.ts makes with Emscripten 4.0.15, by SHA-256.
  */
-const OFFICIAL_BUILD = {
-	'basis_transcoder.js': '720dd9bd09c7cada6d87f1b7b70cec713df04da88cd641ac3212559353834dc8',
-	'basis_transcoder.wasm': 'a0f65d4a30ecb3269d01ead7d0a3477d2b0208146d083625a90623f473f6c139',
+const ENGINE_BUILD = {
+	'basis_transcoder.mjs': '137585ecc38fd9ec6b0e9ba327424764f309e032e5ec286ea30db031b2151636',
+	'basis_transcoder.wasm': '104b8d3804a1d2f832d986b7657ab153d6635d27275a0fcc56d26a9767ad1e4f',
 };
 
-/** The transcoder in Bun, as its official build loads under Node. */
-async function loadBasis() {
-	const require = createRequire(import.meta.url);
-	const basis = await require(join(VENDOR, 'basis_transcoder.js'))({
+/**
+ * What the official v2.50 build (the folder webgl/transcoder/build) writes for each test file and
+ * each format that the engine asks for, every mip level in turn, by SHA-256.
+ */
+const OFFICIAL_OUTPUT: Record<string, string> = {
+	'quarters-etc1s.ktx2/cTFASTC_4x4_RGBA':
+		'fbeb66dd5d9d269870472622c85a96c8af43840f8f41c35bbb53a4ec2de2b53c',
+	'quarters-etc1s.ktx2/cTFBC7_RGBA':
+		'2ca4314aa94054aff3f96cb1259de822d0a311bea102bc51e599bd60cdfc94df',
+	'quarters-etc1s.ktx2/cTFETC1_RGB':
+		'04d6fe88b23c72988da9d2c8640eeecfc3e56a829680f4d20cb0fdb00e3254ca',
+	'quarters-etc1s.ktx2/cTFETC2_RGBA':
+		'ed4e3b4e3a55ab31413f94e239dbc9b28e54d8f04b3d74840f5d38901e9b3aa2',
+	'quarters-etc1s.ktx2/cTFRGBA32':
+		'dd3b6698b71e639ed2fa1659c710f24624813f92dc129c2b9d1dec3ae62ff66f',
+	'quarters-uastc.ktx2/cTFASTC_4x4_RGBA':
+		'c6198fe79470251443477568f60d7b7d930462a50772a2a4ec6c633a9055b772',
+	'quarters-uastc.ktx2/cTFBC7_RGBA':
+		'ed962d0d9da70f09fdd8c6a08d2761396638527f9b1667169eb0c3782ef4b5dd',
+	'quarters-uastc.ktx2/cTFETC1_RGB':
+		'a4981197bf8d0539fe772baf07464297e393ee9c9ee3c68a7eef4e3fe86cefb8',
+	'quarters-uastc.ktx2/cTFETC2_RGBA':
+		'8e84364535054dba79a4604b2071e9e29171df19e3816dc036324ba0368e807e',
+	'quarters-uastc.ktx2/cTFRGBA32':
+		'0fb254e628dee6349b7a0a7b57a728f866a4a8a3f7f813ed81a452bf7149b753',
+	'ramp-uastc.ktx2/cTFASTC_4x4_RGBA':
+		'352185a692895adea6dbf04d3f5aeaf0728de08a2ecd4c18fff4d6599bbf6576',
+	'ramp-uastc.ktx2/cTFBC7_RGBA': '66777f7be4dc84c85a37785a1021ab7872e5cfa96933349509ce1d84ca62c5ec',
+	'ramp-uastc.ktx2/cTFETC1_RGB': 'cd9b2b21d37219fe77efdcaf141869b0efec03f741a83546436f81cffb1b1f7d',
+	'ramp-uastc.ktx2/cTFETC2_RGBA':
+		'd1139e4ea650943d94e310b1d5db742bf7c8e07217b2854bfe0171a6e3f9fc6a',
+	'ramp-uastc.ktx2/cTFRGBA32': '3502ba9658e36663c5c4340978ebe15caa25bc15e12a218c0d504389136d3927',
+};
+
+/** The transcoder in Bun, with the calls that only these tests make. */
+// biome-ignore lint/suspicious/noExplicitAny: the module's types cover only what the engine calls
+async function loadBasis(): Promise<any> {
+	const basis = await (BASIS as unknown as (options: object) => Promise<BasisModule>)({
 		wasmBinary: readFileSync(join(VENDOR, 'basis_transcoder.wasm')),
 	});
 	basis.initializeBasis();
@@ -262,48 +297,63 @@ describe('the transcoder', () => {
 		}
 	});
 
-	test("the worker transcodes every level into one buffer, and names each failure's stage", async () => {
-		// The worker is a classic script: it runs here with a stand-in for its global scope.
-		const posted: { id?: number; texels?: ArrayBuffer; stage?: string; error?: string }[] = [];
-		const scope: Record<string, unknown> = {
-			postMessage: (message: (typeof posted)[number]) => posted.push(message),
+	test("the task transcodes every level into one buffer, and names each failure's stage", async () => {
+		const module = await WebAssembly.compile(readFileSync(join(VENDOR, 'basis_transcoder.wasm')));
+		const answers: TaskAnswer[] = [];
+		const source: TaskSource = {
+			onmessage: null,
+			postMessage: (answer) => answers.push(answer),
 		};
-		const require = createRequire(import.meta.url);
-		const importScripts = (url: string) => {
-			scope.BASIS = require(new URL(url).pathname);
-		};
-		const source = readFileSync(join(ENGINE, 'src/workers/transcoder-worker.js'), 'utf8');
-		new Function('self', 'importScripts', source)(scope, importScripts);
-		const send = (data: unknown) =>
-			(scope.onmessage as (event: { data: unknown }) => void)({ data });
-		const answer = async (count: number) => {
-			while (posted.length < count) await new Promise((resolve) => setTimeout(resolve, 5));
-			return posted[count - 1];
-		};
-		send({ glue: pathToFileURL(join(VENDOR, 'basis_transcoder.js')).href });
-		send({
-			module: await WebAssembly.compile(readFileSync(join(VENDOR, 'basis_transcoder.wasm'))),
-		});
+		const tasks = serveTasks(source);
+		const send = (request: TaskRequest) =>
+			source.onmessage?.(new MessageEvent('message', { data: request }));
 		const uastc = file('quarters-uastc');
-		send({ id: 1, file: uastc.buffer, format: 'cTFASTC_4x4_RGBA', levels: 7, layers: 1 });
-		expect((await answer(1))?.texels?.byteLength).toBe(
+		send({
+			id: 1,
+			task: 'ktx2',
+			modules: [['basis', module]],
+			input: { file: uastc.buffer, format: 'cTFASTC_4x4_RGBA', levels: 7, layers: 1 },
+		});
+		const broken = file('quarters-etc1s').slice(0, 300);
+		send({
+			id: 2,
+			task: 'ktx2',
+			input: { file: broken.buffer, format: 'cTFETC1_RGB', levels: 7, layers: 1 },
+		});
+		send({ id: 3, task: 'draco', input: {} });
+		await tasks.whenIdle(() => answers.length === 3);
+		const byId = (id: number) => answers.find((answer) => answer.id === id);
+		expect(((byId(1) as { output: ArrayBuffer }).output as ArrayBuffer).byteLength).toBe(
 			transcodedBytes('astc-4x4-unorm', 64, 64, 7, 1),
 		);
-		const broken = file('quarters-etc1s').slice(0, 300);
-		send({ id: 2, file: broken.buffer, format: 'cTFETC1_RGB', levels: 7, layers: 1 });
-		expect(await answer(2)).toEqual({
+		expect(byId(2)).toEqual({
 			id: 2,
-			stage: 'transcode',
-			error: 'the transcoder could not start on the file',
+			failed: { stage: 'run', message: 'the transcoder could not start on the file' },
+		});
+		expect(byId(3)).toEqual({
+			id: 3,
+			failed: { stage: 'load', message: 'the engine has no task draco' },
 		});
 	});
 
-	test('is the official Basis Universal v2.50 build, unchanged', () => {
-		for (const [name, sha256] of Object.entries(OFFICIAL_BUILD))
+	test('is the build that tools/build-basis-transcoder.ts makes, and makes no code from strings', () => {
+		for (const [name, sha256] of Object.entries(ENGINE_BUILD))
 			expect(
 				createHash('sha256')
 					.update(readFileSync(join(VENDOR, name)))
 					.digest('hex'),
 			).toBe(sha256);
+		// A Content-Security-Policy without 'unsafe-eval' blocks code made from strings.
+		expect(readFileSync(join(VENDOR, 'basis_transcoder.mjs'), 'utf8')).not.toMatch(
+			/new Function|\beval\(/,
+		);
+	});
+
+	test("writes the official build's bytes for every test file and every format the engine uses", async () => {
+		const written = await transcodeTestFiles(
+			join(VENDOR, 'basis_transcoder.mjs'),
+			join(VENDOR, 'basis_transcoder.wasm'),
+		);
+		expect(Object.fromEntries(written)).toEqual(OFFICIAL_OUTPUT);
 	});
 });

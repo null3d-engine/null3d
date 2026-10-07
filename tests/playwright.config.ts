@@ -18,11 +18,14 @@ const launchOptions = browserOptions(environment);
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
 /** The main project's tests: every test file but those that only the other projects run. */
-const MAIN_PROJECT = { testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts'] };
+const MAIN_PROJECT = {
+	testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts', 'cdn.spec.ts'],
+};
 /** The production build project's tests, and the server that serves its pages. */
 const PRODUCTION_BUILD = {
 	testMatch: [
 		'content-security-policy.spec.ts',
+		'cdn.spec.ts',
 		'engine.spec.ts',
 		'errors.spec.ts',
 		'sketch-shaders.spec.ts',
@@ -72,7 +75,8 @@ export default defineConfig({
 		// that the plugin compiles into a sketch's bundle, and the KTX2 loader and transcoder, the glTF
 		// loader and its worker, the stats overlay and the frame figures, which the build ships as
 		// files of their own. The start under a strict Content-Security-Policy runs only here, since
-		// only a bundler turns small files into the inline addresses that such a policy blocks.
+		// only a bundler turns small files into the inline addresses that such a policy blocks. So does
+		// the start with the engine's files on another origin, as from a CDN, which needs built files.
 		{ name: 'production build', ...PRODUCTION_BUILD, grepInvert: RUNS_ALONE },
 		// The resize tests, on a high-density screen. Playwright's emulated pixel ratio does not reach
 		// the size in device pixels that the browser reports for an element (Playwright issue 18591),
