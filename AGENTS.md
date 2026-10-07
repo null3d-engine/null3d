@@ -89,7 +89,7 @@ Code review enforces these rules.
 4. No thread waits synchronously for another on the critical path, and no worker makes a synchronous call to the main thread.
 5. The sketch worker and the render worker wait with `Atomics.waitAsync` (a `MessageChannel` message on Firefox before 145). Only job workers block with `Atomics.wait`.
 6. The WebGPU path stays within WebGPU's default limits. Where the engine supports compatibility mode, it also stays within that mode's lower limits (the portable budget in [GPU tiers and backends](docs/concepts/backends.md#the-portable-budget)). Anything beyond these needs a capability flag and a fallback. For example, compute workgroups use at most 128 invocations.
-7. Per-instance data reaches vertex shaders through vertex buffers, never through storage buffers.
+7. Per-instance data reaches vertex shaders through vertex buffers, never through storage buffers. The one exception is the `?instances=index` test switch on core WebGPU, which [D-23](.dev/decisions/D-23-index-instances.md) measures.
 8. Indirect draws keep first-instance at 0. Buckets select their data with vertex-buffer offsets.
 9. Dynamic buffer offsets align to 256 bytes.
 10. WGSL uses only the three language features that Chrome, Safari and Firefox all report: `packed_4x8_integer_dot_product`, `pointer_composite_access` and `readonly_and_readwrite_storage_textures`. Any other language feature needs a capability flag and a fallback. Flat interpolation uses `@interpolate(flat, either)`.

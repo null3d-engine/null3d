@@ -13,6 +13,14 @@
 //! source, and copies the moved matrix into the compacted instance buffer, so the vertex shader
 //! draws positions relative to the view's camera.
 //!
+//! A bucket whose pipelines read their instances by index (see
+//! [`super::RendererConfig::index_instances`]) gets no copy: the shader writes each visible
+//! source's index into the bucket's slice, after the copies in the same buffer, so culling binds
+//! no storage buffer more. The view's index group then gives those pipelines' vertex shaders the
+//! view's culling parameters, for the cells' offsets, the scene's matrices, and the bucket tables
+//! of the layout that the view draws. It binds the same buffers as the culling group, so it is made
+//! again whenever that group is.
+//!
 //! When the scene's sources lie in more than one grid cell, the CPU first finds the cells whose
 //! still sources a view can see (see [`crate::cells`]). The view's parameters then hold the runs of
 //! the cell order that it culls: the visible cells' runs and the moving sources' run. Its dispatch
@@ -122,7 +130,13 @@ pub(super) struct Culling {
     offsets: CellOffsets,
     /// True once the placeholder of views without a pyramid exists.
     placeholder: bool,
+    /// True when each view has an index group, for the pipelines that read their instances by
+    /// index.
+    index_instances: bool,
 }
+
+/// The buffers of a view's index group, one per binding.
+const INDEX_BINDINGS: usize = 4;
 
 /// How a view's culling dispatch culls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +180,14 @@ fn occlusion_words(frame: &ViewFrame, levels: &Levels, draws: u32) -> [u32; OCCL
 }
 
 impl Culling {
+    /// The culling passes, with an index group for each view with `index_instances`.
+    pub(super) fn new(index_instances: bool) -> Self {
+        Self {
+            index_instances,
+            ..Self::default()
+        }
+    }
+
     /// True when a view culls in two phases.
     pub(super) fn occludes(&self, view: ViewId) -> bool {
         self.views
@@ -239,7 +261,7 @@ impl Culling {
             (
                 ids::visible(view),
                 &mut buffers.visible,
-                layout.drawable().max(1) * sizes::INSTANCE_STRIDE,
+                layout.compacted_bytes(),
                 usage::VERTEX | usage::STORAGE,
             ),
             (
@@ -291,6 +313,31 @@ impl Culling {
                 ]);
             }
             list.push(Op::CreateBindGroup, &entries)?;
+            if self.index_instances {
+                let mut entries = [0u32; 3 + INDEX_BINDINGS * 5];
+                entries[..3].copy_from_slice(&[
+                    ids::index_group(view),
+                    bind_layout::INSTANCE_INDEX,
+                    INDEX_BINDINGS as u32,
+                ]);
+                let buffers = [
+                    ids::cull_params(view),
+                    ids::MATRICES,
+                    bucket_table,
+                    bucket_records,
+                ];
+                for (binding, buffer) in buffers.into_iter().enumerate() {
+                    let at = 3 + binding * 5;
+                    entries[at..at + 5].copy_from_slice(&[
+                        binding as u32,
+                        resource_kind::BUFFER,
+                        buffer,
+                        0,
+                        0,
+                    ]);
+                }
+                list.push(Op::CreateBindGroup, &entries)?;
+            }
         }
         Ok(())
     }

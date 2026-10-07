@@ -148,6 +148,7 @@ fn query_frame_allocations(jobs: &JobSystem) -> u64 {
             scene: &scene,
             batches: &batches,
             meshes: &BoxMesh,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
         if frame < 4 {
