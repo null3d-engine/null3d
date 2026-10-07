@@ -9,7 +9,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `docs/` | The user documentation as Markdown, one page per ID, with status front matter. It ships inside `@null3d/engine`. |
 | `docs/data/threejs-mapping.json` | The single source of the three.js to null3D mapping |
 | `skills/` | Agent skills for building with null3D and for porting three.js apps (the source) |
-| `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
+| `.claude/skills/` | A generated copy of `skills/` for Claude Code, which `bun install` writes. Git does not keep it. Never edit it. |
 | `crates/` | The Rust crates: core, GPU layer, renderer, shaders, the WebAssembly entry point, and the modules that build tools load: the shader compiler and the asset tool's formats |
 | `packages/` | npm packages: `engine`, `vite-plugin`, `controls`, and `cli`, which is the `null3d` command. Code in the repository reads their TypeScript source, and a pack builds their JavaScript, as [Releases](.dev/releases.md#the-npm-packages) says |
 | `tests/` | Browser tests: test pages, the image test manifest and its reference images, the Playwright tests and the real-browser runner |
@@ -23,7 +23,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 
 | Command | Use |
 | --- | --- |
-| `bun install` | Install the tools and set up the git hooks |
+| `bun install` | Install the tools, set up the git hooks and the git filter for generated sections, and write the generated files |
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, the shader compiler for the Vite plugin, and the asset tool's formats for the command-line tool. Print their sizes and the sizes of the engine's JavaScript in a production build |
 | `bun run build:check-size` | Build, then compare each file's size after Brotli compression with main's build. Fail when a file grew more than 2% and by 64 bytes or more, and no `Size-Growth:` trailer explains it. `--base <ref>` compares with another commit |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
@@ -50,12 +50,12 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run dev` | Serve the test pages, the benchmark pages and the demos with the isolation headers on port 5173, or on the port that `NULL3D_PORT` names |
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
-| `bun run docs` | Regenerate placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, and the mapping page and copies |
-| `bun run docs:check` | Check the API reference's doc comments, front matter, generated files and links, that this table lists every command, and that every decision record has a title, a status and a summary under its own number |
+| `bun run docs` | Write the generated docs: placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, the tables of the quality presets page and of tested devices, and the mapping page and copies. Git keeps none of them |
+| `bun run docs:check` | Write the generated files, then check the API reference's doc comments, front matter and links, that git keeps no generated file, that this table lists every command, and that every decision record has a title, a status and a summary under its own number |
 | `bun run decisions` | List the decision records, each with its status and summary, read from the records themselves |
 | `bun run docs:style` | Check the writing rules in all published Markdown |
-| `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
-| `bun run skills:check` | Check the skills without syncing |
+| `bun run skills` | Write `.claude/skills/` from `skills/`, then check the skills |
+| `bun run skills:check` | Check the skills without writing the copy |
 | `bun run samples:fetch` | Download the sample content at the pinned commit into the cache that every copy of the repository shares, and check each file's SHA-256. `--verify` hashes the cached copy again, and `--pin <commit or branch>` pins another commit. [Sample content](.dev/sample-content.md) says how tests use it |
 | `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules, when they are missing or out of date: the main module, the engine's shaders in one module for each GPU path and each value of the bits a device fixes, and one module for each GPU path of each shader that loads on first use. Git ignores the modules, and the build, the type check, the tests and the dev server run this step first |
 | `bun run check` | Lint and format check (Biome), then the image test references: each manifest test must have the references of both sets, and each reference must belong to a test |
@@ -138,8 +138,8 @@ The owner set these rules on 4 October 2026. [D-52](.dev/decisions/D-52-intent-p
 ## Docs and skills stay in sync
 
 1. One source per fact. The API reference comes from TypeScript doc comments, the three.js mapping from `docs/data/threejs-mapping.json`, and the page inventory from `tools/lib/docs.ts`. Skills link to docs pages by ID and do not copy facts.
-2. Generated files are committed. Run `bun run docs` and `bun run skills` after changing a source, and stage what they write. The shader modules (`packages/engine/src/generated/shaders.ts` and the device modules `shaders-*.js` beside it) are the exception, because git ignores them. Every command that reads them builds them first when they are missing or out of date. The engine's npm package gets them when it is packed.
-3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. When you write the real page, remove the marker. The generator then leaves the page alone, apart from its API reference (rule 5).
+2. Git keeps no generated file ([D-105](.dev/decisions/D-105-generated-files-out-of-git.md)). Git ignores whole generated files, such as `.claude/skills/`, the error pages and the placeholder pages. On a written page, a git filter empties each generated section when you stage the page, so the API reference and the page list never clash in a merge. `bun install` sets up the filter and writes the files. The git hooks write them again after each checkout, merge or rebase, and before each commit. Run `bun run docs` or `bun run skills` to see a change at once. The shader modules are generated too, and every command that reads them builds them first. The npm packages and each release's tagged commit hold every generated file. The constants that TypeScript shares with Rust (`packages/engine/src/generated/core.ts` and `gpu.ts`) are the exception: git keeps them, and the Rust tests write them.
+3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. Git ignores each placeholder page by name in `.gitignore`. When you write the real page, remove the marker and the page's line in `.gitignore`. The generator then leaves the page alone, apart from its API reference (rule 5).
 4. Every docs page has front matter: `id`, `title`, `status` (`planned`, `experimental`, `stable` or `generated`), `since` and `summary`.
 5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. On a written API page, the reference goes between the `<!-- null3d:api:start -->` and `<!-- null3d:api:end -->` markers.
 6. The skills give each call the first version that has it, such as (0.2) or (after 1.0). A part of the current version that is not built yet says "later in 0.1". A TypeScript code block in a skill that exports `defineSketch(...)` is a complete sketch. The unit tests (`bun run test`) type check each one against the engine. The browser tests (`bun run test:browser`) draw each one in hold mode on every GPU tier. The tests leave out a sketch under a heading that names a later version. Remove the version from the heading when the feature merges.
@@ -180,7 +180,7 @@ Before each commit:
 
 - Biome (errors only) and the TypeScript check.
 - When Rust files or Cargo settings are staged: `cargo fmt --check` and Clippy, with warnings treated as errors.
-- Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes. It also fails when a public export lacks the doc comments that the API reference needs.
+- The generators run clean. The hook writes the docs and the skills copy, and fails when a public export lacks the doc comments that the API reference needs. It also fails when git would keep a generated file, or a staged page holds its generated sections because the git filter is missing.
 - Every command in `package.json` is in the table under "Commands", and every command that this file, the README and the guides in `.dev/` run with `bun run` exists.
 - Every decision record starts with its title, then a `Status:` and a `Summary:` paragraph, and no two records share a number.
 

@@ -2,8 +2,8 @@
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
 // pages, the tables of the quality presets page, the shader library's page, the three.js mapping
 // page with the porting skill's copies of the mapping, and the tables of the record of tested
-// devices. Generation is computed in memory
-// first, so the same code writes the files and checks that the committed files are current.
+// devices. Git keeps none of this output (tools/lib/generated.ts). Generation is computed in memory
+// first, so the check reads the same content that the generator writes.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
@@ -561,13 +561,6 @@ export function writeGeneratedDocs(root: string, files: Map<string, string>): st
 	return written;
 }
 
-/** Paths in `expected` whose file content on disk differs from the expected content. */
-export function staleFiles(root: string, expected: Map<string, string>): string[] {
-	return [...expected]
-		.filter(([path, content]) => readIfExists(root, path) !== content)
-		.map(([path]) => path);
-}
-
 /** Problems with one page's front matter, for the page at `path`. */
 export function frontMatterProblems(path: string, text: string, inventory: Set<string>): string[] {
 	let data: Record<string, unknown> | undefined;
@@ -601,8 +594,9 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 
 /**
  * Every problem with the docs: exports the API reference cannot show, library items without doc
- * comments, stale generated files, missing pages, bad front matter, broken links, and files of the
- * record of tested devices that break its rules.
+ * comments, missing pages, bad front matter, broken links, and files of the record of tested
+ * devices that break its rules. Generated files count with the content the generator gives them
+ * now, so the check needs no generated file on disk.
  */
 export function checkDocs(root: string): string[] {
 	const problems: string[] = [];
@@ -611,24 +605,26 @@ export function checkDocs(root: string): string[] {
 		const api = readApi(root);
 		problems.push(...referenceProblems(api), ...libraryProblems(root));
 		generated = generateDocs(root, api);
-		for (const path of staleFiles(root, generated))
-			problems.push(`${path} is out of date: run bun run docs`);
 		problems.push(...readRecord(recordFiles(root)).problems);
 	} catch (e) {
 		problems.push((e as Error).message);
 	}
+	const linked = linkedFiles(root);
+	for (const [path, content] of generated)
+		if (linked.has(path) || path.startsWith('docs/')) linked.set(path, content);
 	const inventory = new Set(PAGES.map((p) => p.id));
 	for (const page of PAGES) {
-		if (!existsSync(join(root, pagePath(page.id))))
-			problems.push(`${pagePath(page.id)} is missing: run bun run docs`);
+		const path = pagePath(page.id);
+		if (!generated.has(path) && !existsSync(join(root, path)))
+			problems.push(`${path} is missing: run bun run docs`);
 	}
-	for (const path of docsFiles(root)) {
-		const text = readIfExists(root, path) ?? '';
+	for (const [path, text] of linked) {
+		if (!path.startsWith('docs/') || !path.endsWith('.md')) continue;
 		problems.push(...frontMatterProblems(path, text, inventory));
 		if (/^status: generated$/m.test(text) && !generated.has(path)) {
 			problems.push(`${path} is marked generated, but nothing generates it any more: delete it`);
 		}
 	}
-	problems.push(...checkLinkTree(linkedFiles(root), (p) => existsSync(join(root, p))));
+	problems.push(...checkLinkTree(linked, (p) => generated.has(p) || existsSync(join(root, p))));
 	return problems;
 }

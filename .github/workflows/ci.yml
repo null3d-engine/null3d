@@ -56,10 +56,11 @@ jobs:
         with:
           name: page-wasm
 
-      - name: Generated files are committed
+      # Git keeps no generated file (D-105). The install step wrote them before the shader modules
+      # arrived, so this writes them again, and fails when a generator changed a file that git keeps.
+      - name: The generators change no file that git keeps
         run: |
-          bun run docs
-          bun tools/skills.ts sync
+          bun tools/generate.ts
           git status --porcelain
           test -z "$(git status --porcelain)"
 
