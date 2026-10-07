@@ -67,13 +67,13 @@ The collection runs only on the heap of the thread that asked. The page and its 
 
 The merge queue's Safari failed `frame-restarts-low-latency` on 7 October 2026 (run 37596224427). The room fell from 10 (the count's cap) to 8 after 43 starts in frames. It fell to 7 after 43 more. That second round lost no more than a round may keep. But the total fall of 3 was more than the 2 that the check put down to lost address space.
 
-A leak in the engine loses room in every round, since each of the 43 engines would keep its memory. Here the second round held the room. So the fall came once, from what Safari kept. Two causes fit, and neither is the engine's. Safari can keep what a removed frame reaches, as above. And a dropped memory that held one of Safari's 8 fast slots can stay held while the page keeps asking for memory ([D-94](D-94-memory-retry-window.md#open)).
+A leak in the engine loses room in every round, since each of the 43 engines would keep its memory. Here the second round held the room. So the fall came once, from what Safari kept, such as what a removed frame reaches, as above. That is not the engine's.
 
 So in `frame-restarts-*`, a fall that the second round held is now a note, as held room is in `frame-destroyed-restarts-*`. Room that the second round loses too still fails, and so does a start or a stop that fails. The restarts on the page keep the old rule. Their engines stop with no frame, so a fall there points at the engine.
 
 ### Every runner page runs a few pages
 
-Where the runner tool opens runner pages, a runner page now also hands the run to a new one after 6 pages. It does the same around a page of its own. Each engine start in Safari can take one of the 8 fast slots that a Safari process has for its WebAssembly memories. Safari can keep a dropped one held while later pages ask for memory ([D-94](D-94-memory-retry-window.md#open)). The merge queue's Safari runs failed late in their long runs. They hit E1109 and held room, and on 7 October 2026 a lost WebGL2 context on S1 (run 37593573711). A new runner page starts with none of what the pages before it kept. Six pages stay below the 8 slots, even when every page leaves one held. Pages that a runner page only skips do not count.
+Where the runner tool opens runner pages, a runner page now also hands the run to a new one after 6 pages. It does the same around a page of its own. Memory that earlier pages left held builds up in one Safari process. It can be what a removed frame reaches, a worker that has not ended yet, or a memory dropped on another thread (above). Each such memory costs up to 4 GiB of the area when it took one of the 8 fast slots of a Safari process ([D-94](D-94-memory-retry-window.md#open)). The merge queue's Safari runs failed late in their long runs. They hit E1109 and held room, and on 7 October 2026 a lost WebGL2 context on S1 (run 37593573711). A new runner page starts with none of what the pages before it kept. Six pages stay below the 8 fast slots, even when every page leaves a memory held. Pages that a runner page only skips do not count.
 
 ### A Safari page that fails for held memory runs once more
 
@@ -87,9 +87,10 @@ Three guards keep memory that Safari holds from failing the Safari runs, while a
 
 | Guard | What it does | Why |
 | --- | --- | --- |
-| A new runner page every 6 pages | A runner page hands the run to a new one after 6 pages that it ran, and around each page that runs in a runner page of its own | A Safari process has 8 fast slots, and each engine start can take one. A new runner page inherits nothing that the pages before it kept |
+| A new runner page every 6 pages | A runner page hands the run to a new one after 6 pages that it ran, and around each page that runs in a runner page of its own | Memory that earlier pages left held builds up in one Safari process. A new runner page inherits none of it |
 | A fall that the second round held is a note | In `frame-restarts-*`, as in `frame-destroyed-restarts-*`, room held once is a note; a loss in the second round fails | A leak in the engine loses room in every round |
 | One more run in a new runner page | In Safari, a page that fails with E1109, "Out of memory", E1302 or room that did not come back runs once more, and fails only if it fails again | The page's failure then comes from what earlier pages left, and the rerun proves it. Each rerun prints as RERUN and goes into the results |
 
 The proof, on 7 October 2026: CI run 37603199761 ran 4 copies of each Safari shard with all three guards. All 8 jobs passed, with no rerun, and each opened 30 to 33 runner pages. The merge queue's Safari jobs then passed 2 of 2 (run 37604797713). On the owner's Mac, the whole Safari plan passed 965 of 966 pages with the first two guards. The one failure was `image-vertex-formats-compat-compat-single-threaded`: 6 pixels differed from the first thread mode's image. It passed 10 of 10 in 5 more runs, and no earlier run shows it. CI's Safari has no WebGPU, so it skips that page.
 
+A later test showed that the 60 s hold of a dropped fast-slot memory came from the test page itself, not from Safari ([D-94](D-94-memory-retry-window.md#open)). The guards stay, for the other causes above.

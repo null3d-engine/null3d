@@ -431,6 +431,36 @@ export async function probeWorker(
 	};
 }
 
+/**
+ * The probe worker's answer that the page's engine starts share. Firefox makes a new WebGL2
+ * context wait for the WebGL work that other contexts have queued, such as a shader link. On a
+ * software renderer an engine's links take seconds, so a start's probe can outlast its time
+ * limits while another engine on the page starts. A worker's abilities hold for the page's life,
+ * so one full answer serves every later start. A failure is not kept.
+ */
+let pageProbe: Promise<WorkerProbe | WorkerProbeFailure> | undefined;
+
+/**
+ * The probe worker's answer for the page: the kept answer, the answer of a probe that is running,
+ * or a new probe's, with `timeoutsMs` as its time limits.
+ */
+export function pageWorkerProbe(
+	timeoutsMs: readonly number[] = WORKER_PROBE_TIMEOUTS_MS,
+): Promise<WorkerProbe | WorkerProbeFailure> {
+	if (pageProbe) return pageProbe;
+	const probe = probeWorker(timeoutsMs);
+	pageProbe = probe;
+	void probe.then((result) => {
+		if ('failure' in result && pageProbe === probe) pageProbe = undefined;
+	});
+	return probe;
+}
+
+/** Drops the kept answer, as after a lost GPU, so that the next start probes again. */
+export function forgetWorkerProbe(): void {
+	pageProbe = undefined;
+}
+
 /** Runs one probe worker, which must answer within `timeoutMs` of its script's start. */
 function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFailure> {
 	return new Promise((resolve) => {
@@ -497,7 +527,7 @@ export async function probeCapabilities(
 	powerPreference?: PowerPreference,
 	hints: DeviceHints = readDeviceHints(),
 ): Promise<CapabilityReport> {
-	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), probeWorker()]);
+	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',

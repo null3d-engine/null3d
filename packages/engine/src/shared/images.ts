@@ -262,11 +262,12 @@ export const RECEIVING = { type: 'receiving' } as const;
 /**
  * Sends images, generators' names, shaders and features to preload through a port to the thread
  * that draws, which receives them with `receiveImages`. The senders hold the images, generators'
- * names and shaders until that thread says that it receives, then send them in order. Firefox can
- * fail to read an image that reaches that thread while it makes its first renderer: the thread
- * gets a messageerror event in place of the image. Features to preload are plain names, so they go
- * at once, and their shader files download while that renderer is made. That thread's wake
- * messages come back through the port and end this thread's waits.
+ * names and shaders until that thread says that it receives, then send them in order, so no image
+ * waits unread while that thread makes its first renderer. Firefox drops the unread images of a
+ * port once the page collects the object of a port that it moved, so the page keeps the ports of
+ * the engine's channels until the engine stops. Features to preload are plain names, so they go at
+ * once, and their shader files download while that renderer is made. That thread's wake messages
+ * come back through the port and end this thread's waits.
  */
 export function sendThrough(port: MessagePort): DrawingSenders {
 	let held: [DrawingMessage, Transferable[]][] | undefined = [];

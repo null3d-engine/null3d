@@ -102,7 +102,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
- *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's;
+ *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's. The
+ *   canvas hands out a new texture each frame, so the view of it must be made each frame too. The
+ *   backend's `colorView` makes it, and the browser counts it there, about 34 bytes on S1;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
@@ -130,6 +132,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'render-worker': {
 		'replay webgpu/backend.ts': 320,
 		'commandEncoder webgpu/backend.ts': 32,
+		'colorView webgpu/backend.ts': 48,
 		'draw render/loop.ts': 64,
 		'drawFrame render/scene-renderer.ts': 192,
 		'(IDLE)': 48,
