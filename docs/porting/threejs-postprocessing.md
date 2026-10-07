@@ -16,7 +16,7 @@ three.js builds post-processing from passes in an `EffectComposer`. null3D has t
 flowchart LR
     scene["Scene passes:<br/>linear HDR color,<br/>after the exposure"] --> effects["Custom effects:<br/>one pass each,<br/>lowest order first"]
     effects --> bloom["Bloom"]
-    bloom --> final["Final pass: tone curve,<br/>FXAA, sRGB, dithering,<br/>outlines, color grading,<br/>vignette"]
+    bloom --> final["Final pass: vignette,<br/>tone curve, FXAA, sRGB,<br/>outlines, color grading,<br/>dithering"]
     effects --> final
     final --> canvas["Canvas"]
 ```
@@ -39,10 +39,10 @@ composer.addPass(vignette);
 composer.addPass(new OutputPass());
 ```
 
-The same look in null3D:
+Close to the same look in null3D. The vignette's `offset` becomes `size`, and its `darkness` becomes `intensity`:
 
 ```ts
-post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { offset: 1, darkness: 1.2 } });
+post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1.2 } });
 ```
 
 ## Passes that become settings
@@ -57,7 +57,7 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { offset: 1, darkness: 
 | `SSAOPass`, `SAOPass`, N8AO | `ao` | Their settings mean other things. Start from the defaults and tune `radius` and `scale` by eye. |
 | `OutlinePass` | `outline` and `mesh.setOutlined(true)` | `visibleEdgeColor` becomes `color`, and `hiddenEdgeColor` becomes `hiddenColor`. Set `width` to about twice `edgeThickness`. |
 | `LUTPass` | `lut: await assets.loadLut(url)`, `lutIntensity` | Load the same `.cube` or `.3dl` file. |
-| `ShaderPass(VignetteShader)` | `vignette: { offset, darkness }` | Keep the two numbers. |
+| `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. The default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs in the final pass. |
 | `SMAAPass`, `SSAARenderPass`, `TAARenderPass` | MSAA, which the presets from Medium up use | null3D has no SMAA, SSAA or TAA. |
 | `BokehPass` | A custom effect that reads `effectDepth` | Or leave depth of field out. |
@@ -74,7 +74,7 @@ pmndrs postprocessing maps the same way:
 | `SSAOEffect`, N8AO | `ao`, tuned by eye |
 | `OutlineEffect` | `outline`. `xRay: false` becomes `hiddenColor: false`. |
 | `LUT3DEffect` | `lut` |
-| `VignetteEffect` | `vignette`, tuned by eye |
+| `VignetteEffect` | `vignette: { size: offset, intensity: darkness }` for the `ESKIL` technique; for the default technique, tune `intensity` and `size` by eye |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | A custom effect for each |
 | `DepthOfFieldEffect` | A custom effect that reads `effectDepth` |
 
@@ -177,7 +177,7 @@ post.addEffect({
 
 ## Port a tone mapping
 
-`post.set` takes the WGSL of a custom tone curve in place of a curve's name. The WGSL declares `fn toneCurve(color: vec3f) -> vec3f`. The engine calls it with the exposed linear color of each pixel, after bloom. It clamps the result to 0 to 1, then encodes sRGB, dithers and grades as usual. A tone curve takes no uniforms.
+`post.set` takes the WGSL of a custom tone curve in place of a curve's name. The WGSL declares `fn toneCurve(color: vec3f) -> vec3f`. The engine calls it with the exposed linear color of each pixel, after bloom. It clamps the result to 0 to 1, then encodes sRGB, grades and dithers as usual. The vignette has darkened the color already. A tone curve takes no uniforms.
 
 three.js's `ReinhardToneMapping` multiplies the color by `toneMappingExposure` first. null3D's color arrives exposed, so leave that step out and copy the exposure. A three.js renderer with Reinhard's curve:
 

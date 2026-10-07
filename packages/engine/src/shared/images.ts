@@ -12,7 +12,8 @@
 //
 // Custom materials' shaders take the same way, each under its render pipeline template. A backend
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
-// not arrived yet builds once it has.
+// not arrived yet builds once it has. On the dev server, a hot update sends a template's shader
+// again: the table lists the template as replaced, and the backend builds its pipelines again.
 //
 // So do the names of features whose shader files the sketch will need, such as skinning when a
 // glTF file with skins loads. The thread that draws starts to download each feature's file then,
@@ -65,6 +66,15 @@ export class ImageTable {
 	private readonly images = new Map<number, ImageBitmap>();
 	/** Custom materials' shaders, by render pipeline template. */
 	readonly shaders = new Map<number, CustomShader>();
+	/** The templates whose shader a hot update replaced, which the backend has not built again yet. */
+	readonly replaced: number[] = [];
+
+	/** Keeps a custom material's shader under its template, and lists a template it replaces. */
+	setShader(template: number, shader: CustomShader): void {
+		if (this.shaders.has(template)) this.replaced.push(template);
+		this.shaders.set(template, shader);
+	}
+
 	/** The features whose shader files the sketch asked for, which every renderer loads. */
 	readonly preloads = new Set<string>();
 	/** Hears each feature that the sketch asks for, while a renderer runs. */
@@ -208,6 +218,7 @@ export class ImageTable {
 		this.images.clear();
 		this.generators.clear();
 		this.shaders.clear();
+		this.replaced.length = 0;
 		// The listener belongs to a renderer: a table that kept it would keep that renderer, and the
 		// engine's memory with it, for as long as the port that fills the table lives.
 		this.onPreload = undefined;
@@ -251,11 +262,12 @@ export const RECEIVING = { type: 'receiving' } as const;
 /**
  * Sends images, generators' names, shaders and features to preload through a port to the thread
  * that draws, which receives them with `receiveImages`. The senders hold the images, generators'
- * names and shaders until that thread says that it receives, then send them in order. Firefox can
- * fail to read an image that reaches that thread while it makes its first renderer: the thread
- * gets a messageerror event in place of the image. Features to preload are plain names, so they go
- * at once, and their shader files download while that renderer is made. That thread's wake
- * messages come back through the port and end this thread's waits.
+ * names and shaders until that thread says that it receives, then send them in order, so no image
+ * waits unread while that thread makes its first renderer. Firefox drops the unread images of a
+ * port once the page collects the object of a port that it moved, so the page keeps the ports of
+ * the engine's channels until the engine stops. Features to preload are plain names, so they go at
+ * once, and their shader files download while that renderer is made. That thread's wake messages
+ * come back through the port and end this thread's waits.
  */
 export function sendThrough(port: MessagePort): DrawingSenders {
 	let held: [DrawingMessage, Transferable[]][] | undefined = [];
@@ -283,7 +295,7 @@ export function sendThrough(port: MessagePort): DrawingSenders {
 
 /** Puts shaders straight into the table of this thread, which draws as well. */
 export function shadersToTable(table: ImageTable): ShaderSender {
-	return (template, shader) => table.shaders.set(template, shader);
+	return (template, shader) => table.setShader(template, shader);
 }
 
 /**
@@ -360,7 +372,7 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 	};
 	port.onmessage = (event: MessageEvent<DrawingMessage>) => {
 		const data = event.data;
-		if ('shader' in data) table.shaders.set(data.template, data.shader);
+		if ('shader' in data) table.setShader(data.template, data.shader);
 		else if ('preload' in data) table.preload(data.preload);
 		else arrive(data.id, 'generator' in data ? data.generator : data.image);
 	};

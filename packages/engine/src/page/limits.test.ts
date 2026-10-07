@@ -23,6 +23,7 @@ import {
 	rowLimitWarning,
 	sceneColorFormat,
 	storageBindingBytes,
+	WEBGL2_SMALL_SCENE_COLOR,
 	webgl2Depth,
 } from './limits';
 
@@ -52,7 +53,11 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	shadowDepthBits: 16,
 	largeWorld: false,
 	gpuOcclusion: false,
+	textureCache: true,
 });
+
+/** What the WebGL2 probe finds of a format that the device does not draw into. */
+const refusedTarget = { complete: false, readsBack: false, samples: 0 };
 
 /** A WebGL2 device that draws RGBA16F targets with the engine's MSAA. */
 const HDR_TARGETS = {
@@ -87,12 +92,14 @@ const PLAIN: DeviceOptions = {
 	indexInstances: false,
 	shadowDepthBits: 16,
 	hdr: true,
+	sceneFormat: undefined,
 	half: undefined,
 	antialias: 'msaa',
 	transparent: false,
 	depthPrepass: false,
 	largeWorld: false,
 	gpuOcclusion: false,
+	textureCache: true,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */
@@ -145,6 +152,32 @@ describe('sceneColorFormat', () => {
 				FORMAT_CANVAS,
 			);
 		}
+	});
+
+	it('takes the small float format on WebGL2 where the probe passes, as its default or ?scene-format= says', () => {
+		const packed = { complete: true, readsBack: true, samples: C.LIMIT_MSAA_SAMPLES };
+		const both = report({ floatRenderTargets: { ...HDR_TARGETS, r11fG11fB10f: packed } });
+		const own = WEBGL2_SMALL_SCENE_COLOR ? FORMAT_RG11B10_UFLOAT : FORMAT_RGBA16_FLOAT;
+		expect(formatOn('webgl2', both)).toBe(own);
+		expect(formatOn('webgl2', both, { sceneFormat: 'rg11b10' })).toBe(FORMAT_RG11B10_UFLOAT);
+		expect(formatOn('webgl2', both, { sceneFormat: 'rgba16f' })).toBe(FORMAT_RGBA16_FLOAT);
+		// A transparent canvas keeps its alpha, and a format that fails the probe is not taken.
+		const wanted: Partial<DeviceOptions> = { sceneFormat: 'rg11b10' };
+		expect(formatOn('webgl2', both, { ...wanted, transparent: true })).toBe(FORMAT_RGBA16_FLOAT);
+		expect(formatOn('webgl2', report({}), wanted)).toBe(FORMAT_RGBA16_FLOAT);
+		const fewSamples = { ...HDR_TARGETS, r11fG11fB10f: { ...packed, samples: 2 } };
+		const few = report({ floatRenderTargets: fewSamples });
+		expect(formatOn('webgl2', few, wanted)).toBe(FORMAT_RGBA16_FLOAT);
+		expect(formatOn('webgl2', few, { ...wanted, antialias: 'fxaa' })).toBe(FORMAT_RG11B10_UFLOAT);
+		// The small format needs RGBA16F too, which bloom's levels take.
+		const onlyPacked = report({
+			floatRenderTargets: { rgba16f: refusedTarget, r11fG11fB10f: packed },
+		});
+		expect(formatOn('webgl2', onlyPacked, wanted)).toBe(FORMAT_CANVAS);
+		// WebGPU takes the small format by default, and ?scene-format=rgba16f turns it off there too.
+		expect(formatOn('webgpu', report({}, small), { sceneFormat: 'rgba16f' })).toBe(
+			FORMAT_RGBA16_FLOAT,
+		);
 	});
 
 	it('reaches the core with the canvas transparency and the anti-aliasing mode', () => {

@@ -18,6 +18,7 @@ describe('parseSwitches', () => {
 			wakeByMessage: false,
 			displayChecks: true,
 			hdr: true,
+			sceneFormat: undefined,
 			half: undefined,
 			cells: true,
 			prepass: undefined,
@@ -25,6 +26,7 @@ describe('parseSwitches', () => {
 			vertexSkinning: false,
 			indexInstances: false,
 			shadowDepthBits: 16,
+			textureCache: true,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -47,6 +49,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?shadowdepth=32').shadowDepthBits).toBe(32);
 		expect(parseSwitches('?shadowdepth=16').shadowDepthBits).toBe(16);
 		expect(parseSwitches('?shadowdepth=24').shadowDepthBits).toBe(16);
+	});
+
+	it('turns the cache of transcoded textures off with ?texture-cache=off, and leaves it on otherwise', () => {
+		expect(parseSwitches('?texture-cache=off').textureCache).toBe(false);
+		expect(parseSwitches('?texture-cache=on').textureCache).toBe(true);
+		expect(parseSwitches('?texture-cache=no').textureCache).toBe(true);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
@@ -128,6 +136,12 @@ describe('parseSwitches', () => {
 	it('leaves two cores free of job workers without the switch, and starts at least one', () => {
 		expect(jobWorkerCount(undefined, 18)).toBe(16);
 		expect(jobWorkerCount(undefined, 2)).toBe(1);
+	});
+
+	it('picks the scene format with ?scene-format=, and leaves it to the GPU path otherwise', () => {
+		expect(parseSwitches('?scene-format=rg11b10').sceneFormat).toBe('rg11b10');
+		expect(parseSwitches('?scene-format=rgba16f').sceneFormat).toBe('rgba16f');
+		expect(parseSwitches('?scene-format=rgba8').sceneFormat).toBeUndefined();
 	});
 
 	it('turns HDR color off only for ?hdr=off', () => {

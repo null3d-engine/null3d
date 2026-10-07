@@ -18,6 +18,8 @@ import {
 	TEMPLATE_AO_DENOISE,
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_CUBE,
+	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
@@ -45,6 +47,7 @@ import {
 	type ShaderVariants,
 } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
+import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
@@ -55,7 +58,8 @@ import type { DepthSetup } from './depth';
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
  * first, with fourteen. Group 1 has three slots, group 2 eight (the instance textures, then the two
  * textures that skinned meshes read and the two that morphed meshes read) and group 3 the last
- * sixteen: the eight map textures, then their samplers. Slots are no texture units: each program
+ * sixteen: the eight map textures, then their samplers, of which the standard material's shared
+ * map units take the first six of each. Slots are no texture units: each program
  * numbers the textures it reads from unit 0, so the groups' bindings never run out of units. The
  * groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
@@ -170,6 +174,17 @@ export interface Pipeline {
 	readonly vertices: GPUVertexBufferLayout | undefined;
 }
 
+/**
+ * The template of a custom shader. A custom material's prepass draws with its own vertex shader,
+ * as every mesh's does. A custom effect's or tone curve's template draws one triangle, as the
+ * final pass does.
+ */
+export function customTemplate(shader: CustomShader): GlslTemplate {
+	return shader.kind === undefined
+		? { shader: shader.variants, pipeline: 'main', meshPrepass: true }
+		: { shader: shader.variants, pipeline: 'main' };
+}
+
 /** The engine's render pipeline templates, by template id, from the shaders the device loaded. */
 export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
@@ -195,6 +210,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_LINE] = { shader: shaders.line, pipeline: 'main' };
 	templates[TEMPLATE_LINE_LIT] = { shader: shaders.line_lit, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.background_cube, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.sky, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.
 	templates[TEMPLATE_AO_DEPTH] = { shader: shaders.ao, pipeline: 'depth' };
@@ -301,6 +318,23 @@ export const METAL_FAULT = 'MSL compilation error';
  */
 export const RELINK_TAIL = '\n// null3d: second link\n';
 
+/** True when the program's link failed with Safari's random Metal fault. */
+export function metalFault(gl: WebGL2RenderingContext, p: Program): boolean {
+	return gl.getProgramInfoLog(p.program)?.includes(METAL_FAULT) === true;
+}
+
+/**
+ * Starts the second link of a program whose link failed with Safari's random Metal fault: it
+ * deletes the GL program and its shaders, and links the sources again into a new GL program.
+ */
+export function relink(gl: WebGL2RenderingContext, p: Program): void {
+	for (const shader of p.shaders) gl.deleteShader(shader);
+	gl.deleteProgram(p.program);
+	const relinked = link(gl, p.source, RELINK_TAIL);
+	p.program = relinked.program;
+	p.shaders = relinked.shaders;
+}
+
 /** The error of a program whose link failed, with the logs of its program and shaders. */
 function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Error {
 	const logs = p.shaders
@@ -322,12 +356,8 @@ function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Err
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
-		if (!gl.getProgramInfoLog(p.program)?.includes(METAL_FAULT)) throw linkError(gl, p, '');
-		for (const shader of p.shaders) gl.deleteShader(shader);
-		gl.deleteProgram(p.program);
-		const relinked = link(gl, p.source, RELINK_TAIL);
-		p.program = relinked.program;
-		p.shaders = relinked.shaders;
+		if (!metalFault(gl, p)) throw linkError(gl, p, '');
+		relink(gl, p);
 		if (!gl.getProgramParameter(p.program, gl.LINK_STATUS))
 			throw linkError(gl, p, ' twice, the second time after a fault in its Metal');
 	}

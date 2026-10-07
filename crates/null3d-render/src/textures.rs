@@ -13,6 +13,13 @@
 //! layers has an array of its own, with exactly its layers. So does a texture in a compressed
 //! format: compatibility mode copies no compressed texels, so its array could never grow.
 //!
+//! WebGL2 gives each shader stage only 16 texture units, so there a standard material's maps do
+//! not take a binding per map slot. They share a few units instead (see
+//! [`TextureStore::shared_map_group`]): maps whose textures share an array and a sampler share a
+//! unit, and the material's row names each map's unit beside its layer. A material whose maps
+//! need more units than there are draws without the maps that come last in
+//! [`MapSlot::SHARING_ORDER`].
+//!
 //! # Images, data and uploads
 //!
 //! A texture's texels come from an image or from data. An image travels to the thread that draws
@@ -68,7 +75,7 @@
 //! whose texels are gone keeps its layer and draws as without a map until it gets new texels.
 
 use null3d_core::error::CoreError;
-use null3d_core::frames::{frame_after, next_frame};
+use null3d_core::frames::{FIRST_FRAME, frame_after, next_frame};
 use null3d_core::handle::{Handle, SlotAllocator};
 use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, TEXTURE_3D_SIZE};
 use null3d_gpu::drawlist::{
@@ -77,6 +84,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::frame::{RecordError, address as memory_address, words_as_bytes};
+use crate::materials::MapSlot;
 
 /// The most layers in one texture array: WebGPU's default limit, which the iPad keeps.
 pub const MAX_LAYERS: u32 = 256;
@@ -187,14 +195,28 @@ pub struct UploadStats {
 /// Where a texture's texels come from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {
-    /// Image `id`, which the thread that draws holds, uploaded with the `upload_flags` in `flags`.
-    Image { id: u32, flags: u32 },
+    /// Images `id` to `id + count - 1`, which the thread that draws holds, one for each layer,
+    /// uploaded with the `upload_flags` in `flags`: one image for a 2D texture, and six for a cube
+    /// texture's faces.
+    Image { id: u32, count: u32, flags: u32 },
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
     /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU in
     /// one command. The store keeps it until the texture gets other texels or is destroyed, so a
     /// new GPU device runs it again.
     Generated { id: u32 },
+}
+
+impl Source {
+    /// The last image id that the texels take, which the thread that draws must hold before they
+    /// upload or are released, or none for data.
+    fn last_image(self) -> Option<u32> {
+        match self {
+            Self::Image { id, count, .. } => Some(id + count - 1),
+            Self::Generated { id, .. } => Some(id),
+            Self::Data { .. } => None,
+        }
+    }
 }
 
 /// Where a texture is on its way to the GPU.
@@ -591,9 +613,10 @@ impl TextureStore {
     }
 
     /// Creates a cube texture with faces of `size` x `size` texels in `format::RGB9E5_UFLOAT` or
-    /// `format::RGBA16_FLOAT`, with `levels` mip levels and no texels yet. It is read with linear
-    /// filters within and between levels, and its texels bring every level. A face takes at most
-    /// [`CUBE_TEXTURE_SIZE`] texels a side, the least that WebGL2 allows.
+    /// `format::RGBA16_FLOAT`, with `levels` mip levels and no texels yet, whose texels bring every
+    /// level, or in `format::RGBA8_UNORM_SRGB` with one level, whose texels come from six images
+    /// (see [`Self::set_cube_images`]). It is read with linear filters within and between levels.
+    /// A face takes at most [`CUBE_TEXTURE_SIZE`] texels a side, the least that WebGL2 allows.
     pub fn create_cube(
         &mut self,
         size: u32,
@@ -604,7 +627,8 @@ impl TextureStore {
         if size > limit {
             return Err(TextureError::TooLarge { limit });
         }
-        if !matches!(format, format::RGB9E5_UFLOAT | format::RGBA16_FLOAT) {
+        let images = format == format::RGBA8_UNORM_SRGB && levels == 1;
+        if !images && !matches!(format, format::RGB9E5_UFLOAT | format::RGBA16_FLOAT) {
             return Err(TextureError::Unsupported);
         }
         let desc = TextureDesc {
@@ -743,6 +767,52 @@ impl TextureStore {
     /// maps share arrays and samplers share the group. A texture that moves to another array needs
     /// its material's group again.
     pub fn map_set_group(&mut self, maps: &[Handle; MAP_SET_SLOTS]) -> Result<u32, TextureError> {
+        let mut slots = [self.placeholder()?; MAP_SET_SLOTS];
+        for (slot, &map) in slots.iter_mut().zip(maps) {
+            if let Some(pair) = self.map_pair(map) {
+                *slot = pair;
+            }
+        }
+        Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(slots)))
+    }
+
+    /// The bind group of a standard material's maps where they share the group's first `units`
+    /// bindings, as WebGL2's standard material samples them to keep texture units free, with the
+    /// unit of each slot's map. Maps whose textures share an array and a sampler share a unit, and
+    /// the slots take units in [`MapSlot::SHARING_ORDER`]. A live map that finds every unit taken
+    /// by others gets none, and so does a slot without a live map. The group's other bindings hold
+    /// the white texel. Materials whose maps share arrays and samplers in the same order share the
+    /// group.
+    pub fn shared_map_group(
+        &mut self,
+        maps: &[Handle; MAP_SET_SLOTS],
+        units: usize,
+    ) -> Result<(u32, [Option<u8>; MAP_SET_SLOTS]), TextureError> {
+        let mut slots = [self.placeholder()?; MAP_SET_SLOTS];
+        let mut slot_units = [None; MAP_SET_SLOTS];
+        let mut used = 0;
+        for slot in MapSlot::SHARING_ORDER.map(|slot| slot as usize) {
+            let Some(pair) = self.map_pair(maps[slot]) else {
+                continue;
+            };
+            let unit = match slots[..used].iter().position(|&taken| taken == pair) {
+                Some(unit) => unit,
+                None if used < units.min(MAP_SET_SLOTS) => {
+                    slots[used] = pair;
+                    used += 1;
+                    used - 1
+                }
+                None => continue,
+            };
+            slot_units[slot] = Some(unit as u8);
+        }
+        let group = self.ids.first_group + self.group_of_key(GroupKey::Maps(slots));
+        Ok((group, slot_units))
+    }
+
+    /// The array and the sampler of the white texel that bind groups of maps bind where a slot
+    /// has no map, made on first use.
+    fn placeholder(&mut self) -> Result<(u32, u32), TextureError> {
         if !self.is_live(self.placeholder) {
             self.placeholder = self.create(TextureDesc {
                 width: 1,
@@ -756,16 +826,14 @@ impl TextureStore {
             let (texels, _) = self.set_data(self.placeholder, 1, 1)?;
             texels.fill(u32::MAX);
         }
-        let empty = *self.slot(self.placeholder)?;
-        let mut slots = [(empty.array, empty.sampler); MAP_SET_SLOTS];
-        for (slot, &map) in slots.iter_mut().zip(maps) {
-            if let Ok(texture) = self.slot(map)
-                && texture.group != NO_GROUP
-            {
-                *slot = (texture.array, texture.sampler);
-            }
-        }
-        Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(slots)))
+        let empty = self.slot(self.placeholder)?;
+        Ok((empty.array, empty.sampler))
+    }
+
+    /// The array and the sampler that a live map samples, or `None` for a slot without one.
+    fn map_pair(&self, map: Handle) -> Option<(u32, u32)> {
+        let texture = self.slot(map).ok()?;
+        (texture.group != NO_GROUP).then_some((texture.array, texture.sampler))
     }
 
     /// Gives a texture a new image of `width` x `height` pixels, uploaded with the
@@ -788,8 +856,43 @@ impl TextureStore {
         let moved = self.resize(texture, width, height)?;
         self.last_image = next_frame(self.last_image);
         let id = self.last_image;
-        self.queue_source(texture, Source::Image { id, flags })?;
+        self.queue_source(
+            texture,
+            Source::Image {
+                id,
+                count: 1,
+                flags,
+            },
+        )?;
         Ok((id, moved))
+    }
+
+    /// Gives a cube texture of 8-bit texels and one mip level six images, one for each face from
+    /// +X to -Z, uploaded with the `upload_flags` in `flags`, and returns the first image's id.
+    /// The caller sends the images to the thread that draws under that id and the five after it,
+    /// in the order of the ids. Texels that were waiting are released unused.
+    pub fn set_cube_images(&mut self, texture: Handle, flags: u32) -> Result<u32, TextureError> {
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if key.kind != Kind::Cube || !format::makes_mipmaps(key.format) || slot.levels > 1 {
+            return Err(TextureError::Unsupported);
+        }
+        // A cube's ids run in a row with no mark between them, so a run that would pass the end
+        // of the circle starts again at the first id.
+        let mut id = next_frame(self.last_image);
+        if id > u32::MAX - view::CUBE_FACES {
+            id = FIRST_FRAME;
+        }
+        self.last_image = id + view::CUBE_FACES - 1;
+        self.queue_source(
+            texture,
+            Source::Image {
+                id,
+                count: view::CUBE_FACES,
+                flags,
+            },
+        )?;
+        Ok(id)
     }
 
     /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU,
@@ -1114,10 +1217,18 @@ impl TextureStore {
                 old_id
             };
             // Images upload into and mip levels draw into a texture that textures share, and a
-            // larger one copies its layers. A texture of a format that takes writes only, a 3D
-            // texture and a cube texture take writes only.
-            let usage = if format::writes_only(key.format) || key.kind != Kind::Layers {
+            // larger one copies its layers. Images upload into a cube texture of 8-bit texels too.
+            // A texture of a format that takes writes only, a 3D texture and a cube texture of
+            // floats take writes only.
+            let usage = if format::writes_only(key.format) || key.kind == Kind::Volume {
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
+            } else if key.kind == Kind::Cube {
+                let images = if format::makes_mipmaps(key.format) {
+                    texture_usage::RENDER_ATTACHMENT
+                } else {
+                    0
+                };
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST | images
             } else {
                 texture_usage::TEXTURE_BINDING
                     | texture_usage::COPY_DST
@@ -1176,17 +1287,20 @@ impl TextureStore {
     /// data is freed.
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         let (arrived, taken) = (self.arrived, self.frames_taken);
-        let due = |r: &Release| match r.source {
-            Source::Image { id, .. } | Source::Generated { id, .. } => {
-                !frame_after(id, arrived) && (r.after == 0 || frame_after(frame, r.after))
+        let due = |r: &Release| match r.source.last_image() {
+            Some(last) => {
+                !frame_after(last, arrived) && (r.after == 0 || frame_after(frame, r.after))
             }
-            Source::Data { .. } => frame_after(taken, r.after),
+            None => frame_after(taken, r.after),
         };
         for release in self.releases.iter().filter(|r| due(r)) {
             match release.source {
-                Source::Image { id, .. } | Source::Generated { id, .. } => {
-                    list.push(Op::ReleaseImage, &[id])?;
+                Source::Image { id, count, .. } => {
+                    for image in id..id + count {
+                        list.push(Op::ReleaseImage, &[image])?;
+                    }
                 }
+                Source::Generated { id, .. } => list.push(Op::ReleaseImage, &[id])?,
                 Source::Data { slot } => self.data[slot as usize] = Vec::new(),
             }
             if let Ok(slot) = self.handles.resolve(release.texture) {
@@ -1237,8 +1351,9 @@ impl TextureStore {
             let State::Queued { source, mut rows } = slot.state else {
                 continue;
             };
-            if let Source::Image { id, .. } | Source::Generated { id, .. } = source
-                && frame_after(id, self.arrived)
+            if source
+                .last_image()
+                .is_some_and(|last| frame_after(last, self.arrived))
             {
                 continue;
             }
@@ -1269,7 +1384,11 @@ impl TextureStore {
                 }
                 let layer = slot.layer + band.layer;
                 let y = band.row * block;
-                if let Source::Image { id: image, flags } = source {
+                if let Source::Image {
+                    id: first, flags, ..
+                } = source
+                {
+                    let image = first + band.layer;
                     list.push(
                         Op::UploadImage,
                         &[id, 0, 0, y, layer, key.width, take, image, flags, 0, y],
@@ -1664,6 +1783,18 @@ mod tests {
         assert_eq!(h.store.ready_layer(late), Some(1));
     }
 
+    #[test]
+    fn a_cube_takes_six_ids_in_a_row_that_never_pass_the_end_of_the_circle() {
+        let mut h = Harness::new();
+        let cube = h.store.create_cube(8, 1, format::RGBA8_UNORM_SRGB).unwrap();
+        h.store.last_image = u32::MAX - 4;
+        assert_eq!(h.store.set_cube_images(cube, 0).unwrap(), FIRST_FRAME);
+        assert_eq!(h.store.images_sent(), FIRST_FRAME + 5);
+        h.store.last_image = 41;
+        assert_eq!(h.store.set_cube_images(cube, 0).unwrap(), 42);
+        assert_eq!(h.store.images_sent(), 47);
+    }
+
     fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
         commands
             .iter()
@@ -1712,6 +1843,53 @@ mod tests {
         assert_eq!(store.group_id(a), store.group_id(b));
         assert_ne!(store.group_id(a), store.group_id(repeat));
         assert_ne!(store.group_id(a), store.group_id(linear));
+    }
+
+    #[test]
+    fn maps_of_one_array_and_sampler_share_a_unit_and_late_maps_lose_theirs() {
+        let mut store = TextureStore::new(IDS, 4096);
+        let color = store.create(desc(64, 64)).unwrap();
+        let emissive = store.create(desc(64, 64)).unwrap();
+        let data = |store: &mut TextureStore, size: u32| {
+            store
+                .create(TextureDesc {
+                    format: format::RGBA8_UNORM,
+                    ..desc(size, size)
+                })
+                .unwrap()
+        };
+        let normal = data(&mut store, 64);
+        let metal_rough = data(&mut store, 64);
+        let occlusion = data(&mut store, 32);
+        let mut maps = [Handle::NONE; MAP_SET_SLOTS];
+        maps[MapSlot::BaseColor as usize] = color;
+        maps[MapSlot::Emissive as usize] = emissive;
+        maps[MapSlot::Normal as usize] = normal;
+        maps[MapSlot::MetalRough as usize] = metal_rough;
+        maps[MapSlot::Occlusion as usize] = occlusion;
+        let (group, units) = store.shared_map_group(&maps, 6).unwrap();
+        let unit = |slot: MapSlot| units[slot as usize];
+        // The sRGB maps share unit 0, the two linear maps of one size unit 1, and the smaller map
+        // takes a unit of its own.
+        assert_eq!(unit(MapSlot::BaseColor), Some(0));
+        assert_eq!(unit(MapSlot::Emissive), Some(0));
+        assert_eq!(unit(MapSlot::Normal), Some(1));
+        assert_eq!(unit(MapSlot::MetalRough), Some(1));
+        assert_eq!(unit(MapSlot::Occlusion), Some(2));
+        assert_eq!(
+            unit(MapSlot::Light),
+            None,
+            "a slot without a map has no unit"
+        );
+        let again = store.shared_map_group(&maps, 6).unwrap();
+        assert_eq!(again, (group, units), "the same maps share the group");
+        // With two units, the maps that come last in the sharing order lose theirs.
+        let (fewer, units) = store.shared_map_group(&maps, 2).unwrap();
+        assert_ne!(fewer, group);
+        assert_eq!(units[MapSlot::BaseColor as usize], Some(0));
+        assert_eq!(units[MapSlot::MetalRough as usize], Some(1));
+        assert_eq!(units[MapSlot::Occlusion as usize], None);
+        assert_eq!(units[MapSlot::Emissive as usize], Some(0));
     }
 
     #[test]
@@ -2346,6 +2524,34 @@ mod tests {
             ops(&commands, Op::GenerateMipmaps),
             [vec![id, 0]],
             "only the texture from an image makes its levels"
+        );
+    }
+
+    #[test]
+    fn a_cube_of_8_bit_texels_takes_six_images_and_a_cube_of_floats_none() {
+        let mut store = TextureStore::new(IDS, 4096);
+        let cube = store.create_cube(16, 1, format::RGBA8_UNORM_SRGB).unwrap();
+        assert_eq!(store.set_cube_images(cube, 0), Ok(1));
+        let other = store.create_cube(16, 1, format::RGBA8_UNORM_SRGB).unwrap();
+        assert_eq!(
+            store.set_cube_images(other, 0),
+            Ok(7),
+            "after the first six"
+        );
+        let floats = store.create_cube(16, 5, format::RGB9E5_UFLOAT).unwrap();
+        assert_eq!(
+            store.set_cube_images(floats, 0),
+            Err(TextureError::Unsupported)
+        );
+        assert_eq!(
+            store.create_cube(16, 2, format::RGBA8_UNORM_SRGB),
+            Err(TextureError::Unsupported),
+            "images bring one level"
+        );
+        let flat = store.create(desc(16, 16)).unwrap();
+        assert_eq!(
+            store.set_cube_images(flat, 0),
+            Err(TextureError::Unsupported)
         );
     }
 

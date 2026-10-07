@@ -42,6 +42,7 @@ import {
 	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIER_PAIRS,
 	TIERS,
+	VIGNETTE_MAX_DIFFERENT_PERCENT,
 } from './parity';
 
 /** An opaque image of one color. */
@@ -261,13 +262,16 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the points, the shadows, the strong bloom, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
 		expect(featureScene('bloom-strong')?.limit).toBe(BLOOM_STRONG_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('bloom-soft')?.limit).toBeUndefined();
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		expect(featureScene('outline-hidden')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
+		// The vignette is a sanity comparison; the table alone keeps three.js's rule.
+		expect(featureScene('lut-vignette')?.limit).toBe(VIGNETTE_MAX_DIFFERENT_PERCENT);
+		expect(featureScene('lut-cube')?.limit).toBeUndefined();
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
 			'points',
@@ -279,6 +283,7 @@ describe('feature scenes', () => {
 			'bloom-strong',
 			'ao-default',
 			'ao-wide',
+			'lut-vignette',
 			'outline-plain',
 			'outline-hidden',
 		]);
@@ -436,6 +441,15 @@ describe('the pages', () => {
 			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
+			'null3d-webgpu-sky',
+			'null3d-webgl2-sky',
+			'null3d-webgpu-sky-clear',
+			'null3d-webgpu-sky-room',
+			'null3d-webgpu-sky-texture',
+			'null3d-webgpu-first',
+			'null3d-webgpu-box',
+			'null3d-webgpu-sky-room-first',
+			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -497,6 +511,25 @@ describe('the pages', () => {
 		);
 	});
 
+	test('runs the sky pages on the pipelined pages with the sky switch', () => {
+		expect(pagePath('s1', 'null3d-webgpu-sky', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky&seconds=2',
+		);
+		expect(pagePath('s1', 'null3d-webgl2-sky')).toBe('/bench/pages/null3d/s1.html?gpu=webgl2&sky');
+		expect(pagePath('s1', 'null3d-webgpu-sky-clear')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=clear',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-sky-texture')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=texture',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-sky-room-first')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=room&backgroundFirst',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-box')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&extraBox',
+		);
+	});
+
 	test('runs the pages without the cascade band on the pipelined pages with the band at 0', () => {
 		expect(pagePath('s4', 'null3d-webgpu-blend-off', 'seconds=2')).toBe(
 			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowCascadeBlend=0&seconds=2',
@@ -525,6 +558,15 @@ describe('the pages', () => {
 			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
+			'null3d-webgpu-sky',
+			'null3d-webgl2-sky',
+			'null3d-webgpu-sky-clear',
+			'null3d-webgpu-sky-room',
+			'null3d-webgpu-sky-texture',
+			'null3d-webgpu-first',
+			'null3d-webgpu-box',
+			'null3d-webgpu-sky-room-first',
+			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -548,6 +590,15 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
 			'webgl2',
 			'webgl2',
 		]);

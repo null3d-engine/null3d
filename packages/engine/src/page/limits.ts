@@ -48,8 +48,9 @@ export interface DeviceReport {
 			texSubImage2D: boolean;
 		} | null;
 		floatRenderTargets: {
-			rgba16f: { complete: boolean; readsBack: boolean; samples: number };
+			rgba16f: FloatTarget;
 			rgba32f?: { complete: boolean };
+			r11fG11fB10f?: FloatTarget;
 		} | null;
 	};
 }
@@ -140,6 +141,11 @@ export interface CoreDevice {
 	 * Only the WebGPU path culls this way.
 	 */
 	gpuOcclusion: boolean;
+	/**
+	 * True when KTX2 files keep their transcoded texels in the browser's Cache Storage, so later
+	 * loads of the same file skip the transcoder.
+	 */
+	textureCache: boolean;
 }
 
 /**
@@ -182,6 +188,7 @@ export type DeviceOptions = Pick<
 	| 'copyUploads'
 	| 'depth'
 	| 'hdr'
+	| 'sceneFormat'
 	| 'half'
 	| 'parallelCompile'
 	| 'freshShaders'
@@ -190,6 +197,7 @@ export type DeviceOptions = Pick<
 	| 'vertexSkinning'
 	| 'indexInstances'
 	| 'shadowDepthBits'
+	| 'textureCache'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -227,18 +235,36 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 	return Math.max(C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES, usable - (usable % 256));
 }
 
+/** What the WebGL2 probe found of a float format as a render target. */
+interface FloatTarget {
+	complete: boolean;
+	readsBack: boolean;
+	samples: number;
+}
+
 /**
- * True when WebGL2 draws HDR color: RGBA16F targets are complete and keep values above 1. With
- * MSAA they must also take the engine's samples.
+ * True when WebGL2 draws scene color into a float format: its targets are complete and keep values
+ * above 1, and with MSAA they take the engine's samples.
  */
-export function webgl2DrawsHdr(report: DeviceReport['webgl2'], antialias: AntialiasMode): boolean {
-	const test = report.floatRenderTargets?.rgba16f;
+function webgl2Draws(test: FloatTarget | undefined, antialias: AntialiasMode): boolean {
 	return (
 		test?.complete === true &&
 		test.readsBack &&
 		(antialias !== 'msaa' || test.samples >= C.LIMIT_MSAA_SAMPLES)
 	);
 }
+
+/** True when WebGL2 draws HDR color: RGBA16F targets pass the probe in the anti-aliasing mode. */
+export function webgl2DrawsHdr(report: DeviceReport['webgl2'], antialias: AntialiasMode): boolean {
+	return webgl2Draws(report.floatRenderTargets?.rgba16f, antialias);
+}
+
+/**
+ * Whether WebGL2 takes the packed small float format for HDR scene color where the device draws
+ * it, without the ?scene-format= switch. It is off: on phones the small format drew no faster than
+ * RGBA16F, and a little slower on one Mali GPU, as decision record D-77 says.
+ */
+export const WEBGL2_SMALL_SCENE_COLOR = false;
 
 /**
  * True when WebGL2 draws into the float targets of ambient occlusion's steps: one 32-bit float, and
@@ -250,22 +276,34 @@ export function webgl2DrawsOcclusion(report: DeviceReport['webgl2']): boolean {
 }
 
 /**
- * The format of the target that scene passes draw into. WebGPU draws HDR color, in rg11b10ufloat,
- * which takes half the bytes, where the device draws into it and the canvas needs no alpha, and in
- * rgba16float elsewhere. Compatibility mode cannot multisample float targets, so with MSAA it takes
- * the 8-bit path. WebGL2 takes it too, unless the device draws HDR color in the anti-aliasing
- * mode. `hdr` false forces the 8-bit path.
+ * The format of the target that scene passes draw into. Both GPU paths draw HDR color, in the
+ * packed small float format, which takes half the bytes, where the device draws into it and the
+ * canvas needs no alpha, and in 16-bit floats elsewhere. WebGPU takes the small format by default,
+ * and WebGL2 as `WEBGL2_SMALL_SCENE_COLOR` says; `sceneFormat`, from the ?scene-format= switch,
+ * picks one where the device can draw it. Compatibility mode cannot multisample float targets, so
+ * with MSAA it takes the 8-bit path. WebGL2 takes it too, unless the device draws RGBA16F in the
+ * anti-aliasing mode. `hdr` false forces the 8-bit path.
  */
 export function sceneColorFormat(
 	tier: Tier,
 	report: DeviceReport,
-	{ hdr, transparent, antialias }: Pick<DeviceOptions, 'hdr' | 'transparent' | 'antialias'>,
+	{
+		hdr,
+		transparent,
+		antialias,
+		sceneFormat,
+	}: Pick<DeviceOptions, 'hdr' | 'transparent' | 'antialias' | 'sceneFormat'>,
 ): number {
 	if (!hdr) return FORMAT_CANVAS;
-	if (tier === 'webgl2')
-		return webgl2DrawsHdr(report.webgl2, antialias) ? FORMAT_RGBA16_FLOAT : FORMAT_CANVAS;
+	if (tier === 'webgl2' && !webgl2DrawsHdr(report.webgl2, antialias)) return FORMAT_CANVAS;
 	if (tier === 'webgpu-compat' && antialias === 'msaa') return FORMAT_CANVAS;
-	return !transparent && report.webgpu.features.includes('rg11b10ufloat-renderable')
+	const small =
+		tier === 'webgl2'
+			? webgl2Draws(report.webgl2.floatRenderTargets?.r11fG11fB10f, antialias)
+			: report.webgpu.features.includes('rg11b10ufloat-renderable');
+	const wanted =
+		sceneFormat ?? (tier !== 'webgl2' || WEBGL2_SMALL_SCENE_COLOR ? 'rg11b10' : 'rgba16f');
+	return !transparent && small && wanted === 'rg11b10'
 		? FORMAT_RG11B10_UFLOAT
 		: FORMAT_RGBA16_FLOAT;
 }
@@ -278,7 +316,7 @@ export function sceneColorFormat(
 export function effectsOutput(
 	tier: Tier,
 	report: DeviceReport,
-	options: Pick<DeviceOptions, 'hdr' | 'transparent' | 'antialias'>,
+	options: Pick<DeviceOptions, 'hdr' | 'transparent' | 'antialias' | 'sceneFormat'>,
 ): { sceneColor: number; antialias: AntialiasMode } {
 	const start = sceneColorFormat(tier, report, options);
 	if (start !== FORMAT_CANVAS || options.antialias !== 'msaa')
@@ -309,6 +347,7 @@ export function halfPrecision(
  * the 8-bit path, so tests reach every route. `freshShaders` makes the browser compile every
  * shader again, as on a first visit. `compression` limits the compressed texture families,
  * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
+ * `textureCache` off makes KTX2 files transcode on every load, to time the cache against it.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
@@ -330,6 +369,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
 		gpuOcclusion: options.gpuOcclusion,
+		textureCache: options.textureCache,
 	};
 	if (tier !== 'webgl2') {
 		return {
@@ -432,4 +472,12 @@ export function rowLimitWarning(sources: number, webgl2: boolean): string | unde
 		? `WebGL2 devices whose textures reach only ${count(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE)} pixels`
 		: "devices with WebGPU's default limits";
 	return `null3D: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but ${smallest} draw at most ${count(portable)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`;
+}
+
+/**
+ * The warning that the sketch thread gives once, the first time an object or an instance row
+ * enters a new grid cell while every cell is in use.
+ */
+export function cellTableWarning(): string {
+	return `null3D: all ${C.CELL_MAX} grid cells are in use, so an object or instance row that entered a new cell went into the origin's cell instead. There it has only the precision of a 32-bit position, and far from the origin it jitters as the camera moves. Keep far content in fewer cells: put far objects under a few parent objects, which share their root's cell, or create and destroy them as the camera moves.`;
 }

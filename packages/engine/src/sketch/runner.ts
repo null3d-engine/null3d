@@ -32,7 +32,7 @@ import {
 } from '../generated/core';
 import { FORMAT_CANVAS } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
-import type { CoreDevice } from '../page/limits';
+import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
@@ -63,6 +63,7 @@ import {
 } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
+import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
@@ -243,6 +244,8 @@ export class SketchRunner {
 	private readonly debugDraw: DebugDraw | undefined;
 	/** The sketch's labels, which each frame projects. */
 	private readonly ui: Ui;
+	/** True once the sketch thread has warned that the grid cells ran out. */
+	private cellsWarned = false;
 	readonly context: SketchContext;
 
 	/**
@@ -315,6 +318,7 @@ export class SketchRunner {
 			() => this.quality.own('uploadBytesPerFrame'),
 			(id) => imagesArrived(slots, id),
 			device.webgl2,
+			device.textureCache,
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -576,6 +580,11 @@ export class SketchRunner {
 	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
 	receive(type: string, data: unknown): void {
 		for (const handler of this.messageHandlers) handler(type, data);
+	}
+
+	/** Swaps the shaders of the sketch's custom materials that hot updates of WGSL name. */
+	updateShaders(updates: readonly WgslUpdate[]): void {
+		this.context.materials.updateShaders(updates);
 	}
 
 	/** Reads the canvas's size into the viewport, when the page wrote a new one. */
@@ -918,6 +927,10 @@ export class SketchRunner {
 		if (this.followEffects()) restart = true;
 		if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
 		glue.updateBatches(frame);
+		if (!this.cellsWarned && glue.cellsRefused() !== 0) {
+			this.cellsWarned = true;
+			console.warn(cellTableWarning());
+		}
 		this.endPhase(Phase.Batches);
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));
 		const height = Math.max(1, Atomics.load(slots, Slot.CanvasHeight));

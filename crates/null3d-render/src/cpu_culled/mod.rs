@@ -25,9 +25,9 @@
 //! Each part has a module: `layout` keeps the sources, buckets and clusters, `data` the data
 //! textures and their rings, `cull` culls each view on the job workers, and `opaque` records the
 //! opaque passes. The debug lines pass, which both builders share, is [`crate::debug_lines`], and
-//! the background texture that the camera's opaque pass draws before its buckets is
-//! [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and begins
-//! their render passes.
+//! the background that the camera's opaque pass draws after its buckets, or before them while a
+//! bucket writes no depth, is [`crate::background`]. The render graph ([`crate::frame_graph`])
+//! orders the passes and begins their render passes.
 //!
 //! # Cells
 //!
@@ -97,7 +97,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, AoIds};
-use crate::background::BackgroundPass;
+use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
@@ -161,8 +161,10 @@ mod ids {
     pub const BLOOM: u32 = SHADOW_TILES + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = BLOOM + 1;
+    /// The uniform buffer of the background's values.
+    pub const BACKGROUND: u32 = AO + 1;
     /// The uniform buffer of the custom effects' blocks.
-    pub const EFFECTS: u32 = AO + 1;
+    pub const EFFECTS: u32 = BACKGROUND + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = EFFECTS + 1;
 
@@ -179,16 +181,15 @@ mod ids {
         VIEW_TEXTURES + RING * view.index() as u32
     }
 
-    /// The material table: one row of texels per material.
+    /// The material table: one row of texels per material, then one per material's custom
+    /// values, with three.js's table of the split-sum terms of specular light in the columns after
+    /// the rows' texels.
     pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEW_IDS as u32;
-    /// three.js's table of the split-sum terms of specular light.
-    pub const DFG: u32 = MATERIALS + 1;
-    /// The ring of light grid textures of the camera's view, one per ring slot.
-    pub const LIGHT_GRID: u32 = DFG + 1;
-    /// The ring of textures of the records of the lights that the light grid lists.
-    pub const LIGHTS: u32 = LIGHT_GRID + RING;
+    /// The ring of light data textures of the camera's view, one per ring slot: the records of the
+    /// lights that the light grid lists, and the grid's words.
+    pub const LIGHT_DATA: u32 = MATERIALS + 1;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
-    pub const BLANK_LUT: u32 = LIGHTS + RING;
+    pub const BLANK_LUT: u32 = LIGHT_DATA + RING;
     /// The blank cube that the frame's groups bind while the scene has no environment.
     pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
@@ -246,8 +247,10 @@ mod ids {
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
-    /// The bind group of each custom effect, after ambient occlusion's.
-    pub const EFFECT_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The background's bind group, after ambient occlusion's.
+    pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The bind group of each custom effect, after the background's.
+    pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1;
     /// The bind groups of materials' maps, after the effects'.
     pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
 }
@@ -376,12 +379,14 @@ pub struct CpuCulledRenderer {
 }
 
 impl CpuCulledRenderer {
-    pub fn new(config: CpuCulledConfig) -> Self {
+    pub fn new(mut config: CpuCulledConfig) -> Self {
         assert!(
             config.max_materials <= sizes::MAX_MATERIALS,
             "the material texture holds {} materials",
             sizes::MAX_MATERIALS
         );
+        // The material texture's rows also hold the table of specular terms beside them.
+        config.max_materials = config.max_materials.max(dfg::SIZE.div_ceil(2));
         let textures = TextureStore::new(
             TextureIds {
                 first_texture: ids::TEXTURE_ARRAYS,
@@ -392,15 +397,17 @@ impl CpuCulledRenderer {
                 .max_texture_size
                 .min(BUDGET[Limit::TextureDimension2D as usize]),
         );
+        let mut settings = SceneSettings::new(
+            MeshStorage::new(Packing::Pages),
+            config.max_materials,
+            textures,
+            config.canvas,
+            config.cascade_depth,
+        );
+        settings.share_map_units(sizes::SHARED_MAP_UNITS as usize);
         Self {
             config,
-            settings: SceneSettings::new(
-                MeshStorage::new(Packing::Pages),
-                config.max_materials,
-                textures,
-                config.canvas,
-                config.cascade_depth,
-            ),
+            settings,
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
             // with `invalidateFramebuffer` instead.
@@ -462,7 +469,12 @@ impl CpuCulledRenderer {
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::new(config.multi_draw),
-            background: BackgroundPass::default(),
+            background: BackgroundPass::new(BackgroundIds {
+                buffer: ids::BACKGROUND,
+                group: ids::BACKGROUND_GROUP,
+                blank_cube: ids::BLANK_ENVIRONMENT,
+                sampler: ids::ENVIRONMENT_SAMPLER,
+            }),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -775,11 +787,13 @@ impl CpuCulledRenderer {
             + shadows
             + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
+            + BackgroundPass::UPLOAD_BYTES
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
-    /// material it holds and one for each material's custom values, of three.js's table of
-    /// specular terms, and of the shadows' uniform block and comparison sampler.
+    /// material it holds and one for each material's custom values, and three.js's table of
+    /// specular terms in the columns after them, and of the shadows' uniform block and comparison
+    /// sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER, None)?;
         ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
@@ -787,8 +801,8 @@ impl CpuCulledRenderer {
             Op::CreateTexture,
             &[
                 ids::MATERIALS,
-                MATERIAL_TEXELS,
-                self.config.max_materials.max(1) * 2,
+                MATERIAL_TEXELS + dfg::SIZE,
+                self.config.max_materials * 2,
                 1,
                 format::RGBA32_FLOAT,
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
@@ -797,7 +811,6 @@ impl CpuCulledRenderer {
                 view::D2,
             ],
         )?;
-        dfg::create(list, ids::DFG)?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         self.dfg_pending = true;
@@ -1028,6 +1041,7 @@ impl CpuCulledRenderer {
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
+            Place::of(self.layout.depthless),
         );
         let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
@@ -1089,7 +1103,7 @@ impl CpuCulledRenderer {
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
-            dfg::upload(list, arena, ids::DFG)?;
+            dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
         }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
@@ -1118,7 +1132,7 @@ impl CpuCulledRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(&self.settings);
+        self.background.prepare(list, arena, &self.settings)?;
         let new_views = first_new < views
             || first_new_cascade < cascades
             || first_new_tile < tiles
@@ -1238,14 +1252,19 @@ impl CpuCulledRenderer {
             skips,
             |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
-                    if view == ViewId::CAMERA {
-                        let slot = opaque.frame_slot(view);
-                        let group = ids::frame_group(view) + light_slot;
-                        background.record(list, group, &[slot, slot])?;
+                    let camera = view == ViewId::CAMERA;
+                    let slot = opaque.frame_slot(view);
+                    let group = ids::frame_group(view) + light_slot;
+                    if camera {
+                        background.record(list, group, &[slot, slot], Place::First)?;
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Lit { light_slot };
-                    opaque.record(list, arena, view, starts, layout, meshes, shading)
+                    opaque.record(list, arena, view, starts, layout, meshes, shading)?;
+                    if camera {
+                        background.record(list, group, &[slot, slot], Place::Last)?;
+                    }
+                    Ok(())
                 }
                 Role::Prepass(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
@@ -1530,6 +1549,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.background.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

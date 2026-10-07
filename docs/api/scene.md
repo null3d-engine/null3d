@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; background, environment, fo
 
 # Scene
 
-> Ships in null3D 0.1, with the environment from 0.2. The API is experimental, so it can still change between versions. The sky and environment backgrounds are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1, with the environment, the sky and environment backgrounds from 0.2. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -100,7 +100,7 @@ door?.setVisible(false);
 
 The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color. The default background is black, or the page behind a transparent canvas. Exposure and tone mapping change the background as they change the objects: [Color management](../concepts/color-management.md#the-background).
 
-`setBackground` also takes a [texture](textures.md). The texture fills the camera's view behind every object, as a texture in three.js's `scene.background` does. It stretches to the shape of the view. A texture that loads with the default `flipY` stands upright. The engine samples it with the texture's own filter and ignores its alpha. It draws the texture before the objects, without the depth test, so every object draws over it.
+`setBackground` also takes a [texture](textures.md). The texture fills the camera's view behind every object, as a texture in three.js's `scene.background` does. It stretches to the shape of the view. A texture that loads with the default `flipY` stands upright. The engine samples it with the texture's own filter and ignores its alpha. The texture draws behind every object, in the pixels that no object covers.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -113,6 +113,73 @@ export default defineSketch(async ({ scene, assets }) => {
 ```
 
 The color set before a texture shows until the texture's texels are on the GPU, and again if you destroy the texture. A later color takes the place of the texture.
+
+### Environments, cube maps and the sky
+
+`setBackground` also takes three backgrounds that surround the scene, as three.js's `scene.background` does with a cube texture and its `Sky` object:
+
+- An environment from [`assets.loadEnvironment` or `assets.builtinEnvironment`](assets.md#environments). It can blur, as three.js's `backgroundBlurriness` blurs a PMREM texture.
+- A cube map of six images from [`assets.loadCubemap`](assets.md#cube-maps), a sky box.
+- three.js's analytic sky: `{ sky: { sunPosition } }`, with the settings of three.js's `Sky` object.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  const sunset = await assets.loadEnvironment('/env/sunset.ktx2');
+  scene.setEnvironment(sunset);
+  // The same light behind the objects, blurred, dimmed and turned a quarter turn.
+  scene.setBackground(sunset, { blur: 0.3, intensity: 0.7, rotation: [0, Math.PI / 2, 0] });
+  return {};
+});
+```
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `intensity` | Every background but a color | 1 | The factor of the background's light, 0 or more, as three.js's `scene.backgroundIntensity` |
+| `blur` | Environments | 0 | How much the background blurs, from 0 (sharp) to 1, as `scene.backgroundBlurriness` |
+| `rotation` | Environments and cube maps | `[0, 0, 0]` | The background's turn, as Euler angles in radians in the order X, Y, Z, as `scene.backgroundRotation` |
+
+An environment's map holds its light blurred for each roughness. So the background reads the level of the blur's roughness, as three.js reads its PMREM texture. A blurred background costs no more than a sharp one. The background and `setEnvironment` are separate: a scene can show one environment and take its light from another. A cube map shows its six images as three.js's `CubeTextureLoader` shows them, and does not light the scene.
+
+The sky takes the names and the defaults of three.js's `Sky` uniforms:
+
+| Setting | Default | What it sets |
+| --- | --- | --- |
+| `sunPosition` | `[0, 0.0349, -0.9994]` | A point toward the sun, as `sunPosition`. The default puts the sun 2 degrees over the horizon, as three.js's sky example does |
+| `turbidity` | 2 | The haze in the air |
+| `rayleigh` | 1 | The scattering by the air's molecules, which makes the sky blue |
+| `mieCoefficient` | 0.005 | The scattering by haze |
+| `mieDirectionalG` | 0.8 | How much the haze scatters toward the sun, from 0 to below 1 |
+| `cloudCoverage` | 0.4 | The share of the sky that clouds cover, from 0 to 1. 0 draws no clouds |
+| `cloudDensity` | 0.4 | How solid the clouds are |
+| `cloudElevation` | 0.5 | The height of the clouds, from 0 to 1 |
+| `cloudScale` | 0.0002 | The size of the clouds' pattern. Larger values make smaller clouds |
+| `cloudSpeed` | 0.00002 | How fast the clouds drift as `time` grows |
+| `time` | 0 | The time in seconds that moves the clouds, such as the sketch's time |
+| `showSunDisc` | true | Whether the sky shows the sun's disc |
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, time }) => {
+  const sun: [number, number, number] = [0, 0.1, -1];
+  const settings = { sunPosition: sun, turbidity: 10, rayleigh: 3, time: 0 };
+  const sky = { sky: settings };
+  return {
+    onUpdate() {
+      // The sun rises and sets, and the clouds drift with the sketch's time.
+      sun[1] = 0.1 + 0.05 * Math.sin(time.now * 0.1);
+      settings.time = time.now;
+      scene.setBackground(sky);
+    },
+  };
+});
+```
+
+The first background of each kind downloads its shaders, `'background'` or `'sky'`, and the view shows the background color until they are built. [Loading screens](../guides/loading-screens.md#loading-everything-up-front) shows how to load them before the first frame. Each call sets every option and every setting, and one left out takes its default. The settings are values, not shader builds, and the call allocates nothing. So a sketch can move the sun or turn a cube map in every frame. Each background draws behind every object, in the pixels that no object covers, and exposure and tone mapping change it with the rest of the scene. An orthographic camera's view rays are parallel, so an environment, a cube map or the sky fills its view with one color. The color set before an environment or a cube map shows until its texels are on the GPU, and again after you destroy it.
+
+Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
 
 ## The environment
 
@@ -205,6 +272,26 @@ An instance batch is one object that draws many copies of one mesh with one mate
 ## API reference
 
 <!-- null3d:api:start -->
+
+### `BackgroundOptions`
+
+Interface `BackgroundOptions`.
+
+The options of `scene.setBackground` for a texture, an environment, a cube map or the sky. A call that leaves an option out takes its default.
+
+| Member | Description |
+| --- | --- |
+| `intensity?: number` | The factor of the background's light, 0 or more, as three.js's `scene.backgroundIntensity`. The default is 1. |
+| `blur?: number` | How much an environment blurs, from 0 (sharp) to 1, as three.js's `scene.backgroundBlurriness`. It reads the environment's light at that roughness, so a blurred background costs no more than a sharp one. Only environments blur. The default is 0. |
+| `rotation?: readonly [number, number, number]` | The turn of a cube map or an environment about the scene, as Euler angles in radians in the order X, Y, Z, as three.js's `scene.backgroundRotation`. The default is `[0, 0, 0]`. |
+
+### `BackgroundSource`
+
+```ts
+type BackgroundSource = Texture | Environment | Cubemap | SkyBackground;
+```
+
+What `scene.setBackground` draws behind every object in place of a plain color: a texture, an environment, a cube map or three.js's sky.
 
 ### `EnvironmentOptions`
 
@@ -359,7 +446,7 @@ The scene: every object, the active camera, the lights and the background.
 | `createSpotLight(options: SpotLightOptions): SpotLight` | Light from a point in a cone, out to `range` meters, which it needs. |
 | `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
 | `createAmbientLight(options: AmbientLightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
-| `setBackground(background: ColorInput \| Texture): void` | What the camera shows behind every object: a color, or a texture. A texture fills the view and stretches to its shape, as a texture in three.js's `scene.background` does. The color set before it shows until the texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of a texture. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
+| `setBackground(background: ColorInput \| BackgroundSource, options?: BackgroundOptions): void` | What the camera shows behind every object, as three.js's `scene.background`: a color, a texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture fills the view and stretches to its shape. An environment or a cube map surrounds the scene, and `options` give its intensity, rotation and, for an environment, its blur, as three.js's `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before shows until a texture's texels are on the GPU, and again if the texture is destroyed. A color takes the place of any other background. Exposure and tone mapping change the background with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. Settings are values, not shader builds, and the call allocates nothing, so a sketch can move the sky's sun or turn a cube map every frame. Throws E1204 for a color it cannot read, E1203 for a number that is not finite, E1108 for a number out of its range, E1213 for an option that the background does not take, and E1101 for a texture, an environment or a cube map that was destroyed. |
 | `setEnvironment(environment: Environment \| null, options?: EnvironmentOptions): void` | Lights the scene with an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene draws without a file's environment until its map is on the GPU. The built-in room's map is whole in the first frame that uses it. It allocates nothing, so a sketch can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for a negative intensity, E1213 for a value that is not an environment, and E1101 for an environment that was destroyed. |
 | `setFog(fog: FogOptions \| null): void` | Fog over every object, by each object's straight-line distance from the camera along a curve: exponential by default, exponential squared or linear. The fog can thin with height and glow toward the main directional light. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a value out of its range, and E1203 for a value that is not finite. Converting the color allocates. |
 | `raycast(origin: Vec3Like, direction: Vec3Like, options: RaycastOptions \| undefined, hit: RaycastHit): boolean` | Casts a ray from `origin` along `direction`, and writes its closest hit into `hit`. Returns true on a hit. On a miss it sets `hit.object` to null and leaves the other fields as they were. The direction needs no unit length. The ray tests the triangles of objects and instance rows on the layers of `options.layers`, as their materials draw them: front faces, or both faces for a double-sided material. Queries see the scene as the last frame's update left it, so a move, a new object or a destroy in this frame counts from the next frame, or from `onLateUpdate`. Create `hit` and `options` once and pass them each time. |
@@ -369,5 +456,36 @@ The scene: every object, the active camera, the lights and the background.
 | `overlapSphere(center: Vec3Like, radius: number, options: QueryOptions \| undefined, out: OverlapHit[]): number` | Finds the objects and instance rows on the layers of `options.layers` that have a triangle within `radius` meters of `center`, writes them into `out`, and returns how many. It fills `out` as `raycastAll` fills its hits, in no set order. |
 | `overlapBox(min: Vec3Like, max: Vec3Like, options: QueryOptions \| undefined, out: OverlapHit[]): number` | Finds the objects and instance rows on the layers of `options.layers` that have a triangle inside the box from `min` to `max` or crossing it, as `overlapSphere` does. The box's sides lie along the world's axes. |
 | `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Hidden objects count too. After the first frame, an object whose pipeline is still building draws nothing, so create a loading stage's objects hidden, warm up, then show them. The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once they are built, before the setup goes on. |
+
+### `SkyBackground`
+
+Interface `SkyBackground`.
+
+three.js's analytic sky as a background: `scene.setBackground({ sky: { sunPosition } })`.
+
+| Member | Description |
+| --- | --- |
+| `sky: SkyOptions` | The sky's settings. |
+
+### `SkyOptions`
+
+Interface `SkyOptions`.
+
+The settings of three.js's sky, with the names and defaults of its `Sky` object's uniforms. A call that leaves a setting out takes its default.
+
+| Member | Description |
+| --- | --- |
+| `sunPosition?: readonly [number, number, number]` | A point toward the sun, as three.js's `sunPosition`. Its direction places the sun. A point far below the horizon, hundreds of thousands of units down, also dims the sky, as in three.js. The default is the sun 2 degrees above the horizon toward -Z, as three.js's sky example sets it: `[0, 0.0349, -0.9994]`. |
+| `turbidity?: number` | The haze in the air, 0 or more. The default is 2. |
+| `rayleigh?: number` | The scattering by the air's molecules, which makes the sky blue, 0 or more. The default is 1. |
+| `mieCoefficient?: number` | The scattering by haze, 0 or more. The default is 0.005. |
+| `mieDirectionalG?: number` | How much the haze scatters toward the sun, from 0 to 1 (below 1). The default is 0.8. |
+| `cloudCoverage?: number` | The share of the sky that clouds cover, from 0 to 1. 0 draws no clouds. The default is 0.4. |
+| `cloudDensity?: number` | How solid the clouds are, 0 or more. The default is 0.4. |
+| `cloudElevation?: number` | The height of the clouds, from 0 to 1: higher clouds look smaller. The default is 0.5. |
+| `cloudScale?: number` | The size of the clouds' pattern, more than 0: larger values make smaller clouds. The default is 0.0002. |
+| `cloudSpeed?: number` | How fast the clouds drift as `time` grows. The default is 0.00002. |
+| `time?: number` | The time in seconds that moves the clouds, such as the sketch's `time`. The default is 0, so the clouds stand still until a sketch sets it. |
+| `showSunDisc?: boolean` | Whether the sky shows the sun's disc. The default is true. |
 
 <!-- null3d:api:end -->

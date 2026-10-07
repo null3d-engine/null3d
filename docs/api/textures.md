@@ -149,6 +149,8 @@ An array holds at most 256 layers, the most that an iPad allows. It starts with 
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
 
+WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. Maps in one array that sample the same way share one of the six. So a material whose color maps have one size and whose data maps have one size takes two. Each compressed map takes one of its own. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A glTF material needs more than six only when its seven maps all differ in size, format or sampling.
+
 A texture can be at most 4096 texels wide and tall, the most that every WebGPU device allows. On a WebGL2 device that allows less, the device's own limit applies: at least 2048 texels. `textures.maxSize` gives the limit, and a larger image throws E1208.
 
 ## From texels to GPU

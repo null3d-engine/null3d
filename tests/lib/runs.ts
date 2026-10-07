@@ -72,10 +72,39 @@ export interface Plan<Check = unknown> {
 	 * where `allowed` lets it lack that path, and posts a skip as the page's result.
 	 */
 	skipMissing?: { report: string; allowed: MissingAllowed };
+	/**
+	 * Where the runner tool can open runner pages, a runner page hands the run to a new one after it
+	 * has run this many pages. Memory that earlier pages left held builds up in one Safari process,
+	 * such as what a removed frame reaches. A new runner page starts with none of it.
+	 */
+	tabEvery?: number;
 }
 
 /** How the runner page runs a plan's pages. */
-export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing'>;
+export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissing' | 'tabEvery'>;
+
+/**
+ * The pages that a runner page runs before it hands the run to a new one: fewer than Safari's 8 fast
+ * slots, so the engines of one runner page never use them all up (D-94).
+ */
+export const PAGES_PER_TAB = 6;
+
+/**
+ * The failures that memory Safari kept from earlier pages explains: a refused memory (E1109, or the
+ * browser's own "Out of memory"), a lost GPU or context (E1302), and room for shared memory that
+ * did not come back.
+ */
+const HELD_MEMORY_FAILURE =
+	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
+
+/**
+ * Whether a page's failure in Safari earns one more run in a new runner page. Safari keeps memory
+ * that pages before it dropped, in a way that a new runner page does not inherit (D-92). A page
+ * whose failure that explains runs once more there, and fails only if it fails again.
+ */
+export function rerunsInNewTab(browser: string, verdict: readonly string[]): boolean {
+	return browser === 'Safari' && verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem));
+}
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {

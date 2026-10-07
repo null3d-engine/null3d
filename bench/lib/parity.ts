@@ -13,6 +13,7 @@ import { percent } from '../../packages/cli/src/compare.js';
 import { TIERS, type Tier } from '../../packages/cli/src/page.js';
 import { encodePng, type RgbaImage } from '../../packages/cli/src/png.js';
 import { STOPS, TONE_MAPPINGS, toneMappingTest } from '../../tests/pages/lib/bright-scene.ts';
+import { BACKGROUND_SCENES } from '../scenes/backgrounds.ts';
 import { MODEL_NAMES } from '../scenes/gltf-models.ts';
 
 export { encodePng, percent, type RgbaImage, TIERS, type Tier };
@@ -53,6 +54,15 @@ export const BLOOM_STRONG_MAX_DIFFERENT_PERCENT = 20;
  * line around the wrong parts gives.
  */
 export const OUTLINE_MAX_DIFFERENT_PERCENT = 0.15;
+
+/**
+ * The limit for the vignette, a sanity comparison: null3D multiplies HDR color before the tone curve,
+ * with `VignetteShader`'s offset and darkness mapped onto its size and intensity (D-77), where
+ * three.js blends display color toward a gray. With a darkness above 1, three.js's corners pass
+ * black sooner, so only the outer corners differ: 1.1% of the grading scene's pixels on the Mac. A
+ * missing or misplaced vignette differs in tens of percent.
+ */
+export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
 
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
@@ -128,8 +138,11 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * end in -prepass, the depth prepass, for the one that ends in -index, vertex shaders that read
  * instance data by index, for those that end in -depth32, shadow cascades in 32-bit float depth,
  * for those that end in -blend-off, S4's shadow cascades with no band between them, for those
- * that end in -timed, the time of each WebGL call, and for those that end in -synced, that time
- * with a wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * with -sky, a background behind S1 (the benchmarks guide lists them), for those that end in
+ * -first, a background drawn before the objects, for those that end in -box, a small box that
+ * writes depth, for those that end in -timed, the time of each WebGL call, and for those that end
+ * in -synced, that time with a wait for the browser's GPU process after each call, and the GPU
+ * interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -169,6 +182,31 @@ const PAGES = {
 		folder: 'null3d',
 		switches: 'gpu=webgl2&shadowCascadeBlend=0',
 		api: 'webgl2',
+	},
+	'null3d-webgpu-sky': { folder: 'null3d', switches: 'gpu=webgpu&sky', api: 'webgpu' },
+	'null3d-webgl2-sky': { folder: 'null3d', switches: 'gpu=webgl2&sky', api: 'webgl2' },
+	'null3d-webgpu-sky-clear': { folder: 'null3d', switches: 'gpu=webgpu&sky=clear', api: 'webgpu' },
+	'null3d-webgpu-sky-room': { folder: 'null3d', switches: 'gpu=webgpu&sky=room', api: 'webgpu' },
+	'null3d-webgpu-sky-texture': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&sky=texture',
+		api: 'webgpu',
+	},
+	'null3d-webgpu-first': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&backgroundFirst',
+		api: 'webgpu',
+	},
+	'null3d-webgpu-box': { folder: 'null3d', switches: 'gpu=webgpu&extraBox', api: 'webgpu' },
+	'null3d-webgpu-sky-room-first': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&sky=room&backgroundFirst',
+		api: 'webgpu',
+	},
+	'null3d-webgpu-sky-texture-first': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&sky=texture&backgroundFirst',
+		api: 'webgpu',
 	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
@@ -340,6 +378,13 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'lines', twin: `${TWINS}/lines.html` },
 	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
+	// three.js's sky, a blurred environment background and a cube map of six pictures.
+	...BACKGROUND_SCENES.map(
+		(bg): FeatureScene => ({
+			test: `background-${bg}`,
+			twin: `${TWINS}/backgrounds.html?bg=${bg}`,
+		}),
+	),
 	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
 	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },
@@ -416,10 +461,10 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			limit: AO_MAX_DIFFERENT_PERCENT,
 		}),
 	),
-	// A color grading table from a .cube file, alone and at part of its intensity with the
-	// vignette, against three.js's LUTPass and VignetteShader after its OutputPass. The .3dl test
-	// has no twin: three.js's LUT3dlLoader refuses the sample file's grid, whose steps differ by one
-	// from rounding.
+	// A color grading table from a .cube file against three.js's LUTPass after its OutputPass, by
+	// three.js's rule. With the vignette too, against VignetteShader, as a sanity comparison: the
+	// vignette is a look of null3D's own. The .3dl test has no twin: three.js's LUT3dlLoader refuses
+	// the sample file's grid, whose steps differ by one from rounding.
 	{
 		test: 'lut-cube',
 		twin: `${TWINS}/grading.html`,
@@ -431,6 +476,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/grading.html?mix`,
 		switches: 'antialias=none',
 		webglOnly: true,
+		limit: VIGNETTE_MAX_DIFFERENT_PERCENT,
 	},
 	// Outlines with the engine's defaults and with a line around hidden parts, against the same line
 	// drawn from the mask of three.js's OutlinePass. The composer's targets have no MSAA, so null3D's

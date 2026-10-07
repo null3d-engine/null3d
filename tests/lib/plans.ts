@@ -72,6 +72,7 @@ import {
 	governorSummary as governorLine,
 	governorProblems,
 } from '../pages/lib/governor.ts';
+import { type JitterResult, jitterProblems } from '../pages/lib/jitter.ts';
 import {
 	framesInFlight,
 	type OverloadResult,
@@ -111,6 +112,7 @@ import {
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
+import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
@@ -135,6 +137,13 @@ import {
 import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
+import {
+	type TextureCacheCheck,
+	type TextureCacheResult,
+	textureCacheNeeds,
+	textureCachePlan,
+	textureCacheProblems,
+} from './texture-cache.ts';
 import {
 	saveVisualResult,
 	VISUAL_LIMITS,
@@ -215,6 +224,8 @@ export type Check =
 	| { kind: 'occlusion' }
 	/** The GPU occlusion page: frames culled against unculled, then the culling off and on in turns. */
 	| { kind: 'gpu-occlusion' }
+	/** The large-world jitter page: flights at the origin and far from it, on one GPU path. */
+	| { kind: 'jitter'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -226,7 +237,9 @@ export type Check =
 	/** The scene page after a simulated GPU loss: the engine must draw the whole scene again. */
 	| { kind: 'recovery'; tier: Tier; run: ImageRun }
 	/** The warm-up time page with a scene's sketch, with fresh shaders or with those compiled before. */
-	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean };
+	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean }
+	/** A load of the texture cache page with the city's textures, with the cache off or on. */
+	| TextureCacheCheck;
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -1040,6 +1053,29 @@ export function gpuOcclusionPlan(): PlanItem<Check>[] {
 	];
 }
 
+/**
+ * How long the jitter page may take on a slow device: five engine starts, each with sixteen steps
+ * of the camera.
+ */
+const JITTER_TIMEOUT_SECONDS = 180;
+
+/**
+ * The large-world jitter check on each GPU path: a camera flies past objects at the origin, 1,000
+ * km and 6,378 km out in large-world mode, and again far out with every grid cell taken. Each far
+ * flight must move as the flight at the origin does, and the flights without cells must jitter.
+ * D-80 records the results.
+ */
+export function jitterPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`jitter-${tier}`,
+			'jitter',
+			{ kind: 'jitter', tier },
+			{ switches: [`gpu=${tier}`, 'images'], timeoutSeconds: JITTER_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 /** The crowds that the animation plan times: a first draft of S5's crowd, then the full crowd. */
 export const ANIMATION_CHARACTERS = [100, 500] as const;
 
@@ -1369,11 +1405,13 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'environment-load': environmentLoadPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
+	jitter: jitterPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
 	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
+	'texture-cache': textureCachePlan,
 };
 
 /**
@@ -1422,6 +1460,8 @@ export function itemsNeeded(check: Check): string[] {
 			return check.load === 'warm' && !check.first
 				? [startupItemId(check.mode, 'warm', 'first')]
 				: [];
+		case 'texture-cache':
+			return textureCacheNeeds(check);
 		default:
 			return [];
 	}
@@ -1685,7 +1725,9 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
  * single-threaded build takes no shared memory, so any room it loses is address space. Room that
  * engines on kept canvases left held gets a note too: their starts go past the room, so a start
  * fails when that memory stops it. So does room that stopped engines in removed frames left held,
- * which Safari keeps with the frame's page.
+ * which Safari keeps with the frame's page. Room that running engines in removed frames left held in
+ * the first round, and that the second round kept, gets a note as well: a leak in the engine loses
+ * room in every round.
  */
 export function restartProblems(
 	result: RestartResult,
@@ -1720,6 +1762,7 @@ export function restartProblems(
 			);
 		return problems;
 	}
+	const fell = again ? (result.room ?? 0) - (again.roomLater ?? again.room) : 0;
 	if (!again)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: ${lostText}`,
@@ -1729,7 +1772,13 @@ export function restartProblems(
 		problems.push(
 			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
 		);
-	else if (threaded && (result.room ?? 0) - (again.roomLater ?? again.room) > ROOM_LOST_ONCE)
+	else if (start === 'frame' && fell > ROOM_LOST_ONCE)
+		// Safari can keep what a removed frame reached (D-92), which costs room once. A leak in the
+		// engine would lose room in the second round too, which fails above.
+		note?.(
+			`Safari kept memory from the first round of ${words.engines}, and the second round held the room: ${lostText}, and for ${again.roomLater} after ${again.cycles} more`,
+		);
+	else if (threaded && fell > ROOM_LOST_ONCE)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}: ${lostText}, and for ${again.roomLater} after ${again.cycles} more, more than the ${ROOM_LOST_ONCE} that lost address space explains`,
 		);
@@ -1936,6 +1985,8 @@ export function judge(
 			return parityProblems(check, result, context);
 		case 'startup':
 			return startupProblems(result as StartupResult, check.mode);
+		case 'texture-cache':
+			return textureCacheProblems(check, result as ItemResult & TextureCacheResult);
 		case 'overload': {
 			const { overloaded, steps } = result as ItemResult & OverloadResult;
 			if (!overloaded)
@@ -1981,6 +2032,12 @@ export function judge(
 				...(occlusion.on?.intervalMs ? [] : ['the page measured no frame with occlusion on']),
 				...(occlusion.on?.occludedEntries ? [] : ['occlusion culling hid nothing in the city']),
 			];
+		}
+		case 'jitter': {
+			const jitter = result as unknown as JitterResult;
+			if (context)
+				saveJitterResult(join(context.imageDir, 'frames', `jitter-${check.tier}`), jitter);
+			return jitterProblems(jitter);
 		}
 		case 'animation':
 			return animationProblems(result as ItemResult & AnimationResult);
@@ -2343,6 +2400,26 @@ export function animationSummary(
 		'| --- | --- | --- | --- | --- | --- | --- |',
 		...rows,
 	].join('\n');
+}
+
+/**
+ * The jitter pages' results as a Markdown table: for each GPU path and flight, how far its objects'
+ * motions strayed from the flight at the origin, and from their own mean motion. Undefined when the
+ * plan has no jitter pages.
+ */
+export function jitterSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) => {
+		if (check.kind !== 'jitter') return [];
+		const result = resultOf(id);
+		if (!result?.ok)
+			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | |`];
+		return jitterRows(check.tier, result as unknown as JitterResult);
+	});
+	if (rows.length === 0) return undefined;
+	return [...JITTER_TABLE_HEAD, ...rows].join('\n');
 }
 
 /**

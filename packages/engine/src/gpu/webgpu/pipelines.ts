@@ -8,6 +8,7 @@ import {
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
+	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
@@ -39,6 +40,7 @@ import {
 	STATE_CULL_FRONT,
 	STATE_CULL_NONE,
 	STATE_DEPTH_EQUAL,
+	STATE_DEPTH_OR_EQUAL,
 	STATE_LINE_LIST,
 	STATE_NO_COLOR_WRITE,
 	STATE_NO_DEPTH_TEST,
@@ -48,6 +50,8 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_CUBE,
+	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
@@ -231,11 +235,12 @@ const ALL_CHANNELS = 0xf;
 
 /**
  * The depth test of a pipeline's state flags, in reversed depth: nearer surfaces pass, every one
- * passes without the test, and only the surface at the target's depth passes after the depth
- * prepass.
+ * passes without the test, only the surface at the target's depth passes after the depth prepass,
+ * and a background at the far plane passes where no object wrote depth.
  */
 function depthCompare(stateFlags: number): GPUCompareFunction {
 	if (stateFlags & STATE_NO_DEPTH_TEST) return 'always';
+	if (stateFlags & STATE_DEPTH_OR_EQUAL) return 'greater-equal';
 	return stateFlags & STATE_DEPTH_EQUAL ? 'equal' : 'greater';
 }
 
@@ -451,6 +456,7 @@ export class Pipelines {
 			{ binding: 6, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 9, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
@@ -459,9 +465,9 @@ export class Pipelines {
 			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 2, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
-		// The view's culling parameters, for the offset from the camera to each cell, the world
-		// matrices, the bucket table and the bucket records, which the vertex shaders of the builds
-		// that read their instances by index read. Compatibility mode may have no storage buffers
+		// The view's culling parameters, for its row of the cell offsets texture, the world matrices,
+		// the bucket table, the bucket records and the cell offsets texture, which the vertex shaders
+		// of the builds that read their instances by index read. Compatibility mode may have no storage buffers
 		// in vertex shaders, and refuses the layout itself, so only core WebGPU makes and binds it.
 		const vertex = GPUShaderStage.VERTEX;
 		this.defineLayout(
@@ -472,6 +478,7 @@ export class Pipelines {
 				{ binding: 1, visibility: vertex, buffer: { type: 'read-only-storage' } },
 				{ binding: 2, visibility: vertex, buffer: { type: 'read-only-storage' } },
 				{ binding: 3, visibility: vertex, buffer: { type: 'read-only-storage' } },
+				{ binding: 4, visibility: vertex, texture: { sampleType: 'unfilterable-float' } },
 			],
 			true,
 		);
@@ -546,6 +553,13 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
+		// The background's values, which the sky's vertex stage reads too, a cube map and its
+		// filtering sampler.
+		this.defineLayout(LAYOUT_BACKGROUND, 'background', [
+			{ binding: 0, visibility: GPUShaderStage.VERTEX | fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
+			{ binding: 2, visibility: fragment, sampler: {} },
+		]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
 		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
 		const effectEntries: GPUBindGroupLayoutEntry[] = [
@@ -632,9 +646,21 @@ export class Pipelines {
 			label: 'background',
 			shader: shaders.background,
 			pipeline: 'main',
-			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES],
+			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES, LAYOUT_BACKGROUND],
 			vertexBuffers: [],
 		});
+		for (const [id, label, shader] of [
+			[TEMPLATE_BACKGROUND_CUBE, 'background cube', shaders.background_cube],
+			[TEMPLATE_BACKGROUND_SKY, 'background sky', shaders.sky],
+		] as const) {
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME, LAYOUT_BACKGROUND],
+				vertexBuffers: [],
+			});
+		}
 		if (DEV) {
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
@@ -716,6 +742,18 @@ export class Pipelines {
 			vertexBuffers: INSTANCE_BUFFERS,
 			ownPrepass: true,
 		});
+	}
+
+	/**
+	 * Gives a custom material's template the shader of a hot update, and forgets the shader modules
+	 * of its old shader. The pipelines that `render` describes from then on use the new shader.
+	 */
+	replaceCustom(id: number, shader: CustomShader): void {
+		const old = this.templates[id];
+		for (const variant of Object.values(old?.shader ?? {}))
+			if (variant.wgsl) this.modules.delete(variant.wgsl);
+		this.templates[id] = undefined;
+		this.defineCustom(id, shader);
 	}
 
 	/** True when a template has this id. */

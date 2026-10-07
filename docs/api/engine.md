@@ -202,7 +202,7 @@ What the browser and device can do, as plain JSON. The engine picks its build an
 | `transferControlToOffscreen: boolean` | True when a page canvas can hand its drawing to a worker. |
 | `webgpu: WebGPUReport` | What WebGPU offers. |
 | `webgl2: WebGL2Report` | What WebGL2 offers. |
-| `worker: WorkerProbe \| { error: string; }` | What a dedicated worker can do, or why the probe worker failed. |
+| `worker: WorkerProbe \| WorkerProbeFailure` | What a dedicated worker can do, or why the probe worker gave no answer. |
 
 ### `createEngine`
 
@@ -292,6 +292,7 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. A later start of the sketch in the same browser on the same device takes the stored result instead, and starts at its preset. `reused` is then true. |
 | `crashedStarts: number` | The starts of this sketch before this one that crashed the tab, one after another, as the engine's note in `localStorage` records them. After one, the engine starts a preset lower, and after two at `low`. |
 | `memoryMaximumMiB: number \| null` | The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not shared. |
+| `renderFallback: RenderFallback \| null` | Why the page draws when a worker was meant to, or null when the thread that draws is the one that the options asked for. `report.worker` holds the probe's answer. |
 
 ### `EngineOptions`
 
@@ -327,7 +328,7 @@ Options for `createEngine`.
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 | `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
-| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, `'background'` with a texture background, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
+| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, `'background'` with a texture, environment or cube map background, `'sky'` with the sky, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
 
 ### `ErrorCode`
 
@@ -440,6 +441,14 @@ type LatencyMode = 'pipelined' | 'low';
 
 How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame while the sketch computes the next one. In `low` mode, the sketch worker draws each frame right after its update.
 
+### `RenderFallback`
+
+```ts
+type RenderFallback = WorkerProbeFailure['failure'] | 'no-surface';
+```
+
+Why the engine draws on the page's thread when its options asked a worker to draw: - `no-answer`: the probe worker, and a second one after it, gave no answer within their time limits. A stalled GPU call or a very busy machine causes this. - `failed-to-start`: the probe worker's script failed to load or run. - `no-surface`: a worker cannot draw with the GPU path here, as the browser offers no context of it for an `OffscreenCanvas` in a worker.
+
 ### `ShaderFeature`
 
 ```ts
@@ -452,6 +461,7 @@ type ShaderFeature =
 	| 'morph'
 	| 'occlusion'
 	| 'skinning'
+	| 'sky'
 	| 'sprites'
 	| 'texcoords';
 ```
@@ -507,7 +517,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxViewportDims: [width: number, height: number] \| null` | The largest viewport width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
-| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests, and with MSAA takes 4 samples. Null without WebGL2. |
+| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; r11fG11fB10f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture, and the 32-bit packed format `R11F_G11F_B10F`, which holds three channels in half the bytes of the 16-bit one. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into the three formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests, and with MSAA takes 4 samples. Null without WebGL2. |
 | `renderer: string \| null` | Reported for the record. The engine reads no meaning from it, and only compares it with an earlier start's, to tell whether a stored preset check came from the same GPU. |
 | `error?: string` | Why the probe failed, when it did. |
 
@@ -541,6 +551,17 @@ What a dedicated worker can do, in `CapabilityReport.worker`. A render worker ne
 | `requestAnimationFrame: boolean` | True when workers have `requestAnimationFrame`. |
 | `offscreenWebGL2: boolean` | True when a worker can draw with WebGL2 into an `OffscreenCanvas`. |
 | `offscreenWebGPU: boolean` | True when a worker can draw with WebGPU into an `OffscreenCanvas`. |
-| `error?: string` | Why the probe failed, when it did. |
+| `webgpuError?: string` | Why the WebGPU check failed, when it threw. The WebGL2 check's answer still holds. |
+
+### `WorkerProbeFailure`
+
+Interface `WorkerProbeFailure`.
+
+Why the probe worker gave no answer, in `CapabilityReport.worker`. The engine then draws on the page's thread, and `engine.mode.renderFallback` names the reason.
+
+| Member | Description |
+| --- | --- |
+| `failure: 'no-answer' \| 'failed-to-start'` | `no-answer` when neither probe worker answered within its time limit, which a stalled GPU call or a very busy machine causes. `failed-to-start` when the worker's script failed to load or run. |
+| `error: string` | The failure in words. |
 
 <!-- null3d:api:end -->

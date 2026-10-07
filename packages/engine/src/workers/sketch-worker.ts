@@ -141,6 +141,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		}
 	} else if (message.type === 'wake') {
 		wakeWaiters();
+	} else if (message.type === 'wgsl') {
+		runner?.updateShaders(message.updates);
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
 	} else if (message.type === 'capture' && draw && host.drawing && controlSlots) {

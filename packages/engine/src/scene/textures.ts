@@ -331,6 +331,11 @@ export class Textures {
 		private readonly arrived: (id: number) => Promise<void> = async () => {},
 		/** @internal True when the engine draws with WebGL2. */
 		readonly webgl2 = false,
+		/**
+		 * @internal True when KTX2 files keep their transcoded texels in the browser's Cache Storage,
+		 * so later loads of the same file skip the transcoder.
+		 */
+		readonly textureCache = false,
 	) {}
 
 	/**
@@ -467,6 +472,30 @@ export class Textures {
 				new Uint8Array(core.memory.buffer, address, level.length).set(level);
 				address += level.length;
 			}
+		} catch (error) {
+			texture.destroy();
+			throw error;
+		}
+		return texture;
+	}
+
+	/**
+	 * @internal A cube texture of 8-bit sRGB texels and one level, whose faces come from six
+	 * square images of one size, from +X to -Z, each with its first row at the top of its face.
+	 * The images upload in the frames after the call.
+	 */
+	fromCubeImages(faces: readonly ImageBitmap[], call: string): Texture {
+		const { core } = this;
+		const size = (faces[0] as ImageBitmap).width;
+		const handle = core.checkGrowth(
+			core.glue.createCubeTexture(size, 1, TEXTURE_FORMAT_SRGB),
+			call,
+		);
+		const texture = new Texture(handle, size, size, 6, 'rgba8unorm', 'srgb', 0, this, true);
+		try {
+			const first = core.checkGrowth(core.glue.setCubeImages(handle, 0), call, 'a texture');
+			for (let face = 0; face < faces.length; face++)
+				this.send(first + face, faces[face] as ImageBitmap);
 		} catch (error) {
 			texture.destroy();
 			throw error;
