@@ -2,9 +2,11 @@
 // it answers. Plain HTTP stays on localhost, which phones reach through adb; HTTPS on the local
 // network serves tablets and phones that reach the Mac by its .local name.
 import { type ChildProcess, spawn } from 'node:child_process';
+import { createWriteStream, mkdirSync } from 'node:fs';
 import { constants } from 'node:os';
 import { join } from 'node:path';
 import { localHostName } from '../../tools/lib/host.ts';
+import { RUNS_DIR } from './report-collector.ts';
 
 /**
  * The dev server's port: 5173, or the one that NULL3D_PORT names. Each copy of the repository, such
@@ -130,7 +132,8 @@ const DEV_PROBE = '/tests/pages/index.html';
 /**
  * Runs Vite with `args` in the repository copy at `root`, with `env` added, and waits until the
  * server answers at `selfUrl` followed by `probe`. Stopping the server ends its process, and so does
- * a signal that stops this one.
+ * a signal that stops this one. The server's output goes to a log file per port in the runs folder,
+ * which CI keeps when a job fails, so a failed page can be checked against what the server said.
  */
 async function spawnServer(
 	root: string,
@@ -142,10 +145,18 @@ async function spawnServer(
 ): Promise<DevServer> {
 	const child: ChildProcess = spawn('bunx', ['vite', ...args], {
 		cwd: root,
-		stdio: ['ignore', 'ignore', 'pipe'],
+		stdio: ['ignore', 'pipe', 'pipe'],
 		env: { ...process.env, ...env },
 	});
 	const stop = trackServer(child);
+	mkdirSync(RUNS_DIR, { recursive: true });
+	const log = createWriteStream(join(RUNS_DIR, `server-${new URL(selfUrl).port}.log`), {
+		flags: 'a',
+	});
+	log.write(`${new Date().toISOString()} vite ${args.join(' ')} in ${root}\n`);
+	child.stdout?.pipe(log, { end: false });
+	child.stderr?.pipe(log, { end: false });
+	child.once('close', () => log.end());
 	let errors = '';
 	child.stderr?.on('data', (chunk: Buffer) => {
 		errors += chunk.toString();

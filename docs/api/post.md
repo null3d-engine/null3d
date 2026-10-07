@@ -255,7 +255,7 @@ fn toneCurve(color: vec3f) -> vec3f {
 post.set({ toneMapping: reinhard });
 ```
 
-- Effects run on linear HDR color, after the exposure and before bloom and the tone curve. Each runs in a pass of its own, and at most 8 run at once.
+- Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes ([Custom passes](../guides/custom-passes.md#cost)).
 - `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.

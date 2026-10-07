@@ -191,6 +191,8 @@ await assets.preload(['/tex/a.png', '/tex/b.png', '/tex/c.png']);
 
 Loads of one address at the same time share one download. Files that `preload` downloaded wait in memory until a load takes them. The HTTP cache keeps everything else, as it does for a page's own requests, so three.js's `THREE.Cache` has no counterpart.
 
+A game that plays with no network caches its files and the engine's in its own service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows.
+
 ## Errors
 
 Each call rejects with an engine error that says how to fix the problem:

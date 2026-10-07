@@ -97,3 +97,9 @@ export const JobsStopAddress = 29;
  * the browser stops each worker as soon as the page has gone.
  */
 export const JobsServing = 30;
+/**
+ * The template of the last joined shader of custom effects, a group's or a fold's, whose pipeline
+ * failed to build, as the thread that draws reports it, or 0. The sketch thread takes it, and from
+ * then on those effects draw one pass each.
+ */
+export const JoinFailed = 31;
