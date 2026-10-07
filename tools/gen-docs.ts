@@ -4,7 +4,8 @@
 //                                   that the API reference cannot show, and on shader library
 //                                   items without doc comments
 //   bun tools/gen-docs.ts --check   report those exports, stale files, missing pages, bad front
-//                                   matter and broken links
+//                                   matter, broken links, and files of the record of tested
+//                                   devices that break its rules
 import { readApi } from './lib/api-docs';
 import {
 	checkDocs,
