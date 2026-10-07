@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { MEMORY_REFUSED } from '../pages/lib/room.ts';
 import {
 	type EndedEarly,
 	memoryResetText,
@@ -71,6 +72,13 @@ describe('the out-of-memory guard', () => {
 			outOfMemory({ ok: false, error: 'RangeError: WebAssembly.Memory(): out of memory' }),
 		).toBe(true);
 		expect(outOfMemory(OTHER_FAILURE)).toBe(false);
+		// A page that ran out of time while the engine still waited for its memory.
+		const waiting = ['10 ms null3d-sketch: started', `20 ms ${MEMORY_REFUSED}: Out of memory`];
+		expect(outOfMemory({ ok: false, error: 'no result within 30 s', trail: waiting })).toBe(true);
+		expect(outOfMemory({ ok: false, error: 'no result within 30 s', trail: [] })).toBe(false);
+		expect(outOfMemory({ ok: false, error: 'the first frame took 20 s', trail: waiting })).toBe(
+			false,
+		);
 		expect(outOfMemory({ ok: true, error: E1109.error })).toBe(false);
 		expect(outOfMemory(undefined)).toBe(false);
 	});

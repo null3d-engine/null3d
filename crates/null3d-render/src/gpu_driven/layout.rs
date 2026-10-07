@@ -40,6 +40,8 @@ const BUCKET_WORDS: u32 = sizes::BUCKET_WORDS;
 const BUCKET_BYTES: u32 = BUCKET_WORDS * 4;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
+/// The index entries that fit in the bytes of one copied instance.
+const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
 
 /// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
 /// group of its material's map, the mesh page of its mesh's first part, its engine mesh and
@@ -128,6 +130,10 @@ pub(super) struct Bucket {
     /// of its skin in the joint texture.
     pub(super) skins: bool,
     pub(super) first_joint: u32,
+    /// True when its pipelines read their instances by index, so its slice holds an index entry
+    /// per instance from entry `base` on, after every copy; false when it holds a copy per instance
+    /// from copy `base` on.
+    pub(super) indexed: bool,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -242,10 +248,16 @@ struct BatchRows {
 pub(super) struct Layout {
     /// What the buckets draw.
     drawn: Drawn,
+    /// True when the buckets whose templates can read their instances by index do so.
+    index_instances: bool,
     pub(super) sources: u32,
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
     pub(super) buckets: Vec<Bucket>,
+    /// The slots of the buckets that read copies, and of those that read indices, which each
+    /// view's compacted instance buffer holds after the copies.
+    pub(super) copied: u32,
+    pub(super) indexed: u32,
     /// Every bucket's draws, bucket by bucket; a draw's place is its indirect draw's.
     pub(super) draws: Vec<Draw>,
     /// The entry of every source: its bucket, its occluder bit and its cell, or `HIDDEN`.
@@ -289,10 +301,19 @@ pub(super) struct Layout {
 }
 
 impl Layout {
-    /// An empty layout of buckets that draw `drawn`.
-    pub(super) fn new(drawn: Drawn) -> Self {
+    /// Bytes of each view's compacted instance buffer for this layout: a copy for each slot of the
+    /// buckets that read copies, then an index entry for each slot of those that read indices.
+    pub(super) fn compacted_bytes(&self) -> u32 {
+        (self.copied * sizes::INSTANCE_STRIDE + self.indexed * sizes::INDEX_STRIDE)
+            .max(sizes::INSTANCE_STRIDE)
+    }
+
+    /// An empty layout of buckets that draw `drawn`, whose pipelines read their instances by index
+    /// where their templates can, with `index_instances`.
+    pub(super) fn new(drawn: Drawn, index_instances: bool) -> Self {
         Self {
             drawn,
+            index_instances,
             ..Self::default()
         }
     }
@@ -334,11 +355,6 @@ impl Layout {
             .is_some_and(|&bucket| bucket != HIDDEN)
     }
 
-    /// The sources that draw somewhere, which each view's compacted instance buffer holds.
-    pub(super) fn drawable(&self) -> u32 {
-        self.buckets.iter().map(|b| b.capacity).sum()
-    }
-
     /// The most that one frame copies into its arena for the tables: the bucket table, the layer
     /// table, the bucket records and the cell order.
     pub(super) fn upload_bound(&self) -> usize {
@@ -371,6 +387,7 @@ impl Layout {
         self.depthless = false;
         self.occluders = 0;
         self.buckets.clear();
+        (self.copied, self.indexed) = (0, 0);
         self.draws.clear();
         self.skinned.clear();
         self.waiting.clear();
@@ -625,8 +642,14 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.skinned.clear();
-        let mut base = 0;
+        let (mut copied, mut indexed) = (0, 0);
         for &((pipeline, group, _, mesh, material, bounds), count) in &self.key_counts {
+            let by_index = self.index_instances && pipeline.reads_index();
+            let pipeline = if by_index {
+                pipeline.by_index()
+            } else {
+                pipeline
+            };
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
@@ -656,13 +679,14 @@ impl Layout {
                     (pipeline, prepass, own)
                 }
             };
+            let base = if by_index { &mut indexed } else { &mut copied };
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
                 prepass_own,
                 group,
                 material,
-                base,
+                base: *base,
                 capacity: count,
                 first_draw: self.draws.len() as u32,
                 draws: parts.len() as u32,
@@ -670,7 +694,9 @@ impl Layout {
                 radius,
                 skins: object.is_some_and(|object| skinning.skins_in_vertex_shader(object)),
                 first_joint: skin.map_or(0, |skin| skin.joint_base),
+                indexed: by_index,
             });
+            *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
                 // A skinned part draws its region of skinned vertices, from its first vertex.
                 let region = regions.and_then(|regions| regions.get(k));
@@ -686,8 +712,13 @@ impl Layout {
                     vertices: region.map(SkinnedPart::vertices),
                 }
             }));
-            base += count;
         }
+        // The index slices follow the copies, so their bases count entries from the buffer's
+        // start.
+        for bucket in self.buckets.iter_mut().filter(|bucket| bucket.indexed) {
+            bucket.base += copied * INDEX_ENTRIES_PER_COPY;
+        }
+        (self.copied, self.indexed) = (copied, indexed);
 
         let counts = &self.key_counts;
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
@@ -746,6 +777,7 @@ impl Layout {
                 bucket.center[1].to_bits(),
                 bucket.center[2].to_bits(),
                 bucket.first_joint,
+                u32::from(bucket.indexed),
             ]);
         }
         self.built = true;
@@ -1060,10 +1092,10 @@ mod tests {
             ]
         );
         // Each record holds its sphere's centre, where the culling shader reads it, then the
-        // first joint of a skin, which no bucket here has.
+        // first joint of a skin, which no bucket here has, and 0 for a slice of copies.
         let words = BUCKET_WORDS as usize;
         let record = &layout.bucket_records[2 * words..3 * words];
         assert_eq!(record[5..8], [0.0f32, 1.5, 0.0].map(f32::to_bits));
-        assert_eq!(record[8], 0);
+        assert_eq!(record[8..], [0, 0]);
     }
 }

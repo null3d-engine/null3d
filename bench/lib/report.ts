@@ -368,6 +368,7 @@ const NULL3D_PAGES = [
 	['null3d-webgl2-half', 'WebGL2 at half precision', 'threejs-webgl'],
 	['null3d-webgpu-prepass', 'WebGPU with the depth prepass', 'threejs-webgpu'],
 	['null3d-webgl2-prepass', 'WebGL2 with the depth prepass', 'threejs-webgl'],
+	['null3d-webgpu-index', 'WebGPU with instance data by index', 'threejs-webgpu'],
 	['null3d-webgpu-depth32', 'WebGPU with 32-bit shadow cascades', 'threejs-webgpu'],
 	['null3d-webgl2-depth32', 'WebGL2 with 32-bit shadow cascades', 'threejs-webgl'],
 	['null3d-webgpu-blend-off', 'WebGPU without the cascade band', 'threejs-webgpu'],

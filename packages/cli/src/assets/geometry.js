@@ -1,10 +1,9 @@
-// The tool's steps for meshes: reorder each triangle list for the GPU's vertex cache, make levels
-// of detail with meshoptimizer's simplifier, and store vertices in the 8-bit and 16-bit integers
-// that KHR_mesh_quantization allows. Each step works on a glTF-Transform document in place.
+// The tool's steps for meshes: reorder each triangle list for the GPU's vertex cache, and store
+// vertices in the 8-bit and 16-bit integers that KHR_mesh_quantization allows. Each step works on
+// a glTF-Transform document in place.
 import { Accessor, Primitive } from '@gltf-transform/core';
 import { KHRMeshQuantization } from '@gltf-transform/extensions';
-import { MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
-import { MSFT_LOD, MSFTLod } from './lod-extension.js';
+import { MeshoptEncoder } from 'meshoptimizer';
 
 /** @import { Document, Mesh, Node, PrimitiveTarget, Skin } from '@gltf-transform/core' */
 
@@ -19,27 +18,6 @@ const POSITION_MAX = 2 ** POSITION_BITS - 1;
 
 /** A vertex index that a reorder's map gives to a vertex that no triangle uses. */
 const UNUSED = 0xffffffff;
-
-/** Meshes with fewer triangles get no levels of detail: they cost little to draw anyway. */
-export const LOD_MIN_TRIANGLES = 256;
-
-/** The share of the triangles that each level of detail aims for: a half, a quarter, an eighth. */
-export const LOD_RATIOS = [0.5, 0.25, 0.125];
-
-/**
- * The largest error that a level may have, as a share of the mesh's longest side. A level that
- * cannot reach its share of triangles within it keeps more triangles.
- */
-const LOD_MAX_ERROR = 0.1;
-
-/** A level must have at most this share of the level above's triangles, or the levels stop. */
-const LOD_MIN_STEP = 0.8;
-
-/**
- * The screen height in pixels that the levels' coverage assumes. A level draws once its error
- * covers less than one pixel of such a screen.
- */
-export const LOD_SCREEN_PIXELS = 1080;
 
 /** @param {Accessor} accessor */
 const isFloat = (accessor) => accessor.getComponentType() === Accessor.ComponentType.FLOAT;
@@ -167,7 +145,7 @@ export async function reorderMeshes(doc) {
  * @param {Uint32Array} indices
  * @param {number} vertices
  */
-function setIndices(doc, prim, indices, vertices) {
+export function setIndices(doc, prim, indices, vertices) {
 	const array = vertices <= 0xffff ? Uint16Array.from(indices) : Uint32Array.from(indices);
 	const old = prim.getIndices();
 	if (old && usesOf(doc, old) === 1) {
@@ -189,7 +167,7 @@ function setIndices(doc, prim, indices, vertices) {
  *
  * @param {Uint32Array} indices
  */
-function cacheOrder(indices) {
+export function cacheOrder(indices) {
 	const work = indices.slice();
 	const [remap] = MeshoptEncoder.reorderMesh(work, true, false);
 	const back = new Uint32Array(remap.length);
@@ -200,174 +178,6 @@ function cacheOrder(indices) {
 	for (let i = 0; i < work.length; i++)
 		work[i] = /** @type {number} */ (back[/** @type {number} */ (work[i])]);
 	return work;
-}
-
-/**
- * A mesh's longest side.
- *
- * @param {Primitive[]} prims
- */
-function longestSide(prims) {
-	const min = [Infinity, Infinity, Infinity];
-	const max = [-Infinity, -Infinity, -Infinity];
-	for (const prim of prims) {
-		const position = /** @type {Accessor} */ (prim.getAttribute('POSITION'));
-		position.getMinNormalized(min.slice()).forEach((v, k) => {
-			min[k] = Math.min(/** @type {number} */ (min[k]), v);
-		});
-		position.getMaxNormalized(max.slice()).forEach((v, k) => {
-			max[k] = Math.max(/** @type {number} */ (max[k]), v);
-		});
-	}
-	return Math.max(0, ...max.map((v, k) => v - /** @type {number} */ (min[k])));
-}
-
-/**
- * The levels of detail of one mesh: each level's indices for each triangle list, and its error.
- *
- * @typedef {object} MeshLevels
- * @property {Primitive[]} prims The mesh's triangle lists, in the order of each level's indices.
- * @property {{ indices: Uint32Array[], error: number, triangles: number }[]} levels The lower
- *   levels, from the most detailed down. The error is a share of the mesh's longest side.
- */
-
-/**
- * Simplifies each mesh of enough triangles to a half, a quarter and an eighth of its triangles,
- * while the simplifier keeps each level's error under a tenth of the mesh's size. Each triangle
- * list of a mesh simplifies on its own, with its border kept, so the parts still meet. The levels
- * share the mesh's vertices: only their indices are new. Levels stop when one would save too
- * little.
- *
- * The simplifier keeps the seams where vertices at one place differ in normals or coordinates.
- * In a mesh with flat faces every edge is such a seam, so nothing simplifies. A level that saves
- * too little therefore tries again with the seams free to move, which keeps the shape but may
- * stretch the textures along them a little, out where the level draws.
- *
- * @param {Document} doc
- * @returns {Promise<Map<Mesh, MeshLevels>>}
- */
-export async function planLevels(doc) {
-	await Promise.all([MeshoptEncoder.ready, MeshoptSimplifier.ready]);
-	/** @type {Map<Mesh, MeshLevels>} */
-	const plans = new Map();
-	for (const mesh of doc.getRoot().listMeshes()) {
-		const prims = triangleLists(mesh);
-		if (prims.some((prim) => !isFloat(/** @type {Accessor} */ (prim.getAttribute('POSITION')))))
-			continue;
-		const sources = prims.map((prim) => {
-			const position = /** @type {Accessor} */ (prim.getAttribute('POSITION'));
-			const positions = Float32Array.from(/** @type {Float32Array} */ (position.getArray()));
-			return {
-				positions,
-				indices: triangleIndices(prim, position.getCount()),
-				scale: MeshoptSimplifier.getScale(positions, 3),
-			};
-		});
-		const total = sources.reduce((sum, s) => sum + s.indices.length / 3, 0);
-		const side = longestSide(prims);
-		if (total < LOD_MIN_TRIANGLES || side === 0) continue;
-		/** @type {MeshLevels['levels']} */
-		const levels = [];
-		let previous = total;
-		let error = 0;
-		for (const ratio of LOD_RATIOS) {
-			/** @param {import('meshoptimizer').SimplifierFlags[]} flags */
-			const simplify = (flags) =>
-				sources.map(({ positions, indices, scale }) => {
-					const target = Math.floor((indices.length * ratio) / 3) * 3;
-					const [simplified, relative] = MeshoptSimplifier.simplify(
-						indices,
-						positions,
-						3,
-						target,
-						(LOD_MAX_ERROR * side) / scale,
-						flags,
-					);
-					return { indices: cacheOrder(simplified), error: (relative * scale) / side };
-				});
-			const count = (/** @type {{ indices: Uint32Array }[]} */ l) =>
-				l.reduce((sum, p) => sum + p.indices.length / 3, 0);
-			let level = simplify(['LockBorder']);
-			if (count(level) > previous * LOD_MIN_STEP) level = simplify(['LockBorder', 'Permissive']);
-			const triangles = count(level);
-			if (triangles > previous * LOD_MIN_STEP) break;
-			error = Math.max(error, ...level.map((l) => l.error));
-			levels.push({ indices: level.map((l) => l.indices), error, triangles });
-			previous = triangles;
-		}
-		if (levels.length > 0) plans.set(mesh, { prims, levels });
-	}
-	return plans;
-}
-
-/**
- * The screen coverage of each level: the share of the screen's height below which the level
- * after it errs by less than a pixel. The lowest level's is 0, so it draws at any distance.
- *
- * @param {readonly { error: number }[]} levels The lower levels.
- */
-export function levelCoverage(levels) {
-	const coverage = levels.map(({ error }) =>
-		error > 0 ? Math.min(1, 1 / (LOD_SCREEN_PIXELS * error)) : 1,
-	);
-	return [...coverage, 0];
-}
-
-/**
- * Stores the planned levels in the document, as MSFT_lod gives them: a mesh for each level, whose
- * triangle lists share the mesh's vertex streams and materials, and a node for each level beside
- * each node that draws the mesh, with that node's transform. The node names its levels and gives
- * the screen coverage of each.
- *
- * @param {Document} doc
- * @param {Map<Mesh, MeshLevels>} plans
- */
-export function storeLevels(doc, plans) {
-	if (plans.size === 0) return;
-	const extension = doc.createExtension(MSFTLod);
-	const buffer = doc.getRoot().listBuffers()[0] ?? doc.createBuffer();
-	for (const [mesh, { prims, levels }] of plans) {
-		const meshes = levels.map((level, k) => {
-			const lower = doc.createMesh(`${mesh.getName()}_lod${k + 1}`);
-			prims.forEach((prim, p) => {
-				const indices = /** @type {Uint32Array} */ (level.indices[p]);
-				const count = /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount();
-				const copy = doc
-					.createPrimitive()
-					.setMode(prim.getMode())
-					.setMaterial(prim.getMaterial())
-					.setIndices(
-						doc
-							.createAccessor()
-							.setType('SCALAR')
-							.setArray(count <= 0xffff ? Uint16Array.from(indices) : Uint32Array.from(indices))
-							.setBuffer(buffer),
-					);
-				for (const semantic of prim.listSemantics())
-					copy.setAttribute(semantic, prim.getAttribute(semantic));
-				for (const target of prim.listTargets()) copy.addTarget(target);
-				lower.addPrimitive(copy);
-			});
-			return lower;
-		});
-		const coverage = levelCoverage(levels);
-		for (const node of mesh.listParents().filter((p) => p.propertyType === 'Node')) {
-			const base = /** @type {Node} */ (node);
-			const lod = extension.createLod().setCoverage(coverage);
-			meshes.forEach((lower, k) => {
-				lod.addLevel(
-					doc
-						.createNode(`${base.getName()}_lod${k + 1}`)
-						.setMesh(lower)
-						.setSkin(base.getSkin())
-						.setTranslation(base.getTranslation())
-						.setRotation(base.getRotation())
-						.setScale(base.getScale()),
-				);
-			});
-			base.setExtension(MSFT_LOD, /** @type {any} */ (lod));
-		}
-	}
 }
 
 /**
