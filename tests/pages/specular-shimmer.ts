@@ -62,11 +62,9 @@ async function drawRow(scale: number): Promise<{ tier: string; frames: Float32Ar
 	canvas.style.width = `${WIDTH * scale}px`;
 	canvas.style.height = `${HEIGHT * scale}px`;
 	document.body.append(canvas);
-	const engine = await createEngine({
-		canvas,
-		sketch: new URL(`./sketches/specular-shimmer-sketch.ts?scene=${SCENE}`, import.meta.url),
-		maxPixelRatio: 1,
-	});
+	const sketch = new URL('./sketches/specular-shimmer-sketch.ts', import.meta.url);
+	sketch.searchParams.set('scene', SCENE);
+	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 	await engine.firstFrame;
 	let placed: (() => void) | undefined;
 	engine.onSketchMessage((name) => {
