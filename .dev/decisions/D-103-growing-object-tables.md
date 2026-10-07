@@ -106,6 +106,10 @@ The world buffers are not the only memory that the list of frame `f` points at. 
 
 Each of these now keeps a replaced buffer (`reserve_keeping` in the core's `alloc.rs`) until its parity is used again: the next cull, sort or arena reset. By then the thread that draws has finished the list that read it. The cost is one more buffer per list, held for a frame or two after a growth.
 
+A new instance batch makes the same room in the renderer, so before this change a batch created during play could move an upload arena too. The kept buffers cover that case as well.
+
+A replaced buffer is at least twice the old one, as a vector's own growth is. Each new batch reserves the arenas for a bound that follows the frame's pending mesh uploads, so the bound creeps up as models load. A first version took exactly the bound. The memory test that loads and destroys models 100 times then saw the engine's memory grow once by 1.2 to 1.8 MB, at a round between the 10th and the 100th. It failed 2 of 12 runs, and 9 of 12 with room for 16,383 objects from the start. Main passed 12 of 12. With the doubling, the branch passed 12 of 12 both ways, on 8 October 2026 on the Mac's GPU.
+
 ### The page's views
 
 Every array moves in a growth, but the memory need not grow, so the memory's buffer does not change. The core therefore counts its moves of viewed arrays in a word of its own. The page's `CoreMemory.refresh` compares that count as well as the buffer. The calls that create objects and the frame's start already refresh, so every view is made again before its next use.
