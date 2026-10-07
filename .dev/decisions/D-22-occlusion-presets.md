@@ -39,6 +39,14 @@ The culling works: in the 96-segment run the opaque pass took 0.92 ms with culli
 
 The iPad Pro (A12X) in Safari 26 is pending: the device runner's `gpu-occlusion` plan measures it.
 
+The first phone, on 2026-10-07: BrowserStack's Galaxy S25 (Adreno 830) in Chrome 149, with the device runner's `gpu-occlusion` plan, on the M2-I1 branch at 89032719b (run 20261007-035830-gpu-occlusion). All six views matched culling off in every pixel. The room scene's GPU time per frame, with 32-segment spheres and the walls hiding 94% of them:
+
+| Culling off | Culling on | Change |
+| --- | --- | --- |
+| 3.74 ms | 4.85 ms | +30% |
+
+With culling on, the compute pass of the pyramid and the second phase took 0.98 ms, and the opaque pass 2.36 ms against 2.42 ms with it off. So on this GPU the opaque pass saved almost nothing, while the added passes cost about 1.1 ms. The cloud phone's screen ran at 30 Hz, so the runner marks the timings unreliable; GPU times come from the GPU's timer. This is one data point, and it fits "off on every preset" on Android.
+
 ### Software occlusion culling on WebGL2
 
 Pending: M2-I2 and M2-I3 (T-36).
