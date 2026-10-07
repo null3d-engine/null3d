@@ -10,7 +10,7 @@ use crate::math::Affine;
 /// A local pose by field: translation, rotation and scale of each joint, in ten arrays of `lanes`
 /// values (see the module documentation of [`crate::animation`]). Joints past the skeleton's
 /// count hold the identity transform.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pose {
     lanes: u32,
     values: Box<[f32]>,
