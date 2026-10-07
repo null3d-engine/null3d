@@ -1,8 +1,8 @@
 # D-79: Lighting defaults: the roughness floor, specular anti-aliasing, horizon fading and AgX
 
-Status: decided, 2026-10-05, under the rulings of [D-53](D-53-technique-defaults.md) (4 and 11). On 2026-10-06 the owner picked AgX's punchy look as the default. The shimmer page's phone runs are pending. Date: 2026-10-05. Task: M2-E7.
+Status: decided, 2026-10-05, under the rulings of [D-53](D-53-technique-defaults.md) (4 and 11). On 2026-10-06 the owner picked AgX's punchy look as the default. The kernel's limit waits for the owner (asked 2026-10-08, with the shimmer page's phone and iPad runs of four settings). Date: 2026-10-05. Task: M2-E7.
 
-Summary: Roughness floors at 0.045, as in three.js r187 and Filament. Filament's specular anti-aliasing kernel replaces three.js's term, with 44 to 47% less shimmer on the Mac, and horizon fading dims environment reflections that a normal map tilts below the surface. AgX with Filament's punchy look is the default curve, at no measurable cost on the Mac; ACES stays for ports.
+Summary: Roughness floors at 0.045, as in three.js r187 and Filament. Filament's specular anti-aliasing kernel replaces three.js's term; its limit waits for the owner, since on the Mac a lower limit flickers less. Horizon fading dims environment reflections that a normal map tilts below the surface. AgX with Filament's punchy look is the default curve, at no measurable cost on the Mac; ACES stays for ports.
 
 ## Question
 
@@ -30,6 +30,34 @@ Each variant was a build of the lit template: Filament's kernel, three.js's term
 
 - The kernel cuts shimmer by 44 to 47% against three.js's term on both GPU sets, and halves the error. That is just short of the "halved" target.
 - No anti-aliasing flickered least on this scene. Both kernels read the change of the interpolated normal between pixels. On meshes whose triangles are about a pixel across, that change jumps from triangle to triangle. It also jumps from one 2 x 2 block of pixels to the next. So the widened roughness itself flickers. Kaplanyan's kernel assumes a smooth normal across the pixel.
+- This first measure counted the 8-bit rounding and the dither as flicker, and the first "explanation" blamed 2 x 2 blocks of pixels. The second sweep below corrects both.
+
+#### The second sweep (8 October 2026)
+
+The page now counts only the part of each pixel's second difference above 4 levels, which rounding and dither cannot reach. It has four scenes:
+
+- `small`: the scene above.
+- `smooth`: large spheres of many triangles, 40 to 60 pixels across, with roughness 0.05 to 0.3.
+- `tiny`: 1,152 smooth spheres about 4 pixels across, with roughness 0.045 to 0.15. Their highlights are narrower than a pixel.
+- `bumps`: a sphere under a fine normal map.
+
+ The variants now include the kernel at other limits. Shimmer, Chrome on the Mac's GPU, WebGPU, 48 frames:
+
+| Variant | small | smooth | tiny |
+| --- | --- | --- | --- |
+| three.js's term (before) | 0.104 | 0.046 | 0.309 |
+| Kernel, limit 0.2² (shipped) | 0.032 | 0.0093 | 0.223 |
+| Kernel, variance 0.05, limit 0.2² | 0.030 | 0.0076 | not run |
+| Kernel, limit 0.1² | 0.018 | 0.0027 | 0.142 |
+| Kernel, limit 0.05² | 0.013 | 0.0014 | 0.081 |
+| None | 0.0096 | 0.00096 | 0.020 |
+
+- Less filtering gives less flicker, step by step, in every scene. No setting of the kernel flickers less than no filter.
+- The cause: the kernel reads how fast the interpolated normal changes from pixel to pixel. Linear interpolation makes that rate constant inside each triangle, with jumps at triangle edges and outlines. As the camera moves, the jumps cross pixels, so each pixel's added roughness jumps from frame to frame. The widened highlights also cover more pixels, so more pixels flicker.
+- 2 x 2 blocks are not the cause on the Mac. `dpdxFine` and `dpdyFine` gave the same pixels as `dpdx` and `dpdy`. The Mac's GPU already measures per pixel.
+- Without a filter, small glossy shapes are darker. The tiny scene's mean light is 0.53 with no filter, 3.2 at the 0.1² limit and 3.5 at 0.2². The averaged row averages after the tone curve, which loses light where a narrow highlight clips. So the page cannot say which brightness is right.
+- In the `bumps` scene every variant gives the same figure. The kernel never sees a normal map's detail. The averaged row there flickers more than the canvas. At 4 times the size, the GPU reads a finer level of the map, whose bumps alias. So `bumps` does not test the kernel, and the device plan leaves it out.
+- Against the rule "halve shimmer against three.js's term": the 0.2² limit cuts it by 70%, 80% and 28%, and fails on `tiny`. The 0.1² limit cuts it by 83%, 94% and 54%, and passes on all three.
 - The kernel costs two square roots and about six other operations per pixel, in place of three.js's term of about five. The difference is far below 1% of a frame. No phone has timed it yet.
 
 ### The look test (prototype L7, Mac only)
