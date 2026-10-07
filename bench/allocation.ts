@@ -30,7 +30,9 @@
 // shadows to S1, with casters that circle them, so tiles of the shadow atlas draw again every
 // frame. `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build
+// turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
+// moves its sun and its clouds every frame. `--prepass` turns the depth prepass on, in any scene.
+// It samples the production build
 // of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
@@ -56,6 +58,7 @@
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
+//   bun run bench:allocation --sky --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
@@ -267,7 +270,9 @@ async function main(): Promise<void> {
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
 		const effects = args.includes('--effects') ? '&effects' : '';
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}`;
+		const sky = args.includes('--sky') ? '&sky' : '';
+		if (sky && scene !== 's1') throw new Error('--sky draws behind S1 only');
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.

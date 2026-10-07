@@ -103,8 +103,9 @@
 //! or turning outlines on or off, rebuilds the layouts, as casting shadows does.
 //!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
-//! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
-//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
+//! that the camera's opaque pass draws after its bundle, or before it while a bucket writes no
+//! depth, is [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and
+//! begins their render passes.
 //!
 //! # Memory
 //!
@@ -130,7 +131,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, AoIds};
-use crate::background::BackgroundPass;
+use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
@@ -271,9 +272,11 @@ mod ids {
     /// reads.
     pub const OUTLINE_BUCKETS: u32 = AO + 1;
     pub const OUTLINE_RECORDS: u32 = OUTLINE_BUCKETS + 1;
+    /// The uniform buffer of the background's values.
+    pub const BACKGROUND: u32 = OUTLINE_RECORDS + 1;
     /// Each camera view's buffers of occlusion culling: its depth pyramid and the pyramid's level
     /// parameters, two ids from `OCCLUSION + 2 * view`.
-    const OCCLUSION: u32 = OUTLINE_RECORDS + 1;
+    const OCCLUSION: u32 = BACKGROUND + 1;
 
     pub const fn pyramid(view: ViewId) -> u32 {
         OCCLUSION + 2 * view.index() as u32
@@ -375,12 +378,14 @@ mod ids {
     pub const JOINTS_GROUP: u32 = SKIN_GROUPS + super::skin::MAX_SEGMENTS;
     /// The bind group of each step of ambient occlusion, after the joint texture's.
     pub const AO_GROUPS: u32 = JOINTS_GROUP + 1;
-    /// Each camera view's group of its depth pyramid, after ambient occlusion's.
+    /// The background's bind group, after ambient occlusion's.
+    pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// Each camera view's group of its depth pyramid, after the background's.
     pub const fn pyramid_group(view: ViewId) -> u32 {
-        AO_GROUPS + AO_STEPS as u32 + view.index() as u32
+        BACKGROUND_GROUP + 1 + view.index() as u32
     }
     /// The bind group of each custom effect, after the depth pyramids'.
-    pub const EFFECT_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32 + MAX_VIEWS as u32;
+    pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1 + MAX_VIEWS as u32;
     /// The bind groups of materials' maps, after the effects'.
     pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
 
@@ -596,7 +601,12 @@ impl GpuDrivenRenderer {
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
-            background: BackgroundPass::default(),
+            background: BackgroundPass::new(BackgroundIds {
+                buffer: ids::BACKGROUND,
+                group: ids::BACKGROUND_GROUP,
+                blank_cube: ids::BLANK_ENVIRONMENT,
+                sampler: ids::ENVIRONMENT_SAMPLER,
+            }),
             lights: CameraLights::on_gpu(config.light_limits),
             light_clusters: LightClusters::default(),
             skinning: Skinning::new(config.vertex_skinning),
@@ -838,6 +848,7 @@ impl GpuDrivenRenderer {
             &self.settings,
             &mut self.pipelines,
             self.graph.scene_targets(),
+            Place::of(self.layout.depthless),
         );
         created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
         // Occlusion culling's shaders load on first use: its pipelines wait for the scene's first
@@ -997,7 +1008,7 @@ impl GpuDrivenRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(&self.settings);
+        self.background.prepare(list, arena, &self.settings)?;
         let binding_bytes = self.config.storage_binding_bytes;
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -1283,10 +1294,15 @@ impl GpuDrivenRenderer {
                     opaque::record(list, view, Bundle::Prepass)
                 }
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
-                    if view == ViewId::CAMERA {
-                        background.record(list, ids::frame_group(view), &[])?;
+                    let camera = view == ViewId::CAMERA;
+                    if camera {
+                        background.record(list, ids::frame_group(view), &[], Place::First)?;
                     }
-                    opaque::record(list, view, Bundle::Opaque)
+                    opaque::record(list, view, Bundle::Opaque)?;
+                    if camera {
+                        background.record(list, ids::frame_group(view), &[], Place::Last)?;
+                    }
+                    Ok(())
                 }
                 Role::Pyramid(view) if drawn(view) && occluding => pyramids.record(list, view),
                 Role::LateCull(view) if drawn(view) && occluding => {
@@ -1388,6 +1404,7 @@ impl GpuDrivenRenderer {
             + shadows
             + sorted
             + self.graph.upload_bound()
+            + BackgroundPass::UPLOAD_BYTES
     }
 }
 
@@ -1441,6 +1458,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.background.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();

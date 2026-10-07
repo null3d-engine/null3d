@@ -19,3 +19,5 @@ With WebGL2, every environment image differs by 13.8% to 14.9%: the spheres lose
 Main has both faults.
 
 Objects past 512 m drew in the wrong place on WebGPU, and captures of scenes that resolve straight into the canvas came back empty: both fixed by the S25 WebGPU fixes ([Browser faults](../../implementation-notes.md#browser-faults))
+
+WebGPU: S1's scene pass takes about 4.8 ms more GPU time once it draws anything besides the swarm, a background or a small box alike (D-68).
