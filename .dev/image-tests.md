@@ -45,7 +45,8 @@ Each demo in `examples/` is a sketch that the examples page runs live and the ma
 
 Checks of the demos, made on 8 October 2026 while M2-L5 made them:
 
-- Ambient occlusion draws dark dots along the bottom row and the right column of the image. The cause is a normal that is not a number at the occlusion texture's edge. The post effects demo's references hold these dots, so the fix of that fault makes them again.
+- Ambient occlusion drew dark dots along the bottom row and the right column of the image. The cause was a normal that is not a number at the occlusion texture's edge. #414 fixed it, and the post effects demo's references were then made again in both sets.
+- The character demo's first Mac references framed the camera lower and closer than its SwiftShader references, from the same commit. After the merge with main, the Mac's GPU drew the SwiftShader framing in 9 of 9 runs, so the Mac references were made again. The cause of the first framing was not found.
 - A first look suggested that ambient occlusion and a custom effect together gave wrong colors. That comparison was not fair. The image with both drew brown crates, and the images with one drew gray-blue crates. A fair test drew one scene twice: with occlusion alone, and with occlusion and an effect that changes nothing. Both drew the same pixels. So compare effects in one scene, with an effect that returns its input, before you report a fault.
 
 ## Visual checks
