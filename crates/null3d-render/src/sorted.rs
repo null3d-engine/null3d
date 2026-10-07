@@ -40,6 +40,7 @@ use null3d_core::world::SphereArrays;
 use crate::frame::{
     CellOffsets, RunCells, SceneSettings, bucket_of, collect_bucket_keys, push_runs,
 };
+use crate::materials::feature;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 use crate::view::ViewFrame;
 
@@ -59,6 +60,9 @@ const SKINNED_GROUP: u32 = 1 << 31;
 pub(crate) struct SortedBucket {
     /// The id of its render pipeline.
     pub(crate) pipeline: u32,
+    /// The id of the pipeline that draws its back faces before [`SortedBucket::pipeline`] draws
+    /// its front faces, or 0 for a bucket that draws in one draw (see [`SortedBucket::passes`]).
+    pub(crate) back: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(crate) textures: u32,
     /// The engine mesh id, which gives the parts it draws.
@@ -71,6 +75,14 @@ pub(crate) struct SortedBucket {
 }
 
 impl SortedBucket {
+    /// The pipelines that draw each run of the bucket, in order: the back faces' first for a
+    /// double-sided material that blends, as three.js draws one, and then the bucket's own. A
+    /// material with `forceSinglePass`, or a pair whose faces always face the camera, draws once.
+    pub(crate) fn passes(&self) -> impl Iterator<Item = u32> + use<> {
+        let back = (self.back != 0).then_some(self.back);
+        back.into_iter().chain(std::iter::once(self.pipeline))
+    }
+
     /// The scene slot of the skinned object whose bucket this is, or `None` for a bucket that
     /// draws no skinned object.
     pub(crate) fn skinned_slot(&self) -> Option<u32> {
@@ -181,7 +193,8 @@ pub(crate) struct SortedLayout {
     /// The most draws that a frame's sort can make: every row alone, apart from those of the
     /// largest bucket, which can at most sit between the others'.
     draws_room: u32,
-    /// The most parts of any sorted bucket's mesh.
+    /// The most draws that a run of any sorted bucket takes: one per part of its mesh, for each of
+    /// its passes.
     most_parts: u32,
     /// The frame's culling runs, and the scene objects' arrays that they read.
     runs: Vec<CullRun>,
@@ -223,7 +236,8 @@ impl SortedLayout {
         &self.scene_slots
     }
 
-    /// The most parts of any sorted bucket's mesh, each of which a draw draws apart.
+    /// The most draws that a run of any sorted bucket takes: one per part of its mesh, for each of
+    /// its passes.
     pub(crate) fn most_parts(&self) -> u32 {
         self.most_parts
     }
@@ -289,13 +303,25 @@ impl SortedLayout {
         };
         collect_bucket_keys(&mut self.key_counts, scene, batches, scene_key, batch_key);
 
+        // A double-sided material that blends draws its back faces, then its front faces.
+        let faces = |pipeline: DrawKey, material: u32| {
+            let single = settings.materials().features(material - 1) & feature::SINGLE_PASS != 0;
+            (pipeline.blends_both_faces() && !single)
+                .then(|| (pipeline.faces(false), pipeline.faces(true)))
+        };
         self.waiting.clear();
         for slot in 0..scene.capacity() as usize + 1 {
             if let Some(key) = pair_key(slot)
                 && let SkinnedPipeline::Waiting(skinned) = skin(slot, key.0)
             {
-                self.waiting.try_reserve(1)?;
-                self.waiting.push(pipelines.id(skinned.in_pass(targets)));
+                self.waiting.try_reserve(2)?;
+                match faces(skinned, key.4) {
+                    Some((back, front)) => {
+                        self.waiting.push(pipelines.id(back.in_pass(targets)));
+                        self.waiting.push(pipelines.id(front.in_pass(targets)));
+                    }
+                    None => self.waiting.push(pipelines.id(skinned.in_pass(targets))),
+                }
             }
         }
 
@@ -303,9 +329,15 @@ impl SortedLayout {
         let (mut total, mut largest, mut most_parts) = (0u32, 0u32, 1u32);
         for &((pipeline, textures, _, mesh, material, group), count) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
-            most_parts = most_parts.max(meshes.parts(slot).len() as u32);
+            let (back, front) = match faces(pipeline, material) {
+                Some((back, front)) => (pipelines.id(back.in_pass(targets)), front),
+                None => (0, pipeline),
+            };
+            let passes = if back == 0 { 1 } else { 2 };
+            most_parts = most_parts.max(meshes.parts(slot).len() as u32 * passes);
             self.buckets.push(SortedBucket {
-                pipeline: pipelines.id(pipeline.in_pass(targets)),
+                pipeline: pipelines.id(front.in_pass(targets)),
+                back,
                 textures,
                 mesh,
                 material,
