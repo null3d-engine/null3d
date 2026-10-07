@@ -1037,6 +1037,23 @@ describe('the checks plan', () => {
 			'the browser did not get back the memory of engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts in frames, and for 0 after',
 		]);
 		expect(judge(inFrames.check, result({}), NONE_MISSING)).toEqual(['the page started no engine']);
+		// A fall that the second round held is Safari's, not a leak in the engine: a note.
+		const frameNotes: string[] = [];
+		const fellInFrames = (again: object) =>
+			result({ kinds: { frame: { ...engine, roomLater: 4, again: { ...engine, ...again } } } });
+		expect(
+			judge(inFrames.check, fellInFrames({ room: 4, roomLater: 3 }), NONE_MISSING, {
+				...context,
+				note: (t: string) => frameNotes.push(t),
+			}),
+		).toEqual([]);
+		expect(frameNotes).toEqual([
+			'Safari kept memory from the first round of engines in removed frames, and the second round held the room: it had room for 6 shared memories before 10 starts in frames, and for 4 after, and for 3 after 10 more',
+		]);
+		// Room that the second round loses too still fails.
+		expect(judge(inFrames.check, fellInFrames({ room: 4, roomLater: 2 }), NONE_MISSING)).toEqual([
+			'the browser did not get back the memory of engines in removed frames in two rounds: it had room for 6 shared memories before 10 starts in frames, and for 4 after, then for 2 after 10 more within 31 s',
+		]);
 		const kept = items.find((item) => item.id === 'canvas-kept-restarts-pipelined');
 		const destroyedInFrames = items.find(
 			(item) => item.id === 'frame-destroyed-restarts-pipelined',

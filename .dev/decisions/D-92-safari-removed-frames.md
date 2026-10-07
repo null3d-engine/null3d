@@ -62,3 +62,12 @@ The collection runs only on the heap of the thread that asked. The page and its 
 - The probe's frames loaded Vite's live-reload client, and the parent page read each frame's window. Both put references to the frame on the page's side.
 - The probe and the whole-room counts keep every memory they count in one array and drop them together. One stale pointer to that array holds all of them. This most likely explains a WebDriver run that found no room at all: two frames of 256 MiB each cannot take about 120 places.
 - A clean repro without these confounders is still to come. The figures above give the room that the tests saw held. They do not show what held it.
+
+### Frame restarts: a fall that the second round held
+
+The merge queue's Safari failed `frame-restarts-low-latency` on 7 October 2026 (run 37596224427). The room fell from 10 (the count's cap) to 8 after 43 starts in frames. It fell to 7 after 43 more. That second round lost no more than a round may keep. But the total fall of 3 was more than the 2 that the check put down to lost address space.
+
+A leak in the engine loses room in every round, since each of the 43 engines would keep its memory. Here the second round held the room. So the fall came once, from what Safari kept. Two causes fit, and neither is the engine's. Safari can keep what a removed frame reaches, as above. And a dropped memory that held one of Safari's 8 fast slots can stay held while the page keeps asking for memory ([D-94](D-94-memory-retry-window.md#open)).
+
+So in `frame-restarts-*`, a fall that the second round held is now a note, as held room is in `frame-destroyed-restarts-*`. Room that the second round loses too still fails, and so does a start or a stop that fails. The restarts on the page keep the old rule. Their engines stop with no frame, so a fall there points at the engine.
+
