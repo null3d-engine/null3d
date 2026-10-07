@@ -97,6 +97,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 				'E1109',
 				`${name} failed: the engine could not get ${Math.ceil(a / MB)} MB more memory.`,
 			);
+		case 1111:
+			return error(
+				'E1111',
+				`${name} was called on ${what}, whose skeleton an animated object (instance ${b}) still uses.`,
+			);
 		case 1218:
 			if (a === ANIMATION_PROBLEM_KEYS)
 				return error(

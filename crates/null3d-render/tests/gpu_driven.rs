@@ -605,8 +605,8 @@ fn offsets_texture(commands: &[(Op, Vec<u32>)]) -> u32 {
         .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CULL)
         .map(|(_, o)| o)
         .expect("the frame binds a culling group");
-    assert_eq!(group[3 + 8 * 5 + 1], resource_kind::TEXTURE);
-    group[3 + 8 * 5 + 2]
+    assert_eq!(group[3 + 9 * 5 + 1], resource_kind::TEXTURE);
+    group[3 + 9 * 5 + 2]
 }
 
 /// Writes of a frame into the texture of cell offsets: the view's row and the cells it writes.

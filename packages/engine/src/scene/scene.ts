@@ -160,7 +160,7 @@ export interface MeshOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes the mesh block the view for software occlusion culling on WebGL2, like
+	 * True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like
 	 * `setOccluder(true)`. The default is false.
 	 */
 	occluder?: boolean;
@@ -272,9 +272,9 @@ export interface InstantiateOptions extends NodeOptions {
 	/** True makes shadows fall on every mesh of the copy. The default is false. */
 	receiveShadows?: boolean;
 	/**
-	 * True makes every mesh of the copy block the view for software occlusion culling on WebGL2,
-	 * like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset
-	 * tool gave blockers block, and the others do not.
+	 * True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on
+	 * WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the
+	 * asset tool gave blockers block, and the others do not.
 	 */
 	occluder?: boolean;
 	/**
@@ -1206,13 +1206,15 @@ export class Mesh extends Object3D {
 	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
 	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
 	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
-	 * frame, and the engine skips every object that lies wholly behind the blockers. Mark large,
-	 * solid meshes that hide much of the scene, such as buildings and walls, whose mesh has at most
-	 * 4,096 triangles. A mesh that the asset tool gave a blocker draws that blocker instead, a few
-	 * boxes inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what
-	 * the object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
-	 * mask, use a custom material or are skinned never block, whatever this says. WebGPU culls
-	 * hidden objects on the GPU, and ignores it. A change needs no rebuild of the engine's tables.
+	 * frame, and the engine skips every object that lies wholly behind the blockers. On WebGPU,
+	 * while the `gpuOcclusion` setting is on, the GPU draws the depth of the blockers that showed
+	 * in the last frame and skips every object wholly behind them. Mark large, solid meshes that
+	 * hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles.
+	 * On WebGL2, a mesh that the asset tool gave a blocker draws that blocker instead, a few boxes
+	 * inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what the
+	 * object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
+	 * mask or use a custom material never block, whatever this says, nor do skinned ones on
+	 * WebGL2. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
 		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
@@ -1836,6 +1838,8 @@ export class InstanceBatch {
 		private readonly hasColors: boolean,
 		/** @internal The batches of a model's other meshes, which read this batch's rows. */
 		readonly parts: readonly number[] = [],
+		/** @internal The meshes and materials that the batch and its parts draw. */
+		readonly uses: BatchUses = NO_USES,
 	) {}
 
 	/**
@@ -1949,6 +1953,14 @@ export class InstanceBatch {
 		this.generation = -1;
 	}
 }
+
+/** @internal The meshes and materials that an instance batch draws, which their destroy checks. */
+export interface BatchUses {
+	readonly meshes: readonly MeshGeometry[];
+	readonly materials: readonly Material[];
+}
+
+const NO_USES: BatchUses = { meshes: [], materials: [] };
 
 /** The class of each kind of light that a model's node can create, by the core's light kind. */
 const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
@@ -2477,6 +2489,34 @@ export class Scene {
 		for (const part of batch.parts) this.batchSlots[part & SLOT_MASK] = batch;
 	}
 
+	/**
+	 * @internal The first live object or instance batch that uses one of `meshes` or `materials`,
+	 * or whose animator plays `rig`, as error messages describe it, or undefined when none does.
+	 * It looks at every object and batch, so destroys call it, never the frame loop.
+	 */
+	userOf(
+		meshes: ReadonlySet<MeshGeometry>,
+		materials: ReadonlySet<Material> = new Set(),
+		rig?: object,
+	): string | undefined {
+		for (const object of this.objectSlots) {
+			if (object === undefined || object.destroyedFrame !== -1) continue;
+			if (rig !== undefined && object.animation?.rig === rig && object.animation.instance !== 0)
+				return object.describe();
+			if (!(object instanceof Mesh)) continue;
+			const { mesh, material } = object;
+			if ((mesh && meshes.has(mesh)) || (material && materials.has(material)))
+				return object.describe();
+		}
+		for (const batch of this.batchSlots) {
+			if (batch === undefined || batch.destroyedFrame !== -1) continue;
+			const { uses } = batch;
+			if (uses.meshes.some((m) => meshes.has(m)) || uses.materials.some((m) => materials.has(m)))
+				return 'an instance batch';
+		}
+		return undefined;
+	}
+
 	/** @internal Takes a destroyed object out of the index of names. */
 	forget(object: Object3D): void {
 		const { name } = object;
@@ -2621,6 +2661,7 @@ export class Scene {
 	 */
 	instantiate(prefab: Prefab, options: InstantiateOptions = {}): PrefabInstance {
 		const call = 'instantiate';
+		prefab.checkLive(call);
 		const { template } = prefab;
 		if (DEV) {
 			checkSameEngine(call, 'model', prefab.core, this);
@@ -2908,7 +2949,8 @@ export class Scene {
 			throw error;
 		}
 		if (DEV) this.countBatchRows(count * ids.length);
-		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1));
+		const uses = { meshes: parts.map((p) => p.mesh), materials: parts.map((p) => p.material) };
+		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1), uses);
 		this.rememberBatch(batch);
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.origin) batch.setOrigin(options.origin, call);
@@ -2937,6 +2979,7 @@ export class Scene {
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		if ('template' in source) {
+			source.checkLive(call);
 			const problem =
 				source.instancing.length > 0
 					? 'has instancing of its own. Use scene.instantiate for it'
@@ -2960,7 +3003,10 @@ export class Scene {
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
+		const batch = new InstanceBatch(this, id, count, options.colors ?? false, [], {
+			meshes: [mesh],
+			materials: [material],
+		});
 		this.rememberBatch(batch);
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
@@ -3053,7 +3099,10 @@ export class Scene {
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const instances = new InstanceBatch(this, id, count, false);
+		const instances = new InstanceBatch(this, id, count, false, [], {
+			meshes: [parts.mesh],
+			materials: [parts.material],
+		});
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
@@ -3099,7 +3148,10 @@ export class Scene {
 		);
 		const rows = LINE_SEGMENTS[mode](points);
 		if (DEV) this.countBatchRows(rows);
-		const instances = new InstanceBatch(this, id, rows, false);
+		const instances = new InstanceBatch(this, id, rows, false, [], {
+			meshes: [parts.mesh],
+			materials: [],
+		});
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new lines.LineBatch(core, id, points, parts.material, instances, LINE_CHECKS);

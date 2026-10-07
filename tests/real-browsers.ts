@@ -606,9 +606,13 @@ function openApp({ app, window }: AppLaunch, url: string): boolean {
 	}
 }
 
-/** The address of a run's runner page for one runner, from the plan item at `from` when given. */
-const runnerUrl = (baseUrl: string, run: string, runner: string, from?: number) =>
-	`${baseUrl}/tests/pages/runner.html?run=${run}&runner=${runner}${from ? `&from=${from}` : ''}`;
+/**
+ * The address of a run's runner page for one runner, from the plan item at `from` when given. With
+ * `tabs`, the runner page hands the run over before and after a page that runs in a runner page of
+ * its own, since the tool then opens the next runner page.
+ */
+const runnerUrl = (baseUrl: string, run: string, runner: string, from?: number, tabs = false) =>
+	`${baseUrl}/tests/pages/runner.html?run=${run}&runner=${runner}${from ? `&from=${from}` : ''}${tabs ? '&tabs' : ''}`;
 
 /** Where cloud devices reach the dev server's HTTPS port, through BrowserStack Local. */
 const CLOUD_URL = `https://bs-local.com:${HTTPS_PORT}`;
@@ -634,7 +638,7 @@ async function openRunners(
 	const opened: string[] = [];
 	for (const name of names) {
 		const launch = launches.get(name) as Launch;
-		const url = runnerUrl(baseUrl, run, name);
+		const url = runnerUrl(baseUrl, run, name, undefined, isApp(launch));
 		if (isApp(launch)) {
 			if (openApp(launch, url)) opened.push(name);
 		} else if (launch.kind === 'cloud') {
@@ -835,6 +839,18 @@ export class QuietRecovery {
 		return true;
 	}
 
+	/**
+	 * Opens a new runner page at the plan's item `from`, where a runner page handed the run over
+	 * because a page runs in a runner page of its own. These new pages do not count against the few
+	 * that a runner gets for stopped pages.
+	 */
+	readonly onHandover = (name: string, from: number): boolean => {
+		const item = this.plan.items[from];
+		if (!item || !this.reopener.reopen(name, from)) return false;
+		console.log(`${name}: opened a new runner page for ${item.id}`);
+		return true;
+	};
+
 	/** The note for a page where a runner page went quiet once and a new one ran it again. */
 	noteFor(name: string, id: string): string | undefined {
 		return this.stalls.get(name)?.get(id) === 1
@@ -863,7 +879,7 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 				: 'no evidence: the tool looks only at a Mac',
 		reopen: (runner, from) => {
 			const launch = launches.get(runner);
-			const url = runnerUrl(baseUrl, run, runner, from);
+			const url = runnerUrl(baseUrl, run, runner, from, isApp(launch));
 			if (launch?.kind === 'android') {
 				openOnPhone(launch.browser, url);
 				return true;
@@ -975,6 +991,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'environment',
 	'ao',
 	'occlusion',
+	'gpu-occlusion',
 	'overload',
 	'soak',
 ]);
@@ -1270,6 +1287,7 @@ async function runPlan(
 			await waitForRunners(plan, await openRunners([name], launches, run, local.url, cloud), {
 				onFinish: (runner) => console.log(`${runner}: finished`),
 				onQuiet: recovery.onQuiet,
+				onHandover: recovery.onHandover,
 				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
 				...(remote && {
 					startMs: CLOUD_START_MS,

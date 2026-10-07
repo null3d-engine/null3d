@@ -313,6 +313,7 @@ Options for `createEngine`.
 | `shadowTileSize?: number` | Texels on each side of each tile of the shadow atlas: 256, 512, 1,024 or 2,048. Without it, the quality preset sets it. Another value fails with E1213. |
 | `pointLightShadows?: boolean` | True makes point lights cast shadows, false keeps them from it. Without it, the quality preset decides: High and Ultra turn them on. Another value fails with E1213. |
 | `depthPrepass?: boolean` | True to draw the depth of the opaque objects before the engine shades them, so each pixel is shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many others and shading costs much, and costs a second pass over the objects' vertices. Without it, the quality preset decides. The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off` switch wins over this option. Another value fails with E1213. |
+| `gpuOcclusion?: boolean` | True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth of the marked objects that it showed in the last frame and tests every object against it. It saves GPU time where walls and large objects hide many detailed ones; a scene that marks no object pays nothing. Every quality preset leaves it off: measure your scene's GPU time with it first, as its passes can cost more than they save. It stays fixed while the engine runs, and the `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth prepass draw without it. Another value fails with E1213. |
 | `morphTargets?: number` | The most morph target weights of each object that a WebGL2 device draws, a whole number from 1 to 256. Each object keeps the weights farthest from 0. Without it, the quality preset sets it. WebGPU draws every weight. Another value fails with E1213. |
 | `softwareOcclusion?: boolean` | True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without it, the quality preset decides, and a sketch can change it during play with `quality.set`. The `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGPU ignores it. Another value fails with E1213. |
 | `transparent?: boolean` | True for a see-through canvas: the page shows through wherever no object draws, until the sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites it. The default is false, an opaque canvas. |
@@ -324,7 +325,7 @@ Options for `createEngine`.
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 | `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
-| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
+| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, `'background'` with a texture background, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
 
 ### `ErrorCode`
 
@@ -340,6 +341,7 @@ type ErrorCode =
 	| 'E1108'
 	| 'E1109'
 	| 'E1110'
+	| 'E1111'
 	| 'E1203'
 	| 'E1204'
 	| 'E1205'
@@ -445,6 +447,7 @@ type ShaderFeature =
 	| 'bloom'
 	| 'lines'
 	| 'morph'
+	| 'occlusion'
 	| 'skinning'
 	| 'sprites'
 	| 'texcoords';

@@ -278,6 +278,7 @@ export class SketchRunner {
 			device.depthPrepass,
 			device.vertexSkinning,
 			device.largeWorld,
+			device.gpuOcclusion,
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
@@ -384,6 +385,7 @@ export class SketchRunner {
 			{ geometry, materials },
 			this.input,
 		);
+		geometry.users = scene;
 		this.post = new Post(
 			this.core,
 			device.effectsSceneColor !== FORMAT_CANVAS,

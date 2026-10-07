@@ -20,6 +20,17 @@
 //! the cell order that it culls: the visible cells' runs and the moving sources' run. Its dispatch
 //! covers those runs alone, and each workgroup finds its run and reads its sources' places from
 //! the cell order. Otherwise the dispatch covers every source in place.
+//!
+//! A camera view that culls in two phases against its depth pyramid (see [`super::pyramid`])
+//! binds its pyramid as the group's last buffer, where other views bind a placeholder, and keeps
+//! its history, a word for each source, after its indirect draws in their buffer. In a frame
+//! without marked occluders it culls once, with the plain culling pipeline, into the second set
+//! of indirect draws. Its first dispatch keeps only the sources that
+//! showed in its last frame, in the first set of indirect draws, which its occluders' pass draws.
+//! Its late dispatch, after the pyramid, tests every source against the pyramid, writes the
+//! history, and counts the visible sources in a second set of indirect draws, after the first,
+//! which its opaque pass draws. Its parameters hold what the late dispatch reads: the
+//! view-projection matrix, the render size and the pyramid's levels.
 
 use null3d_core::cells::MAX_CELLS;
 use null3d_core::scene::SceneStorage;
@@ -30,6 +41,7 @@ use null3d_gpu::drawlist::{
 
 use super::ids;
 use super::layout::Layout;
+use super::pyramid::Levels;
 use crate::cells::{CellCulling, CellMask};
 use crate::frame::{CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes};
 use crate::view::{MAX_VIEW_IDS, ViewFrame, ViewId};
@@ -48,14 +60,28 @@ const RANGES_OFFSET: u32 = CULL_PLANES_BYTES;
 /// Bytes of one run of the cell order: its first position, its end, its first workgroup, and
 /// padding.
 const RANGE_BYTES: u32 = 16;
-/// Bytes of the culling parameters: the planes, then the runs of the cell order.
-pub(super) const CULL_PARAMS_BYTES: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES * RANGE_BYTES;
+/// Where the occlusion phases' values start in the culling parameters: after the runs of the cell
+/// order.
+const OCCLUSION_OFFSET: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES * RANGE_BYTES;
+/// Words of the occlusion phases' values: the view-projection matrix, the render size, the
+/// pyramid's levels, the first set's draws, where the history starts and an occluder's least span.
+/// The shader works out each level's shape from the render size.
+const OCCLUSION_WORDS: usize = 16 + 4 + 4;
+/// Bytes of the culling parameters: the planes, the runs of the cell order, then the occlusion
+/// phases' values.
+pub(super) const CULL_PARAMS_BYTES: u32 = OCCLUSION_OFFSET + sizes::CULL_OCCLUSION_BYTES;
+
+const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES);
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
-/// The buffers of the culling pass's bind group, one per binding, then the cell offsets texture.
-const CULL_BINDINGS: usize = 9;
+/// The buffers of the culling pass's bind group, one per binding, the last the depth pyramid, then
+/// the cell offsets texture. Eight storage buffers is what every device allows a shader stage, so
+/// the history shares the indirect draws' buffer, and the cell offsets sit in a texture.
+const CULL_BINDINGS: usize = 10;
 /// Words of the culling pass's bind group entries: three for the group, five per entry.
 const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
+/// Bytes of the placeholder that views without a pyramid bind in its place.
+const NO_PYRAMID_BYTES: u32 = 16;
 
 // Runs of the cell order that follow each other join, so a view's runs are at most one per pair
 // of cells, and one for the moving sources.
@@ -63,11 +89,13 @@ const _: () = assert!(sizes::MAX_CULL_RANGES == MAX_CELLS / 2 + 1);
 
 /// A view's culling buffers that grow with the layout: their sizes, 0 before they exist. And the
 /// workgroups of its culling dispatch in the frame being recorded.
-/// Also the runs of the cell order that it culls in that frame, as its parameters hold them.
+/// Also the runs of the cell order that it culls in that frame, as its parameters hold them, and
+/// whether it culls in two phases.
 #[derive(Clone, Debug)]
 struct ViewBuffers {
     visible: u32,
     indirect: u32,
+    occlusion: bool,
     groups: u32,
     ranges: Vec<[u32; 4]>,
     range_count: usize,
@@ -78,6 +106,7 @@ impl Default for ViewBuffers {
         Self {
             visible: 0,
             indirect: 0,
+            occlusion: false,
             groups: 0,
             ranges: vec![[0; 4]; sizes::MAX_CULL_RANGES as usize],
             range_count: 0,
@@ -92,8 +121,22 @@ pub(super) struct Culling {
     views: Vec<Option<ViewBuffers>>,
     /// The offsets from the camera of the view being uploaded to each cell in use.
     offsets: CellOffsets,
+    /// True once the placeholder of views without a pyramid exists.
+    placeholder: bool,
     /// True once the cell offsets texture exists.
     offsets_made: bool,
+}
+
+/// How a view's culling dispatch culls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Phase {
+    /// Once, against the frustum alone: shadow views, views without occlusion culling, and frames
+    /// without marked occluders, which count into the second set of indirect draws.
+    Once,
+    /// The first phase of occlusion culling: the occluders.
+    Early,
+    /// The second phase of occlusion culling: every source against the pyramid.
+    Late,
 }
 
 /// Records the creation of the culling pipeline.
@@ -102,7 +145,37 @@ pub(super) fn create_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
     Ok(())
 }
 
+/// The part of the render size's larger side that an occluder's bounds span at least. Smaller
+/// objects hide few others, and drawing their depth would cost more than it saves.
+const OCCLUDER_SPAN_DIVISOR: u32 = 16;
+
+/// The occlusion phases' values in a view's culling parameters: the view-projection matrix for
+/// positions relative to its camera, the render size, the pyramid's levels, the first phase's
+/// draws and the word of the indirect draws' buffer where the history starts, after both phases'
+/// draws, and an occluder's least span.
+fn occlusion_words(frame: &ViewFrame, levels: &Levels, draws: u32) -> [u32; OCCLUSION_WORDS] {
+    let mut words = [0u32; OCCLUSION_WORDS];
+    for (word, value) in words.iter_mut().zip(frame.uniform.view_proj) {
+        *word = value.to_bits();
+    }
+    let (width, height) = levels.render;
+    words[16] = (width as f32).to_bits();
+    words[17] = (height as f32).to_bits();
+    words[20] = levels.count;
+    words[21] = draws;
+    words[22] = 2 * draws * sizes::INDIRECT_WORDS;
+    words[23] = width.max(height).div_ceil(OCCLUDER_SPAN_DIVISOR);
+    words
+}
+
 impl Culling {
+    /// True when a view culls in two phases.
+    pub(super) fn occludes(&self, view: ViewId) -> bool {
+        self.views
+            .get(view.index())
+            .is_some_and(|buffers| buffers.as_ref().is_some_and(|b| b.occlusion))
+    }
+
     /// True when a view's culling buffers exist.
     pub(super) fn has_view(&self, view: ViewId) -> bool {
         self.views.get(view.index()).is_some_and(Option::is_some)
@@ -116,6 +189,13 @@ impl Culling {
     ) -> Result<(), RecordError> {
         if self.has_view(view) {
             return Ok(());
+        }
+        if !self.placeholder {
+            list.push(
+                Op::CreateBuffer,
+                &[ids::NO_PYRAMID, NO_PYRAMID_BYTES, usage::STORAGE],
+            )?;
+            self.placeholder = true;
         }
         if !self.offsets_made {
             list.push(
@@ -151,8 +231,10 @@ impl Culling {
 
     /// Sizes a view's compacted instance and indirect buffers for the layout, at most
     /// `binding_bytes` each, and binds its culling group again when a buffer it binds is new:
-    /// one of its own, or one of the layouts' (`shared_recreated`). The group binds the layout's
-    /// bucket tables beside the scene's matrices and layer table.
+    /// one of its own, or one that `shared_recreated` names, of the layouts or the pyramid. The
+    /// group binds the layout's bucket tables beside the scene's matrices and layer table. With
+    /// `occlusion`, the view culls in two phases: it has twice the indirect draws with its history
+    /// after them, and a group of the occlusion layout, which binds its pyramid too.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
@@ -160,11 +242,19 @@ impl Culling {
         layout: &Layout,
         shared_recreated: bool,
         binding_bytes: u32,
+        occlusion: bool,
     ) -> Result<(), RecordError> {
         let buffers = self.views[view.index()]
             .as_mut()
             .expect("a view's buffers exist before it culls");
-        let draws = layout.draws.len() as u32;
+        let (phases, history) = if occlusion {
+            (2, layout.sources)
+        } else {
+            (1, 0)
+        };
+        let draws = layout.draws.len() as u32 * phases;
+        let mut recreated = shared_recreated || buffers.occlusion != occlusion;
+        buffers.occlusion = occlusion;
         let needed = [
             (
                 ids::visible(view),
@@ -175,11 +265,10 @@ impl Culling {
             (
                 ids::indirect(view),
                 &mut buffers.indirect,
-                draws.max(1) * INDIRECT_BYTES,
+                draws.max(1) * INDIRECT_BYTES + history * 4,
                 usage::INDIRECT | usage::STORAGE | usage::COPY_DST,
             ),
         ];
-        let mut recreated = shared_recreated;
         for (id, made, size, flags) in needed {
             if *made < size {
                 *made = grown_size(size, binding_bytes);
@@ -195,7 +284,12 @@ impl Culling {
                 CULL_BINDINGS as u32,
             ]);
             let (bucket_table, bucket_records) = layout.table_ids();
-            for (binding, buffer) in [
+            let pyramid = if occlusion {
+                ids::pyramid(view)
+            } else {
+                ids::NO_PYRAMID
+            };
+            let buffers = [
                 ids::cull_params(view),
                 ids::MATRICES,
                 bucket_table,
@@ -204,10 +298,9 @@ impl Culling {
                 ids::indirect(view),
                 ids::SOURCE_LAYERS,
                 ids::ORDER,
-            ]
-            .into_iter()
-            .enumerate()
-            {
+                pyramid,
+            ];
+            for (binding, &buffer) in buffers.iter().enumerate() {
                 let at = 3 + binding * 5;
                 entries[at..at + 5].copy_from_slice(&[
                     binding as u32,
@@ -217,9 +310,9 @@ impl Culling {
                     0,
                 ]);
             }
-            let at = 3 + (CULL_BINDINGS - 1) * 5;
+            let at = 3 + buffers.len() * 5;
             entries[at..at + 5].copy_from_slice(&[
-                CULL_BINDINGS as u32 - 1,
+                buffers.len() as u32,
                 resource_kind::TEXTURE,
                 ids::CELL_OFFSETS,
                 0,
@@ -235,7 +328,8 @@ impl Culling {
     /// cell, the runs of the cell order of the cells it can see. `sources` is the scene's layout,
     /// whose sources and cell order every view culls, and `drawn` the layout whose buckets the
     /// view draws. Resets its indirect draws' instance counts to zero, and notes the workgroups of
-    /// its dispatch.
+    /// its dispatch. A view that culls in two phases gets `pyramid`'s levels too, the values its
+    /// late dispatch reads, and both sets of its indirect draws reset.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn upload(
         &mut self,
@@ -247,6 +341,7 @@ impl Culling {
         drawn: &Layout,
         scene: &SceneStorage,
         cells: &CellCulling,
+        pyramid: Option<&Levels>,
     ) -> Result<(), RecordError> {
         let mut params = [0u32; (CULL_PLANES_BYTES / 4) as usize];
         for (plane, out) in frame.frustum.planes().iter().zip(params.chunks_mut(4)) {
@@ -296,9 +391,17 @@ impl Culling {
             let (at, bytes) = arena.push(words_as_bytes(words))?;
             list.push(Op::WriteBuffer, &[params_id, RANGES_OFFSET, at, bytes])?;
         }
+        if let (Some(levels), true) = (pyramid, buffers.occlusion) {
+            let words = occlusion_words(frame, levels, drawn.draws.len() as u32);
+            let (at, bytes) = arena.push(words_as_bytes(&words))?;
+            list.push(Op::WriteBuffer, &[params_id, OCCLUSION_OFFSET, at, bytes])?;
+        }
         if !drawn.draws.is_empty() {
             let (at, bytes) = arena.push(words_as_bytes(&drawn.indirect_template))?;
             list.push(Op::WriteBuffer, &[ids::indirect(view), 0, at, bytes])?;
+            if buffers.occlusion {
+                list.push(Op::WriteBuffer, &[ids::indirect(view), bytes, at, bytes])?;
+            }
         }
         Ok(())
     }
@@ -319,13 +422,14 @@ impl Culling {
         })
     }
 
-    /// Records a view's culling dispatch, or nothing when no bucket draws or no source is in a
-    /// cell the view can see.
+    /// Records a view's culling dispatch for `phase`, or nothing when no bucket draws or no
+    /// source is in a cell the view can see.
     pub(super) fn record(
         &self,
         list: &mut DrawList,
         view: ViewId,
         layout: &Layout,
+        phase: Phase,
     ) -> Result<(), RecordError> {
         let groups = self.views[view.index()]
             .as_ref()
@@ -333,7 +437,12 @@ impl Culling {
         if layout.buckets.is_empty() || groups == 0 {
             return Ok(());
         }
-        list.push(Op::SetComputePipeline, &[ids::CULL])?;
+        let pipeline = match phase {
+            Phase::Once => ids::CULL,
+            Phase::Early => ids::OCCLUSION_EARLY,
+            Phase::Late => ids::OCCLUSION_LATE,
+        };
+        list.push(Op::SetComputePipeline, &[pipeline])?;
         list.push(Op::SetBindGroup, &[0, ids::cull_group(view), 0])?;
         list.push(Op::Dispatch, &[groups, 1, 1])?;
         Ok(())
@@ -343,6 +452,7 @@ impl Culling {
     /// the GPU.
     pub(super) fn forget_gpu(&mut self) {
         self.views.clear();
+        self.placeholder = false;
         self.offsets_made = false;
     }
 }

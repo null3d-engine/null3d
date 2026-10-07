@@ -42,6 +42,7 @@ export interface CoreGlue extends CoreErrors {
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
 		largeWorld: boolean,
+		gpuOcclusion: boolean,
 		shadowDepthBits: number,
 	): number;
 	/**
@@ -263,6 +264,13 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/**
+	 * Destroys `count` meshes whose ids `meshArrays`'s words hold: their data goes at once, and the
+	 * next frame gives their ids to later meshes once no object or batch names them.
+	 */
+	destroyMeshes(count: number): number;
+	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
+	meshMemoryBytes(): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
@@ -516,6 +524,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createSkeleton(joints: number): number;
 	/**
+	 * Destroys a skeleton with its clips and joint masks. Fails with 1111 while an animated
+	 * instance uses it.
+	 */
+	destroySkeleton(skeleton: number): number;
+	/**
 	 * Creates a clip from the staging words: `tracks` headers of `ANIMATION_TRACK_WORDS` words
 	 * (joint, channel, interpolation, key count), then each track's key times and values, resampled
 	 * at `rate` keys per second.
@@ -649,6 +662,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'meshRadius',
+	'destroyMeshes',
+	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
 	'setMaterialValues',
@@ -698,6 +713,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initAnimations',
 	'animationStaging',
 	'createSkeleton',
+	'destroySkeleton',
 	'createClip',
 	'createClipLater',
 	'clipReady',
