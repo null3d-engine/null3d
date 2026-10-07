@@ -1,5 +1,5 @@
 // What a run learned about each browser it ran in, for the record of tested devices: the browser
-// the runner page found itself in, and a row of that record, ready to paste. The runner page and the
+// the runner page found itself in, and the run's entry in that record. The runner page and the
 // runner tool both use this file, so it imports nothing from Node or the DOM.
 
 import { GPU_PATH_NAMES, type GpuPath, SOFTWARE_RENDERER, skippedPathsText } from './gpu-paths.ts';
@@ -200,7 +200,7 @@ export const noFramesText = (visibility: string | undefined) =>
  */
 export type LaunchKind = 'mac' | 'linux' | 'android' | 'lan' | 'cloud';
 
-/** One runner's outcome in a run, with what the record's row needs besides the device. */
+/** One runner's outcome in a run, with what the record's entry needs besides the device. */
 export interface RowInput {
 	/** The run's name, which starts with its date and ends with its plan. */
 	run: string;
@@ -212,19 +212,6 @@ export interface RowInput {
 	/** The GPU paths that the device lacks, whose pages its runner page skipped. */
 	skippedPaths?: readonly GpuPath[];
 }
-
-/** The record's columns, in order, as the header of its table gives them. */
-export const RECORD_COLUMNS = [
-	'Device',
-	'OS',
-	'Browser',
-	'GPU',
-	'GPU paths',
-	'Where',
-	'Plans',
-	'Result',
-	'Known issues',
-] as const;
 
 /** The device's kind and model, with its screen and cores, which help to tell models apart. */
 export function deviceText({
@@ -319,15 +306,21 @@ function planText(run: string): string {
 	return match ? `${match[4]} ${match[1]}-${match[2]}-${match[3]}` : run;
 }
 
-/** A table cell's text, with the pipes that would end the cell escaped. */
-const cell = (text: string) => text.replaceAll('|', '\\|');
+/** One run's entry in the record of tested devices: the device and browser's facts, and the run. */
+export interface TestedDeviceEntry {
+	/** The device, OS, browser, GPU, GPU paths and where it ran, in the order of the record's list. */
+	facts: readonly string[];
+	/** The plan and its date. */
+	plans: string;
+	/** The counts, and the GPU paths whose pages the runner page skipped. */
+	result: string;
+}
 
 /**
- * One row of the record of tested devices, as a Markdown table row, from what the runner page
- * recorded and the run's counts. A fact that the browser does not give stays empty. The known
- * issues are for a person to fill in.
+ * One run's entry in the record of tested devices, from what the runner page recorded and the
+ * run's counts. A fact that the browser does not give stays empty.
  */
-export function testedDeviceRow({
+export function testedDeviceEntry({
 	run,
 	launch,
 	device,
@@ -335,20 +328,20 @@ export function testedDeviceRow({
 	skip,
 	fail,
 	skippedPaths = [],
-}: RowInput): string {
-	const cells = [
-		deviceText(device),
-		osText(device),
-		browserText(device.browser ?? detectBrowser(device)),
-		gpuText(device.gpu),
-		pathsText(device.gpu),
-		whereText(launch, device.origin),
-		planText(run),
-		[
+}: RowInput): TestedDeviceEntry {
+	return {
+		facts: [
+			deviceText(device),
+			osText(device),
+			browserText(device.browser ?? detectBrowser(device)),
+			gpuText(device.gpu),
+			pathsText(device.gpu),
+			whereText(launch, device.origin),
+		],
+		plans: planText(run),
+		result: [
 			`${pass} passed, ${skip} skipped, ${fail} failed`,
 			...(skippedPaths.length > 0 ? [skippedPathsText(skippedPaths)] : []),
 		].join('; '),
-		'',
-	];
-	return `|${cells.map((text) => (text ? ` ${cell(text)} ` : ' ')).join('|')}|`;
+	};
 }

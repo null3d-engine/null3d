@@ -104,8 +104,9 @@
 //                       move almost wholly past the main display's left edge, at a small size, or at
 //                       their own size in timed plans
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
-// results depend on. After a fixed plan, it prints each browser's row for the record of tested
-// devices, from what the runner page found about its browser, device and GPU. A runner whose name
+// results depend on. After a fixed plan, it prints each browser's entry for the record of tested
+// devices, from what the runner page found about its browser, device and GPU: the run's file and
+// the folder where it goes. A runner whose name
 // names one browser warns when its page ran in another.
 import { execFileSync, spawn } from 'node:child_process';
 import {
@@ -130,6 +131,13 @@ import {
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
+import {
+	factsOf,
+	RECORD_DIR,
+	readRecord,
+	recordFiles,
+	runEntryText,
+} from '../tools/lib/tested-devices.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import {
 	type AppWindow,
@@ -150,7 +158,7 @@ import {
 	NO_FRAMES,
 	type NoFramesRecord,
 	noFramesText,
-	testedDeviceRow,
+	testedDeviceEntry,
 } from './lib/device-record.ts';
 import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
@@ -446,24 +454,25 @@ export const shieldsText = (state: ShieldsState | null) =>
 const browserOf = (device: DeviceFacts) => device.browser ?? detectBrowser(device);
 
 /**
- * Prints a row of the record of tested devices for each runner whose page started, ready to paste
- * into `.dev/tested-devices.md`.
+ * Prints each runner's entry for the record of tested devices, for the runners whose page started:
+ * the run's file, and the folder where it goes, or a new folder's README.
  */
-function printRecordRows(
+function printRecordEntries(
 	run: string,
 	runners: readonly LaunchedRunner[],
 	summary: Readonly<Record<string, RunnerSummary>>,
 ): void {
-	const rows = runners.flatMap(({ name, launch }) => {
+	const { rows } = readRecord(recordFiles(REPO_ROOT));
+	const entries = runners.flatMap(({ name, launch }) => {
 		const device = readDevice(run, name);
 		const counts = summary[name];
-		return device && counts
-			? [testedDeviceRow({ run, launch: launch.kind, device, ...counts })]
-			: [];
+		if (!device || !counts) return [];
+		const entry = testedDeviceEntry({ run, launch: launch.kind, device, ...counts });
+		return [runEntryText(rows, run, factsOf(entry.facts), entry.plans, entry.result)];
 	});
-	if (rows.length > 0)
+	if (entries.length > 0)
 		console.log(
-			`\nRows for the record of tested devices (.dev/tested-devices.md):\n${rows.join('\n')}\n`,
+			`\nEntries for the record of tested devices (${RECORD_DIR}/). Add the commit to the plans, and what the run found to the result:\n\n${entries.join('\n')}`,
 		);
 }
 
@@ -1467,7 +1476,7 @@ async function runPlan(
 		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
 		if (endedEarly) console.log(endedEarlyText(name, endedEarly));
 	}
-	printRecordRows(run, runners, summary);
+	printRecordEntries(run, runners, summary);
 	console.log(`results: ${join(RUNS_DIR, run)}`);
 	if (imageFailures > 0)
 		console.log('Review the new and changed images with their diffs: bun run images:review');

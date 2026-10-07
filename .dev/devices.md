@@ -30,7 +30,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - Do not add or move files in the tree that the dev server watches during a run. A new HTML file anywhere in it reloads every open page, and a page reloaded while it measures reports 0 frames.
 - The `smoke` plan is about a tenth of the checks plan, for a device in a cloud session of limited time. It keeps the capability, isolation, shader, upload, preset, warm-up and stats pages, the restarts of each build, and the main features' image tests. It also keeps the starts and stops in frames in the threaded build's first mode. Each image test runs on every GPU tier in its first thread mode, so new tiers and modes join by the same rules.
 - The runner page detects the browser it runs in, from Brave's object on `navigator`, the client hints and the user agent. It records the browser, the GPU and the page's address in `device.json`. The summary names each runner's browser. When a runner's name names one browser and its page runs in another, the runner warns. A name that names no browser, such as `bspixel10`, suits a device whose browser is chosen in the session.
-- After a fixed plan, the runner prints a row for each browser for [the record of tested devices](tested-devices.md).
+- After a fixed plan, the runner prints an entry for each browser for [the record of tested devices](tested-devices.md). It gives the run's file and its folder.
 - Close the browser tabs that testing opens as soon as each test ends. Old tabs keep pages running, which costs heat and skews later runs.
 
 ## Guards on device runs
@@ -98,7 +98,7 @@ The runner watches each browser's results while a run goes on. Three guards keep
 - After the report, the runner page skips each page that needs a path that the device lacks and that the run lets it lack. It posts a skip as the page's result and does not open the page.
 - `--allow-no-webgpu` covers both WebGPU paths. On a device that offers compatibility mode only, it skips the core WebGPU pages and runs the compatibility mode pages.
 - A page's path is the one that its `?gpu=` switch forces. A page without the switch takes its check's path. A WebGPU page without the switch, such as the uploads page, takes any adapter, so it needs compatibility mode only. The plan's file gives each page's path as `gpu`, and the skip flags as `skipMissing`.
-- Each browser's line in the run's summary names the paths whose pages it skipped. So does the result in its row for [the record of tested devices](tested-devices.md).
+- Each browser's line in the run's summary names the paths whose pages it skipped. So does the result in its entry for [the record of tested devices](tested-devices.md).
 - On 3 October 2026, TestingBot's Redmi Note 13 in Chrome 138 offered compatibility mode only: its adapter had no core features and limits. The engine refused each page that forced core WebGPU with E1301, as it must, and the run counted 85 such pages as failures.
 - Four pages that force core WebGPU passed on the Redmi: the clear page, two replay pages and the shader library page. They ask for an adapter themselves and do not start the engine. They now count as skips there too, because the engine never draws with core WebGPU on that device.
 - Each shard of a plan with the capabilities page loads that page first, so each shard skips the missing paths. Before this, on 4 October 2026, the second shard of the checks plan opened every WebGPU page on the cloud Galaxy S24. It took about 40 minutes in place of 17.
@@ -392,13 +392,13 @@ Four kinds of sitting serve the technique prototypes ([Technique review, October
 
 A cloud session gives no control of heat or refresh rate. Treat its timings as guides, from comparisons run in turns in one session. Where a gate item needs heat control, such as the 10-minute showcase runs, the owner decides between the S24+ over USB and a cloud phone.
 
-Every run on a device and browser goes into [the record of tested devices](tested-devices.md), with its date, plan, commit and result.
+Every run on a device and browser goes into [the record of tested devices](tested-devices.md) as a file of its own. The file gives its date, plan, commit and result.
 
 ## BrowserStack Live
 
 [BrowserStack Live](https://www.browserstack.com/live) lends real phones, tablets and desktop browsers for live sessions. Each device opens the runner page over BrowserStack's tunnel to the Mac. The person picks the browser for each session.
 
-- TestingBot was tried first, on 3 October 2026. Its device screens often did not load and its sessions dropped during runs, so the team moved to BrowserStack. TestingBot's rows stay in [the record of tested devices](tested-devices.md).
+- TestingBot was tried first, on 3 October 2026. Its device screens often did not load and its sessions dropped during runs, so the team moved to BrowserStack. TestingBot's devices stay in [the record of tested devices](tested-devices.md).
 - BrowserStack is not a lasting subscription. There are no nightly runs and no runs on each merge. Each tier below is a manual sitting, or one command while the team has [BrowserStack Automate](#browserstack-automate).
 - The tiers name device models, systems and GPUs. If BrowserStack lapses, another cloud, a borrowed device or a new team device of the same kind stands in.
 - The iPad and the Mac stay the timing devices. Phone timings come from BrowserStack Automate's phones where they can, as [Which device runs a check](#which-device-runs-a-check) says. Cloud timings are only a rough guide, because nobody controls the devices' heat or display settings.
@@ -418,7 +418,7 @@ Every run on a device and browser goes into [the record of tested devices](teste
 - The browser words are `safari`, `chrome`, `samsung`, `edge` and `firefox`. The runner warns when the page runs in another browser than its name says.
 - Pass `--allow-no-webgpu` only where the tier's table expects no core WebGPU. On a device that should have it, a lost path must fail the run, as [GPU paths that a device lacks](#gpu-paths-that-a-device-lacks) explains.
 - A session that drops leaves its results in place. Open a new session with the same runner name. The runner page starts at the first page without a result.
-- After each run, paste the runner's row into [the record of tested devices](tested-devices.md). Add BrowserStack's device name to the device cell. Fill the GPU cell from the tables below where the browser hides the GPU.
+- After each run, add the run's file that the runner prints to [the record of tested devices](tested-devices.md). For a new folder, add BrowserStack's device name to the device fact in its README. Fill the GPU fact from the tables below where the browser hides the GPU.
 - The runner marks a GPU name such as SwiftShader or Microsoft Basic Render Driver as a software renderer. That machine has no GPU, so its run tests the clear failure, not the GPU paths.
 
 ### What BrowserStack offers
@@ -542,7 +542,7 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 2. Start BrowserStack Local and the HTTPS dev server from a checkout of main, as steps 1 to 4 of [Set up a session](#set-up-a-session) say.
 3. From the same checkout, check the account and the devices: `NULL3D_PORT=3000 bun run devices:cloud --tier A --check`.
 4. Run the tier: `NULL3D_PORT=3000 bun run devices:cloud --tier A`.
-5. Paste the rows that the runner prints into [the record of tested devices](tested-devices.md). Their place cell says BrowserStack Automate.
+5. Add the run files that the runner prints to [the record of tested devices](tested-devices.md). A new folder's Where fact says BrowserStack Automate.
 
 - `--tier B` or `--tier A,B` picks other tiers. `--only bsiphone17-safari,bspixel10-chrome` picks runners from any tier.
 - `--part 2/3` runs only the second of three parts of the picked devices, in the list's order. Each part is a run of its own, with its own build on the dashboard. With one session at a time, tier A's 10 devices take about 2 hours, so run them as `--part 1/3`, `--part 2/3` and `--part 3/3`. On 4 October 2026, the three parts took 25, 18 and 47 minutes.

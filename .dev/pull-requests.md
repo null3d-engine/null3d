@@ -10,7 +10,7 @@ Record the reasons for the change in `.dev/`, in the same pull request, as [AGEN
 | --- | --- | --- |
 | A design choice or an owner's ruling | A decision record, new or an addendum: the problem, the figures, the options rejected and why, and who decided and when | [D-92](decisions/D-92-safari-removed-frames.md) gives the memory that Safari kept on CI, the options, and the owner's confirmation on 7 October 2026 |
 | A bug fix | The cause and why the fix is right, in the record or guide that owns the area | The framebuffer fault on the Pixel 10: [D-71](decisions/D-71-custom-effects.md) gives the cause, the per-call timings and the unit test |
-| A device or benchmark run | A row in [tested devices](tested-devices.md) or in the [benchmark results](benchmark-results.md) | The iPad's custom effects run of 7 October 2026, in the iPad Pro's row |
+| A device or benchmark run | A new run file in [tested devices](tested-devices.md), or a row in the [benchmark results](benchmark-results.md) | The iPad's custom effects run of 7 October 2026, in the iPad Pro's folder |
 | A process or tooling lesson | The guide that covers it | Take a pull request out of the queue as soon as a job fails, in [The merge queue](#the-merge-queue) |
 
 The `Docs-Checked:` trailer names the page that holds the reason, or says why the change has no new reason.
@@ -22,7 +22,7 @@ The `Docs-Checked:` trailer names the page that holds the reason, or says why th
 
 | Generated files | Generator |
 | --- | --- |
-| The docs generator's output: placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, and the three.js mapping page and copies | `bun run docs` |
+| The docs generator's output: placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, the three.js mapping page and copies, and the tables of [tested devices](tested-devices.md) | `bun run docs` |
 | The skills copy, `.claude/skills/` | `bun run skills` |
 | The constants that TypeScript shares with Rust, `packages/engine/src/generated/core.ts` and `gpu.ts`, and the render graph's text dump in `crates/null3d-render/tests/snapshots/` | `NULL3D_UPDATE_GENERATED=1 cargo test -p null3d-wasm -p null3d-gpu -p null3d-render` |
 
@@ -33,6 +33,16 @@ The `Docs-Checked:` trailer names the page that holds the reason, or says why th
 - Build and run the quick checks again before you push the merge: lint, types, docs, skills and unit tests. Then rerun the browser and image tests only of the areas that the merge's conflicts touched. The queue runs every test on top of main.
 - `bun run docs` reads the engine's types, and they import the shader modules. Build the modules first, with `bun run shaders` or `bun run build`. Without them, the generator leaves generated sections out of `docs/api/engine.md`.
 - Run a branch's own copy of a hook's tool, such as `tools/hooks/check-trailers.ts`, from that branch's checkout. Another checkout's copy can be older, and refuse a valid `Size-Growth:` name.
+
+## A branch that edited the old table of tested devices
+
+The record of [tested devices](tested-devices.md) was one table until 7 October 2026, and each run added text to a cell of its row. Now each run is a file of its own ([D-97](decisions/D-97-tested-devices-per-file.md)). A branch that edited the old table conflicts with main on `.dev/tested-devices.md`. Move its edits into the new files in one step:
+
+1. Note the branch's last commit before the merge: `tip=$(git rev-parse HEAD)`.
+2. Fetch and merge main. Take main's page for the conflict: `git checkout --theirs .dev/tested-devices.md`.
+3. Run `bun tools/tested-devices.ts --branch $tip`. It compares the branch's table with the table where the branch started, its merge base with `origin/main`. It writes a run file for each row's new plans and results, and a new folder for each new row. It puts changed facts and new known issues in each README.
+4. Read its notes. A note names each cell that the branch changed in place rather than added to, and each fact that it changed. Check those files by hand.
+5. Run `bun run docs`. Stage the page and the new files, and commit the merge.
 
 ## Commit messages and pushes
 
@@ -55,7 +65,7 @@ The `Docs-Checked:` trailer names the page that holds the reason, or says why th
 - Then read the failed job's log, and find whether the pull request caused the failure. A test that fails only under load, or a run that GitHub cancelled when a runner shut down, says nothing about the pull request. Put such a pull request back in the queue with the same commit. Otherwise fix the cause and push.
 - Two tests are known to fail only on a loaded machine. One is the GPU loss test "draws on after a GPU loss" on SwiftShader. It got no frame in its fixed recovery wait, in full local runs while the Mac's load was 21 to 30. The other is the benchmark page test of S4 on SwiftShader. It drew no frame in its short run, in merge queue runs 37289400132 and 37578361814. Both passed when they ran again. In each, the slow software GPU took longer than the test's fixed window to draw the first frame after a start or a loss. A rerun alone shows whether a failure is this ([Image tests](image-tests.md#tests-on-slow-machines)).
 - Run `bun run build:check-size` on the branch, with current main merged, just before the pull request joins the queue. The pull request's own size check compared with main as it was at the last push. On 6 October 2026 the queue removed a pull request for two files that had grown 2.0% against the newer main.
-- Two pull requests that add text at one place of a file clash after the first one's squash. A row of the [tested devices](tested-devices.md) record is an example. This happens even when one pull request already contains the other's text. Queue the second only after the first merges, and merge main into it first.
+- Two pull requests that add text at one place of a file clash after the first one's squash. This happens even when one pull request already contains the other's text. Queue the second only after the first merges, and merge main into it first. The record of [tested devices](tested-devices.md) had most of these clashes, so each run there is now a file of its own ([D-97](decisions/D-97-tested-devices-per-file.md)).
 - `gh run list --event merge_group` lists the queue's runs. Each run's branch is `gh-readonly-queue/main/pr-<number>-<commit>`, so look for your pull request's number. The pull request's timeline also links the failed run, and `gh run view <run> --log-failed` prints its failed steps.
 - Each run builds the shader modules from the sources that it tests, so pull requests that change shaders can share a queue run.
 - The size check of a queue run compares with the commit that the group builds on, which holds the pull requests ahead. A pull request's own run compares with main. So a file's growth counts only against the pull request that makes it. When the check compared with main instead, a pull request ahead added its growth to the one behind it. The queue then removed the second ([Benchmarks](benchmarks.md#download-size)).
