@@ -249,7 +249,8 @@ To collect the numbers, rest each device first and close its other tabs:
 ## The shimmer plan
 
 - The `shimmer` plan measures how much the highlights of small shiny shapes flicker as the camera moves, for [D-79](decisions/D-79-lighting-defaults.md). Its page is `tests/pages/specular-shimmer.html`, on each GPU path.
-- The page draws 96 small metal spheres and rings and moves the camera a quarter of a pixel per frame for 48 frames. It draws the same frames again at 4 times the width and height, averaged down. Those frames do not flicker, because each pixel holds the light of its whole area.
+- The plan runs 3 scenes on each GPU path: small low-poly spheres and rings, large smooth spheres, and spheres about 4 pixels across (`?scene=small`, `smooth` and `tiny`). The page moves the camera a quarter of a pixel per frame for 48 frames. It draws the same frames again at 4 times the width and height, averaged down. Those frames flicker far less, because each pixel holds the light of more of its area.
+- The page's bump-mapped scene (`?scene=bumps`) stays out of the plan. Specular anti-aliasing never sees a normal map's detail, and at 4 times the size the map's finer level flickers more than the frames it checks.
 - It reports the flicker of both rows, their difference (the shimmer) and the mean error against the averaged row, in steps of 1/255. It times nothing, so the refresh rate does not matter.
 - To compare the specular anti-aliasing kernel with another, build each variant of the lit template and run the plan on each build. Run it on the phones and the iPad: `bun tests/real-browsers.ts --plan shimmer --allow-no-webgpu --android chrome --lan ipad-safari`, or with `bun run devices:cloud` on the cloud phones.
 

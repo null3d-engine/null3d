@@ -1386,16 +1386,25 @@ export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
 const SHIMMER_TIMEOUT_SECONDS = 300;
 
 /**
- * How much the highlights of small shiny shapes flicker on each GPU path, against a supersampled
- * row of the same frames. D-79 records the results.
+ * The shimmer page's scenes that a device run measures: small low-poly shapes, smooth spheres, and
+ * spheres a few pixels across. The bump-mapped scene is left out, because specular anti-aliasing
+ * never sees a normal map's detail.
+ */
+const SHIMMER_SCENES = ['small', 'smooth', 'tiny'] as const;
+
+/**
+ * How much the highlights of shiny shapes flicker in each scene on each GPU path, against a
+ * supersampled row of the same frames. D-79 records the results.
  */
 export function shimmerPlan(): PlanItem<Check>[] {
-	return TIERS.map((tier) =>
-		pageItem(
-			`shimmer-${tier}`,
-			'specular-shimmer',
-			{ kind: 'shimmer', tier },
-			{ switches: [`gpu=${tier}`], timeoutSeconds: SHIMMER_TIMEOUT_SECONDS },
+	return TIERS.flatMap((tier) =>
+		SHIMMER_SCENES.map((scene) =>
+			pageItem(
+				`shimmer-${scene}-${tier}`,
+				'specular-shimmer',
+				{ kind: 'shimmer', tier },
+				{ switches: [`gpu=${tier}`, `scene=${scene}`], timeoutSeconds: SHIMMER_TIMEOUT_SECONDS },
+			),
 		),
 	);
 }
