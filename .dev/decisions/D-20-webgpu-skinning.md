@@ -147,3 +147,9 @@ Since this work began, main merged three changes that touch the skinned vertex. 
 - The pass keeps one build per tangent and color bit. The pipeline constant for 8-bit directions applies to each build, so the constant adds no build.
 - A morphed mesh's color stays four 32-bit floats, after the 8-bit normal and tangent, since morph targets may push it outside what 8 bits hold. Its offset in the skinned vertex moves up with the narrower directions, and a unit test checks that layout.
 - Held poses count from the first frame that waits for every pipeline, as the pipeline cache counts that frame's pipelines as built.
+
+Checks of the rebuilt branch on the Mac's GPU, on 8 October 2026:
+
+- The image tests of skinning, morph targets and glTF passed 115 of 120 on every GPU path. The 5 others were the new normal-map test below, which had no references yet. No existing reference moved.
+- The skinning, skinning pass and animation browser tests passed 13 of 13. The skinning pass page checks both layouts against the CPU.
+- A new image test, `skinning-normal-map`, lights the characters through a normal map of grooves, so the light shows each skinned tangent. With 8-bit tangents and with 32-bit ones, the images differ by at most 4 levels in any pixel, on the Mac's GPU and on SwiftShader. WebGL2's vertex shaders, which skin in floats, match the same reference.
