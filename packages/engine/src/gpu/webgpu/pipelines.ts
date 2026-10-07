@@ -17,6 +17,8 @@ import {
 	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
+	LAYOUT_FINAL_EFFECTS,
+	LAYOUT_FINAL_EFFECTS_DEPTH_MS,
 	LAYOUT_FRAME,
 	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
@@ -589,6 +591,21 @@ export class Pipelines {
 			...effectEntries,
 			unfiltered(3, true),
 		]);
+		// The final pass with custom effects folded into it: the pass's own entries, then every
+		// effect's block and the scene's depth, which the effects read as a group does. The effects
+		// sample the scene color with a linear filter, so it binds as a filterable float texture:
+		// effects run on the HDR path, whose color formats filter.
+		const foldEntries: GPUBindGroupLayoutEntry[] = [
+			...finalEntries.map((entry) =>
+				entry.binding === 1 ? { binding: 1, visibility: fragment, texture: {} } : entry,
+			),
+			{ binding: 4, visibility: fragment, buffer: { type: 'uniform' } },
+		];
+		this.defineLayout(LAYOUT_FINAL_EFFECTS, 'final effects', [...foldEntries, unfiltered(5)]);
+		this.defineLayout(LAYOUT_FINAL_EFFECTS_DEPTH_MS, 'final effects depth ms', [
+			...foldEntries,
+			unfiltered(5, true),
+		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -741,20 +758,29 @@ export class Pipelines {
 	 * Adds a template of the sketch's compiled WGSL. A custom material's is the standard material's
 	 * template with the material's WGSL, in the shader variants that the plugin built, which also
 	 * read the first texture coordinates. A material with textures binds them in the slots of the
-	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and a custom tone
-	 * curve's binds as the final pass or its bloom build does.
+	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and so does a
+	 * group of joined effects. A custom tone curve's binds as the final pass or its bloom build does,
+	 * and the final pass with effects folded into it binds their buffer and the depth too.
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
 		const { kind } = shader;
 		if (kind !== undefined) {
+			const effect = kind === 'effect' || kind === 'effectGroup';
+			const [layout, multisampled, label] = effect
+				? [LAYOUT_EFFECT, LAYOUT_EFFECT_DEPTH_MS, `custom effect ${id}`]
+				: kind === 'effectFold'
+					? [LAYOUT_FINAL_EFFECTS, LAYOUT_FINAL_EFFECTS_DEPTH_MS, `folded effects ${id}`]
+					: [
+							kind === 'final' ? LAYOUT_FINAL : LAYOUT_FINAL_BLOOM,
+							undefined,
+							`custom tone curve ${id}`,
+						];
 			this.defineTemplate(id, {
-				label: kind === 'effect' ? `custom effect ${id}` : `custom tone curve ${id}`,
+				label,
 				shader: shader.variants,
 				pipeline: 'main',
-				layouts: [
-					kind === 'effect' ? LAYOUT_EFFECT : kind === 'final' ? LAYOUT_FINAL : LAYOUT_FINAL_BLOOM,
-				],
-				multisampledLayouts: kind === 'effect' ? [LAYOUT_EFFECT_DEPTH_MS] : undefined,
+				layouts: [layout],
+				multisampledLayouts: multisampled === undefined ? undefined : [multisampled],
 				vertexBuffers: [],
 			});
 			return;

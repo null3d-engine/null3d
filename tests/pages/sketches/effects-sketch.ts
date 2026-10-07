@@ -3,8 +3,8 @@
 // curve. ?effects adds two effects: a color split that reads the pixels beside each pixel, and a
 // fog that reads the scene's depth. ?reversed adds them in the other order, with orders that run
 // them as ?effects does. ?later adds them during play, half a second in, and changes a uniform after
-// adding it. ?curve maps the scene with a custom tone curve, Reinhard's, and ?bloom turns bloom on
-// with the effects. ?scale= draws at that render scale.
+// adding it. ?fogfirst runs the fog before the split. ?curve maps the scene with a custom tone
+// curve, Reinhard's, and ?bloom turns bloom on with the effects. ?scale= draws at that render scale.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
@@ -14,6 +14,7 @@ const params = new URL(import.meta.url).searchParams;
 const EFFECTS = params.has('effects');
 const REVERSED = params.has('reversed');
 const LATER = params.has('later');
+const FOG_FIRST = params.has('fogfirst');
 const CURVE = params.has('curve');
 const BLOOM = params.has('bloom');
 const SCALE = params.get('scale');
@@ -84,7 +85,12 @@ export default defineSketch(({ scene, materials, geometry, post, quality, time }
 			post.addEffect({ wgsl: split, order: -1, uniforms: { tint: [1, 0.95, 0.9], shift: 3 } });
 			return;
 		}
-		const first = post.addEffect({ wgsl: split, uniforms: { tint: [1, 0.95, 0.9], shift: 1 } });
+		const order = FOG_FIRST ? 1 : 0;
+		const first = post.addEffect({
+			wgsl: split,
+			order,
+			uniforms: { tint: [1, 0.95, 0.9], shift: 1 },
+		});
 		post.addEffect({ wgsl: fog, uniforms: { color: '#b0c4d8', density: 0.04 } });
 		post.setEffectUniform(first, 'shift', 3);
 	};

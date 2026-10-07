@@ -211,6 +211,8 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
+	/** The sketch's textures, whose memory budget each frame looks at. */
+	private readonly textures: Textures;
 	/**
 	 * The frame-budget governor, which moves the render scale and the shadow settings during play.
 	 * In hold mode it takes no step, and the settings apply as set.
@@ -319,6 +321,7 @@ export class SketchRunner {
 			(id) => imagesArrived(slots, id),
 			device.webgl2,
 			device.textureCache,
+			() => this.quality.own('textureMemoryMiB'),
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -363,7 +366,9 @@ export class SketchRunner {
 					return governor.aoScale / FULL_SCALE;
 				},
 			},
+			textures.memory,
 		);
+		this.textures = textures;
 		this.applyFrameSettings(this.quality.settings);
 		this.readViewport();
 		const host: DebugHost = {
@@ -374,6 +379,7 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
+				textureMemory: textures.memory,
 			},
 		};
 		const templates = new ShaderTemplates(sketch.sendShader);
@@ -395,6 +401,7 @@ export class SketchRunner {
 			device.occlusionTargets,
 			materials.shaders,
 			templates,
+			device.joinEffects,
 		);
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
@@ -947,7 +954,12 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
+		// The texture memory budget dropped levels or asks for some again: the loads again start
+		// now, and the quality change handlers hear of it in the next frame.
+		if (this.textures.pollBudget()) this.quality.governed();
 		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
+		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
 		if (glue.cullFrame(frame, width, height, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);

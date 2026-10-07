@@ -9,7 +9,17 @@
 // count per frame. The device runner's bloom and ao
 // plans run it on each GPU path at the scales of 1 and 0.5. With bloom, ?size= sets the quality
 // setting bloomSize, the base of its chain, as the bloom-sizes plan does.
+//
+// With effects, the effects join (D-71): ?join=off keeps each in a pass of its own, and the page
+// reports how long each joined shader took to build, where development builds keep the times.
+// ?heavy makes the GPU the limit where it has no timer: 8 effects by default, at the display's
+// whole pixel ratio, so the frame interval shows what joining saves.
 import { createEngine } from '@null3d/engine';
+import {
+	JOIN_TIMING_CHANNEL,
+	JOIN_TIMING_REQUEST,
+	type JoinTimingReport,
+} from '../../packages/engine/src/gpu/effect-join';
 import {
 	GL_TIMING_CHANNEL,
 	GL_TIMING_REQUEST,
@@ -33,7 +43,8 @@ type Effect = keyof typeof SKETCHES;
 const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
-const count = params.get('count');
+const heavy = params.has('heavy');
+const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
 if (antialias !== null && antialias !== 'msaa' && antialias !== 'fxaa' && antialias !== 'none')
 	throw new Error(`the page takes no anti-aliasing mode ${antialias}`);
@@ -53,7 +64,12 @@ run('effect-cost', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
 	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}`;
-	const engine = await createEngine({ canvas, sketch, antialias: antialias ?? undefined });
+	const engine = await createEngine({
+		canvas,
+		sketch,
+		antialias: antialias ?? undefined,
+		maxPixelRatio: heavy ? devicePixelRatio : undefined,
+	});
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
@@ -110,6 +126,7 @@ run('effect-cost', async () => {
 		},
 		glSnapshot,
 	);
+	const joinBuilds = effect === 'effects' ? await requestJoinTiming() : undefined;
 	await engine.destroy();
 	return {
 		effect,
@@ -118,6 +135,9 @@ run('effect-cost', async () => {
 		scale,
 		bloomSize: size === null ? null : Number(size),
 		effects: effect === 'effects' ? Number(count ?? '4') : null,
+		joined: effect === 'effects' ? params.get('join') !== 'off' : null,
+		heavy,
+		joinBuilds,
 		antialias,
 		// The window in CSS pixels and the screen's pixel ratio: the preset's cap on the ratio sets
 		// the drawing buffer's size from them.
@@ -143,5 +163,22 @@ function requestGlTiming(): Promise<GlTimingReport | undefined> {
 			resolve(event.data);
 		};
 		channel.postMessage(GL_TIMING_REQUEST);
+	}).finally(() => channel.close());
+}
+
+/**
+ * The joined shaders' build times that the thread that draws kept, or undefined when none comes:
+ * a release build keeps none.
+ */
+function requestJoinTiming(): Promise<JoinTimingReport | undefined> {
+	const channel = new BroadcastChannel(JOIN_TIMING_CHANNEL);
+	return new Promise<JoinTimingReport | undefined>((resolve) => {
+		const timeout = setTimeout(() => resolve(undefined), 2000);
+		channel.onmessage = (event: MessageEvent<JoinTimingReport>) => {
+			if (event.data?.type !== 'join-timing') return;
+			clearTimeout(timeout);
+			resolve(event.data);
+		};
+		channel.postMessage(JOIN_TIMING_REQUEST);
 	}).finally(() => channel.close());
 }

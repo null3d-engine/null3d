@@ -1,16 +1,17 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Eleven more
+// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Twelve more
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
 // ?occlusion=on or off for occlusion culling, ?skinning= for how WebGPU skins (vertex for the
 // vertex shader of each pass, or full, skip or narrow for the skinning pass with fewer of its
 // savings), ?instances=index for vertex shaders that read instance data by index on core WebGPU,
-// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth, and
-// ?texture-cache=off for KTX2 files that transcode on every load. ?hold
-// starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
-// running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
+// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
+// ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
+// in a pass each, none joined. ?hold starts hold mode for image tests, ?preset= fixes the quality
+// preset, ?bench publishes the running engine for benchmark tools, and ?gl-timing times each WebGL
+// call for benchmark pages.
 
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
@@ -146,6 +147,11 @@ export interface Switches {
 	 * cells skipped first, for benchmarks that measure what cell culling saves.
 	 */
 	cells: boolean;
+	/**
+	 * False when ?join=off keeps each custom effect in a pass of its own, with none joined into a
+	 * group or folded into the final pass, for pages that measure what joining saves.
+	 */
+	join: boolean;
 	/**
 	 * True when ?prepass=on turns the depth prepass on, false when ?prepass=off turns it off, and
 	 * undefined to leave it to the page's option and the quality preset.
@@ -285,6 +291,7 @@ export function parseSwitches(search: string): Switches {
 		sceneFormat: oneOf(params.get('scene-format'), SCENE_FORMATS),
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
+		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
 		skinning:

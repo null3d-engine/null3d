@@ -176,6 +176,12 @@ const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
  * no HDR target runs no effects: the page's switch that turns HDR off stands in for one, and must
  * draw the scene without them. At half the render scale the effects draw into the corners of the
  * same targets.
+ *
+ * The effects join (D-71): the fog reads only its own pixel, so it joins the color split's pass,
+ * and the group folds into the final pass, or draws as a group where bloom reads it. Each `-separate`
+ * test turns joining off with ?join=off and must draw its joined twin's image. With the fog first,
+ * the split reads the pixels beside each pixel of the fog's output, so it must not join the fog:
+ * `effects-fog-first` draws separate passes, and `effects-fog-first-joined` must draw its image.
  */
 function effectsTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -191,6 +197,22 @@ function effectsTests(): ImageTest[] {
 		test('effects-curve', '?curve'),
 		test('effects-bloom-curve', '?effects&bloom&curve'),
 		test('effects-scale-50', '?scale=0.5&effects'),
+		...(
+			[
+				['effects', '?effects'],
+				['effects-bloom-curve', '?effects&bloom&curve'],
+				['effects-scale-50', '?scale=0.5&effects'],
+			] as const
+		).map(
+			([name, query]): ImageTest => ({
+				...test(`${name}-separate`, query),
+				switches: ['join=off'],
+				reference: name,
+			}),
+		),
+		// The separate passes make this reference, and the joined effects must draw it.
+		{ ...test('effects-fog-first', '?effects&fogfirst'), switches: ['join=off'] },
+		{ ...test('effects-fog-first-joined', '?effects&fogfirst'), reference: 'effects-fog-first' },
 		{
 			...test('effects-8-bit', '?effects&curve'),
 			tiers: ['webgpu', 'webgl2'],
@@ -257,7 +279,9 @@ const AO_SKETCH = 'tests/pages/sketches/ao-sketch.ts';
  * every tier. The parity test compares the two with three.js's GTAOPass. The sun's test shows that
  * the occlusion darkens only the ambient light, beside the sun's shadows. Ambient occlusion at half
  * the render scale draws into the corners of the same targets, and a quarter-size scale into a
- * smaller corner.
+ * smaller corner. A custom effect that returns each pixel as it reads it must leave the occlusion's
+ * image as it was. Compatibility mode starts on the 8-bit path with MSAA, and the effect moves it to
+ * HDR color with FXAA, which smooths edges differently, so that test leaves it out.
  */
 function aoTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -274,6 +298,11 @@ function aoTests(): ImageTest[] {
 		test('ao-scale-50', '?scale=0.5&ao=wide'),
 		test('ao-quarter', '?ao=wide&aoscale=0.25'),
 		test('ao-custom', '?ao=wide&custom'),
+		{
+			...test('ao-identity-effect', '?ao=wide&identity'),
+			tiers: ['webgpu', 'webgl2'],
+			reference: 'ao-wide',
+		},
 	];
 }
 
@@ -760,6 +789,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 240],
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
+	},
+	// Two 512 x 512 textures and a small one past a texture memory budget of 1 MiB in a live engine.
+	// The large ones drop their largest mip level, so each quarter draws one flat color where the
+	// full texture holds a checker. Then the levels load again from the file once room returns, and
+	// a compressed texture from a KTX2 file drops a level by loading the file again.
+	{
+		name: 'texture-budget',
+		page: 'tests/pages/texture-budget.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: {
+			withinBudget: true,
+			largestDropped: true,
+			smallKept: true,
+			restored: true,
+			mostDropped: true,
+			compressedDropped: true,
+		},
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
