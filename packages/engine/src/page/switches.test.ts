@@ -36,6 +36,7 @@ describe('parseSwitches', () => {
 			hold: undefined,
 			bench: false,
 			glTiming: undefined,
+			replayDelay: undefined,
 		});
 	});
 
@@ -96,6 +97,12 @@ describe('parseSwitches', () => {
 	it('reads ?bench with or without a value', () => {
 		expect(parseSwitches('?bench').bench).toBe(true);
 		expect(parseSwitches('?gpu=webgl2&bench=1').bench).toBe(true);
+	});
+
+	it('reads ?replay-delay, a whole number of ms up to a second', () => {
+		expect(parseSwitches('?replay-delay=40').replayDelay).toBe(40);
+		for (const value of ['0', '2.5', '-3', '5000', 'x'])
+			expect(parseSwitches(`?replay-delay=${value}`).replayDelay).toBeUndefined();
 	});
 
 	it('reads ?gl-timing, which times each WebGL call for benchmark pages', () => {

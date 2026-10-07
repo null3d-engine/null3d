@@ -44,6 +44,7 @@
 
 use std::collections::TryReserveError;
 
+use null3d_core::alloc::reserve_keeping;
 use null3d_core::cells::ORIGIN_CELL;
 use null3d_core::clusters::RowCells;
 use null3d_core::culling::{
@@ -101,6 +102,9 @@ struct ViewCull {
     sorted: SortedView,
     /// Each frame parity's index list entries of the sorted rows, in their order.
     sorted_entries: [Vec<u32>; 2],
+    /// Each frame parity's entry lists that a growth replaced, kept until that parity sorts again:
+    /// the list of its last frame may still upload from them.
+    sorted_kept: [Vec<Vec<u32>>; 2],
 }
 
 /// Each view's culling output, and the runs of rows that a view culls. The views are of one kind,
@@ -289,8 +293,8 @@ impl Culling {
         let rows = sorted.rows() as usize;
         for view in &mut self.views {
             sorted.reserve_view(&mut view.sorted)?;
-            for entries in &mut view.sorted_entries {
-                entries.try_reserve(rows.saturating_sub(entries.len()))?;
+            for (entries, kept) in view.sorted_entries.iter_mut().zip(&mut view.sorted_kept) {
+                reserve_keeping(entries, rows, kept)?;
             }
         }
         Ok(())
@@ -389,6 +393,7 @@ impl Culling {
                 .map(|o| o.occluders.buffer());
             let entries = &mut view.sorted_entries[parity];
             entries.clear();
+            view.sorted_kept[parity].clear();
             if let Some(sorted) = sorted {
                 let frame = view.frame.as_ref();
                 sorted.sort(
