@@ -66,12 +66,14 @@ export const GRID_CELLS: readonly GridCell[] = Array.from(
 
 /**
  * The environments that light the grid in its environment tests, with no sun and no ambient light:
- * the room of three.js's `RoomEnvironment`, built in, and Poly Haven's Venice Sunset, an HDR file
- * with a low sun, which the asset tool turns into an environment map.
+ * the room of three.js's `RoomEnvironment`, built in, Poly Haven's Venice Sunset, a Radiance file
+ * with a low sun, and Poly Haven's small studio, an OpenEXR file. The asset tool turns a file into
+ * an environment map, or the engine reads the file itself and filters it at load.
  */
 export const GRID_ENVIRONMENTS = {
 	room: { builtin: 'room' },
 	venice: { hdr: sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr') },
+	studio: { hdr: sampleUrl('sources/hdri/polyhaven/studio_small_09/studio_small_09_1k.exr') },
 } as const;
 
 export type GridEnvironmentName = keyof typeof GRID_ENVIRONMENTS;

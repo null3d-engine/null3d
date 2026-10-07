@@ -8,7 +8,7 @@ summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadEnvironment, buil
 
 # Assets
 
-> Ships in null3D 0.1, with glTF models, color grading tables and environments from 0.2. The API is experimental, so it can still change between versions. `loadCubemap` is not built yet. `loadEnvironment` reads only the files of `bunx @null3d/cli assets env`, not HDR files. Morph targets load but do not draw. glTF files with Draco compression do not load yet. Coding agents must not use these parts.
+> Ships in null3D 0.1, with glTF models, color grading tables and environments from 0.2. The API is experimental, so it can still change between versions. `loadCubemap` is not built yet. Morph targets load but do not draw. glTF files with Draco compression do not load yet. Coding agents must not use these parts.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
@@ -33,7 +33,7 @@ export default defineSketch(async ({ assets, page }) => {
 | `loadTexture(url, options)` | A texture from a PNG, JPEG or WebP file, an AVIF file where the browser decodes AVIF, or a KTX2 file of ETC1S or UASTC data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
-| `loadEnvironment(url)` | An `Environment` from a file of `bunx @null3d/cli assets env`, for `scene.setEnvironment`. [Environments](#environments) says what it reads |
+| `loadEnvironment(url)` | An `Environment` for `scene.setEnvironment`, from a file of `bunx @null3d/cli assets env` or from an HDR file: Radiance (`.hdr`) or OpenEXR (`.exr`). [Environments](#environments) says what it reads |
 | `builtinEnvironment('room')` | The built-in room, the scene of three.js's `RoomEnvironment`, as an `Environment` |
 | `loadJson(url)` | The file parsed as JSON |
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
@@ -113,15 +113,21 @@ A load that fails frees everything that it made before the failure.
 
 ## Environments
 
-`loadEnvironment` reads the KTX2 file that `bunx @null3d/cli assets env` writes. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light. `builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. The GPU draws it and filters it, so no file downloads. Give either to [`scene.setEnvironment`](scene.md#the-environment).
+`loadEnvironment` reads two kinds of file:
+
+- The KTX2 file that `bunx @null3d/cli assets env` writes, the fast path. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light.
+- An HDR file of an equirectangular panorama, as three.js's `HDRLoader` and `EXRLoader` read it: a Radiance file (`.hdr`) or an OpenEXR file (`.exr`). The engine filters it on the GPU at load, with the asset tool's steps, as three.js's `PMREMGenerator.fromEquirectangular` does.
+
+`builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. The GPU draws it and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets }) => {
-  const [room, sunset] = await Promise.all([
+  const [room, sunset, studio] = await Promise.all([
     assets.builtinEnvironment('room'),
     assets.loadEnvironment('/env/sunset.ktx2'),
+    assets.loadEnvironment('/hdri/studio_2k.hdr'),
   ]);
   scene.setEnvironment(sunset, { intensity: 1.2 });
   return {};
@@ -129,11 +135,15 @@ export default defineSketch(async ({ scene, assets }) => {
 ```
 
 - An `Environment` has its cube map's `size`, the width of the largest faces, its `levels`, its `format` and its GPU `bytes`.
-- The first environment file loads the file reader, under 1 KB after Brotli. The first built-in room loads the code and the shaders that make it on the GPU, about 7 KB after Brotli. [Lighting and environment](../concepts/lighting.md#cost) gives the GPU's time.
-- A file's cube map uploads in the frames after the load, and the scene draws without it until it is on the GPU.
+- The first environment file loads the file reader, under 1 KB after Brotli. The first built-in room loads the code and the shaders that make it on the GPU, about 8 KB after Brotli. [Lighting and environment](../concepts/lighting.md#cost) gives the GPU's time.
+- A KTX2 file's cube map uploads in the frames after the load, and the scene draws without it until it is on the GPU.
+- A worker reads an HDR file, outside the sketch's frames. The first one loads the reader and its worker, about 6.5 KB after Brotli. It also loads the code and shaders that make the room, which filter the file. They start at the call for an address that ends in `.hdr` or `.exr`, so they load during the download. The call resolves once the file is read and those shaders are ready. The GPU then filters the whole map in the next frame, before that frame draws. So no frame draws the scene without its light. Load HDR files while the scene loads.
+- An HDR map has faces of 256 texels, as the asset tool's default. An image wider than 2,048 texels becomes the averages of squares of its texels first. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files.
+- The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
 - `builtinEnvironment` resolves once the code and the shaders that make the room are ready. The GPU then makes the whole map in the next frame, before that frame draws. So the first frame with the room already has its light. That frame takes longer by the map's GPU time: about 20 ms on a MacBook Pro, and 50 to 110 ms on recent phones. Ask for the room while the scene loads. During play, the call makes one long frame.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
+- The tool's file needs no reading or filtering at load, so prefer it for maps that ship with a game. HDR files suit maps that change, such as files that users upload. The tool's file is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. A 1K OpenEXR file and its map take about 1.3 MB each.
 
 [Lighting and environment](../concepts/lighting.md#environment-maps) says how an environment lights the scene.
 
@@ -211,8 +221,8 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 | `loadGltf(url: string \| URL, options: LoadGltfOptions = {}): Promise<Prefab>` | Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first call downloads the loader and its worker. The first file with meshopt compression also downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too, and they take files that `preload` downloaded. Throws E1411 when a file does not download, E1413 when a server of another origin does not allow the page to read it, E1416 for a file that is not a glTF model the engine reads or that passes a limit on what one file may decode to, E1417 for a file that requires an extension the engine does not read, E1412 when an image does not decode, E1109 when a mesh does not fit engine memory, and E1406 when the loader or the meshopt decoder does not download. `options.rewriteUrl` checks the addresses that the file names. |
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadLut(url: string \| URL): Promise<Lut>` | Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along; a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when the readers do not load. |
-| `loadEnvironment(url: string \| URL): Promise<Environment>` | Downloads an environment map that `bunx |
-| `builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment>` | Makes a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for soft, neutral light with no file of your own. No file downloads: the GPU draws the room into its cube map and filters it for each roughness, as three.js's `PMREMGenerator.fromScene` does. It resolves once the code and the shaders that make the map are ready. The next frame then makes the whole map before it draws, so the first frame with the environment already has its light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a call during play makes one long frame. The first one loads the code that makes it, about 7 KB after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its code does not download. |
+| `loadEnvironment(url: string \| URL): Promise<Environment>` | Downloads an environment and makes an `Environment` from it, for `scene.setEnvironment`. It takes a KTX2 file that `bunx |
+| `builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment>` | Makes a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for soft, neutral light with no file of your own. No file downloads: the GPU draws the room into its cube map and filters it for each roughness, as three.js's `PMREMGenerator.fromScene` does. It resolves once the code and the shaders that make the map are ready. The next frame then makes the whole map before it draws, so the first frame with the environment already has its light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a call during play makes one long frame. The first one loads the code that makes it, about 8 KB after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its code does not download. |
 | `loadJson<T = unknown>(url: string \| URL): Promise<T>` | Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412 when the file is not valid JSON. |
 | `loadBinary(url: string \| URL): Promise<ArrayBuffer>` | Downloads a file as bytes. Throws E1411 or E1413 as `loadTexture` does. |
 | `preload(urls: readonly (string \| URL)[]): Promise<void>` | Downloads files ahead of their loads, all at once, and resolves when every one has arrived. The next load of each address takes its file from memory. Pair it with `onProgress` for a loading screen. Throws the error of the first file that fails, as `loadBinary` does. |
