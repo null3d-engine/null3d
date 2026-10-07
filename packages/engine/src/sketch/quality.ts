@@ -11,6 +11,7 @@
 import { EngineError } from '../errors/engine-error';
 import type { PresetCheck } from '../quality/check';
 import {
+	capTextureMemory,
 	checkSettings,
 	LIVE_SETTINGS,
 	lowered,
@@ -22,6 +23,7 @@ import {
 	type QualitySettings,
 	startValues,
 } from '../quality/presets';
+import type { TextureMemory } from '../scene/textures';
 
 /** The preset and the settings that the page starts a sketch with. */
 export interface QualityStart {
@@ -32,11 +34,24 @@ export interface QualityStart {
 	/** The GPU path's highest preset, which caps the presets that `setPreset` gets. */
 	highest: QualityPreset;
 	/**
+	 * The most texture memory in MiB that a preset gives on this kind of device, unless the page's
+	 * options give the texture memory. Without it, there is no cap.
+	 */
+	textureCapMiB?: number;
+	/**
 	 * Present when the engine checks the preset after its first frame. `fps` is the frame rate that
 	 * the ?fps= switch holds, which caps the check's target.
 	 */
 	check?: { fps?: number };
 }
+
+/** The texture memory of a sketch quality without textures, as tests make it. */
+const NO_TEXTURE_MEMORY: TextureMemory = {
+	bytes: 0,
+	budgetBytes: 0,
+	droppedLevels: 0,
+	droppedTextures: 0,
+};
 
 /** What the page learns after each change: the preset, the settings, and the check's result. */
 export interface QualityUpdate {
@@ -113,6 +128,12 @@ export interface Quality {
 	 */
 	readonly governor: QualityGovernor;
 	/**
+	 * The GPU memory that textures take, against `settings.textureMemoryMiB`, and the mip levels
+	 * that the engine dropped to stay under it. The `onChange` handlers run after the engine drops
+	 * levels or asks for them again.
+	 */
+	readonly textureMemory: TextureMemory;
+	/**
 	 * Changes settings from the next frame on, and resolves at once. It takes the settings that
 	 * change during play, each with a value that the setting takes, and throws E1213 for any other
 	 * setting or value, or for a `minRenderScale` above `maxRenderScale`. A setting that it does not
@@ -165,12 +186,13 @@ export class SketchQuality implements Quality {
 	 */
 	private readonly options: Partial<QualitySettings>;
 	private readonly highest: QualityPreset;
+	private readonly textureCapMiB: number;
 
 	readonly governor: QualityGovernor;
 
 	/**
 	 * `governor` reports the governor's steps. Without it, the settings apply as set, as in hold
-	 * mode.
+	 * mode. `textureMemory` reports the textures' memory.
 	 */
 	constructor(
 		start: QualityStart,
@@ -178,6 +200,7 @@ export class SketchQuality implements Quality {
 		private readonly settle: () => Promise<void> = () => Promise.resolve(),
 		private readonly scale: () => number = () => 1,
 		governor?: QualityGovernor,
+		readonly textureMemory: TextureMemory = NO_TEXTURE_MEMORY,
 	) {
 		this.preset = start.preset;
 		this.settings = { ...start.settings };
@@ -185,6 +208,7 @@ export class SketchQuality implements Quality {
 		for (const [name, value] of Object.entries(startValues(start.settings))) kept[name] ??= value;
 		this.options = kept as Partial<QualitySettings>;
 		this.highest = start.highest;
+		this.textureCapMiB = start.textureCapMiB ?? Number.POSITIVE_INFINITY;
 		const { settings } = this;
 		this.governor = governor ?? {
 			steps: 0,
@@ -225,7 +249,7 @@ export class SketchQuality implements Quality {
 		const wanted = presetArgument(preset);
 		const next = presetIndex(wanted) > presetIndex(this.highest) ? this.highest : wanted;
 		this.owned.clear();
-		return this.update(next, presetSettings(next, this.options));
+		return this.update(next, this.presetValues(next, this.options));
 	}
 
 	/**
@@ -245,7 +269,12 @@ export class SketchQuality implements Quality {
 		const kept: Record<string, unknown> = { ...this.options };
 		const current = this.settings as unknown as Record<string, unknown>;
 		for (const name of this.owned) kept[name] = current[name];
-		return this.update(next, presetSettings(next, kept as Partial<QualitySettings>));
+		return this.update(next, this.presetValues(next, kept as Partial<QualitySettings>));
+	}
+
+	/** The settings of `preset`, with `kept`'s values, under the device's texture memory cap. */
+	private presetValues(preset: QualityPreset, kept: Partial<QualitySettings>): QualitySettings {
+		return capTextureMemory(presetSettings(preset, kept), kept, this.textureCapMiB);
 	}
 
 	onChange(handler: (quality: Quality) => void): () => void {
@@ -253,7 +282,10 @@ export class SketchQuality implements Quality {
 		return () => this.handlers.delete(handler);
 	}
 
-	/** Tells the change handlers of a step of the governor's shadow settings, at the next frame. */
+	/**
+	 * Tells the change handlers of a step of the governor's shadow settings, or of the texture
+	 * memory budget's drops, at the next frame.
+	 */
 	governed(): void {
 		this.change = Math.max(this.change, LIVE_CHANGE);
 	}
