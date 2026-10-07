@@ -4,7 +4,7 @@ null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, 
 
 A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both, or a full shader's `@vertex` and `@fragment` entry points. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`.
 
-Versions: `materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. So are textures in custom materials (0.2): each `var name: texture_2d<f32>;` of the WGSL, given in the `textures` option. The inputs and built-in values that the tables below mark (0.2) come later in 0.2. Post effects and custom passes come in 0.2 too. A port that needs a later part waits for it, or keeps its values in the standard options.
+Versions: `materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. So are textures in custom materials (0.2): each `var name: texture_2d<f32>;` of the WGSL, given in the `textures` option. So are post effects (0.2): `post.addEffect` with `fn effect(input: EffectInput) -> vec4f`. The other inputs and built-in values that the tables below mark (0.2) come later in 0.2, as do custom passes. A port that needs a later part waits for it, or keeps its values in the standard options.
 
 ## Contents
 
@@ -29,7 +29,7 @@ Read what the original shader does, then pick the smallest null3D form that can 
 | Moves vertices | `vertexOffset`, plus a surface function if needed |
 | Ignores lighting (unlit effects, holograms, fresnel glows) | Surface function that writes `emissive` and sets `baseColor` to zero |
 | Replaces three.js lighting | Full shader with `null3d::lighting` helpers; rare, so confirm it is needed |
-| Is a full-screen pass | `post.addEffect` (0.2, `references/post-processing.md`) |
+| Is a full-screen pass | `post.addEffect` (0.2, `references/post-processing.md`, section 6) |
 | Renders to a texture for another material | Custom pass (`render.addPass`, 0.2) |
 
 Surface functions keep instancing, shadows, fog and both backends working, and skinning when it comes in 0.2. Full shaders keep instancing and both backends, but get no lighting, shadows, fog, uniforms or standard values.
@@ -91,7 +91,7 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 ## 4. Coordinate, depth and color conventions
 
 - Fragment coordinates: a surface function has no `fragCoord` input until 0.2. Compute the pixel from the clip position: `let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);` then `let pixel = (clip.xy / clip.w * vec2f(0.5, -0.5) + 0.5) * frame.resolution;`. Its origin is at the top left with y pointing down, as `@builtin(position)` in a full shader's fragment stage. GLSL `gl_FragCoord` starts at the bottom left with y pointing up. Wherever the original used `gl_FragCoord.y`, use `frame.resolution.y - pixel.y`.
-- Screen UVs in post effects (0.2): `input.uv` is (0, 0) at the top left. three.js full-screen passes use a `vUv` that is (0, 0) at the bottom left. Replace `vUv.y` with `1.0 - input.uv.y` where direction matters (gradients, top-of-screen effects).
+- Screen UVs in post effects (0.2): `input.uv` is (0, 0) at the top left, and `input.pixel` counts pixels from the top left. three.js full-screen passes use a `vUv` that is (0, 0) at the bottom left. Replace `vUv.y` with `1.0 - input.uv.y` where direction matters (gradients, offsets, top-of-screen effects). `texture2D(tDiffuse, uv)` becomes `effectColor(uv)`, and the effect reads its uniforms as `uniforms.name`.
 - Texture UVs: textures loaded with `flipY: true` sample the same as three.js's `TextureLoader` default. glTF textures use `flipY: false` in both engines. Keep the original's setting, and the ported shader's UV math stays the same.
 - Depth: the engine uses reversed depth on both GPU paths, where near is 1 and far is 0. A vertex shader writes clip-space depth in WebGPU's range of 0 to 1, and the engine moves it where WebGL2 needs that. Do not port three.js depth formulas such as `perspectiveDepthToViewZ` or `readDepth`; use `null3d::depth::linear_depth(d, near, far)` and `null3d::depth::perspective_depth_to_view_z(d, near, far)`, which are correct on both backends.
 - Color output: engine surfaces are linear, and the engine encodes them as sRGB for the canvas once. A three.js `ShaderMaterial` without `<colorspace_fragment>` writes its values straight to the screen, so its colors were effectively sRGB. Convert such constants with `null3d::color::srgb_to_linear`, or pass them as `'#rrggbb'` uniforms, which the engine converts.
@@ -137,14 +137,14 @@ Keep the original's standard options (color, roughness, metalness, emissive) on 
 | `normalView` | `(camera.view * vec4f(input.normal, 0.0)).xyz`, with `camera.view` (0.2) |
 | `cameraPosition`, `time` | `camera.position`, `frame.time` |
 | `vertexColor()`, `instanceIndex` | `input.vertexColor`; `input.instance` (0.2) |
-| `screenUV` | The pixel of section 4 divided by `frame.resolution` in surfaces, `input.uv` in effects (0.2) |
+| `screenUV` | The pixel of section 4 divided by `frame.resolution` in surfaces; `input.uv` in effects (0.2) |
 | `add`, `sub`, `mul`, `div`, `.add()` chains | `+`, `-`, `*`, `/` |
 | `oneMinus(x)`, `saturate(x)` | `1.0 - x`, `saturate(x)` |
 | `mx_noise_float(p)` and other MaterialX noise | `null3d::noise::simplex3(p)`, `fbm3(p, octaves)` (values differ; tune) |
 | `Fn(() => { ... })`, `If`, `Loop`, `.toVar()` | `fn`, `if`, `for`, `var` |
 | `material.colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `material.positionNode` | `vertexOffset` returning `newPosition - input.position` |
-| `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader, or a post effect (0.2); `mrtNode` has no equivalent |
+| `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader; a post-processing `outputNode` becomes a post effect (`post.addEffect`, 0.2); `mrtNode` has no equivalent |
 
 On an `InstancedMesh`, three.js r186 applies the instance matrix before `positionNode` runs, so `positionLocal` there already holds the instanced vertex. In null3D, `input.position` is always the mesh's own vertex, and the engine applies the instance transform after `vertexOffset`. A displacement that three.js scaled by that `positionLocal` changes size after the port. Write it from `input.position` and the instance's own data, and check the project's three.js version before you port a `positionNode`.
 

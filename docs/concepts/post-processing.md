@@ -3,20 +3,21 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, bloom through a chain of mip levels, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette."
+summary: "HDR scene color, ambient occlusion at half size, custom effects, bloom through a chain of mip levels, an outline mask, and one final pass for exposure, tone mapping, FXAA, dithering, outlines, color grading and the vignette."
 ---
 
 # The post-processing chain
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. In this version the chain has HDR scene color, ambient occlusion, bloom, outlines, and the final pass with color grading and the vignette. Custom effects are not built yet. Coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
 
 ```mermaid
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
     ao --> scene
-    scene["Scene passes:<br/>linear HDR color"] --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
+    scene["Scene passes:<br/>linear HDR color"] --> custom["Custom effects:<br/>one pass each"]
+    custom --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
     down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
-    scene --> final["Final pass: blends in bloom,<br/>then tone mapping,<br/>FXAA and dithering"]
+    custom --> final["Final pass: blends in bloom,<br/>then tone mapping,<br/>FXAA and dithering"]
     up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
     final --> line["In the same pass:<br/>the outline's line"]
@@ -24,7 +25,7 @@ flowchart LR
     grade --> canvas["Canvas"]
 ```
 
-Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
+Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the sketch's custom effects and bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It adds the effects' results and applies the tone mapping. Then it smooths edges with FXAA, encodes sRGB and dithers. Last, it grades the display color with a color grading table and the vignette, when the sketch sets them.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -90,6 +91,28 @@ With the default weights, bloom draws 15 small passes: 8 steps down and 7 steps 
 - The bloom scene of the engine's effect cost test ran on a MacBook Pro in Chrome, with WebGPU at 1920 x 1080. Bloom added 0.79 to 0.85 ms of GPU time per frame at a render scale of 1, and 0.79 ms at 0.5. A base of 128 added 0.52 to 0.66 ms.
 - Phone GPUs pay a fixed cost for each pass, so a smaller base, with fewer levels, saves the most there. Each halving of the base removes two passes.
 - The targets exist only while bloom is on.
+
+## Custom effects and tone curves
+
+A sketch adds effects of its own with `post.addEffect`. Each is a WGSL function that the engine calls for each pixel, in a full-screen pass of its own. [Custom passes](../guides/custom-passes.md) shows how to write one.
+
+```ts
+const warm = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    return vec4f(input.color.rgb * vec3f(1.1, 1.0, 0.9), input.color.a);
+}
+`;
+
+post.addEffect({ wgsl: warm });
+```
+
+- Effects run after the scene passes and before bloom, on linear HDR color after the exposure. Light that an effect adds can glow, and the tone curve maps it with the rest.
+- Each effect reads the color that the effect before it wrote. It can read any pixel, and the scene's depth on every GPU path.
+- Effects run from the lowest `order` to the highest, at most 8 at once.
+- Two targets of the render size serve all the effects. The render graph lets them share memory, because each effect's target lives only until the next effect has read it.
+- Each effect costs a full-screen pass: a read and a write of 8 bytes per pixel. Join effects that read only their own pixel into one function.
+
+A custom tone curve replaces the built-in curves. Its WGSL declares `fn toneCurve(color: vec3f) -> vec3f`, and `post.set({ toneMapping })` takes it. The final pass calls it in place of the built-in curve, after bloom and before FXAA and dithering.
 
 ## Ambient occlusion
 
@@ -171,10 +194,10 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut`,
 
 ## Effects on devices without HDR color
 
-Bloom needs the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
+Bloom, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
 
-- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. When a sketch turns bloom on, the engine moves to HDR color with FXAA for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
-- WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom stays off. Development builds warn once in the console.
+- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Bloom, a custom effect or a custom tone curve moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
+- WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom and custom effects stay off, and the built-in tone curve stays. Development builds warn once in the console.
 
 The devices that the engine was tested on all draw HDR color with WebGL2, and with core WebGPU.
 
@@ -192,10 +215,12 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies ACES. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
 - `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`.
 - A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { offset, darkness } })`.
+- Any other `ShaderPass` becomes `post.addEffect` with the shader rewritten in WGSL. A pass after `OutputPass` saw display color, and an effect sees linear HDR color. Numbers that assume colors from 0 to 1 may need changes. `ReinhardToneMapping`, `CineonToneMapping` and `CustomToneMapping` become a custom tone curve. [Porting post-processing](../porting/threejs-postprocessing.md) shows both.
 
 ## Related pages
 
-- [Post-processing API](../api/post.md): `post.set` and its settings.
+- [Post-processing API](../api/post.md): `post.set` and its settings, and `post.addEffect`.
+- [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
 - [Objects and transforms](../api/objects.md#mesh-calls): `setOutlined`.
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
