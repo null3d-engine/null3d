@@ -45,7 +45,7 @@ The check found one row whose text the old page hid. This was Safari on the Mac 
 
 ## Consequences
 
-- A run is a file, `<run name>.md`, in its folder. It has a `Plans:` paragraph and a `Result:` paragraph. The device runner prints it, with the folder where it goes, or with a new folder's README when none fits. The runner also prints the facts that differ from the folder's README.
+- A run is a file, `<run name>.md`, in its folder. It has a `Plans:` paragraph, then the `Result:`, which runs to the end of the file. The device runner prints it, with the folder where it goes, or with a new folder's README when none fits. The runner also prints an OS, a browser or GPU paths that the folder's README lacks, such as a new browser version.
 - A folder's README holds a title, the six facts as a list, and a "Known issues" section with one paragraph per issue. Links in these files are relative to the file, and the page's tables move them to the page's folder.
 - `bun run docs` writes the tables between markers on the page. The commit hook and `bun run docs:check` fail when the page is stale. They also refuse a folder without a README or a run, and a README without its facts or its issues section. They refuse a run file without its date, plans or result too.
 - The writing check covers the new files as maintainer guides. The old cells' long sentences now show as warnings, which do not block.

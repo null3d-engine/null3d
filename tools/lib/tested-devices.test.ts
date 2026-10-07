@@ -55,7 +55,7 @@ const record = () =>
 		],
 		[
 			`${DIR}/ipad-pro-11-inch-safari/20261007-054211-effects.md`,
-			runText('effects 2026-10-07', '4 of 4 ([D-71](../../decisions/D-71-custom-effects.md)).'),
+			`${runText('effects 2026-10-07', '4 of 4 ([D-71](../../decisions/D-71-custom-effects.md)).')}\nNo memory refusal.\n`,
 		],
 	]);
 
@@ -73,6 +73,8 @@ describe('readRecord', () => {
 			'effects 2026-10-07',
 		]);
 		expect(rows[0]?.runs[0]?.result).toBe('656 of 656. Warm runs slowed.');
+		// A result may take several paragraphs.
+		expect(rows[0]?.runs[1]?.result).toEndWith('.md)). No memory refusal.');
 		expect(rows[1]?.issues).toEqual([]);
 	});
 
@@ -117,7 +119,7 @@ describe('the tables and the full record', () => {
 		const full = fullRecord(readRecord(record()).rows);
 		expect(tableRows(full)[0]?.slice(6)).toEqual([
 			'checks 2026-09-29; effects 2026-10-07',
-			'656 of 656. Warm runs slowed. 4 of 4 ([D-71](decisions/D-71-custom-effects.md)).',
+			'656 of 656. Warm runs slowed. 4 of 4 ([D-71](decisions/D-71-custom-effects.md)). No memory refusal.',
 			'The tab closed at 2016 MiB ([D-12](decisions/D-12-memory-budgets.md)).',
 		]);
 	});
@@ -205,6 +207,11 @@ describe('the runner entry', () => {
 		);
 	});
 
+	it('finds an Android folder for a browser that hides the model', () => {
+		const run = { ...pixel, Device: 'Android device, 412 x 924 at 2.625x, 7 cores' };
+		expect(findFolders(rows, run).map((row) => row.folder)).toEqual([`${DIR}/pixel-9-chrome`]);
+	});
+
 	it('prints a new folder with its README when none fits', () => {
 		const run = { ...pixel, Device: 'Pixel 10, 412 x 924 at 2.625x, 8 cores' };
 		const text = runEntryText(rows, '20261008-101500-smoke', run, 'smoke 2026-10-08', '3 passed');
@@ -258,6 +265,25 @@ describe('branchEntries', () => {
 			'iPad Pro 11-inch in Safari: the Browser fact is now "Safari 26.7, with a Mac user agent"',
 			`Pixel 10 in Chrome: a new folder, ${DIR}/pixel-10-chrome`,
 		]);
+	});
+
+	it('leaves out text that main already holds, and the full stop that closes the old text', () => {
+		const before = [...head, line([...ipadRow.slice(0, 7), 'Done', ipadRow[8] as string])].join(
+			'\n',
+		);
+		const after = [
+			...head,
+			line([
+				...ipadRow.slice(0, 6),
+				'checks 2026-09-29; effects 2026-10-07; soak 2026-10-08',
+				'Done. Warm runs slowed. Soak held.',
+				ipadRow[8] as string,
+			]),
+		].join('\n');
+		const { writes } = branchEntries(before, after, record());
+		expect(writes.get(`${DIR}/ipad-pro-11-inch-safari/20261008-soak.md`)).toBe(
+			'Plans: soak 2026-10-08\n\nResult: Soak held.\n',
+		);
 	});
 
 	it('notes a cell that the branch changed in place', () => {

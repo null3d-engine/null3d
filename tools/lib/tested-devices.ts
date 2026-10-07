@@ -1,9 +1,10 @@
 // The record of tested devices. Each device and browser has a folder in `.dev/tested-devices/`:
 // its README holds the facts and the known issues, and each other file holds one run. A run is a
-// new file, so pull requests that record runs never edit the same lines. The page
+// new file, so pull requests that record runs do not edit the same lines. The page
 // `.dev/tested-devices.md` holds a table of the facts and the known issues, made from the folders,
 // and `bun run devices:record` prints every run's plans and results as well.
 import { posix } from 'node:path';
+import { labelledParagraph } from './decisions';
 import { readIfExists, walkFiles } from './files';
 
 export const RECORD_DIR = '.dev/tested-devices';
@@ -39,12 +40,6 @@ export interface DeviceRow {
 	issues: string[];
 	/** The runs, oldest first. */
 	runs: Run[];
-}
-
-/** The text of the paragraph that starts with `label:`, joined onto one line, or '' when absent. */
-function labelledParagraph(text: string, label: string): string {
-	const match = text.match(new RegExp(`^${label}: (.+(?:\\n.+)*)`, 'm'));
-	return match ? (match[1] as string).replace(/\s*\n\s*/g, ' ').trim() : '';
 }
 
 /** A Markdown block's paragraphs, each joined onto one line. */
@@ -241,7 +236,9 @@ export function readRecord(files: ReadonlyMap<string, string>): {
 		const row: DeviceRow = { folder, facts: read.facts, issues: read.issues, runs: [] };
 		for (const [path, text] of runs.sort(([a], [b]) => a.localeCompare(b))) {
 			const plans = labelledParagraph(text, 'Plans');
-			const result = labelledParagraph(text, 'Result');
+			// The result runs to the end of the file, so a long one may take several paragraphs.
+			const resultAt = text.search(/^Result: /m);
+			const result = resultAt === -1 ? '' : paragraphs(text.slice(resultAt + 8)).join(' ');
 			if (!plans)
 				problems.push(`${path}: add a "Plans:" paragraph: the plans that ran, with their dates`);
 			if (!result) problems.push(`${path}: add a "Result:" paragraph under the plans`);
@@ -375,9 +372,21 @@ export function addedText(before: string, after: string): { text: string; edited
 	)
 		end++;
 	return {
-		text: after.slice(start, after.length - end).replace(/^[\s;,]+|[\s;,]+$/g, ''),
+		text: after.slice(start, after.length - end).replace(/^[\s;,.]+|[\s;,]+$/g, ''),
 		edited: before.length - end > start,
 	};
+}
+
+/**
+ * The parts of `text` that `known` lacks, sentence by sentence (or plan by plan), so text that main
+ * already holds is not recorded twice.
+ */
+function unknownText(text: string, known: string, atSemicolons = false): string {
+	return sentenceLines(text, atSemicolons)
+		.split('\n')
+		.filter((line) => !known.includes(line.replace(/[.;\s]+$/, '')))
+		.join(' ')
+		.replace(/[\s;,]+$/, '');
 }
 
 /** A run file's name, without `.md`, from the run named in its text or the first date of its plans. */
@@ -459,6 +468,22 @@ export function branchEntries(
 			notes.push(`${title}: the ${fact} fact is now "${value}"`);
 		});
 		const [plans, result, issues] = [6, 7, 8].map((i) => addedText(old?.[i] ?? '', cells[i] ?? ''));
+		// Text that main's files already hold, such as another pull request's run that the branch
+		// merged, stays out of the new files.
+		const known = (pick: (run: Run) => string) =>
+			row.runs.map((run) => onPage(pick(run), run.path)).join(' ');
+		if (plans)
+			plans.text = unknownText(
+				plans.text,
+				known((run) => run.plans),
+				true,
+			);
+		if (result)
+			result.text = unknownText(
+				result.text,
+				known((run) => run.result),
+			);
+		if (issues) issues.text = unknownText(issues.text, issueCell(row));
 		for (const [label, change] of [
 			['Plans', plans],
 			['Result', result],
@@ -488,22 +513,31 @@ export function branchEntries(
 	return { writes, notes };
 }
 
+/** True when one text holds the other, in any case. */
+const overlaps = (a: string, b: string) => {
+	const [x, y] = [a.toLowerCase(), b.toLowerCase()];
+	return x.includes(y) || y.includes(x);
+};
+
 /**
  * The folders that may hold a device and browser that a runner page described. The page knows
  * less than a person: a model number or "iPad", not "iPad Pro 11-inch". So the browser's name
- * must match and the device's folder must name the page's model. The screen, the cores and the
- * place narrow the choice when more than one folder fits.
+ * must match and the device's folder must name the page's model. A browser that hides an Android
+ * model, such as Brave, gives "Android device", which fits any folder on Android. The screen, the
+ * cores and the place narrow the choice when more than one folder fits.
  */
 export function findFolders(rows: readonly DeviceRow[], facts: Facts): DeviceRow[] {
 	const [model = '', ...details] = facts.Device.split(', ');
+	const fitsModel = (row: DeviceRow) =>
+		model === 'Android device'
+			? row.facts.OS.startsWith('Android')
+			: row.facts.Device.toLowerCase().includes(model.toLowerCase());
 	let found = rows.filter(
-		(row) =>
-			browserName(row.facts.Browser) === browserName(facts.Browser) &&
-			row.facts.Device.toLowerCase().includes(model.toLowerCase()),
+		(row) => browserName(row.facts.Browser) === browserName(facts.Browser) && fitsModel(row),
 	);
 	const narrowers = [
 		...details.map((detail) => (row: DeviceRow) => row.facts.Device.includes(detail)),
-		(row: DeviceRow) => row.facts.Where.toLowerCase() === facts.Where.toLowerCase(),
+		(row: DeviceRow) => overlaps(row.facts.Where, facts.Where),
 	];
 	for (const fits of narrowers) {
 		if (found.length < 2) break;
@@ -516,7 +550,7 @@ export function findFolders(rows: readonly DeviceRow[], facts: Facts): DeviceRow
 /**
  * The files that record one run from the device runner, as text to paste: the run file, and the
  * folder's README when no folder fits the device and browser. It says where each file goes, and
- * which facts of a fitting folder differ from what the run found.
+ * which OS, browser or GPU paths the run found that a fitting folder's README lacks.
  */
 export function runEntryText(
 	rows: readonly DeviceRow[],
@@ -530,9 +564,13 @@ export function runEntryText(
 	const body = runText(plans, result);
 	if (found.length === 1) {
 		const row = found[0] as DeviceRow;
-		const differ = FACTS.filter((fact) => facts[fact] && facts[fact] !== row.facts[fact]).map(
-			(fact) => `  ${fact}: the README says "${row.facts[fact]}"; the run found "${facts[fact]}"`,
-		);
+		// The README's device, GPU and place hold more than a runner page can find, so only a
+		// version that the README lacks is worth a note.
+		const differ = (['OS', 'Browser', 'GPU paths'] as const)
+			.filter((fact) => facts[fact] && !row.facts[fact].includes(facts[fact]))
+			.map(
+				(fact) => `  ${fact}: the README says "${row.facts[fact]}"; the run found "${facts[fact]}"`,
+			);
 		return [
 			`${posix.join(row.folder, file)}:`,
 			body,
