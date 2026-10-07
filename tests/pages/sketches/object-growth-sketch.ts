@@ -1,17 +1,16 @@
 // The scene's object tables grow during play, for the object growth test. Both modes draw the same
 // boxes, a tree and a turned dynamic box, and post 'before' once frames have drawn. On the page's
-// 'grow', ?mode=grow first creates many groups, which draw nothing: they fill the tables several
-// times over, so the scene grows at the create calls. Then both modes move a box, turn the dynamic
+// 'grow', ?mode=grow creates groups, which draw nothing, in each of several frames: each frame's
+// creates fill the tables, so the scene grows in every one of those frames, at a create call or
+// at the frame's start. The first of them also destroys a group with a child, and moves a box
+// again to where it already went. In the first frame both modes move that box, turn the dynamic
 // box, and add a box under the tree's root, whose slot in grow mode lies past every slot of the
-// tables it started with. The next frame starts more than three quarters full in grow mode, so
-// the tables grow again at the frame's start, and that frame creates more groups, destroys one and
-// moves the box again to the same place. Both modes post 'after' once frames have drawn.
+// tables it started with. Both modes post 'after' once frames have drawn.
 import { defineSketch, type Group } from '@null3d/engine';
 
 const growing = new URL(import.meta.url).searchParams.get('mode') === 'grow';
-/** Groups that the first frame of the growth creates, and the second. */
-const FIRST = 13_000;
-const SECOND = 8_000;
+/** Groups that each frame of the growth creates. */
+const GROUPS = [1_500, 3_000, 6_000, 12_000, 24_000];
 /** Frames before each picture. */
 const FRAMES = 6;
 
@@ -56,19 +55,20 @@ export default defineSketch(({ scene, geometry, materials, page, time }) => {
 			if (grown < 0 && asked) grown = time.frame;
 			if (grown < 0) return;
 			const step = time.frame - grown;
+			const count = growing ? (GROUPS[step] ?? 0) : 0;
+			for (let k = 0; k < count; k++)
+				hidden.push(scene.createGroup({ position: [0, -50, 0], parent: hidden[k * 2] }));
 			if (step === 0) {
-				if (growing)
-					for (let k = 0; k < FIRST; k++) hidden.push(scene.createGroup({ position: [0, -50, 0] }));
 				moved.setPosition(0, 3, 0);
 				spinner.setRotation(0, 0, 0, 1);
 				scene.createMesh({ mesh: box, material: paint, parent: root, position: [2, 1, 0] });
 			}
 			if (growing && step === 1) {
-				for (let k = 0; k < SECOND; k++) hidden.push(scene.createGroup({ parent: hidden[k] }));
 				hidden[1]?.destroy();
 				moved.setPosition(0, 3, 0);
 			}
-			if (step === 1 + FRAMES) page.post('after', { objects: growing ? hidden.length + 1 : 1 });
+			if (step === GROUPS.length + FRAMES)
+				page.post('after', { objects: growing ? hidden.length + 1 : 1 });
 		},
 	};
 });

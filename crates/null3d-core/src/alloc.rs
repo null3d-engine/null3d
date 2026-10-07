@@ -16,3 +16,41 @@ pub fn filled<T: Clone>(len: usize, value: T) -> Result<Vec<T>, TryReserveError>
 pub fn reserve_len<T>(v: &mut Vec<T>, len: usize) -> Result<(), TryReserveError> {
     v.try_reserve_exact(len.saturating_sub(v.len()))
 }
+
+/// Makes room in `v` for `len` items in all, without changing its length, and without freeing the
+/// memory it held: a list that the thread that draws still replays may point into it. A larger
+/// buffer takes the items, and the old one goes into `kept`, which the owner empties once no list
+/// can point into it.
+pub fn reserve_keeping<T: Copy>(
+    v: &mut Vec<T>,
+    len: usize,
+    kept: &mut Vec<Vec<T>>,
+) -> Result<(), TryReserveError> {
+    if v.capacity() >= len {
+        return Ok(());
+    }
+    kept.try_reserve(1)?;
+    let mut larger = Vec::new();
+    larger.try_reserve_exact(len)?;
+    larger.extend_from_slice(v);
+    kept.push(std::mem::replace(v, larger));
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserving_keeps_the_old_buffer_where_it_was() {
+        let mut v = vec![1u32, 2, 3];
+        let mut kept = Vec::new();
+        reserve_keeping(&mut v, 2, &mut kept).unwrap();
+        assert!(kept.is_empty());
+        let old = v.as_ptr();
+        reserve_keeping(&mut v, 100, &mut kept).unwrap();
+        assert_eq!((v.as_slice(), v.capacity() >= 100), (&[1, 2, 3][..], true));
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].as_ptr(), old);
+    }
+}

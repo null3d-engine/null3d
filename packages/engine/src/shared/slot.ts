@@ -97,3 +97,9 @@ export const JobsStopAddress = 29;
  * the browser stops each worker as soon as the page has gone.
  */
 export const JobsServing = 30;
+/**
+ * The milliseconds that the thread that draws waits before it replays each frame's list, from the
+ * ?replay-delay= test switch, or 0. The sketch thread then steps the next frame before the replay
+ * reads the engine memory that the list points at.
+ */
+export const ReplayDelayMs = 31;

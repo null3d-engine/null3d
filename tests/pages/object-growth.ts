@@ -51,6 +51,7 @@ run('object-growth', async () => {
 			objects: number;
 			during: number;
 			odd: number;
+			sequence: string;
 			latency: string;
 			failures: string[];
 		}
@@ -97,6 +98,9 @@ run('object-growth', async () => {
 			objects: done.objects,
 			during: during.length,
 			odd: during.filter((each) => each !== before && each !== picture).length,
+			sequence: during
+				.map((each) => (each === before ? 'B' : each === picture ? 'A' : 'X'))
+				.join(''),
 			latency: engine.mode.latency,
 			failures,
 		};

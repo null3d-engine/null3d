@@ -13,7 +13,8 @@
 //! [`SceneStorage::try_grow`] raises the capacity between frame steps. Every array moves, so
 //! TypeScript makes its views again. The world buffers move to new arrays, and the old pair stays
 //! allocated until two frames have begun: the draw list of the frame before the growth points at
-//! its matrices, and the thread that draws can still be replaying it.
+//! its matrices, and the thread that draws can still be replaying it. Before it frees them, it
+//! marks every row hidden, so a reader that held them too long draws nothing.
 //!
 //! # Static and dynamic objects
 //!
@@ -1100,8 +1101,15 @@ impl SceneStorage {
         }
         let gap = frame != crate::frames::next_frame(self.frame);
         if !self.retired.is_empty() {
-            self.retired
-                .retain(|&(free_at, _)| crate::frames::frame_after(free_at, frame));
+            self.retired.retain_mut(|(free_at, buffers)| {
+                let keep = crate::frames::frame_after(*free_at, frame);
+                if !keep {
+                    // A reader that still held these rows would now draw nothing, which the
+                    // object growth browser test sees, instead of rows that look right.
+                    buffers.iter_mut().for_each(WorldArrays::hide_all);
+                }
+                keep
+            });
         }
         if gap {
             // The other buffer may have missed changes, so rebuild both from scratch.

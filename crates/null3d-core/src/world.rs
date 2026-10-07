@@ -184,6 +184,15 @@ impl WorldArrays {
         self.radii[row] = HIDDEN_RADIUS;
     }
 
+    /// Marks every row hidden, as [`WorldArrays::hide_row`] does each one.
+    pub(crate) fn hide_all(&mut self) {
+        self.matrices.fill(0.0);
+        self.xs.fill(0.0);
+        self.ys.fill(0.0);
+        self.zs.fill(0.0);
+        self.radii.fill(HIDDEN_RADIUS);
+    }
+
     /// Moves the translation and sphere center of `row` by `delta`: the row's matrix becomes
     /// relative to a point `delta` away from the one it was relative to.
     pub(crate) fn shift_row(&mut self, row: usize, delta: [f32; 3]) {

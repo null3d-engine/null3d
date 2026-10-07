@@ -11,6 +11,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
+use null3d_core::alloc::reserve_keeping;
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
@@ -416,21 +417,24 @@ pub(crate) fn indices_as_bytes(indices: &[u16]) -> &[u8] {
 #[derive(Default)]
 pub(crate) struct UploadArena {
     bytes: Vec<u8>,
+    /// Bytes that a reserve ahead of a frame replaced, kept until the next reset: the list of the
+    /// frame that last used the arena may still point into them.
+    kept: Vec<Vec<u8>>,
 }
 
 impl UploadArena {
     /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
     /// the arena has been replayed, so its copies may move.
     pub(crate) fn reset(&mut self, total: usize) {
+        self.kept.clear();
         self.bytes.clear();
         self.bytes.reserve_exact(total);
     }
 
     /// Makes room for `total` bytes ahead of the frame that needs them, or fails when memory
-    /// cannot grow.
+    /// cannot grow. The bytes that the arena holds stay where they are until the next reset.
     pub(crate) fn try_reserve(&mut self, total: usize) -> Result<(), TryReserveError> {
-        self.bytes
-            .try_reserve(total.saturating_sub(self.bytes.len()))
+        reserve_keeping(&mut self.bytes, total, &mut self.kept)
     }
 
     /// Copies bytes into the arena, padded to four bytes, and returns their address and padded

@@ -108,6 +108,12 @@ export class FrameReplay {
 
 	/** Replays a frame's list, apart from the pipelines it creates, which are building already. */
 	replay(frame: number): void {
+		const delay = Atomics.load(this.slots, Slot.ReplayDelayMs);
+		if (delay > 0) {
+			// The test switch's wait: the sketch thread steps the next frame meanwhile.
+			const until = performance.now() + delay;
+			while (performance.now() < until);
+		}
 		const from = this.restOf(frame);
 		this.backend.replay(this.words, this.floats, from, this.end, this.viewsOf);
 		if (!this.backend.building) this.complete = true;

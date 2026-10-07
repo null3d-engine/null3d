@@ -1167,6 +1167,8 @@ async function startEngine(
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const views = controlViews(control);
 	const { slots } = views;
+	if (switches.replayDelay !== undefined)
+		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
 	const statsSwitch = new StatsSwitch(() => ({
 		canvas: options.canvas,
 		metrics,

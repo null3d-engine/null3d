@@ -96,7 +96,15 @@ Option (d), built as follows.
 
 ### The thread that draws
 
-The draw list of a frame points at the world matrices in place. The thread that draws copies them to the GPU when it replays the list. It can still be replaying frame `f` while the sketch thread steps frame `f + 1`. A growth in frame `f + 1` therefore moves the world buffers to new arrays and keeps the old pair. It frees them at the start of the second frame after the growth. By then the thread that draws has taken the frame after `f`, so it has finished frame `f`. Each growth marks the scene's structure changed, so the renderer rebuilds its tables at the new size and uploads every matrix again.
+The draw list of a frame points at the world matrices in place. The thread that draws copies them to the GPU when it replays the list. It can still be replaying frame `f` while the sketch thread steps frame `f + 1`. A growth in frame `f + 1` therefore moves the world buffers to new arrays and keeps the old pair. It frees them at the start of the second frame after the growth. By then the thread that draws has taken the frame after `f`, so it has finished frame `f`. Each growth marks the scene's structure changed, so the renderer rebuilds its tables at the new size and uploads every matrix again. Before the core frees the old pair, it marks every row in it hidden. A replay that still read them would then draw nothing, which a test sees, in place of rows that look right.
+
+The world buffers are not the only memory that the list of frame `f` points at. A growth also makes room in the renderer for the new places, for both frame parities. That moved three more kinds of list while the thread that draws could still read them:
+
+- the culled index lists of each view, on the path that culls on the CPU;
+- each view's sorted entries of blended rows;
+- the upload arenas, which hold the bytes that a frame copies to the GPU.
+
+Each of these now keeps a replaced buffer (`reserve_keeping` in the core's `alloc.rs`) until its parity is used again: the next cull, sort or arena reset. By then the thread that draws has finished the list that read it. The cost is one more buffer per list, held for a frame or two after a growth.
 
 ### The page's views
 
@@ -107,5 +115,15 @@ Every array moves in a growth, but the memory need not grow, so the memory's buf
 - The core: `SceneStorage::try_grow`, `SlotAllocator::grow`, `Bitset::grow` and `WorldArrays::try_grown`. The WebAssembly entry point grows the scene in `reserveObject`, `reserveObjects` and `beginFrame`.
 - The page: the `expectedObjects` option, and views that refresh after a growth.
 - Tests: Rust unit tests check a grown scene against one that started large, and the old world buffers' lifetime. The object growth browser test grows the tables during play on WebGPU, compatibility mode and WebGL2. It checks the pictures before and after against an engine that never grew. It also checks every frame drawn while the tables grow, in pipelined mode.
-- That browser test does not catch an early free of the old world buffers. With the buffers freed at once, and even overwritten, it passed 2 runs on each GPU path on 8 October 2026. The thread that draws copies the last frame's matrices long before the growth comes in the next step, so the overlap is rare. The Rust unit test checks the rule itself.
+- The test runs with the `?replay-delay=50` switch. It makes the thread that draws wait 50 ms before it replays each frame's list, so the sketch thread steps the next frame, and grows the tables, first. Without the wait, the thread that draws copies the last frame's matrices long before the growth comes. A first version of the test then passed with the old world buffers freed at once, in 2 runs on each GPU path.
+- The switch is for engine tests only, and counts from 1 to 1,000 ms. It busy-waits on the thread that draws, so a page with it runs slowly.
+- Checks of the test on the Mac's GPU in Chrome 155, 8 October 2026, 3 runs on each GPU path:
+
+| Build | Frames that showed neither picture | Result |
+| --- | --- | --- |
+| This branch | 0 in each of 9 runs | passes |
+| The old world buffers freed at once | 2 on WebGPU and compatibility mode, 3 on WebGL2, in each of 9 runs | fails |
+| Without the kept index lists, sorted entries and arenas | 2 on WebGPU; compatibility mode hung the page for over 30 minutes | fails |
+
+- The Rust unit tests check the rules themselves: the old world buffers' lifetime, and that `reserve_keeping` keeps the old buffer in place.
 - Docs: the scene's limits, the engine's options and memory, handles, and E1102's example. The skill's quick reference lists the option.
