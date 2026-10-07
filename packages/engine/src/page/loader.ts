@@ -6,6 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import { type Build, coreUrls } from '../shared/core';
 import { compileWasm, type MemoryLimits, readMemoryLimits, type WasmError } from '../shared/wasm';
+import { type MemoryKey, releaseMemories, takeMemory } from './memory-pool';
 import { endParkedWorkers } from './ownership';
 
 /**
@@ -39,6 +40,8 @@ export interface LoadedCore {
 	build: Build;
 	module: WebAssembly.Module;
 	memory?: WebAssembly.Memory;
+	/** What the shared memory is for, so that a stop can keep it for the next engine. */
+	memoryKey?: MemoryKey;
 }
 
 const coreError: WasmError = (code, message) => new EngineError(code, message);
@@ -102,7 +105,8 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * A stopped engine's memory counts against both until the engine's workers have finished, which
  * Safari does a moment after the engine stops. So after each refusal the loader waits longer and
  * tries again, for about 45 seconds in all, and a refusal after that fails with E1109. The first
- * refusal after 10 seconds of waits also tells the page, through `stillWaiting`. The first refusal also ends
+ * refusal after 10 seconds of waits also tells the page, through `stillWaiting`. The first refusal also
+ * lets go of the memories that the page kept for new engines, which this one could not take, and ends
  * the drawing workers that stopped engines left with their canvases: Safari frees the memory that
  * such a worker used only once the worker ends. `create`, `pause` and `freeRoom` stand in for the
  * browser and the page in tests.
@@ -112,8 +116,10 @@ export async function createSharedMemory(
 	create: (descriptor: WebAssembly.MemoryDescriptor) => WebAssembly.Memory = (d) =>
 		new WebAssembly.Memory(d),
 	pause: (ms: number) => Promise<void> = wait,
-	freeRoom: () => void = () =>
-		endParkedWorkers('when the browser refused the shared memory of a new engine'),
+	freeRoom: () => void = () => {
+		releaseMemories();
+		endParkedWorkers('when the browser refused the shared memory of a new engine');
+	},
 	stillWaiting: () => void = () => {},
 ): Promise<WebAssembly.Memory> {
 	let waited = 0;
@@ -142,11 +148,12 @@ export async function createSharedMemory(
 }
 
 /**
- * Downloads and compiles a core build. For the threaded build it also creates the shared memory,
- * with the initial size and the maximum that the module's import declares, which the loader reads
- * from the start of the download while the browser compiles the rest. The limits need no file of
- * their own, so a strict Content-Security-Policy has no inline address to block. `memoryWait` hears
- * when the browser has refused the memory for 10 seconds and the loader still tries.
+ * Downloads and compiles a core build. For the threaded build it also gets the shared memory: one
+ * that an engine before kept with the same core and maximum, or a new one with the initial size and
+ * the maximum that the module's import declares. The loader reads those from the start of the
+ * download while the browser compiles the rest. The limits need no file of their own, so a strict
+ * Content-Security-Policy has no inline address to block. `memoryWait` hears when the browser has
+ * refused a new memory for 10 seconds and the loader still tries.
  */
 export async function loadCore(
 	build: Build,
@@ -168,16 +175,19 @@ export async function loadCore(
 			'E1402',
 			'the threaded engine core imports no shared memory, so it comes from another build.',
 		);
-	const maximum = maximumPages(limits, maximumMiB);
+	const memoryKey = { core: url.href, maximum: maximumPages(limits, maximumMiB) };
 	return {
 		build,
 		module,
-		memory: await createSharedMemory(
-			{ initial: limits.initial, maximum, shared: true },
-			undefined,
-			undefined,
-			undefined,
-			memoryWait,
-		),
+		memoryKey,
+		memory:
+			takeMemory(memoryKey, limits.initial) ??
+			(await createSharedMemory(
+				{ initial: limits.initial, maximum: memoryKey.maximum, shared: true },
+				undefined,
+				undefined,
+				undefined,
+				memoryWait,
+			)),
 	};
 }

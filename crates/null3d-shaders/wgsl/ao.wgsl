@@ -51,6 +51,8 @@ const DENOISE_TAPS: i32 = 16;
 const DENOISE_RINGS: f32 = 2.0;
 /// The side of three.js's magic square, whose numbers turn each pixel's slices.
 const NOISE_SIZE: i32 = 5;
+/// The slope error of a neighbor outside the steps' corner, which no neighbor inside it reaches.
+const OUTSIDE: f32 = 1e30;
 
 /// The number at `cell` of three.js's 5 x 5 magic square, from 1 to 25, by the rule that its
 /// construction follows. A formula, as some drivers reject a constant array in GLSL.
@@ -114,17 +116,25 @@ fn depth(@builtin(position) position: vec4f) -> @location(0) vec4f {
 }
 
 /// three.js's computeNormalFromDepth: the normal of the surface at `texel`, from the neighbors on
-/// each side whose depths continue the surface's slope best, so edges keep their own side.
+/// each side whose depths continue the surface's slope best, so edges keep their own side. At the
+/// corner's edges the neighbor inside the corner speaks for the surface: a neighbor outside it
+/// reads the edge texel's own depth, so it would always look best, and at the right and bottom
+/// edges its position is the edge texel's own, which leaves no direction to build a normal from.
 fn rebuilt_normal(texel: vec2i, center: vec3f) -> vec3f {
+    let last = vec2i(settings.corners.zw) - 1;
     let c = depth_at(texel);
     let left = depth_at(texel - vec2i(1, 0));
     let right = depth_at(texel + vec2i(1, 0));
     let above = depth_at(texel - vec2i(0, 1));
     let below = depth_at(texel + vec2i(0, 1));
-    let left_error = abs(2.0 * left - depth_at(texel - vec2i(2, 0)) - c);
-    let right_error = abs(2.0 * right - depth_at(texel + vec2i(2, 0)) - c);
-    let above_error = abs(2.0 * above - depth_at(texel - vec2i(0, 2)) - c);
-    let below_error = abs(2.0 * below - depth_at(texel + vec2i(0, 2)) - c);
+    let left_error =
+        select(abs(2.0 * left - depth_at(texel - vec2i(2, 0)) - c), OUTSIDE, texel.x <= 0);
+    let right_error =
+        select(abs(2.0 * right - depth_at(texel + vec2i(2, 0)) - c), OUTSIDE, texel.x >= last.x);
+    let above_error =
+        select(abs(2.0 * above - depth_at(texel - vec2i(0, 2)) - c), OUTSIDE, texel.y <= 0);
+    let below_error =
+        select(abs(2.0 * below - depth_at(texel + vec2i(0, 2)) - c), OUTSIDE, texel.y >= last.y);
     var across = position_at(texel + vec2i(1, 0)) - center;
     if left_error < right_error {
         across = center - position_at(texel - vec2i(1, 0));

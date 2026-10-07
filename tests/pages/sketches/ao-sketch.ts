@@ -5,6 +5,8 @@
 // WebGL2 and compatibility mode leave it at 0. ?sun adds a sun and its shadows, so the test shows
 // that the occlusion darkens only the ambient light. ?custom gives the large sphere a custom
 // material whose vertex offset swells it in bands, so its depth comes from its own vertex shader.
+// ?identity adds a custom effect that returns each pixel as it reads it, so the image must not
+// change.
 // ?scale= draws at that render scale, with a
 // range that reaches down to 0.5; with ?fixed the range holds that scale alone, and the governor is
 // off, for timing. On the page's 'ao' message it turns the default occlusion on, waits until its
@@ -29,6 +31,14 @@ const AO =
 const AO_SCALE = Number(params.get('aoscale') ?? 0.5);
 const SUN = params.has('sun');
 const CUSTOM = params.has('custom');
+const IDENTITY = params.has('identity');
+
+/** Returns each pixel as it reads it. */
+const identity = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    return input.color;
+}
+`;
 
 /** Swells the surface along its normals in bands, and darkens the swollen bands a little. */
 const swell = /* wgsl */ `
@@ -52,6 +62,7 @@ const FIXED = params.has('fixed');
 export default defineSketch(({ scene, materials, geometry, post, quality, time, page }) => {
 	quality.set({ aoScale: AO_SCALE === 0.25 ? 0.25 : 0.5 });
 	if (AO) post.set({ ao: AO });
+	if (IDENTITY) post.addEffect({ wgsl: identity });
 	if (SCALE !== null) {
 		const scale = Number(SCALE);
 		quality.set({

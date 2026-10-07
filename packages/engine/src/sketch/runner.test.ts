@@ -238,6 +238,7 @@ async function start(
 				shadowDepthBits: 16,
 				largeWorld: false,
 				gpuOcclusion: false,
+				textureCache: true,
 			},
 			capabilities: CAPABILITIES,
 			quality,
