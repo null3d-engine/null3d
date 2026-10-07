@@ -52,11 +52,15 @@ How the data was produced: `NULL3D_PORT=17473 bun run --cwd tests test hot-reloa
 5. The materials send the new shader under the template that the key's WGSL already has. The thread that draws lists the template as replaced. Its backend builds each live pipeline of the template again in the background: `createRenderPipelineAsync` on WebGPU, and `KHR_parallel_shader_compile` on WebGL2. The old pipeline draws until the new one is built. On WebGL2, Safari's Metal translator now and then fails a link at random. Such a link runs once more, also in the background. A build that fails otherwise logs why and keeps the old one.
 6. WGSL that does not compile goes to Vite's overlay and the terminal, and no update goes out. The script's last applied code stays the base of the comparison, so the next good edit sends every literal changed since.
 7. Every engine part is behind `DEV`, so a production build drops it.
+8. The hot contract covers custom materials only. An edit to the WGSL of a custom effect or a custom tone curve reloads the page, as a whole shader does. Both came with custom post effects (#351), after this design. Their WGSL takes the same keys, but nothing on the page applies an update to them yet:
+   - An effect's shader is a template in the same shared template table as the materials'. A swap needs a contract of its uniforms and its depth read, which set its bind group and its block of values in the core. It also needs the effects to take updates as the materials do.
+   - A tone curve is built into every variant of the engine's final pass. A swap replaces the final pass's template, which the engine owns, not a material.
+   - A reload shows every such edit correctly, at the cost of the sketch's state. That is the right default until the swaps exist.
 
 ## Consequences
 
 - The plugin has `compile-pool.ts`, `compile-worker.js`, `compiler-calls.js` and `hot.ts`. The worker and the calls are plain JavaScript, so Node runs them without type stripping. The compile functions in `wgsl.ts` are async.
 - The engine has `shared/wgsl-updates.ts`, `Materials.updateShaders`, `ImageTable.setShader` and its list of replaced templates, and the backends' swaps.
 - Cached spot and point light shadows of a still scene keep the old shape of a vertex offset until something in their view moves. A uniform change through `set()` behaves the same way.
-- Custom effects and tone curves (M2-F5) take the same keys, but they have no contract yet, so an edit to their WGSL reloads the page. A hot swap needs only their own contract in `hot.ts` and a consumer of `updateShaders`.
+- Custom effects and tone curves (M2-F5) take the same keys but have no contract. So an edit to their WGSL reloads the page (decision 8). A hot swap needs their own contract in `hot.ts` and a consumer of `updateShaders`.
 - Docs: `guides/custom-shaders` (hot reload) and `getting-started/install`. Skill: `null3d-develop` `shaders.md` and `testing-and-debugging.md`.
