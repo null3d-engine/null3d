@@ -87,7 +87,9 @@ console.log(engine.capabilities.tier, engine.mode);
 console.log(JSON.stringify(engine.report)); // every result of the start's tests
 ```
 
-Add `engine.report` to a bug report. It holds the result of every test, and the GPU's name where the browser shows one. [Page API: createEngine](../api/engine.md#what-the-engine-reports) describes each value.
+Add `engine.report` to a bug report. It holds the result of every test, and the GPU's name where the browser shows one.
+
+When the page draws although a worker was meant to, `engine.mode.renderFallback` says why. `no-surface` means that the browser cannot draw with the GPU path in a worker. `no-answer` means that the engine's test worker did not answer in time, twice, as on a stalled GPU or a very busy machine. `failed-to-start` means that the test worker's script did not load. A development build also logs a warning with the reason. Drawing on the page works, but the page's own code then shares its thread with the drawing. [Page API: createEngine](../api/engine.md#what-the-engine-reports) describes each value.
 
 Switches in the page's address force a choice, so you can find which path shows a fault. The engine reads them in development builds only:
 

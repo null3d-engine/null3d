@@ -18,6 +18,7 @@ describe('parseSwitches', () => {
 			wakeByMessage: false,
 			displayChecks: true,
 			hdr: true,
+			sceneFormat: undefined,
 			half: undefined,
 			cells: true,
 			prepass: undefined,
@@ -129,6 +130,12 @@ describe('parseSwitches', () => {
 	it('leaves two cores free of job workers without the switch, and starts at least one', () => {
 		expect(jobWorkerCount(undefined, 18)).toBe(16);
 		expect(jobWorkerCount(undefined, 2)).toBe(1);
+	});
+
+	it('picks the scene format with ?scene-format=, and leaves it to the GPU path otherwise', () => {
+		expect(parseSwitches('?scene-format=rg11b10').sceneFormat).toBe('rg11b10');
+		expect(parseSwitches('?scene-format=rgba16f').sceneFormat).toBe('rgba16f');
+		expect(parseSwitches('?scene-format=rgba8').sceneFormat).toBeUndefined();
 	});
 
 	it('turns HDR color off only for ?hdr=off', () => {

@@ -127,7 +127,9 @@ interface PieceSizes {
 /**
  * The most WGSL that the pieces of one group may add to its host, in characters, and the most that
  * the pieces of a fold, effects and tone curve, may add to the final pass. A joined shader then
- * stays within 24 KB: the group's host takes about 1.7 KB and the final pass about 15.3 KB. The
+ * stays within about 25 KB: the group's host takes about 1.7 KB and the final pass about 16.8 KB.
+ * Each effect's size counts the helpers it shares with the others, which a joined shader holds
+ * once, so a joined shader is often much smaller. The
  * shader that failed to build on a Pixel 11's PowerVR driver held 50 KB, and its 17 KB parts built
  * there; the final pass draws on every device that the engine was tested on. A driver's failure
  * can show as a lost context rather than an error, so the cap holds before any build.

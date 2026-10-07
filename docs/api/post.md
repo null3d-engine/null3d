@@ -160,7 +160,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 
 - `mesh.setOutlined(true)` marks a mesh, and `setOutlined(false)` clears it. A model's copy from `scene.instantiate` has `setOutlined` too, which marks each of its meshes. Instance batches take no outline.
 - One outline style covers every outlined mesh. three.js needs one `OutlinePass` for each style, and null3D draws one.
-- The canvas shows the line's colors exactly: the exposure and the tone mapping do not change them. The color grading table and the vignette still apply.
+- The exposure, the tone mapping and the vignette do not change the line's colors. The color grading table still applies, and the dither moves them by up to one 8-bit step.
 - The line is as wide as `width` says on every screen and at every render scale. The engine multiplies it by the device's pixel ratio.
 - Above about 4 pixels of the canvas, a part of a mesh thinner than the line can leave a gap between itself and its line.
 - The outline covers the mesh's whole shape. It ignores the holes that an alpha cutoff cuts, and the vertices that a custom material moves.
@@ -195,22 +195,28 @@ export default defineSketch(async ({ assets, post }) => {
 
 ## Vignette
 
-The vignette darkens the picture toward its edges, with the meanings of three.js's `VignetteShader`:
+The vignette darkens the picture toward its edges:
 
 ```ts
-post.set({ vignette: { offset: 1, darkness: 1.2 } });
+post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 ```
 
 | Setting | Values | Default |
 | --- | --- | --- |
 | `vignette` | Its settings to turn it on, or `false` to turn it off. | Off |
-| `vignette.offset` | How far toward the center the darkening reaches: a number from 0 up. At 1, the corners blend halfway toward the gray of `1 - darkness`. | 1 |
-| `vignette.darkness` | How dark the edges turn: a number from 0 up. At 1 they blend toward black. | 1 |
+| `vignette.intensity` | How dark the edges turn, from 0 up. At 1 the edges turn black where the darkening is full, and above 1 they turn black sooner. | 1 |
+| `vignette.size` | How much of the picture the darkening covers, from 0 up. It scales the distance from the center. From about 1.41 the corners take the full intensity. | 1 |
+| `vignette.falloff` | How fast the light falls from the center: the power of the falloff curve, above 0. Higher values darken more of the picture. | 2 |
+| `vignette.roundness` | The shape, from 0 to 1: 0 follows the canvas's shape, an ellipse on a wide canvas, and 1 is a circle. | 0 |
 
-- Each pixel blends toward the gray of `1 - darkness` by its squared distance from the canvas's center, scaled by `offset`. The vignette applies after the color grading table.
+- The vignette multiplies each pixel's light before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners darken as dark corners do.
+- At a distance `d` from the center, in canvas widths and heights times `size`, the light is multiplied by `1 - intensity × (1 - (1 - d²)^falloff)`, and never by less than 0.
+- three.js's `VignetteShader` blends display color toward a gray instead. A port sets `size` to its `offset` and `intensity` to its `darkness`, and the default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
-Grading and the vignette work on display color, so they draw on every GPU path, with HDR color or without it. They cost the final pass a few operations per pixel, and the table one texture read. On a device that resolves its multisampled picture straight into the canvas, they make the final pass run, which reads the picture once more.
+Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the vignette multiplies the linear value of each pixel's display color. They cost the final pass a few operations per pixel, and the table one texture read. On a device that resolves its multisampled picture straight into the canvas, they make the final pass run, which reads the picture once more.
+
+The final pass dithers last, after the table and the vignette. It adds noise of up to one step of the 8-bit canvas, so smooth gradients show no bands. The noise is the same in every frame.
 
 ## Custom effects
 
@@ -258,7 +264,7 @@ post.set({ toneMapping: reinhard });
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, offset, darkness or outline width below 0, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
@@ -379,7 +385,7 @@ Settings for `post.set`. A setting that the call leaves out keeps its value.
 | `ao?: AoSettings \| false` | Ambient occlusion: darkens the ambient light where nearby surfaces hide a surface from the sky, as three.js's `GTAOPass` finds it. It darkens only the light that comes from all around, where `GTAOPass` darkens the whole image. Settings turn it on, `{}` with the values it had, and `false` turns it off. It is off by default, and draws only where the quality setting `aoScale` is above 0. |
 | `lut?: Lut \| false` | A color grading table from `assets.loadLut`, which maps each pixel's color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default. |
 | `lutIntensity?: number` | The share of the table's color in each pixel, from 0 for none to 1 for all of it, as `LUTPass`'s `intensity`. It is 1 by default. |
-| `vignette?: VignetteSettings \| false` | Darkens the picture toward its edges, as three.js's `VignetteShader` does. Settings turn the vignette on, `{}` with the values it had, and `false` turns it off. It is off by default. |
+| `vignette?: VignetteSettings \| false` | Darkens the picture toward its edges. Settings turn the vignette on, `{}` with the values it had, and `false` turns it off. It is off by default. |
 | `outline?: OutlineSettings \| false` | A sharp line around the objects that `setOutlined(true)` marks. Settings turn outlines on, `{}` with the values they had, and `false` turns them off. They are off by default. |
 
 ### `ToneCurve`
@@ -402,11 +408,13 @@ How the engine maps the scene's high dynamic range color to the screen, with thr
 
 Interface `VignetteSettings`.
 
-The vignette's settings, with the meanings of three.js's `VignetteShader`: each pixel blends toward the gray of `1 - darkness` by its squared distance from the canvas's center, scaled by `offset`. A setting that a call leaves out keeps its value.
+The vignette's settings. The vignette multiplies each pixel's light by a factor that falls from 1 at the canvas's center toward its edges. It works before the tone mapping, so bright corners darken as dark ones do. A setting that a call leaves out keeps its value.
 
 | Member | Description |
 | --- | --- |
-| `offset?: number` | How far toward the center the darkening reaches: 0 or more, and 1 by default. At 1, the corners blend halfway toward the gray, and higher values darken more of the picture. |
-| `darkness?: number` | How dark the edges turn: 0 or more, and 1 by default, which blends them toward black. Above 1 the blend goes past black, so the edges darken faster. |
+| `intensity?: number` | How dark the edges turn: 0 or more, and 1 by default. At 0 nothing changes, and at 1 the edges turn black where the darkening is full. Above 1 they turn black sooner. |
+| `size?: number` | How much of the picture the darkening covers: 0 or more, and 1 by default. It scales the distance from the center. From about 1.41 the corners take the full intensity, and higher values darken more of the picture. |
+| `falloff?: number` | How fast the light falls from the center: the power of the falloff curve, above 0, and 2 by default. Higher values darken more of the picture, and lower values keep the darkening near the edges. |
+| `roundness?: number` | The vignette's shape, from 0 to 1, and 0 by default. At 0 it follows the canvas's shape, an ellipse on a wide canvas. At 1 it is a circle. |
 
 <!-- null3d:api:end -->

@@ -15,6 +15,7 @@
 import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { AO_IMAGE } from '../../bench/scenes/ao.ts';
+import { BACKGROUND_SCENES, BACKGROUNDS_IMAGE } from '../../bench/scenes/backgrounds.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
 import { FOG_IMAGE, FOG_SETTINGS, type FogName } from '../../bench/scenes/fog.ts';
 import {
@@ -361,6 +362,45 @@ function gradingTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the dark tone tests, where an 8-bit canvas shows bands first. */
+const DARK_TONES_SKETCH = 'tests/pages/sketches/dark-tones-sketch.ts';
+
+/**
+ * Dark tones on every tier. A strong vignette over a flat dark background: the dither runs last,
+ * after the vignette, so its noise keeps one step of depth in the dark corners. The 8-bit path
+ * darkens the linear value of display color instead of HDR color, and must still draw the HDR
+ * path's image: on 5 October 2026 no pixel differed past the threshold. A point light's
+ * falloff over a dark floor: a long dark gradient. On WebGL2 the packed small float format must
+ * draw the gradient as 16-bit floats do, with no bands. Core WebGPU draws in that format already
+ * where the device can.
+ */
+function darkToneTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${DARK_TONES_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('dark-vignette', '?vignette'),
+		{
+			...test('dark-vignette-8-bit', '?vignette'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'dark-vignette',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+		test('dark-gradient', '?gradient'),
+		{
+			...test('dark-gradient-small-float', '?gradient'),
+			tiers: ['webgl2'],
+			switches: ['scene-format=rg11b10'],
+			reference: 'dark-gradient',
+		},
+	];
+}
+
 /** The sketch of the outline tests: a sphere half behind a wall and a box (bench/scenes/outline.ts). */
 const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
 
@@ -702,6 +742,37 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'texture-background',
 		expect: { hdr: false },
 	},
+	// The other backgrounds: three.js's sky with clouds, an environment that blurs, dims and turns
+	// behind spheres it lights, and a cube map of six pictures. The parity test compares each with
+	// three.js.
+	...BACKGROUND_SCENES.map(
+		(bg): ImageTest => ({
+			name: `background-${bg}`,
+			sketch: `tests/pages/sketches/backgrounds-sketch.ts?bg=${bg}`,
+			size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+			hold: 0,
+		}),
+	),
+	// The sky on the 8-bit path, where the sky's own shader tone maps its color. It must draw the
+	// HDR path's image.
+	{
+		name: 'background-sky-8-bit',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=sky',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		reference: 'background-sky',
+		expect: { hdr: false },
+	},
+	// The cube map through an orthographic camera, whose parallel rays all look toward one point
+	// of the cube: the view shows that point's color.
+	{
+		name: 'background-cubemap-ortho',
+		sketch: 'tests/pages/sketches/backgrounds-sketch.ts?bg=cubemap&ortho',
+		size: [BACKGROUNDS_IMAGE.width, BACKGROUNDS_IMAGE.height],
+		hold: 0,
+	},
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.
@@ -773,6 +844,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...occlusionTests(),
 	...gradingTests(),
+	...darkToneTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
 	{
@@ -1537,10 +1609,10 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
  * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
  * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
  * cuts a slab, S2, and skinned characters with shadows. The depth debug view replaces every
- * material, and a background texture draws after the prepass in its render pass. Custom materials
- * draw their prepass depth with their own vertex shader, a vertex offset that samples a texture
- * among them. The shadows test's ground, which the near plane cuts, caught WebGL2's prepass when it
- * drew with a program of its own (D-43).
+ * material, and a background texture and the sky draw after the prepass, behind its depth, in its
+ * render pass. Custom materials draw their prepass depth with their own vertex shader, a vertex
+ * offset that samples a texture among them. The shadows test's ground, which the near plane cuts,
+ * caught WebGL2's prepass when it drew with a program of its own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1552,6 +1624,7 @@ const PREPASS_SCENES = [
 	'skinning-shadows',
 	'debug-view-depth',
 	'texture-background',
+	'background-sky',
 	'custom-textures',
 ];
 

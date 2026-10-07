@@ -120,8 +120,8 @@
       "three": "renderer.setClearColor / scene.background = color or texture",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.setBackground('#rrggbb' | texture); environment backgrounds (0.2)",
-      "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background. Environment backgrounds come in 0.2.",
+      "target": "scene.setBackground('#rrggbb' | texture | environment (0.2) | cube map (0.2) | { sky } (0.2), options)",
+      "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. An environment or a cube map surrounds the scene, as a PMREM texture or a CubeTexture in scene.background does. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
     },
@@ -462,7 +462,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "scene.setEnvironment(env, { rotation }) and scene.setBackground(env, { rotation })",
-      "notes": "Rotation is an Euler array in radians, in the order X, Y, Z, as in three.js. Each material shares the scene's rotation, so material.envMapRotation has none of its own. scene.setBackground takes environments with environment backgrounds.",
+      "notes": "Rotation is an Euler array in radians, in the order X, Y, Z, as in three.js. Each material shares the scene's rotation, so material.envMapRotation has none of its own. scene.setBackground turns environments and cube maps, not textures or the sky.",
       "docs": "api/scene",
       "detect": "\\b(environment|background|envMap)Rotation\\b"
     },
@@ -473,7 +473,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "scene.setBackground(env, { blur, intensity })",
-      "notes": "",
+      "notes": "Each setBackground call sets the options of that background, where three.js keeps them on the scene. The blur reads the environment's level for that roughness, as three.js reads its PMREM texture, so it costs nothing extra. Only environments blur: three.js turns a blurred CubeTexture into a PMREM texture, and the engine asks for an environment from assets.loadEnvironment. intensity applies to textures, environments, cube maps and the sky.",
       "docs": "api/scene",
       "detect": "background(Blurriness|Intensity)\\b"
     },
@@ -1077,9 +1077,9 @@
       "three": "CubeTextureLoader / CubeTexture",
       "status": "changed",
       "since": "0.2",
-      "target": "assets.loadCubemap(urls) for sky boxes; assets.loadEnvironment for lighting",
-      "notes": "",
-      "docs": "api/textures",
+      "target": "assets.loadCubemap([px, nx, py, ny, pz, nz]) for sky boxes with scene.setBackground; assets.loadEnvironment for lighting",
+      "notes": "The faces come in three.js's order and draw as three.js draws a CubeTexture background, mirrored across x. Each face is square, of one size, at most 2,048 pixels a side. A cube map does not light materials and does not blur: for envMap or a blurred background, load an environment from an HDR or EXR image with assets.loadEnvironment.",
+      "docs": "api/assets",
       "detect": "\\bCubeTexture(Loader)?\\b"
     },
     {
@@ -1526,10 +1526,10 @@
       "id": "vignette",
       "category": "Post-processing",
       "three": "VignetteShader / VignetteEffect",
-      "status": "direct",
+      "status": "changed",
       "since": "0.2",
-      "target": "post.set({ vignette: { offset, darkness } })",
-      "notes": "VignetteShader's offset and darkness keep their meanings. The postprocessing library's VignetteEffect matches with its ESKIL technique; its default technique darkens with another curve, so tune the two numbers.",
+      "target": "post.set({ vignette: { intensity, size, falloff, roundness } })",
+      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; the default falloff of 2 and roundness of 0 give a close match. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bVignette(Shader|Effect)\\b"
     },
@@ -1558,13 +1558,13 @@
     {
       "id": "sky",
       "category": "Post-processing",
-      "three": "Sky (addons)",
+      "three": "Sky / SkyMesh (addons)",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })",
-      "notes": "A built-in analytic sky with the same parameters.",
+      "target": "scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, ... } })",
+      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js.",
       "docs": "api/scene",
-      "detect": "new\\s+Sky\\s*\\("
+      "detect": "new\\s+Sky(Mesh)?\\s*\\("
     },
     {
       "id": "lensflare",

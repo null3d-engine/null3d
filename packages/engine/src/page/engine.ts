@@ -57,9 +57,11 @@ import { checkBrowser } from './browser-check';
 import { type CanvasWatch, watchCanvas } from './canvas-watch';
 import {
 	type CapabilityReport,
+	forgetWorkerProbe,
 	type PowerPreference,
 	probeCapabilities,
 	readDeviceHints,
+	type WorkerProbeFailure,
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
@@ -281,10 +283,11 @@ export interface EngineOptions {
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
-	 * batch, `'background'` with a texture background, and `'occlusion'` with the first object that
-	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the
-	 * skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'`
-	 * shaders to load. Listed features download beside the engine's own
+	 * batch, `'background'` with a texture, environment or cube map background, `'sky'` with the
+	 * sky, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU
+	 * occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads
+	 * the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features
+	 * download beside the engine's own
 	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
@@ -398,7 +401,34 @@ export interface EngineMode {
 	 * shared.
 	 */
 	memoryMaximumMiB: number | null;
+	/**
+	 * Why the page draws when a worker was meant to, or null when the thread that draws is the one
+	 * that the options asked for. `report.worker` holds the probe's answer.
+	 */
+	renderFallback: RenderFallback | null;
 }
+
+/**
+ * Why the engine draws on the page's thread when its options asked a worker to draw:
+ * - `no-answer`: the probe worker, and a second one after it, gave no answer within their time
+ *   limits. A stalled GPU call or a very busy machine causes this.
+ * - `failed-to-start`: the probe worker's script failed to load or run.
+ * - `no-surface`: a worker cannot draw with the GPU path here, as the browser offers no context of
+ *   it for an `OffscreenCanvas` in a worker.
+ *
+ * @category api/engine
+ */
+export type RenderFallback = WorkerProbeFailure['failure'] | 'no-surface';
+
+/** Why a worker cannot draw, in words, for the warning in development builds. */
+function fallbackText(report: CapabilityReport): string {
+	return 'failure' in report.worker
+		? report.worker.error
+		: 'this browser cannot draw with the chosen GPU path in a worker';
+}
+
+/** True once an engine on the page has warned that the page draws instead of a worker. */
+let warnedFallback = false;
 
 /**
  * A running engine, as `createEngine` returns it.
@@ -520,7 +550,7 @@ export function chooseTier(
 	wanted: GpuSwitch,
 	inWorker: boolean,
 ): TierChoice | null {
-	const worker = 'error' in report.worker ? undefined : report.worker;
+	const worker = 'failure' in report.worker ? undefined : report.worker;
 	const webgpu =
 		report.webgpu.compatibilityAdapter && (!inWorker || worker?.offscreenWebGPU === true);
 	const webgl2 = inWorker ? worker?.offscreenWebGL2 === true : report.webgl2.available;
@@ -652,6 +682,7 @@ export class EngineWorker {
 					events.labelSlot(reply.id, reply.slot, reply.generation);
 					return;
 				case 'lost':
+					forgetWorkerProbe();
 					events.failure(
 						new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
 					);
@@ -1216,6 +1247,17 @@ async function startEngine(
 	let localCore: CoreGlue | undefined;
 	/** The job workers' task ports that the page's on-demand loader uses, when the page runs the sketch. */
 	let jobTaskHost: JobTaskHost | undefined;
+	/**
+	 * The channels between the engine's threads, which the page keeps until the stop. Firefox drops
+	 * the unread messages of a port that moved to a worker once the page collects the port it moved,
+	 * if they hold image bitmaps or WebAssembly modules: the receiver then gets a messageerror event.
+	 */
+	const channels: MessageChannel[] = [];
+	const channel = () => {
+		const made = new MessageChannel();
+		channels.push(made);
+		return made;
+	};
 	let stopping: Promise<void> | undefined;
 	/** The marker of a start that may crash the tab, which the start sets once it knows the tier. */
 	let markerSet = false;
@@ -1270,6 +1312,7 @@ async function startEngine(
 			for (const worker of withCore)
 				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
 			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			channels.length = 0;
 			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
 			// list that the page's engine holds, so the engine stays until that worker has stopped.
@@ -1307,9 +1350,17 @@ async function startEngine(
 			(safeGpu && chooseTier(report, safeGpu, inWorker)) || chooseTier(report, requested, inWorker);
 
 		let choice = pickTier(renderThread !== 'main');
+		let renderFallback: RenderFallback | null = null;
 		if (!choice && renderThread !== 'main' && !movedTo) {
 			// Worker rendering is unavailable here, so the page draws while the sketch worker computes
 			// the frames, in pipelined mode. Low latency needs the sketch worker to draw.
+			renderFallback = 'failure' in report.worker ? report.worker.failure : 'no-surface';
+			if (DEV && !warnedFallback) {
+				warnedFallback = true;
+				console.warn(
+					`null3D: the page draws instead of a worker, because ${fallbackText(report)}. The page's thread then shares its time with the drawing until the page reloads. engine.mode.renderFallback and engine.report.worker give the reason.`,
+				);
+			}
 			if (DEV && latency === 'low')
 				console.warn(
 					'null3D: low latency needs a worker that draws, and this browser cannot draw in a worker. The engine runs in pipelined mode, and the page draws.',
@@ -1369,6 +1420,7 @@ async function startEngine(
 			presetCheck: storedCheck ?? null,
 			crashedStarts: history.crashed,
 			memoryMaximumMiB: threaded ? maximumMiB : null,
+			renderFallback,
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
@@ -1462,8 +1514,10 @@ async function startEngine(
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
 			notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
 		};
-		const pageLoss = (reason: string) =>
+		const pageLoss = (reason: string) => {
+			forgetWorkerProbe();
 			onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
+		};
 		let draw: DrawModule | undefined;
 		/**
 		 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
@@ -1508,7 +1562,7 @@ async function startEngine(
 		const startJobs = (jobs: readonly EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
 			return jobs.map((job, index) => {
-				const tasks = new MessageChannel();
+				const tasks = channel();
 				job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: tasks.port1 }, [
 					tasks.port1,
 				]);
@@ -1573,7 +1627,7 @@ async function startEngine(
 				render.ready().catch((error: unknown) => start.abort(error));
 				// Texture images and custom materials' shaders go from the page straight to the render
 				// worker.
-				const images = new MessageChannel();
+				const images = channel();
 				imagePort = images.port1;
 				startRenderWorker(render, images.port2);
 			}
@@ -1659,7 +1713,7 @@ async function startEngine(
 				rendererHost = sketch;
 			} else {
 				// Texture images go from the sketch worker straight to the thread that draws.
-				const images = new MessageChannel();
+				const images = channel();
 				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [
 					images.port1,
 					...taskPorts,

@@ -673,6 +673,10 @@ pub mod layout {
     /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
     /// textures that the step reads with `textureLoad`.
     pub const AO: u32 = 18;
+    /// The background's group: its uniform block, then a cube texture and its filtering sampler.
+    /// It is group 1 of the cube and sky backgrounds, and group 2 of the texture background,
+    /// which reads only the uniform block.
+    pub const BACKGROUND: u32 = 19;
     /// The group after a template's own groups in the WebGPU builds that read their instances by
     /// index ([`INSTANCE_INDEX`](super::permutation::INSTANCE_INDEX)): the view's culling
     /// parameters as a uniform block, for the offset from the camera to each cell, then the world
@@ -851,6 +855,10 @@ pub mod state_flags {
     pub const DEPTH_EQUAL: u32 = 128;
     /// Writes no color, as the depth prepass draws into the color target's render pass.
     pub const NO_COLOR_WRITE: u32 = 256;
+    /// Draws where the fragment is as near as what the depth target holds or nearer, so a
+    /// fragment at the far plane draws where no object wrote depth, as backgrounds draw after the
+    /// opaque objects.
+    pub const DEPTH_OR_EQUAL: u32 = 1024;
     /// Every flag.
     pub const ALL: u32 = CULL_NONE
         | LINE_LIST
@@ -859,7 +867,8 @@ pub mod state_flags {
         | NO_DEPTH_TEST
         | BLEND
         | DEPTH_EQUAL
-        | NO_COLOR_WRITE;
+        | NO_COLOR_WRITE
+        | DEPTH_OR_EQUAL;
 }
 
 /// Vertex formats. Every vertex has a position and a normal. A format adds optional attributes
@@ -1294,6 +1303,9 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
+    /// Bytes of the background's uniform block: eight vectors, which the cube map and the sky
+    /// read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 128;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1322,8 +1334,9 @@ pub mod template {
     /// Casters between the light and the layer's view flatten onto its near face.
     pub const SHADOW_DEPTH: u32 = 8;
     /// A texture behind every object: one triangle over the whole view, with no vertex buffer, that
-    /// samples a layer of a texture array. The bind group of index 0 is the frame's and that of
-    /// index 1 the texture's. The draw's first vertex is the layer times three.
+    /// samples a layer of a texture array. The bind group of index 0 is the frame's, that of index
+    /// 1 the texture's and that of index 2 the background's, of layout
+    /// [`BACKGROUND`](super::layout::BACKGROUND). The draw's first vertex is the layer times three.
     pub const BACKGROUND: u32 = 9;
     /// The debug views of instanced meshes: normals, depth, overdraw or wireframe, which the
     /// permutation's debug view bits pick, in place of each mesh's material. Only development
@@ -1384,6 +1397,14 @@ pub mod template {
     /// Ambient occlusion's edge-aware blur, three.js's Poisson denoise: it writes the occlusion
     /// that the opaque pass reads, beside the depth it blurred at.
     pub const AO_DENOISE: u32 = 34;
+    /// A cube map behind every object, such as an environment map: a cube around the camera of 36
+    /// vertices with no vertex buffer, whose fragments read the cube map in their direction. The
+    /// bind group of index 0 is the frame's and that of index 1 the background's, of layout
+    /// [`BACKGROUND`](super::layout::BACKGROUND).
+    pub const BACKGROUND_CUBE: u32 = 35;
+    /// three.js's analytic sky behind every object, drawn as [`BACKGROUND_CUBE`] is, from the
+    /// values of the background's uniform block alone.
+    pub const BACKGROUND_SKY: u32 = 36;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1663,6 +1684,7 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
+                ("BACKGROUND", layout::BACKGROUND),
                 ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
                 ("EFFECT", layout::EFFECT),
                 ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
@@ -1713,6 +1735,7 @@ pub fn typescript_constants() -> String {
                 ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
                 ("DEPTH_EQUAL", state_flags::DEPTH_EQUAL),
                 ("NO_COLOR_WRITE", state_flags::NO_COLOR_WRITE),
+                ("DEPTH_OR_EQUAL", state_flags::DEPTH_OR_EQUAL),
             ],
         ),
         (
@@ -1747,6 +1770,8 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH_MS", template::AO_DEPTH_MS),
                 ("AO", template::AO),
                 ("AO_DENOISE", template::AO_DENOISE),
+                ("BACKGROUND_CUBE", template::BACKGROUND_CUBE),
+                ("BACKGROUND_SKY", template::BACKGROUND_SKY),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1809,6 +1834,7 @@ pub fn typescript_constants() -> String {
                     "SHADOW_TILES_UNIFORM_BYTES",
                     sizes::SHADOW_TILES_UNIFORM_BYTES,
                 ),
+                ("BACKGROUND_UNIFORM_BYTES", sizes::BACKGROUND_UNIFORM_BYTES),
             ],
         ),
     ];

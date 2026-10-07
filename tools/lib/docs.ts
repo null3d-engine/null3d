@@ -1,7 +1,8 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
-// pages, the tables of the quality presets page, the shader library's page, and the three.js
-// mapping page with the porting skill's copies of the mapping. Generation is computed in memory
+// pages, the tables of the quality presets page, the shader library's page, the three.js mapping
+// page with the porting skill's copies of the mapping, and the tables of the record of tested
+// devices. Generation is computed in memory
 // first, so the same code writes the files and checks that the committed files are current.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -32,6 +33,7 @@ import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
+import { RECORD_PAGE, RECORD_TABLE, readRecord, recordFiles, recordTables } from './tested-devices';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
@@ -516,6 +518,19 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 		out.set(pagePath(`errors/${code}`), errorPage(code, entry));
 	out.set(pagePath('errors/index'), errorIndexPage(ERRORS));
 
+	const devicesPage = readIfExists(root, RECORD_PAGE);
+	if (devicesPage !== null)
+		out.set(
+			RECORD_PAGE,
+			replaceBetween(
+				devicesPage,
+				tableMarkers(RECORD_TABLE),
+				recordTables(readRecord(recordFiles(root)).rows),
+				RECORD_PAGE,
+				'tables of tested devices',
+			),
+		);
+
 	const indexPath = pagePath('index');
 	const index = readIfExists(root, indexPath);
 	if (index === null) throw new Error(`${indexPath} is missing; it is written by hand`);
@@ -586,7 +601,8 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 
 /**
  * Every problem with the docs: exports the API reference cannot show, library items without doc
- * comments, stale generated files, missing pages, bad front matter and broken links.
+ * comments, stale generated files, missing pages, bad front matter, broken links, and files of the
+ * record of tested devices that break its rules.
  */
 export function checkDocs(root: string): string[] {
 	const problems: string[] = [];
@@ -597,6 +613,7 @@ export function checkDocs(root: string): string[] {
 		generated = generateDocs(root, api);
 		for (const path of staleFiles(root, generated))
 			problems.push(`${path} is out of date: run bun run docs`);
+		problems.push(...readRecord(recordFiles(root)).problems);
 	} catch (e) {
 		problems.push((e as Error).message);
 	}

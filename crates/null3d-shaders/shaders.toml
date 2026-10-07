@@ -390,8 +390,9 @@ pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
-# A texture behind every object, drawn first in the camera's opaque pass as one triangle over the
-# whole view. Its TONE_MAP builds tone map and encode their color themselves, for the 8-bit path.
+# A texture behind every object, drawn in the camera's opaque pass as one triangle over the whole
+# view at the far plane. Its TONE_MAP builds tone map and encode their color themselves, for the
+# 8-bit path.
 [shaders.background]
 file = "background.wgsl"
 by_device = true
@@ -399,10 +400,34 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
-# A page downloads it with its first background texture. The background appears once its pipeline
-# is built, as it appears once the texture's texels are on the GPU.
+# An environment or a cube map behind every object, drawn in the camera's opaque pass as a box
+# around the camera at the far plane. Its TONE_MAP builds tone map and encode their color
+# themselves, for the 8-bit path.
+[shaders.background_cube]
+file = "background_cube.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the texture, environment and cube map backgrounds with its first background
+# of one of them. The background appears once its pipeline is built, as it appears once its
+# texels are on the GPU.
 [first_use.background]
-shaders = ["background"]
+shaders = ["background", "background_cube"]
+
+# three.js's sky behind every object, drawn as the cube map background is.
+[shaders.sky]
+file = "sky.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the sky with its first sky background. The view shows the background color
+# until the sky's pipeline is built.
+[first_use.sky]
+shaders = ["sky"]
 
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only. It stays in shaders.ts, where the GPU timer imports it.

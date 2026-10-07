@@ -35,8 +35,15 @@ import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
+import {
+	type BackgroundOptions,
+	type BackgroundSource,
+	Cubemap,
+	isSkyBackground,
+	SceneBackground,
+} from './background';
 import { type ColorInput, linearColor } from './color';
-import { type Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
+import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
@@ -2197,6 +2204,8 @@ export class Scene {
 	private sceneQueries: SceneQueries | undefined;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
 	private sceneEnvironment: SceneEnvironment | undefined;
+	/** The background's values in the core, made on the first `setBackground`. */
+	private sceneBackground: SceneBackground | undefined;
 	/** Pointer events on objects, made on the first `on`. */
 	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -3329,24 +3338,36 @@ export class Scene {
 	}
 
 	/**
-	 * What the camera shows behind every object: a color, or a texture. A texture fills the view and
-	 * stretches to its shape, as a texture in three.js's `scene.background` does. The color set
-	 * before it shows until the texture's texels are on the GPU, and again if the texture is
-	 * destroyed. A color takes the place of a texture. Exposure and tone mapping change the
-	 * background with the rest of the scene. Without a background, the canvas shows black, or the
-	 * page behind it on a transparent canvas.
+	 * What the camera shows behind every object, as three.js's `scene.background`: a color, a
+	 * texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube
+	 * map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture
+	 * fills the view and stretches to its shape. An environment or a cube map surrounds the scene,
+	 * and `options` give its intensity, rotation and, for an environment, its blur, as three.js's
+	 * `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before
+	 * shows until a texture's texels are on the GPU, and again if the texture is destroyed. A color
+	 * takes the place of any other background. Exposure and tone mapping change the background with
+	 * the rest of the scene. Without a background, the canvas shows black, or the page behind it on
+	 * a transparent canvas. Settings are values, not shader builds, and the call allocates nothing,
+	 * so a sketch can move the sky's sun or turn a cube map every frame. Throws E1204 for a color
+	 * it cannot read, E1203 for a number that is not finite, E1108 for a number out of its range,
+	 * E1213 for an option that the background does not take, and E1101 for a texture, an
+	 * environment or a cube map that was destroyed.
 	 */
-	setBackground(background: ColorInput | Texture): void {
-		const { glue } = this.core;
-		if (background instanceof Texture) {
-			this.makers?.materials.shaders.need('background');
-			const status = glue.setBackgroundTexture(background.handle);
-			this.core.check(status, 'setBackground', 'a texture', true);
+	setBackground(background: ColorInput | BackgroundSource, options?: BackgroundOptions): void {
+		// No closure here: one that reads `this` would make every call allocate a context.
+		this.sceneBackground ??= new SceneBackground(this.core, this.makers?.materials.shaders);
+		if (
+			background instanceof Texture ||
+			background instanceof Environment ||
+			background instanceof Cubemap ||
+			isSkyBackground(background)
+		) {
+			this.sceneBackground.set(background, options);
 			return;
 		}
 		const [r, g, b] = linearColor(background, 'setBackground');
-		glue.setBackground(r, g, b);
-		glue.setBackgroundTexture(0);
+		this.core.glue.setBackground(r, g, b);
+		this.sceneBackground.clear();
 	}
 
 	/**
