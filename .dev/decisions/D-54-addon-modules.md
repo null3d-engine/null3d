@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-04. The add-on rule came at 18:00, CDN delivery at 19:00, and the one loader with the line between core and add-ons at 19:20. Draco's support and the bundler decided the same day. The loader, the bootstrap and the CDN checks are built (M2-R18, 5 October 2026; see "Built"); Draco and add-ons build on them. Date: 2026-10-04. Task: M2-N1, M2-R18.
 
+Summary: What a glTF file or a standard scene needs stays in the core and loads on first use; physics, splats, particles, MSDF text and `three-compat` are add-ons. One loader compiles first-use WebAssembly once and runs it in the engine's job workers, or in the glTF worker for its decoders; add-ons start no workers, and decoder tasks never hold up a frame. Bundled is the main path; from a CDN every worker starts from one `blob:` bootstrap, with E1422 and E1423 for a missing policy item or header. The engine reads Draco files, with the decoder (59 KB) loaded on first use.
+
 ## Question
 
 [D-52](D-52-intent-parity.md) says that heavy or niche features ship as add-on modules. Each takes one install and one import. It works with the Vite plugin and from CDNs, under a strict Content Security Policy. Five questions remain:

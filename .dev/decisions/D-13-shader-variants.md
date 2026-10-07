@@ -1,6 +1,8 @@
 # D-13: Shader variants
 
-Status: proposed on 2026-09-30; decided by its rule on 2026-10-03, when T-26's device times met it. Date: 2026-09-30. Task: M1-A6, with M1-L3 for the compile times. Tests: T-12, T-26.
+Status: proposed on 2026-09-30; decided by its rule on 2026-10-03, when T-26's device times met it. The addenda of 2026-10-04 find its figures out of date and move features to first-use files, and the addendum of 2026-10-05 writes shared paragraphs once. Date: 2026-09-30. Task: M1-A6, with M1-L3 for the compile times. Tests: T-12, T-26.
+
+Summary: Ship the shaders of each GPU path in one file for each value of the permutation bits that a device fixes, and load only the device's own. S4's pipelines held its first frame 115 ms on the S24+ with fresh shaders, against a target of 250 ms.
 
 ## Question
 

@@ -7,7 +7,7 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | [Benchmarks](benchmarks.md) | How to run the benchmarks and read their numbers, the benchmark job in CI and its expected-change trailer, the sweeps for open defaults, allocation sampling and profiling |
 | [Benchmark results](benchmark-results.md) | Every benchmark scene's figures against three.js, one row per device, browser, GPU path, date and commit, and the archive of each run's records that feeds them |
 | [Code review, October 2026](code-review-2026-10.md) | The library code review of 4 October 2026: the high findings by fix group, the order of the fixes, the code issues that the technique review found, and the challenges to recorded decisions |
-| [Decision records](decisions/README.md) | Design choices settled by measurement: the question, the rule, the data and the outcome of each |
+| [Decision records](decisions/README.md) | Design choices settled by measurement: the question, the rule, the data and the outcome of each. `bun run decisions` prints the list of records from the records themselves |
 | [Device sessions](devices.md) | The device runner and its plans, which device runs each check, and how to set up and run the Android phone, the iPad, the Mac's browser apps and BrowserStack's device cloud |
 | [Image tests](image-tests.md) | The image test manifest, its references in each environment and on each device, the review step, and CI's shards |
 | [Implementation notes](implementation-notes.md) | Habits that keep the hot paths fast, and the browser faults that shaped the code |

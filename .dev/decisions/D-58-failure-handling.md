@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04; kept canvases in Safari decided by the owner on 2026-10-06. Task: M2-R15.
 
+Summary: Every failure after the start reaches `onFailure` with a code, once: E1404 for a thread's loop, E1304 and E1305 for WebGPU errors. A job worker that dies holding a chunk has its chunk counted from its own thread, so no wait spins for good. A WebGL2 loss found inside a frame recovers. A new engine waits for the engine that holds its canvas to stop, and draws through the worker that kept the canvas while the canvas stays in the document. Sketch code that outlives its engine fails with E1420. Frame numbers and the governor's times survive the 32-bit wrap, and a destroyed object's handle can never match a new object.
+
 ## Question
 
 The code review of October 2026 ([group B](../code-review-2026-10.md)) found failures that froze or leaked instead of reporting:

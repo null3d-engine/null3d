@@ -1,6 +1,8 @@
 # D-73: The blend between shadow cascades, and what each cascade's box holds
 
-Status: decided. Date: 2026-10-05. Task: M2-R1.
+Status: decided; the phones' cost waits on prototype S4. Date: 2026-10-05. Task: M2-R1.
+
+Summary: Each cascade blends into the next over the last 10% of its length (`shadowCascadeBlend`), linearly, and only the band's pixels read a second layer. The seam figure fell from 3.19 px to 0.63 px, for 0.01 ms of GPU time in S4 at Low on the Mac. Each box holds every point whose distance from the camera falls in its slice, from the band before it, which ends the lit holes of narrow views. A kept far box that no longer holds its view draws out of turn, and the shadow distance stays in meters under a scaled camera.
 
 ## Question
 

@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-R11.
 
+Summary: A `[first_use.<feature>]` table in the shader manifest gives a feature's templates and bits files of their own, which a page downloads on the feature's first use: sprites, lines, skinning, bloom, the texture background and the test template so far. A start shader file drops from 27.6 to 30.0 KB to 17.7 to 19.4 KB after Brotli. Full-screen passes and passes whose output others read keep to what they had until their pipelines are built. Each file has the limits of one start shader file, and a build holds one copy of each, 26.5 MB of shader files in place of 51.7 MB.
+
 ## Question
 
 Every M2 feature adds templates or permutation bits to the shader files that a page downloads at its start ([D-13](D-13-shader-variants.md)). So a page that never draws a sprite, a line or a skinned mesh still downloads their builds. It also parses them before its first frame. How do a feature's shader builds reach only the pages that use the feature? And what must a feature's passes do while its builds are on the way?
