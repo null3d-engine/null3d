@@ -8,9 +8,11 @@
 // each pass on WebGPU, ?instances=index for vertex shaders that read instance data by index on core
 // WebGPU, ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
 // ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
-// in a pass each, none joined. ?hold starts hold mode for image tests, ?preset= fixes the quality
-// preset, ?bench publishes the running engine for benchmark tools, and ?gl-timing times each WebGL
-// call for benchmark pages.
+// in a pass each, none joined. ?replay-delay= makes the thread that draws wait before it replays
+// each frame's list, for a test of memory that the sketch thread frees while the list may still
+// point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
+// publishes the running engine for benchmark tools, and ?gl-timing times each WebGL call for
+// benchmark pages.
 
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
@@ -214,8 +216,15 @@ export interface Switches {
 	 * undefined to time none.
 	 */
 	glTiming: GlTimingMode | undefined;
+	/**
+	 * The milliseconds that ?replay-delay= makes the thread that draws wait before it replays each
+	 * frame's list, or undefined for no wait. The sketch thread then steps the next frame first.
+	 */
+	replayDelay: number | undefined;
 }
 
+/** The longest wait that ?replay-delay= gives, in ms: longer would stall the frames for good. */
+const MAX_REPLAY_DELAY_MS = 1000;
 /** The most job workers the engine core runs. */
 const MAX_JOB_WORKERS = 255;
 /** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
@@ -304,5 +313,6 @@ export function parseSwitches(search: string): Switches {
 			: params.get('gl-timing') === 'sync'
 				? 'sync'
 				: 'calls',
+		replayDelay: whole(params.get('replay-delay'), MAX_REPLAY_DELAY_MS),
 	};
 }

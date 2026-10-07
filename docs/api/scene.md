@@ -254,7 +254,9 @@ An instance batch is one object that draws many copies of one mesh with one mate
 
 ## Limits
 
-- One engine holds up to 16,383 objects at once: groups, meshes, cameras and lights together. One more throws E1102. A destroyed object frees its place when the frame applies the change.
+- A scene starts with room for 1,023 objects: groups, meshes, cameras and lights together. When it needs more, it grows on its own. It doubles its room at the start of a frame once it is three quarters full. A create call that finds it full doubles it at once. A destroyed object frees its place when the frame applies the change.
+- Each growth copies the scene's tables, about 263 bytes per object, in one short pause. A scene that knows its size can start with room for every object, with the `expectedObjects` option of [`createEngine`](engine.md#options), and never grows during play.
+- A scene holds up to 1,048,575 objects, the most that a handle can name. Past that, a create call throws E1102. A growth that the engine's memory cannot hold throws E1109. Each place counts toward the objects and instance rows that the GPU draws (`engine.capabilities.maxInstances`), and a growth past that limit throws E1501.
 - The rows of an instance batch take none of those places. One engine holds up to 256 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.
 - The animation table holds up to 1,024 animated objects: each copy of a model with clips or skins takes one. One more throws E1102, and `instantiate` or `clone` then creates no part of the copy.

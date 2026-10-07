@@ -26,7 +26,7 @@ A handle packs two numbers into 30 bits:
 
 | Part | Bits | Purpose |
 | --- | --- | --- |
-| Slot index | 20 | The object's row in the data arrays. 20 bits give room for 1,048,575 objects, and this version's scene holds up to 16,383, lights and cameras included. |
+| Slot index | 20 | The object's row in the data arrays. 20 bits give room for 1,048,575 objects, lights and cameras included, which is the most that a scene holds. A scene starts with room for fewer and grows as it needs: [Scene limits](../api/scene.md#limits). |
 | Generation | 10 | A counter that changes when the slot's object is destroyed, so the engine can tell an old handle from the handle of a new object in the same slot. |
 
 Each instance in an instance batch is a row of that batch, with no handle of its own. The limit therefore does not cap instance counts.
