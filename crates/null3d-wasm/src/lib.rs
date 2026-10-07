@@ -2978,7 +2978,8 @@ fn ray_from(numbers: &[f64], t_max: f64) -> Option<WorldRay> {
 }
 
 /// What a raycast's input gives the rows of sprite, point and line batches: its thresholds, and
-/// the camera that they face.
+/// the camera that they face. Each query reads it once, so it stays out of line.
+#[inline(never)]
 fn row_query(input: &[f64]) -> RowQuery {
     let at = |i: u32| input[i as usize];
     let three = |i: u32| [at(i), at(i + 1), at(i + 2)];

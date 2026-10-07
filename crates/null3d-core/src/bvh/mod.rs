@@ -443,8 +443,9 @@ struct ReachLanes {
 }
 
 impl ReachLanes {
-    /// Grows four boxes by the reach at each one's farthest depth.
-    #[inline(always)]
+    /// Grows four boxes by the reach at each one's farthest depth. It stays out of line, so each
+    /// tree walk keeps one call, not its own copy, and walks without a reach skip it.
+    #[inline(never)]
     fn grow(&self, min: &mut [f32x4; 3], max: &mut [f32x4; 3]) {
         let mut depth = -self.eye_depth;
         for k in 0..3 {
@@ -492,8 +493,8 @@ impl RayBoxes {
     }
 
     /// The ray with each box grown by `reach`, for a ray in the frame of the cell whose centre
-    /// `offset` gives.
-    #[inline(always)]
+    /// `offset` gives. Walks make it once per cell, so it stays out of line.
+    #[inline(never)]
     pub(crate) fn reaching(ray: &Ray, reach: &Reach, offset: [f64; 3]) -> RayBoxes {
         RayBoxes {
             reach: (!reach.is_none()).then(|| reach.lanes(offset)),

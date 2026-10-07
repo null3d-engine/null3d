@@ -134,8 +134,9 @@ impl RowBounds {
     }
 
     /// The box of a row with world radius `radius` and world matrix `m`, or the empty box for a
-    /// hidden row, whose radius is negative.
-    #[inline(always)]
+    /// hidden row, whose radius is negative. It stays out of line: the syncs call it from several
+    /// places, and a call costs little beside the box's arithmetic.
+    #[inline(never)]
     fn of_row(&self, radius: f32, m: &crate::math::Affine) -> Aabb {
         if radius.is_nan() || radius < 0.0 {
             return Aabb::EMPTY;
