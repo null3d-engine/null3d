@@ -38,8 +38,8 @@ enable draw_index;
 // with (decision record D-23), read storage buffers in the vertex stage, which compatibility mode
 // may lack. Each instance brings only its source's index as an instance-rate attribute, which the
 // culling shader wrote. The vertex shader reads the source's world matrix, its entry in the bucket
-// table and its bucket's record, and adds its cell's offset from the view's culling parameters,
-// as the culling shader does for the copies. These four bindings form the group after the
+// table and its bucket's record, and adds its cell's offset from the view's row of the cell offsets
+// texture, as the culling shader does for the copies. These five bindings form the group after the
 // template's own groups: after the frame's, the maps' and the joint texture's, where it has them.
 //
 // On WebGL2 (the WEBGL2 builds) the vertex shader
@@ -131,12 +131,11 @@ struct CellOffsets {
 /// cell index.
 const OCCLUDER: u32 = 1u << 22u;
 
-/// The start of the view's culling parameters: its planes and counts, then the offset from the
-/// camera to the center of each grid cell, by cell index.
+/// The start of the view's culling parameters: its planes, then its counts, whose last names the
+/// view's row of the cell offsets texture.
 struct InstanceCells {
     planes: array<vec4f, 6>,
     counts: vec4u,
-    offsets: array<vec4f, MAX_CELLS>,
 }
 
 /// A bucket record, as the culling shader reads it: of its words, the vertex shader reads the
@@ -162,22 +161,26 @@ struct InstanceBucket {
 @group(3) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
 @group(3) @binding(2) var<storage, read> instance_entries: array<u32>;
 @group(3) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(3) @binding(4) var instance_offsets: texture_2d<f32>;
 #else
 @group(2) @binding(0) var<uniform> instance_cells: InstanceCells;
 @group(2) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
 @group(2) @binding(2) var<storage, read> instance_entries: array<u32>;
 @group(2) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(2) @binding(4) var instance_offsets: texture_2d<f32>;
 #endif
 #else ifdef SKIN
 @group(2) @binding(0) var<uniform> instance_cells: InstanceCells;
 @group(2) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
 @group(2) @binding(2) var<storage, read> instance_entries: array<u32>;
 @group(2) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(2) @binding(4) var instance_offsets: texture_2d<f32>;
 #else
 @group(1) @binding(0) var<uniform> instance_cells: InstanceCells;
 @group(1) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
 @group(1) @binding(2) var<storage, read> instance_entries: array<u32>;
 @group(1) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(1) @binding(4) var instance_offsets: texture_2d<f32>;
 #endif
 #endif
 #endif
@@ -378,7 +381,7 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
 fn instance_by_index(source: u32) -> Instance {
     let entry = instance_entries[source];
     let bucket = instance_buckets[entry & (OCCLUDER - 1u)];
-    let offset = instance_cells.offsets[entry >> CELL_SHIFT];
+    let offset = textureLoad(instance_offsets, vec2u(entry >> CELL_SHIFT, instance_cells.counts.w), 0);
     let row_x = instance_matrices[source * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
     let row_y = instance_matrices[source * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
     let row_z = instance_matrices[source * 3u + 2u] + vec4f(0.0, 0.0, 0.0, offset.z);

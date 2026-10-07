@@ -310,8 +310,11 @@ mod ids {
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
+    /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
+    /// per view (see [`super::cull`]).
+    pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const TARGETS: u32 = CELL_OFFSETS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
