@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { samplePath, samplesDir } from '../../tools/lib/samples';
-import type { S6Layout } from '../scenes/s6';
+import { S6_ENGINE_OBJECTS, type S6Layout } from '../scenes/s6';
 import {
 	boxVertices,
 	buildKit,
@@ -110,6 +110,16 @@ describe('the kit file', () => {
 		kit.parts.forEach((count, model) => {
 			for (let part = 0; part < count; part++) expect(names).toContain(kitPartName(model, part));
 		});
+	});
+
+	test("the whole city's objects fit the room that S6's page asks the engine for", () => {
+		let meshes = 0;
+		for (const row of layout.objects.rows)
+			meshes += (row[0] as number) < 0 ? 1 : (kit.parts[row[0] as number] as number);
+		// The sun, the ambient light, the camera, the label's marker and the street lights.
+		const others = 4 + layout.lights.length;
+		expect(meshes + others).toBe(20_738);
+		expect(meshes + others).toBeLessThanOrEqual(S6_ENGINE_OBJECTS);
 	});
 
 	test('shares one colour map per kit and merges equal materials', () => {

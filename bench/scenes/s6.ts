@@ -55,6 +55,13 @@ export const S6_BOX = -1;
 /** The objects of the whole city: the pinned layout's rows. */
 export const S6_FULL_COUNT = 19_173;
 
+/**
+ * The engine objects that the whole city makes, with room to spare: one mesh for each part of each
+ * row's model, a box for each box row, and the lights, the camera and the label's marker. The page
+ * asks the engine for this room at its start, so its object tables never grow during play.
+ */
+export const S6_ENGINE_OBJECTS = 21_000;
+
 /** The messages that S6's sketch sends its page. */
 export const S6_MESSAGES = {
 	/** The labels' ids and texts, once, at the setup. */

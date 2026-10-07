@@ -1,19 +1,20 @@
 // The page of the null3d version of S6; the scene runs in its sketch module. It fills the window at
 // the preset's pixel ratio and records a trace of each second, as S4's page does. It turns GPU
 // occlusion culling on, so WebGPU skips what the buildings hide, as the job workers do on WebGL2;
-// the engine's `?occlusion=off` switch turns both methods off. It binds the labels that the sketch
+// the engine's `?occlusion=off` switch turns both methods off. It asks the engine for room for the
+// whole city's objects at its start. It binds the labels that the sketch
 // tracks, and waits for the city to stream in before a timed run warms up. The report gives the
 // load: milliseconds from the page's start to the first frame and to the whole city, the sketch's
 // seconds for each stage, and the bytes that the sketch's thread downloaded.
 import type { Engine } from '@null3d/engine';
-import { S6_FULL_COUNT, S6_MESSAGES, S6_PICKED_LABEL } from '../../scenes/s6';
+import { S6_ENGINE_OBJECTS, S6_FULL_COUNT, S6_MESSAGES, S6_PICKED_LABEL } from '../../scenes/s6';
 import { labelLayer, labelTag, pickedText } from '../lib/s6-labels';
 import { runNull3dPage } from './harness';
 
 runNull3dPage('s6', new URL('./s6-sketch.ts', import.meta.url), S6_FULL_COUNT, undefined, {
 	fillWindow: true,
 	trace: true,
-	engine: { gpuOcclusion: true },
+	engine: { gpuOcclusion: true, expectedObjects: S6_ENGINE_OBJECTS },
 	started: watchCity,
 });
 
