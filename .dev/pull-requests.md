@@ -2,6 +2,19 @@
 
 This guide covers how to merge main into a branch, and what to do when the merge queue removes a pull request. It also covers why CI's jobs are split as they are, and several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates and the rules of the merge queue.
 
+## Before you open a pull request
+
+Record the reasons for the change in `.dev/`, in the same pull request, as [AGENTS.md](../AGENTS.md#record-the-reasons) says. Each kind of reason has its place:
+
+| Kind | Place | Example |
+| --- | --- | --- |
+| A design choice or an owner's ruling | A decision record, new or an addendum: the problem, the figures, the options rejected and why, and who decided and when | [D-92](decisions/D-92-safari-removed-frames.md) gives the memory that Safari kept on CI, the options, and the owner's confirmation on 7 October 2026 |
+| A bug fix | The cause and why the fix is right, in the record or guide that owns the area | The framebuffer fault on the Pixel 10: [D-71](decisions/D-71-custom-effects.md) gives the cause, the per-call timings and the unit test |
+| A device or benchmark run | A row in [tested devices](tested-devices.md) or in the [benchmark results](benchmark-results.md) | The iPad's custom effects run of 7 October 2026, in the iPad Pro's row |
+| A process or tooling lesson | The guide that covers it | Take a pull request out of the queue as soon as a job fails, in [The merge queue](#the-merge-queue) |
+
+The `Docs-Checked:` trailer names the page that holds the reason, or says why the change has no new reason.
+
 ## Merge main into a branch
 
 - Merge main into your branch. Do not rebase a branch that you pushed, because a rebase needs a force push (see [Commit messages and pushes](#commit-messages-and-pushes)).
@@ -40,7 +53,7 @@ This guide covers how to merge main into a branch, and what to do when the merge
 - When the queue's run fails, the queue removes the pull request. It does not join the queue again with the same commit, so fix the cause and push.
 - Take a pull request out of the queue as soon as one job of its run fails, as the owner ruled on 6 October 2026. The check `ci-passed` fails only when every job has ended, so the queue keeps the pull request for the rest of the run. The pull requests behind it build on top of it meanwhile. Take it out with `gh api graphql -f query='mutation{dequeuePullRequest(input:{id:"<id>"}){mergeQueueEntry{id}}}'`. The pull request's id comes from `gh pr view <number> --json id -q .id`.
 - Then read the failed job's log, and find whether the pull request caused the failure. A test that fails only under load, or a run that GitHub cancelled when a runner shut down, says nothing about the pull request. Put such a pull request back in the queue with the same commit. Otherwise fix the cause and push.
-- Two tests are known to fail only on a loaded machine. One is the GPU loss test "draws on after a GPU loss" on SwiftShader. It got no frame in its fixed recovery wait, in full local runs while the Mac's load was 21 to 30. The other is the benchmark page test of S4 on SwiftShader. It drew no frame in its short run, in merge queue runs 37289400132 and 37578361814. Both passed when they ran again. The branch `fix/bench-swiftshader-empty-window` makes both wait until a frame comes ([Image tests](image-tests.md#tests-on-slow-machines)).
+- Two tests are known to fail only on a loaded machine. One is the GPU loss test "draws on after a GPU loss" on SwiftShader. It got no frame in its fixed recovery wait, in full local runs while the Mac's load was 21 to 30. The other is the benchmark page test of S4 on SwiftShader. It drew no frame in its short run, in merge queue runs 37289400132 and 37578361814. Both passed when they ran again. In each, the slow software GPU took longer than the test's fixed window to draw the first frame after a start or a loss. A rerun alone shows whether a failure is this ([Image tests](image-tests.md#tests-on-slow-machines)).
 - Run `bun run build:check-size` on the branch, with current main merged, just before the pull request joins the queue. The pull request's own size check compared with main as it was at the last push. On 6 October 2026 the queue removed a pull request for two files that had grown 2.0% against the newer main.
 - Two pull requests that add text at one place of a file clash after the first one's squash. A row of the [tested devices](tested-devices.md) record is an example. This happens even when one pull request already contains the other's text. Queue the second only after the first merges, and merge main into it first.
 - `gh run list --event merge_group` lists the queue's runs. Each run's branch is `gh-readonly-queue/main/pr-<number>-<commit>`, so look for your pull request's number. The pull request's timeline also links the failed run, and `gh run view <run> --log-failed` prints its failed steps.

@@ -162,14 +162,14 @@ The docs style check catches the mechanical part of these rules. It blocks build
 
 ## Record the reasons
 
-The owner set this rule on 7 October 2026. Each pull request records the reasons for its changes in `.dev/`, in the same pull request:
+The owner set this rule on 7 October 2026. Every pull request records its reasons in `.dev/`, in the same pull request. Pull request text, commit messages and chat are not enough.
 
-- A design choice or an owner's ruling goes in a [decision record](.dev/decisions/README.md), or in an addendum to one. It gives the problem, the figures, the options rejected, and who decided and when.
-- A bug fix gives the cause, and why the fix is right, in the guide or record that owns the area. Examples are the [implementation notes](.dev/implementation-notes.md), the [image tests](.dev/image-tests.md) and the [benchmarks](.dev/benchmarks.md).
-- A device run goes in the [tested devices](.dev/tested-devices.md) record, as a row or in an existing row.
-- A lesson about the work itself goes in the guide that covers it, such as [pull requests and parallel work](.dev/pull-requests.md).
+- A design choice or an owner's ruling: a [decision record](.dev/decisions/README.md), new or an addendum. It gives the problem, the figures, the options rejected and why, and who decided and when.
+- A bug fix: the cause, and why the fix is right, in the record or guide that owns the area. Examples are the [implementation notes](.dev/implementation-notes.md), the driver bugs, the [image tests](.dev/image-tests.md) and the [benchmarks](.dev/benchmarks.md).
+- A device or benchmark run: a row in the [tested devices](.dev/tested-devices.md) record or in the [benchmark results](.dev/benchmark-results.md).
+- A lesson about process or tools: the guide that covers it, such as [pull requests and parallel work](.dev/pull-requests.md) or the benchmarks.
 
-Pull request text, commit messages, status notes and chat are not enough. A reader of `.dev/` must find the reason there. The `Docs-Checked:` trailer names the `.dev` page that holds the reason.
+The `Docs-Checked:` trailer names the `.dev` page that holds the reason, or says why there is no new reason. [Pull requests and parallel work](.dev/pull-requests.md#before-you-open-a-pull-request) gives an example of each kind.
 
 ## Commit gates
 
