@@ -203,7 +203,7 @@ fn destroying_a_custom_material_keeps_the_pipelines_of_custom_effects() {
     use null3d_render::output::{Antialias, SceneColor};
     let canvas = CanvasOutput {
         scene_color: SceneColor::from_format(null3d_gpu::drawlist::format::RGBA16_FLOAT),
-        antialias: Antialias::Fxaa,
+        antialias: Antialias::None,
         transparent: false,
     };
     let mut world = World::build(GpuDrivenRenderer::new(RendererConfig {
@@ -211,27 +211,46 @@ fn destroying_a_custom_material_keeps_the_pipelines_of_custom_effects() {
         ..RendererConfig::default()
     }));
     let mut mock = MockBackend::default();
-    // An effect takes the template after the material's, as the sketch's templates count up.
-    let effect = Effect {
-        template: template::CUSTOM_FIRST + 1,
-        depth: false,
-        values: [0.0; EFFECT_FLOATS],
-    };
-    world.renderer.settings_mut().set_effect(0, Some(effect));
-    let material = world
-        .renderer
-        .settings_mut()
+    // Three effects take the templates after the material's, as the sketch's templates count up.
+    // The first two draw as a group with a joined shader, and the last folds into the final pass.
+    let effects = template::CUSTOM_FIRST + 1..template::CUSTOM_FIRST + 4;
+    let (group, fold) = (template::CUSTOM_FIRST + 4, template::CUSTOM_FIRST + 5);
+    let settings = world.renderer.settings_mut();
+    for (place, template) in effects.clone().enumerate() {
+        let effect = Effect {
+            template,
+            depth: false,
+            values: [0.0; EFFECT_FLOATS],
+        };
+        settings.set_effect(place, Some(effect));
+    }
+    settings.set_effect_group(0, 2, group);
+    settings.set_effect_fold(2, fold);
+    let material = settings
         .materials_mut()
         .create(custom(0), 0, [1.0; 4])
         .unwrap();
     let object = add_object(&mut world, material + 1);
-    let made = world.step(&mut mock, true);
-    let effect_pipeline = made
-        .iter()
-        .find(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::CUSTOM_FIRST + 1)
-        .map(|(_, o)| o[0])
-        .expect("the frame makes the effect's pipeline");
-    // The material goes: its pipelines go, and the effect's stay.
+    // Groups and the fold ask for their pipelines once their effects' own pipelines are built.
+    let mut post = Vec::new();
+    for _ in 0..4 {
+        let commands = world.step(&mut mock, true);
+        post.extend(
+            commands
+                .iter()
+                .filter(|(op, o)| {
+                    *op == Op::CreateRenderPipeline && (effects.start..=fold).contains(&o[1])
+                })
+                .map(|(_, o)| (o[1], o[0])),
+        );
+    }
+    for template in effects.start..=fold {
+        assert!(
+            post.iter().any(|&(t, _)| t == template),
+            "the frames make the pipeline of template {template}: {post:?}"
+        );
+    }
+    // The material goes: its pipelines go, and those of the effects, the group and the fold stay.
     world
         .scene
         .apply_commands(&[Command::destroy(object)], world.frame)
@@ -253,8 +272,10 @@ fn destroying_a_custom_material_keeps_the_pipelines_of_custom_effects() {
         );
     }
     assert!(!destroyed.is_empty(), "the material's pipelines go");
-    assert!(
-        !destroyed.contains(&effect_pipeline),
-        "the effect's pipeline {effect_pipeline} stays: {destroyed:?}"
-    );
+    for (template, pipeline) in post {
+        assert!(
+            !destroyed.contains(&pipeline),
+            "the pipeline {pipeline} of template {template} stays: {destroyed:?}"
+        );
+    }
 }
