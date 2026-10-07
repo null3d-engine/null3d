@@ -218,5 +218,4 @@ These figures time the GPU's work only. Work that the browser does outside the p
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/debug.md) lists every export of this page with its type and description. The engine's doc comments make it.

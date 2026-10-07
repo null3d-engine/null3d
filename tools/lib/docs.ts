@@ -33,7 +33,7 @@ import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
-import { RECORD_PAGE, RECORD_TABLE, readRecord, recordFiles, recordTables } from './tested-devices';
+import { RECORD_TABLES_PAGE, readRecord, recordFiles, recordTablesPage } from './tested-devices';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
@@ -152,16 +152,12 @@ export const PAGES: readonly PageEntry[] = [
 
 /** Marks a page as generated from the inventory, so the generator may rewrite it. */
 export const PLACEHOLDER_MARKER = '<!-- null3d:placeholder -->';
-const PAGE_LIST_START = '<!-- null3d:page-list:start -->';
-const PAGE_LIST_END = '<!-- null3d:page-list:end -->';
-/** Written API pages hold their generated reference between these markers. */
-export const API_START = '<!-- null3d:api:start -->';
-export const API_END = '<!-- null3d:api:end -->';
-
-/** The markers around a generated table on a written page. */
-export function tableMarkers(name: string): readonly [start: string, end: string] {
-	return [`<!-- null3d:${name}:start -->`, `<!-- null3d:${name}:end -->`];
-}
+/** The generated page that lists every docs page. */
+export const PAGE_LIST_ID = 'pages';
+/** The folder of the generated reference pages of written API pages. */
+const REFERENCE_AREA = 'api/reference';
+/** The generated page of the quality presets' tables. */
+export const PRESET_TABLES_ID = 'concepts/quality-preset-tables';
 
 /** A preset's name as a table prints it: "Low". */
 const presetTitle = (preset: string) => preset.charAt(0).toUpperCase() + preset.slice(1);
@@ -217,18 +213,36 @@ export function presetCheckTable(): string {
 	return markdownTable(['Rule', 'Value'], rows);
 }
 
-/**
- * The tables that the generator writes into written pages, each between its markers. A page
- * named here must hold the markers of each of its tables.
- */
-export const PAGE_TABLES: Readonly<Record<string, readonly (readonly [string, () => string])[]>> = {
-	'concepts/quality-presets': [
-		['preset-devices', presetDeviceTable],
-		['preset-ceilings', presetCeilingTable],
-		['preset-settings', presetSettingsTable],
-		['preset-check', presetCheckTable],
-	],
-};
+/** The page of the quality presets' tables, from the chooser's constants and the preset table. */
+export function presetTablesPage(): string {
+	return `${renderFrontMatter([
+		['id', PRESET_TABLES_ID],
+		['title', 'Quality preset tables'],
+		['status', 'generated'],
+		['since', '0.1'],
+		['summary', "Each preset's starting devices, GPU path caps, check rules and settings."],
+	])}
+# Quality preset tables
+
+> [Quality presets](quality-presets.md) explains these tables. The engine's own constants make them.
+
+## Starting preset of each device
+
+${presetDeviceTable()}
+
+## Highest preset of each GPU path
+
+${presetCeilingTable()}
+
+## Rules of the preset check
+
+${presetCheckTable()}
+
+## Settings of each preset
+
+${presetSettingsTable()}
+`;
+}
 
 /**
  * The single source of the three.js mapping. The mapping page and the porting skill's copies come
@@ -243,6 +257,33 @@ export const DOC_AREAS = new Set(AREAS.map(([id]) => id));
 
 export function pagePath(id: string): string {
 	return `docs/${id}.md`;
+}
+
+/** The ID of a written API page's generated reference page, such as api/reference/scene. */
+export function referencePageId(id: string): string {
+	return `${REFERENCE_AREA}/${id.slice('api/'.length)}`;
+}
+
+/** The link from a written API page to its reference page. */
+export function referenceLink(id: string): string {
+	return `(reference/${id.slice('api/'.length)}.md)`;
+}
+
+/** The generated reference page of a written API page: its exports, from their doc comments. */
+export function referencePage(page: PageEntry, reference: string): string {
+	return `${renderFrontMatter([
+		['id', referencePageId(page.id)],
+		['title', `${page.title}: API reference`],
+		['status', 'generated'],
+		['since', page.since],
+		['summary', `Every export of the ${page.title} API, from the engine's doc comments.`],
+	])}
+# ${page.title}: API reference
+
+> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.
+
+${reference}
+`;
 }
 
 /**
@@ -412,6 +453,8 @@ function collectPages(root: string, generated: Map<string, string>): PageInfo[] 
 		...docsFiles(root),
 		...[...generated.keys()].filter((p) => p.startsWith('docs/') && p.endsWith('.md')),
 	]);
+	paths.delete(pagePath('index'));
+	paths.delete(pagePath(PAGE_LIST_ID));
 	const out: PageInfo[] = [];
 	for (const path of paths) {
 		const text = generated.get(path) ?? readIfExists(root, path);
@@ -429,7 +472,7 @@ function collectPages(root: string, generated: Map<string, string>): PageInfo[] 
 	return out;
 }
 
-/** The generated page list for docs/index.md: every page by area, in inventory order. */
+/** The list of pages: every page by area, in inventory order. */
 export function pageList(pages: PageInfo[]): string {
 	const order = new Map(PAGES.map((p, i) => [p.id, i]));
 	const rank = (p: PageInfo) => order.get(p.id) ?? Number.MAX_SAFE_INTEGER;
@@ -445,7 +488,7 @@ export function pageList(pages: PageInfo[]): string {
 		);
 		sections.push(
 			[
-				`### ${heading}`,
+				`## ${heading}`,
 				'',
 				'| Page | What it covers | Status | Version |',
 				'| --- | --- | --- | --- |',
@@ -456,25 +499,28 @@ export function pageList(pages: PageInfo[]): string {
 	return sections.join('\n\n');
 }
 
-/** Replaces what lies between two markers; `what` names the generated part for the error. */
-function replaceBetween(
-	text: string,
-	[start, end]: readonly [string, string],
-	inner: string,
-	path: string,
-	what: string,
-): string {
-	const from = text.indexOf(start);
-	const to = text.indexOf(end);
-	if (from === -1 || to === -1 || to < from) {
-		throw new Error(`${path} must contain ${start} and ${end} around the generated ${what}`);
-	}
-	return `${text.slice(0, from + start.length)}\n\n${inner}\n\n${text.slice(to)}`;
+/** The generated page that lists every docs page by area, apart from the reference pages. */
+export function pageListPage(pages: PageInfo[]): string {
+	const listed = pages.filter((p) => !p.id.startsWith(`${REFERENCE_AREA}/`));
+	return `${renderFrontMatter([
+		['id', PAGE_LIST_ID],
+		['title', 'All pages'],
+		['status', 'generated'],
+		['since', '0.1'],
+		['summary', 'Every docs page by area, with its status and version.'],
+	])}
+# All pages
+
+> The docs generator writes this list from each page's front matter. [The docs home](index.md) explains the status labels.
+
+${pageList(listed)}
+`;
 }
 
 /**
- * Every generated file with its expected content, keyed by repository-relative path. `api` is the
- * engine's reference, which tests replace.
+ * Every generated file with its content, keyed by repository-relative path. Git keeps none of
+ * them, and written pages link to the generated ones. `api` is the engine's reference, which tests
+ * replace.
  */
 export function generateDocs(root: string, api: ApiReference = readApi(root)): Map<string, string> {
 	const out = new Map<string, string>();
@@ -485,19 +531,13 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 		const path = pagePath(page.id);
 		const current = readIfExists(root, path);
 		const symbols = byPage.get(page.id);
-		const reference = symbols ? renderReference(symbols) : '';
-		if (current === null || current.includes(PLACEHOLDER_MARKER)) {
-			out.set(path, placeholderPage(page, reference));
-			continue;
-		}
-		const tables = PAGE_TABLES[page.id] ?? [];
-		if (!reference && !current.includes(API_START) && tables.length === 0) continue;
-		let text = current;
-		if (reference || current.includes(API_START))
-			text = replaceBetween(text, [API_START, API_END], reference, path, 'API reference');
-		for (const [name, render] of tables)
-			text = replaceBetween(text, tableMarkers(name), render(), path, `table ${name}`);
-		out.set(path, text);
+		if (current === null || current.includes(PLACEHOLDER_MARKER))
+			out.set(path, placeholderPage(page, symbols ? renderReference(symbols) : ''));
+		else if (symbols)
+			out.set(
+				pagePath(referencePageId(page.id)),
+				referencePage(page, renderReference(symbols, '##')),
+			);
 	}
 
 	const library = PAGES.find((page) => page.id === LIBRARY_PAGE_ID);
@@ -506,6 +546,7 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 			pagePath(LIBRARY_PAGE_ID),
 			libraryPage(readLibrary(root).modules, library.title, library.summary),
 		);
+	out.set(pagePath(PRESET_TABLES_ID), presetTablesPage());
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
@@ -518,34 +559,10 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 		out.set(pagePath(`errors/${code}`), errorPage(code, entry));
 	out.set(pagePath('errors/index'), errorIndexPage(ERRORS));
 
-	const devicesPage = readIfExists(root, RECORD_PAGE);
-	if (devicesPage !== null)
-		out.set(
-			RECORD_PAGE,
-			replaceBetween(
-				devicesPage,
-				tableMarkers(RECORD_TABLE),
-				recordTables(readRecord(recordFiles(root)).rows),
-				RECORD_PAGE,
-				'tables of tested devices',
-			),
-		);
+	const record = recordFiles(root);
+	if (record.size > 0) out.set(RECORD_TABLES_PAGE, recordTablesPage(readRecord(record).rows));
 
-	const indexPath = pagePath('index');
-	const index = readIfExists(root, indexPath);
-	if (index === null) throw new Error(`${indexPath} is missing; it is written by hand`);
-	const listed = collectPages(root, out).filter((p) => p.id !== 'index');
-	out.set(
-		indexPath,
-		replaceBetween(
-			index,
-			[PAGE_LIST_START, PAGE_LIST_END],
-			pageList(listed),
-			indexPath,
-			'page list',
-		),
-	);
-
+	out.set(pagePath(PAGE_LIST_ID), pageListPage(collectPages(root, out)));
 	return out;
 }
 
@@ -592,6 +609,18 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 	return problems;
 }
 
+/** Written API pages that do not link to their generated reference page. */
+export function referenceLinkProblems(
+	pages: ReadonlyMap<string, string>,
+	generated: ReadonlyMap<string, string>,
+): string[] {
+	return PAGES.filter((page) => generated.has(pagePath(referencePageId(page.id))))
+		.filter((page) => !(pages.get(pagePath(page.id)) ?? '').includes(referenceLink(page.id)))
+		.map(
+			(page) => `${pagePath(page.id)} must link to its API reference, ${referenceLink(page.id)}`,
+		);
+}
+
 /**
  * Every problem with the docs: exports the API reference cannot show, library items without doc
  * comments, missing pages, bad front matter, broken links, and files of the record of tested
@@ -612,6 +641,7 @@ export function checkDocs(root: string): string[] {
 	const linked = linkedFiles(root);
 	for (const [path, content] of generated)
 		if (linked.has(path) || path.startsWith('docs/')) linked.set(path, content);
+	problems.push(...referenceLinkProblems(linked, generated));
 	const inventory = new Set(PAGES.map((p) => p.id));
 	for (const page of PAGES) {
 		const path = pagePath(page.id);

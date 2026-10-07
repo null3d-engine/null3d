@@ -207,5 +207,4 @@ The page reads the gamepads once per display frame while at least one is connect
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/input.md) lists every export of this page with its type and description. The engine's doc comments make it.

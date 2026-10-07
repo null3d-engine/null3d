@@ -13,7 +13,10 @@ const root = process.cwd();
 const generated = writeGenerated(root);
 
 if (process.argv.includes('--check')) {
-	const problems = [...checkDocs(root), ...(isWorkTree(root) ? gitProblems(root, generated) : [])];
+	const problems = [
+		...checkDocs(root),
+		...(isWorkTree(root) ? gitProblems(root, [...generated.files.keys()]) : []),
+	];
 	for (const p of problems) console.log(`error: ${p}`);
 	console.log(
 		problems.length

@@ -146,5 +146,6 @@ Most points look the same in both engines. These differ:
 - `alphaMap` has no counterpart yet.
 - three.js's `Raycaster` hits a point within `params.Points.threshold`, 1 meter by default, whatever its size. null3D hits each point's square, and the `pointThreshold` option gives three.js's test.
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+## API reference
+
+[The API reference](reference/points.md) lists every export of this page with its type and description. The engine's doc comments make it.

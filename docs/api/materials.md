@@ -288,5 +288,4 @@ One engine holds up to 1,024 materials at once. One more throws E1501. A materia
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/materials.md) lists every export of this page with its type and description. The engine's doc comments make it.

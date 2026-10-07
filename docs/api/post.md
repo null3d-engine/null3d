@@ -283,5 +283,4 @@ post.set({ toneMapping: reinhard });
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/post.md) lists every export of this page with its type and description. The engine's doc comments make it.

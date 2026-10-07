@@ -4,7 +4,7 @@ This record lists every device and browser that null3D has run on, with the plan
 
 ## The record
 
-Each device and browser has a folder in [`tested-devices/`](tested-devices/). The folder's README gives the facts and the known issues. Each other file in the folder records one run: the plans that ran, with their dates and commits, and the result. The tables below come from the READMEs, and `bun run docs` writes them. Each row links to its folder of runs. `bun run devices:record` prints the whole record as one table, with every run's plans and results.
+Each device and browser has a folder in [`tested-devices/`](tested-devices/). The folder's README gives the facts and the known issues. Each other file in the folder records one run: the plans that ran, with their dates and commits, and the result. The [tables of tested devices](tested-device-tables.md) come from the READMEs, and `bun run docs` writes them. Git does not keep them. Each row links to its folder of runs. `bun run devices:record` prints the whole record as one table, with every run's plans and results.
 
 A new run is a new file, so two pull requests that record runs do not edit the same lines. They clash only when both add a device, a fact or a known issue at one place. [D-97](decisions/D-97-tested-devices-per-file.md) gives the reasons.
 
@@ -12,15 +12,12 @@ The dates are the dates in the run names, which are in UTC. An empty cell means 
 
 The Where fact names the place of each run: the owner's phone, tablet or Mac, TestingBot's device cloud, BrowserStack Live, or BrowserStack Automate. On BrowserStack Live, a person picks the device and the browser in each session. On BrowserStack Automate, which the team uses from 3 October 2026, the device runner opens and drives each session, with nobody at it ([Device sessions](devices.md#browserstack-automate)).
 
-<!-- null3d:tested-devices:start -->
-<!-- null3d:tested-devices:end -->
-
 ## How to add a run
 
 1. Run a plan on the device with the device runner, as [Device sessions](devices.md) says.
 2. At the end of a fixed plan, the runner prints an entry for each browser. It gives the run's file and the folder where the file goes. The file's name is the run's name, such as `20261007-054211-effects.md`. Its `Plans:` paragraph gives the plan and its date, and its `Result:` paragraph gives the counts. Add the commit to the plans, and what the run found to the result.
 3. Never edit another run's file. A run that repeats a plan gets a new file too.
-4. When no folder holds the device and browser, the runner prints a new folder's README as well. It gives a title, the facts, and "None recorded." under "Known issues". The runner knows less than a person, so first check that no folder holds the device under another name. A new browser on a known device gets a folder of its own. Then run `bun run docs`, which adds the folder's row to the tables.
+4. When no folder holds the device and browser, the runner prints a new folder's README as well. It gives a title, the facts, and "None recorded." under "Known issues". The runner knows less than a person, so first check that no folder holds the device under another name. A new browser on a known device gets a folder of its own. Then run `bun run docs`, which adds the folder's row to the [tables](tested-device-tables.md).
 5. When a fact changes, such as the browser's version, edit its line in the README and run `bun run docs`. The runner prints an OS, a browser or GPU paths that the README lacks.
 6. Add a known issue as a new paragraph under "Known issues" in the README, with a link to its pull request or decision record. Then run `bun run docs`.
 7. Write links in these files relative to the file, such as `../../decisions/D-12-memory-budgets.md`. The tables move them to the page's folder.

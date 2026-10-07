@@ -129,5 +129,4 @@ A fixed factor per frame, such as `current += (goal - current) * 0.1`, moves fas
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/time.md) lists every export of this page with its type and description. The engine's doc comments make it.

@@ -1,6 +1,6 @@
 # Pull requests and parallel work
 
-This guide covers how to merge main into a branch, and how a pull request merges. It also covers what CI runs on each event and why its jobs are split as they are. Last, it covers several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates and the rules of merging.
+This guide covers generated files, how to merge main into a branch, and how a pull request merges. It also covers what CI runs on each event and why its jobs are split as they are. Last, it covers several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates and the rules of merging.
 
 ## Before you open a pull request
 
@@ -15,29 +15,66 @@ Record the reasons for the change in `.dev/`, in the same pull request, as [AGEN
 
 The `Docs-Checked:` trailer names the page that holds the reason, or says why the change has no new reason.
 
+## Generated files
+
+Never commit a generated file, unless [D-105](decisions/D-105-generated-files-out-of-git.md) gives the reason to keep it. A generated file changes in every pull request that changes its source, so it clashes between them. Git can also merge its text cleanly into a result that no generator makes. So git ignores each generated file, and these steps build it.
+
+| Generated files | Source | Generator |
+| --- | --- | --- |
+| The skills copy for Claude Code, `.claude/skills/` | `skills/`, without each skill's evals | `bun run skills` |
+| The API reference pages, `docs/api/reference/` | The doc comments on the engine's exports | `bun run docs` |
+| The list of all pages, `docs/pages.md` | Each page's front matter | `bun run docs` |
+| The error pages, `docs/errors/` | The engine's error table | `bun run docs` |
+| The quality preset tables, `docs/concepts/quality-preset-tables.md` | The quality chooser's constants and the preset table | `bun run docs` |
+| The shader library page, `docs/shaders/library.md` | The WGSL library's doc comments | `bun run docs` |
+| The three.js mapping page and the porting skill's 2 copies of the mapping | `docs/data/threejs-mapping.json` | `bun run docs` |
+| The placeholder pages of planned pages | The page inventory in `tools/lib/docs.ts` | `bun run docs` |
+| The tested device tables, `.dev/tested-device-tables.md` | The README of each folder in `.dev/tested-devices/` | `bun run docs` |
+| The shader modules in `packages/engine/src/generated/` | The shader crate | `bun run shaders` |
+| The WebAssembly files, and each package's built JavaScript | The Rust crates and the packages' TypeScript | `bun run build`, and each package's pack step |
+
+`bun run docs` writes every file of the docs generator and the skills copy, with `bun tools/generate.ts`. These steps run it:
+
+- The install step, `bun install`. A fresh clone therefore has `.claude/skills/` and every docs page after it. The step runs no Rust build.
+- The git hooks after each checkout, merge, pull or rebase, and the pre-commit hook.
+- In CI: the docs job, which then checks that the generators wrote no file that git keeps. The engine package's pack step writes the docs that the package holds.
+- After each full run on main passes, CI pushes main's commit with every generated file to the `generated` branch. Links that must work on GitHub point there, such as the docs link in each engine error message.
+- Each release tags a commit that holds every generated file, for the Claude Code plugin, `bunx skills add` and the skill zips.
+
+Every command that reads the shader modules builds them first: the build, the type check, the unit tests, the dev server and the browser tests. The docs generator reads the engine's types, which import the shader modules. Without them, the engine's API reference leaves out the shader features, and `bun tools/generate.ts` says so. Run it again after `bun run shaders` or `bun run build`.
+
+After you clone, run `bun install`. After a branch switch or a pull, the hooks write the generated files again. When a hook did not run, as in a worktree before its first `bun install`, run `bun install`.
+
+### A clash on a generated file
+
+Never merge a generated file by hand. Take main's side, run the file's generator, and commit what the generator writes.
+
+- For a file that git does not keep, main's side is its deletion: `git rm --cached <path>`. The file stays on disk, and the generator writes it again.
+- Git keeps the constants that TypeScript shares with Rust, `packages/engine/src/generated/core.ts` and `gpu.ts`, and the render graph's text dump in `crates/null3d-render/tests/snapshots/`. Take either side, then run `NULL3D_UPDATE_GENERATED=1 cargo test -p null3d-wasm -p null3d-gpu -p null3d-render`, and stage what it writes. Run it after every merge of main, also when git reports no conflict.
+
+### Generated files that git keeps
+
+[D-105](decisions/D-105-generated-files-out-of-git.md) gives the reason for each. They are:
+
+- The constants shared with Rust, and the Rust tests' snapshots
+- The three.js test fixtures, the meshopt test files and the image references
+- The vendored Basis and meshopt builds
+- The benchmark records and the README's animation
+- What a release writes: the version numbers, `CHANGELOG.md` and the plugin's marketplace file
+- The lock files and the sample content's manifest A new kind of generated file goes into `.gitignore`, unless its pull request adds its reason to D-105.
+
 ## Merge main into a branch
 
 - Merge main into your branch. Do not rebase a branch that you pushed, because a rebase needs a force push (see [Commit messages and pushes](#commit-messages-and-pushes)).
-- Git keeps no file that the docs generator or the skills sync writes ([D-105](decisions/D-105-generated-files-out-of-git.md)), so a merge never conflicts on them. Git stores each written page with its generated sections empty. After a merge, the post-merge hook writes the generated files and sections again. After a merge that stopped on a conflict, run `bun tools/generate.ts` once you resolve it.
-- Git still keeps the files that the Rust tests write: the constants that TypeScript shares with Rust, `packages/engine/src/generated/core.ts` and `gpu.ts`, and the render graph's text dump in `crates/null3d-render/tests/snapshots/`. Never merge these by hand. Take either side of a conflict, then run `NULL3D_UPDATE_GENERATED=1 cargo test -p null3d-wasm -p null3d-gpu -p null3d-render`, and stage what it writes. Run it after every merge of main, also when git reports no conflict. Git can merge the text of a generated file cleanly and still give a result that no generator makes.
-- Git does not keep the shader modules, `packages/engine/src/generated/shaders*.ts`, so a merge never touches them. The build, the type check, the unit tests, the dev server and the browser tests read them. Each of these builds them first when they are missing or out of date. `bun run shaders` does the same on its own.
+- Never merge a generated file by hand. [Generated files](#generated-files) says how to resolve a clash on one.
 - A branch from before git stopped keeping the shader modules gets a conflict on each module that it changed when it merges main. Resolve them all with `git rm --cached packages/engine/src/generated/shaders*.ts`, which keeps the files for the next build to replace.
 - Check the shared numbers after the merge. Two branches can each take the next free number, and git then merges both lines without a conflict. The shared numbers are the error codes (`packages/engine/src/errors/codes.ts`) and the scene command numbers (`crates/null3d-wasm/src/constants.rs`). They are also the draw list's opcodes and pipeline template numbers (`crates/null3d-gpu/src/drawlist.rs`), and the decision record numbers. The bindings and slots that a shader and its bind group layout share are shared numbers too. A unit test catches a clash in some of these lists, such as the opcodes, but not in all of them. The docs check, `bun run docs:check`, refuses two decision records with one number.
 - Build and run the quick checks again before you push the merge: lint, types, docs, skills and unit tests. Then rerun the browser and image tests only of the areas that the merge's conflicts touched. CI runs every test on the pull request merged into main.
-- The docs generator reads the engine's types, and they import the shader modules. Without the modules, the generator leaves the shader features out of `docs/api/engine.md` and prints a note. After `bun run shaders` or `bun run build`, run `bun tools/generate.ts` to fill them in.
 - Run a branch's own copy of a hook's tool, such as `tools/hooks/check-trailers.ts`, from that branch's checkout. Another checkout's copy can be older, and refuse a valid `Size-Growth:` name.
 
 ## A branch from before generated files left git
 
-Git kept the generated files until 8 October 2026 ([D-105](decisions/D-105-generated-files-out-of-git.md)). A plain merge of main into a branch from before then conflicts on each generated file and section that the branch changed. First take the generated files out of git on the branch, in a commit of its own. Then both sides make the same change, and the merge has no conflict on them. Git's `-X renormalize` merge option does not help here, because the merge reads the branch's attributes, which lack the filter.
-
-1. Fetch main. Copy its ignore rules and attributes: `git checkout origin/main -- .gitignore .gitattributes`. If the branch changed `.gitignore`, add its own lines back.
-2. Empty the generated sections of the written pages: `git add --renormalize docs .dev/tested-devices.md`. This needs the git filter, which `bun install` on main's code sets up in the repository's git config. Every worktree of one repository shares that config.
-3. Take every file that main ignores out of git: `git ls-files -z -ci --exclude-standard | xargs -0 git rm -q --cached`. The files stay on disk.
-4. Commit, for example `chore(docs): take generated files out of git`. The branch's old commit hook still checks the generated files on disk, and they are current.
-5. Merge main. Resolve conflicts in written prose as for any merge. Then run `bun install`, which writes every generated file.
-
-A test on 8 October 2026 used a branch that edited a skill, its copy, an API page's prose and reference, and an error page. It merged main this way with no conflict, and kept only its edits to sources: the skill and the prose.
+Git kept the generated files until 8 October 2026 ([D-105](decisions/D-105-generated-files-out-of-git.md)). A branch from before then conflicts with main once, when it merges main. Merge main, and for each conflict on a generated file that main deleted, take the deletion with `git rm --cached <path>`. Where a written page conflicts on its old generated part (an API reference, the page list or a table), take main's side. Then run `bun install`, check that `bun run docs:check` passes, and commit the merge.
 
 ## A branch that edited the old table of tested devices
 
@@ -72,7 +109,9 @@ Main does not use a merge queue from 7 October 2026 ([D-99](decisions/D-99-no-me
 
 ### Before a merge
 
-A pull request's run tests GitHub's merge of it into main as main was at the push. It does not hold the pull requests that merged since, or those that will merge before it. So before a pull request merges:
+Main has no merge queue, so pull requests that change the same code files merge one after another. The smaller or readier one merges first. Each later one merges main again, passes its checks, and only then merges.
+
+A pull request's run tests GitHub's merge of it into main as main was at the push. It does not hold the pull requests that merged since, or those that will merge before it. So before a pull request merges, its author tests it against main and the pull requests about to merge:
 
 - Merge current main into the branch, run the generators, and push. Run the quick checks, and the browser and image tests of the areas that the merge touched.
 - Test it combined with each pull request that will merge before it too. Merge them all into a scratch branch on top of current main, and build it. Then run the quick checks and the tests of the areas that they share.

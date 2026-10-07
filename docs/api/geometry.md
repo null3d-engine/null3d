@@ -191,5 +191,4 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/geometry.md) lists every export of this page with its type and description. The engine's doc comments make it.

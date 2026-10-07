@@ -271,5 +271,4 @@ An instance batch is one object that draws many copies of one mesh with one mate
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/scene.md) lists every export of this page with its type and description. The engine's doc comments make it.

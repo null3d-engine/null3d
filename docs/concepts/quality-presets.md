@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -55,8 +55,7 @@ export default defineSketch(({ quality }) => {
 
 The engine starts from the kind of device. A coarse main pointer, as on a touch screen, marks a phone or a tablet, and the screen's smaller edge tells them apart. That edge stays the same when the device turns and when the browser's address bar hides.
 
-<!-- null3d:preset-devices:start -->
-<!-- null3d:preset-devices:end -->
+The [starting preset of each device](quality-preset-tables.md#starting-preset-of-each-device) gives the preset for each kind of device. It also gives the memory reading that lowers the starting preset by one.
 
 Only Chromium browsers report the device's memory, and they report at most 8 GB. So memory can lower a preset, but it never raises one. The engine picks Ultra only when a page asks for it.
 
@@ -64,8 +63,7 @@ A tablet slows down as it heats up, and then Medium and High can take longer tha
 
 The GPU path then caps the preset, because WebGL2 and WebGPU's compatibility mode lack features that the heavier presets use. For example, compatibility mode cannot draw multisampled float targets.
 
-<!-- null3d:preset-ceilings:start -->
-<!-- null3d:preset-ceilings:end -->
+The [highest preset of each GPU path](quality-preset-tables.md#highest-preset-of-each-gpu-path) gives each cap.
 
 A page can name a preset instead, such as a preset that a player picked in a menu. The GPU path still caps it:
 
@@ -95,8 +93,7 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A setting that the setup changed with `quality.set` keeps its value on the lighter preset.
 5. `createEngine` resolves after the check. The sketch's `quality.onChange` handlers then hear of the new preset at the start of the first frame of play.
 
-<!-- null3d:preset-check:start -->
-<!-- null3d:preset-check:end -->
+The [rules of the preset check](quality-preset-tables.md#rules-of-the-preset-check) give its target frame rate, the share of the target that passes, and its times.
 
 The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes at least three quarters of a second for each preset that it measures. That was about 0.8 seconds on a MacBook Pro, and about 1 second on an 11-inch iPad Pro. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
 
@@ -136,8 +133,7 @@ A change of preset can change pipelines and render targets, and building them ta
 
 Each value is a starting point, which measurements on phones, tablets and desktops tune from release to release. A setting that changes "during play" takes a new value at any time. One that changes "at the start" is fixed while the engine runs. The preset that the engine starts with, or the page's option, gives its value, and `quality.setPreset` keeps it. The memory maximum is fixed before the engine loads. "Planned" settings belong to features that are not built yet.
 
-<!-- null3d:preset-settings:start -->
-<!-- null3d:preset-settings:end -->
+The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) give each setting's value on each preset, when it changes, and whether it is built.
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
 

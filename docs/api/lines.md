@@ -175,5 +175,6 @@ Every segment counts toward the device's limit of objects and instance rows, as 
 
 three.js's `Line`, `LineSegments` and `LineLoop` draw lines one pixel wide on most GPUs, whatever `linewidth` says, and its `Line2` draws wider ones. null3D draws every width with the same quads, so a port of either keeps its look. three.js makes one object and one draw per line, and null3D draws a whole batch in one draw. three.js's `Raycaster` hits a `Line` within `params.Line.threshold`, 1 meter by default, whatever its width, and a `Line2` within half its width. null3D hits each line as `Line2` does, and the `lineThreshold` option gives the test for `Line`.
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+## API reference
+
+[The API reference](reference/lines.md) lists every export of this page with its type and description. The engine's doc comments make it.

@@ -36,10 +36,14 @@ tools/fixtures/*/Cargo.lock
 # Working copies of parallel helpers
 .claude/worktrees/
 
-# Generated files, which `bun install` and the git hooks write (tools/lib/generated.ts). Pages with
-# generated sections stay in git, and the filter in .gitattributes empties their sections.
+# Generated files, which `bun install`, the git hooks and `bun run docs` write (tools/lib/generated.ts,
+# D-105). Written pages link to them.
 .claude/skills/
+.dev/tested-device-tables.md
+docs/api/reference/
+docs/concepts/quality-preset-tables.md
 docs/errors/
+docs/pages.md
 docs/porting/threejs-mapping.md
 docs/shaders/library.md
 skills/null3d-port-threejs/references/api-mapping.md

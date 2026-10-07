@@ -1,5 +1,0 @@
-# Git stores each docs page with its generated sections empty, so that generated text never clashes
-# in a merge. `bun install` sets up the filter, and the generators fill the sections on disk
-# (tools/lib/generated.ts).
-docs/**/*.md filter=null3d-generated
-.dev/tested-devices.md filter=null3d-generated

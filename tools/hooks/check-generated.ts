@@ -2,14 +2,13 @@
 // and refuses the commit when a generator reports a problem: a public export without the doc
 // comments that the API reference needs, a shader library item without doc comments, or a file of
 // the record of tested devices that breaks its rules. It also refuses a generated file that git
-// would keep, and a staged page that holds its generated sections because the git filter is not
-// set up. Git does not keep the shader modules; the type check that runs before this guard builds
-// them, and fails when a shader does not build.
+// would keep. Git does not keep the shader modules; the type check that runs before this guard
+// builds them, and fails when a shader does not build.
 import { gitProblems, writeGenerated } from '../lib/generated';
 
 const root = process.cwd();
 const generated = writeGenerated(root);
-const problems = [...generated.problems, ...gitProblems(root, generated)];
+const problems = [...generated.problems, ...gitProblems(root, [...generated.files.keys()])];
 if (problems.length) {
 	console.error('\ncommit rejected: a generator reports problems:\n');
 	for (const p of problems) console.error(`  ${p}`);

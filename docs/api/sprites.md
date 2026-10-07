@@ -179,5 +179,6 @@ Every sprite counts toward the device's limit of objects and instance rows, as a
 
 three.js makes one object and one draw per sprite. null3D draws a whole batch in one draw. Without size attenuation, a three.js sprite's size is a fraction of the view's height that depends on the camera's field of view. A null3D sprite's size is in CSS pixels. A three.js scale of `s` shows `s × h / (2 × tan(fov / 2))` pixels on a canvas `h` CSS pixels high. Raycasts hit sprites as three.js's `Raycaster` does. Sprites face the active camera, which takes the place of `raycaster.camera`.
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+## API reference
+
+[The API reference](reference/sprites.md) lists every export of this page with its type and description. The engine's doc comments make it.

@@ -151,5 +151,4 @@ A three.js `distance` of 0 means a light with no end. null3D needs a finite rang
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/lights.md) lists every export of this page with its type and description. The engine's doc comments make it.

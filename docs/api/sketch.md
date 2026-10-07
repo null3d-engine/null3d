@@ -165,5 +165,4 @@ An error that a callback throws does not stop a live engine. The engine logs eac
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/sketch.md) lists every export of this page with its type and description. The engine's doc comments make it.

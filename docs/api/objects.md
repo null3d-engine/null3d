@@ -147,5 +147,4 @@ The `name` option gives an object a name that error messages show, such as `"Cra
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/objects.md) lists every export of this page with its type and description. The engine's doc comments make it.

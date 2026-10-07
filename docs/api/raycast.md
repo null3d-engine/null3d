@@ -237,5 +237,6 @@ The trees give the same hits as testing every triangle of every object in turn. 
 
 three.js tests hidden objects unless you filter them out; null3D never hits them. three.js gives a `Line`'s hit point on the line; null3D gives the point on the ray, as three.js does for `Line2`. three.js's `Line2` ignores `raycaster.far`; null3D's `maxDistance` limits every hit. three.js tests a skinned mesh's animated vertices; null3D tests its bind pose. three.js returns a new array of new objects for each raycast; null3D writes into the objects you pass. three.js tests each object's bounding sphere in turn, so a ray costs more as the scene grows. null3D walks its trees, so a ray costs about the same in a large scene.
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+## API reference
+
+[The API reference](reference/raycast.md) lists every export of this page with its type and description. The engine's doc comments make it.

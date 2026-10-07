@@ -229,5 +229,4 @@ The browser reads a file from another origin, such as a CDN, only when its serve
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/assets.md) lists every export of this page with its type and description. The engine's doc comments make it.

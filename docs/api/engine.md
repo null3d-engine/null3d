@@ -183,5 +183,4 @@ The thread that draws reads the frame back from the GPU and encodes the image. W
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/engine.md) lists every export of this page with its type and description. The engine's doc comments make it.

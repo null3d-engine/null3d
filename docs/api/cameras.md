@@ -141,5 +141,4 @@ A scene can have several cameras, and `setActiveCamera` switches between them. T
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/cameras.md) lists every export of this page with its type and description. The engine's doc comments make it.

@@ -109,5 +109,4 @@ This version stores a batch's colors but does not draw them yet, so every row sh
 
 ## API reference
 
-<!-- null3d:api:start -->
-<!-- null3d:api:end -->
+[The API reference](reference/math.md) lists every export of this page with its type and description. The engine's doc comments make it.
