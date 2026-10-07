@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { GENERATORS_PRELOAD } from '../shared/images';
 import { ShaderPreloads } from './shader-preloads';
 
 describe('ShaderPreloads', () => {
@@ -9,5 +10,13 @@ describe('ShaderPreloads', () => {
 		preloads.need('skinning');
 		preloads.needAll(['bloom', 'skinning', 'lines']);
 		expect(sent).toEqual([['skinning'], ['bloom'], ['lines']]);
+	});
+
+	it("asks for the environment generator's code once, under its reserved name", () => {
+		const sent: (readonly string[])[] = [];
+		const preloads = new ShaderPreloads((features) => sent.push(features));
+		preloads.needGenerators();
+		preloads.needGenerators();
+		expect(sent).toEqual([[GENERATORS_PRELOAD]]);
 	});
 });

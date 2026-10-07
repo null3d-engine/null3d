@@ -369,6 +369,7 @@ ship.bounds;               // (0.2) { center, radius, min, max } of the whole mo
 ship.materials;            // (0.2) the file's materials; set() changes every copy
 ship.clips;                // (0.2) clip names, which a copy's animator plays
 const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
+const hdr = await assets.loadEnvironment('/hdri/sunset_2k.hdr');  // (0.2) .hdr or .exr, filtered on the GPU at load
 const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment, made on the GPU; no file. Ask while loading: the next frame makes it whole (50-110 ms on phones)
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
