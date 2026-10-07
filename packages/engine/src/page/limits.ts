@@ -136,6 +136,8 @@ export interface CoreDevice {
 	 * their precision at any distance from the origin.
 	 */
 	largeWorld: boolean;
+	/** The objects that the scene starts with room for, or 0 for the core's default. */
+	expectedObjects: number;
 	/**
 	 * True when each camera view culls in two phases against a depth pyramid of what it drew.
 	 * Only the WebGPU path culls this way.
@@ -201,6 +203,8 @@ export type DeviceOptions = Pick<
 	depthPrepass: boolean;
 	/** True for positions that keep their precision at any distance from the origin. */
 	largeWorld: boolean;
+	/** The objects that the scene starts with room for, or 0 for the core's default. */
+	expectedObjects: number;
 	/** True to cull each camera view in two phases against a depth pyramid. */
 	gpuOcclusion: boolean;
 };
@@ -361,6 +365,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		vertexSkinning: options.vertexSkinning,
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
+		expectedObjects: options.expectedObjects,
 		gpuOcclusion: options.gpuOcclusion,
 	};
 	if (tier !== 'webgl2') {

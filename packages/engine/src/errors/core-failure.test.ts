@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { SCENE_CAPACITY } from '../sketch/runner';
+import * as C from '../generated/core';
 import { ERRORS } from './codes';
 import { type CoreErrors, coreFailure, QUEUED_CHANGE } from './core-failure';
 import { EngineError, setErrorFixes } from './engine-error';
@@ -20,12 +20,12 @@ function detail(error: EngineError): string {
 describe('failures of calls', () => {
 	test('name the full store, and what it holds', () => {
 		const messages = [
-			coreFailure(failedCore(1102, 1, SCENE_CAPACITY), 'createGroup'),
+			coreFailure(failedCore(1102, 1, C.LIMIT_MAX_OBJECTS), 'createGroup'),
 			coreFailure(failedCore(1102, 2, 256), 'createInstances'),
 			coreFailure(failedCore(1102, 9, 4), 'createMesh'),
 		].map(detail);
 		expect(messages).toEqual([
-			`E1102: createGroup() failed: the scene already holds ${SCENE_CAPACITY} objects.`,
+			`E1102: createGroup() failed: the scene already holds ${C.LIMIT_MAX_OBJECTS} objects.`,
 			'E1102: createInstances() failed: the batch table already holds 256 batches.',
 			'E1102: createMesh() failed: the store already holds 4 items.',
 		]);
@@ -82,7 +82,7 @@ test('failures of queued changes name the change and the slot of the object', ()
 
 test('the error table shows messages as the engine prints them', () => {
 	const printed: [keyof typeof ERRORS, EngineError][] = [
-		['E1102', coreFailure(failedCore(1102, 1, SCENE_CAPACITY), 'createMesh')],
+		['E1102', coreFailure(failedCore(1102, 1, C.LIMIT_MAX_OBJECTS), 'createMesh')],
 		['E1103', coreFailure(failedCore(1501, 6, 3), 'createInstances')],
 		['E1104', coreFailure(failedCore(1104, 9, 12), QUEUED_CHANGE)],
 		['E1106', coreFailure(failedCore(1106, 7), QUEUED_CHANGE)],
