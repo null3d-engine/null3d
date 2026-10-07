@@ -42,6 +42,7 @@ export interface CoreGlue extends CoreErrors {
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
 		largeWorld: boolean,
+		shadowDepthBits: number,
 	): number;
 	/**
 	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
@@ -493,17 +494,22 @@ export interface CoreGlue extends CoreErrors {
 	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
 	setBackgroundTexture(texture: number): number;
 	/**
-	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
-	 * linear fog, and the density of exponential squared fog.
+	 * The scene's fog: its curve (`FOG_CURVE_*`), or none, its linear color, the density of
+	 * exponential and exponential squared fog, the near and far distances of linear fog, the height
+	 * where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 	 */
 	setFog(
-		kind: number,
+		curve: number,
 		r: number,
 		g: number,
 		b: number,
+		density: number,
 		near: number,
 		far: number,
-		density: number,
+		height: number,
+		heightFalloff: number,
+		sunGlow: number,
+		sunGlowExponent: number,
 	): number;
 	/**
 	 * Draws the scene with a debug view (`DEBUG_VIEW_*`), or with its materials with

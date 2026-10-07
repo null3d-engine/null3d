@@ -10,7 +10,7 @@ import {
 	FOG_COUNT,
 	FOG_IMAGE,
 	FOG_SETTINGS,
-	type FogName,
+	TWIN_FOGS,
 } from '../../scenes/fog';
 import { showPageName } from '../lib/fit';
 import { readChoice } from '../lib/options';
@@ -20,16 +20,16 @@ const params = new URLSearchParams(location.search);
 showPageName();
 run('hold', async () => {
 	const rendererName = readChoice(params, 'renderer', RENDERERS);
-	const fogName = readChoice(params, 'fog', Object.keys(FOG_SETTINGS) as FogName[]);
+	const fogName = readChoice(params, 'fog', TWIN_FOGS);
 	const { three, renderer, readFrame } = await startThree(rendererName);
 	const scene = new three.Scene();
 	lightScene(three, scene);
 	scene.background = new three.Color(FOG_COLOR);
-	const fog = FOG_SETTINGS[fogName];
+	const { linear, exp2 } = FOG_SETTINGS;
 	scene.fog =
-		fog.type === 'linear'
-			? new three.Fog(fog.color, fog.near, fog.far)
-			: new three.FogExp2(fog.color, fog.density);
+		fogName === 'linear'
+			? new three.Fog(linear.color, linear.near, linear.far)
+			: new three.FogExp2(exp2.color, exp2.density);
 
 	for (const { size, position, color, lit, fog: takesFog } of FOG_BOXES) {
 		const options = { color, fog: takesFog };
