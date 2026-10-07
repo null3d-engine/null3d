@@ -25,7 +25,7 @@ export interface DecisionRecord {
 }
 
 /** The text of the paragraph that starts with `label:`, joined onto one line, or '' when absent. */
-function labelledParagraph(text: string, label: string): string {
+export function labelledParagraph(text: string, label: string): string {
 	const match = text.match(new RegExp(`^${label}: (.+(?:\\n.+)*)`, 'm'));
 	return match ? (match[1] as string).replace(/\s*\n\s*/g, ' ').trim() : '';
 }

@@ -4,7 +4,7 @@
 // (Chrome), which gives no WebGPU adapter; and an iPad (Safari), which offers every path.
 import { describe, expect, it } from 'bun:test';
 import { parseArgs, planItems, summaryLine } from '../real-browsers.ts';
-import { testedDeviceRow } from './device-record.ts';
+import { testedDeviceEntry } from './device-record.ts';
 import {
 	type GpuPath,
 	type MissingAllowed,
@@ -150,8 +150,8 @@ describe('the skipped paths in the output', () => {
 		);
 	});
 
-	it("names them in the row's result", () => {
-		const row = testedDeviceRow({
+	it("names them in the result of the run's entry", () => {
+		const { result } = testedDeviceEntry({
 			run: '20261003-015519-checks',
 			launch: 'lan',
 			device: { userAgent: '', origin: 'https://local.testingbot.com:3001' },
@@ -160,8 +160,8 @@ describe('the skipped paths in the output', () => {
 			fail: 0,
 			skippedPaths: ['webgpu'],
 		});
-		expect(row).toContain(
-			'| 270 passed, 87 skipped, 0 failed; skipped the pages for WebGPU, which the device lacks |',
+		expect(result).toBe(
+			'270 passed, 87 skipped, 0 failed; skipped the pages for WebGPU, which the device lacks',
 		);
 	});
 });
