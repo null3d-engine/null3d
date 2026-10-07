@@ -2318,12 +2318,35 @@ pub fn set_debug_view(view: u32) -> u32 {
     })
 }
 
-/// The scene's fog: its kind (`constants::fog_kind`), its linear color, the near and far distances
-/// of linear fog, and the density of exponential squared fog.
+/// The scene's fog: its curve (`constants::fog_curve`), or no fog, its linear color, the density of
+/// exponential and exponential squared fog, the near and far distances of linear fog, the height
+/// where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 #[wasm_bindgen(js_name = setFog)]
-pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: f32) -> u32 {
+#[allow(clippy::too_many_arguments)]
+pub fn set_fog(
+    curve: u32,
+    r: f32,
+    g: f32,
+    b: f32,
+    density: f32,
+    near: f32,
+    far: f32,
+    height: f32,
+    height_falloff: f32,
+    sun_glow: f32,
+    sun_exponent: f32,
+) -> u32 {
     with_engine(|e| {
-        let fog = Fog::from_code(kind, [r, g, b], near, far, density);
+        let values = [
+            density,
+            near,
+            far,
+            height,
+            height_falloff,
+            sun_glow,
+            sun_exponent,
+        ];
+        let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
         0
     })

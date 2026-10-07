@@ -31,7 +31,7 @@ use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::environment::{Environment, EnvironmentUniform};
-use crate::fog::Fog;
+use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale, Size};
@@ -568,7 +568,7 @@ struct Lighting {
     shadow_quality: ShadowQuality,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
-    fog: Fog,
+    fog: Option<Fog>,
 }
 
 /// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
@@ -663,7 +663,7 @@ impl SceneSettings {
                 sun_shadow: None,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
-                fog: Fog::None,
+                fog: None,
             },
             shadow_schedule: CascadeSchedule::default(),
             moving_casters: MovingCasters::default(),
@@ -1301,9 +1301,9 @@ impl SceneSettings {
         self.lighting.background = Some(color);
     }
 
-    /// The fog that every view's objects take, apart from materials that opt out. The background
-    /// takes none.
-    pub fn set_fog(&mut self, fog: Fog) {
+    /// The fog that every view's objects take, apart from materials that opt out, or none. The
+    /// background takes none.
+    pub fn set_fog(&mut self, fog: Option<Fog>) {
         self.lighting.fog = fog;
     }
 
@@ -1404,7 +1404,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
             output: output.uniform(),
-            fog: self.lighting.fog.uniform(camera.forward, output.exposure),
+            fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],

@@ -103,6 +103,10 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	s3: ["WebGLRenderer's shader for 256 point lights, which most GPUs cannot build"],
 	s4: [
 		"on WebGL2, more pixels that differ from WebGLRenderer's frame than three.js's two renderers differ by",
+		// The fog measures the straight-line distance from the camera, and three.js the depth along
+		// the view, so the town's far corners take more fog: 2.9% to 3.3% of the pixels differ on the
+		// Mac's GPU. The fog scenes compare the same curves by three.js's own rule.
+		"on every tier, fog by distance from the camera where three.js's fog follows the depth along the view",
 	],
 	s5: [],
 };
