@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-A3.
 
+Summary: meshoptimizer's own decoder, from its npm package, whose module the on-demand loader compiles once and sends to the glTF worker with the first file that holds meshopt data: 3.1 KB of WebAssembly and 0.4 KB of script after Brotli, apart from a page's first download. It reads both extension names, decodes every mode and filter as the reference decoder does, and never downloads a fallback buffer. The test file for the vendor name comes from gltfpack.
+
 ## Question
 
 glTF files compressed with meshopt hold their vertex and index data in `EXT_meshopt_compression` or `KHR_meshopt_compression` buffer views. Which decoder reads them, where does it run, and how does a page that loads no such file avoid its download? How do the tests show that a compressed file loads as its uncompressed source does?
@@ -73,6 +75,10 @@ Option (a). `scene/gltf-meshopt.ts` imports the decoder from the `meshoptimizer`
 The glTF worker imports the decoder module with the first file whose buffer views use either name, and keeps it for the worker's life. A failed download fails that load with E1406, and the next file tries again. The parser stays free of imports. It takes the decoder as an argument, and decodes a view the first time an accessor reads it, into an array of the view's length. It checks the extension's rules first. The data must lie in a buffer that holds data, and the mode and filter must allow the stride. A triangle list must hold whole triangles. The decoded bytes must fill the view and stay within an accessor's limit. A fallback buffer is never downloaded, because the engine always decodes.
 
 The engine reads `KHR_meshopt_compression`'s newer vertex codec and color filter under either name, as meshoptimizer's decoder and three.js do.
+
+### Changed by M2-R18 (5 October 2026)
+
+The decoder now loads through the on-demand loader ([D-54](D-54-addon-modules.md#built)). The loader compiles its module once per page with `WebAssembly.compileStreaming`. It sends the module to the glTF worker, which only instantiates it. That needs the module as a file, and the package packs it into a string inside its script. So the engine keeps the package's SIMD module as `vendor/meshopt/meshopt_decoder.wasm`: 12.0 KB, 3.1 KB after Brotli. The tool `bun tools/vendor-meshopt.ts` writes it from the pinned package, and a unit test checks it. The engine needs SIMD, so the plain build goes. The file `scene/gltf-meshopt.ts` calls the module as the package's script does, in 0.4 KB after Brotli, from 6.2 KB. The package `meshoptimizer` moves to the engine's development dependencies, because the asset tool and the tests still use it. The glTF worker asks for the decoder in the answer that lists a file's buffers, so a file waits for no extra round trip.
 
 ## How three.js handles it
 

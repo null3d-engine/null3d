@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-06. Task: s5-flake (M1 gate).
 
+Summary: On CI's slowest machines, S5's image pages took 84 s to 90 s of their 90 s, and browser shard 5 reached its 15 minutes in 9 of 14 queue runs, through the moving shadow tests. On SwiftShader alone, S5 now draws 100 characters, not 500, and each preset's moving shadow run reads 24 frames, not 60. Both still catch their faults. The moving shadow tests run in parallel, and new shard weights model the slowest shard at under 10 minutes. The real GPU, Safari, Firefox and the devices keep the full loads.
+
 ## Question
 
 Two browser tests outgrew CI's slowest machines. S5's image test on WebGPU timed out in three merge queue runs, at its limit of 90 s for each page. Browser shard 5 reached its job limit of 15 minutes in most merge queue runs after #359, and that took #365 out of the queue. Should these tests get longer limits, or lighter work on CI's software GPU?

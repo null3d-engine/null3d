@@ -36,7 +36,9 @@ import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
+import { spawnWorker } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -794,7 +796,8 @@ function startWorkers(
 ): EngineWorkers {
 	/** Each worker as it starts, so that a refusal can stop the ones before it. */
 	const made: Worker[] = [];
-	const kept = (worker: Worker) => {
+	const kept = (start: () => Worker) => {
+		const worker = spawnWorker(start, (code, message) => new EngineError(code, message));
 		made.push(worker);
 		return worker;
 	};
@@ -804,10 +807,11 @@ function startWorkers(
 					reused?.role === 'sketch'
 						? reused.worker
 						: kept(
-								new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-									type: 'module',
-									name: 'null3d-sketch',
-								}),
+								() =>
+									new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+										type: 'module',
+										name: 'null3d-sketch',
+									}),
 							),
 					'sketch',
 					events,
@@ -818,10 +822,11 @@ function startWorkers(
 					reused?.role === 'render'
 						? reused.worker
 						: kept(
-								new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-									type: 'module',
-									name: 'null3d-render',
-								}),
+								() =>
+									new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
+										type: 'module',
+										name: 'null3d-render',
+									}),
 							),
 					'render',
 					events,
@@ -830,10 +835,11 @@ function startWorkers(
 		const jobs = Array.from({ length: jobWorkers }, (_, index) => {
 			const job = new EngineWorker(
 				kept(
-					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-						type: 'module',
-						name: `null3d-job-${index}`,
-					}),
+					() =>
+						new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+							type: 'module',
+							name: `null3d-job-${index}`,
+						}),
 				),
 				`job ${index}`,
 				events,
@@ -851,13 +857,10 @@ function startWorkers(
 		});
 		return { sketch, render, jobs };
 	} catch (thrown) {
-		// A browser refuses a dedicated worker whose script comes from another origin, such as a CDN.
+		// A browser that refuses a worker at once, such as for a script address it cannot read.
 		for (const worker of made) worker.terminate();
 		const reason = thrown instanceof Error ? thrown.message : String(thrown);
-		throw new EngineError(
-			'E1405',
-			`the browser refused to start an engine worker: ${reason}. A worker's script must come from the page's own origin.`,
-		);
+		throw new EngineError('E1405', `the browser refused to start an engine worker: ${reason}.`);
 	}
 }
 
@@ -1209,6 +1212,8 @@ async function startEngine(
 	 * memory, so each engine starts a core of its own.
 	 */
 	let localCore: CoreGlue | undefined;
+	/** The job workers' task ports that the page's on-demand loader uses, when the page runs the sketch. */
+	let jobTaskHost: JobTaskHost | undefined;
 	let stopping: Promise<void> | undefined;
 	/** The marker of a start that may crash the tab, which the start sets once it knows the tier. */
 	let markerSet = false;
@@ -1268,7 +1273,9 @@ async function startEngine(
 			// list that the page's engine holds, so the engine stays until that worker has stopped.
 			localCore?.destroyEngine();
 			// The job workers have left the job system, so the page's threaded core has no more work,
-			// and the browser can free the engine's memory once the page lets go of the core.
+			// and the browser can free the engine's memory once the page lets go of the core and of the
+			// loader's call into it.
+			clearJobTasks(jobTaskHost);
 			localCore?.releaseInstance?.();
 			release();
 		})();
@@ -1492,13 +1499,19 @@ async function startEngine(
 		if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
 
 		/**
-		 * Hands the core to the job workers. A stop waits until each job worker reports that it left the
-		 * job system, which one without the core never does.
+		 * Hands the core to the job workers, each with a port for the on-demand loader's tasks. A stop
+		 * waits until each job worker reports that it left the job system, which one without the core
+		 * never does. Returns the other end of each port, for the thread that runs the sketch.
 		 */
-		const startJobs = (jobs: readonly EngineWorker[]) => {
-			for (const [index, job] of jobs.entries())
-				job.worker.postMessage({ type: 'init', ...handoff, index });
+		const startJobs = (jobs: readonly EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
+			return jobs.map((job, index) => {
+				const tasks = new MessageChannel();
+				job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: tasks.port1 }, [
+					tasks.port1,
+				]);
+				return tasks.port2;
+			});
 		};
 		/**
 		 * Moves the canvas to the worker that draws, unless that worker kept it from an engine before.
@@ -1543,7 +1556,14 @@ async function startEngine(
 			wasmMemory = memory;
 			const imageTable = new ImageTable();
 			const render = threads?.render;
-			if (threads) startJobs(threads.jobs);
+			// The page's on-demand loader sends its tasks to this engine's job workers; without them, it
+			// starts a task worker.
+			const glue = started.glue;
+			jobTaskHost = {
+				ports: threads ? startJobs(threads.jobs) : [],
+				call: (index) => glue.callJobWorker(index),
+			};
+			setJobTasks(jobTaskHost);
 			let imagePort: MessagePort | undefined;
 			if (render) {
 				// The setup can wait for frames of the render worker: in hold mode, for a warm-up, and
@@ -1612,8 +1632,9 @@ async function startEngine(
 			}
 		} else if (threads?.sketch) {
 			const { sketch, render, jobs } = threads;
-			startJobs(jobs);
+			const taskPorts = startJobs(jobs);
 			const init: SketchWorkerInit = {
+				taskPorts,
 				type: 'init',
 				...handoff,
 				sketchUrl,
@@ -1629,15 +1650,18 @@ async function startEngine(
 			withCore.add(sketch);
 			if (renderThread === 'sketch-worker') {
 				const canvas = moveCanvas(sketch, 'sketch');
-				sketch.worker.postMessage(
-					{ ...init, renderer: { canvas, ...rendererSetup } },
-					canvas ? [canvas] : [],
-				);
+				sketch.worker.postMessage({ ...init, renderer: { canvas, ...rendererSetup } }, [
+					...(canvas ? [canvas] : []),
+					...taskPorts,
+				]);
 				rendererHost = sketch;
 			} else {
 				// Texture images go from the sketch worker straight to the thread that draws.
 				const images = new MessageChannel();
-				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [images.port1]);
+				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [
+					images.port1,
+					...taskPorts,
+				]);
 				if (render) startRenderWorker(render, images.port2);
 				else
 					localDrawing = await abortable(

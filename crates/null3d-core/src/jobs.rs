@@ -66,6 +66,16 @@
 //! delays a frame job's helpers by at most one task each, and never blocks the caller, which
 //! runs any chunk no worker has taken.
 //!
+//! # Calls from the host
+//!
+//! The host can ask one job worker to leave its loop for a while, to run host code such as a
+//! decoder that loads on first use. [`JobSystem::call_worker`] adds one to that worker's call
+//! count and wakes the workers. The worker returns [`LoopExit::Called`] from
+//! [`JobSystem::worker_loop`] only when no frame chunk is left to claim, so a call never takes a
+//! worker away from a frame job's open chunks. The host runs its work, takes one off the count
+//! for each piece with [`JobSystem::call_done`], and calls the loop again. The calling thread runs
+//! every chunk that no job worker claims, so a frame never waits for a worker that is away.
+//!
 //! # Busy time
 //!
 //! With a clock in its settings, the system adds up the time each job worker spends in frame
@@ -138,6 +148,15 @@ pub struct BackgroundTask {
     pub arg: u64,
 }
 
+/// Why [`JobSystem::worker_loop`] returned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoopExit {
+    /// The system shut down, or the index is past the worker count.
+    Stopped,
+    /// The host called the worker with [`JobSystem::call_worker`].
+    Called,
+}
+
 /// Settings for [`JobSystem::with_config`].
 #[derive(Clone, Copy, Debug)]
 pub struct JobConfig {
@@ -205,6 +224,8 @@ pub struct JobSystem {
     busy_ns: Box<[CachePadded<AtomicU64>]>,
     /// True while each job worker runs a frame chunk that it has not counted as done.
     holding: Box<[CachePadded<AtomicBool>]>,
+    /// Calls from the host per job worker that the worker has not finished.
+    calls: Box<[CachePadded<AtomicU32>]>,
 }
 
 // SAFETY: the job descriptor is written only by the thread that won the `busy` flag, while no
@@ -255,6 +276,9 @@ impl JobSystem {
                 .collect(),
             holding: (0..workers)
                 .map(|_| CachePadded(AtomicBool::new(false)))
+                .collect(),
+            calls: (0..workers)
+                .map(|_| CachePadded(AtomicU32::new(0)))
                 .collect(),
         }
     }
@@ -396,24 +420,30 @@ impl JobSystem {
     }
 
     /// The body of job worker `worker_index` (from 0 to the worker count minus 1). It runs frame
-    /// chunks first and background tasks when no chunk is left, blocks when idle, and returns
-    /// after [`JobSystem::shutdown`]. An index past the worker count returns at once.
-    pub fn worker_loop(&self, worker_index: u32) {
-        if worker_index >= self.workers {
-            return;
-        }
+    /// chunks first. When no chunk is left, it leaves for the host's calls, then runs background
+    /// tasks, and blocks when idle. It returns [`LoopExit::Called`] for a call, and
+    /// [`LoopExit::Stopped`] after [`JobSystem::shutdown`] or at once for an index past the worker
+    /// count.
+    pub fn worker_loop(&self, worker_index: u32) -> LoopExit {
+        let Some(calls) = self.calls.get(worker_index as usize) else {
+            return LoopExit::Stopped;
+        };
         let me = WorkerId::job_worker(worker_index);
         let previous = CURRENT_WORKER.with(|c| c.replace(me.0));
         let mut idle_rounds = 0;
+        let mut exit = LoopExit::Stopped;
         while !self.shutdown.load(Ordering::Acquire) {
             if let Some(chunk) = self.try_claim() {
                 self.run_chunk(chunk, me);
                 idle_rounds = 0;
                 continue;
             }
-            if !self.frame_work_pending()
-                && let Some(task) = self.background.pop()
-            {
+            let frame_work = self.frame_work_pending();
+            if !frame_work && calls.0.load(Ordering::Acquire) > 0 {
+                exit = LoopExit::Called;
+                break;
+            }
+            if !frame_work && let Some(task) = self.background.pop() {
                 let started = self.work_started(me);
                 (task.run)(task.arg, me);
                 self.work_finished(me, started);
@@ -425,10 +455,37 @@ impl JobSystem {
                 spin_loop();
                 continue;
             }
-            self.sleep();
+            self.sleep(&calls.0);
             idle_rounds = 0;
         }
         CURRENT_WORKER.with(|c| c.set(previous));
+        exit
+    }
+
+    /// Asks job worker `worker_index` to leave [`JobSystem::worker_loop`] once no frame chunk is
+    /// left to claim, and wakes the workers. Each call needs one [`JobSystem::call_done`]. Does
+    /// nothing for an index past the worker count.
+    pub fn call_worker(&self, worker_index: u32) {
+        if let Some(calls) = self.calls.get(worker_index as usize) {
+            calls.0.fetch_add(1, Ordering::SeqCst);
+            self.wake_workers(true);
+        }
+    }
+
+    /// Ends one call to job worker `worker_index`. A count already at zero stays there.
+    pub fn call_done(&self, worker_index: u32) {
+        if let Some(calls) = self.calls.get(worker_index as usize) {
+            let _ = calls
+                .0
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+        }
+    }
+
+    /// The calls to job worker `worker_index` that it has not finished, as a snapshot.
+    pub fn pending_calls(&self, worker_index: u32) -> u32 {
+        self.calls
+            .get(worker_index as usize)
+            .map_or(0, |calls| calls.0.load(Ordering::SeqCst))
     }
 
     /// Asks every job worker to return from [`JobSystem::worker_loop`] and wakes them. Queued
@@ -551,13 +608,15 @@ impl JobSystem {
         }
     }
 
-    /// Blocks an idle worker until a publisher bumps the wake word.
-    fn sleep(&self) {
+    /// Blocks an idle worker until a publisher bumps the wake word. `calls` is the worker's count
+    /// of the host's calls.
+    fn sleep(&self, calls: &AtomicU32) {
         let seen = self.wake.0.load(Ordering::SeqCst);
         self.sleepers.fetch_add(1, Ordering::SeqCst);
         let work_arrived = self.shutdown.load(Ordering::SeqCst)
             || self.frame_work_pending()
             || !self.background.is_empty()
+            || calls.load(Ordering::SeqCst) > 0
             || self.wake.0.load(Ordering::SeqCst) != seen;
         if !work_arrived {
             wait::wait(&self.wake.0, seen);
@@ -790,10 +849,54 @@ mod tests {
     #[test]
     fn a_worker_loop_past_the_worker_count_returns() {
         let jobs = JobSystem::new(1);
-        jobs.worker_loop(1);
+        assert_eq!(jobs.worker_loop(1), LoopExit::Stopped);
         jobs.shutdown();
-        jobs.worker_loop(0);
+        assert_eq!(jobs.worker_loop(0), LoopExit::Stopped);
         assert!(jobs.is_shut_down());
+    }
+
+    #[test]
+    fn a_call_returns_the_worker_until_it_is_done() {
+        let jobs = JobSystem::with_config(JobConfig {
+            workers: 2,
+            spin_rounds: 0,
+            ..JobConfig::default()
+        });
+        jobs.call_worker(1);
+        jobs.call_worker(1);
+        jobs.call_worker(5);
+        assert_eq!(jobs.pending_calls(1), 2);
+        assert_eq!(jobs.pending_calls(0), 0);
+        assert_eq!(jobs.worker_loop(1), LoopExit::Called);
+        jobs.call_done(1);
+        assert_eq!(jobs.worker_loop(1), LoopExit::Called);
+        jobs.call_done(1);
+        jobs.call_done(1);
+        assert_eq!(jobs.pending_calls(1), 0);
+        jobs.shutdown();
+        assert_eq!(jobs.worker_loop(1), LoopExit::Stopped);
+    }
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // The test runs a job worker on a native thread.
+    fn a_call_wakes_a_sleeping_worker() {
+        let jobs = std::sync::Arc::new(JobSystem::with_config(JobConfig {
+            workers: 1,
+            spin_rounds: 0,
+            ..JobConfig::default()
+        }));
+        let worker = {
+            let jobs = std::sync::Arc::clone(&jobs);
+            std::thread::spawn(move || jobs.worker_loop(0))
+        };
+        while jobs.sleepers.load(Ordering::SeqCst) < 1 {
+            std::thread::yield_now();
+        }
+        jobs.call_worker(0);
+        assert_eq!(
+            worker.join().expect("the job worker panicked"),
+            LoopExit::Called
+        );
     }
 
     #[test]

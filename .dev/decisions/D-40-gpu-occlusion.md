@@ -2,6 +2,8 @@
 
 Status: method decided, 2026-10-04; off on every preset (D-22); the stall between passes open for the owner; the iPad's timings pending. Task: M2-I1.
 
+Summary: Marked occluders that showed last frame and look large draw their depth at one sample per pixel. A compute pass builds a depth pyramid in a storage buffer, and a second culling phase tests every object against it, so the image equals culling without it and no object shows a frame late. Its shaders load on first use, once a scene marks an occluder.
+
 ## Question
 
 How does the WebGPU path skip opaque objects that other objects hide, without a visible error? Where does the depth it tests against come from, and which objects hide others? What does it cost? [D-22](D-22-occlusion-presets.md) records the preset rows and their timings; this record covers the method.

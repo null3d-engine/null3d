@@ -16,7 +16,7 @@ import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { AO_IMAGE } from '../../bench/scenes/ao.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
-import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { FOG_IMAGE, FOG_SETTINGS, type FogName } from '../../bench/scenes/fog.ts';
 import {
 	MODEL_NAMES,
 	MODEL_SCENES,
@@ -1101,10 +1101,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
 	// references of its own.
 	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
-	// Towers on a floor that runs into linear fog and exponential squared fog, lit and unlit, and two
-	// towers whose materials turn fog off. The parity test compares each image with three.js's `Fog`
-	// and `FogExp2`.
-	...(['linear', 'exp2'] as const).map(
+	// Towers on a floor that runs into fog, lit and unlit, and two towers whose materials turn fog
+	// off: each fog curve, fog that thins with height, and fog that glows toward a low sun. The
+	// parity test compares the linear and exponential squared images with three.js's `Fog` and
+	// `FogExp2`.
+	...(Object.keys(FOG_SETTINGS) as FogName[]).map(
 		(fog): ImageTest => ({
 			name: `fog-${fog}`,
 			sketch: `tests/pages/sketches/fog-sketch.ts?fog=${fog}`,
@@ -1143,6 +1144,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// The same spheres lit by HDR files that the engine reads and filters itself at load. The
+	// sunset's Radiance file must draw as the tool's map of it does, so it borrows that test's
+	// references: the scene lights the same from either source. The studio's OpenEXR file has its
+	// own. A worker reads each file, and its panorama reaches the thread that draws in each thread
+	// mode's own way, so the sunset draws in every mode. The GPU filters the panorama in the held
+	// frame, which takes a software GPU as long as the room.
+	{
+		name: 'environment-venice-hdr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=venice&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		reference: 'environment-venice',
+		modes: ALL_MODES,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'environment-studio-exr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=studio&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

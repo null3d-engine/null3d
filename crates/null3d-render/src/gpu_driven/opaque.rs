@@ -107,12 +107,15 @@ pub(super) enum Bundle {
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
     Outline,
+    /// The casters' depth into a tile of the shadow atlas, each bucket with its pipeline for the
+    /// tiles, whose depth format may differ from the cascades'.
+    Tile,
 }
 
 impl Bundle {
     fn id(self, view: ViewId) -> u32 {
         match self {
-            Self::Opaque | Self::Outline => ids::bundle(view),
+            Self::Opaque | Self::Outline | Self::Tile => ids::bundle(view),
             Self::Prepass => ids::prepass_bundle(view),
         }
     }
@@ -155,6 +158,7 @@ pub(super) fn record_bundle(
     match kind {
         Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
         Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own)?,
+        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true)?,
         Bundle::Outline => {
             draws.record(list, |b| b.pipeline, |_| false)?;
             draws.record(list, |b| b.prepass, |_| false)?;

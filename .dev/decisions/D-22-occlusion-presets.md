@@ -2,6 +2,8 @@
 
 Status: WebGPU rows decided from the Mac's timings, 2026-10-04; the iPad's WebGPU timings and the WebGL2 rows (T-36, M2-I3) pending. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
 
+Summary: GPU occlusion culling is off on every preset for now. On a quiet Mac it took 37% off a room scene whose walls hide 94% of its objects, but with another program drawing on the GPU it cost 19% to 40% more, and desktops turn it on only if a loaded run loses no more than 5%. A scene that marks no occluder pays nothing for it.
+
 ## Question
 
 On which presets does each path cull occluded objects: GPU occlusion culling on WebGPU ([D-40](D-40-gpu-occlusion.md)), and software occlusion culling on WebGL2 ([D-41](D-41-software-occlusion.md), T-36)?

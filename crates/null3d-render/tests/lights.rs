@@ -12,7 +12,7 @@ use null3d_core::lights::{LightTable, color, kind, value};
 use null3d_core::scene::{Command, flags};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
-use null3d_render::fog::Fog;
+use null3d_render::fog::{self, Fog};
 use null3d_render::frame::{FrameBuilder, NO_MESH};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
@@ -127,10 +127,12 @@ fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
         tone_mapping: ToneMapping::Aces,
         exposure: 0.5,
     });
-    settings.set_fog(Fog::Exp2 {
-        color: [0.5, 0.5, 1.0],
-        density: 0.1,
-    });
+    let fog = Fog::from_code(
+        fog::curve::EXP2,
+        [0.5, 0.5, 1.0],
+        [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0],
+    );
+    settings.set_fog(fog);
     record(&mut world, &mut lights);
     let [_, sun_color, ambient_color] = uniform(&world);
     assert_eq!(sun_color, [1.0, 1.0, 1.0, 0.0]);

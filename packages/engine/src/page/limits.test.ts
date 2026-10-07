@@ -48,6 +48,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	cellCulling: true,
 	depthPrepass: false,
 	vertexSkinning: false,
+	shadowDepthBits: 16,
 	largeWorld: false,
 	gpuOcclusion: false,
 });
@@ -82,6 +83,7 @@ const PLAIN: DeviceOptions = {
 	compression: undefined,
 	cells: true,
 	vertexSkinning: false,
+	shadowDepthBits: 16,
 	hdr: true,
 	half: undefined,
 	antialias: 'msaa',

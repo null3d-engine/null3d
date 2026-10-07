@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-06, until a Safari release with WebKit's fix. Date: 2026-10-06. Task: fix/indirect-copies-gpu (an M1 gate blocker).
 
+Summary: Chrome checks each indirect draw with a compute pass for each buffer that a render pass reads, so D-85's buffer per draw doubled S4's GPU time in Chrome. The copies run only when the user agent names Apple's WebKit, and go once Safari ships the fix.
+
 ## Question
 
 [D-85](D-85-safari-indirect-arguments.md) gives each indexed indirect draw of a render pass its own copy of its arguments, in every browser, since Safari 26 hangs the GPU without them. In Chrome on the Mac, that doubled S4's GPU time at Low. Can the engine keep Safari's protection without that cost elsewhere?

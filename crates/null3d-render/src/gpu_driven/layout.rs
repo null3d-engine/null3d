@@ -30,6 +30,7 @@ use crate::frame::{
 };
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
+use crate::shadows::CasterPasses;
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, the centre of the local sphere that culls the bucket's sources, and the first joint of
@@ -101,11 +102,13 @@ fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Bucket {
-    /// The id of its render pipeline.
+    /// The id of its render pipeline. In the casters' layout, the pipeline that draws into the
+    /// shadow cascades, or 0 while the cascades are off.
     pub(super) pipeline: u32,
     /// The id of the render pipeline that draws its depth in the depth prepass or the occluders'
     /// pass, or 0 for a bucket that the pass leaves out. In the outlined layout, the pipeline that
-    /// marks the parts that nothing hides, after `pipeline` marked every part.
+    /// marks the parts that nothing hides, after `pipeline` marked every part. In the casters'
+    /// layout, the pipeline that draws into the shadow atlas's tiles, or 0 while the tiles are off.
     pub(super) prepass: u32,
     /// True when that pipeline is the bucket's own template's, which reads the frame group and the
     /// maps' group as the shading does, and false for the depth template's.
@@ -463,9 +466,10 @@ impl Layout {
     }
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
-    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
-    /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
-    /// a `prepass`, the buckets that the depth prepass or the occluders' pass draws get its
+    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. While
+    /// `shadows` has a pass on, the scene's receivers draw with pipelines that read the shadow maps,
+    /// and the casters' buckets get a pipeline for each pass of `shadows` in place of `targets`.
+    /// With a `prepass`, the buckets that the depth prepass or the occluders' pass draws get its
     /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask.
     /// Skinned objects draw the skinned vertices that `skinning` lays out; the skinned objects that
     /// it hides get no bucket, and the layout asks only for their pipelines (see
@@ -481,7 +485,7 @@ impl Layout {
         batches: &BatchTable,
         parity: usize,
         limit: u32,
-        shadows: bool,
+        shadows: CasterPasses,
         prepass: Prepass,
         skinning: &Skinning,
     ) -> Result<(), RecordError> {
@@ -527,7 +531,7 @@ impl Layout {
             if pipeline.blends() {
                 return None;
             }
-            let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
+            let pipeline = if shadows.any() && object & flags::RECEIVE_SHADOWS != 0 {
                 settings.receiving(pipeline)
             } else {
                 pipeline
@@ -540,7 +544,7 @@ impl Layout {
             let object = scene.flags()[slot];
             let left_out = match drawn {
                 Drawn::Scene => false,
-                Drawn::Casters => !shadows || object & flags::CAST_SHADOWS == 0,
+                Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
             };
             if left_out {
@@ -594,14 +598,16 @@ impl Layout {
             }
             if let Some((pipeline, ..)) = any_key(slot as usize) {
                 // The outlined layout's buckets draw with both pipelines of the outline mask.
-                let (pipeline, second) = if drawn == Drawn::Outlined {
-                    let (every, visible) = mask_keys(pipeline);
-                    (
-                        pipelines.id(every.in_pass(targets)),
-                        pipelines.id(visible.in_pass(targets)),
-                    )
-                } else {
-                    pipelines.opaque(pipeline, targets, prepass)
+                let (pipeline, second) = match drawn {
+                    Drawn::Outlined => {
+                        let (every, visible) = mask_keys(pipeline);
+                        (
+                            pipelines.id(every.in_pass(targets)),
+                            pipelines.id(visible.in_pass(targets)),
+                        )
+                    }
+                    Drawn::Casters => shadows.pipelines(pipelines, pipeline),
+                    Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
                 };
                 self.waiting
                     .extend([pipeline, second].into_iter().filter(|&id| id != 0));
@@ -623,17 +629,24 @@ impl Layout {
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
             // The mask's second pipeline binds as the depth template does.
-            let (pipeline, prepass, prepass_own) = if drawn == Drawn::Outlined {
-                let (every, visible) = mask_keys(pipeline);
-                (
-                    pipelines.id(every.in_pass(targets)),
-                    pipelines.id(visible.in_pass(targets)),
-                    false,
-                )
-            } else {
-                let own = pipeline.places_own_vertices();
-                let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
-                (pipeline, prepass, own)
+            let (pipeline, prepass, prepass_own) = match drawn {
+                Drawn::Outlined => {
+                    let (every, visible) = mask_keys(pipeline);
+                    (
+                        pipelines.id(every.in_pass(targets)),
+                        pipelines.id(visible.in_pass(targets)),
+                        false,
+                    )
+                }
+                Drawn::Casters => {
+                    let (cascades, tiles) = shadows.pipelines(pipelines, pipeline);
+                    (cascades, tiles, false)
+                }
+                Drawn::Scene => {
+                    let own = pipeline.places_own_vertices();
+                    let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                    (pipeline, prepass, own)
+                }
             };
             self.buckets.push(Bucket {
                 pipeline,
@@ -1019,7 +1032,7 @@ mod tests {
                 &batches,
                 parity,
                 u32::MAX,
-                false,
+                CasterPasses::default(),
                 Prepass::Off,
                 &Skinning::default(),
             )
