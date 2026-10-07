@@ -4,7 +4,8 @@
 # Usage, from the repository root of a built checkout:
 #   zsh bench/ab-s4.sh [--set <set>] [--rounds <n>] [--uncapped [--scale <n>]] <runner options...>
 # The sets: pixel (the default), pixel-webgpu, pixel-bound, pixel-quick, pixel-count, derivatives,
-# derivatives-quick and medium. --rounds 1 runs one round only.
+# derivatives-quick, prepass and medium. The prepass set draws both paths at Low and at Medium with
+# and without the depth prepass, to show what the prepass costs where hidden surfaces cost little. --rounds 1 runs one round only.
 # For example: zsh bench/ab-s4.sh --lan ipad-safari    or    zsh bench/ab-s4.sh --set medium Safari
 # The pixel set runs S4 at Low, so edge smoothing and the larger shadow filter stay out of the way,
 # and takes one per-pixel cost away from WebGL2 in each variant. The pixel-webgpu set takes the same
@@ -46,6 +47,19 @@ case $set in
 			'webgpu|preset=medium'
 			'webgl2|preset=medium'
 			'webgl2|preset=medium&glderiv=off'
+			'webgl2|preset=medium&prepass=on'
+		)
+		;;
+	prepass)
+		base='preset=low&governor=off&render=main'
+		variants=(
+			'webgpu|'
+			'webgpu|prepass=on'
+			'webgl2|'
+			'webgl2|prepass=on'
+			'webgpu|preset=medium'
+			'webgpu|preset=medium&prepass=on'
+			'webgl2|preset=medium'
 			'webgl2|preset=medium&prepass=on'
 		)
 		;;
@@ -92,7 +106,7 @@ case $set in
 			'webgl2|preset=low'
 		)
 		;;
-	*) print -u2 "unknown set $set: use pixel, pixel-webgpu, pixel-bound, pixel-quick, pixel-count, derivatives, derivatives-quick or medium"; exit 2 ;;
+	*) print -u2 "unknown set $set: use pixel, pixel-webgpu, pixel-bound, pixel-quick, pixel-count, derivatives, derivatives-quick, prepass or medium"; exit 2 ;;
 esac
 out=target/ab-s4-$set${uncapped:+-uncapped}${${scale:#1}:+-x$scale}.tsv
 [[ -f $out ]] || print -r -- $'round\tpage\tswitches\trun\tfps\tinterval_ms\tgpu_delay_ms\tgpu_ms\tcpu_ms' > $out
