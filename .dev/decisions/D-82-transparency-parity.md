@@ -71,6 +71,7 @@ The new files hold 1,648 builds: alpha to coverage's, the hash's and the cutout'
 
 - The Mac ran the image pages in Chrome one at a time, three runs each, at a load of about 6. A whole page with the new pipelines took 0.42 to 0.48 s from its start to its held frame. The same page with the plain mask, as on main, took 0.41 to 0.48 s. The new pipelines add no time that the Mac shows.
 - The shaders test page compiles every build, in parts of at most 150 GLSL programs, so its parts went from 8 to 15. On CI's software GPU each part takes 13 to 19 s. The browser job's shard weights move so that the shard that holds them stays at about main's longest shard: `PWTEST_SHARD_WEIGHTS` from `233:310:174:109:150:118:175` to `233:310:174:109:145:105:193`. From main's CI times of 5 October 2026, the longest shard estimates at 9.7 minutes of tests, against 10.3 on main. The job's limit is 15 minutes.
+- The shader compiler's test that builds every variant of the engine's shaders and compares them with the native build took 76 s on CI's runners with these builds, past its limit of 60 s. Its limit is now 3 minutes, which leaves room for later bits.
 - Phones compile more slowly. The cold start of a page with masked materials on the cloud phones and the iPad is one of the device runs below.
 
 ### Cost
