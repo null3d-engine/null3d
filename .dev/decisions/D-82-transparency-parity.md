@@ -1,6 +1,6 @@
 # D-82: Transparency parity: two-sided blending, alpha to coverage, the alpha hash and cut-out shadows
 
-Status: decided. Date: 2026-10-05. Task: M2-J6.
+Status: decided; the owner confirmed alpha to coverage on by default on 2026-10-07. Date: 2026-10-05. Task: M2-J6.
 
 ## Question
 
@@ -100,7 +100,7 @@ A port of three.js's `getAlphaHashThreshold`, Wyman and McGuire's hashed alpha t
 
 ### Alpha to coverage by default
 
-three.js leaves `alphaToCoverage` off. Filament turns it on for every masked material, and Bevy and Godot offer it as an alpha mode. Under D-52 part 2 the best technique is the default. So the owner ruled on 5 October 2026 that masked materials take it whenever MSAA is on. The option costs no draw and no pass: the ramp is a few instructions, and the GPU or the sample mask does the rest. The option `alphaToCoverage: false` gives three.js's hard `alphaTest` edges. A three-compat add-on can set it off for ports. The owner may still overrule.
+three.js leaves `alphaToCoverage` off. Filament turns it on for every masked material, and Bevy and Godot offer it as an alpha mode. Under D-52 part 2 the best technique is the default. So the owner ruled on 5 October 2026 that masked materials take it whenever MSAA is on. The option costs no draw and no pass: the ramp is a few instructions, and the GPU or the sample mask does the rest. The option `alphaToCoverage: false` gives three.js's hard `alphaTest` edges. A three-compat add-on can set it off for ports. The owner confirmed this default on 7 October 2026.
 
 The parity tests follow from it. The `alpha-mask` scene turns the option off, so it still checks three.js's `alphaTest`. The glTF twin turns `alphaToCoverage` on for every material with an alpha test, so the glTF scenes compare like with like. The scenes that change images are listed under Data.
 
@@ -121,7 +121,7 @@ A run of the transparent pass is a set of neighbors in the sorted order that sha
 ## Decision
 
 - Double-sided blended runs draw back faces, then front faces; `forceSinglePass: true` draws one pass.
-- `alphaToCoverage: true` with `alphaMode: 'mask'`: the pipeline's alpha to coverage where the target has alpha, the shader's `sample_mask` on `rg11b10ufloat`, and a plain alpha test with one sample. Off by default, as in three.js.
+- `alphaToCoverage: true` with `alphaMode: 'mask'`: the pipeline's alpha to coverage where the target has alpha, the shader's `sample_mask` on `rg11b10ufloat`, and a plain alpha test with one sample.
 - `alphaMode: 'hash'`: three.js's hash on the mesh's own positions.
 - Alpha to coverage is on by default for masked materials; `alphaToCoverage: false` turns it off.
 - Masked materials of the engine's mesh templates cut their shadows: templates 37 `SHADOW_CUTOUT` and 38 `SHADOW_CUTOUT_MAP`.
