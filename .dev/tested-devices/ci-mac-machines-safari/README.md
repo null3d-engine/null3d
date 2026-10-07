@@ -5,7 +5,7 @@
 - Browser: Safari 26.6.1, from the image's software list
 - GPU:
 - GPU paths: WebGL2; no WebGPU
-- Where: GitHub Actions, in the merge queue
+- Where: GitHub Actions, in each full CI run: pull requests ready for review, and main after each merge
 
 ## Known issues
 

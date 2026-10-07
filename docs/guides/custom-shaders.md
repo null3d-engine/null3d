@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1, with typed uniforms and textures in 0.2. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built. Hot reload that keeps the page running is not built yet, so coding agents must not use it.
+> Ships in null3D 0.1, with typed uniforms, textures and hot reload in 0.2. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built, and so is hot reload on the dev server.
 
 ```mermaid
 flowchart LR
@@ -170,7 +170,26 @@ src/sketch.ts:14:23: expected `;`, found "2.0"
 - On the dev server, the error shows in Vite's overlay on the page and in the terminal. The engine's start fails too, with [E1410](../errors/E1410.md), because the sketch module did not load.
 - In `vite build`, the build fails with the same message.
 
-Editing a shader on the dev server reloads the page.
+## Hot reload
+
+On the dev server, the plugin sends a shader that you change to the running page. The page does not reload, so the sketch keeps its state, its camera and its time:
+
+1. You save a `.wgsl` file, or a script file in which only the WGSL of tagged literals changed.
+2. The plugin compiles the new WGSL and sends it to each page of the dev server.
+3. The engine builds the new shader's pipelines in the background. The old shader draws until they are ready, so no frame loses an object.
+
+On a desktop computer, an edit shows within about a second. Most of that time is the compile, which builds every variant of a custom material for both GPU paths.
+
+These rules apply:
+
+- A change to other code in the script file runs the module again, so Vite reloads the page as it does for any module.
+- WGSL that does not compile shows in Vite's overlay and in the terminal. The page keeps drawing with the last shader that compiled. The overlay closes when your fix compiles.
+- A change to the uniforms, the textures or the vertex attributes of a custom material reloads the page. So does a change between a surface function and a full shader. The materials keep their values in a layout that these set.
+- A whole shader reloads the page, because your own code draws it.
+- A change to the WGSL of a custom post effect or a custom tone curve reloads the page.
+- Spot and point light shadows of a still scene keep the old shape of a vertex offset until something in their view moves.
+
+The plugin compiles WGSL on worker threads, so the dev server answers the page's other requests while a shader compiles. It starts one thread for each core but one, at most 8, and each takes about 20 MB. It splits each custom material's variants among the threads.
 
 ## TypeScript
 

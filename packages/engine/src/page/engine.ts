@@ -38,6 +38,7 @@ import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
+import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
 import { spawnWorker } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
@@ -181,9 +182,9 @@ export interface EngineOptions {
 	 * True to draw the depth of the opaque objects before the engine shades them, so each pixel is
 	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
 	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
-	 * it, the quality preset decides. The prepass stays fixed while the engine runs, and the
-	 * `?prepass=on` or `?prepass=off` switch wins over this option.
-	 * Another value fails with E1213.
+	 * it, the quality preset decides: every preset draws the prepass on WebGL2, and none on WebGPU.
+	 * The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off`
+	 * switch wins over this option. Another value fails with E1213.
 	 */
 	depthPrepass?: boolean;
 	/**
@@ -1275,6 +1276,12 @@ async function startEngine(
 		stopJobs();
 		waitForJobWorkersToLeave(slots);
 	};
+	/** On the dev server, hands each hot update of WGSL to the thread that runs the sketch. */
+	const updateShaders = (event: Event) => {
+		const updates = (event as CustomEvent<readonly WgslUpdate[]>).detail;
+		if (localRunner) localRunner.updateShaders(updates);
+		else threads?.sketch?.worker.postMessage({ type: 'wgsl', updates });
+	};
 	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
 	 * It works from any point of the start. Then it drops the page's engine, lets go of the page's
@@ -1291,6 +1298,7 @@ async function startEngine(
 			Atomics.store(slots, Slot.Paused, 2);
 			stopJobs();
 			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
+			globalThis.removeEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 			statsSwitch.show(false);
 			for (const slot of [
 				Slot.Running,
@@ -1399,14 +1407,14 @@ async function startEngine(
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 		// Occlusion culling on the GPU needs WebGPU's compute passes, and does not run with the depth
-		// prepass, which only the page turns on.
+		// prepass, which only the page turns on outside WebGL2.
 		const tierSettings =
 			tier === 'webgl2' || pageSettings.depthPrepass
 				? { ...pageSettings, gpuOcclusion: false }
 				: pageSettings;
 		const quality: QualityStart = {
 			preset,
-			settings: checkedSettings(chosen, preset, tierSettings),
+			settings: checkedSettings(chosen, preset, tierSettings, tier),
 			options: tierSettings,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
@@ -1555,6 +1563,7 @@ async function startEngine(
 		};
 
 		if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+		if (DEV) globalThis.addEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 
 		/**
 		 * Hands the core to the job workers, each with a port for the on-demand loader's tasks. A stop

@@ -214,6 +214,38 @@ pub struct MaterialSource {
     pub path: String,
     /// The WGSL: functions that the template calls, and anything they use.
     pub source: String,
+    /// The share of the builds to make, or `None` for every build.
+    #[serde(default)]
+    pub share: Option<Share>,
+}
+
+/// One share of a custom material's builds, so that several threads build one material at once
+/// and the caller joins their outputs. A share holds the builds whose place in the build order,
+/// counted from 0, leaves `index` when divided by `count`. Every share also holds the WebGPU builds
+/// without permutation bits, which give the vertex inputs that each output carries.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Share {
+    pub index: u32,
+    pub count: u32,
+}
+
+impl Share {
+    /// True when the share holds the build at `place` in the build order, of `variant`.
+    pub(crate) fn holds(self, place: u32, variant: &Variant, permutation: u32) -> bool {
+        place % self.count == self.index
+            || (permutation == 0 && variant.targets.contains(&Target::Wgsl))
+    }
+
+    /// The problem of a share that holds no place, or None.
+    fn problem(self) -> Option<Problem> {
+        (self.count == 0 || self.index >= self.count).then(|| {
+            Problem::general(format!(
+                "the shader compiler got share {} of {}: a share's index is below its count.",
+                self.index, self.count
+            ))
+        })
+    }
 }
 
 /// A custom material, built into every variant of the template, or a full shader.
@@ -310,13 +342,16 @@ fn built_inputs(built: &BTreeMap<String, VariantOutput>, entry: &str) -> (Vec<u3
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
 
 impl Compiler {
-    /// Builds a custom material's WGSL into every variant of the template. Problems in the WGSL
-    /// name its own lines; problems in the template's lines say so.
+    /// Builds a custom material's WGSL into every variant of the template, or into the builds of
+    /// its share. Problems in the WGSL name its own lines; problems in the template's lines say so.
     pub fn compile_material(
         &mut self,
         template: &MaterialTemplate,
         material: &MaterialSource,
     ) -> Result<MaterialOutput, BuildError> {
+        if let Some(problem) = material.share.and_then(Share::problem) {
+            return Err(BuildError::from_iter([problem]));
+        }
         let path = material.path.as_str();
         let tokens = tokenize(&material.source);
         let (vertex_entries, fragment_entries) = entry_points(&tokens);
@@ -418,6 +453,7 @@ impl Compiler {
             &source,
             &template.pipelines,
             &variants,
+            material.share,
             &str::to_owned,
             &mut errors,
         );
@@ -496,6 +532,7 @@ impl Compiler {
             &source,
             &pipelines,
             &variants,
+            material.share,
             &str::to_owned,
             &mut errors,
         );

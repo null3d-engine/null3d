@@ -231,7 +231,7 @@ const glow = materials.unlit({ color: '#ffb040', alphaMode: 'blend', blending: '
 
 ## Depth bias
 
-`depthBias: { constant, slopeScale }` moves a surface's depth before the depth test. A decal that lies on a wall has the wall's depth, so without a bias the two fight pixel by pixel. A bias toward the camera makes the decal win.
+`depthBias: { constant, slopeScale }` moves a surface's depth before the depth test. A decal that lies on a wall has the wall's depth, so without a bias the two fight pixel by pixel. Where the depths are exactly equal, no surface is defined to win, and the winner may differ between GPU paths ([The depth prepass](../concepts/quality-presets.md#the-depth-prepass)). A bias toward the camera makes the decal win.
 
 | Field | three.js | What it does |
 | --- | --- | --- |

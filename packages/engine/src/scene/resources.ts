@@ -58,6 +58,8 @@ import {
 	SHAPE_TORUS,
 } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
+import type { CustomShader } from '../shared/images';
+import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
@@ -1044,6 +1046,17 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly { readonly name: string }[];
+	/** On the dev server, the key of the WGSL's hot updates. */
+	readonly hot?: string;
+}
+
+/** What the thread that draws builds a custom material's pipelines from. */
+function customShader(compiled: CompiledMaterial): CustomShader {
+	return {
+		variants: compiled.variants,
+		locations: compiled.locations,
+		textures: compiled.textures.length,
+	};
 }
 
 /** Every value of either material, which `set` writes. */
@@ -1627,15 +1640,25 @@ export class Materials {
 		return wgsl as CompiledMaterial;
 	}
 
-	/** The template of a custom material's WGSL, which goes to the thread that draws once. */
+	/**
+	 * The template of a custom material's WGSL, which goes to the thread that draws once. On the
+	 * dev server, WGSL under one hot update key shares one template, which takes the newest WGSL.
+	 */
 	private templateOf(compiled: CompiledMaterial): number {
-		return this.templates.of(compiled, () => [
-			{
-				variants: compiled.variants,
-				locations: compiled.locations,
-				textures: compiled.textures.length,
-			},
-		]);
+		return this.templates.of(compiled, () => [customShader(compiled)], compiled.hot);
+	}
+
+	/**
+	 * @internal Swaps the shader of every custom material made from WGSL under the keys of hot
+	 * updates. The plugin sends an update only when the new WGSL keeps the material's uniforms,
+	 * textures and vertex inputs, so the materials keep their values.
+	 */
+	updateShaders(updates: readonly WgslUpdate[]): void {
+		if (!DEV) return;
+		for (const { key, shader } of updates) {
+			if (shader.kind !== 'material') continue;
+			this.templates.update(key, [customShader(shader as CompiledMaterial)]);
+		}
 	}
 }
 

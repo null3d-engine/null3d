@@ -63,6 +63,7 @@ import {
 } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
+import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
@@ -317,6 +318,7 @@ export class SketchRunner {
 			() => this.quality.own('uploadBytesPerFrame'),
 			(id) => imagesArrived(slots, id),
 			device.webgl2,
+			device.textureCache,
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -578,6 +580,11 @@ export class SketchRunner {
 	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
 	receive(type: string, data: unknown): void {
 		for (const handler of this.messageHandlers) handler(type, data);
+	}
+
+	/** Swaps the shaders of the sketch's custom materials that hot updates of WGSL name. */
+	updateShaders(updates: readonly WgslUpdate[]): void {
+		this.context.materials.updateShaders(updates);
 	}
 
 	/** Reads the canvas's size into the viewport, when the page wrote a new one. */

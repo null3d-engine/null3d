@@ -1,6 +1,6 @@
 # D-86: Which CI jobs run on a pull request, in the merge queue and on main
 
-Status: decided by the owner on 2026-10-06, until the 1.0 release. Date: 2026-10-06.
+Status: replaced by [D-99](D-99-no-merge-queue.md) on 2026-10-07. That record runs every job on each pull request that is ready for review and on main, and drops the merge queue. Decided by the owner on 2026-10-06. Date: 2026-10-06.
 
 Summary: The merge queue runs every job. A pull request runs the quick checks, without the browser and benchmark page shards, and its author runs the browser tests of the areas it changes. A push to main runs only what keeps the caches and the commit's sizes, since main gets the exact commit that the queue tested.
 
