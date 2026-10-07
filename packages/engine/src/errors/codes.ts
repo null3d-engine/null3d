@@ -446,7 +446,7 @@ const DOCS = {
 	E1504: {
 		title: 'Render pass cycle',
 		cause:
-			"Render passes need each other in a loop, so no order runs each pass after the passes whose output it reads. A sketch's pass that reads its own texture, or two passes that read each other's, make such a loop.",
+			"Render passes need each other in a loop, so no order runs each pass after the passes whose output it reads. A sketch's pass that reads its own texture makes such a loop.",
 		example: 'E1504: the passes form a cycle: "Tint" runs after "Glow", and "Glow" after "Tint".',
 		since: '0.1',
 	},

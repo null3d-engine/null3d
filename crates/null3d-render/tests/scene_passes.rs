@@ -193,42 +193,16 @@ fn a_scene_pass_runs_before_the_camera_only_while_a_texture_shows_it() {
 fn a_pass_that_reads_a_missing_texture_or_closes_a_loop_fails_and_names_it() {
     let mut world = World::new();
     let mut mock = MockBackend::default();
-    let camera = world.scene.reserve().unwrap();
-    world
-        .scene
-        .apply_commands(
-            &[Command::create(
-                camera,
-                Handle::NONE,
-                NO_MESH,
-                flags::VISIBLE,
-            )],
-            world.frame,
-        )
-        .unwrap();
-    let view = View::new(camera, LENS, ALL_LAYERS).with_target(ViewTarget {
-        size: Some((SIZE, SIZE)),
-        ..ViewTarget::default()
-    });
-    let names = ViewNames {
-        pass: "Map".into(),
-        target: "minimap".into(),
-        reads: vec!["mirror".into()],
-    };
-    let map = world
-        .renderer
-        .settings_mut()
-        .add_named_view(view, names)
-        .unwrap();
-    // Nothing shows the map, so the graph culls it, and it reads nothing.
-    world.renderer.check_graph().unwrap();
-    add_screen(&mut world, map);
+    // Nothing shows the map, so the graph culls it. The texture that no pass writes fails anyway,
+    // so the call that adds the pass fails, not a later one that makes it run.
+    let map = add_pass(&mut world, [0.0, 20.0, 0.0], "Map", "minimap", &["mirror"]);
     let error = world.renderer.check_graph().unwrap_err();
     assert_eq!(error.code(), GraphError::MISSING_INPUT);
     assert_eq!(
         world.renderer.graph_message(error),
         r#"E1502: the pass "Map" uses "mirror", but no pass creates it."#
     );
+    add_screen(&mut world, map);
 
     // A mirror that reads the map, which reads the mirror, closes a loop.
     let mirror = add_pass(

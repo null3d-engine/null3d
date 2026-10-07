@@ -1579,6 +1579,29 @@ fn scene_with_a_view(read: bool) -> RenderGraph {
 }
 
 #[test]
+fn a_culled_pass_that_uses_what_no_pass_creates_fails_with_code_1502() {
+    // Nothing reads the view's target, so its passes are culled. The name that no pass creates
+    // still fails, so the declaration that names it fails at once.
+    let mut graph = scene_with_a_view(false);
+    graph.add_pass(
+        Pass::new("Mirror", PassKind::Scene)
+            .optional()
+            .size(Size::Fixed {
+                width: 64,
+                height: 64,
+            })
+            .reads("nothing")
+            .creates("mirror", HDR),
+    );
+    let error = graph.compile().unwrap_err();
+    assert_eq!(
+        graph.explain(error),
+        r#"E1502: the pass "Mirror" uses "nothing", but no pass creates it."#
+    );
+    assert!(graph.plan().is_none(), "a failed compile leaves no plan");
+}
+
+#[test]
 fn optional_passes_run_only_while_a_running_pass_uses_what_they_write() {
     let graph = compiled(scene_with_a_view(true));
     assert_eq!(

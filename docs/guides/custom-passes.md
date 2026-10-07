@@ -222,7 +222,7 @@ const guard = render.addPass({
 });
 ```
 
-Two passes that read each other's textures form a loop, which throws E1504.
+A pass reads only the textures of passes added before it, so passes cannot read each other in a loop. A pass that names its own texture in `reads` throws E1504.
 
 ### Drawing less often
 
@@ -256,7 +256,7 @@ The texture holds linear color after the exposure, so a material that shows it g
 | E1220 | Options that `render.addPass` does not take, or a texture name that another pass writes. |
 | E1502 | A name in `reads` that no pass writes. |
 | E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
-| E1504 | Passes that read each other's textures in a loop. |
+| E1504 | A pass that reads its own texture. |
 
 ## Related pages
 

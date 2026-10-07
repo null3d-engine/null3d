@@ -466,10 +466,23 @@ impl Compiler {
         Ok(())
     }
 
-    /// Checks that every resource a running pass uses exists, and that the targets of each pass
-    /// that draws fit one render pass. Lists what each pass that draws attaches, reads and
-    /// writes, for the steps it may share.
+    /// Checks that every resource a declared pass uses exists, also in a pass that is switched off
+    /// or culled, so the declaration that names a missing resource fails, not a later change that
+    /// makes its pass run. Checks that the targets of each running pass that draws fit one render
+    /// pass. Lists what each pass that draws attaches, reads and writes, for the steps it may share.
     fn check_passes(&mut self, graph: Decls<'_>) -> Result<(), GraphError> {
+        for index in 0..graph.passes.len() {
+            let missing = graph
+                .uses(index)
+                .iter()
+                .find(|access| self.resources[access.resource as usize].kind == Kind::Unknown);
+            if let Some(access) = missing {
+                return Err(GraphError::MissingInput {
+                    pass: PassId(index as u16),
+                    resource: ResourceId(access.resource),
+                });
+            }
+        }
         for (index, pass) in graph.running() {
             let id = PassId(index as u16);
             let targets = self.targets.len() as u32;
@@ -485,9 +498,6 @@ impl Compiler {
                     resource: Some(resource),
                     reason,
                 };
-                if state.kind == Kind::Unknown {
-                    return Err(GraphError::MissingInput { pass: id, resource });
-                }
                 // Compute passes share a compute pass with any other, so only passes that draw
                 // need their reads and writes listed. A resolve pass lists its own below.
                 if !pass.kind.draws() || pass.kind == PassKind::Resolve {

@@ -91,7 +91,7 @@ console.log(render.dumpGraph());
 | E1220 | Options that `render.addPass` does not take, a `writes` or `name` that another pass has, or a 32nd scene pass. Or something that is not a render pass, given to `render.setPassEnabled`, `render.removePass` or `textures.fromPass`. |
 | E1502 | A name in `reads` that no pass writes. Or `render.removePass` on a pass whose texture another pass reads. |
 | E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
-| E1504 | A pass that reads its own texture, or passes that read each other's textures in a loop. |
+| E1504 | A pass that reads its own texture. |
 | E1101 | A call on a pass that `render.removePass` removed. |
 
 The core checks the whole graph when `render.addPass`, `render.removePass` or `textures.fromPass` changes it, so the call that breaks the graph throws.

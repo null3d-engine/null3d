@@ -119,7 +119,7 @@ export const ERROR_FIXES = {
 	E1503:
 		"Give each pass's texture a name that no other pass writes. The engine's own passes write sceneColor, sceneDepth, outlineMask and the other names that render.dumpGraph() shows, so pick another name.",
 	E1504:
-		'Break the loop: a pass cannot read its own texture, or the texture of a pass that reads its own. To show a mirror in a mirror, give the second mirror a pass of its own that reads neither.',
+		'Break the loop: a pass cannot read its own texture. To show a mirror in a mirror, add a pass for the inner mirror first, and let the outer pass read its texture.',
 	E1505:
 		"Draw into targets of one size and one sample count in each pass, and into at most four color targets. If the message names only the engine's own passes, report it with the message, the browser and the quality preset.",
 } satisfies Record<string, string>;

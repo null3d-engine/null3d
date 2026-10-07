@@ -297,7 +297,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 
 - The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
-- The graph checks every change at once: a missing `reads` name throws E1502, a loop E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
+- The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
 - Full-screen passes of your own WGSL come later in 0.2. Until then, write full-screen WGSL as a custom effect (section 5). Docs: `api/render`, `guides/custom-passes`.
 
 ## 8. Portable WGSL rules
