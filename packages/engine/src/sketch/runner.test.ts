@@ -239,6 +239,7 @@ async function start(
 				largeWorld: false,
 				expectedObjects: 0,
 				gpuOcclusion: false,
+				textureCache: true,
 			},
 			capabilities: CAPABILITIES,
 			quality,

@@ -182,9 +182,9 @@ export interface EngineOptions {
 	 * True to draw the depth of the opaque objects before the engine shades them, so each pixel is
 	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
 	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
-	 * it, the quality preset decides. The prepass stays fixed while the engine runs, and the
-	 * `?prepass=on` or `?prepass=off` switch wins over this option.
-	 * Another value fails with E1213.
+	 * it, the quality preset decides: every preset draws the prepass on WebGL2, and none on WebGPU.
+	 * The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off`
+	 * switch wins over this option. Another value fails with E1213.
 	 */
 	depthPrepass?: boolean;
 	/**
@@ -1416,14 +1416,14 @@ async function startEngine(
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 		// Occlusion culling on the GPU needs WebGPU's compute passes, and does not run with the depth
-		// prepass, which only the page turns on.
+		// prepass, which only the page turns on outside WebGL2.
 		const tierSettings =
 			tier === 'webgl2' || pageSettings.depthPrepass
 				? { ...pageSettings, gpuOcclusion: false }
 				: pageSettings;
 		const quality: QualityStart = {
 			preset,
-			settings: checkedSettings(chosen, preset, tierSettings),
+			settings: checkedSettings(chosen, preset, tierSettings, tier),
 			options: tierSettings,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck ? { fps: switches.fps } : undefined,

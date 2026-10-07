@@ -4,6 +4,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import { DEFAULT_MAXIMUM_MIB, MAX_MAXIMUM_MIB, MIN_MAXIMUM_MIB } from '../page/loader';
 import { PLANNED_SETTINGS, SETTING_DOCS, settingRows } from './preset-docs';
 import {
+	checkedSettings,
 	checkSettings,
 	describeValues,
 	LIVE_SETTINGS,
@@ -17,6 +18,7 @@ import {
 	QUALITY_SETTINGS,
 	type QualitySettingName,
 	type QualitySettings,
+	type Setting,
 	type SettingValues,
 	SKETCH_SETTINGS,
 	takesValue,
@@ -47,27 +49,45 @@ const sameNames: [SketchSettingName] extends [keyof QualitySettings]
 		: false
 	: false = true;
 
+/** Each row of preset values of a setting: every GPU path's, and WebGL2's own where it has one. */
+function valueRows(setting: Setting): (readonly unknown[])[] {
+	return setting.webgl2 ? [setting.presets, setting.webgl2] : [setting.presets];
+}
+
 describe('the preset table', () => {
 	it('gives every setting a value on each preset, which the setting takes', () => {
-		for (const { name, setting } of ROWS) {
-			expect([name, setting.presets.length]).toEqual([name, QUALITY_PRESETS.length]);
-			for (const value of setting.presets)
-				expect([name, value, takesValue(setting.values, value)]).toEqual([name, value, true]);
-		}
+		for (const { name, setting } of ROWS)
+			for (const presets of valueRows(setting)) {
+				expect([name, presets.length]).toEqual([name, QUALITY_PRESETS.length]);
+				for (const value of presets)
+					expect([name, value, takesValue(setting.values, value)]).toEqual([name, value, true]);
+			}
 	});
 
 	it('makes each preset as light as the next one up, or lighter, in every setting', () => {
-		for (const { name, setting } of ROWS) {
-			const { presets, values } = setting;
-			for (let k = 1; k < presets.length; k++) {
-				const lighterOrSame = cost(values, presets[k - 1]) <= cost(values, presets[k]);
-				expect([name, QUALITY_PRESETS[k - 1], lighterOrSame]).toEqual([
-					name,
-					QUALITY_PRESETS[k - 1],
-					true,
-				]);
-			}
+		for (const { name, setting } of ROWS)
+			for (const presets of valueRows(setting))
+				for (let k = 1; k < presets.length; k++) {
+					const { values } = setting;
+					const lighterOrSame = cost(values, presets[k - 1]) <= cost(values, presets[k]);
+					expect([name, QUALITY_PRESETS[k - 1], lighterOrSame]).toEqual([
+						name,
+						QUALITY_PRESETS[k - 1],
+						true,
+					]);
+				}
+	});
+
+	it('draws the depth prepass on WebGL2 at every preset, and on no other GPU path (D-43)', () => {
+		const rows = ROWS.filter((row) => row.setting.webgl2).map((row) => row.name);
+		expect(rows).toEqual(['depthPrepass']);
+		for (const preset of QUALITY_PRESETS) {
+			expect(presetValue('depthPrepass', preset, 'webgl2')).toBe(true);
+			for (const tier of ['webgpu', 'webgpu-compat', undefined] as const)
+				expect(presetValue('depthPrepass', preset, tier)).toBe(false);
 		}
+		const docs = ROWS.find((row) => row.name === 'depthPrepass');
+		expect(docs?.values).toEqual(QUALITY_PRESETS.map(() => 'no (WebGL2: yes)'));
 	});
 
 	it('orders each list of choices from the lightest to the heaviest', () => {
@@ -294,6 +314,25 @@ describe('presetSettings', () => {
 		expect(presetSettings('low', { pointLightShadows: true }).pointLightShadows).toBe(true);
 		expect(presetSettings('low', { shadowCascades: 4 }).shadowCascades).toBe(4);
 		expect(presetSettings('ultra', { shadowMapSize: 512 }).shadowMapSize).toBe(512);
+	});
+
+	it("gives WebGL2 its own values, which the page's option replaces", () => {
+		for (const preset of QUALITY_PRESETS) {
+			const webgl2 = presetSettings(preset, {}, 'webgl2');
+			expect(webgl2).toEqual({ ...presetSettings(preset), depthPrepass: true });
+			expect(presetSettings(preset, {}, 'webgpu')).toEqual(presetSettings(preset));
+			expect(presetSettings(preset, { depthPrepass: false }, 'webgl2').depthPrepass).toBe(false);
+			expect(presetSettings(preset, { depthPrepass: true }, 'webgpu').depthPrepass).toBe(true);
+		}
+		// A check that lowers the preset keeps the start's WebGL2 values.
+		expect(checkedSettings('medium', 'low', {}, 'webgl2')).toEqual({
+			...presetSettings('low', {}, 'webgl2'),
+			antialias: 'msaa',
+			shadowCascades: 3,
+			shadowMapSize: 2048,
+			shadowTiles: 8,
+			morphTargets: 16,
+		});
 	});
 
 	it("reads one setting's value on a preset", () => {

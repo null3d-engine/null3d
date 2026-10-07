@@ -227,9 +227,11 @@ On WebGL2, objects marked with `setOccluder(true)` or the `occluder` option hide
 
 ## The depth prepass
 
-With the `depthPrepass` option of `createEngine`, the engine draws the depth of the opaque objects first. The opaque pass then shades each pixel once, for its nearest surface. It saves GPU time where objects hide many others and their shading costs much. It always costs a second pass over the vertices, so every preset leaves it off.
+With the depth prepass, the engine draws the depth of the opaque objects first. The opaque pass then shades each pixel once, for its nearest surface. It saves GPU time where objects hide many others and their shading costs much. It always costs a second pass over the vertices.
 
-In the S2 benchmark in Chrome on a MacBook Pro, the prepass raised WebGPU's GPU time per frame from 0.28 ms to 0.40 ms. On WebGL2 it doubled the draw calls, from 101 to 201. S2's trees hide few others, and their shading is cheap. Measure your own scene with `?prepass=on` and `?prepass=off`, and compare `gpuMs`. `debug.view('overdraw')` shows where many surfaces cover one pixel, in development builds ([Debug drawing and stats](../api/debug.md)).
+On WebGL2, every preset draws the prepass. On Apple GPUs, a depth prepass restores early rejection of hidden pixels in WebGL2. In the S4 benchmark on an iPad, the prepass took WebGL2 from 38 to 60 frames per second on Low. On Medium it went from 17 to 37. On Android phones it kept their frame rates. [Quality presets](../concepts/quality-presets.md#the-depth-prepass) gives the figures.
+
+On WebGPU, every preset leaves it off. In the S2 benchmark in Chrome on a MacBook Pro, the prepass raised WebGPU's GPU time per frame from 0.28 ms to 0.40 ms. It doubled the draw calls, from 101 to 201. S2's trees hide few others, and their shading is cheap. The `depthPrepass` option of `createEngine` replaces the preset's choice on either path. Measure your own scene with `?prepass=on` and `?prepass=off`, and compare `gpuMs`. `debug.view('overdraw')` shows where many surfaces cover one pixel, in development builds ([Debug drawing and stats](../api/debug.md)).
 
 ## Measure
 
