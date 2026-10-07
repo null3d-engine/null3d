@@ -58,9 +58,9 @@ Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of 
 
 ## Atomic compare-exchange
 
-The build rejects `atomicCompareExchangeWeak`. Safari 27.0 cannot compile a shader that calls it, on atomics in any address space, so the shader fails to load on every Apple device with that version. WebKit has fixed the fault, but no Safari release that has the fix is out yet.
+The build rejects `atomicCompareExchangeWeak`. Safari 27.0 cannot compile a shader that calls it, on atomics in any address space. Such a shader fails to load on every Apple device with that version. WebKit has fixed the fault, but no Safari release that has the fix is out yet.
 
-To claim a slot, use `atomicLoad` and `atomicStore` between barriers: store your value into a free slot, call `workgroupBarrier()`, and then read which value the slot holds. `atomicExchange`, `atomicMin` and `atomicMax` also compile on every target browser.
+To claim a slot, store your value into a free slot with `atomicStore`. Then call `workgroupBarrier()`, and read which value the slot holds with `atomicLoad`. `atomicExchange`, `atomicMin` and `atomicMax` also compile on every target browser.
 
 ## Directives
 
