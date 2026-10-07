@@ -285,10 +285,12 @@ export interface EngineOptions {
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
 	 * batch, `'background'` with a texture, environment or cube map background, `'sky'` with the
-	 * sky, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU
-	 * occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads
-	 * the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features
-	 * download beside the engine's own
+	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
+	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
+	 * until its shaders are built, and `'occlusion'` with the first object that `setOccluder(true)`
+	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
+	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.

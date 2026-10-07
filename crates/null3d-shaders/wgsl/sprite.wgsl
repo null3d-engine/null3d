@@ -12,15 +12,26 @@ enable draw_index;
 // screen at every distance. The color is the material's color times the sprite's, and in the MAP
 // builds times the map at the sprite's frame: the frame's column and row move the texture
 // coordinates, and the material's texture coordinate transform scales them into the atlas. The
-// ALPHA_MASK builds draw nothing where the alpha falls below the material's cutoff, and a material
-// that blends writes premultiplied color. Fog takes the sprite's center, as three.js's fog depth
-// does.
+// ALPHA_MASK builds draw nothing where the alpha falls below the material's cutoff, the
+// ALPHA_COVERAGE builds fade it there for alpha to coverage, and the ALPHA_HASH builds test it
+// against the alpha hash (null3d::cutout), whose pattern stays on the quad, in the sprite's units.
+// A material that blends writes premultiplied color. Fog takes the sprite's center, as three.js's
+// fog depth does.
 #import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{frame as engine_frame, material_of}
 #import null3d::vertex::{mesh_position, mesh_uv}
 #ifdef MAP
 #import null3d::mesh::{map_layer, map_ready, straight_texel}
+#endif
+#ifdef ALPHA_COVERAGE
+#import null3d::cutout::{alpha_coverage}
+#endif
+#ifdef ALPHA_HASH
+#import null3d::cutout::{alpha_hash_threshold}
+#endif
+#ifdef SAMPLE_MASK
+#import null3d::cutout::{MaskedFragment, masked_fragment}
 #endif
 
 #ifdef MAP
@@ -61,6 +72,10 @@ struct VertexOut {
     @location(2) color: vec4f,
     /// The sprite's center relative to the camera.
     @location(3) relative: vec3f,
+#ifdef ALPHA_HASH
+    /// The corner on the quad, in the sprite's units, where the alpha hash finds its pattern.
+    @location(4) mesh_place: vec3f,
+#endif
 }
 
 @vertex
@@ -95,13 +110,20 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.uv = mesh_uv(v.uv0) + cell;
     out.material = found.material;
     out.color = vec4f(found.row_y.x, found.row_z.x, found.row_z.y, found.row_z.z) * SMALL_INVERSE;
+#ifdef ALPHA_HASH
+    out.mesh_place = vec3f(corner, 0.0);
+#endif
     return out;
 }
 
 /// The material's color times the sprite's, times the map at the sprite's frame in the MAP builds.
 /// Sampling decodes an sRGB map to linear values, and reads a linear map as it is.
 @fragment
+#ifdef SAMPLE_MASK
+fn fs(in: VertexOut) -> MaskedFragment {
+#else
 fn fs(in: VertexOut) -> @location(0) vec4f {
+#endif
     let m = material_of(in.material);
     var base = m.color.rgb * in.color.rgb;
     var alpha = m.color.a * in.color.a;
@@ -113,11 +135,26 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     base *= map.rgb;
     alpha *= map.a;
 #endif
-#ifdef ALPHA_MASK
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(in.mesh_place) {
+        discard;
+    }
+#else ifdef ALPHA_COVERAGE
+    alpha = alpha_coverage(alpha, fwidth(alpha), m.emissive.w);
+    if alpha <= 0.0 {
+        discard;
+    }
+#else ifdef ALPHA_MASK
     if alpha < m.emissive.w {
         discard;
     }
 #endif
     let finished = finish_exposed(fogged(exposed(base), in.relative, m), in.clip.xy);
+#ifdef SAMPLE_MASK
+    return masked_fragment(vec4f(finished.rgb, alpha));
+#else ifdef ALPHA_COVERAGE
+    return vec4f(finished.rgb, alpha);
+#else
     return fragment_color(m, finished.rgb, alpha);
+#endif
 }

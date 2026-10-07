@@ -177,6 +177,15 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
     add(&mut world, &triangle(true), full, colors_and_mask);
     let masked = CustomShading::standard(first + 4);
     add(&mut world, &mapped, masked, feature::ALPHA_MASK);
+    // A custom material has no builds that fade or hash its alpha, so it tests the cutoff.
+    let mask_ways = feature::ALPHA_TO_COVERAGE | feature::ALPHA_HASH;
+    add(
+        &mut world,
+        &mapped,
+        masked,
+        feature::ALPHA_MASK | feature::ALPHA_TO_COVERAGE,
+    );
+    add(&mut world, &mapped, masked, feature::ALPHA_MASK | mask_ways);
     world.record(true);
     MockBackend::default()
         .replay(world.renderer.list(1).words())
@@ -230,8 +239,9 @@ fn plain_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, u32, u32)
     made
 }
 
-/// Masked materials of each shading that reads alpha, materials without depth writes or the depth
-/// test, and one with a depth bias, each on a triangle of its own.
+/// Masked materials of each shading that reads alpha, with alpha to coverage and the alpha hash,
+/// materials without depth writes or the depth test, and one with a depth bias, each on a triangle
+/// of its own.
 fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>) {
     let plain = triangle(false);
     add(&mut world, &plain, Shading::Lit, feature::ALPHA_MASK);
@@ -242,6 +252,24 @@ fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>) {
     add_biased(&mut world, &plain, Shading::Unlit, 0, decal);
     let masked_colors = feature::ALPHA_MASK | feature::VERTEX_COLORS;
     add(&mut world, &triangle(true), Shading::Unlit, masked_colors);
+    // Alpha to coverage fades the alpha and turns on in the pipeline, as the canvas's target has
+    // alpha and MSAA. The alpha hash wins over alpha to coverage.
+    let covers = feature::ALPHA_MASK | feature::ALPHA_TO_COVERAGE;
+    add(&mut world, &plain, Shading::Lit, covers);
+    add(
+        &mut world,
+        &plain,
+        Shading::Unlit,
+        feature::ALPHA_MASK | feature::ALPHA_HASH,
+    );
+    add(
+        &mut world,
+        &plain,
+        Shading::Lit,
+        covers | feature::ALPHA_HASH,
+    );
+    // A material that blends tests no alpha, so it never covers by alpha.
+    add(&mut world, &plain, Shading::Unlit, covers | feature::BLEND);
     world.record(true);
     MockBackend::default()
         .replay(world.renderer.list(1).words())
@@ -249,6 +277,7 @@ fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>) {
     let commands = world.commands();
     let (lit, unlit) = (template::INSTANCED_LIT, template::INSTANCED_UNLIT);
     let mask = permutation::ALPHA_MASK;
+    let (fade, hash) = (permutation::ALPHA_COVERAGE, permutation::ALPHA_HASH);
     // The world's own objects draw with the lit and unlit shading, unmasked.
     let mut expected = vec![
         (lit, 0, 0, 0, 0),
@@ -258,6 +287,10 @@ fn check_mask_and_depth<B: FrameBuilder>(mut world: World<B>) {
         (unlit, 0, state_flags::NO_DEPTH_WRITE, 0, 0),
         (unlit, 0, state_flags::NO_DEPTH_TEST, 0, 0),
         (unlit, mask, 0, 0, 0),
+        (lit, mask | fade, state_flags::ALPHA_TO_COVERAGE, 0, 0),
+        (unlit, mask | hash, 0, 0, 0),
+        (lit, mask | hash, 0, 0, 0),
+        (unlit, 0, state_flags::BLEND_NORMAL, 0, 0),
     ];
     expected.sort_unstable();
     assert_eq!(plain_pipelines(&commands), expected);

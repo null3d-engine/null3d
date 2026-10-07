@@ -2,7 +2,10 @@
 // which the parity test compares them with. It is plain data with no engine imports. Three
 // see-through planes overlap in front of a wall, in an order that differs from the order of their
 // creation, and a see-through sphere stands in front of them. Each engine must draw them farthest
-// first with normal blending, as three.js does with `transparent: true`.
+// first with normal blending, as three.js does with `transparent: true`. The solids' scene stands
+// double-sided see-through solids in the same room instead: each engine must draw each solid's back
+// faces before its front faces, as three.js does with `side: DoubleSide`, unless the solid's
+// material asks for one draw with `forceSinglePass`.
 import { PARITY_CANVAS } from './spec';
 
 export { AMBIENT, BACKGROUND, SUN } from './spec';
@@ -92,3 +95,73 @@ export const GLASS_SPHERE_SEGMENTS = [32, 16] as const;
 
 /** The object count that each engine's page reports: the boxes, the planes and the sphere. */
 export const GLASS_COUNT = GLASS_BOXES.length + GLASS_PLANES.length + 1;
+
+/**
+ * A double-sided see-through solid: its shape and size, whether lights shade it, its sRGB color and
+ * opacity, its center, its turn about the y axis in radians, and whether it draws both faces in one
+ * draw, as three.js's `forceSinglePass`.
+ */
+export interface GlassSolid {
+	shape: 'box' | 'sphere' | 'tube';
+	/** The box's sides; the sphere's radius; the tube's radius and height. */
+	size: Vec3;
+	lit: boolean;
+	color: string;
+	opacity: number;
+	position: Vec3;
+	turn: number;
+	singlePass: boolean;
+}
+
+/**
+ * The solids: a box and a sphere whose far insides show through their near sides, and two open
+ * tubes, of which the right one draws in one pass, so its triangles' order decides what covers what.
+ */
+export const GLASS_SOLIDS: readonly GlassSolid[] = [
+	{
+		shape: 'box',
+		size: [1.4, 1.4, 1.4],
+		lit: true,
+		color: '#4a8cff',
+		opacity: 0.4,
+		position: [-1.6, 0.9, 0],
+		turn: 0.6,
+		singlePass: false,
+	},
+	{
+		shape: 'sphere',
+		size: [0.8, 0, 0],
+		lit: true,
+		color: '#f2c14e',
+		opacity: 0.45,
+		position: [0.2, 0.9, 0.8],
+		turn: 0,
+		singlePass: false,
+	},
+	{
+		shape: 'tube',
+		size: [0.6, 1.6, 0],
+		lit: false,
+		color: '#e8554e',
+		opacity: 0.5,
+		position: [1.7, 0.85, -0.4],
+		turn: 0.3,
+		singlePass: false,
+	},
+	{
+		shape: 'tube',
+		size: [0.45, 1.2, 0],
+		lit: true,
+		color: '#5bc27a',
+		opacity: 0.5,
+		position: [2.6, 0.65, 1.2],
+		turn: -0.4,
+		singlePass: true,
+	},
+];
+
+/** The segments of the solids' curved surfaces, the same in both engines: around, then along. */
+export const GLASS_SOLID_SEGMENTS = [32, 16] as const;
+
+/** The object count of the solids' scene: the boxes and the solids. */
+export const GLASS_SOLID_COUNT = GLASS_BOXES.length + GLASS_SOLIDS.length;
