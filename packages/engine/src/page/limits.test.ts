@@ -49,6 +49,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	cellCulling: true,
 	depthPrepass: false,
 	vertexSkinning: false,
+	indexInstances: false,
 	shadowDepthBits: 16,
 	largeWorld: false,
 	gpuOcclusion: false,
@@ -87,6 +88,7 @@ const PLAIN: DeviceOptions = {
 	compression: undefined,
 	cells: true,
 	vertexSkinning: false,
+	indexInstances: false,
 	shadowDepthBits: 16,
 	hdr: true,
 	sceneFormat: undefined,
@@ -338,6 +340,15 @@ describe('coreDevice on WebGL2', () => {
 		for (const tier of ['webgpu', 'webgpu-compat'] as const) {
 			expect(coreDevice(tier, report({}), PLAIN).depthPrepass).toBe(false);
 			expect(coreDevice(tier, report({}), on).depthPrepass).toBe(true);
+		}
+	});
+
+	it('reads instances by index only on core WebGPU, where ?instances=index asks for it', () => {
+		const on: DeviceOptions = { ...PLAIN, indexInstances: true };
+		expect(coreDevice('webgpu', report({}), PLAIN).indexInstances).toBe(false);
+		expect(coreDevice('webgpu', report({}), on).indexInstances).toBe(true);
+		for (const tier of ['webgpu-compat', 'webgl2'] as const) {
+			expect(coreDevice(tier, report({}), on).indexInstances).toBe(false);
 		}
 	});
 

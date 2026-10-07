@@ -44,7 +44,7 @@ const engine = await createEngine({
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
-  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'
+  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
@@ -427,9 +427,11 @@ const n = scene.raycastAll(origin, direction, opts, hits);   // every triangle h
 scene.raycastBatch(rays, opts, { distances });         // 6 numbers per ray; job workers; -1 = miss
 scene.overlapSphere(center, radius, opts, out);        // objects with a triangle in the sphere
 scene.overlapBox(min, max, opts, out);                 // returns the count, as overlapSphere
+scene.raycast(o, d, { pointThreshold: 0.2, lineThreshold: 0.1 }, hit);   // three.js's Points and Line thresholds
+sprites.on('click', (e) => select(e.instance));        // sprite, point and line batches take pointer events
 ```
 
-Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
+Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Raycasts hit sprites, points and lines where they draw, through the active camera. Then `hit.object` is the batch, `hit.instance` the sprite, point or segment, and `hit.triangle` -1. Overlap queries skip them. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
 
 ## 14. Input (`api/input`) and controls (`api/controls`)
 

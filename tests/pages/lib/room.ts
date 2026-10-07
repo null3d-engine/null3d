@@ -15,6 +15,13 @@ export const ROOM_KEPT = 1;
  */
 export const ROOM_LOST_ONCE = 2;
 
+/**
+ * The step that a test page's trail notes at the first shared memory that the browser refuses. The
+ * engine tries again for about 45 seconds before E1109, longer than many pages may take, so a page
+ * that times out while it waits for memory shows this in its trail.
+ */
+export const MEMORY_REFUSED = 'the browser refused a shared memory';
+
 /** The engine's default maximum of its shared memory, in 64 KiB pages: 1 GiB. */
 export const DEFAULT_MAXIMUM_PAGES = 16_384;
 const INITIAL_PAGES = 18;

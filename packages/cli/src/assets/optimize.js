@@ -16,6 +16,8 @@ import { TEXTURE_FOLDER } from './textures.js';
 
 const OPTIONS = /** @type {const} */ ({
 	lod: { type: 'boolean', default: false },
+	simplify: { type: 'string', default: String(DEFAULT_OPTIONS.simplify) },
+	'simplify-error': { type: 'string', default: String(DEFAULT_OPTIONS.simplifyError) },
 	'max-texture-size': { type: 'string', default: String(MAX_TEXTURE_SIDE) },
 	'texture-quality': { type: 'string', default: DEFAULT_OPTIONS.textureQuality },
 	compression: { type: 'string', default: DEFAULT_OPTIONS.meshopt ? 'meshopt' : 'none' },
@@ -34,8 +36,8 @@ output folder, at the place it had in the input folder. Its textures become KTX2
 output folder's textures folder, named by their contents, so models that share a texture share
 its file.
 
-Meshes: vertices reordered for the GPU's vertex cache, then stored as 8-bit and 16-bit integers
-(KHR_mesh_quantization).
+Meshes: equal meshes, materials and textures merged into one, vertices reordered for the GPU's
+vertex cache, then stored as 8-bit and 16-bit integers (KHR_mesh_quantization).
 Clips: keys at the rate the engine keeps them, 16-bit rotations, one key for a track that never
 changes, so the engine copies them at load. No key or track is dropped.
 Textures: PNG and JPEG images encoded to KTX2 with every mip level, each side at its nearest
@@ -44,8 +46,13 @@ power of two. Normal maps take UASTC; color and data maps take ETC1S, or UASTC w
 the same bytes on every machine.
 
 Options:
-  --lod                        Add levels of detail with a half, a quarter and an eighth of the
-                               triangles, to meshes of 256 triangles or more (MSFT_lod)
+  --lod                        Add levels of detail to meshes of 64 triangles or more, each
+                               with about half the triangles of the level above, and store each
+                               level's error for the engine to pick by (MSFT_lod)
+  --simplify <share>           Keep this share of each mesh's triangles, from 0 to 1, as far as
+                               --simplify-error allows (1)
+  --simplify-error <share>     The most that --simplify may move the surface, as a share of each
+                               mesh's size (0.01)
   --max-texture-size <pixels>  The largest side of a texture: a power of two up to 2048 (2048)
   --texture-quality <size|high> ETC1S for color and data maps, or UASTC, several times
                                larger with less loss (size)
@@ -93,6 +100,16 @@ export function parseOptimizeArgs(args) {
 	const compression = values.compression;
 	if (compression !== 'none' && compression !== 'meshopt')
 		throw new UsageError(`--compression takes none or meshopt, not "${compression}"`);
+	const simplify = Number(values.simplify);
+	if (!(simplify > 0 && simplify <= 1))
+		throw new UsageError(
+			`--simplify takes a share of the triangles above 0 and up to 1, such as 0.5, not "${values.simplify}"`,
+		);
+	const simplifyError = Number(values['simplify-error']);
+	if (!(simplifyError >= 0 && simplifyError <= 1))
+		throw new UsageError(
+			`--simplify-error takes a share of a mesh's size from 0 to 1, such as 0.05, not "${values['simplify-error']}"`,
+		);
 	const bvh = Number(values.bvh);
 	if (!Number.isInteger(bvh) || bvh < 0)
 		throw new UsageError(
@@ -108,6 +125,8 @@ export function parseOptimizeArgs(args) {
 		output: resolve(/** @type {string} */ (positionals[1])),
 		options: {
 			lod: values.lod,
+			simplify,
+			simplifyError,
 			maxTextureSize: side,
 			textureQuality: quality,
 			meshopt: compression === 'meshopt',

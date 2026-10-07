@@ -1620,11 +1620,47 @@ const HALF_PRECISION_TESTS = [
 	eightBitTest('aces'),
 ];
 
+/**
+ * The tests that draw again with vertex shaders that read each culled instance by index from
+ * storage buffers, as `?instances=index` asks on core WebGPU (decision record D-23): objects with an
+ * instance batch, cells far from the origin, the standard material's maps, cascaded shadows, point
+ * light shadows, skinned characters from the skinning pass and skinned in the vertex shader,
+ * outlines, see-through objects beside culled ones, custom materials, which keep the culling
+ * shader's copies, S1-cells and S4. Each copy must draw its test's image. Compatibility mode and
+ * WebGL2 ignore the switch, so the copies draw on core WebGPU only, in their test's first thread
+ * mode.
+ */
+const INDEX_INSTANCE_TESTS = [
+	'scene',
+	'cells-1000km',
+	'standard-maps',
+	'shadows',
+	'point-shadows',
+	'skinning-shadows',
+	'skinning-vertex',
+	'outline-hidden',
+	'transparency',
+	'custom-textures',
+	's1-cells',
+	's4',
+];
+
+/** A test again with `?instances=index`, on core WebGPU, in its first thread mode. */
+function withIndexInstances(name: string): ImageTest {
+	const test = copyWithSwitch(name, 'index', 'instances=index');
+	return {
+		...test,
+		tiers: ['webgpu'],
+		...(test.modes && { modes: test.modes.slice(0, 1) }),
+	};
+}
+
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	...FEATURE_TESTS,
 	...PREPASS_SCENES.map(withPrepass),
 	...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
+	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */

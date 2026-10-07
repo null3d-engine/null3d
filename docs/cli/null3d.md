@@ -255,7 +255,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 
 ## assets
 
-`assets optimize` makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model.
+`assets optimize` makes glTF models smaller and faster to load and draw. It merges equal meshes, materials and textures into one copy. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size 1024
@@ -263,7 +263,9 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--lod` | Adds levels of detail to each mesh of 256 triangles or more | No levels |
+| `--lod` | Adds levels of detail to each mesh of 64 triangles or more, and stores each level's error | No levels |
+| `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
+| `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC instead of ETC1S | `size` |
 | `--compression <none\|meshopt>` | `none` leaves the buffers uncompressed, without `EXT_meshopt_compression` | `meshopt` |

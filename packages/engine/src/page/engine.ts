@@ -251,7 +251,9 @@ export interface EngineOptions {
 	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
-	 * GPU has finished the first frame.
+	 * GPU has finished the first frame. Before `core`, `memory-wait` comes when the browser has
+	 * refused the engine's memory for 10 seconds. The engine then tries for about 35 seconds more
+	 * before it fails with E1109.
 	 */
 	onProgress?: (stage: StartupStage) => void;
 	/**
@@ -295,7 +297,7 @@ export interface EngineOptions {
  *
  * @category api/engine
  */
-export type StartupStage = 'core' | 'sketch' | 'first-frame';
+export type StartupStage = 'memory-wait' | 'core' | 'sketch' | 'first-frame';
 
 /**
  * The GPU path the engine chose, and what it offers.
@@ -1040,7 +1042,7 @@ async function startEngine(
 	const sketchOnPage = sketchThread === 'main';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
-		loadCore(build, maximumMiB).then((loaded) => {
+		loadCore(build, maximumMiB, () => onProgress('memory-wait')).then((loaded) => {
 			coreMs = performance.now() - startedAt;
 			return loaded;
 		}),

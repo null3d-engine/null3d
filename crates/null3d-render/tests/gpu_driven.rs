@@ -1066,3 +1066,160 @@ fn the_gpu_lists_the_lights_in_frames_whose_lights_changed() {
     let frame = world.renderer.view_frame(ViewId::CAMERA).unwrap();
     assert_eq!(frame.uniform.cluster_grid[2], 0.0);
 }
+
+/// One draw of a bundle as the bundle has set it up: its pipeline's template and permutation, the
+/// buffer of its instances at vertex slot 1 with the byte range it binds, and the groups after the
+/// frame's.
+#[derive(Debug)]
+struct BundleDraw {
+    template: u32,
+    permutation: u32,
+    instances: u32,
+    range: std::ops::Range<u32>,
+    groups: [u32; 3],
+}
+
+/// Every indirect draw that the frame's bundles record.
+fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> Vec<BundleDraw> {
+    let pipelines: HashMap<u32, (u32, u32)> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::CreateRenderPipeline)
+        .map(|(_, o)| (o[0], (o[1], o[2])))
+        .collect();
+    let (mut pipeline, mut instances, mut groups) = (0, 0, [0; 3]);
+    let mut range = 0..0;
+    let mut draws = Vec::new();
+    for (op, o) in commands {
+        match op {
+            Op::BeginBundle => (pipeline, instances, groups) = (0, 0, [0; 3]),
+            Op::SetPipeline => pipeline = o[0],
+            Op::SetVertexBuffer if o[0] == 1 => {
+                instances = o[1];
+                range = o[2]..o[2] + o[3];
+            }
+            Op::SetBindGroup if (1..=3).contains(&o[0]) => groups[o[0] as usize - 1] = o[1],
+            Op::DrawIndexedIndirect => {
+                let (template, permutation) = pipelines[&pipeline];
+                draws.push(BundleDraw {
+                    template,
+                    permutation,
+                    instances,
+                    range: range.clone(),
+                    groups,
+                });
+            }
+            _ => {}
+        }
+    }
+    draws
+}
+
+#[test]
+fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_group() {
+    use null3d_gpu::drawlist::{permutation, sizes, template, vertex};
+    use null3d_render::materials::{CustomShading, Shading};
+
+    for index_instances in [false, true] {
+        let mut world = World::with_config(RendererConfig {
+            index_instances,
+            ..RendererConfig::default()
+        });
+        world.cast_sun_shadows(2);
+        // The shown objects cast shadows and receive them.
+        let both = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+        let commands: Vec<_> = world.objects[..3]
+            .iter()
+            .map(|&object| Command::set_flags(object, both, both))
+            .collect();
+        world.scene.apply_commands(&commands, world.frame).unwrap();
+        // A custom material reads the culling shader's copies, with the switch or without.
+        let custom = Shading::Custom(CustomShading {
+            template: template::CUSTOM_FIRST,
+            attributes: vertex::UV0,
+            base_color: true,
+            textures: 0,
+        });
+        world.add_object(&common::grid(1, 1), custom);
+        let mut mock = MockBackend::default();
+        let commands = world.step(&mut mock, true);
+
+        // The buffers that each bind group of a layout binds, by binding, after the group's id.
+        let groups_of = |kind: u32| -> Vec<Vec<u32>> {
+            commands
+                .iter()
+                .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == kind)
+                .map(|(_, o)| {
+                    let buffers = (0..o[2] as usize).map(|b| o[5 + 5 * b]);
+                    std::iter::once(o[0]).chain(buffers).collect()
+                })
+                .collect()
+        };
+        // Each view's culling group binds the same nine buffers with the switch or without: the
+        // indices share the compacted instance buffer.
+        let culling = groups_of(layout::CULL);
+        assert_eq!(culling.len(), 3, "the camera and two cascades: {culling:?}");
+        assert!(culling.iter().all(|group| group.len() == 1 + 9));
+        // With the switch, each view's index group binds its culling parameters, the matrices and
+        // the bucket tables of the layout it draws, as its culling group does.
+        let indexed = groups_of(layout::INSTANCE_INDEX);
+        assert_eq!(indexed.len(), if index_instances { 3 } else { 0 });
+        for group in &indexed {
+            let cull = culling.iter().find(|c| c[1] == group[1]).unwrap();
+            assert_eq!(group[1..], cull[1..5]);
+        }
+
+        let draws = bundle_draws(&commands);
+        for draw in &draws {
+            let reads_index = draw.permutation & permutation::INSTANCE_INDEX != 0;
+            let engine_template = draw.template < template::CUSTOM_FIRST;
+            assert_eq!(reads_index, index_instances && engine_template, "{draw:?}");
+            // Every draw reads its view's compacted instance buffer. One that reads indices binds
+            // its view's index group right after the frame's: these templates sample no maps.
+            let view = culling
+                .iter()
+                .find(|c| c[5] == draw.instances)
+                .unwrap_or_else(|| panic!("a view's compacted buffer: {draw:?}"));
+            if reads_index {
+                let group = indexed.iter().find(|g| g[1] == view[1]).unwrap();
+                assert_eq!(draw.groups[0], group[0], "{draw:?}");
+            }
+        }
+        // In each view's buffer, the index slices start after the last copy slice, at whole
+        // entries, and fit in the buffer.
+        for view in &culling {
+            let in_view = || draws.iter().filter(|d| d.instances == view[5]);
+            let reads_index = |d: &&BundleDraw| d.permutation & permutation::INSTANCE_INDEX != 0;
+            let copies_end = in_view()
+                .filter(|d| !reads_index(d))
+                .map(|d| d.range.end)
+                .max()
+                .unwrap_or(0);
+            let size = commands
+                .iter()
+                .filter(|(op, o)| *op == Op::CreateBuffer && o[0] == view[5])
+                .map(|(_, o)| o[1])
+                .next_back()
+                .unwrap();
+            for draw in in_view().filter(reads_index) {
+                assert!(
+                    draw.range.start >= copies_end,
+                    "{draw:?} after {copies_end}"
+                );
+                assert_eq!(draw.range.start % sizes::INDEX_STRIDE, 0);
+                assert!(draw.range.end <= size, "{draw:?} in {size} bytes");
+            }
+        }
+        // The scene's lit and unlit buckets in the camera's bundle, and the casters' in each
+        // cascade's, read indices; the custom material's bucket reads copies.
+        let by_index = draws
+            .iter()
+            .filter(|d| d.permutation & permutation::INSTANCE_INDEX != 0)
+            .count();
+        assert!(draws.iter().any(|d| d.template >= template::CUSTOM_FIRST));
+        if index_instances {
+            assert!(by_index >= 3 + 2, "{draws:?}");
+        } else {
+            assert_eq!(by_index, 0);
+        }
+    }
+}

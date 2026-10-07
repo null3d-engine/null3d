@@ -1,10 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Nine more set
+// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Ten more set
 // what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory=
 // for the shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for
 // culling without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for
-// occlusion culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU, and
+// occlusion culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU,
+// ?instances=index for vertex shaders that read instance data by index on core WebGPU, and
 // ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth. ?hold
 // starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
 // running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
@@ -152,6 +153,12 @@ export interface Switches {
 	 */
 	vertexSkinning: boolean;
 	/**
+	 * True when ?instances=index makes the vertex shaders on core WebGPU read each culled instance
+	 * by index from storage buffers, instead of a copy of its matrix that the culling shader
+	 * writes, to measure the two against each other. Compatibility mode and WebGL2 ignore it.
+	 */
+	indexInstances: boolean;
+	/**
 	 * The bits per texel of the shadow cascades' depth: 32 when ?shadowdepth=32 asks for 32-bit
 	 * floats, to measure them against the 16-bit depth that the engine stores otherwise.
 	 */
@@ -269,6 +276,7 @@ export function parseSwitches(search: string): Switches {
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
 		vertexSkinning: params.get('skinning') === 'vertex',
+		indexInstances: params.get('instances') === 'index',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),

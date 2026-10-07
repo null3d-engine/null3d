@@ -345,15 +345,19 @@ mod ids {
     pub const OCCLUSION_LATE: u32 = 10;
     pub const PYRAMID: u32 = 11;
 
-    /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
+    /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
+    /// the group of the pipelines that read their instances by index.
     pub const fn frame_group(view: ViewId) -> u32 {
-        1 + 2 * view.index() as u32
+        1 + 3 * view.index() as u32
     }
     pub const fn cull_group(view: ViewId) -> u32 {
         frame_group(view) + 1
     }
+    pub const fn index_group(view: ViewId) -> u32 {
+        frame_group(view) + 2
+    }
     /// The final pass's group, after every view's.
-    pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
+    pub const FINAL_GROUP: u32 = 1 + 3 * MAX_VIEW_IDS as u32;
     /// The light clustering pass's group.
     pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
     /// Each camera view's group of its depth prepass, after the light clustering pass's group.
@@ -413,6 +417,10 @@ pub struct RendererConfig {
     /// True to skin skinned meshes in the vertex shader of each pass that draws them, false to
     /// skin each once per frame in the skinning pass.
     pub vertex_skinning: bool,
+    /// True when the vertex shaders of the culled buckets read each instance by index from
+    /// storage buffers, where their templates can, instead of a copy that the culling shader
+    /// writes. A test switch asks for it on core WebGPU (decision record D-23).
+    pub index_instances: bool,
     /// True to cull each camera view in two phases against a depth pyramid of what it drew, so
     /// objects that others hide do not draw. The depth prepass turns it off.
     pub gpu_occlusion: bool,
@@ -433,6 +441,7 @@ impl Default for RendererConfig {
             light_limits: LightLimits::default(),
             depth_prepass: false,
             vertex_skinning: false,
+            index_instances: false,
             gpu_occlusion: false,
             cascade_depth: CascadeDepth::default(),
         }
@@ -570,16 +579,16 @@ impl GpuDrivenRenderer {
                 graph.set_occlusion(config.gpu_occlusion);
                 graph
             },
-            layout: Layout::new(Drawn::Scene),
-            casters: Layout::new(Drawn::Casters),
-            outlined: Layout::new(Drawn::Outlined),
+            layout: Layout::new(Drawn::Scene, config.index_instances),
+            casters: Layout::new(Drawn::Casters, config.index_instances),
+            outlined: Layout::new(Drawn::Outlined, config.index_instances),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             outline_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, false),
-            culling: Culling::default(),
+            culling: Culling::new(config.index_instances),
             pyramids: Pyramids::default(),
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),

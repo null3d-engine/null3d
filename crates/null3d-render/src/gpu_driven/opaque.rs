@@ -4,6 +4,10 @@
 //! layout or the mesh buffers change. The shadow passes record and replay their bundles the same
 //! way (see [`super::shadow`]).
 //!
+//! A bucket whose pipelines read their instances by index draws its slice of index entries, which
+//! follow the copies in the view's compacted instance buffer, and binds the view's index group
+//! after its other groups (see [`super::cull`]).
+//!
 //! With the depth prepass, each camera view has a second bundle, which the prepass replays before
 //! the view's bundle in the same render pass. It draws the same buckets from the same compacted
 //! instances and indirect draws, with each bucket's depth pipeline, and leaves out the buckets that
@@ -219,14 +223,19 @@ impl Draws<'_> {
                 pipeline = Some(id);
             }
             let maps = if own { bucket.group } else { 0 };
-            groups.set(list, maps, bucket.skins)?;
+            let (stride, index) = if bucket.indexed {
+                (sizes::INDEX_STRIDE, ids::index_group(view))
+            } else {
+                (sizes::INSTANCE_STRIDE, 0)
+            };
+            groups.set(list, maps, bucket.skins, index)?;
             list.push(
                 Op::SetVertexBuffer,
                 &[
                     1,
                     ids::visible(view),
-                    bucket.base * sizes::INSTANCE_STRIDE,
-                    bucket.capacity.max(1) * sizes::INSTANCE_STRIDE,
+                    bucket.base * stride,
+                    bucket.capacity.max(1) * stride,
                 ],
             )?;
             for index in bucket.first_draw..bucket.first_draw + bucket.draws {
