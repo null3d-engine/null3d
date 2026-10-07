@@ -80,6 +80,7 @@ import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
+import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
 import {
 	type CanvasHold,
 	canvasHold,
@@ -92,7 +93,7 @@ import {
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
-import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
+import { STOP_TIMEOUT_MS, stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -524,11 +525,19 @@ export interface Engine {
 	 * the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes back at
 	 * once. It also leaves the canvas blank, at its size, because Safari keeps the GPU memory of a
 	 * canvas's last frame until the canvas shows another. The promise resolves once every worker has
-	 * stopped, when the browser can free the engine's memory. Wait for it before you start another
-	 * engine on the same page: an iPad has room for only a few engines' memory. A new engine can
-	 * start on the same canvas, with the same thread options; `createEngine` waits for this stop.
+	 * stopped. Wait for it before you start another engine on the same page: an iPad has room for
+	 * only a few engines' memory. A new engine can start on the same canvas, with the same thread
+	 * options; `createEngine` waits for this stop.
+	 *
+	 * The page keeps the memory that the engine's threads shared for about 30 seconds, and the next
+	 * engine with the same memory maximum takes it. A page that destroys and creates the engine
+	 * again, as React's strict mode, a route change or a hot reload does, then asks the browser for
+	 * no new memory. Safari can refuse new memory for some seconds after a page drops some. The page
+	 * keeps at most 2 memories, and the RAM that they hold stays taken until a new engine takes one
+	 * or their time ends. `{ release: true }` lets the browser free them at once: use it when the
+	 * page will not start the engine again soon.
 	 */
-	destroy(): Promise<void>;
+	destroy(options?: { release?: boolean }): Promise<void>;
 }
 
 /** The global where the `?bench` switch publishes the running engine. */
@@ -539,8 +548,6 @@ const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
-/** How long stopping the engine waits for its job workers and the worker that draws to stop. */
-const STOP_TIMEOUT_MS = 2_000;
 
 interface TierChoice {
 	tier: Tier;
@@ -1229,6 +1236,9 @@ async function startEngine(
 
 	// What the start sets up, which a stop takes down again, from any point of the start.
 	let coreMemory: WebAssembly.Memory | undefined;
+	let memoryKey: MemoryKey | undefined;
+	/** True while the page's own core starts in the shared memory. */
+	let pageCoreStarting = false;
 	let canvasWatch: CanvasWatch | undefined;
 	let input: ReturnType<typeof captureInput> | undefined;
 	let stopPreferences: (() => void) | undefined;
@@ -1333,8 +1343,25 @@ async function startEngine(
 			clearJobTasks(jobTaskHost);
 			localCore?.releaseInstance?.();
 			release();
+			keepCoreMemory();
 		})();
 		return stopping;
+	};
+	/**
+	 * Keeps the threaded core's memory for the page's next engine once no thread of this engine can
+	 * run in it: every thread that got the core answered the stop, and the page's own core is not
+	 * still starting. A memory that no thread got yet, from a start that ended first, is kept too.
+	 */
+	const keepCoreMemory = () => {
+		if (!coreMemory) {
+			void coreLoad.then(
+				(core) => core.memory && core.memoryKey && keepMemory(core.memory, core.memoryKey),
+				() => undefined,
+			);
+			return;
+		}
+		const left = [...jobsWithCore, ...withCore].every((worker) => worker.cleanStop);
+		if (memoryKey && left && !pageCoreStarting) keepMemory(coreMemory, memoryKey);
 	};
 	/**
 	 * Leaves the canvas to the next engine. A worker that holds it and answered the stop, or never
@@ -1464,6 +1491,7 @@ async function startEngine(
 
 		const core = await abortable(coreLoad, signal);
 		coreMemory = core.memory;
+		memoryKey = core.memoryKey;
 		onProgress('core');
 		let wasmMemory = core.memory;
 		const capabilities: EngineCapabilities = {
@@ -1609,6 +1637,12 @@ async function startEngine(
 			// memory fills it with the core's data, and a core that starts while another fills it
 			// waits, which the page's thread must never do.
 			const coreStart = startCore(build, core.module, core.memory);
+			pageCoreStarting = true;
+			void coreStart
+				.catch(() => undefined)
+				.then(() => {
+					pageCoreStarting = false;
+				});
 			const started = await abortable(coreStart, start.signal).catch((error: unknown) => {
 				// A start that ends while the page's core starts lets go of that core once it has
 				// started, or the core would keep the engine's memory.
@@ -1882,8 +1916,9 @@ async function startEngine(
 				if (localDrawing) localDrawing.simulateLoss();
 				else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
 			},
-			destroy() {
-				return stop();
+			async destroy(destroyOptions) {
+				await stop();
+				if (destroyOptions?.release) releaseMemories();
 			},
 		};
 		if (hold === undefined) {
