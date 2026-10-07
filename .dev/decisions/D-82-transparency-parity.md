@@ -98,7 +98,7 @@ The Mac, 7 October 2026, Chrome, S2, 5 runs of 10 s per page, a load of about 5,
 | WebGL2, two passes | no timer | 3.80 | 9,662 | 2.74 MB | 16.9 |
 
   On WebGPU the second draw adds 26% of GPU time on the S25. On WebGL2 the frame rate fell from 30 to 17 fps, with the eightfold upload that the records fix halves. On the fixed build (run `20261007-095947-bench`) two draws uploaded 1.50 MB per frame and ran at 17.7 fps. So the WebGL2 cost is the draws themselves: each run's two draws switch pipelines, so about 9,600 single draws cannot join multi-draw calls. The alpha hash cost 2% of GPU time on WebGPU (3.34 ms plain, 3.41 ms hashed), and nothing measurable on WebGL2 (1.10 and 1.12 ms of CPU time, both at 30 fps).
-- The S25 drew the integer hash's images within the Mac's tolerance: the 6 hash checks passed on 1fd345ab3 (run `20261007-095744-checks`).
+- The S25 and the iPad drew the integer hash's images within the Mac's tolerance: the 6 hash checks passed on 1fd345ab3 on each (runs `20261007-095744-checks` and `20261007-101259-checks`). With the sine hash the iPad had differed from the Mac too, in 4.7% of pixels, so the hash's pattern depended on Apple's GPU as well as Adreno's.
 - The iPad's cost waits for a cool run. The first, on 7 October 2026, ran with the display at 45 Hz, so `.dev/tested-devices.md` keeps it only as a hot run.
 - The pages of plain S2 and the hash later in the same run overlapped a shader build and the end of the quiet window, so the hash's cost comes from the iPad.
 - The cost rule needed a ruling: this worst case cannot meet it, as three.js's own two draws would not.
