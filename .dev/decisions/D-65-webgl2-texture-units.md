@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-05; the packing comes with M2-J7. Date: 2026-10-05. Task: M2-N1.
 
+Summary: The standard material's busiest WebGL2 fragment build reaches 16 of the 16 guaranteed units after M2-E2 and M2-J5. M2-J7 packs maps into texture-array layers or atlases, so it uses at most 12.
+
 ## Question
 
 WebGL2 guarantees 16 texture units in each shader stage. How many may the standard material's fragment stage use, and what does a feature do that needs one more?

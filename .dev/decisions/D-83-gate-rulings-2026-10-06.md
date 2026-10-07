@@ -1,6 +1,8 @@
 # D-83: The owner's rulings on the M1 gate, 6 October 2026
 
-Status: decided by the owner on 2026-10-06, in the morning, Singapore time. Date: 2026-10-06. Task: M1-K5.
+Status: decided by the owner, Singapore time: rulings 1 to 10 on 2026-10-06, rulings 11 and 12 late that night, and rulings 13 and 14 on 2026-10-07. Date: 2026-10-06. Task: M1-K5.
+
+Summary: The gate commit moved to fdf14a28, where only the failed and invalid items ran again. T-28's cold-start target on the S24+ became 5.5 s, and Safari's memory fix, the shadow trail fix and that day's browser fixes joined the gate. The iPad's rise in S4's GPU time at Low was accepted after the receiver plane's rewrite won back about 0.1 ms.
 
 ## Question
 

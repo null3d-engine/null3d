@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-A3.
 
+Summary: meshoptimizer's own decoder, from its npm package, which the glTF worker loads with the first file that holds meshopt data: 6.2 KB after Brotli, apart from a page's first download. It reads both extension names, decodes every mode and filter as the reference decoder does, and never downloads a fallback buffer. The test file for the vendor name comes from gltfpack.
+
 ## Question
 
 glTF files compressed with meshopt hold their vertex and index data in `EXT_meshopt_compression` or `KHR_meshopt_compression` buffer views. Which decoder reads them, where does it run, and how does a page that loads no such file avoid its download? How do the tests show that a compressed file loads as its uncompressed source does?

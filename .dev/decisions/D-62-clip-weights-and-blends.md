@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-05. Date: 2026-10-05. Task: M2-C9.
 
+Summary: `play(name, { time, weight })`; a play with a weight joins its layer, one without takes it over, and each replaces only clips of its own kind. Clip weights, blend values and a play's numbers cross in engine memory, and a frozen options object is read once, so clip switches allocate nothing. A 1D blend moves each clip at its length over the weight-averaged length, as Godot and PlayCanvas do. S5 blends by clip weights; scripts stay within 3.9e-4 of three.js.
+
 ## Question
 
 How should the animator start clips out of step, weigh clips that play together, and blend clips by a value such as speed? Games need all three to start a crowd out of step and to blend idle, walk and run. three.js has the first two (`action.time` and `setEffectiveWeight`), and ports map them directly. Animation is strict under [D-52](D-52-intent-parity.md), so poses must match three.js's `AnimationMixer` where three.js has the feature. A crowd must still allocate nothing per frame.

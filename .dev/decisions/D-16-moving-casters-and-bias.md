@@ -1,6 +1,8 @@
 # D-16: Moving casters in far cascades, and where shadows meet their casters
 
-Status: decided. Date: 2026-10-03, with the owner's two rulings for Low of 2026-10-05; the second supersedes the first. Tasks: M1-F3 and M1-K5.
+Status: decided. Date: 2026-10-03, with the owner's two rulings for Low of 2026-10-05; the second supersedes the first. On 2026-10-06 the owner dropped the cache of Low's still casters and accepted the cost of following moving casters. The addendum of 2026-10-07 measures the receiver plane's cost on the iPad and gives the plane a cheaper form. Tasks: M1-F3 and M1-K5.
+
+Summary: A far cascade draws in every frame while a moving caster touches its box, which adds no memory, on every preset. Low kept its far cascade's turns after the gate's iPad comparison, until the iPad soak showed every car's shadow jerking behind it in S4 (`followMovingCasters`, which also stops the governor's far cascade step while off). A cache of Low's still casters was built and dropped on 2026-10-06, as following cost about 0.1 ms on the cloud iPad. The owner accepted its 0.3 ms on the owner's iPad. The biases are in meters (0.01 and 0.02 m), scaled by each surface's angle to the light and capped at one texel, and receivers pick their cascade by their distance from the camera, so the lit lines at casters' bases are thinner and change less as the view turns.
 
 ## Question
 

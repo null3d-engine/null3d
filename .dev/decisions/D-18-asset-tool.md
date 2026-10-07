@@ -2,6 +2,8 @@
 
 Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05, with near-constant tracks stored once by the owner's ruling of that day. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
 
+Summary: JavaScript on the official WebAssembly encoders, with the formats that the engine also reads from its Rust core built to WebAssembly, and the Vite plugin running the same steps with a cache. Every machine writes the same bytes. One encoder per thread did S6's 144 textures in 18 to 26 s on the Mac, against 130 s for the native encoder with all cores on one texture at a time.
+
 ## Question
 
 `bunx @null3d/cli assets optimize` turns glTF models into files that load and draw fast. Their meshes are quantized and reordered for the GPU's vertex cache, with levels of detail on request, and their textures are KTX2 files. Later commands add environment maps, conversions, blocker meshes and prebuilt BVHs. Which language and which encoders build the tool? And where do the formats that both the tool and the engine read come from?
