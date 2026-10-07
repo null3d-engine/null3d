@@ -242,10 +242,10 @@ impl Opaque {
     }
 
     /// Records the creation of a view's frame groups, which bind its uniform block, its cell
-    /// offsets and the material table's texture. A camera's view has one group for each slot of
-    /// the light textures' ring. Each also binds three.js's table of the split-sum terms of
-    /// specular light, the shadow map of `lit` with the comparison sampler and the cascades'
-    /// uniform block that read it, the slot's light grid and light records, the shadow atlas of
+    /// offsets and the material table's texture, which also holds three.js's table of the
+    /// split-sum terms of specular light. A camera's view has one group for each slot of the light
+    /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
+    /// cascades' uniform block that read it, the slot's light data texture, the shadow atlas of
     /// `lit` with the tiles' uniform block, the texture of ambient occlusion, and the
     /// environment's cube texture of `lit` with its sampler. A shadow cascade's or a shadow tile's
     /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
@@ -288,14 +288,9 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 63 + environment::ENTRY_WORDS];
+        let mut words = [0; 53 + environment::ENTRY_WORDS];
         words[3..18].copy_from_slice(&common);
-        words[18..48].copy_from_slice(&[
-            3,
-            resource_kind::TEXTURE,
-            ids::DFG,
-            0,
-            0,
+        words[18..43].copy_from_slice(&[
             4,
             resource_kind::TEXTURE,
             map,
@@ -323,22 +318,17 @@ impl Opaque {
             sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 14]);
-            words[58..63].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            words[63..]
-                .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
-            words[48..58].copy_from_slice(&[
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 12]);
+            words[43..48].copy_from_slice(&[
                 7,
                 resource_kind::TEXTURE,
-                ids::LIGHT_GRID + slot,
-                0,
-                0,
-                8,
-                resource_kind::TEXTURE,
-                ids::LIGHTS + slot,
+                ids::LIGHT_DATA + slot,
                 0,
                 0,
             ]);
+            words[48..53].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            words[53..]
+                .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }
         Ok(())

@@ -342,9 +342,12 @@ pub mod format {
     /// ambient occlusion's copy of the depth. WebGL2 calls it `R32F`, and draws into it with
     /// `EXT_color_buffer_float`.
     pub const R32_FLOAT: u32 = 20;
+    /// Four 32-bit unsigned integers per texel: data of several kinds in one data texture, such as
+    /// WebGL2's light grid and light records, which shaders read as integers or turn into floats.
+    pub const RGBA32_UINT: u32 = 21;
 
     /// Every format.
-    pub const ALL: [u32; 21] = [
+    pub const ALL: [u32; 22] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -366,6 +369,7 @@ pub mod format {
         ETC2_RGBA8_UNORM_SRGB,
         RGB9E5_UFLOAT,
         R32_FLOAT,
+        RGBA32_UINT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -432,6 +436,7 @@ pub mod format {
             | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
+            | RGBA32_UINT
             | ASTC_4X4_UNORM
             | ASTC_4X4_UNORM_SRGB
             | BC7_RGBA_UNORM
@@ -1166,9 +1171,13 @@ pub mod sizes {
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
-    /// Light records per row of the WebGL2 light list's data texture, four texels each. A
-    /// power of two.
-    pub const LIGHTS_PER_TEXTURE_ROW: u32 = 512;
+    /// Light records per row of WebGL2's light data texture, four texels each, from its first
+    /// column. A power of two.
+    pub const LIGHTS_PER_TEXTURE_ROW: u32 = 256;
+    /// Words of the light grid per row of WebGL2's light data texture, four to a texel, in the
+    /// columns after the light records'. A power of two. The texture is 2,048 texels wide, the
+    /// width that every WebGL2 device allows.
+    pub const GRID_WORDS_PER_TEXTURE_ROW: u32 = 4096;
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
@@ -1182,6 +1191,10 @@ pub mod sizes {
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
+    /// The units that the standard material's maps share on WebGL2, which gives a shader stage
+    /// only 16 texture units: the group's first bindings hold the units' arrays, and the bindings
+    /// from [`MAP_SLOTS`] their samplers.
+    pub const SHARED_MAP_UNITS: u32 = 6;
     /// Grid cells in use at most, which the shaders' tables of offsets from the camera to each
     /// cell hold, one `vec4f` each.
     pub const MAX_CELLS: u32 = 512;
@@ -1470,6 +1483,7 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
                 ("R32_FLOAT", format::R32_FLOAT),
+                ("RGBA32_UINT", format::RGBA32_UINT),
             ],
         ),
         (
@@ -1675,11 +1689,16 @@ pub fn typescript_constants() -> String {
                 ("INDICES_PER_TEXTURE_ROW", sizes::INDICES_PER_TEXTURE_ROW),
                 ("LIGHT_RECORD_BYTES", sizes::LIGHT_RECORD_BYTES),
                 ("LIGHTS_PER_TEXTURE_ROW", sizes::LIGHTS_PER_TEXTURE_ROW),
+                (
+                    "GRID_WORDS_PER_TEXTURE_ROW",
+                    sizes::GRID_WORDS_PER_TEXTURE_ROW,
+                ),
                 ("DRAW_RECORD_BYTES", sizes::DRAW_RECORD_BYTES),
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAP_SLOTS", sizes::MAP_SLOTS),
+                ("SHARED_MAP_UNITS", sizes::SHARED_MAP_UNITS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),

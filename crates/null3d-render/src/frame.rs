@@ -36,7 +36,8 @@ use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale, Size};
 use crate::materials::{
-    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
+    MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
+    blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::outline::Outline;
@@ -592,6 +593,9 @@ pub struct SceneSettings {
     /// The bind group of each material's maps, by material id, for the standard materials with a
     /// live map and the custom materials with textures, and 0 for the others.
     map_groups: Vec<u32>,
+    /// The units that a standard material's maps share, or 0 where each map slot has a binding
+    /// of its own (see [`SceneSettings::share_map_units`]).
+    shared_map_units: usize,
     /// Scratch marks of the material ids that objects and batches use, for the release of
     /// destroyed materials' ids.
     used_materials: Vec<bool>,
@@ -653,6 +657,7 @@ impl SceneSettings {
             materials: MaterialTable::with_capacity(max_materials),
             textures,
             map_groups: Vec::new(),
+            shared_map_units: 0,
             used_materials: Vec::new(),
             background_texture: Handle::NONE,
             views: vec![View::default()],
@@ -685,6 +690,13 @@ impl SceneSettings {
             debug_view: DebugView::Lit,
             shadow_camera: None,
         }
+    }
+
+    /// Makes the standard material's maps share the first `units` bindings of their bind group,
+    /// as WebGL2's standard material samples them: maps whose textures share an array and a
+    /// sampler share a unit, and each map's layer in its material's row names its unit.
+    pub fn share_map_units(&mut self, units: usize) {
+        self.shared_map_units = units;
     }
 
     /// The frame's clock: the sketch time and the seconds since the frame before, in seconds,
@@ -1084,16 +1096,25 @@ impl SceneSettings {
         }
         self.map_groups.resize(count as usize, 0);
         for id in 0..count {
-            let samples = match self.materials.shading(id) {
+            let shading = self.materials.shading(id);
+            let samples = match shading {
                 Ok(Shading::Lit) => self.has_live_map(id),
                 Ok(Shading::Custom(custom)) => custom.textures > 0,
                 _ => false,
             };
-            self.map_groups[id as usize] = if samples {
-                let maps = self.materials.maps(id);
-                self.textures.map_set_group(&maps).unwrap_or(0)
-            } else {
+            let maps = self.materials.maps(id);
+            self.map_groups[id as usize] = if !samples {
                 0
+            } else if matches!(shading, Ok(Shading::Lit)) && self.shared_map_units > 0 {
+                let (group, units) = self
+                    .textures
+                    .shared_map_group(&maps, self.shared_map_units)
+                    .unwrap_or((0, [None; MAP_SLOTS]));
+                self.materials
+                    .set_map_units(id, units.map(|unit| unit.unwrap_or(NO_UNIT)));
+                group
+            } else {
+                self.textures.map_set_group(&maps).unwrap_or(0)
             };
         }
     }
