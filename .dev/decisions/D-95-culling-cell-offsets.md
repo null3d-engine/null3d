@@ -47,6 +47,7 @@ The offsets sit in a float texture with one row per view and one texel per cell.
 
 - `crates/null3d-shaders/wgsl/cull.wgsl` binds the texture at binding 9. `crates/null3d-render/src/gpu_driven/cull.rs` makes it once and writes each view's row. The parameters shrink by 8 KiB. `packages/engine/src/gpu/webgpu/pipelines.ts` adds the binding to the culling layout.
 - The culling stage binds 8 storage buffers, 1 uniform buffer and 1 sampled texture.
+- The vertex shaders that read their instances by index ([D-23](D-23-index-instances.md)) read the same texture, at the row that the view's parameters name. Their index group binds it after its four buffers. Before, they read the offsets table in the view's culling parameters, at an index that differs from vertex to vertex. That is the same shape as the S25's fault, and the table is no longer in the parameters. One texture also keeps one copy of the offsets for both readers.
 - Hand-built test pages that replay a culling pass, such as `tests/pages/replay.ts`, build the culling bind group themselves. They must match the culling layout, the offsets texture at binding 9 included, and the parameters' words. Otherwise the group is invalid on WebGPU and the page draws nothing. Change them in the same pull request as the layout.
 - The WebGL2 path keeps its uniform table of offsets in the vertex shader. It is right on the S25, as on every other tested device.
 - Test any new uniform table that shaders index per thread on the S25 before it ships. Or read it from a texture or a storage buffer.

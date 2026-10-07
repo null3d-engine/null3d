@@ -4,6 +4,7 @@
 // move everything in between.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { MEMORY_REFUSED } from '../pages/lib/room.ts';
 import type { DeviceFacts } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
@@ -116,9 +117,16 @@ export const OOM_STOP_PAGES = 3;
 /** The engine's code for a shared memory that the browser refused, and the browser's own words. */
 const OUT_OF_MEMORY = /\bE1109\b|out of memory/i;
 
-/** Whether a page failed because the browser refused it memory. */
+/**
+ * Whether a page failed because the browser refused it memory: with E1109 or the browser's own
+ * error, or with no result in time while the engine still waited for its memory.
+ */
 export const outOfMemory = (result: ItemResult | undefined): boolean =>
-	result?.ok === false && OUT_OF_MEMORY.test(String(result.error ?? ''));
+	result?.ok === false &&
+	(OUT_OF_MEMORY.test(String(result.error ?? '')) ||
+		(String(result.error).startsWith('no result within') &&
+			Array.isArray(result.trail) &&
+			result.trail.some((step) => String(step).includes(MEMORY_REFUSED))));
 
 /**
  * Whether a runner's browser keeps refusing memory, from whether each of its pages failed for lack
