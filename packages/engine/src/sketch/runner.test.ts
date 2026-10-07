@@ -229,6 +229,7 @@ async function start(
 				joinEffects: true,
 				depthPrepass: false,
 				vertexSkinning: false,
+				indexInstances: false,
 				shadowDepthBits: 16,
 				largeWorld: false,
 				gpuOcclusion: false,

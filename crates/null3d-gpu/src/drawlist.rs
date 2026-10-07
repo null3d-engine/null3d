@@ -349,9 +349,12 @@ pub mod format {
     /// Depth as a 16-bit unsigned normalized number: half the bytes of `DEPTH32_FLOAT`, with even
     /// steps of 1 / 65,535 from 0 to 1. WebGL2 calls it `DEPTH_COMPONENT16`.
     pub const DEPTH16_UNORM: u32 = 22;
+    /// Four 32-bit unsigned integers per texel: data of several kinds in one data texture, such as
+    /// WebGL2's light grid and light records, which shaders read as integers or turn into floats.
+    pub const RGBA32_UINT: u32 = 23;
 
     /// Every format.
-    pub const ALL: [u32; 23] = [
+    pub const ALL: [u32; 24] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -375,6 +378,7 @@ pub mod format {
         R32_FLOAT,
         BC6H_RGB_UFLOAT,
         DEPTH16_UNORM,
+        RGBA32_UINT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -442,6 +446,7 @@ pub mod format {
             DEPTH16_UNORM => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
+            | RGBA32_UINT
             | ASTC_4X4_UNORM
             | ASTC_4X4_UNORM_SRGB
             | BC7_RGBA_UNORM
@@ -668,6 +673,12 @@ pub mod layout {
     /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
     /// textures that the step reads with `textureLoad`.
     pub const AO: u32 = 18;
+    /// The group after a template's own groups in the WebGPU builds that read their instances by
+    /// index ([`INSTANCE_INDEX`](super::permutation::INSTANCE_INDEX)): the view's culling
+    /// parameters as a uniform block, for the offset from the camera to each cell, then the world
+    /// matrices, the bucket table and the bucket records of the layout that the view draws, which
+    /// vertex shaders read.
+    pub const INSTANCE_INDEX: u32 = 20;
     /// Group 0 of a custom effect's pass: the effect's uniform block, or every effect's block for a
     /// group of joined effects, the color it reads, a linear sampler, and the scene's depth as
     /// unfilterable floats, or a blank texture where no effect reads depth.
@@ -739,11 +750,16 @@ pub mod permutation {
     /// The outline mask template marks the parts of outlined objects that nothing hides. Without
     /// it, the template marks every part, hidden or not.
     pub const OUTLINE_VISIBLE: u32 = 65536;
+    /// On WebGPU, the vertex shader reads its instance by index: an instance-rate vertex attribute
+    /// names the source, and the shader reads the source's world matrix, its bucket's material and
+    /// its cell's offset from storage buffers, instead of a copy that the culling shader writes.
+    /// Only the test switch for index-only instance data asks for it (decision record D-23).
+    pub const INSTANCE_INDEX: u32 = 131072;
     /// A custom effect reads the scene's depth from a multisampled target, at sample 0.
     pub const DEPTH_MULTISAMPLED: u32 = 262144;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 18] = [
+    pub const NAMES: [(&str, u32); 19] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -761,6 +777,7 @@ pub mod permutation {
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("INSTANCE_INDEX", INSTANCE_INDEX),
         ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
     ];
 
@@ -770,6 +787,25 @@ pub mod permutation {
     /// build writes the engine's variants into one module for each GPU path and each value of
     /// these bits, and a page loads only its own.
     pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP | HALF;
+
+    /// Pairs of bits that no build holds together, so the shader build makes no build with both.
+    /// A mesh that WebGPU skins in the vertex shader reads the culling shader's copies, so the
+    /// builds that read their instances by index never skin: those builds would load with the
+    /// skinning feature and double its WebGPU files.
+    pub const APART: [(u32, u32); 1] = [(SKIN, INSTANCE_INDEX)];
+
+    /// True when a permutation word holds no pair of [`APART`].
+    pub const fn buildable(word: u32) -> bool {
+        let mut k = 0;
+        while k < APART.len() {
+            let (a, b) = APART[k];
+            if word & a != 0 && word & b != 0 {
+                return false;
+            }
+            k += 1;
+        }
+        true
+    }
 
     /// Every bit.
     pub const ALL: u32 = {
@@ -1178,6 +1214,9 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
+    /// Bytes per compacted instance that a vertex shader reads by index: the source's index in a
+    /// whole 16-byte entry, which the culling shader writes as one vector.
+    pub const INDEX_STRIDE: u32 = 16;
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, and the
@@ -1190,9 +1229,10 @@ pub mod sizes {
     /// 32-bit words per indexed indirect draw.
     pub const INDIRECT_WORDS: u32 = 5;
     /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
-    /// local sphere's radius, its first draw and draw count, the sphere's centre, and the first
-    /// joint of a skin that the vertex shader skins.
-    pub const BUCKET_WORDS: u32 = 9;
+    /// local sphere's radius, its first draw and draw count, the sphere's centre, the first joint
+    /// of a skin that the vertex shader skins, and 1 for a bucket whose slice holds source indices
+    /// instead of copies of the matrices.
+    pub const BUCKET_WORDS: u32 = 10;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
@@ -1206,9 +1246,13 @@ pub mod sizes {
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
-    /// Light records per row of the WebGL2 light list's data texture, four texels each. A
-    /// power of two.
-    pub const LIGHTS_PER_TEXTURE_ROW: u32 = 512;
+    /// Light records per row of WebGL2's light data texture, four texels each, from its first
+    /// column. A power of two.
+    pub const LIGHTS_PER_TEXTURE_ROW: u32 = 256;
+    /// Words of the light grid per row of WebGL2's light data texture, four to a texel, in the
+    /// columns after the light records'. A power of two. The texture is 2,048 texels wide, the
+    /// width that every WebGL2 device allows.
+    pub const GRID_WORDS_PER_TEXTURE_ROW: u32 = 4096;
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
@@ -1222,6 +1266,10 @@ pub mod sizes {
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
+    /// The units that the standard material's maps share on WebGL2, which gives a shader stage
+    /// only 16 texture units: the group's first bindings hold the units' arrays, and the bindings
+    /// from [`MAP_SLOTS`] their samplers.
+    pub const SHARED_MAP_UNITS: u32 = 6;
     /// Grid cells in use at most, which the shaders' tables of offsets from the camera to each
     /// cell hold, one `vec4f` each.
     pub const MAX_CELLS: u32 = 512;
@@ -1525,6 +1573,7 @@ pub fn typescript_constants() -> String {
                 ("R32_FLOAT", format::R32_FLOAT),
                 ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
                 ("DEPTH16_UNORM", format::DEPTH16_UNORM),
+                ("RGBA32_UINT", format::RGBA32_UINT),
             ],
         ),
         (
@@ -1614,6 +1663,7 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
+                ("INSTANCE_INDEX", layout::INSTANCE_INDEX),
                 ("EFFECT", layout::EFFECT),
                 ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
@@ -1728,6 +1778,7 @@ pub fn typescript_constants() -> String {
             "SIZE",
             &[
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
+                ("INDEX_STRIDE", sizes::INDEX_STRIDE),
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
                 ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
@@ -1738,11 +1789,16 @@ pub fn typescript_constants() -> String {
                 ("INDICES_PER_TEXTURE_ROW", sizes::INDICES_PER_TEXTURE_ROW),
                 ("LIGHT_RECORD_BYTES", sizes::LIGHT_RECORD_BYTES),
                 ("LIGHTS_PER_TEXTURE_ROW", sizes::LIGHTS_PER_TEXTURE_ROW),
+                (
+                    "GRID_WORDS_PER_TEXTURE_ROW",
+                    sizes::GRID_WORDS_PER_TEXTURE_ROW,
+                ),
                 ("DRAW_RECORD_BYTES", sizes::DRAW_RECORD_BYTES),
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAP_SLOTS", sizes::MAP_SLOTS),
+                ("SHARED_MAP_UNITS", sizes::SHARED_MAP_UNITS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
@@ -1818,7 +1874,6 @@ mod tests {
         for line in [
             format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
-            format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
             format!("const MAX_RANGES: u32 = {}u;", sizes::MAX_CULL_RANGES),
             format!(
                 "const WORKGROUP_SIZE: u32 = {}u;",

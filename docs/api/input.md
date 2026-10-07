@@ -104,7 +104,7 @@ A canvas that takes touch gestures needs `touch-action: none` in its CSS. Withou
 
 ## Pointer events on objects
 
-`object.on(type, handler)` calls `handler` for each pointer event of `type` on an object, and `object.off(type, handler)` removes it. Instance batches take the same calls, and the event's `instance` names the row. The engine finds the object under the pointer itself, so the sketch needs no raycast of its own.
+`object.on(type, handler)` calls `handler` for each pointer event of `type` on an object, and `object.off(type, handler)` removes it. Instance batches take the same calls, and the event's `instance` names the row. So do [sprite](sprites.md), [point](points.md) and [line](lines.md) batches, whose `instance` names the sprite, the point or the line's segment. The engine finds the object under the pointer itself, so the sketch needs no raycast of its own.
 
 ```ts
 export default defineSketch(({ scene, geometry, materials, page }) => {
@@ -131,7 +131,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 
 ### Which object gets the event
 
-- The engine casts a ray from the camera through the pointer. The closest object or instance row that the ray hits gets the event. Objects behind it get nothing, so a wall in front of a box takes the click.
+- The engine casts a ray from the camera through the pointer. The closest object or row of a batch that the ray hits gets the event. Sprites, points and lines are hit where they draw, with the camera of the frame on screen at the event. Objects behind it get nothing, so a wall in front of a box takes the click.
 - The ray tests the objects on the layers that the camera draws, as [Raycasting](raycast.md) tests them. Hidden objects are never hit. A see-through object, such as a glass pane, takes the event too. To pick through it, cast your own ray with `camera.screenToRay` and `scene.raycast` on the layers you choose.
 - The event then goes to the object's parent, and on up to the root object. An event on a web page goes up through the elements that hold its target in the same way. So a handler on a model's group hears the clicks on every part of the model. `event.stopPropagation()` stops the event before the next parent.
 - A `click` goes to the closest object that was under the pointer at both the press and the release. A press on one child of a group and a release on another click the group.
@@ -152,8 +152,8 @@ The engine passes one event object to every handler and reuses it, so copy any v
 | Field | Value |
 | --- | --- |
 | `type` | The event's type |
-| `object` | The object under the pointer, or the instance batch of a row. It can be a child of the object whose handler runs. For `pointerleave`, it is the object that the pointer moved onto, or null |
-| `instance` | The row of an instance batch, or -1 for an object |
+| `object` | The object under the pointer, or the batch of a row: an instance, sprite, point or line batch. It can be a child of the object whose handler runs. For `pointerleave`, it is the object that the pointer moved onto, or null |
+| `instance` | The row of a batch: an instance row, a sprite, a point or a line's segment. -1 for an object |
 | `point`, `normal`, `distance`, `triangle` | Where the ray hit `object`, as a [raycast's hit](raycast.md#raycasts) gives them |
 | `ray` | The ray from the camera through the pointer, from the frame that was on screen at the event |
 | `x`, `y` | The pointer's position in CSS pixels from the canvas's top-left corner |
@@ -301,12 +301,12 @@ A pointer event on an object, which the handlers of `object.on` take. The engine
 | Member | Description |
 | --- | --- |
 | `readonly type: ObjectEventType` | The event's type. |
-| `readonly object: Object3D \| InstanceBatch \| null` | The object under the pointer: the closest object that the ray hits, or the instance batch of a row. It can be a child of the object whose handler runs. For `pointerleave`, it is the object that the pointer moved onto, or null when the pointer is over nothing. |
-| `readonly instance: number` | The row of an instance batch, or -1 for an object. |
+| `readonly object: Object3D \| InstanceBatch \| SpriteBatch \| PointBatch \| LineBatch \| null` | The object under the pointer: the closest object that the ray hits, or the batch of a row: an instance, sprite, point or line batch. It can be a child of the object whose handler runs. For `pointerleave`, it is the object that the pointer moved onto, or null when the pointer is over nothing. |
+| `readonly instance: number` | The row of a batch: an instance row, a sprite, a point or a line's segment. -1 for an object. |
 | `readonly point: Vec3Like` | Where the ray hits `object`, in world space. |
-| `readonly normal: Vec3Like` | The unit normal of the hit triangle in world space, on the side that faces the camera. |
+| `readonly normal: Vec3Like` | The unit normal of the hit triangle in world space, on the side that faces the camera. A hit on a sprite or a point faces the camera; on a line, it points back along the ray. |
 | `readonly distance: number` | The distance from the ray's origin to the hit, in meters. |
-| `readonly triangle: number` | The index of the hit triangle in its mesh, as three.js's `faceIndex`. |
+| `readonly triangle: number` | The index of the hit triangle in its mesh, as three.js's `faceIndex`, or -1 for a sprite, a point or a line. |
 | `readonly ray: Ray` | The ray from the camera through the pointer, from the frame that was on screen at the event. |
 | `readonly x: number` | The pointer's distance from the canvas's left edge in CSS pixels. |
 | `readonly y: number` | The pointer's distance from the canvas's top edge in CSS pixels. |

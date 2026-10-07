@@ -1,6 +1,7 @@
 //! Standard materials with texture maps, drawn by both frame builders: the template and variant
-//! each set of maps picks, and the map set's bind group that the material draws with. Checked
-//! through the mock backend, which rejects what a real GPU would, and by decoding the lists.
+//! each set of maps picks, and the map set's bind group that the material draws with. On WebGPU
+//! each map slot has a binding of its own; on WebGL2 the maps share a few units. Checked through
+//! the mock backend, which rejects what a real GPU would, and by decoding the lists.
 
 mod common;
 
@@ -95,7 +96,9 @@ fn map_sets(commands: &[(Op, Vec<u32>)]) -> Vec<Vec<u32>> {
         .collect()
 }
 
-fn check<B: FrameBuilder>(mut world: World<B>) {
+/// Checks the maps of `world`, whose builder shares units among a standard material's maps when
+/// `shared` is true.
+fn check<B: FrameBuilder>(mut world: World<B>, shared: bool) {
     let linear = TextureDesc {
         format: format::RGBA8_UNORM,
         ..map_desc(SIZE)
@@ -141,30 +144,47 @@ fn check<B: FrameBuilder>(mut world: World<B>) {
         vec![(0, uvs), (permutation::VERTEX_TANGENT, tangents)],
         "a normal map needs its own variant only on a mesh with tangents"
     );
-    // Three sets of maps: the base color map alone, with the normal map, and the emissive map.
-    // Each slot without a map binds the one white texel's texture.
     let sets = map_sets(&commands);
-    assert_eq!(sets.len(), 3);
-    let empty = sets[0][MapSlot::MetalRough as usize];
-    for set in &sets {
-        for slot in [MapSlot::MetalRough, MapSlot::Occlusion, MapSlot::Light] {
-            assert_eq!(set[slot as usize], empty);
-        }
-    }
     let settings = world.renderer.settings();
     let pipeline = settings.pipeline_of(colored.0, colored.1).unwrap();
     assert_eq!(pipeline.template, template::INSTANCED_STANDARD_MAPS);
     let glow = settings.pipeline_of(glowing.0, glowing.1).unwrap();
-    assert_ne!(
+    let (colored_group, glowing_group) = (
         settings.texture_group(colored.1, pipeline),
         settings.texture_group(glowing.1, glow),
-        "the emissive map sits in another slot, so another set"
     );
+    if shared {
+        // Two sets: the base color map's array alone, and with the normal map's after it. The
+        // emissive map shares the base color map's array and sampler, so it shares its unit and
+        // its set. Each unit without a map binds the one white texel's texture.
+        assert_eq!(sets.len(), 2);
+        assert_eq!(colored_group, glowing_group);
+        let empty = sets[0][1];
+        assert_ne!(sets[1][1], empty, "the normal map takes the second unit");
+        for set in &sets {
+            assert_ne!(set[0], empty);
+            assert!(set[2..].iter().all(|&texture| texture == empty));
+        }
+    } else {
+        // Three sets of maps: the base color map alone, with the normal map, and the emissive
+        // map. Each slot without a map binds the one white texel's texture.
+        assert_eq!(sets.len(), 3);
+        let empty = sets[0][MapSlot::MetalRough as usize];
+        for set in &sets {
+            for slot in [MapSlot::MetalRough, MapSlot::Occlusion, MapSlot::Light] {
+                assert_eq!(set[slot as usize], empty);
+            }
+        }
+        assert_ne!(
+            colored_group, glowing_group,
+            "the emissive map sits in another slot, so another set"
+        );
+    }
 }
 
 #[test]
 fn maps_pick_their_template_variant_and_map_set_on_webgpu() {
-    check(World::new());
+    check(World::new(), false);
 }
 
 #[test]
@@ -174,6 +194,6 @@ fn maps_pick_their_template_variant_and_map_set_on_webgl2() {
             multi_draw,
             ..CpuCulledConfig::default()
         };
-        check(World::build(CpuCulledRenderer::new(config)));
+        check(World::build(CpuCulledRenderer::new(config)), true);
     }
 }

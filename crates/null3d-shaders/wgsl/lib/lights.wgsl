@@ -20,9 +20,10 @@
 // word per cluster, then the light index list. A cluster's word holds where its lights start in
 // the grid in its low START_BITS bits, and how many there are in the bits above. The light list at
 // binding 8 holds the lights, four vectors each. On WebGPU both are storage buffers that fragment
-// shaders read. On WebGL2 (the WEBGL2 builds) both are data textures read with `textureLoad`: the
-// grid one word per texel, and the lights four texels each. The frame's `cluster_depth` and
-// `cluster_grid` find a position's cluster.
+// shaders read. On WebGL2 (the WEBGL2 builds) both share one data texture of 32-bit integers at
+// binding 7, read with `textureLoad`, so they take one texture unit: the lights in the columns of
+// its first half, four texels each, and the grid in the columns of its second half, four words per
+// texel. The frame's `cluster_depth` and `cluster_grid` find a position's cluster.
 
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
@@ -45,13 +46,15 @@ struct PointLight {
 }
 
 #ifdef WEBGL2
-/// Words per row of the light grid's data texture are 1 << WORD_ROW_SHIFT.
-const WORD_ROW_SHIFT: u32 = 11u;
-/// Lights per row of the light list's data texture are 1 << LIGHT_ROW_SHIFT, four texels each.
-const LIGHT_ROW_SHIFT: u32 = 9u;
+/// Lights per row of the light data texture are 1 << LIGHT_ROW_SHIFT, four texels each, from its
+/// first column.
+const LIGHT_ROW_SHIFT: u32 = 8u;
+/// Words of the light grid per row of the light data texture are 1 << WORD_ROW_SHIFT, four per
+/// texel, from column GRID_COLUMN.
+const WORD_ROW_SHIFT: u32 = 12u;
+const GRID_COLUMN: u32 = 1024u;
 
-@group(0) @binding(7) var light_grid: texture_2d<u32>;
-@group(0) @binding(8) var light_list: texture_2d<f32>;
+@group(0) @binding(7) var light_data: texture_2d<u32>;
 #else
 @group(0) @binding(7) var<storage, read> light_grid: array<u32>;
 @group(0) @binding(8) var<storage, read> light_list: array<PointLight>;
@@ -60,8 +63,9 @@ const LIGHT_ROW_SHIFT: u32 = 9u;
 /// Word `i` of the light grid.
 fn grid_word(i: u32) -> u32 {
 #ifdef WEBGL2
-    let row = (1u << WORD_ROW_SHIFT) - 1u;
-    return textureLoad(light_grid, vec2u(i & row, i >> WORD_ROW_SHIFT), 0).x;
+    let within = i & ((1u << WORD_ROW_SHIFT) - 1u);
+    let at = vec2u(GRID_COLUMN + (within >> 2u), i >> WORD_ROW_SHIFT);
+    return textureLoad(light_data, at, 0)[within & 3u];
 #else
     return light_grid[i];
 #endif
@@ -73,10 +77,10 @@ fn light_of(i: u32) -> PointLight {
     let row = (1u << LIGHT_ROW_SHIFT) - 1u;
     let at = vec2u((i & row) * 4u, i >> LIGHT_ROW_SHIFT);
     return PointLight(
-        textureLoad(light_list, at, 0),
-        textureLoad(light_list, at + vec2u(1u, 0u), 0),
-        textureLoad(light_list, at + vec2u(2u, 0u), 0),
-        textureLoad(light_list, at + vec2u(3u, 0u), 0),
+        bitcast<vec4f>(textureLoad(light_data, at, 0)),
+        bitcast<vec4f>(textureLoad(light_data, at + vec2u(1u, 0u), 0)),
+        bitcast<vec4f>(textureLoad(light_data, at + vec2u(2u, 0u), 0)),
+        bitcast<vec4f>(textureLoad(light_data, at + vec2u(3u, 0u), 0)),
     );
 #else
     return light_list[i];

@@ -1721,7 +1721,9 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
  * single-threaded build takes no shared memory, so any room it loses is address space. Room that
  * engines on kept canvases left held gets a note too: their starts go past the room, so a start
  * fails when that memory stops it. So does room that stopped engines in removed frames left held,
- * which Safari keeps with the frame's page.
+ * which Safari keeps with the frame's page. Room that running engines in removed frames left held in
+ * the first round, and that the second round kept, gets a note as well: a leak in the engine loses
+ * room in every round.
  */
 export function restartProblems(
 	result: RestartResult,
@@ -1756,6 +1758,7 @@ export function restartProblems(
 			);
 		return problems;
 	}
+	const fell = again ? (result.room ?? 0) - (again.roomLater ?? again.room) : 0;
 	if (!again)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: ${lostText}`,
@@ -1765,7 +1768,14 @@ export function restartProblems(
 		problems.push(
 			`the browser did not get back the memory of ${words.engines} in two rounds: ${lostText}, then for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}`,
 		);
-	else if (threaded && (result.room ?? 0) - (again.roomLater ?? again.room) > ROOM_LOST_ONCE)
+	else if (start === 'frame' && fell > ROOM_LOST_ONCE)
+		// Safari can keep what a removed frame reached (D-92), and a dropped memory that held one of
+		// its fast slots while the page keeps asking for memory (D-94). Both cost room once. A leak
+		// in the engine would lose room in the second round too, which fails above.
+		note?.(
+			`Safari kept memory from the first round of ${words.engines}, and the second round held the room: ${lostText}, and for ${again.roomLater} after ${again.cycles} more`,
+		);
+	else if (threaded && fell > ROOM_LOST_ONCE)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}: ${lostText}, and for ${again.roomLater} after ${again.cycles} more, more than the ${ROOM_LOST_ONCE} that lost address space explains`,
 		);

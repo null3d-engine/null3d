@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'bun:test';
 import { type Accessor, Document, type Node } from '@gltf-transform/core';
 import { EXTMeshGPUInstancing } from '@gltf-transform/extensions';
+import { POSITION_BITS, quantizeMeshes, reorderMeshes } from './geometry.js';
 import {
+	LOD_MAX_LEVELS,
 	LOD_SCREEN_PIXELS,
 	levelCoverage,
-	POSITION_BITS,
 	planLevels,
-	quantizeMeshes,
-	reorderMeshes,
+	simplifyMeshes,
 	storeLevels,
-} from './geometry.js';
+} from './levels.js';
 import { lodOf } from './lod-extension.js';
 
 type Vec3 = [number, number, number];
@@ -300,14 +300,65 @@ describe('quantizeMeshes', () => {
 	});
 });
 
+/** The triangles of a node's mesh, as lists of vertex numbers. */
+const triangles = (node: Node) => {
+	const indices = node.getMesh()!.listPrimitives()[0]!.getIndices()!.getArray()!;
+	return Array.from({ length: indices.length / 3 }, (_, t) => [
+		indices[t * 3]!,
+		indices[t * 3 + 1]!,
+		indices[t * 3 + 2]!,
+	]);
+};
+
+/**
+ * A grid whose every triangle has its own three vertices, as an exporter of flat faces writes it,
+ * with the same normal at each copy of a place, or a normal per triangle.
+ */
+function unwelded(doc: Document, n: number, size: number, flat: boolean) {
+	const smooth = grid(doc, n, size).listPrimitives()[0]!;
+	const indices = smooth.getIndices()!.getArray()!;
+	const source = smooth.getAttribute('POSITION')!;
+	const uv = smooth.getAttribute('TEXCOORD_0')!;
+	const positions = new Float32Array(indices.length * 3);
+	const normals = new Float32Array(indices.length * 3);
+	const uvs = new Float32Array(indices.length * 2);
+	for (let k = 0; k < indices.length; k++) {
+		positions.set(element(source, indices[k]!), k * 3);
+		uvs.set(element(uv, indices[k]!), k * 2);
+		const tilt = flat ? Math.floor(k / 3) % 7 : 0;
+		const normal = [tilt / 10, 1, 0];
+		const length = Math.hypot(...normal);
+		normals.set(
+			normal.map((v) => v / length),
+			k * 3,
+		);
+	}
+	const buffer = doc.getRoot().listBuffers()[0]!;
+	const prim = doc
+		.createPrimitive()
+		.setAttribute(
+			'POSITION',
+			doc.createAccessor().setType('VEC3').setArray(positions).setBuffer(buffer),
+		)
+		.setAttribute(
+			'NORMAL',
+			doc.createAccessor().setType('VEC3').setArray(normals).setBuffer(buffer),
+		)
+		.setAttribute(
+			'TEXCOORD_0',
+			doc.createAccessor().setType('VEC2').setArray(uvs).setBuffer(buffer),
+		);
+	return doc.createMesh(flat ? 'flat' : 'split').addPrimitive(prim);
+}
+
 describe('levels of detail', () => {
 	it('give each level a coverage at which its error spans under a pixel', () => {
-		expect(levelCoverage([{ error: 0.01 }, { error: 0.05 }])).toEqual([
-			1 / (LOD_SCREEN_PIXELS * 0.01),
-			1 / (LOD_SCREEN_PIXELS * 0.05),
+		expect(levelCoverage([{ error: 0.02 }, { error: 0.1 }], 2)).toEqual([
+			2 / (LOD_SCREEN_PIXELS * 0.02),
+			2 / (LOD_SCREEN_PIXELS * 0.1),
 			0,
 		]);
-		expect(levelCoverage([{ error: 0 }])).toEqual([1, 0]);
+		expect(levelCoverage([{ error: 0 }], 1)).toEqual([1, 0]);
 	});
 
 	it('simplify a large mesh into levels with fewer triangles that share its vertices', async () => {
@@ -315,57 +366,179 @@ describe('levels of detail', () => {
 		const mesh = grid(doc, 32, 4);
 		const node = doc.createNode('terrain').setMesh(mesh).setTranslation([0, 3, 0]);
 		doc.createScene().addChild(node);
-		const small = doc.createNode('tiny').setMesh(grid(doc, 4, 1));
+		const small = doc.createNode('tiny').setMesh(grid(doc, 5, 1));
 		doc.getRoot().listScenes()[0]!.addChild(small);
 		await reorderMeshes(doc);
+		quantizeMeshes(doc);
 		const plans = await planLevels(doc);
 		expect([...plans.keys()]).toEqual([mesh]);
-		quantizeMeshes(doc);
 		storeLevels(doc, plans);
 		const lod = lodOf(node)!;
-		const counts = [node, ...lod.listLevels()].map(
-			(n) => n.getMesh()!.listPrimitives()[0]!.getIndices()!.getCount() / 3,
-		);
+		const counts = [node, ...lod.listLevels()].map((n) => triangles(n).length);
 		expect(counts[0]).toBe(32 * 32 * 2);
-		for (let k = 1; k < counts.length; k++) expect(counts[k]!).toBeLessThan(counts[k - 1]!);
+		expect(counts.length).toBeGreaterThan(3);
+		expect(counts.length).toBeLessThanOrEqual(LOD_MAX_LEVELS + 1);
+		for (let k = 1; k < counts.length; k++) expect(counts[k]!).toBeLessThan(counts[k - 1]! * 0.75);
+		const errors = lod.getErrors();
+		expect(errors.length).toBe(counts.length - 1);
+		for (let k = 1; k < errors.length; k++)
+			expect(errors[k]!).toBeGreaterThanOrEqual(errors[k - 1]! * 1.5 - 1e-9);
 		for (const level of lod.listLevels()) {
+			expect(level.getMesh()!.listPrimitives()[0]!.getAttribute('POSITION')).toBe(
+				mesh.listPrimitives()[0]!.getAttribute('POSITION'),
+			);
 			expect(level.getTranslation()).toEqual(node.getTranslation());
 			expect(level.getScale()).toEqual(node.getScale());
 		}
 		expect(lodOf(small)).toBeNull();
 	});
 
-	it('simplify a mesh of flat faces, whose every edge is a seam, by letting the seams move', async () => {
+	it('store each error in the units of the stored positions, as quantized or not', async () => {
+		const plan = async (quantize: boolean) => {
+			const doc = new Document();
+			const mesh = grid(doc, 24, 4);
+			doc.createScene().addChild(doc.createNode().setMesh(mesh));
+			await reorderMeshes(doc);
+			if (quantize) quantizeMeshes(doc);
+			const { side, levels } = (await planLevels(doc)).get(mesh)!;
+			return { side, errors: levels.map((level) => level.error) };
+		};
+		const float = await plan(false);
+		const quantized = await plan(true);
+		expect(float.side).toBeCloseTo(4, 5);
+		expect(quantized.side).toBe(2 ** POSITION_BITS - 1);
+		// The same mesh in steps of 4 / 16,383 has the same errors in its own units.
+		expect(quantized.errors.length).toBe(float.errors.length);
+		quantized.errors.forEach((error, k) => {
+			const share = error / quantized.side;
+			expect(share).toBeGreaterThan((float.errors[k]! / float.side) * 0.7);
+			expect(share).toBeLessThan((float.errors[k]! / float.side) * 1.3);
+		});
+	});
+
+	it('weld the copies of each vertex before planning, so a mesh split into triangles simplifies', async () => {
 		const doc = new Document();
-		const smooth = grid(doc, 24, 4).listPrimitives()[0]!;
-		const indices = smooth.getIndices()!.getArray()!;
-		const source = smooth.getAttribute('POSITION')!;
-		const positions = new Float32Array(indices.length * 3);
-		const normals = new Float32Array(indices.length * 3);
-		for (let k = 0; k < indices.length; k++) {
-			positions.set(element(source, indices[k]!), k * 3);
-			normals.set([0, 1, (k % 7) / 10], k * 3);
+		const split = unwelded(doc, 24, 4, false);
+		doc.createScene().addChild(doc.createNode('split').setMesh(split));
+		const plans = await planLevels(doc);
+		const levels = plans.get(split)?.levels ?? [];
+		expect(levels.length).toBeGreaterThan(2);
+		expect(levels[0]!.triangles).toBeLessThanOrEqual(24 * 24 * 2 * 0.55);
+	});
+
+	it('simplify a mesh of flat faces by letting normal seams move, but keep texture seams', async () => {
+		const doc = new Document();
+		const flat = unwelded(doc, 24, 4, true);
+		const prim = flat.listPrimitives()[0]!;
+		// Each triangle right of the middle reads the texture's other half, so the vertices down the
+		// middle have a copy on each side of a texture seam.
+		const uvs = prim.getAttribute('TEXCOORD_0')!;
+		const position = prim.getAttribute('POSITION')!;
+		const shifted = new Float32Array(uvs.getArray()!);
+		const right = new Set<number>();
+		for (let t = 0; t < position.getCount(); t += 3) {
+			const x = [0, 1, 2].reduce((sum, c) => sum + element(position, t + c)[0]!, 0) / 3;
+			if (x > 2)
+				for (let c = 0; c < 3; c++) {
+					right.add(t + c);
+					shifted[(t + c) * 2 + 1]! += 0.5;
+				}
 		}
-		const buffer = doc.getRoot().listBuffers()[0]!;
-		const flat = doc
-			.createMesh('flat')
-			.addPrimitive(
-				doc
-					.createPrimitive()
-					.setAttribute(
-						'POSITION',
-						doc.createAccessor().setType('VEC3').setArray(positions).setBuffer(buffer),
-					)
-					.setAttribute(
-						'NORMAL',
-						doc.createAccessor().setType('VEC3').setArray(normals).setBuffer(buffer),
-					),
-			);
+		uvs.setArray(shifted);
 		doc.createScene().addChild(doc.createNode('flat').setMesh(flat));
-		await reorderMeshes(doc);
 		const plans = await planLevels(doc);
 		const levels = plans.get(flat)?.levels ?? [];
 		expect(levels.length).toBeGreaterThan(0);
-		expect(levels[0]!.triangles).toBeLessThan(24 * 24 * 2 * 0.8);
+		expect(levels[0]!.triangles).toBeLessThan(24 * 24 * 2 * 0.75);
+		for (const level of levels) {
+			const indices = level.indices[0]!;
+			for (let t = 0; t < indices.length; t += 3) {
+				const halves = new Set([0, 1, 2].map((c) => right.has(indices[t + c]!)));
+				expect(halves.size).toBe(1);
+			}
+		}
+	});
+
+	it('plan a skinned mesh in its rest pose, and give its errors in the units of that pose', async () => {
+		const plan = async (scale: number) => {
+			const doc = new Document();
+			const mesh = grid(doc, 24, 4);
+			const prim = mesh.listPrimitives()[0]!;
+			const count = prim.getAttribute('POSITION')!.getCount();
+			const buffer = doc.getRoot().listBuffers()[0]!;
+			const joints = new Uint8Array(count * 4);
+			const weights = new Float32Array(count * 4).map((_, i) => (i % 4 === 0 ? 1 : 0));
+			prim
+				.setAttribute(
+					'JOINTS_0',
+					doc.createAccessor().setType('VEC4').setArray(joints).setBuffer(buffer),
+				)
+				.setAttribute(
+					'WEIGHTS_0',
+					doc.createAccessor().setType('VEC4').setArray(weights).setBuffer(buffer),
+				);
+			const joint = doc.createNode('joint').setScale([scale, scale, scale]);
+			const skin = doc.createSkin().addJoint(joint);
+			doc.createScene().addChild(joint).addChild(doc.createNode().setMesh(mesh).setSkin(skin));
+			const { side, levels } = (await planLevels(doc)).get(mesh)!;
+			return { side, errors: levels.map((level) => level.error) };
+		};
+		const plain = await plan(1);
+		const large = await plan(100);
+		// A skeleton 100 times larger draws the mesh 100 times larger, with the same levels.
+		expect(large.side).toBeCloseTo(400, 1);
+		expect(large.errors.length).toBe(plain.errors.length);
+		large.errors.forEach((error, k) => {
+			expect(error / 100).toBeCloseTo(plain.errors[k]!, 4);
+		});
+	});
+
+	it('give the nodes of each level the instances of the node they stand in for', async () => {
+		const doc = new Document();
+		const mesh = grid(doc, 16, 2);
+		const node = doc.createNode('batch').setMesh(mesh);
+		const buffer = doc.getRoot().listBuffers()[0]!;
+		node.setExtension(
+			'EXT_mesh_gpu_instancing',
+			doc
+				.createExtension(EXTMeshGPUInstancing)
+				.createInstancedMesh()
+				.setAttribute(
+					'TRANSLATION',
+					doc
+						.createAccessor()
+						.setType('VEC3')
+						.setArray(new Float32Array([0, 0, 0, 5, 0, 5]))
+						.setBuffer(buffer),
+				),
+		);
+		doc.createScene().addChild(node);
+		storeLevels(doc, await planLevels(doc));
+		const levels = lodOf(node)!.listLevels();
+		expect(levels.length).toBeGreaterThan(0);
+		for (const level of levels) {
+			const instances = level.getExtension('EXT_mesh_gpu_instancing') as unknown as {
+				getAttribute(semantic: string): Accessor | null;
+			};
+			expect(instances.getAttribute('TRANSLATION')!.getCount()).toBe(2);
+		}
+	});
+});
+
+describe('simplifyMeshes', () => {
+	it("keeps a share of a mesh's triangles where the shape allows, and leaves a box alone", async () => {
+		const doc = new Document();
+		const terrain = grid(doc, 24, 4);
+		const box = unwelded(doc, 1, 1, true);
+		doc
+			.createScene()
+			.addChild(doc.createNode().setMesh(terrain))
+			.addChild(doc.createNode().setMesh(box));
+		const boxIndices = box.listPrimitives()[0]!.getIndices();
+		await simplifyMeshes(doc, 0.5);
+		const kept = terrain.listPrimitives()[0]!.getIndices()!.getCount() / 3;
+		expect(kept).toBeLessThanOrEqual(24 * 24 * 2 * 0.5);
+		expect(kept).toBeGreaterThan(0);
+		expect(box.listPrimitives()[0]!.getIndices()).toBe(boxIndices);
 	});
 });

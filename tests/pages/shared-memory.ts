@@ -46,12 +46,17 @@ const MIN_CYCLES = 3;
 const UNCOUNTED_CYCLES = 10;
 /** How long the page waits after a worker is ready, so that a blocking worker is inside its wait. */
 const SETTLE_MS = 50;
-/** How long a worker may take to get ready, and the engine to start and to draw its first frame. */
+/** How long a worker may take to get ready, and the engine to draw its first frame. */
 const READY_TIMEOUT_MS = 5_000;
 const ENGINE_TIMEOUT_MS = 20_000;
 /**
+ * How long the engine may take to start: its own wait of about 45 seconds for memory that the
+ * browser refuses, and the rest of the start.
+ */
+const START_TIMEOUT_MS = 60_000;
+/**
  * How long, in all, the starts that the browser refuses may wait for it to free the stopped
- * engines' memory, beyond the engine's own wait of about 10 seconds for each start.
+ * engines' memory, beyond the engine's own wait for each start.
  */
 const LATE_STARTS_MS = 30_000;
 /** The pause before the page tries a refused start again. */
@@ -201,7 +206,7 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 				sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
 				onProgress: progress,
 			}),
-			ENGINE_TIMEOUT_MS,
+			START_TIMEOUT_MS,
 			'the engine start',
 		);
 		let stopAt = 0;
@@ -251,7 +256,7 @@ async function startEngineInFrame(destroy: boolean): Promise<void> {
 				addEventListener('message', listen);
 				document.body.append(frame);
 			}),
-			ENGINE_TIMEOUT_MS,
+			START_TIMEOUT_MS,
 			'the engine start in a frame',
 		);
 		if (message.engineFrame === 'failed')

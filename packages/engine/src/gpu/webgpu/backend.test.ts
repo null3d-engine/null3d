@@ -39,6 +39,8 @@ const MAC_CHROME =
  */
 function fakeDevice() {
 	const log: string[] = [];
+	const passes: GPURenderPassDescriptor[] = [];
+	const textures: { sampleCount: number; destroyed: boolean }[] = [];
 	const buffers: { size: number; usage: number; destroyed: boolean }[] = [];
 	const name = (buffer: unknown) => `buffer ${buffers.indexOf(buffer as (typeof buffers)[number])}`;
 	const pass = {
@@ -68,13 +70,23 @@ function fakeDevice() {
 			return Promise.resolve(pipeline);
 		},
 		createTexture(descriptor: GPUTextureDescriptor) {
-			return {
+			const [width, height] = descriptor.size as number[];
+			const texture = {
+				width,
+				height,
 				format: descriptor.format,
 				dimension: descriptor.dimension,
 				mipLevelCount: descriptor.mipLevelCount,
-				createView: () => ({}),
-				destroy() {},
+				sampleCount: descriptor.sampleCount ?? 1,
+				usage: descriptor.usage,
+				destroyed: false,
+				createView: () => ({ of: texture }),
+				destroy() {
+					texture.destroyed = true;
+				},
 			};
+			textures.push(texture);
+			return texture;
 		},
 		createBuffer({ size, usage }: GPUBufferDescriptor) {
 			const buffer = {
@@ -90,7 +102,10 @@ function fakeDevice() {
 			return buffer;
 		},
 		createCommandEncoder: () => ({
-			beginRenderPass() {
+			beginRenderPass(descriptor: GPURenderPassDescriptor) {
+				// The backend fills one descriptor again for each pass, so the log keeps copies.
+				const colors = [...descriptor.colorAttachments].map((color) => ({ ...color }));
+				passes.push({ ...descriptor, colorAttachments: colors as GPURenderPassColorAttachment[] });
 				log.push('begin pass');
 				return pass;
 			},
@@ -107,7 +122,7 @@ function fakeDevice() {
 			},
 		},
 	};
-	return { device: device as unknown as GPUDevice, log, buffers };
+	return { device: device as unknown as GPUDevice, log, buffers, passes, textures };
 }
 
 /** A draw list of commands, each a code and its operands. */
@@ -153,6 +168,91 @@ describe('WebGPUBackend', () => {
 		await settle();
 		replay(backend, drawList(texture(1, 64, 1, 3, G.VIEW_2D_ARRAY), [G.OP_GENERATE_MIPMAPS, 1, 0]));
 		expect(log.filter((entry) => entry.startsWith('build'))).toEqual([]);
+	});
+
+	it('draws a capture of a frame that resolves into the canvas into color targets of its own', () => {
+		const { device, passes, textures } = fakeDevice();
+		const canvas = device.createTexture({ size: [64, 64], format: 'rgba8unorm', usage: 0 });
+		const context = { getCurrentTexture: () => canvas } as unknown as GPUCanvasContext;
+		const backend = new WebGPUBackend(device, context, 'rgba8unorm', SHADERS);
+		const multisampled: [number, ...number[]] = [
+			G.OP_CREATE_TEXTURE,
+			...[3, 64, 64, 1, G.FORMAT_RGBA8_UNORM, G.TEXTURE_USAGE_RENDER_ATTACHMENT, 4, 1, G.VIEW_2D],
+		];
+		// The scene's multisampled color resolves into the canvas, id 0.
+		const frame = drawList(
+			[G.OP_BEGIN_RENDER_PASS, 3, 0, G.NO_TARGET, 0, 0, 0, 0, G.PASS_CLEAR_COLOR],
+			[G.OP_END_RENDER_PASS],
+		);
+		replay(backend, drawList(multisampled));
+		replay(backend, frame);
+		backend.canvasTarget = device.createTexture({ size: [64, 64], format: 'rgba8unorm', usage: 0 });
+		replay(backend, frame);
+		replay(backend, frame);
+		backend.endCapture();
+		replay(backend, frame);
+		const drawn = passes.map((pass) => {
+			const [color] = pass.colorAttachments as unknown as { view: { of: never } }[];
+			return color ? textures.indexOf(color.view.of) : -1;
+		});
+		const scene = textures.findIndex((texture) => texture.sampleCount === 4);
+		const standIn = textures.findLastIndex((texture) => texture.sampleCount === 4);
+		expect(standIn).not.toBe(scene);
+		expect(drawn).toEqual([scene, standIn, standIn, scene]);
+		expect(textures[standIn]?.destroyed).toBe(true);
+		expect(textures[scene]?.destroyed).toBe(false);
+	});
+
+	it('makes no layout with storage buffers in vertex shaders at the start, which compatibility mode refuses', () => {
+		const { device } = fakeDevice();
+		const made: string[] = [];
+		const vertexStorage = (entry: GPUBindGroupLayoutEntry) =>
+			(entry.visibility & GPUShaderStage.VERTEX) !== 0 &&
+			entry.buffer?.type !== undefined &&
+			entry.buffer.type !== 'uniform';
+		device.createBindGroupLayout = (descriptor: GPUBindGroupLayoutDescriptor) => {
+			const entries = [...descriptor.entries];
+			if (entries.some(vertexStorage))
+				throw new Error(`${descriptor.label}: no storage buffers in the vertex stage`);
+			made.push(descriptor.label ?? '');
+			return {} as GPUBindGroupLayout;
+		};
+		new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		expect(made.length).toBeGreaterThan(0);
+		expect(made).not.toContain('instance index');
+	});
+
+	it('binds at most 8 storage buffers to each shader stage of a pipeline, the default limit', () => {
+		const { device } = fakeDevice();
+		const STAGES = { vertex: 1, fragment: 2, compute: 4 };
+		const storage = (layout: GPUBindGroupLayoutDescriptor, stage: number) =>
+			[...layout.entries].filter(
+				(entry) =>
+					(entry.visibility & stage) !== 0 &&
+					entry.buffer?.type !== undefined &&
+					entry.buffer.type !== 'uniform',
+			).length;
+		const pipelineLayouts: GPUBindGroupLayoutDescriptor[][] = [];
+		device.createBindGroupLayout = (descriptor: GPUBindGroupLayoutDescriptor) =>
+			descriptor as unknown as GPUBindGroupLayout;
+		device.createPipelineLayout = (descriptor: GPUPipelineLayoutDescriptor) => {
+			pipelineLayouts.push([
+				...descriptor.bindGroupLayouts,
+			] as unknown as GPUBindGroupLayoutDescriptor[]);
+			return {} as GPUPipelineLayout;
+		};
+		new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		const cull = pipelineLayouts.find((groups) => groups.some((g) => g.label === 'cull'));
+		// Culling sits at the limit: the scene's tables, the compacted instances, which hold the
+		// index entries too, the indirect draws, which hold occlusion culling's history too, and the
+		// depth pyramid.
+		expect(cull?.reduce((sum, group) => sum + storage(group, STAGES.compute), 0)).toBe(8);
+		for (const groups of pipelineLayouts)
+			for (const [name, stage] of Object.entries(STAGES)) {
+				const count = groups.reduce((sum, group) => sum + storage(group, stage), 0);
+				const labels = groups.map((group) => group.label).join(', ');
+				expect(count, `${name} stage of ${labels}`).toBeLessThanOrEqual(8);
+			}
 	});
 
 	it('destroys a copy buffer that a larger one replaced, once its copies are submitted', () => {

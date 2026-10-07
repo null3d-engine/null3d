@@ -22,7 +22,8 @@
 #                permutations  Permutation bits by name, as the `permutation` module of
 #                              crates/null3d-gpu/src/drawlist.rs names them. The variant builds once
 #                              for each combination of them, with the names of the bits it has as
-#                              more shader defs. The build without any bit takes the variant's name,
+#                              more shader defs. A combination with both bits of a pair that the
+#                              module's `APART` lists makes no build. The build without any bit takes the variant's name,
 #                              and each other build adds the names of its bits in lowercase, in bit
 #                              order, such as `webgl2_draw_index`. Each build records its bits as
 #                              its permutation word, which the backends pick it by.
@@ -108,6 +109,13 @@
 # one draw per bucket, or many buckets in one multi-draw call. The TONE_MAP builds tone map and
 # encode their color themselves, for the 8-bit path. The library module null3d::mesh holds what
 # they share. They load by device, with the culling shader.
+#
+# The INSTANCE_INDEX builds of the WebGPU templates that the culling shader draws (the standard
+# material with and without maps, both unlit ones, the shadow depth and the outline mask) read
+# each instance by index from storage buffers in the vertex stage. Only the test switch for
+# index-only instance data draws with them (decision record D-23). They load on first use, as the
+# instance_index feature, so no page that draws without the switch downloads them. Custom
+# materials build without the bit.
 
 # The standard material, lit like three.js's MeshStandardMaterial. VERTEX_COLOR multiplies the
 # base color by the mesh's vertex colors, and ALPHA_MASK discards the fragments whose alpha falls
@@ -120,17 +128,18 @@ file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF"], targets = ["wgsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
-# occlusion, emissive and light maps. VERTEX_TANGENT takes the normal map's frame from the mesh's
-# tangents, and VERTEX_COLOR, ALPHA_MASK and RECEIVE_SHADOWS act as for the standard material.
+# occlusion, emissive, light and specular maps, which share six texture units on WebGL2.
+# VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK
+# and RECEIVE_SHADOWS act as for the standard material.
 [shaders.standard_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF"], targets = ["wgsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
@@ -139,7 +148,7 @@ variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TO
 file = "unlit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["wgsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # The material's color times its map, like three.js's MeshBasicMaterial with a map, times the
@@ -148,7 +157,7 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "unlit_map.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN"], targets = ["wgsl"] }
+variants.webgpu = { defs = ["JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # Sprites, like three.js's Sprite with a SpriteMaterial: quads of a sprite batch's rows that face
@@ -280,7 +289,7 @@ bits = ["BLOOM"]
 file = "outline_mask.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE"], targets = ["wgsl"] }
+variants.webgpu = { permutations = ["SKIN", "OUTLINE_VISIBLE", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "OUTLINE_VISIBLE", "SKIN"], targets = ["glsl"] }
 
 # Ambient occlusion's steps at a fraction of the render size, three.js's GTAOPass: `depth` copies
@@ -338,7 +347,7 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "shadow_depth.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["SKIN", "PREPASS", "CASTER_OFFSET"], targets = ["wgsl"] }
+variants.webgpu = { permutations = ["SKIN", "PREPASS", "CASTER_OFFSET", "INSTANCE_INDEX"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "CASTER_OFFSET", "SKIN", "MORPH"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
@@ -462,6 +471,11 @@ bits = ["SKIN"]
 # skinning pass, so it has no MORPH builds.
 [first_use.morph]
 bits = ["MORPH"]
+
+# A WebGPU page downloads the INSTANCE_INDEX builds when the test switch for index-only instance
+# data draws its first bucket with them.
+[first_use.instance_index]
+bits = ["INSTANCE_INDEX"]
 
 # The depth pyramid of two-phase occlusion culling, a batch of levels per dispatch; its compute
 # entry point is `main`. WebGPU only.

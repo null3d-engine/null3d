@@ -278,6 +278,7 @@ export class SketchRunner {
 			device.cellCulling,
 			device.depthPrepass,
 			device.vertexSkinning,
+			device.indexInstances,
 			device.largeWorld,
 			device.gpuOcclusion,
 			device.shadowDepthBits,
