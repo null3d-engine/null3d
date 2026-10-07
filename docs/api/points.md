@@ -8,7 +8,7 @@ summary: "createPoints; size attenuation; textures."
 
 # Points
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Points do not cast or receive shadows, and raycasts and overlap queries do not find them. Coding agents must not rely on either.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Points do not cast or receive shadows, and overlap queries do not find them. Coding agents must not rely on either.
 
 ```mermaid
 flowchart LR
@@ -114,6 +114,10 @@ A point without a map is a square. For round points, give a map of a disc, with 
 
 Opaque and masked points need no sorting, and cost the least. Blended points draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. Every frame, the engine sorts the points of a batch among themselves and among the scene's other blended objects. For points that add light, such as sparks, `blending: 'additive'` with `depthWrite: false` needs no exact order to look right.
 
+## Clicks and raycasts
+
+Raycasts hit a point where the ray crosses its square. The hit's `object` is the batch, and its `instance` is the point. A point batch takes `points.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. The `pointThreshold` option changes the test: a ray then hits a point within that many meters, whatever the point's size. That makes small points easier to click. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+
 ## Speed
 
 A batch costs about the same per point as an instance batch costs per row. The engine packs each point into the data that it keeps for an instance row. So points share the culling, sorting and drawing of instance batches. One batch of 100,000 points draws in one draw on WebGPU and WebGL2.
@@ -139,7 +143,8 @@ Most points look the same in both engines. These differ:
 - WebGL draws a point only while its center is on the screen. So a large three.js point vanishes when its center leaves the edge. A null3D point stays until its whole square leaves the screen.
 - Each GPU sets a largest size for WebGL points, and the WebGL specification lets that limit be as low as 1 pixel. null3D points have no such limit. three.js's WebGPU renderer draws `Points` one pixel wide.
 - three.js draws the points of one cloud in their order. null3D sorts blended points back to front.
-- `alphaMap` and `Raycaster`'s points threshold have no counterpart yet: raycasts do not find points.
+- `alphaMap` has no counterpart yet.
+- three.js's `Raycaster` hits a point within `params.Points.threshold`, 1 meter by default, whatever its size. null3D hits each point's square, and the `pointThreshold` option gives three.js's test.
 
 <!-- null3d:api:start -->
 
@@ -159,6 +164,8 @@ Many points: squares that face the camera, all of one size, each with its own po
 | `setActiveCount(count: number): void` | Draws only the first `count` points. |
 | `setLayers(mask: number): void` | Puts every point on the layers of a 32-bit mask. A new mask needs no rebuild. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks points of a static batch to update and upload. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on a point of the batch, as `Object3D.on` does. A ray hits a point where its square draws. The event's `instance` names the point. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 | `destroy(): void` | Removes the batch and frees its points. Its typed arrays are not valid after this: another batch can take their memory. |
 
 ### `PointOptions`

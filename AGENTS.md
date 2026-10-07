@@ -160,6 +160,17 @@ Published Markdown (every page under `docs/`, the skills, the README, the packag
 
 The docs style check catches the mechanical part of these rules. It blocks build-process words such as milestone and checkpoint, and the command line tool run by the wrong name. It checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
 
+## Record the reasons
+
+The owner set this rule on 7 October 2026. Every pull request records its reasons in `.dev/`, in the same pull request. Pull request text, commit messages and chat are not enough.
+
+- A design choice or an owner's ruling: a [decision record](.dev/decisions/README.md), new or an addendum. It gives the problem, the figures, the options rejected and why, and who decided and when.
+- A bug fix: the cause, and why the fix is right, in the record or guide that owns the area. Examples are the [implementation notes](.dev/implementation-notes.md), the driver bugs, the [image tests](.dev/image-tests.md) and the [benchmarks](.dev/benchmarks.md).
+- A device or benchmark run: a row in the [tested devices](.dev/tested-devices.md) record or in the [benchmark results](.dev/benchmark-results.md).
+- A lesson about process or tools: the guide that covers it, such as [pull requests and parallel work](.dev/pull-requests.md) or the benchmarks.
+
+The `Docs-Checked:` trailer names the `.dev` page that holds the reason, or says why there is no new reason. [Pull requests and parallel work](.dev/pull-requests.md#before-you-open-a-pull-request) gives an example of each kind.
+
 ## Commit gates
 
 `bun install` sets up git hooks that keep the docs in line with the code. Never skip them with `--no-verify`: CI runs the same checks and fails the pull request.

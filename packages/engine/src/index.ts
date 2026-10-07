@@ -126,6 +126,7 @@ export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
 export type {
 	OverlapHit,
 	QueryOptions,
+	QueryTarget,
 	RaycastBatchHits,
 	RaycastHit,
 	RaycastOptions,
