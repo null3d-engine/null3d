@@ -15,9 +15,10 @@
 // test switch asks for) takes no copy: its slice gets each survivor's index, and the vertex shader
 // reads the matrix, the material and the cell's offset itself (decision record D-23). Those slices
 // follow the copies in the same buffer, so culling binds no storage buffer more. Each index fills a
-// whole 16-byte entry. A write to one part of a vector in storage may be a read and a write of the
-// whole vector, so threads that wrote neighbouring words of one entry would race on any GPU. The
-// buffer is an array of `vec4u`, and the copies' floats go into it bit for bit.
+// whole 16-byte entry. WGSL may write one part of a vector in storage as a read and a write of the
+// whole vector, so two threads that write parts of one entry make a data race, which can lose a
+// write on any GPU. The buffer is an array of `vec4u`, and the copies' floats go into it bit for
+// bit.
 //
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
