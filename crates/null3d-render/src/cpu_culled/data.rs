@@ -15,6 +15,10 @@ pub(super) const RING: u32 = 3;
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// Texels of one light record: four vectors of four 32-bit values.
 const LIGHT_TEXELS: u32 = sizes::LIGHT_RECORD_BYTES / 16;
+/// The first column of the light grid's words in the light data texture, after the records'.
+const GRID_COLUMN: u32 = sizes::LIGHTS_PER_TEXTURE_ROW * LIGHT_TEXELS;
+/// Words of the light grid in one texel of the light data texture.
+pub(super) const GRID_WORDS_PER_TEXEL: u32 = 4;
 
 /// A slot of one of the frame rings that moves on only when a frame writes new data, so a frame
 /// whose data did not change draws from the slot that already holds it. A slot is written again
@@ -76,6 +80,7 @@ pub(super) fn write_matrices(
         TextureRows {
             first,
             count: (matrices.len() / MATRIX_FLOATS) as u32,
+            column: 0,
             per_row: sizes::MATRICES_PER_TEXTURE_ROW,
             texels: sizes::MATRIX_TEXELS,
             bytes: MATRIX_BYTES,
@@ -84,12 +89,13 @@ pub(super) fn write_matrices(
     )
 }
 
-/// Items of a data texture: `count` items from item `first` on, `per_row` items to a texture row,
-/// each `texels` texels and `bytes` bytes.
+/// Items of a data texture: `count` items from item `first` on, `per_row` items to a texture row
+/// from texel `column` of the row, each `texels` texels and `bytes` bytes.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TextureRows {
     first: u32,
     count: u32,
+    column: u32,
     per_row: u32,
     texels: u32,
     bytes: u32,
@@ -101,20 +107,35 @@ impl TextureRows {
         Self {
             first,
             count,
+            column: 0,
             per_row: sizes::INDICES_PER_TEXTURE_ROW,
             texels: 1,
             bytes: 4,
         }
     }
 
-    /// `count` light records of the light list's textures, from record `first` on.
+    /// `count` light records of the light data textures, from record `first` on.
     pub(super) fn lights(first: u32, count: u32) -> Self {
         Self {
             first,
             count,
+            column: 0,
             per_row: sizes::LIGHTS_PER_TEXTURE_ROW,
             texels: LIGHT_TEXELS,
             bytes: sizes::LIGHT_RECORD_BYTES,
+        }
+    }
+
+    /// `count` texels of the light grid's words in the light data textures, four words each, from
+    /// texel `first` of the words on.
+    pub(super) fn grid_words(first: u32, count: u32) -> Self {
+        Self {
+            first,
+            count,
+            column: GRID_COLUMN,
+            per_row: sizes::GRID_WORDS_PER_TEXTURE_ROW / GRID_WORDS_PER_TEXEL,
+            texels: 1,
+            bytes: 4 * GRID_WORDS_PER_TEXEL,
         }
     }
 }
@@ -142,7 +163,7 @@ pub(super) fn write_rows(
             &[
                 texture,
                 0,
-                column * rows.texels,
+                rows.column + column * rows.texels,
                 item / rows.per_row,
                 0,
                 width * rows.texels,
@@ -195,13 +216,14 @@ impl DataTexture {
         }
     }
 
-    /// The textures of light records, four texels each.
-    pub(super) const fn lights(first_id: u32, count: u32) -> Self {
+    /// The light data textures: the light records, four texels each, then the light grid's
+    /// words, four to a texel, all as 32-bit integers.
+    pub(super) const fn light_data(first_id: u32, count: u32) -> Self {
         Self {
             first_id,
             count,
-            width: sizes::LIGHTS_PER_TEXTURE_ROW * LIGHT_TEXELS,
-            format: format::RGBA32_FLOAT,
+            width: GRID_COLUMN + sizes::GRID_WORDS_PER_TEXTURE_ROW / GRID_WORDS_PER_TEXEL,
+            format: format::RGBA32_UINT,
         }
     }
 
@@ -305,6 +327,7 @@ mod tests {
         let rows = TextureRows {
             first,
             count,
+            column: 0,
             per_row: 512,
             texels: 3,
             bytes: 48,
