@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04. Task: M2-C5. Color targets added on 2026-10-05, task M2-C11.
 
+Summary: Sparse deltas per vertex in half floats, in one RGBA16F texture, and the weights in an RGBA32F texture of their own. WebGPU morphs in the skinning pass; WebGL2 in each pass's vertex shader under the MORPH bit, keeping a preset's count of each object's largest weights (8 on Low to 64 on Ultra). Clips animate weights through joints that move no vertex. The MORPH builds load on first use, in shader files of 18.6 to 20.5 KB after Brotli, under the owner's limit of the start shader file's size. Custom materials draw morphed meshes at rest on WebGL2.
+
 ## Question
 
 A morph target is a second shape of a mesh: a face that smiles, a door that bends. Each object of the mesh blends its targets in by weights, as three.js's `morphTargetInfluences` does. How do the targets reach the GPU, and where do vertices take them? WebGPU already skins in a compute pass ([D-20](D-20-webgpu-skinning.md)), and WebGL2 skins in each pass's vertex shader ([D-10](D-10-webgl2-skinning.md)). How do clips animate weights? And how do the extra shader builds fit the download budget ([D-14](D-14-js-budget.md))?

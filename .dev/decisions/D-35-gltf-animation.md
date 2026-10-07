@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-C7.
 
+Summary: One skeleton per model: skin joints, moved nodes and the nodes above and below them are joints, not objects. Meshes on bones move as one-joint skins. The job workers resample clips as background tasks. Seven sample models match three.js within 3e-4, Fox within 5e-3.
+
 ## Question
 
 How does a glTF file's animation reach the engine core? A file has skins, which name nodes as joints, and clips, whose channels move any node. The core takes one skeleton per animated object ([D-26](D-26-animation-clips.md)) and plays its clips through the animator ([D-28](D-28-animator.md)). So the loader must decide which nodes become joints and which stay objects. It must also decide how meshes that hang on bones follow them, and where clips are resampled. Cubic spline keys need converting too.
