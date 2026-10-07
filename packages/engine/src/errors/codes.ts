@@ -33,7 +33,7 @@ const DOCS = {
 		title: 'Too many objects',
 		cause:
 			'The scene, the table of instance batches or the queue of changes for the next frame is full. The message names which one, and how many it holds.',
-		example: 'E1102: createMesh() failed: the scene already holds 32767 objects.',
+		example: 'E1102: createMesh() failed: the scene already holds 16383 objects.',
 		since: '0.1',
 	},
 	E1103: {
