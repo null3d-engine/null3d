@@ -280,7 +280,7 @@ describe('textures.fromData', () => {
 		);
 		fails(
 			{ width: 1, height: 1, format: 'rgba16float', colorSpace: 'srgb', data: new Uint16Array(4) },
-			"got colorSpace 'srgb' for rgba16float data",
+			"got colorSpace 'srgb' for rgba16float texels, which are linear",
 		);
 		fails(
 			{ width: 1, height: 1, format: 'rgba16float', mipmaps: true, data: new Uint16Array(4) },

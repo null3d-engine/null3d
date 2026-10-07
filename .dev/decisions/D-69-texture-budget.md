@@ -50,7 +50,7 @@ How the data was produced: on 2026-10-05, `NULL3D_PORT=17373 bun run test:images
 
 - Uncompressed texels on the GPU move to the array of the next smaller size. The frame's list copies every level but the largest. The old layer frees after the copy.
 - Texels that bring their own levels, and wait in engine memory for their upload, lose their largest level there.
-- Compressed texels on the GPU load again from the file without their largest levels. Neither compatibility mode nor WebGL2 copies compressed texels.
+- Compressed texels on the GPU load again from the file without their largest levels. Neither compatibility mode nor WebGL2 copies compressed texels. HDR texels in `rgb9e5ufloat` load again the same way, because WebGL2 cannot copy that format either.
 
 **Giving levels back.** The engine asks the page to load the file again. The page fetches it with `cache: 'force-cache'`, so the HTTP cache usually answers. An image decodes at the size of the levels that stay, with `resizeQuality: 'high'`. A KTX2 file transcodes and keeps its smaller levels. An image inside a glTF file reads its byte range again. The parser notes the file that holds each buffer, and where the image lies in it. The texels go to a hidden texture of their size. Once they are on the GPU, the texture swaps places with it, so it draws with its old levels until then. Two loads run at once. A file that no longer loads keeps the texture at the levels it holds, and it drops no more. The same path loads a file's texture again after the browser takes the GPU away.
 

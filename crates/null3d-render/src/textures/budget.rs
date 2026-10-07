@@ -26,12 +26,13 @@
 //! back: a texture from a file. A texture that a sketch makes from an image or data keeps its
 //! levels, and counts toward the budget. A texture drops a level in one of three ways:
 //!
-//! - Uncompressed texels on the GPU move to the array of the next smaller size: the recorded frame
-//!   copies every level but the largest. The move needs no download.
+//! - Other texels on the GPU move to the array of the next smaller size: the recorded frame copies
+//!   every level but the largest. The move needs no download.
 //! - Texels that bring their own levels, and wait in engine memory for their upload, lose their
 //!   largest level there.
-//! - Compressed texels on the GPU load again without their largest levels, because no GPU path
-//!   copies them: compatibility mode and WebGL2 cannot.
+//! - Texels of a format that takes writes only, compressed or shared-exponent, load again without
+//!   their largest levels when they are on the GPU, because no GPU path copies them: compatibility
+//!   mode and WebGL2 cannot.
 //!
 //! # Loads again
 //!
@@ -421,9 +422,10 @@ impl TextureStore {
         {
             return None;
         }
-        let compressed = format::is_compressed(key.format);
+        // No GPU path copies the texels of a format that takes writes only.
+        let writes_only = format::writes_only(key.format);
         match slot.state {
-            State::Uploaded { .. } if compressed => Some(Drop::Reload),
+            State::Uploaded { .. } if writes_only => Some(Drop::Reload),
             State::Uploaded { .. } => Some(Drop::Copy),
             State::Queued {
                 source: Source::Data { .. },
@@ -970,6 +972,29 @@ mod tests {
         let smaller = h.store.bytes(texture).unwrap();
         assert!(smaller < full / 3);
         assert_eq!(h.store.memory_bytes(), smaller);
+    }
+
+    #[test]
+    fn shared_exponent_texels_on_the_gpu_load_again_too() {
+        let mut h = Harness::new();
+        let texture = h
+            .store
+            .create(TextureDesc {
+                format: format::RGB9E5_UFLOAT,
+                ..astc_desc(256, 256, 9)
+            })
+            .unwrap();
+        fill(&mut h.store, texture, 256, 256);
+        h.store.set_reloadable(texture).unwrap();
+        h.frame();
+        h.store.set_memory_budget(1);
+        h.frame();
+        assert_eq!(
+            h.store.take_reload(),
+            Some(texture),
+            "no GPU path copies the format, so the file loads again"
+        );
+        assert_eq!(h.store.reload_of(texture).map(|(level, _)| level), Some(1));
     }
 
     #[test]

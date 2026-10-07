@@ -1111,7 +1111,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "assets.loadTexture('x.ktx2')",
-      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader.",
+      "notes": "Built in: delete the setup. The engine loads the transcoder with the first KTX2 file and picks the device's format. The file's first row is at v = 0, as with KTX2Loader. UASTC HDR files load too: as BC6H where the device has BC formats, else as rgb9e5ufloat, where three.js uses ASTC HDR or half floats. Both stay linear, so keep tone mapping on.",
       "docs": "api/textures",
       "detect": "\\bKTX2Loader\\b|setTranscoderPath|\\.detectSupport\\s*\\("
     },
@@ -1155,7 +1155,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures, WebP and AVIF textures (EXT_texture_webp, EXT_texture_avif) and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
