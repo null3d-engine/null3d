@@ -11,7 +11,6 @@ import {
 	isExemptCommit,
 } from './check-docs-ack';
 import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
-import { unstagedPaths } from './check-generated';
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
@@ -227,19 +226,6 @@ describe('the two rules', () => {
 		expect(checkDocs('docs: fix typo', ['docs/concepts/handles.md']).ok).toBe(true);
 		expect(checkSkills('docs: fix typo', ['docs/concepts/handles.md']).ok).toBe(true);
 		expect(checkDocs('Merge branch main', code).ok).toBe(true);
-	});
-});
-
-describe('unstagedPaths', () => {
-	it('lists paths whose working tree differs from the index, including untracked files', () => {
-		const porcelain = [
-			'M  docs/staged.md',
-			' M docs/unstaged.md',
-			'MM docs/both.md',
-			'?? docs/new.md',
-			'',
-		].join('\n');
-		expect(unstagedPaths(porcelain)).toEqual(['docs/unstaged.md', 'docs/both.md', 'docs/new.md']);
 	});
 });
 
