@@ -9,8 +9,18 @@ import { basename, extname, join } from 'node:path';
 
 /** Options of the asset tool, as `assets optimize` takes them. */
 export interface AssetOptions {
-	/** Add levels of detail to meshes of 256 triangles or more. The default is false. */
+	/** Add levels of detail to meshes of 64 triangles or more. The default is false. */
 	lod?: boolean;
+	/**
+	 * Keep this share of each mesh's triangles, above 0 and up to 1, as far as `simplifyError`
+	 * allows. The default, 1, keeps them all.
+	 */
+	simplify?: number;
+	/**
+	 * The most that `simplify` may move a mesh's surface, as a share of the mesh's size. The
+	 * default is 0.01.
+	 */
+	simplifyError?: number;
 	/** The largest side of a texture: a power of two up to 2048, the default. */
 	maxTextureSize?: number;
 	/** `size` encodes color and data maps in ETC1S, the default; `high` in UASTC. */

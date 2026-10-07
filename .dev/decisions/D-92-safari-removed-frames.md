@@ -1,6 +1,6 @@
 # D-92: Frame restart pages in runner pages of their own, and notes for memory that removed frames keep
 
-Status: decided. Date: 7 October 2026. Task: M2-R26.
+Status: decided, and confirmed by the owner on 7 October 2026. Date: 7 October 2026. Task: M2-R26.
 
 Summary: Safari on CI's Mac sometimes keeps a removed frame's whole page, and the shared memory it reaches, for minutes, even with no engine. So each frame restart page runs in a runner page of its own. Memory that stopped engines in removed frames leave held is a note, not a failure.
 
@@ -23,6 +23,8 @@ Diagnostic runs on CI's Mac (Safari 26.6.1), on a branch of their own that never
 | Removed-frame probe, 2 frames of 256 MiB each, room watched for 16 s (run 37556572452) | Held past 16 s: a plain page with no engine 2 of 8, its page still alive; a running low-latency engine 2 of 4, its page still alive; others came back within 4 s |
 | Restart pages that count the whole room (run 37559349506) | 12 of 36 places held for 118 s and 123 s after `frame-destroyed-restarts-low-latency` and the next page; other pages started at 2, 3 or 6 and were back to full by their end |
 | Safari's budget of bytes for these memories | 21 memories of 1 GiB initial size, against 36 to 38 places of address space; engines start at 1.1 MiB, so the budget does not refuse them |
+
+The same probe ran on the owner's Mac (Safari 26.6.2) on 7 October 2026, in plain Safari and through WebDriver. All 8 pages passed. Plain Safari kept a removed frame's page with no engine, and 1 place of room, for about 19 s. So Safari keeps removed frames without automation too. WebDriver once held more: on WebGL2, an engine stopped late left no room for 19 s.
 
 How the data was produced: `gh workflow run ci.yml` on the diagnostic branch, running only the Safari 1/2 shard, at most 4 copies at once. The test server saved Safari's memory map with `vmmap` when a page posted a refusal. The probe is `tests/pages/frame-memory.html`, on the branch `probe/ios-frame-memory`.
 
