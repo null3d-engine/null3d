@@ -64,6 +64,15 @@ export const ALPHA_HASH_MAX_DIFFERENT_PERCENT = 6;
  */
 export const OUTLINE_MAX_DIFFERENT_PERCENT = 0.15;
 
+/**
+ * The limit for the vignette, a sanity comparison: null3D multiplies HDR color before the tone curve,
+ * with `VignetteShader`'s offset and darkness mapped onto its size and intensity (D-77), where
+ * three.js blends display color toward a gray. With a darkness above 1, three.js's corners pass
+ * black sooner, so only the outer corners differ: 1.1% of the grading scene's pixels on the Mac. A
+ * missing or misplaced vignette differs in tens of percent.
+ */
+export const VIGNETTE_MAX_DIFFERENT_PERCENT = 2;
+
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
 /** A diff image shows each matching pixel at this share of the reference pixel's value. */
@@ -484,10 +493,10 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			limit: AO_MAX_DIFFERENT_PERCENT,
 		}),
 	),
-	// A color grading table from a .cube file, alone and at part of its intensity with the
-	// vignette, against three.js's LUTPass and VignetteShader after its OutputPass. The .3dl test
-	// has no twin: three.js's LUT3dlLoader refuses the sample file's grid, whose steps differ by one
-	// from rounding.
+	// A color grading table from a .cube file against three.js's LUTPass after its OutputPass, by
+	// three.js's rule. With the vignette too, against VignetteShader, as a sanity comparison: the
+	// vignette is a look of null3D's own. The .3dl test has no twin: three.js's LUT3dlLoader refuses
+	// the sample file's grid, whose steps differ by one from rounding.
 	{
 		test: 'lut-cube',
 		twin: `${TWINS}/grading.html`,
@@ -499,6 +508,7 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/grading.html?mix`,
 		switches: 'antialias=none',
 		webglOnly: true,
+		limit: VIGNETTE_MAX_DIFFERENT_PERCENT,
 	},
 	// Outlines with the engine's defaults and with a line around hidden parts, against the same line
 	// drawn from the mask of three.js's OutlinePass. The composer's targets have no MSAA, so null3D's

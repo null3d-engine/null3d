@@ -1,9 +1,10 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
-// occlusion, which darkens the ambient light of the camera's opaque objects, outlines, and the
-// color grading table and the vignette, which the final pass applies after the tone mapping. The
-// core takes one exposure: the sketch's exposure times the camera exposure of its EV100. The
-// sketch's custom effects and custom tone curve come through here too (see `effects.ts`).
+// occlusion, which darkens the ambient light of the camera's opaque objects, outlines, the
+// vignette, which the final pass applies before the tone mapping, and the color grading table,
+// which it applies after. The core takes one exposure: the sketch's exposure times the camera
+// exposure of its EV100. The sketch's custom effects and custom tone curve come through here too
+// (see `effects.ts`).
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -75,7 +76,7 @@ const AO_SETTINGS = [
 ] as const;
 /** The most samples of ambient occlusion's horizon search. */
 const MAX_AO_SAMPLES = 64;
-const VIGNETTE_SETTINGS = ['offset', 'darkness'] as const;
+const VIGNETTE_SETTINGS = ['intensity', 'size', 'falloff', 'roundness'] as const;
 const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
 const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
 
@@ -181,23 +182,35 @@ export interface AoSettings {
 }
 
 /**
- * The vignette's settings, with the meanings of three.js's `VignetteShader`: each pixel blends
- * toward the gray of `1 - darkness` by its squared distance from the canvas's center, scaled by
- * `offset`. A setting that a call leaves out keeps its value.
+ * The vignette's settings. The vignette multiplies each pixel's light by a factor that falls from
+ * 1 at the canvas's center toward its edges. It works before the tone mapping, so bright corners
+ * darken as dark ones do. A setting that a call leaves out keeps its value.
  *
  * @category api/post
  */
 export interface VignetteSettings {
 	/**
-	 * How far toward the center the darkening reaches: 0 or more, and 1 by default. At 1, the
-	 * corners blend halfway toward the gray, and higher values darken more of the picture.
+	 * How dark the edges turn: 0 or more, and 1 by default. At 0 nothing changes, and at 1 the
+	 * edges turn black where the darkening is full. Above 1 they turn black sooner.
 	 */
-	offset?: number;
+	intensity?: number;
 	/**
-	 * How dark the edges turn: 0 or more, and 1 by default, which blends them toward black. Above 1
-	 * the blend goes past black, so the edges darken faster.
+	 * How much of the picture the darkening covers: 0 or more, and 1 by default. It scales the
+	 * distance from the center. From about 1.41 the corners take the full intensity, and higher
+	 * values darken more of the picture.
 	 */
-	darkness?: number;
+	size?: number;
+	/**
+	 * How fast the light falls from the center: the power of the falloff curve, above 0, and 2 by
+	 * default. Higher values darken more of the picture, and lower values keep the darkening near
+	 * the edges.
+	 */
+	falloff?: number;
+	/**
+	 * The vignette's shape, from 0 to 1, and 0 by default. At 0 it follows the canvas's shape, an
+	 * ellipse on a wide canvas. At 1 it is a circle.
+	 */
+	roundness?: number;
 }
 
 /**
@@ -276,8 +289,8 @@ export interface PostSettings {
 	 */
 	lutIntensity?: number;
 	/**
-	 * Darkens the picture toward its edges, as three.js's `VignetteShader` does. Settings turn the
-	 * vignette on, `{}` with the values it had, and `false` turns it off. It is off by default.
+	 * Darkens the picture toward its edges. Settings turn the vignette on, `{}` with the values it
+	 * had, and `false` turns it off. It is off by default.
 	 */
 	vignette?: VignetteSettings | false;
 	/**
@@ -454,9 +467,11 @@ export class Post {
 		if (vignette !== undefined) {
 			this.vignette = vignette !== false;
 			if (vignette !== false) {
-				if (vignette.offset !== undefined) values[C.POST_VALUE_VIGNETTE_OFFSET] = vignette.offset;
-				if (vignette.darkness !== undefined)
-					values[C.POST_VALUE_VIGNETTE_DARKNESS] = vignette.darkness;
+				const { intensity, size, falloff, roundness } = vignette;
+				if (intensity !== undefined) values[C.POST_VALUE_VIGNETTE_INTENSITY] = intensity;
+				if (size !== undefined) values[C.POST_VALUE_VIGNETTE_SIZE] = size;
+				if (falloff !== undefined) values[C.POST_VALUE_VIGNETTE_FALLOFF] = falloff;
+				if (roundness !== undefined) values[C.POST_VALUE_VIGNETTE_ROUNDNESS] = roundness;
 			}
 			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
 		}
@@ -630,10 +645,23 @@ function checkSettings(settings: PostSettings): void {
 			`post.set() got ${String(lut)} for lut, which takes a table from assets.loadLut() or false.`,
 		);
 	checkNumber('lutIntensity', lutIntensity, 1);
-	checkGroup('vignette', vignette, VIGNETTE_SETTINGS, 'offset and darkness');
+	if (
+		typeof vignette === 'object' &&
+		vignette !== null &&
+		('offset' in vignette || 'darkness' in vignette)
+	)
+		throw new EngineError(
+			'E1213',
+			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness.",
+		);
+	checkGroup('vignette', vignette, VIGNETTE_SETTINGS, 'intensity, size, falloff and roundness');
 	if (vignette) {
-		checkNumber('vignette.offset', vignette.offset);
-		checkNumber('vignette.darkness', vignette.darkness);
+		checkNumber('vignette.intensity', vignette.intensity);
+		checkNumber('vignette.size', vignette.size);
+		checkNumber('vignette.falloff', vignette.falloff);
+		if (vignette.falloff === 0)
+			throw new EngineError('E1213', 'post.set() got 0 for vignette.falloff, which is above 0.');
+		checkNumber('vignette.roundness', vignette.roundness, 1);
 	}
 	checkGroup('outline', outline, OUTLINE_SETTINGS, 'color, hiddenColor and width');
 	if (outline) checkNumber('outline.width', outline.width);

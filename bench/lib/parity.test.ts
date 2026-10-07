@@ -43,6 +43,7 @@ import {
 	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIER_PAIRS,
 	TIERS,
+	VIGNETTE_MAX_DIFFERENT_PERCENT,
 } from './parity';
 
 /** An opaque image of one color. */
@@ -262,7 +263,7 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the alpha hash, the masked shadows, the points, the shadows, the strong bloom, ambient occlusion, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the alpha hash, the masked shadows, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// null3D's integer hash draws its own pattern, so the hash scene is a sanity comparison.
@@ -272,6 +273,9 @@ describe('feature scenes', () => {
 		expect(featureScene('bloom-soft')?.limit).toBeUndefined();
 		expect(SHADOW_MAX_DIFFERENT_PERCENT).toBeGreaterThan(MAX_DIFFERENT_PERCENT);
 		expect(featureScene('outline-hidden')?.limit).toBe(OUTLINE_MAX_DIFFERENT_PERCENT);
+		// The vignette is a sanity comparison; the table alone keeps three.js's rule.
+		expect(featureScene('lut-vignette')?.limit).toBe(VIGNETTE_MAX_DIFFERENT_PERCENT);
+		expect(featureScene('lut-cube')?.limit).toBeUndefined();
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
 			'alpha-hash',
@@ -285,6 +289,7 @@ describe('feature scenes', () => {
 			'bloom-strong',
 			'ao-default',
 			'ao-wide',
+			'lut-vignette',
 			'outline-plain',
 			'outline-hidden',
 		]);
