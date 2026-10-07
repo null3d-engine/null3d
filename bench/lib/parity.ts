@@ -47,6 +47,15 @@ export const AO_MAX_DIFFERENT_PERCENT = 1;
 export const BLOOM_STRONG_MAX_DIFFERENT_PERCENT = 20;
 
 /**
+ * The alpha hash scene's limit, a sanity comparison. null3D keeps three.js's cells and threshold but
+ * hashes each cell with integer math, so every GPU draws one pattern, where three.js's sine hash
+ * draws a pattern of each GPU's own (D-82). The two patterns differ in most pixels of the hashed
+ * cards: 5.0% of the frame on the Mac. The limit sits just above that. The image tests, against
+ * null3D's own references, check the pattern itself.
+ */
+export const ALPHA_HASH_MAX_DIFFERENT_PERCENT = 6;
+
+/**
  * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
  * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
  * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
@@ -336,7 +345,11 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'alpha-coverage', twin: `${TWINS}/alpha-mask.html?mode=coverage` },
-	{ test: 'alpha-hash', twin: `${TWINS}/alpha-mask.html?mode=hash` },
+	{
+		test: 'alpha-hash',
+		twin: `${TWINS}/alpha-mask.html?mode=hash`,
+		limit: ALPHA_HASH_MAX_DIFFERENT_PERCENT,
+	},
 	// three.js's shadows ignore vertex alpha, so only the cards that their map cuts cast here.
 	{
 		test: 'alpha-mask-shadows',

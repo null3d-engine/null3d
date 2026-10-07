@@ -187,6 +187,12 @@ Animated characters also cost skinning work and memory:
 
 For a large crowd, use models with fewer vertices, and fewer shadow cascades on phones.
 
+## See-through objects
+
+Blended objects draw after the opaque ones, farthest first, and a run of neighbors that share a mesh and a material draws together. Many blended objects therefore cost many draws. A double-sided blended material draws twice, back faces first, as three.js draws it, so its near side always covers its far side. Solid double-sided materials draw once.
+
+The second draw costs about as much as the first. In the S2 benchmark with every box blended and double-sided, the transparent pass took 1.88 ms of GPU time on a Mac with one draw per box, and 4.09 ms with two. For flat surfaces, such as leaves and panes of glass, whose two faces never overlap on screen, set `forceSinglePass: true`. It saves the second draw: [Double-sided blended surfaces](../api/materials.md#double-sided-blended-surfaces). Masked and hashed materials need no sort and no second draw.
+
 ## Large worlds
 
 The engine divides space into [grid cells](../concepts/culling.md#grid-cells) 1,024 m wide. When a scene spreads over several cells, each view first tests each cell against its frustum. It then skips every still object of the cells out of view, and tests only the rest one by one. A still object is a static object whose parents are all static, or a row of a static instance batch.

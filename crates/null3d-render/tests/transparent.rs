@@ -286,3 +286,59 @@ fn double_sided_blended_meshes_draw_back_faces_first_on_webgl2() {
     };
     check_faces(World::build(CpuCulledRenderer::new(config)), "WebGL2");
 }
+
+/// The records offset that each draw of the camera's transparent pass binds, outside bundles.
+fn blended_records(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    let mut states = HashMap::new();
+    let (mut pass, mut in_bundle, mut state, mut records) = (0, false, 0, 0);
+    let mut offsets = Vec::new();
+    for (op, o) in commands {
+        match op {
+            Op::CreateRenderPipeline => {
+                states.insert(o[0], o[6]);
+            }
+            Op::BeginRenderPass => pass += 1,
+            Op::BeginBundle => in_bundle = true,
+            Op::EndBundle => in_bundle = false,
+            Op::SetPipeline if !in_bundle => state = states[&o[0]],
+            Op::SetBindGroup if !in_bundle && o[0] == 1 && o[2] == 1 => records = o[3],
+            Op::DrawIndexed if !in_bundle && state & state_flags::BLEND != 0 && pass == 1 => {
+                offsets.push(records);
+            }
+            _ => {}
+        }
+    }
+    offsets
+}
+
+/// On WebGL2 a run's front faces draw from the records of its back faces, so each run writes one
+/// aligned block of records, not two.
+#[test]
+fn a_runs_front_faces_reuse_the_records_of_its_back_faces_on_webgl2() {
+    let config = CpuCulledConfig {
+        multi_draw: false,
+        ..CpuCulledConfig::default()
+    };
+    let mut world = World::build(CpuCulledRenderer::new(config));
+    let box_mesh = base_format(box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap());
+    // Two materials, so the boxes sort into two runs.
+    for z in [-5.0, 0.0] {
+        let (mesh, material) = blended_pair(&mut world, &box_mesh, feature::DOUBLE_SIDED);
+        add_blended(&mut world, mesh, material, z);
+    }
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let offsets = blended_records(&world.commands());
+    assert_eq!(offsets.len(), 4, "two runs, each in two draws");
+    assert_eq!(
+        offsets[0], offsets[1],
+        "the far box's two draws share their records"
+    );
+    assert_eq!(
+        offsets[2], offsets[3],
+        "the near box's two draws share their records"
+    );
+    assert_ne!(offsets[1], offsets[2], "each run has records of its own");
+}

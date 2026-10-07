@@ -1,5 +1,7 @@
 #define_import_path null3d::cutout
 
+#import null3d::noise::{lattice, to_unit}
+
 // The two ways besides the plain cutoff in which the masked builds (ALPHA_MASK) of the mesh and
 // sprite templates test a fragment's alpha. Each has a permutation bit of its own, so the plain
 // mask's builds carry none of this code, and the builds of each load on first use.
@@ -13,7 +15,7 @@
 // - The alpha hash (ALPHA_HASH) keeps a fragment when its alpha reaches a threshold from a hash of
 //   its place on the mesh, three.js's `alphaHash` (Wyman and McGuire's hashed alpha test). The
 //   alpha then sets the share of the surface that draws, and the pattern stays on the mesh as it
-//   moves.
+//   moves. Each cell's hash is integer math, so every GPU draws the same pattern.
 //
 // Both read derivatives, so the templates call them in uniform control flow, before the test
 // discards.
@@ -30,26 +32,26 @@ fn alpha_coverage(alpha: f32, fade: f32, cutoff: f32) -> f32 {
     return smoothstep(cutoff, cutoff + max(fade, MIN_FADE), alpha);
 }
 
-fn hash_2d(value: vec2f) -> f32 {
-    return fract(1.0e4 * sin(17.0 * value.x + 0.1 * value.y) * (0.1 + abs(sin(13.0 * value.y + value.x))));
-}
-
-fn hash_3d(value: vec3f) -> f32 {
-    return hash_2d(vec2f(hash_2d(value.xy), value.z));
+/// A hash from 0 to 1 of a cell of the mesh's space, given by its whole coordinates. three.js
+/// hashes the sines of the coordinates and scales them up, so each GPU's sine, which differs in its
+/// last bits, draws its own pattern. The integer hash of `null3d::noise` gives every GPU the same
+/// value.
+fn hash_cell(cell: vec3f) -> f32 {
+    return to_unit(lattice(vec3i(cell)).x);
 }
 
 /// The alpha below which the alpha hash discards a fragment at `position`, in the mesh's own
-/// space, as three.js's `getAlphaHashThreshold` gives it: the hash of the position in cells of two
-/// sizes near the pixel's size, a power of two apart, blended by where the pixel lies between
-/// them, then spread evenly from 0 to 1. It reads derivatives, so it runs in uniform control flow.
+/// space, as three.js's `getAlphaHashThreshold` gives it, with `hash_cell`: the hash of the
+/// position in cells of two sizes near the pixel's size, a power of two apart, blended by where the
+/// pixel lies between them, then spread evenly from 0 to 1. It reads derivatives, so it runs in uniform control flow.
 fn alpha_hash_threshold(position: vec3f) -> f32 {
     let change = max(length(dpdx(position)), length(dpdy(position)));
     let pixel_scale = 1.0 / (ALPHA_HASH_SCALE * change);
     let scale_log = log2(pixel_scale);
     let scales = vec2f(exp2(floor(scale_log)), exp2(ceil(scale_log)));
     let hashes = vec2f(
-        hash_3d(floor(scales.x * position)),
-        hash_3d(floor(scales.y * position)),
+        hash_cell(floor(scales.x * position)),
+        hash_cell(floor(scales.y * position)),
     );
     let blend = fract(scale_log);
     let x = (1.0 - blend) * hashes.x + blend * hashes.y;

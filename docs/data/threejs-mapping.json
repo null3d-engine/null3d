@@ -902,7 +902,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "alphaMode: 'hash'",
-      "notes": "The same hash of each point's place on the mesh as three.js's, so the alpha sets the share of the surface that draws. alphaCutoff has no effect in this mode. Hashed surfaces cast whole shadows, as in three.js.",
+      "notes": "Three.js's cells and threshold on each point's place on the mesh, so the alpha sets the share of the surface that draws. The noise pattern differs: null3D hashes each cell with integer math, so every GPU draws the same pattern, where three.js's sine hash changes from GPU to GPU. alphaCutoff has no effect in this mode. A hashed surface casts a hashed shadow, where three.js casts the whole shape.",
       "docs": "api/materials",
       "detect": "\\balphaHash\\s*[:=]"
     },
