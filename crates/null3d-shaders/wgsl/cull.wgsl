@@ -11,6 +11,11 @@
 // the instance by its cell's offset from the camera before it tests it. The compacted instance
 // buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
 //
+// The offsets come from a data texture, one row per view and one texel per cell, which each thread
+// reads at its own cell. A table in the uniform parameters, read at each thread's own index, gave
+// every thread of a group the same thread's entry on the Galaxy S25 (Adreno 830). A texture keeps
+// the culling group within the eight storage buffers that every device allows a shader stage.
+//
 // A bucket whose vertex shaders read their instances by index (the INSTANCE_INDEX builds, which a
 // test switch asks for) takes no copy: its slice gets each survivor's index, and the vertex shader
 // reads the matrix, the material and the cell's offset itself (decision record D-23). Those slices
@@ -56,8 +61,6 @@
 /// instance's cell index from CELL_SHIFT up.
 const CELL_SHIFT: u32 = 23u;
 const OCCLUDER: u32 = 1u << 22u;
-/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
-const MAX_CELLS: u32 = 512u;
 /// Runs of the cell order that one dispatch covers at most.
 const MAX_RANGES: u32 = 257u;
 /// Threads per workgroup.
@@ -86,9 +89,8 @@ struct CullParams {
     layers: u32,
     /// The runs of the cell order to cull, or 0 to cull every instance in place.
     range_count: u32,
-    pad2: u32,
-    /// The offset from the camera to the center of each grid cell, by cell index.
-    cell_offsets: array<vec4f, MAX_CELLS>,
+    /// The view's row of the cell offsets texture.
+    offsets_row: u32,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
     /// What the occlusion phases read. Other views leave it unset.
@@ -127,6 +129,9 @@ struct Bucket {
 /// The view's depth pyramid, which only the occlusion phases bind: the count of the frame's
 /// occluders, then the levels' depths as the bits of 32-bit floats.
 @group(0) @binding(8) var<storage, read_write> pyramid: array<atomic<u32>>;
+/// The offset from each view's camera to the center of each grid cell: texel x of row y holds
+/// cell x's offset for the view whose row is y.
+@group(0) @binding(9) var cell_offsets: texture_2d<f32>;
 
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
@@ -187,7 +192,7 @@ fn survivor(i: u32) -> Survivor {
         return out;
     }
     let b = entry & (OCCLUDER - 1u);
-    let offset = params.cell_offsets[entry >> CELL_SHIFT];
+    let offset = textureLoad(cell_offsets, vec2u(entry >> CELL_SHIFT, params.offsets_row), 0);
     out.occluder = (entry & OCCLUDER) != 0u;
     out.r0 = matrices[i * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
     out.r1 = matrices[i * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);

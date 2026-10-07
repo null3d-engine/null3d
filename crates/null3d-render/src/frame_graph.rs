@@ -472,8 +472,9 @@ pub(crate) struct FrameGraph {
     transparent_on: bool,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
-    /// Each texture of the plan that the draw lists made, with the size it was made at.
-    made: Vec<(PlannedTexture, (u32, u32))>,
+    /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
+    /// multisampled target, whether it resolved into the canvas.
+    made: Vec<(PlannedTexture, (u32, u32), bool)>,
     /// True when the frame being recorded made or released a texture of the plan.
     textures_made: bool,
     /// The canvas size the draw lists set last, or `(0, 0)` before any.
@@ -1601,8 +1602,14 @@ impl FrameGraph {
     /// Makes each texture of the plan whose shape or size differs from what the draw lists made,
     /// with the views of its layers where passes draw into it by layer, and releases the textures
     /// and views the plan no longer has. Returns true when it made or released any.
+    ///
+    /// A multisampled target is made again when the pass that takes the scene to the canvas
+    /// changes, between the resolve pass and the final pass. On the Galaxy S25 (Adreno 830), a
+    /// multisampled color texture whose first resolve went into the canvas resolves nothing into
+    /// any other texture later.
     fn make_textures(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
         let start = list.len();
+        let into_canvas = !self.final_runs();
         let textures = self
             .graph
             .plan()
@@ -1610,8 +1617,12 @@ impl FrameGraph {
             .textures();
         let mut views = 0;
         for (index, texture) in textures.iter().enumerate() {
-            let made = (*texture, texture.size.extent(self.canvas));
             let target = texture.target;
+            let made = (
+                *texture,
+                texture.size.extent(self.canvas),
+                into_canvas && target.samples > 1,
+            );
             let by_layer =
                 target.is_array() && texture.usage & texture_usage::RENDER_ATTACHMENT != 0;
             let first_view = if by_layer { views } else { NO_VIEWS };
@@ -1625,7 +1636,7 @@ impl FrameGraph {
             }
             let remade = self.made.get(index) != Some(&made);
             if remade {
-                create_texture(list, self.first_texture + index as u32, made)?;
+                create_texture(list, self.first_texture + index as u32, (made.0, made.1))?;
                 match self.made.get_mut(index) {
                     Some(slot) => *slot = made,
                     None => self.made.push(made),
@@ -2324,6 +2335,42 @@ mod tests {
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn multisampled_targets_are_made_again_when_the_pass_to_the_canvas_changes() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        frames.sync_views(&[View::default()]);
+        let mut list = DrawList::with_capacity(512);
+        let multisampled = |list: &DrawList| {
+            let created = operands(list, Op::CreateTexture);
+            created.into_iter().filter(|t| t[6] > 1).count()
+        };
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        let first = multisampled(&list);
+        assert!(first > 0);
+
+        // The final pass takes over from the resolve pass, so the multisampled targets that
+        // resolved into the canvas are made again, and so are they when the resolve pass returns.
+        for scales in [true, false] {
+            frames.set_scaling(scales);
+            list.clear();
+            frames
+                .prepare(&mut list, (64, 64), RenderScale::FULL)
+                .unwrap();
+            assert_eq!(
+                multisampled(&list),
+                first,
+                "render scale can drop: {scales}"
+            );
+            list.clear();
+            frames
+                .prepare(&mut list, (64, 64), RenderScale::FULL)
+                .unwrap();
+            assert!(list.is_empty());
+        }
     }
 
     #[test]
