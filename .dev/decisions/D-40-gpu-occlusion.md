@@ -90,6 +90,7 @@ Option (a3). Marked occluders that look large draw their depth at one sample per
 
 - The preset table has the `gpuOcclusion` row, off on every preset. `createEngine` has the `gpuOcclusion` option, and `?occlusion=on|off` sets it on WebGPU and `softwareOcclusion` on WebGL2.
 - `concepts/culling`, `concepts/quality-presets` and `api/objects` describe it.
+- The culling stage is full. Its group binds 8 storage buffers: the matrices, the bucket table and records, the compacted instances, the indirect draws with the history, the layer table, the cell order and the pyramid. That is the most that every device allows one shader stage, compatibility mode included. A feature that culls with more data must share one of these buffers, as the history shares the indirect draws', or read it from a texture.
 - The hidden share comes from the room's geometry (`hiddenShare` in `bench/scenes/room.ts`), not from a count on the GPU. The draw list has no buffer readback until M2-D6 adds one. A readback of the instance counts would let `engine.measure` report what it hides on WebGPU too, in `occludedEntries`.
 - Safari 26 encodes a render bundle with indirect draws again at every `executeBundles` (5.9). The occluders' pass adds one bundle per camera view, so Safari before 27.2 pays that cost twice for the camera. The iPad run measures it.
 - FXAA images vary by a few dozen pixels from run to run, with or without culling. The cause is not known.
