@@ -2,7 +2,7 @@
 # Measurement only: S4 on one browser, with one setting changed at a time, in two rounds (the second
 # in reverse order), so heat and other load slow each variant alike.
 # Usage, from the repository root of a built checkout:
-#   zsh bench/ab-s4.sh [--set pixel|pixel-webgpu|pixel-bound|medium] <runner options...>
+#   zsh bench/ab-s4.sh [--set pixel|pixel-webgpu|pixel-bound|medium] [--uncapped] <runner options...>
 # For example: zsh bench/ab-s4.sh --lan ipad-safari    or    zsh bench/ab-s4.sh --set medium Safari
 # The pixel set runs S4 at Low, so edge smoothing and the larger shadow filter stay out of the way,
 # and takes one per-pixel cost away from WebGL2 in each variant. The pixel-webgpu set takes the same
@@ -10,11 +10,15 @@
 # pixel set at a pixel ratio of 2, so that a fast GPU, such as the Mac's, cannot keep up with the
 # display on WebGL2, and the frame rate shows each cost. The medium set changes Medium's settings
 # one at a time.
-# It writes one line per run to target/ab-s4-<set>.tsv.
+# With --uncapped, Playwright's Chrome runs the pages without waiting for the display (bench:run's
+# --uncapped), so the frame interval is the cost when the GPU sets the pace, and the runner options
+# are not used. It writes one line per run to target/ab-s4-<set>.tsv, or ab-s4-<set>-uncapped.tsv.
 emulate -L zsh
 set=pixel
 ratio=''
+uncapped=''
 if [[ $1 == --set ]]; then set=$2; shift 2; fi
+if [[ $1 == --uncapped ]]; then uncapped=1; shift; fi
 case $set in
 	pixel|pixel-webgpu|pixel-bound)
 		base='preset=low&governor=off&render=main'
@@ -52,7 +56,7 @@ case $set in
 		;;
 	*) print -u2 "unknown set $set: use pixel, pixel-webgpu, pixel-bound or medium"; exit 2 ;;
 esac
-out=target/ab-s4-$set.tsv
+out=target/ab-s4-$set${uncapped:+-uncapped}.tsv
 [[ -f $out ]] || print -r -- $'round\tpage\tswitches\trun\tfps\tinterval_ms\tgpu_delay_ms\tgpu_ms\tcpu_ms' > $out
 for round in 1 2; do
 	order=($variants)
@@ -64,12 +68,21 @@ for round in 1 2; do
 		[[ -n $ratio && $extra != maxPixelRatio=* ]] && switches+="&$ratio"
 		# A later preset= wins over the first, as the page reads the last value.
 		[[ $extra == preset=* ]] && switches="governor=off&render=main&$extra"
-		before=$(ls -d target/runs/*-bench(N/om[1]) 2>/dev/null)
-		bun tests/real-browsers.ts --plan bench "$@" --scenes s4 --pages $page --runs 1 --seconds 20 \
-			--only bench-s4-$page-1 --switches "$switches"
-		run=$(ls -d target/runs/*-bench(N/om[1]))
+		if [[ -n $uncapped ]]; then
+			before=$(ls -d target/bench/*-bench(N/om[1]) 2>/dev/null)
+			bun bench/run.ts --uncapped --scenes s4 --pages $page --runs 1 --seconds 20 \
+				--switches "$switches"
+			run=$(ls -d target/bench/*-bench(N/om[1]))
+			results=($run/s4-$page-1.json(N))
+		else
+			before=$(ls -d target/runs/*-bench(N/om[1]) 2>/dev/null)
+			bun tests/real-browsers.ts --plan bench "$@" --scenes s4 --pages $page --runs 1 --seconds 20 \
+				--only bench-s4-$page-1 --switches "$switches"
+			run=$(ls -d target/runs/*-bench(N/om[1]))
+			results=($run/*/bench-s4-$page-1.json(N))
+		fi
 		[[ $run == $before ]] && { print "no new run for $v"; continue; }
-		for f in $run/*/bench-s4-$page-1.json(N); do
+		for f in $results; do
 			bun -e '
 				const r = await Bun.file(process.argv[1]).json();
 				const s = r.stats ?? {};

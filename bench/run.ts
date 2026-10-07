@@ -58,6 +58,9 @@
 //                     window, drawing with SwiftShader as CI's Linux machines do
 //   --switches <q>    page switches that every page gets, such as shadows=3: S2 with the sun's
 //                     shadows in 3 cascades on null3d, and in one map on three.js
+//   --uncapped        Chrome draws without waiting for the display's refresh, so a page that the
+//                     GPU holds back shows its GPU's cost in its frame interval on both GPU paths;
+//                     WebGL2 reports no GPU time of its own
 // Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -175,6 +178,8 @@ export interface BenchOptions {
 	dev: boolean;
 	/** Page switches that every page gets, such as `shadows=3`, or an empty string. */
 	switches: string;
+	/** Chrome draws without waiting for the display's refresh, with no frame rate limit. */
+	uncapped: boolean;
 }
 
 /** A run's warm-up and measured seconds: `--seconds` for both, or the protocol's. */
@@ -220,6 +225,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		browser: 'chrome',
 		dev: false,
 		switches: '',
+		uncapped: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -246,6 +252,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 			options.browser = list(value(), BROWSERS, '--browser')[0] as BenchOptions['browser'];
 		else if (arg === DEV_OPTION) options.dev = true;
 		else if (arg === '--switches') options.switches = readSwitches(value(), '--switches');
+		else if (arg === '--uncapped') options.uncapped = true;
 		else throw new Error(`unknown option ${arg}`);
 	}
 	if (!(Number.isInteger(options.runs) && options.runs > 0))
@@ -268,19 +275,23 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 	return options;
 }
 
+/** Chrome's switches that let it draw frames as fast as the GPU finishes them. */
+const UNCAPPED_ARGS = ['--disable-gpu-vsync', '--disable-frame-rate-limit'];
+
 /**
  * Starts the browser: Chrome or Brave in a window, or Chromium without one on SwiftShader. A browser
  * in a window gives focus back to the app that was in front.
  */
-function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
+function launchBrowser(name: BenchOptions['browser'], uncapped: boolean): Promise<Browser> {
+	const pacing = uncapped ? UNCAPPED_ARGS : [];
 	if (name === 'chromium')
 		return chromium.launch({
 			headless: true,
-			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES],
+			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES, ...pacing],
 		});
 	return launchInWindow({
 		...(name === 'brave' ? { executablePath: BRAVE } : { channel: 'chrome' }),
-		args: [WEBGPU_DEVELOPER_FEATURES],
+		args: [WEBGPU_DEVELOPER_FEATURES, ...pacing],
 	});
 }
 
@@ -620,7 +631,7 @@ function readRecords(folder: string): ComparisonRecord[] {
 
 /** Runs the pages in the browser, and returns the run's report. */
 async function runInBrowser(options: BenchOptions, dir: string): Promise<string> {
-	const browser = await launchBrowser(options.browser);
+	const browser = await launchBrowser(options.browser, options.uncapped);
 	try {
 		if (options.compare)
 			return judgeComparison(
