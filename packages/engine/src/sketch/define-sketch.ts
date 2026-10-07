@@ -14,6 +14,7 @@ import type { Post } from '../scene/post';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 import type { Textures } from '../scene/textures';
+import { violationFor, watchPolicy } from '../shared/policy';
 import type { Input } from './input';
 import type { Quality } from './quality';
 import type { Ui } from './ui';
@@ -226,17 +227,28 @@ function isSketchDefinition(value: unknown): value is SketchDefinition {
 	);
 }
 
+/** The directives that can block a module's download. */
+const SCRIPT_DIRECTIVES = /^(script-src|worker-src|default-src)/;
+
 /**
- * Imports a sketch module and returns its sketch. A module that does not load fails with E1410,
- * unless its code threw an engine error, which keeps its code. A module that exports no sketch
- * fails with E1401.
+ * Imports a sketch module and returns its sketch. A module that the page's policy blocks, or one
+ * of its imports from the same origin, fails with E1422. Any other module that does not load fails
+ * with E1410, unless its code threw an engine error, which keeps its code. A module that exports no
+ * sketch fails with E1401.
  */
 export async function loadSketch(url: string): Promise<SketchDefinition> {
 	let module: { default?: unknown };
+	watchPolicy();
 	try {
 		module = await import(/* @vite-ignore */ url);
 	} catch (e) {
 		if (e instanceof EngineError) throw e;
+		const violation = await violationFor(new URL(url, globalThis.location?.href));
+		if (violation && SCRIPT_DIRECTIVES.test(violation.directive))
+			throw new EngineError(
+				'E1422',
+				`the page's Content-Security-Policy blocks the sketch module ${url}: its ${violation.directive} does not allow ${violation.blocked}.`,
+			);
 		const reason = reasonOf(e);
 		throw new EngineError('E1410', `the sketch module ${url} did not load: ${reason}.`);
 	}
