@@ -1,6 +1,6 @@
 # D-97: The record of tested devices, one file per run
 
-Status: decided. Date: 2026-10-07. The owner asked for the split on 7 October 2026.
+Status: decided. Date: 2026-10-07. The owner asked for the split, and chose option C on 7 October 2026.
 
 Summary: Each device and browser has a folder in `.dev/tested-devices/`, with a README for its facts and known issues and one file per run. The page `.dev/tested-devices.md` holds a table of the facts and issues that `bun run docs` makes from the READMEs, and `bun run devices:record` prints every run's results. Before, 29 of main's 143 commits since 2026-10-03 edited the single table, and 4 of 6 open pull requests on 2026-10-07 did.
 
@@ -37,7 +37,7 @@ Option A's generated page would hold each row's results. So two pull requests th
 
 ## Decision
 
-Option C, the only option that meets the rule. The page keeps every fact and known issue of the old table. It has a table for each kind of place: the owner's devices, the device clouds and CI's machines. Each row links to its folder. There GitHub shows the run files by date, with the README below them.
+Option C, the only option that meets the rule. The owner chose it on 7 October 2026, for two reasons. [D-84](D-84-generated-decision-list.md) already took the list of decision records out of git for the same kind of clash. Run files that are only ever added cannot clash. The page keeps every fact and known issue of the old table. It has a table for each kind of place: the owner's devices, the device clouds and CI's machines. Each row links to its folder. There GitHub shows the run files by date, with the README below them.
 
 The converter, `bun tools/tested-devices.ts --from-table`, wrote one folder for each of the 40 rows. Each folder's first run file, `<first date>-earlier-runs.md`, holds the row's old plans and results. No rule could split the old cells into runs. A check printed the full record from the new files and compared it with the old table. All 40 rows and all 360 cells matched, 62,633 characters.
 
@@ -50,4 +50,5 @@ The check found one row whose text the old page hid. This was Safari on the Mac 
 - `bun run docs` writes the tables between markers on the page. The commit hook and `bun run docs:check` fail when the page is stale. They also refuse a folder without a README or a run, and a README without its facts or its issues section. They refuse a run file without its date, plans or result too.
 - The writing check covers the new files as maintainer guides. The old cells' long sentences now show as warnings, which do not block.
 - A branch that edited the old table moves its edits with `bun tools/tested-devices.ts --branch <commit>`, as [Pull requests and parallel work](../pull-requests.md#a-branch-that-edited-the-old-table-of-tested-devices) says.
+- The README and the user docs will need a list of tested devices. They can build it from the same files: `readRecord()` in `tools/lib/tested-devices.ts` reads each folder's facts, known issues and runs. A generator for those pages can pick what it shows from there, so it needs no copy of the record.
 - [Tested devices](../tested-devices.md), [Device sessions](../devices.md), [Releases](../releases.md) and [AGENTS.md](../../AGENTS.md) now say to add a run file.
