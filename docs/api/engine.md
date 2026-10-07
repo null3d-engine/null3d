@@ -59,7 +59,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 45 seconds of tries. |
 | [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. |
-| [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
+| [E1410](../errors/E1410.md) | The sketch module did not load, at the first import or the second: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
@@ -92,6 +92,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `largeWorld` | false | Keeps the positions of objects exact at any distance from the origin, for scenes the size of a planet: [Large worlds and precision](../concepts/large-worlds.md#large-world-mode) |
 | `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs). The `?sketch-thread=` switch wins over it, and the single-threaded build always runs the sketch on the main thread. |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
+| `expectedObjects` | None | The objects that the scene starts with room for, from 1 to 1,048,575, in place of 1,023. A scene that knows its size never grows its tables during play: [Scene limits](scene.md#limits). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [UI overlays and labels](ui.md). Another value fails with [E1213](../errors/E1213.md). |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
@@ -122,7 +123,7 @@ const engine = await createEngine({ canvas, sketch, memory: { maximumMiB: 2048 }
 
 The browser reserves address space for the whole maximum when the engine starts, and the memory grows into it as the scene needs. Every other engine and WebAssembly module on the page, such as a physics engine, shares the address space that is left. So a larger maximum leaves less room for them. In Safari on an iPad Pro, a page holds the memories of 6 engines at 1024 MiB, and of 3 at 4096 MiB.
 
-Ask for more only when a scene needs it. Each instance row takes about 210 bytes of engine memory, so 1024 MiB holds about 5 million rows with the rest of the scene. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
+Ask for more only when a scene needs it. Each instance row takes about 210 bytes of engine memory, so 1024 MiB holds about 5 million rows with the rest of the scene. Each place for an object takes about 263 bytes in the scene's tables. While the tables grow, the old and the new ones both take memory for a moment. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
 
 The single-threaded build's memory is not shared. It grows as the scene needs, so the option does not change it. The `?memory=<MiB>` switch in the page's address wins over the option, for tests.
 

@@ -240,6 +240,7 @@ async function start(
 				indexInstances: false,
 				shadowDepthBits: 16,
 				largeWorld: false,
+				expectedObjects: 0,
 				gpuOcclusion: false,
 				textureCache: true,
 			},

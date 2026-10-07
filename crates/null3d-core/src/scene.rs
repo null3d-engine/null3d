@@ -3,10 +3,18 @@
 //!
 //! # Data
 //!
-//! Every field is an array indexed by slot (see [`crate::handle`]), allocated once with room for
-//! `capacity + 1` rows because slot 0 is never used. TypeScript reads and writes these arrays
-//! through typed-array views: positions (3 floats per slot), rotations (a quaternion, 4 floats),
-//! scales (3 floats), local bounding radii, and the dirty bitset. The engine writes the rest.
+//! Every field is an array indexed by slot (see [`crate::handle`]), with room for `capacity + 1`
+//! rows because slot 0 is never used. TypeScript reads and writes these arrays through typed-array
+//! views: positions (3 floats per slot), rotations (a quaternion, 4 floats), scales (3 floats),
+//! local bounding radii, and the dirty bitset. The engine writes the rest.
+//!
+//! # Growth
+//!
+//! [`SceneStorage::try_grow`] raises the capacity between frame steps. Every array moves, so
+//! TypeScript makes its views again. The world buffers move to new arrays, and the old pair stays
+//! allocated until two frames have begun: the draw list of the frame before the growth points at
+//! its matrices, and the thread that draws can still be replaying it. Before it frees them, it
+//! marks every row hidden, so a reader that held them too long draws nothing.
 //!
 //! # Static and dynamic objects
 //!
@@ -94,10 +102,12 @@
 //! object with [`flags::UNCULLED`] gets a world radius of [`UNBOUNDED_RADIUS`], so culling keeps
 //! it wherever it is.
 
+use std::collections::TryReserveError;
 use std::ops::Range;
 use std::simd::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use crate::alloc::reserve_len;
 use crate::arena::Pod;
 use crate::bitset::Bitset;
 use crate::cells::{self, CELL_SIZE, CellCoords, CellPosition, CellTable, ORIGIN_CELL};
@@ -190,6 +200,9 @@ pub const NO_PARENT: u32 = u32::MAX;
 pub const PARALLEL_LEVEL_THRESHOLD: u32 = 256;
 /// Objects per chunk when a level updates in parallel.
 pub const LEVEL_CHUNK: u32 = 128;
+/// The bytes of engine memory that each object's row takes across the storage's arrays, the slot
+/// allocator and both world buffers, outside large-world mode, which adds 12.
+pub const ROW_BYTES: u32 = 263;
 /// Slots at or past this count build the changed bitset as a parallel loop.
 const PARALLEL_BITS_THRESHOLD: u32 = 1 << 16;
 
@@ -524,6 +537,8 @@ pub struct SceneStorage {
     /// Objects that the late update recomputes: the moved ones, then the ones below them.
     late: Bitset,
     world: [WorldArrays; 2],
+    /// World buffers that a growth replaced, each with the frame from which no reader holds them.
+    retired: Vec<(u32, [WorldArrays; 2])>,
     changed_frames: Vec<u32>,
     changed: Bitset,
     dead_pending: Bitset,
@@ -547,7 +562,7 @@ pub struct SceneStorage {
 }
 
 impl SceneStorage {
-    /// Storage for up to `capacity` objects. Every array is allocated here, once.
+    /// Storage for up to `capacity` objects, until [`SceneStorage::try_grow`] raises it.
     ///
     /// # Panics
     /// When `capacity` is over [`crate::handle::MAX_SLOTS`].
@@ -585,6 +600,7 @@ impl SceneStorage {
             branches: Bitset::new(rows as u32),
             late: Bitset::new(rows as u32),
             world: [WorldArrays::new(rows, false), WorldArrays::new(rows, false)],
+            retired: Vec::new(),
             changed_frames: vec![0; rows],
             changed: Bitset::new(rows as u32),
             dead_pending: Bitset::new(rows as u32),
@@ -629,6 +645,131 @@ impl SceneStorage {
     /// The number of objects the storage holds.
     pub fn capacity(&self) -> u32 {
         self.slots.capacity()
+    }
+
+    /// Raises the number of objects the storage holds to `capacity`, keeping every object, handle
+    /// and pending change. Every array moves, so views of them must be made again. The world
+    /// buffers move to new arrays, and the old ones stay allocated until two frames have begun,
+    /// because the thread that draws can still be reading the last frame's rows from them. Fails
+    /// with [`CoreError::OutOfMemory`] when memory cannot grow for the new rows, and the storage
+    /// is then unchanged. A `capacity` no larger than the current one does nothing.
+    ///
+    /// # Panics
+    /// When `capacity` is over [`crate::handle::MAX_SLOTS`].
+    pub fn try_grow(&mut self, capacity: u32) -> Result<(), CoreError> {
+        let old = self.capacity();
+        if capacity <= old {
+            return Ok(());
+        }
+        let rows = capacity as usize + 1;
+        let out_of_memory = |_| CoreError::OutOfMemory {
+            bytes: (capacity - old).saturating_mul(ROW_BYTES),
+        };
+        // Every allocation comes first, so a failure leaves each array as it was.
+        let world = [
+            self.world[0].try_grown(rows).map_err(out_of_memory)?,
+            self.world[1].try_grown(rows).map_err(out_of_memory)?,
+        ];
+        self.retired.try_reserve(1).map_err(out_of_memory)?;
+        self.reserve_rows(capacity).map_err(out_of_memory)?;
+
+        self.slots.grow(capacity);
+        for bits in [
+            &mut self.created,
+            &mut self.moved,
+            &mut self.dirty,
+            &mut self.branches,
+            &mut self.late,
+            &mut self.changed,
+            &mut self.dead_pending,
+        ] {
+            bits.grow(rows as u32);
+        }
+        self.positions.resize(rows * 3, 0.0);
+        if self.is_large_world() {
+            self.position_cells.resize(rows * 3, 0);
+        }
+        self.rotations.resize(rows * 4, 0.0);
+        for q in &mut self.rotations.as_chunks_mut::<4>().0[old as usize + 1..] {
+            *q = IDENTITY_ROTATION;
+        }
+        self.scales.resize(rows * 3, 1.0);
+        self.local_radii.resize(rows, 0.0);
+        self.local_centers.resize(rows * 3, 0.0);
+        self.render_orders.resize(rows, 0.0);
+        self.parents.resize(rows, NO_PARENT);
+        for zeros in [
+            &mut self.flags,
+            &mut self.meshes,
+            &mut self.materials,
+            &mut self.skins,
+            &mut self.morphs,
+            &mut self.depths,
+            &mut self.changed_frames,
+            &mut self.order,
+            &mut self.child_offsets,
+            &mut self.child_list,
+        ] {
+            zeros.resize(rows, 0);
+        }
+        self.layers.resize(rows, DEFAULT_LAYERS);
+        self.cells.resize(rows, ORIGIN_CELL);
+        self.levels.resize(rows + 1, Level::default());
+        let free_at = crate::frames::next_frame(crate::frames::next_frame(self.frame));
+        let old_world = std::mem::replace(&mut self.world, world);
+        self.retired.push((free_at, old_world));
+        self.order_dirty = true;
+        self.structure_changed = true;
+        self.structure_epoch = self.structure_epoch.wrapping_add(1);
+        Ok(())
+    }
+
+    /// Makes room in every array for `capacity` objects, without changing any length.
+    fn reserve_rows(&mut self, capacity: u32) -> Result<(), TryReserveError> {
+        let rows = capacity as usize + 1;
+        self.slots.try_reserve(capacity)?;
+        for bits in [
+            &mut self.created,
+            &mut self.moved,
+            &mut self.dirty,
+            &mut self.branches,
+            &mut self.late,
+            &mut self.changed,
+            &mut self.dead_pending,
+        ] {
+            bits.try_reserve(rows as u32)?;
+        }
+        for (floats, per_row) in [
+            (&mut self.positions, 3),
+            (&mut self.rotations, 4),
+            (&mut self.scales, 3),
+            (&mut self.local_radii, 1),
+            (&mut self.local_centers, 3),
+            (&mut self.render_orders, 1),
+        ] {
+            reserve_len(floats, rows * per_row)?;
+        }
+        if self.is_large_world() {
+            reserve_len(&mut self.position_cells, rows * 3)?;
+        }
+        for words in [
+            &mut self.parents,
+            &mut self.flags,
+            &mut self.meshes,
+            &mut self.materials,
+            &mut self.skins,
+            &mut self.morphs,
+            &mut self.layers,
+            &mut self.cells,
+            &mut self.depths,
+            &mut self.changed_frames,
+            &mut self.order,
+            &mut self.child_offsets,
+            &mut self.child_list,
+        ] {
+            reserve_len(words, rows)?;
+        }
+        reserve_len(&mut self.levels, rows + 1)
     }
 
     /// The slot allocator: liveness, generations and destroyed frames.
@@ -959,6 +1100,17 @@ impl SceneStorage {
             return;
         }
         let gap = frame != crate::frames::next_frame(self.frame);
+        if !self.retired.is_empty() {
+            self.retired.retain_mut(|(free_at, buffers)| {
+                let keep = crate::frames::frame_after(*free_at, frame);
+                if !keep {
+                    // A reader that still held these rows would now draw nothing, which the
+                    // object growth browser test sees, instead of rows that look right.
+                    buffers.iter_mut().for_each(WorldArrays::hide_all);
+                }
+                keep
+            });
+        }
         if gap {
             // The other buffer may have missed changes, so rebuild both from scratch.
             for (d, c) in self.dirty.words_mut().iter_mut().zip(self.created.words()) {
@@ -1779,6 +1931,190 @@ mod tests {
         assert_eq!(scene.slots().live_count(), 3);
         scene.reserve_many(&mut more[..1]).unwrap();
         assert_eq!(scene.slots().live_count(), 4);
+    }
+
+    /// The world output of every slot in both buffers.
+    fn world_rows(scene: &SceneStorage, rows: usize) -> Vec<([f32; 12], [f32; 4])> {
+        (0..2)
+            .flat_map(|parity| {
+                (0..rows).map(move |s| {
+                    (
+                        *scene.world(parity).matrix(s),
+                        scene.world(parity).sphere(s),
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// Runs the same frames on a scene that starts with room for 4 objects and grows three times,
+    /// and on one that starts with room for 64: a tree, a dynamic object, a static change in each
+    /// frame, and a destroy whose row hides in the frame after it.
+    #[test]
+    fn a_grown_scene_matches_one_that_started_large() {
+        let jobs = JobSystem::new(0);
+        let run = |start: u32| {
+            let mut scene = SceneStorage::with_capacity(start);
+            let (root, c1) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+            let (child, c2) = object(&mut scene, [0.0, 2.0, 0.0], root, SHOWN);
+            let (spinner, c3) = object(&mut scene, [0.0, 0.0, 3.0], Handle::NONE, MOVING);
+            scene.apply_commands(&[c1, c2, c3], 1).unwrap();
+            scene.update_transforms(&jobs);
+            let mut handles = vec![root, child, spinner];
+            for frame in 2..12 {
+                scene.set_position(root, [frame as f32, 0.0, 0.0]).unwrap();
+                let at = scene.resolve(spinner).unwrap() as usize * 3;
+                scene.positions_mut()[at] = frame as f32;
+                if scene.slots().live_count() + 3 > scene.capacity() {
+                    scene.try_grow(scene.capacity() * 2 + 1).unwrap();
+                }
+                let mut commands = Vec::new();
+                for k in 0..3 {
+                    let parent = if k == 0 { child } else { Handle::NONE };
+                    let (h, c) = object(&mut scene, [k as f32, frame as f32, 0.0], parent, SHOWN);
+                    handles.push(h);
+                    commands.push(c);
+                }
+                if frame == 8 {
+                    commands.push(Command::destroy(handles[4]));
+                }
+                scene.apply_commands(&commands, frame).unwrap();
+                scene.update_transforms(&jobs);
+            }
+            scene.begin_frame(12);
+            scene.update_transforms(&jobs);
+            (scene, handles)
+        };
+        let (grown, handles) = run(4);
+        let (large, same) = run(64);
+        assert_eq!(handles, same);
+        assert_eq!(grown.capacity(), 39);
+        assert_eq!(world_rows(&grown, 40), world_rows(&large, 40));
+        for h in [handles[0], handles[1], handles[30]] {
+            assert_eq!(
+                grown.absolute_world_matrix(h),
+                large.absolute_world_matrix(h)
+            );
+        }
+        assert!(!grown.slots().is_live(handles[4]));
+    }
+
+    #[test]
+    fn a_growth_keeps_the_old_world_buffers_for_two_frames() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(2);
+        let (h, c) = object(&mut scene, [5.0, 0.0, 0.0], Handle::NONE, MOVING);
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let old = scene.world(1).matrices().as_ptr();
+        scene.try_grow(8).unwrap();
+        assert_ne!(scene.world(1).matrices().as_ptr(), old);
+        assert_eq!(scene.world(1).rows(), 9);
+        assert!(scene.take_structure_changed());
+        // The thread that draws may still replay frame 1's list, which points into the old arrays.
+        scene.begin_frame(2);
+        assert_eq!(scene.retired.len(), 1);
+        assert_eq!(scene.retired[0].1[1].matrices().as_ptr(), old);
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, h), [5.0, 0.0, 0.0]);
+        scene.begin_frame(3);
+        assert!(scene.retired.is_empty());
+        // A smaller capacity changes nothing.
+        scene.try_grow(3).unwrap();
+        assert_eq!(scene.capacity(), 8);
+        assert!(!scene.take_structure_changed());
+    }
+
+    #[test]
+    fn a_large_world_scene_grows_its_whole_cells_too() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_large_world(1);
+        let far = [7.0e6, 0.0, -3.0e6];
+        let h = scene.reserve().unwrap();
+        scene.set_position64(h, far).unwrap();
+        scene
+            .apply_commands(&[Command::create(h, Handle::NONE, 7, SHOWN)], 1)
+            .unwrap();
+        scene.try_grow(3).unwrap();
+        assert_eq!(scene.position_cells().len(), 12);
+        let g = scene.reserve().unwrap();
+        scene.set_position64(g, far).unwrap();
+        scene
+            .apply_commands(&[Command::create(g, Handle::NONE, 7, SHOWN)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        let at = |h| scene.absolute_world_matrix(h).map(|m| [m[3], m[7], m[11]]);
+        assert_eq!(at(h), Ok(far));
+        assert_eq!(at(g), Ok(far));
+    }
+
+    /// Prints the time of each doubling from the default start, for decision record D-103. Run it
+    /// with `cargo test --release -p null3d-core --lib -- --ignored --nocapture growth_times`.
+    #[test]
+    #[ignore = "a timing, not a check"]
+    #[allow(clippy::disallowed_methods)] // A native test reads the native clock.
+    fn growth_times() {
+        let mut scene = SceneStorage::with_capacity(1_023);
+        while scene.capacity() < 262_143 {
+            let next = scene.capacity() * 2 + 1;
+            let mut handles = vec![0; (scene.capacity() - scene.slots().live_count()) as usize];
+            scene.reserve_many(&mut handles).unwrap();
+            let start = std::time::Instant::now();
+            scene.try_grow(next).unwrap();
+            let ms = start.elapsed().as_secs_f64() * 1000.0;
+            println!("{} -> {next}: {ms:.2} ms", (next - 1) / 2);
+            scene.begin_frame(scene.frame() + 3);
+        }
+    }
+
+    #[test]
+    fn row_bytes_counts_every_array_of_a_row() {
+        let bytes = |scene: &SceneStorage| {
+            let floats = [
+                &scene.positions,
+                &scene.rotations,
+                &scene.scales,
+                &scene.local_radii,
+                &scene.local_centers,
+                &scene.render_orders,
+            ]
+            .map(|v| v.len() * 4);
+            let words = [
+                &scene.parents,
+                &scene.flags,
+                &scene.meshes,
+                &scene.materials,
+                &scene.skins,
+                &scene.morphs,
+                &scene.layers,
+                &scene.cells,
+                &scene.depths,
+                &scene.changed_frames,
+                &scene.order,
+                &scene.child_offsets,
+                &scene.child_list,
+            ]
+            .map(|v| v.len() * 4);
+            let world: usize = scene
+                .world
+                .iter()
+                .map(|w| (w.matrices().len() + 4 * w.rows()) * 4)
+                .sum();
+            let slots = scene.slots.generations().len() * 2
+                + (scene.capacity() as usize + 1) * 4
+                + scene.capacity() as usize * 4;
+            let bits = 8 * (scene.capacity() as usize + 1).div_ceil(8);
+            floats.iter().sum::<usize>()
+                + words.iter().sum::<usize>()
+                + world
+                + slots
+                + bits
+                + scene.levels.len() * size_of::<Level>()
+        };
+        let mut scene = SceneStorage::with_capacity(1023);
+        let before = bytes(&scene);
+        scene.try_grow(2047).unwrap();
+        assert_eq!((bytes(&scene) - before) / 1024, ROW_BYTES as usize);
     }
 
     #[test]

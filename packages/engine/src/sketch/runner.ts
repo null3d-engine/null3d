@@ -75,7 +75,6 @@ import { type LabelSlotSender, Ui } from './ui';
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
 /** Fixed sizes of the engine core. */
-export const SCENE_CAPACITY = 16_383;
 const MAX_BATCHES = 256;
 const COMMAND_CAPACITY = 1 << 16;
 
@@ -271,7 +270,7 @@ export class SketchRunner {
 		const { slots } = sketch.control;
 		const status = glue.initEngine(
 			sketch.jobWorkers,
-			SCENE_CAPACITY,
+			device.expectedObjects,
 			MAX_BATCHES,
 			COMMAND_CAPACITY,
 			device.storageBindingBytes,
@@ -310,7 +309,7 @@ export class SketchRunner {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
-		this.core = new CoreMemory(glue, sketch.memory);
+		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		const textures = new Textures(

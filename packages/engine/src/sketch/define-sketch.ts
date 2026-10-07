@@ -230,17 +230,43 @@ function isSketchDefinition(value: unknown): value is SketchDefinition {
 /** The directives that can block a module's download. */
 const SCRIPT_DIRECTIVES = /^(script-src|worker-src|default-src)/;
 
+/** How long the loader waits before it imports a sketch module that did not load once more, in ms. */
+const RETRY_WAIT_MS = 500;
+
+/** The query parameter that gives a sketch module a fresh address for its second import. */
+const RETRY_PARAM = 'null3d-retry';
+
+/** Imports the module at an address. */
+type ModuleImport = (url: string) => Promise<{ default?: unknown }>;
+
+const importModule: ModuleImport = (url) => import(/* @vite-ignore */ url);
+
+/** How `loadSketch` reports and makes its imports. */
+export interface SketchLoadOptions {
+	/** Notes a step of the load in the thread's start trail, such as a second import. */
+	step?: (text: string) => void;
+	/** Imports a module. Tests give a stub. */
+	importModule?: ModuleImport;
+	/** How long the loader waits before the second import, in ms. */
+	retryWaitMs?: number;
+}
+
 /**
  * Imports a sketch module and returns its sketch. A module that the page's policy blocks, or one
- * of its imports from the same origin, fails with E1422. Any other module that does not load fails
- * with E1410, unless its code threw an engine error, which keeps its code. A module that exports no
- * sketch fails with E1401.
+ * of its imports from the same origin, fails with E1422. A module that does not load is imported
+ * once more after a short wait, and the console and `step` note the second import. When both
+ * imports fail, the load fails with E1410 and the first failure's reason, unless the module's code
+ * threw an engine error, which keeps its code. A module that exports no sketch fails with E1401.
  */
-export async function loadSketch(url: string): Promise<SketchDefinition> {
+export async function loadSketch(
+	url: string,
+	options: SketchLoadOptions = {},
+): Promise<SketchDefinition> {
+	const load = options.importModule ?? importModule;
 	let module: { default?: unknown };
 	watchPolicy();
 	try {
-		module = await import(/* @vite-ignore */ url);
+		module = await load(url);
 	} catch (e) {
 		if (e instanceof EngineError) throw e;
 		const violation = await violationFor(new URL(url, globalThis.location?.href));
@@ -249,10 +275,51 @@ export async function loadSketch(url: string): Promise<SketchDefinition> {
 				'E1422',
 				`the page's Content-Security-Policy blocks the sketch module ${url}: its ${violation.directive} does not allow ${violation.blocked}.`,
 			);
-		const reason = reasonOf(e);
-		throw new EngineError('E1410', `the sketch module ${url} did not load: ${reason}.`);
+		module = await importAgain(url, e, load, options);
 	}
 	if (!isSketchDefinition(module.default))
 		throw new EngineError('E1401', `${url} must export default defineSketch(...).`);
 	return module.default;
+}
+
+/**
+ * Imports a sketch module whose first import failed with `first`, once more after a short wait.
+ * Every browser keeps a module whose code threw or did not parse, and rethrows the same error at
+ * once, so such a module fails with E1410 without a second download. Firefox and Safari download a
+ * module that did not download again at the same address. Chrome keeps the failed download and
+ * fails again at once with a new error, so the loader then imports the module at an address with
+ * a query of its own. Only http and https addresses take a query. So in Firefox and Safari, a
+ * module that fails both downloads is asked for a third time.
+ */
+async function importAgain(
+	url: string,
+	first: unknown,
+	load: ModuleImport,
+	{ step, retryWaitMs = RETRY_WAIT_MS }: SketchLoadOptions,
+): Promise<{ default?: unknown }> {
+	const reason = reasonOf(first);
+	const failed = (e: unknown) =>
+		e instanceof EngineError
+			? e
+			: new EngineError('E1410', `the sketch module ${url} did not load: ${reason}.`);
+	const note = (text: string) => {
+		console.warn(`null3D: ${text}`);
+		step?.(text);
+	};
+	note(`the sketch module ${url} did not load (${reason}), so the engine imports it once more`);
+	await new Promise((resolve) => setTimeout(resolve, retryWaitMs));
+	try {
+		return await load(url);
+	} catch (second) {
+		const address = new URL(url, globalThis.location?.href);
+		if (second === first || second instanceof EngineError || !/^https?:$/.test(address.protocol))
+			throw failed(second);
+		address.searchParams.set(RETRY_PARAM, '1');
+		note(`the second import failed too, so the engine imports ${address.href}`);
+		try {
+			return await load(address.href);
+		} catch (third) {
+			throw failed(third);
+		}
+	}
 }

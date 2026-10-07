@@ -3,6 +3,7 @@
 // only once.
 
 import { EngineError } from '../errors/engine-error';
+import * as C from '../generated/core';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import { type Build, coreUrls } from '../shared/core';
 import { compileWasm, type MemoryLimits, readMemoryLimits, type WasmError } from '../shared/wasm';
@@ -86,6 +87,20 @@ export function memoryMaximumMiB(
 			`the memory.maximumMiB option ${String(option)} is not a whole number of MiB from ${MIN_MAXIMUM_MIB} to ${MAX_MAXIMUM_MIB}.`,
 		);
 	return fromSwitch ?? option ?? fallback;
+}
+
+/**
+ * The objects that `createEngine`'s `expectedObjects` option asks the scene to start with room for,
+ * or 0 without the option. Throws E1213 for a value that is not a whole number from 1 to the most
+ * objects a scene holds.
+ */
+export function expectedObjectCount(value: number | undefined): number {
+	if (value === undefined) return 0;
+	if (Number.isInteger(value) && value >= 1 && value <= C.LIMIT_MAX_OBJECTS) return value;
+	throw new EngineError(
+		'E1213',
+		`createEngine() got ${value} for expectedObjects, which is not a whole number from 1 to ${C.LIMIT_MAX_OBJECTS.toLocaleString('en-US')}.`,
+	);
 }
 
 /**

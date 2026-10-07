@@ -53,6 +53,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	indexInstances: false,
 	shadowDepthBits: 16,
 	largeWorld: false,
+	expectedObjects: 0,
 	gpuOcclusion: false,
 	textureCache: true,
 });
@@ -100,6 +101,7 @@ const PLAIN: DeviceOptions = {
 	transparent: false,
 	depthPrepass: false,
 	largeWorld: false,
+	expectedObjects: 0,
 	gpuOcclusion: false,
 	textureCache: true,
 };

@@ -2623,7 +2623,7 @@ export class Scene {
 		}
 		const layered = layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT;
 		let write = this.reserveCommands(1 + (layered ? 1 : 0) + (material ? 1 : 0), call);
-		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
+		const handle = this.core.checkGrowth(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
 		const [x, y, z] = options.position ?? ORIGIN;
@@ -2830,9 +2830,10 @@ export class Scene {
 		const { core } = this;
 		const at = core.checkGrowth(core.glue.reserveObjects(count), call);
 		const handles = core.u32(at, count).slice();
-		const v = this.views;
 		const objects: Object3D[] = [];
 		for (let k = 0; k < count; k++) {
+			// A light's creation below can grow the memory, so each node takes the views anew.
+			const v = this.views;
 			const n = node(k);
 			const handle = handles[k] as number;
 			const slot = handle & SLOT_MASK;
