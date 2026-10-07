@@ -2,7 +2,7 @@
 
 Status: decided. Date: 2026-10-05. Task: M2-R21.
 
-Summary: A destroy moves the meshes that stay down over the removed data, so memory stays flat as levels load and drop. Mesh buffers held 1.49 MB after 10 and after 100 rounds, against 19.5 MB without freeing. `destroy` throws E1111 while a live object, batch or animator uses the mesh or model. A removal from 2,000 meshes takes 0.07 ms to 0.3 ms in WebGL2's pages, and 4 ms to 6 ms in WebGPU's one shared buffer.
+Summary: A destroy moves the meshes that stay down over the removed data, so memory stays flat as levels load and drop. Mesh buffers held 1.49 MB after 10 and after 100 rounds, against 19.5 MB without freeing. Removing meshes from 2,000 takes 0.07 ms to 0.3 ms in WebGL2's pages, and 4 ms to 6 ms in WebGPU's shared buffer.
 
 ## Question
 
