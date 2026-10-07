@@ -69,6 +69,7 @@ const frame = await engine.captureFrame();        // the next frame's { width, h
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
+await engine.destroy({ release: true }); // (0.2) also frees the memory that the page keeps about 30 s for the next engine
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
@@ -284,7 +285,9 @@ const paint = materials.standard({
   ior: 1.5, specularIntensity: 1, specularColor: '#ffffff',  // (0.2) non-metal reflection, as three.js's physical material
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
-  alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'blend' shows through
+  alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'hash' (0.2) draws the share the alpha sets; 'blend' shows through
+  alphaToCoverage: true,                       // (0.2) with 'mask': MSAA smooths the cut edges
+  forceSinglePass: false,                      // (0.2) with 'blend' and doubleSided: one draw for both faces
   blending: 'normal',                          // with 'blend': 'normal', 'additive' or 'multiply'
   depthWrite: true, depthTest: true,           // fixed at creation
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
@@ -316,11 +319,12 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
 - `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
+- (0.2) `alphaToCoverage`, on by default, smooths a mask's cut edges with MSAA, for foliage and fences. `false` gives three.js's hard `alphaTest` edges. Without MSAA it is a plain mask. The `'hash'` alpha mode draws a share of the surface that its alpha sets, in a pattern fixed to the mesh. Fades and crossing see-through surfaces then need no sort. A double-sided `'blend'` material draws its back faces, then its front faces, so a glass ball shows its far side. On flat surfaces, `forceSinglePass: true` saves that second draw.
 - Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
 - `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher` comes in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material. They are the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `alphaToCoverage`, `forceSinglePass`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 

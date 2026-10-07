@@ -3,7 +3,8 @@
 // carry rings of vertex alpha, and each masked material cuts them at its own cutoff, so each card
 // shows rings of another width. The cards stand in front of a wall and cross each other, and a
 // batch of small cards lies tilted on the floor. MSAA smooths the cards' outer edges, and the cut
-// edges stay as the cutoff draws them.
+// edges stay as the cutoff draws them, unless the cards turn alpha to coverage on. The same cards
+// with the alpha hash draw a share of each ring that their alpha sets.
 import { PARITY_CANVAS } from './spec';
 
 export { AMBIENT, BACKGROUND, SUN } from './spec';
@@ -75,10 +76,14 @@ export function turnAboutX(angle: number): [number, number, number, number] {
 	return [Math.sin(angle / 2), 0, 0, Math.cos(angle / 2)];
 }
 
-/** The mesh of a card: positions, normals, linear colors with alpha, and triangle indices. */
+/**
+ * The mesh of a card: positions, normals, texture coordinates from 0 at the bottom left to 1 at the
+ * top right, linear colors with alpha, and triangle indices.
+ */
 export interface CardMesh {
 	positions: Float32Array;
 	normals: Float32Array;
+	uvs: Float32Array;
 	colors: Float32Array;
 	indices: Uint16Array;
 }
@@ -92,6 +97,7 @@ export function cardMesh(): CardMesh {
 	const side = CARD_CELLS + 1;
 	const positions = new Float32Array(side * side * 3);
 	const normals = new Float32Array(side * side * 3);
+	const uvs = new Float32Array(side * side * 2);
 	const colors = new Float32Array(side * side * 4);
 	for (let row = 0; row < side; row++) {
 		for (let column = 0; column < side; column++) {
@@ -102,6 +108,7 @@ export function cardMesh(): CardMesh {
 			const k = row * side + column;
 			positions.set([x, y, 0], k * 3);
 			normals.set([0, 0, 1], k * 3);
+			uvs.set([u, v], k * 2);
 			const radius = Math.sqrt(x * x + y * y) / (CARD_SIZE / 2);
 			const alpha = 0.5 + 0.5 * Math.cos(radius * 3 * Math.PI);
 			colors.set([0.9 - 0.5 * u, 0.25 + 0.5 * v, 0.1 + 0.8 * u, alpha], k * 4);
@@ -119,7 +126,55 @@ export function cardMesh(): CardMesh {
 			at += 6;
 		}
 	}
-	return { positions, normals, colors, indices };
+	return { positions, normals, uvs, colors, indices };
+}
+
+/**
+ * How the cards test their alpha: the plain mask, as three.js's `alphaTest`; alpha to coverage,
+ * which smooths the cut edges with MSAA, as `alphaToCoverage` with `alphaTest`; or the alpha hash,
+ * as `alphaHash`, which ignores the cutoff.
+ */
+export const MASK_MODES = ['mask', 'coverage', 'hash'] as const;
+export type MaskMode = (typeof MASK_MODES)[number];
+
+/**
+ * The sun's shadows of the shadow variant, where the cards cast the holes of their masks onto the
+ * floor and the wall. null3D draws them in its cascades to `distance`, with `mapSize` texels on
+ * each side. three.js draws one map of `threeMapSize` texels, in a box of `halfSize` on each side
+ * of the light's line through the origin, which holds every shadow the view shows.
+ */
+export const MASK_SHADOWS = {
+	cascades: 1,
+	mapSize: 2048,
+	distance: 14,
+	halfSize: 7,
+	threeMapSize: 2048,
+} as const;
+
+/**
+ * The cards of the shadow variant whose base color map cuts their shape: a lit one and an unlit
+ * one, each with the map's stripes, at the cutoff `cutoff`.
+ */
+export const MASK_MAP_CARDS: readonly MaskCard[] = [
+	{ lit: true, cutoff: 0.5, position: [-3.4, 1.2, 0.8], rotation: [0, 0.5, 0] },
+	{ lit: false, cutoff: 0.5, position: [3.3, 1.1, 0.9], rotation: [0, -0.5, 0] },
+];
+
+/** The texels on each side of the cards' map. */
+export const STRIPE_SIZE = 16;
+
+/**
+ * The sRGB texels of the cards' map: diagonal stripes, opaque and clear in turn, in two greens, four
+ * bytes per texel, rows from the bottom.
+ */
+export function stripeTexels(): Uint8Array {
+	const texels = new Uint8Array(STRIPE_SIZE * STRIPE_SIZE * 4);
+	for (let y = 0; y < STRIPE_SIZE; y++)
+		for (let x = 0; x < STRIPE_SIZE; x++) {
+			const opaque = (x + y) % 6 < 3;
+			texels.set([60, 150 + (x % 2) * 60, 70, opaque ? 255 : 0], (y * STRIPE_SIZE + x) * 4);
+		}
+	return texels;
 }
 
 /** The object count that each engine's page reports: the boxes, the cards and the tiles. */
