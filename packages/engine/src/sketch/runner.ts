@@ -73,8 +73,11 @@ import { type LabelSlotSender, Ui } from './ui';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
-/** Fixed sizes of the engine core. */
-export const SCENE_CAPACITY = 16_383;
+/**
+ * Fixed sizes of the engine core. The scene's capacity holds S6's whole city until the object
+ * tables grow on demand, which replaces it.
+ */
+export const SCENE_CAPACITY = 32_767;
 const MAX_BATCHES = 256;
 const COMMAND_CAPACITY = 1 << 16;
 
