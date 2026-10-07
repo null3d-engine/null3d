@@ -38,6 +38,9 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 		tier,
 		preset,
 		renderScale: 0,
+		textureBytes: 0,
+		textureBudgetBytes: 0,
+		droppedLevels: 0,
 	};
 }
 

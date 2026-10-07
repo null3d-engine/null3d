@@ -551,6 +551,7 @@ describe('SketchRunner', () => {
 		expect(log).toEqual([
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, medium.uploadBytesPerFrame),
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, medium.maxAnisotropy),
+			textureOption(C.TEXTURE_OPTION_MEMORY_BUDGET_KIB, medium.textureMemoryMiB * 1024),
 			'setup',
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 2048),
 		]);
@@ -851,10 +852,16 @@ describe('SketchRunner and quality presets', () => {
 		);
 		stopDrawing();
 		expect(context.quality.preset).toBe('low');
-		// Low's pixel ratio cap applies, and the sketch's own anisotropy cap and upload budget stay.
+		// Low's pixel ratio cap and texture memory budget apply, and the sketch's own anisotropy cap
+		// and upload budget stay.
 		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
 		expect(context.quality.settings.maxAnisotropy).toBe(16);
-		expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([]);
+		expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([
+			textureOption(
+				C.TEXTURE_OPTION_MEMORY_BUDGET_KIB,
+				presetSettings('low').textureMemoryMiB * 1024,
+			),
+		]);
 	}, 10_000);
 
 	it('asks for no more than the frame rate that ?fps= holds', async () => {

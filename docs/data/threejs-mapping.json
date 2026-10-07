@@ -99,9 +99,20 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.stats(true); debug.frameStats() for numbers",
-      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. It counts no triangles or GPU memory. engine.measure() on the page adds GPU time and memory.",
+      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. It counts no triangles. engine.measure() on the page adds GPU time and memory. In the sketch, debug.frameStats() (0.2) also gives the textures' GPU bytes, their budget and their dropped mip levels.",
       "docs": "api/debug",
-      "detect": "\\.info\\.(render|memory|programs)|from\\s+['\"][^'\"]*stats(\\.module)?(\\.js)?['\"]|\\bnew\\s+Stats\\s*\\("
+      "detect": "\\.info\\.(render|programs)|from\\s+['\"][^'\"]*stats(\\.module)?(\\.js)?['\"]|\\bnew\\s+Stats\\s*\\("
+    },
+    {
+      "id": "texture-memory",
+      "category": "Renderer and loop",
+      "three": "renderer.info.memory.textures",
+      "status": "changed",
+      "since": "0.2",
+      "target": "quality.textureMemory; textures.memoryBytes; the quality setting textureMemoryMiB",
+      "notes": "three.js counts the textures that the renderer holds, not their bytes, and sets no budget. null3D reports the textures' GPU bytes and holds them under the preset's budget: past it, textures from files drop their largest mip levels, which load again once room returns.",
+      "docs": "concepts/quality-presets",
+      "detect": "\\.info\\.memory\\b"
     },
     {
       "id": "precompile",

@@ -2001,6 +2001,47 @@ pub fn sync_textures(images_arrived: u32, frames_taken: u32) {
     with_engine(|e| {
         let textures = e.renderer.settings_mut().textures_mut();
         textures.sync(images_arrived, frames_taken);
+        // The memory budget moves textures between arrays before the frame culls and records, so
+        // the draw tables it builds bind the arrays that hold them.
+        e.structure_changed |= textures.fit_memory();
+        0
+    });
+}
+
+// Notes that the page can load a texture's texels again, at any mip level, as it can a file's.
+// Only such a texture drops levels under the memory budget. New texels from the page undo it.
+/// Notes that the page can load a texture's texels again.
+#[wasm_bindgen(js_name = setTextureReloadable)]
+pub fn set_texture_reloadable(texture: u32) -> u32 {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        match textures.set_reloadable(Handle::from_raw(texture)) {
+            Ok(()) => 0,
+            Err(error) => texture_failure(error),
+        }
+    })
+}
+
+// The next texture whose texels the page should load again, or 0 for none. `textureStat` gives
+// the levels to leave out (`RELOAD_LEVEL`) and the hidden texture that takes the texels
+// (`RELOAD_TEXTURE`), whose `setTextureImage` or `setTextureData` the page then calls.
+/// Takes the next texture whose texels the page should load again.
+#[wasm_bindgen(js_name = takeTextureReload)]
+pub fn take_texture_reload() -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        Ok(textures.take_reload().map_or(0, Handle::raw))
+    })
+}
+
+// Stops a texture's load again for good, after the page could not load its texels: it keeps the
+// levels it holds and drops no more.
+/// Stops a texture's load again for good.
+#[wasm_bindgen(js_name = failTextureReload)]
+pub fn fail_texture_reload(texture: u32) {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures.fail_reload(Handle::from_raw(texture));
         0
     });
 }
@@ -2014,6 +2055,7 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
     with_engine(|e| {
         let textures = e.renderer.settings().textures();
         let stats = textures.stats();
+        let handle = Handle::from_raw(texture);
         let bytes = |b: u64| b as f64;
         value = match field {
             texture_stat::MEMORY_BYTES => bytes(textures.memory_bytes()),
@@ -2027,6 +2069,20 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
             texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
             texture_stat::UPLOAD_BUDGET => f64::from(textures.budget()),
             texture_stat::MAX_ANISOTROPY => f64::from(textures.max_anisotropy()),
+            texture_stat::MEMORY_BUDGET => bytes(textures.memory_budget()),
+            texture_stat::DROPPED_LEVELS => match textures.dropped_levels(handle) {
+                Ok(levels) => f64::from(levels),
+                Err(error) => return texture_failure(error),
+            },
+            texture_stat::DROPPED_TOTAL => f64::from(textures.dropped().0),
+            texture_stat::DROPPED_TEXTURES => f64::from(textures.dropped().1),
+            texture_stat::BUDGET_EPOCH => f64::from(textures.budget_epoch()),
+            texture_stat::RELOAD_LEVEL => {
+                textures.reload_of(handle).map_or(0.0, |r| f64::from(r.0))
+            }
+            texture_stat::RELOAD_TEXTURE => textures
+                .reload_of(handle)
+                .map_or(0.0, |r| f64::from(r.1.raw())),
             _ => f64::from(textures.max_size()),
         };
         0
@@ -2059,6 +2115,9 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
         match option {
             texture_option::UPLOAD_BUDGET => textures.set_budget(value),
             texture_option::MAX_ANISOTROPY => textures.set_max_anisotropy(value),
+            texture_option::MEMORY_BUDGET_KIB => {
+                textures.set_memory_budget(u64::from(value) * 1024)
+            }
             _ => textures.upload_all_next_frame(),
         }
         0

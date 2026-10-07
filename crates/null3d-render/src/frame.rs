@@ -26,7 +26,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
-use crate::background::Background;
+use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
@@ -51,6 +51,7 @@ use crate::shadows::{
     fit_cascades,
 };
 use crate::textures::TextureStore;
+use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -1058,15 +1059,23 @@ impl SceneSettings {
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a
     /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
-    /// that changed into `table`. Returns true when a map's bind group was made again, which
-    /// render bundles that bind it must see.
+    /// that changed into `table`. While the textures near their memory budget, it also reads part
+    /// of the scene for the budget's estimate of what each texture needs. Returns true when a map's
+    /// bind group was made again, which render bundles that bind it must see.
     pub(crate) fn record_materials(
         &mut self,
+        input: &FrameInput<'_>,
         list: &mut DrawList,
         arena: &mut UploadArena,
         table: MaterialStorage,
-        frame: u32,
     ) -> Result<bool, RecordError> {
+        let frame = input.frame;
+        if self.textures.needs_estimate()
+            && let Some(view) = self.need_view(input)
+        {
+            self.textures
+                .estimate_needs(input.scene, input.batches, &self.materials, &view);
+        }
         let remade = self.textures.record(list, frame)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
@@ -1096,6 +1105,34 @@ impl SceneSettings {
             )?;
         }
         Ok(remade)
+    }
+
+    /// What the texture budget's estimate of need reads of the camera's view, or `None` when the
+    /// view has no camera.
+    fn need_view(&self, input: &FrameInput<'_>) -> Option<NeedView> {
+        let (_, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+        let parity = input.parity();
+        let view = self.view_frame(
+            ViewId::CAMERA,
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
+        )?;
+        Some(NeedView {
+            camera: view.camera,
+            frustum: view.frustum,
+            lens,
+            height: input.canvas.1 as f32,
+            frame: input.frame,
+            parity,
+            // Only a 2D background takes a layer that the budget may drop; cube textures keep
+            // their levels.
+            background: match self.background.map(|b| b.source) {
+                Some(BackgroundSource::Texture(texture)) => texture,
+                _ => Handle::NONE,
+            },
+        })
     }
 
     /// The bind group of the maps that a material draws with through `pipeline`, as

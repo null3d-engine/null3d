@@ -351,6 +351,7 @@ textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array
 textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrientation: 'flipY' }));
 tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
 tex.width; tex.height; tex.bytes;   // size and GPU memory
+tex.droppedLevels;         // (0.2) largest mip levels the memory budget dropped, 0 to 3; width and height stay
 tex.destroy();
 textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the largest width or height
 ```
@@ -524,6 +525,8 @@ quality.governor.farCascadeInterval;    // the shadow settings drawn now, which 
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set
 quality.settings.shadowCascades;        // cascades of lights that name none; fixed at the start, with shadowMapSize
 quality.settings.morphTargets;          // (0.2) most morph weights per object on WebGL2, the largest; fixed at the start
+quality.set({ textureMemoryMiB: 512 }); // (0.2) texture GPU memory budget; past it, textures from files drop mip levels
+quality.textureMemory;                  // (0.2) { bytes, budgetBytes, droppedLevels, droppedTextures }; onChange runs on drops
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });

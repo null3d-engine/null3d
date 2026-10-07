@@ -374,8 +374,20 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setTextureData(texture: number, width: number, height: number): number;
 	destroyTexture(texture: number, frame: number): number;
-	/** Tells the texture store what the thread that draws has: images received, and frames taken. */
+	/**
+	 * Tells the texture store what the thread that draws has: images received, and frames taken.
+	 * Then the store fits the textures to their memory budget.
+	 */
 	syncTextures(imagesArrived: number, framesTaken: number): void;
+	/** Notes that the page can load a texture's texels again from its file, at any mip level. */
+	setTextureReloadable(texture: number): number;
+	/**
+	 * The next texture whose texels the page should load again, or 0 for none. `textureStat` gives
+	 * the levels to leave out and the hidden texture that takes the texels.
+	 */
+	takeTextureReload(): number;
+	/** Stops a texture's load again for good: it keeps the levels it holds and drops no more. */
+	failTextureReload(texture: number): void;
 	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
 	textureStat(field: number, texture: number): number;
 	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
@@ -721,6 +733,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
+	'setTextureReloadable',
+	'takeTextureReload',
+	'failTextureReload',
 	'textureStat',
 	'setTextureOption',
 	'setShadowTiles',

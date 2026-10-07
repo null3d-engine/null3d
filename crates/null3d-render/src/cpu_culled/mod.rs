@@ -1109,8 +1109,7 @@ impl CpuCulledRenderer {
             .upload(list, arena, self.settings.meshes().pages())?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
-        self.settings
-            .record_materials(list, arena, table, input.frame)?;
+        self.settings.record_materials(input, list, arena, table)?;
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
