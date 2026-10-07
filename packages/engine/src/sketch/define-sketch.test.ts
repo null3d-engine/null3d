@@ -72,6 +72,32 @@ describe('loadSketch', () => {
 		);
 	});
 
+	/** Reports a policy violation as a browser does, a moment after the request that it blocked. */
+	const reportViolation = (directive: string, blocked: string) =>
+		setTimeout(() => {
+			const event = new Event('securitypolicyviolation');
+			Object.assign(event, { effectiveDirective: directive, blockedURI: blocked });
+			dispatchEvent(event);
+		}, 0);
+
+	it("refuses a module that the page's policy blocks, or an import of it, with E1422 and the directive", async () => {
+		const url = 'http://127.0.0.1:9/assets/sketch.js';
+		const failing = failure(url);
+		reportViolation('worker-src', 'http://127.0.0.1:9/assets/src.js');
+		const error = await failing;
+		expect(error.code).toBe('E1422');
+		expect(error.message).toStartWith(
+			`E1422: the page's Content-Security-Policy blocks the sketch module ${url}: its worker-src does not allow http://127.0.0.1:9/assets/src.js.`,
+		);
+	});
+
+	it('keeps E1410 when the only violation is of a directive that blocks no module', async () => {
+		const url = 'http://127.0.0.1:10/assets/sketch.js';
+		const failing = failure(url);
+		reportViolation('img-src', 'http://127.0.0.1:10/assets/texture.png');
+		expect((await failing).code).toBe('E1410');
+	});
+
 	it('keeps the code of an engine error that the module throws when it loads', async () => {
 		const url = writeModule(
 			'engine-error.js',

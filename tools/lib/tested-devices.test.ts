@@ -186,8 +186,17 @@ describe('the text helpers', () => {
 	});
 
 	it('finds the text that an edit added to a cell, and notices text it changed', () => {
-		expect(addedText('a; b', 'a; new; b')).toEqual({ text: 'new', edited: false });
-		expect(addedText('Done.', 'Done. More.')).toEqual({ text: 'More.', edited: false });
+		expect(addedText('a; b', 'a; new; b')).toEqual({ text: 'new', edited: false, closes: false });
+		expect(addedText('Done.', 'Done. More.')).toEqual({
+			text: 'More.',
+			edited: false,
+			closes: false,
+		});
+		expect(addedText('Done', 'Done. More.')).toEqual({
+			text: 'More.',
+			edited: false,
+			closes: true,
+		});
 		expect(addedText('Done.', 'Undone. More.').edited).toBe(true);
 	});
 });
@@ -284,6 +293,19 @@ describe('branchEntries', () => {
 		expect(writes.get(`${DIR}/ipad-pro-11-inch-safari/20261008-soak.md`)).toBe(
 			'Plans: soak 2026-10-08\n\nResult: Soak held.\n',
 		);
+		// The last run's result already ends its sentence, so its file stays as it is.
+		expect([...writes.keys()]).toEqual([`${DIR}/ipad-pro-11-inch-safari/20261008-soak.md`]);
+		// A branch whose new text closed the old cell's last sentence gives the old text that full stop.
+		const unclosed = new Map(record());
+		unclosed.set(
+			`${DIR}/ipad-pro-11-inch-safari/20261007-054211-effects.md`,
+			runText('effects 2026-10-07', 'No memory refusal'),
+		);
+		expect(
+			branchEntries(before, after, unclosed).writes.get(
+				`${DIR}/ipad-pro-11-inch-safari/20261007-054211-effects.md`,
+			),
+		).toBe('Plans: effects 2026-10-07\n\nResult: No memory refusal.\n');
 	});
 
 	it('notes a cell that the branch changed in place', () => {

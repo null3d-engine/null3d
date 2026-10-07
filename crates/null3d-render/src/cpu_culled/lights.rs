@@ -1,30 +1,29 @@
-//! The point and spot lights of the camera's view on WebGL2: the light grid's words in a data
-//! texture of 32-bit integers, and the light records in a data texture of floats, four texels
-//! each. Fragment shaders read both with `texelFetch`. Each has a ring of three textures, as the
+//! The point and spot lights of the camera's view on WebGL2: the light records and the light
+//! grid's words in one data texture of 32-bit integers, so they take one texture unit of the
+//! fragment stage. The records fill the columns of the texture's first half, four texels each, and
+//! the words the columns of its second half, four to a texel. Fragment shaders read both with
+//! `texelFetch`, and turn the records' bits into floats. The texture has a ring of three, as the
 //! index lists do, so a frame never writes a texture that the GPU may still read for an earlier
-//! frame. Every view has a frame group for each ring slot, which binds that slot's textures.
+//! frame. Every view has a frame group for each ring slot, which binds that slot's texture.
 //!
 //! The textures grow with the lists, with room to spare. When they grow, every view binds them
 //! again, and the next frame writes the lists into them again.
 
 use null3d_gpu::drawlist::{DrawList, sizes};
 
-use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
+use super::data::{DataTexture, GRID_WORDS_PER_TEXEL, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
 use crate::frame::{RecordError, UploadArena};
 use crate::light_grid::CameraLights;
 
-/// The ring of light grid textures, then the ring of light record textures.
-const TEXTURES: [DataTexture; 2] = [
-    DataTexture::indices(ids::LIGHT_GRID, RING),
-    DataTexture::lights(ids::LIGHTS, RING),
-];
+/// The ring of light data textures.
+const TEXTURE: DataTexture = DataTexture::light_data(ids::LIGHT_DATA, RING);
 
-/// The light textures' ring slot, and the rows each kind of texture holds, 0 before it exists.
+/// The light textures' ring slot, and the rows each texture holds, 0 before they exist.
 #[derive(Debug, Default)]
 pub(super) struct LightTextures {
     slot: RingSlot,
-    rows: [u32; 2],
+    rows: u32,
 }
 
 impl LightTextures {
@@ -43,14 +42,10 @@ impl LightTextures {
         limit: u32,
     ) -> Result<bool, RecordError> {
         let grid = lights.grid();
-        let needed = [
-            (grid.words().len() as u32).div_ceil(sizes::INDICES_PER_TEXTURE_ROW),
-            (grid.lights().len() as u32).div_ceil(sizes::LIGHTS_PER_TEXTURE_ROW),
-        ];
-        let mut remade = false;
-        for ((texture, rows), needed) in TEXTURES.into_iter().zip(&mut self.rows).zip(needed) {
-            remade |= texture.grow(list, rows, needed, limit)?;
-        }
+        let needed = (grid.words().len() as u32)
+            .div_ceil(sizes::GRID_WORDS_PER_TEXTURE_ROW)
+            .max((grid.lights().len() as u32).div_ceil(sizes::LIGHTS_PER_TEXTURE_ROW));
+        let remade = TEXTURE.grow(list, &mut self.rows, needed, limit)?;
         if remade {
             self.slot.forget();
             lights.forget_gpu();
@@ -72,12 +67,16 @@ impl LightTextures {
         if !new {
             return Ok(());
         }
-        let (words, count) = (lights.words_bytes(), lights.grid().lights().len() as u32);
-        let (at, _) = arena.push(words)?;
-        let rows = TextureRows::indices(0, (words.len() / 4) as u32);
-        write_rows(list, ids::LIGHT_GRID + slot, rows, at)?;
+        let texture = ids::LIGHT_DATA + slot;
+        let words = lights.words_bytes();
+        let texel_bytes = 4 * GRID_WORDS_PER_TEXEL as usize;
+        let (at, padded) = arena.push_zeroed(words.len().next_multiple_of(texel_bytes))?;
+        padded[..words.len()].copy_from_slice(words);
+        let texels = (padded.len() / texel_bytes) as u32;
+        write_rows(list, texture, TextureRows::grid_words(0, texels), at)?;
+        let count = lights.grid().lights().len() as u32;
         let (at, _) = arena.push(lights.lights_bytes())?;
-        write_rows(list, ids::LIGHTS + slot, TextureRows::lights(0, count), at)
+        write_rows(list, texture, TextureRows::lights(0, count), at)
     }
 
     /// Forgets the textures, so they are made again, after the thread that draws replaced the GPU.

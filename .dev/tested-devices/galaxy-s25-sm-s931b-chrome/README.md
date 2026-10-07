@@ -16,4 +16,6 @@ WebGL2 has no GPU timer.
 In the prefilter prototype, writing half floats straight into the cube on WebGL2 raises GL error 0x502, on every phone tested The meshopt KHR test model draws broken cubes on WebGPU and in compatibility mode (3.7% and 4.0% of pixels): the compute skinning pass writes vertices with packed 8-bit normalized attributes wrong.
 Skinning in the vertex shader draws it right.
 With WebGL2, every environment image differs by 13.8% to 14.9%: the spheres lose their reflections.
-Main has both faults
+Main has both faults.
+
+Objects past 512 m drew in the wrong place on WebGPU, and captures of scenes that resolve straight into the canvas came back empty: both fixed by the S25 WebGPU fixes ([Browser faults](../../implementation-notes.md#browser-faults))

@@ -21,4 +21,4 @@ Capped room count, 2026-10-06: CI's shard 2, 169 of 170 (run 20261006-144206); t
 Then 170 of 170 (run 20261006-145412); each restart page counted 10, the cap, before and after its starts.
 Full counts: 8 of 9, then 4 of 4, then 1 of 1 (runs 20261006-150513, -150939 and -151154-memory).
 The one failure was the check's own error, which judged a threaded page's fall by the room before its second round; that round got the room back.
-The room at the end was 39
+The room at the end was 39.

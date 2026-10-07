@@ -359,9 +359,15 @@ export function rowFiles(
 	]);
 }
 
-/** What a branch's edit added to one cell: the inserted text, and whether it also removed text. */
-export function addedText(before: string, after: string): { text: string; edited: boolean } {
-	if (before === after) return { text: '', edited: false };
+/**
+ * What a branch's edit added to one cell: the inserted text, whether it also removed text, and
+ * whether it began with the full stop that closes the old text's last sentence.
+ */
+export function addedText(
+	before: string,
+	after: string,
+): { text: string; edited: boolean; closes: boolean } {
+	if (before === after) return { text: '', edited: false, closes: false };
 	let start = 0;
 	while (start < before.length && before[start] === after[start]) start++;
 	let end = 0;
@@ -371,9 +377,11 @@ export function addedText(before: string, after: string): { text: string; edited
 		before[before.length - 1 - end] === after[after.length - 1 - end]
 	)
 		end++;
+	const inserted = after.slice(start, after.length - end);
 	return {
-		text: after.slice(start, after.length - end).replace(/^[\s;,.]+|[\s;,]+$/g, ''),
+		text: inserted.replace(/^[\s;,.]+|[\s;,]+$/g, ''),
 		edited: before.length - end > start,
+		closes: /^\s*\./.test(inserted),
 	};
 }
 
@@ -413,12 +421,15 @@ export function matchRow(rows: readonly DeviceRow[], facts: Facts): DeviceRow | 
 const withFact = (readme: string, fact: string, value: string) =>
 	readme.replace(new RegExp(`^- ${fact}:.*$`, 'm'), `- ${fact}:${value ? ` ${value}` : ''}`);
 
-/** A README's text with one more known issue. */
-function withIssue(readme: string, issue: string): string {
+/** Text that ends with a full stop, adding one where its last sentence lacks it. */
+const closed = (text: string) => text.trimEnd().replace(/([^.])$/, '$1.');
+
+/** A README's text with one more known issue, and the full stop that the last one lacked. */
+function withIssue(readme: string, issue: string, closesLast: boolean): string {
 	const text = sentenceLines(issue);
-	return /\nNone recorded\.\n?$/.test(readme)
-		? readme.replace(/None recorded\.\n?$/, `${text}\n`)
-		: `${readme.trimEnd()}\n\n${text}\n`;
+	if (/\nNone recorded\.\n?$/.test(readme))
+		return readme.replace(/None recorded\.\n?$/, `${text}\n`);
+	return `${closesLast ? closed(readme) : readme.trimEnd()}\n\n${text}\n`;
 }
 
 /**
@@ -493,7 +504,12 @@ export function branchEntries(
 				notes.push(
 					`${title}: the branch changed text inside its ${label} cell, not only added to it; check the new files`,
 				);
-		if (issues?.text) readme = withIssue(readme, move(issues.text));
+		if (issues?.text) readme = withIssue(readme, move(issues.text), issues.closes);
+		// A branch that closed the last result's sentence with its own text gets that full stop.
+		const lastRun = row.runs.at(-1);
+		const lastText = lastRun ? (files.get(lastRun.path) ?? '') : '';
+		if (lastRun && result?.text && result.closes && `${closed(lastText)}\n` !== lastText)
+			writes.set(lastRun.path, `${closed(lastText)}\n`);
 		if (readme !== (files.get(readmePath) ?? '')) writes.set(readmePath, readme);
 		if (plans?.text || result?.text) {
 			const taken = new Set(
