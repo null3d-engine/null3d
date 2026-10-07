@@ -1,15 +1,16 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Eleven more set
-// what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory=
-// for the shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for
-// culling without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for
-// occlusion culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU,
-// ?instances=index for vertex shaders that read instance data by index on core WebGPU,
-// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth, and ?join=off
-// for custom effects in a pass each, none joined. ?hold starts hold mode for image tests, ?preset=
-// fixes the quality preset, ?bench publishes the running engine for benchmark tools, and
-// ?gl-timing times each WebGL call for benchmark pages.
+// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Twelve more
+// set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
+// ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
+// ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
+// ?occlusion=on or off for occlusion culling, ?skinning=vertex for skinning in the vertex shader of
+// each pass on WebGPU, ?instances=index for vertex shaders that read instance data by index on core
+// WebGPU, ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
+// ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
+// in a pass each, none joined. ?hold starts hold mode for image tests, ?preset= fixes the quality
+// preset, ?bench publishes the running engine for benchmark tools, and ?gl-timing times each WebGL
+// call for benchmark pages.
 
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
@@ -170,6 +171,11 @@ export interface Switches {
 	 */
 	shadowDepthBits: ShadowDepthBits;
 	/**
+	 * False when ?texture-cache=off makes KTX2 files transcode on every load, with no cache of
+	 * transcoded textures, to time the cache against it.
+	 */
+	textureCache: boolean;
+	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
 	 */
@@ -285,6 +291,7 @@ export function parseSwitches(search: string): Switches {
 		vertexSkinning: params.get('skinning') === 'vertex',
 		indexInstances: params.get('instances') === 'index',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
+		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
