@@ -503,6 +503,18 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
  */
 const S5_SWIFTSHADER_COUNT = 100;
 
+/**
+ * S6's objects on SwiftShader: the ones nearest the camera's start, which fill the held view's
+ * street. The whole city's 3.85 million triangles would take the software GPU minutes per frame.
+ */
+const S6_SWIFTSHADER_COUNT = 4_000;
+
+/**
+ * The seconds that S6's held frame may take. The first load on a machine builds and optimizes the
+ * city's model files, about two minutes on the owner's Mac, while the page waits for its import.
+ */
+const S6_TIMEOUT_SECONDS = 600;
+
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
@@ -1538,7 +1550,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
 	// their frame, so other devices may differ in fewer of their pixels. S5 draws a smaller crowd on
-	// SwiftShader.
+	// SwiftShader, and S6 the part of the city nearest its camera.
 	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
@@ -1546,8 +1558,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
 			hold: HOLD_TIME,
 			modes: ['pipelined', 'low latency'],
-			timeoutSeconds: 90,
+			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
 			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
+			...(scene === 's6' && { swiftShaderSwitches: [`n=${S6_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),

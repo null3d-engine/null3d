@@ -255,6 +255,28 @@ A run folder holds every page's full result, with frames and images, and stays o
 - Phones and tablets first find S5's own scale: `bun tests/real-browsers.ts --plan scale --scenes s5 --allow-no-webgpu --android chrome` ([Device sessions](devices.md#android-phone)). Then run the bench plan at that count: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s5 --pages null3d-webgl2,threejs-webgl,scene-code --n <count>`.
 - On the iPad: `bun tests/real-browsers.ts --plan scale --scenes s5 --lan ipad-safari`, then `--plan bench --lan ipad-safari --scenes s5 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code --n <count>`.
 
+## The city
+
+- S6 draws the generated city of the sample content: 19,173 objects in 200 materials. Its 144 blocks hold towers, kit buildings, roads and street props. `?n=` keeps only the objects nearest the camera's start, up to the whole city. The layout comes from the sample content's seeded generator ([Sample content](sample-content.md#the-city-of-s6)).
+- `bench/lib/city-files.ts` turns the layout into two model files. The kit file holds each part of the 98 Kenney models once, as a node of its own. The tower file holds each of the 1,849 boxes with a mesh of its own, and the layout's 200 materials. A box's texture coordinates count metres, so a stretched box keeps the texel size of a small one. Occlusion, roughness and metalness of each texture set go into one image, in glTF's channels. The asset tool then optimizes both files, as for any model a page imports with `?optimized`. Both engines load the same files.
+- The optimized files take 37.5 MB: the kit 1.8 MB, the towers 2.8 MB of meshes and 33 MB of KTX2 textures. On the GPU the textures take 87 MB as ETC2 or ASTC, and 133 MB as BC7. The scene draws about 3.85 million triangles. The tool gave 63 of the 122 kit parts and 1,705 of the 1,849 boxes a blocker. The 144 boxes without one are the flat ground slabs.
+- null3D makes one object per model part and row with `createMesh`, from the nodes of the loaded files. A copy from `scene.instantiate` would add a group per copy. Each object casts and receives shadows. Each keeps the tool's blocker choice through the node's `occluder` field.
+- The scene streams in. The setup waits for the layout and the kit file, creates the nearest objects and returns, so the first frame comes early. Each frame then creates the objects of up to 3,000 more rows, nearest first, and the towers once their file is in. The sketch then tells the page the time of each stage. A timed run warms up only when the city is whole. A held frame loads everything first.
+- An evening sun casts shadows, and 32 street lights light the camera's route. A Poly Haven environment lights the rest, and the analytic sky fills the background. Bloom and ambient occlusion are on. The preset decides the shadows, ambient occlusion (High and Ultra) and software occlusion culling (Medium and up). The page also turns GPU occlusion culling on, so both methods run. The engine's `?occlusion=off` turns both off.
+- The camera drives the layout's closed route at 12 m/s and 8 m high, looking 30 m ahead. Clicks pick buildings through pointer events, and a label names the picked building at the hit point. Labels follow the eight tallest towers. `?demo` adds the stats overlay, and Space pauses the drive.
+- The three.js twin loads the same two files with `GLTFLoader`, `KTX2Loader` and `MeshoptDecoder`. Each kit part draws as one `InstancedMesh` with a row per copy, which three.js advises for many copies of a mesh, with shadows. The towers stay the meshes the loader made. It streams in as null3D's page does. `PMREMGenerator` prefilters the environment, and the `Sky` addon draws the sky. Its shadows come from the cascaded shadow addon, as in S4's twin. WebGPURenderer shades the street lights with clustered lighting. On WebGLRenderer, `EffectComposer` runs `GTAOPass` at the preset's ambient occlusion scale, `UnrealBloomPass` and `OutputPass`. On WebGPURenderer, the render pipeline runs the same as nodes. `Raycaster` picks with three-mesh-bvh's trees, and `CSS2DRenderer` draws the labels. three.js has no occlusion culling.
+- Each engine draws bloom and ambient occlusion with its own technique. null3D's bloom works down a chain of mip levels, where three.js runs `UnrealBloomPass`. null3D's occlusion darkens only ambient light, and `GTAOPass` darkens the whole image. So the parity checks leave S6 out, and its frames carry a quality note ([D-52](decisions/D-52-intent-parity.md)).
+
+### What S6 found
+
+- `GTAONode` on WebGPURenderer reads depth with `textureGather`, which takes no multisampled texture. With the renderer's MSAA, its shader failed to build. The twin's scene pass draws without MSAA when it feeds ambient occlusion, as three.js's own example does.
+- The first build on a machine generates the city files in about 27 seconds and optimizes them in about 100 seconds on the owner's Mac. Later builds take both from their caches. The benchmark pages' build server in `bench/playwright.config.ts` waits up to 10 minutes.
+
+### Run S6
+
+- The CI comparison leaves S6 out (`COMPARED_SCENES` in `bench/run.ts`) until it runs at a pinned preset.
+- On the Mac: `bun run bench:run --scenes s6 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,threejs-webgl,scene-code`.
+
 ## Shadows
 
 - `?shadows=<n>` on S2's pages turns on the sun's shadows, and every node casts and receives them. null3D draws them in n cascades, from 1 to 4, and three.js in one map. Both maps have 2,048 texels on each side (`SHADOWS` in `bench/scenes/spec.ts`), and three.js's map covers a box around the whole forest.

@@ -93,7 +93,7 @@ export interface ImageComparison {
 // The scenes and the pages that draw their hold frames.
 
 /** Every benchmark scene. The benchmark runs, the page tests and the image tests cover each one. */
-export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3', 's4', 's5'] as const;
+export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3', 's4', 's5', 's6'] as const;
 export type BenchScene = (typeof BENCH_SCENES)[number];
 
 /**
@@ -119,6 +119,10 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 		"on every tier, fog by distance from the camera where three.js's fog follows the depth along the view",
 	],
 	s5: [],
+	// Each engine draws bloom and ambient occlusion with its own technique, as the benchmarks guide
+	// says for S6: null3D's mip-chain bloom against UnrealBloomPass, and occlusion that darkens only
+	// ambient light against GTAOPass, which darkens the whole image.
+	s6: ['on every tier, bloom and ambient occlusion that each engine draws with its own technique'],
 };
 
 /** The benchmark scenes whose hold frames the parity checks compare with three.js's. */
