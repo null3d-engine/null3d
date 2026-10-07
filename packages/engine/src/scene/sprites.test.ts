@@ -80,6 +80,9 @@ function rowCalls(log: string[]): SpriteBatchRows {
 		setLayers: (mask) => log.push(`layers ${mask}`),
 		markDirty: (start, count) => log.push(`dirty ${start} ${count}`),
 		destroy: () => log.push('destroy'),
+		destroyedFrame: -1,
+		listen: (_target, type) => log.push(`on ${type}`),
+		unlisten: (_target, type) => log.push(`off ${type}`),
 	};
 }
 
@@ -145,7 +148,7 @@ describe('scene.createSprites', () => {
 		expect(sprites).toBeInstanceOf(SpriteBatch);
 		expect(sprites.count).toBe(6);
 		// Capacity, dynamic, quad, material, columns, rows and sizes in pixels.
-		expect(batches).toEqual([[6, true, 1, 1, 3, 2, true]]);
+		expect(batches).toEqual([[6, true, 1, 1, 3, 2, true, false]]);
 	});
 
 	test('an atlas side that is not a whole number from 1 to the limit rejects with E1108', async () => {
@@ -215,6 +218,26 @@ describe('sprite batches', () => {
 		// the material table.
 		expect(destroyedMaterials).toEqual([1]);
 	});
+
+	test('pointer handlers of a sprite or point batch listen for that batch', () => {
+		const { core, makers } = fakeCore();
+		const { material } = spriteParts(makers, new Map(), {}, [1, 1], 'blend', 'createSprites');
+		const targets: unknown[] = [];
+		const rows = {
+			...rowCalls([]),
+			listen: (target: unknown) => targets.push(target),
+			unlisten: (target: unknown) => targets.push(target),
+		};
+		const sprites = new SpriteBatch(core, 7, 5, material, rows);
+		const points = new PointBatch(sprites, { size: () => {} });
+		const handler = () => {};
+		sprites.on('click', handler);
+		points.on('pointerenter', handler);
+		points.off('pointerenter', handler);
+		expect(targets).toEqual([sprites, points, points]);
+		expect([sprites.destroyedFrame, points.destroyedFrame]).toEqual([-1, -1]);
+		expect([sprites.pointerParent(), points.pointerParent()]).toEqual([null, null]);
+	});
 });
 
 describe('scene.createPoints', () => {
@@ -229,7 +252,7 @@ describe('scene.createPoints', () => {
 		expect(points).toBeInstanceOf(PointBatch);
 		expect(points.count).toBe(2);
 		// Capacity, dynamic, quad, material, columns, rows and sizes in pixels.
-		expect(batches).toEqual([[2, false, 1, 1, 1, 1, true]]);
+		expect(batches).toEqual([[2, false, 1, 1, 1, 1, true, true]]);
 		expect((materials[0]?.features ?? 0) & MATERIAL_FEATURE_BLEND).toBe(0);
 		expect([...points.positions]).toEqual([1, 2, 3, 4, 5, 6]);
 		const rgb = [...points.colors].filter((_, k) => k % 4 !== 3);

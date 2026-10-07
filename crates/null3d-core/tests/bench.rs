@@ -806,6 +806,7 @@ fn bench_scene_queries() {
         scene: &scene,
         batches: &batches,
         meshes: &meshes,
+        rows: Default::default(),
     };
     queries.sync(&view, &serial).unwrap();
     println!(
@@ -896,6 +897,7 @@ fn bench_scene_queries() {
             scene: &scene,
             batches: &batches,
             meshes: &meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, pool.jobs()).unwrap();
         if frame > 10 {
@@ -1040,5 +1042,122 @@ fn bench_software_occlusion() {
                 100.0 * hidden as f64 / tested as f64
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_row_queries() {
+    use null3d_core::bvh::rows::{QueryCamera, RowQuery};
+    use null3d_core::lines::{LineLook, LineMode};
+    use null3d_core::sprites::SpriteLook;
+    println!(
+        "\nrow queries: 20,000 static boxes, 10,000 points and 2,000 line segments sized in pixels, in 1 km"
+    );
+    let box_positions = vec![
+        -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0, //
+        -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+    ];
+    let box_indices = vec![
+        0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5,
+        0, 4, 7, 0, 7, 3,
+    ];
+    let quad = vec![
+        -0.5, -0.5, 0.0, 0.5, -0.5, 0.0, 0.5, 0.5, 0.0, -0.5, 0.5, 0.0,
+    ];
+    let meshes = BenchMeshes {
+        meshes: vec![(box_positions, box_indices), (quad, vec![0, 1, 2, 0, 2, 3])],
+    };
+    let mut rng = Rng::new(26);
+    let mut scene = SceneStorage::with_capacity(20_000);
+    let mut batches = BatchTable::with_capacity(2);
+    let place = |rng: &mut Rng| {
+        [
+            rng.range(-500.0, 500.0),
+            rng.range(0.0, 20.0),
+            rng.range(-500.0, 500.0),
+        ]
+    };
+    let mut commands = Vec::new();
+    for _ in 0..20_000u32 {
+        let h = scene.reserve().unwrap();
+        scene.set_position(h, place(&mut rng)).unwrap();
+        scene.set_local_radius(h, 1.8).unwrap();
+        commands.push(Command::create(h, Handle::NONE, 1, flags::VISIBLE));
+    }
+    scene.apply_commands(&commands, 1).unwrap();
+    // The rows sit on layer 1, the boxes on layer 0.
+    let look = SpriteLook::new(1, 1, true).as_points();
+    let points = batches
+        .create_sprites(10_000, false, 2, 1, 0.71, look)
+        .unwrap();
+    let batch = batches.get_mut(points).unwrap();
+    batch.set_layers(0b10);
+    for r in 0..10_000 {
+        let p = place(&mut rng);
+        batch.positions_mut()[r * 3..r * 3 + 3].copy_from_slice(&p);
+    }
+    batch.sprite_rows_mut().0.fill(6.0);
+    let look = LineLook::new(LineMode::Segments, 3.0, false, false);
+    let lines = batches.create_lines(4_000, false, 1, 1, 1.5, look).unwrap();
+    let batch = batches.get_mut(lines).unwrap();
+    batch.set_layers(0b10);
+    for p in 0..2_000 {
+        let a = place(&mut rng);
+        let b: [f32; 3] = std::array::from_fn(|k| a[k] + rng.range(-5.0, 5.0));
+        batch.line_points_mut().0[p * 6..p * 6 + 6].copy_from_slice(&[a, b].concat());
+    }
+    let serial = JobSystem::new(0);
+    scene.update_transforms(&serial);
+    batches.update(&serial, 1, scene.cell_table_mut());
+    let eye = [0.0f64, 60.0, 600.0];
+    let pixel = 2.0 * 30.0f32.to_radians().tan() / 1080.0;
+    let rows = RowQuery {
+        camera: Some(QueryCamera {
+            eye,
+            right: [1.0, 0.0, 0.0],
+            up: [0.0, 1.0, 0.0],
+            forward: [0.0, 0.0, -1.0],
+            perspective: true,
+            pixel: [pixel, pixel],
+            near: 0.1,
+            far: 5000.0,
+        }),
+        ..RowQuery::default()
+    };
+    let view = QueryScene {
+        scene: &scene,
+        batches: &batches,
+        meshes: &meshes,
+        rows,
+    };
+    let mut queries = SceneQueries::new();
+    queries.sync(&view, &serial).unwrap();
+    // Rays from the camera toward points of the scene, as pointer events cast them.
+    let rays: Vec<WorldRay> = (0..10_000)
+        .map(|_| {
+            let t = place(&mut rng).map(f64::from);
+            WorldRay::toward(eye, std::array::from_fn(|k| t[k] - eye[k])).unwrap()
+        })
+        .collect();
+    let per = |d: Duration| micros(d) / rays.len() as f64;
+    for (name, layers) in [
+        ("boxes alone", 0b1),
+        ("rows alone", 0b10),
+        ("boxes and rows", 0b11),
+    ] {
+        let hits = rays
+            .iter()
+            .filter(|r| queries.raycast(&view, r, layers).is_some())
+            .count();
+        let closest = fastest(20, || {
+            for r in &rays {
+                black_box(queries.raycast(&view, r, layers));
+            }
+        });
+        println!(
+            "  {name}: raycast {:.2} µs a ray ({hits} of 10,000 rays hit)",
+            per(closest)
+        );
     }
 }
