@@ -28,7 +28,7 @@ export interface CoreGlue extends CoreErrors {
 	isThreadedBuild(): boolean;
 	initEngine(
 		jobWorkers: number,
-		sceneCapacity: number,
+		expectedObjects: number,
 		maxBatches: number,
 		commands: number,
 		storageBindingBytes: number,
@@ -74,6 +74,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	releaseInstance?(): void;
 	sceneCapacity(): number;
+	/**
+	 * The address of a 32-bit count that grows each time arrays that views read move without the
+	 * memory growing, as when the scene grows. Views made at another count are stale.
+	 */
+	arraysMovedAddress(): number;
 	sceneArrays(field: number): number;
 	reserveObject(): number;
 	/**
@@ -714,6 +719,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'jobsStopAddress',
 	'destroyEngine',
 	'sceneCapacity',
+	'arraysMovedAddress',
 	'sceneArrays',
 	'reserveObject',
 	'reserveObjects',

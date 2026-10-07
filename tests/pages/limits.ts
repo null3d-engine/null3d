@@ -16,6 +16,9 @@ interface BatchResult {
 	message?: string;
 }
 
+/** The objects that the scene has room for: its rows, but for the row of slot 0, which no object takes. */
+const SCENE_OBJECTS = 16_383;
+
 run('limits', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
@@ -24,6 +27,8 @@ run('limits', async () => {
 		canvas,
 		sketch: new URL('./sketches/limit-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
+		// The scene's places count toward the GPU's limit, so they stay at a known number.
+		expectedObjects: SCENE_OBJECTS,
 		onSketchMessage: (name, data) => replies.get(name)?.(data),
 	});
 	const failures: string[] = [];
@@ -48,8 +53,7 @@ run('limits', async () => {
 	const pastPortableDrawn = pastPortable.ok ? await drawnPixels() : 0;
 	if (pastPortable.ok) await ask('destroy', 'destroyed');
 	// The scene's object slots count toward the limit, so this batch fills it exactly.
-	const sceneSlots = 16_384;
-	const full = await batch(maxInstances - sceneSlots);
+	const full = await batch(maxInstances - (SCENE_OBJECTS + 1));
 	if (full.ok) await ask('destroy', 'destroyed');
 	const after = await batch(1000);
 	const afterDrawn = after.ok ? await drawnPixels() : 0;

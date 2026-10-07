@@ -13,6 +13,7 @@
 //! engine's error table.
 
 use std::cell::{Cell, UnsafeCell};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
@@ -25,7 +26,7 @@ use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
-use null3d_core::handle::Handle;
+use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
 use null3d_core::lights::LightTable;
@@ -100,6 +101,15 @@ extern "C" {
 
 /// Upload ranges one frame can list before it uploads everything instead.
 const UPLOAD_RANGES: u32 = 4096;
+
+/// The objects the scene has room for at the start when the page gives no expected count: few, so a
+/// small scene keeps small tables. A growth from a size this small takes a small fraction of a
+/// millisecond, so a scene that grows past it during play barely pauses.
+pub const START_OBJECTS: u32 = 1_023;
+
+/// Counts the times that arrays TypeScript views moved without the memory growing: each scene
+/// growth. TypeScript compares it with the count it made its views at.
+static ARRAYS_MOVED: AtomicU32 = AtomicU32::new(0);
 
 /// Engine error codes for failures that do not come from the core.
 mod codes {
@@ -193,6 +203,12 @@ struct Engine {
     /// The message of the last render graph error that a call met, with the passes and resources
     /// by name, which `renderGraphMessage` gives TypeScript.
     graph_message: String,
+    /// The objects that the page expects the scene to hold, or 0. The scene grows ahead of need
+    /// only once it holds more.
+    expected_objects: u32,
+    /// The capacity at which a growth ahead of need failed, which the frame steps then do not try
+    /// again, or 0.
+    ahead_failed: u32,
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
@@ -420,12 +436,14 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// position holds whole cells besides its 32-bit part, so positions keep their precision at any
 /// distance. With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth
 /// pyramid. The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
-/// Every capacity is fixed from here on.
+/// The scene starts with room for `expected_objects` objects, or for `START_OBJECTS` with 0, and
+/// grows when it needs more (`ensure_room`, `grow_ahead`). Every other capacity is fixed from here
+/// on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
     job_workers: u32,
-    scene_capacity: u32,
+    expected_objects: u32,
     max_batches: u32,
     commands: u32,
     storage_binding_bytes: u32,
@@ -471,6 +489,10 @@ pub fn init_engine(
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
     let cascade_depth = CascadeDepth::from_bits(shadow_depth_bits);
+    let scene_capacity = match expected_objects {
+        0 => START_OBJECTS,
+        expected => expected.min(MAX_SLOTS),
+    };
     *cell = Some(Engine {
         scene: if large_world {
             SceneStorage::with_large_world(scene_capacity)
@@ -527,6 +549,8 @@ pub fn init_engine(
         background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
         effect_values: Box::new([0.0; EFFECT_FLOATS]),
         graph_message: String::new(),
+        expected_objects,
+        ahead_failed: 0,
     });
     0
 }
@@ -694,6 +718,75 @@ pub fn scene_capacity() -> u32 {
     value_with_engine(|e| Ok(e.scene.capacity()))
 }
 
+/// The address of the count of moves of viewed arrays; views made at another count are stale.
+#[wasm_bindgen(js_name = arraysMovedAddress)]
+pub fn arrays_moved_address() -> u32 {
+    ARRAYS_MOVED.as_ptr() as usize as u32
+}
+
+/// The capacity, doubled from `capacity` as often as needed, that holds `needed` objects with a
+/// quarter of its places to spare, so the frames after a large load do not grow it again.
+fn grown_capacity(capacity: u32, needed: u32) -> u32 {
+    let wanted = needed.saturating_add(needed / 3);
+    let mut grown = capacity.max(1);
+    while grown < wanted && grown < MAX_SLOTS {
+        grown = grown.saturating_mul(2).saturating_add(1).min(MAX_SLOTS);
+    }
+    grown
+}
+
+/// Grows the scene to hold `capacity` objects, or as many as the renderer draws beside the
+/// instance batches' rows, but at least `needed`. The renderer makes room first, as for a new
+/// batch, so no later frame runs out of memory while it records.
+fn grow_scene(e: &mut Engine, capacity: u32, needed: u32) -> Result<(), u32> {
+    let batch_rows = e
+        .batches
+        .iter()
+        .fold(0u32, |sum, (_, batch)| sum.saturating_add(batch.capacity()));
+    let limit = e.renderer.max_sources();
+    let capacity = capacity.min(limit.saturating_sub(batch_rows).saturating_sub(1));
+    if capacity < needed || capacity <= e.scene.capacity() {
+        return Err(record_failure(RecordError::TooManySources { limit }));
+    }
+    let added = capacity.saturating_sub(e.scene.capacity());
+    e.renderer
+        .reserve_sources(capacity + 1 + batch_rows)
+        .map_err(|_| {
+            core_failure(CoreError::OutOfMemory {
+                bytes: added.saturating_mul(BYTES_PER_SOURCE),
+            })
+        })?;
+    e.scene.try_grow(capacity).map_err(core_failure)?;
+    e.structure_changed = true;
+    ARRAYS_MOVED.fetch_add(1, Ordering::Release);
+    Ok(())
+}
+
+/// Grows the scene, when its free places are fewer than `count`, so it holds `count` more objects.
+/// Past the most objects a handle can name, it leaves the scene alone, and the reserve fails.
+fn ensure_room(e: &mut Engine, count: u32) -> Result<(), u32> {
+    let (capacity, live) = (e.scene.capacity(), e.scene.slots().live_count());
+    let needed = live.saturating_add(count);
+    if needed <= capacity || needed > MAX_SLOTS {
+        return Ok(());
+    }
+    grow_scene(e, grown_capacity(capacity, needed), needed)
+}
+
+/// Doubles the scene once it is three quarters full, at a frame's start, so that objects created
+/// during play rarely find it full: a growth then costs a pause in the middle of the sketch's
+/// code. A scene that holds no more than the page expects does not grow ahead.
+fn grow_ahead(e: &mut Engine) {
+    let (capacity, live) = (e.scene.capacity(), e.scene.slots().live_count());
+    let threshold = (capacity - capacity / 4).max(e.expected_objects);
+    if live <= threshold || capacity >= MAX_SLOTS || e.ahead_failed == capacity {
+        return;
+    }
+    if grow_scene(e, grown_capacity(capacity, capacity + 1), live).is_err() {
+        e.ahead_failed = capacity;
+    }
+}
+
 /// The address of one of the per-slot arrays TypeScript writes (see `constants::scene_field`):
 /// positions (3 floats), rotations (4), scales (3), local bounding radii (1), local bounding
 /// sphere centres (3), the whole cells of each position (3 integers, or 0 without large-world
@@ -716,19 +809,24 @@ pub fn scene_arrays(field: u32) -> u32 {
     })
 }
 
-/// Reserves an object slot and returns its handle; TypeScript writes the object's transform, then
-/// a create command.
+/// Reserves an object slot, growing the scene when it is full, and returns its handle; TypeScript
+/// writes the object's transform, then a create command.
 #[wasm_bindgen(js_name = reserveObject)]
 pub fn reserve_object() -> u32 {
-    value_with_engine(|e| e.scene.reserve().map(Handle::raw).map_err(core_failure))
+    value_with_engine(|e| {
+        ensure_room(e, 1)?;
+        e.scene.reserve().map(Handle::raw).map_err(core_failure)
+    })
 }
 
-/// Reserves `count` object slots at once, or none when too few are free, and returns the address
+/// Reserves `count` object slots at once, growing the scene when too few are free, or reserves
+/// none when it cannot grow, and returns the address
 /// of their handles in the staging words. TypeScript writes the objects' transforms, then their
 /// create commands, as after `reserveObject`.
 #[wasm_bindgen(js_name = reserveObjects)]
 pub fn reserve_objects(count: u32) -> u32 {
     value_with_engine(|e| {
+        ensure_room(e, count)?;
         let at = reserve_staging(e, count)?;
         e.scene.reserve_many(&mut e.staging).map_err(core_failure)?;
         Ok(at)
@@ -784,6 +882,7 @@ pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
         let step = step_us as f32 / 1_000_000.0;
         e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
+        grow_ahead(e);
         e.structure_changed |= e.scene.take_structure_changed();
         if !e.removed_meshes.is_empty() {
             release_mesh_ids(e);
@@ -3517,4 +3616,22 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
         };
         write_hits(q.hits, found)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_growth_doubles_until_a_quarter_of_the_places_is_spare() {
+        // A full scene doubles once.
+        assert_eq!(grown_capacity(16_383, 16_384), 32_767);
+        // A load of many objects at once doubles until it leaves a quarter of the places free.
+        assert_eq!(grown_capacity(16_383, 30_000), 65_535);
+        assert_eq!(grown_capacity(START_OBJECTS, 5_096), 8_191);
+        assert_eq!(grown_capacity(1_000, 1_001), 2_001);
+        // The growth stops at the most objects a handle can name.
+        assert_eq!(grown_capacity(524_287, 524_288), MAX_SLOTS);
+        assert_eq!(grown_capacity(700_000, MAX_SLOTS), MAX_SLOTS);
+    }
 }

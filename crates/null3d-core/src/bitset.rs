@@ -5,9 +5,9 @@
 
 use std::collections::TryReserveError;
 
-use crate::alloc::filled;
+use crate::alloc::{filled, reserve_len};
 
-/// A bitset with a fixed number of bits, allocated once. Bits past [`Bitset::len`] in the last
+/// A bitset with a fixed number of bits, which only [`Bitset::grow`] changes. Bits past [`Bitset::len`] in the last
 /// word are always clear.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bitset {
@@ -30,6 +30,20 @@ impl Bitset {
             words: filled(len.div_ceil(64) as usize, 0)?,
             len,
         })
+    }
+
+    /// Makes room for `len` bits without changing the length, so [`Bitset::grow`] to `len` cannot
+    /// fail.
+    pub fn try_reserve(&mut self, len: u32) -> Result<(), TryReserveError> {
+        reserve_len(&mut self.words, len.div_ceil(64) as usize)
+    }
+
+    /// Lengthens the bitset to `len` bits, the new ones clear. A shorter `len` does nothing.
+    pub fn grow(&mut self, len: u32) {
+        if len > self.len {
+            self.words.resize(len.div_ceil(64) as usize, 0);
+            self.len = len;
+        }
     }
 
     /// The number of bits.
@@ -237,6 +251,22 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn grow_keeps_bits_and_adds_clear_ones() {
+        let mut b = Bitset::new(70);
+        b.set(3);
+        b.set(69);
+        b.try_reserve(200).unwrap();
+        assert_eq!(b.len(), 70);
+        b.grow(200);
+        assert_eq!((b.len(), b.words().len()), (200, 4));
+        assert_eq!(b.iter_ones().collect::<Vec<_>>(), [3, 69]);
+        b.set(199);
+        b.grow(100);
+        assert_eq!(b.len(), 200);
+        assert_eq!(b.next_clear(69), 70);
     }
 
     #[test]

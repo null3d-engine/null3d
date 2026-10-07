@@ -82,7 +82,7 @@ import { captureInput } from './input';
 import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
-import { loadCore, memoryMaximumMiB } from './loader';
+import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
 import {
@@ -264,6 +264,16 @@ export interface EngineOptions {
 	 * tables of 16 bytes per label in memory that its threads share, so 4,096 labels take 192 KB.
 	 */
 	maxLabels?: number;
+	/**
+	 * The number of objects that the scene will hold at most, when the sketch knows it: a whole
+	 * number from 1 to 1,048,575. Another value fails with E1213. The scene then starts with room
+	 * for that many, so it never grows during play. Without it, the scene starts with room for
+	 * 1,023 objects. A scene grows on its own when it needs more: it doubles its room at the start
+	 * of a frame once it is three quarters full. A create call that finds it full doubles it at once.
+	 * Each growth copies the scene's tables, about 263 bytes per object, in one short pause. Set
+	 * this option for a scene that creates many objects during play, so they never wait for one.
+	 */
+	expectedObjects?: number;
 	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
@@ -1185,9 +1195,12 @@ async function startEngine(
 		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
 		: 0;
 	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
+	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const views = controlViews(control);
 	const { slots } = views;
+	if (switches.replayDelay !== undefined)
+		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
 	const statsSwitch = new StatsSwitch(() => ({
 		canvas: options.canvas,
 		metrics,
@@ -1509,6 +1522,7 @@ async function startEngine(
 			transparent: options.transparent === true,
 			depthPrepass: quality.settings.depthPrepass,
 			largeWorld: options.largeWorld === true,
+			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
 		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
