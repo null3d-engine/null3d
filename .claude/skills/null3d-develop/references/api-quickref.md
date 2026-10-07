@@ -44,7 +44,7 @@ const engine = await createEngine({
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
-  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'
+  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
@@ -200,7 +200,7 @@ rocks.destroy();
 
 The arrays are views of engine memory, which can grow when you create meshes or batches. Read them from the batch each time you use them, such as at the start of `onUpdate`, and do not keep them from the setup. A read allocates nothing.
 
-`scene.createInstances(prefab, count, { dynamic, colors, layers })` (0.2) draws a loaded model with one batch per mesh, which share their rows: write the returned batch's arrays, and one row moves every part of that copy. The model's lights are left out, and a model with instancing of its own throws E1417.
+`scene.createInstances(prefab, count, { dynamic, colors, layers })` (0.2) draws a loaded model with one batch per mesh, which share their rows: write the returned batch's arrays, and one row moves every part of that copy. The model's lights are left out, and a model with instancing of its own throws E1417. Batches do not skin. A skinned mesh whose rest pose is not its bind pose draws in its bind pose, and development builds warn.
 
 ## 6. Cameras (`api/cameras`)
 
@@ -325,7 +325,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 ## 10. Textures (`api/textures`)
 
 ```ts
-const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, AVIF where decoded
+const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP or AVIF
   colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
   flipY: true,               // default, as three.js's TextureLoader; glTF textures use false
   wrap: 'repeat',            // 'clamp' (default) | 'repeat' | 'mirror', or [u, v]
@@ -338,6 +338,8 @@ const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, A
 // KTX2 of ETC1S or UASTC data (basisu, toktx): the device's compressed format, with the file's mip levels
 const floor = await assets.loadTexture('/tex/floor.ktx2', { wrap: 'repeat' }); // color space from the file
 floor.format;              // 'astc-4x4-unorm' | 'bc7-rgba-unorm' | 'etc2-rgb8unorm' | 'etc2-rgba8unorm' | 'rgba8unorm'
+// KTX2 of UASTC HDR data (0.2): 'bc6h-rgb-ufloat' with BC formats, else 'rgb9e5ufloat'; always linear
+const lamp = await assets.loadTexture('/tex/lamp-hdr.ktx2');
 // KTX2 rows stay as the file holds them (first row at v = 0): encode with basisu -y_flip for planes; no flipY
 textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
 textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
@@ -425,9 +427,11 @@ const n = scene.raycastAll(origin, direction, opts, hits);   // every triangle h
 scene.raycastBatch(rays, opts, { distances });         // 6 numbers per ray; job workers; -1 = miss
 scene.overlapSphere(center, radius, opts, out);        // objects with a triangle in the sphere
 scene.overlapBox(min, max, opts, out);                 // returns the count, as overlapSphere
+scene.raycast(o, d, { pointThreshold: 0.2, lineThreshold: 0.1 }, hit);   // three.js's Points and Line thresholds
+sprites.on('click', (e) => select(e.instance));        // sprite, point and line batches take pointer events
 ```
 
-Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
+Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Raycasts hit sprites, points and lines where they draw, through the active camera. Then `hit.object` is the batch, `hit.instance` the sprite, point or segment, and `hit.triangle` -1. Overlap queries skip them. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
 
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
@@ -470,9 +474,10 @@ post.set({
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
-post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
-post.setEffectUniform('pixelate', 'size', 8);  // (0.2)
-post.removeEffect('pixelate');                 // (0.2)
+post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
+const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; one pass each, at most 8
+post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
+post.removeEffect(fx);                  // (0.2)
 ```
 
 ## 16. Render graph (0.2) (`api/render`)

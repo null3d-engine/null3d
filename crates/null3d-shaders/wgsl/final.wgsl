@@ -26,6 +26,10 @@
 // circle of the line's width is the line's coverage, so the line has no blur and shows its colors
 // exactly. The 8-bit path draws it the same way, because both paths hold display color there.
 //
+// A custom tone curve takes the place of the built-in ones: the shader compiler adds its WGSL,
+// `fn toneCurve(color: vec3f) -> vec3f`, after this file's last line, and builds every variant with
+// the shader def CUSTOM_TONE_CURVE. The pass clamps what the curve returns to 0 to 1.
+//
 // Last, the pass grades each pixel's display color, as three.js's LUTPass and VignetteShader do
 // after its OutputPass: a color grading table, then the vignette, each while its flag is set. The
 // table is a 3D texture that maps a display color to its graded color, read with a linear filter.
@@ -289,7 +293,11 @@ fn display(texel: vec4f, pixel: vec2f) -> vec4f {
     if coverage <= 0.0 {
         return vec4f(0.0);
     }
+#ifdef CUSTOM_TONE_CURVE
+    let mapped = saturate(toneCurve(texel.rgb / coverage));
+#else
     let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings.output);
+#endif
     let encoded = saturate(null3d::tonemap::encode(mapped, pixel));
     return vec4f(encoded * coverage, coverage);
 }

@@ -12,18 +12,24 @@ import {
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
 	LAYOUT_DEPTH_PYRAMID,
+	LAYOUT_EFFECT,
+	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
+	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	PERMUTATION_DEPTH_MULTISAMPLED,
+	PERMUTATION_INSTANCE_INDEX,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
 	PERMUTATION_VERTEX_TANGENT,
+	SIZE_INDEX_STRIDE,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_MAP_SLOTS,
 	STATE_BLEND,
@@ -118,6 +124,11 @@ export interface RenderTemplate {
 	/** The bind group layout of each group, by layout id, from group 0 on. */
 	readonly layouts: readonly number[];
 	/**
+	 * For a custom effect's template: the layouts of its builds that read a multisampled depth, the
+	 * pipelines whose permutation has the DEPTH_MULTISAMPLED bit.
+	 */
+	readonly multisampledLayouts?: readonly number[];
+	/**
 	 * For a template that draws meshes: the vertex shader locations that it reads from a mesh's
 	 * vertices, in slot 0, where each pipeline's vertex format places them.
 	 */
@@ -177,6 +188,18 @@ const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 2, offset: 32, format: 'float32x4' },
 			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 3, offset: 48, format: 'uint32x4' },
 		],
+	},
+];
+
+/**
+ * The compacted index that a mesh draw's instances read in the builds that read their instances by
+ * index: the source's index, from which the vertex shader reads the rest.
+ */
+const INDEX_BUFFERS: GPUVertexBufferLayout[] = [
+	{
+		arrayStride: SIZE_INDEX_STRIDE,
+		stepMode: 'instance',
+		attributes: [{ shaderLocation: VERTEX_INSTANCE_LOCATION, offset: 0, format: 'uint32' }],
 	},
 ];
 
@@ -259,7 +282,8 @@ function meshLocations(t: RenderTemplate, permutation: number): number[] | undef
 /**
  * The vertex buffers of a template's pipeline: a mesh's vertices first, for a template that draws
  * meshes, with each location it reads where the vertex format places it. The variants with vertex
- * colors read the mesh's colors too.
+ * colors read the mesh's colors too. The builds that read their instances by index take an index
+ * per instance in place of the template's compacted instance.
  */
 function vertexBuffers(
 	t: RenderTemplate,
@@ -268,6 +292,7 @@ function vertexBuffers(
 ): GPUVertexBufferLayout[] {
 	const locations = meshLocations(t, permutation);
 	if (!locations) return t.vertexBuffers;
+	const instances = permutation & PERMUTATION_INSTANCE_INDEX ? INDEX_BUFFERS : t.vertexBuffers;
 	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
@@ -279,7 +304,7 @@ function vertexBuffers(
 		stepMode: 'vertex',
 		attributes,
 	};
-	return [mesh, ...t.vertexBuffers];
+	return [mesh, ...instances];
 }
 
 /**
@@ -307,13 +332,15 @@ function scaleConstants(
 
 export class Pipelines {
 	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
+	/** The layouts that only some devices bind, which the first pipeline or bind group to use them makes. */
+	private readonly laterLayouts: (GPUBindGroupLayoutDescriptor | undefined)[] = [];
 	private readonly templates: (RenderTemplate | undefined)[] = [];
 	/**
-	 * Each template's pipeline layout, made for its first pipeline, and its layout with the joint
-	 * texture's group after its own, for the builds that skin in the vertex shader.
+	 * Each template's pipeline layouts, made for their first pipelines, by the groups after the
+	 * template's own: the joint texture's for the builds that skin in the vertex shader, then the
+	 * view's index group for the builds that read their instances by index.
 	 */
-	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
-	private readonly skinLayouts: (GPUPipelineLayout | undefined)[] = [];
+	private readonly pipelineLayouts = new Map<number, GPUPipelineLayout>();
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
 	/**
@@ -432,6 +459,22 @@ export class Pipelines {
 			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 2, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
+		// The view's culling parameters, for the offset from the camera to each cell, the world
+		// matrices, the bucket table and the bucket records, which the vertex shaders of the builds
+		// that read their instances by index read. Compatibility mode may have no storage buffers
+		// in vertex shaders, and refuses the layout itself, so only core WebGPU makes and binds it.
+		const vertex = GPUShaderStage.VERTEX;
+		this.defineLayout(
+			LAYOUT_INSTANCE_INDEX,
+			'instance index',
+			[
+				{ binding: 0, visibility: vertex, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: vertex, buffer: { type: 'read-only-storage' } },
+				{ binding: 2, visibility: vertex, buffer: { type: 'read-only-storage' } },
+				{ binding: 3, visibility: vertex, buffer: { type: 'read-only-storage' } },
+			],
+			true,
+		);
 		// Light clustering's parameters, the light list, and the light grid that it fills.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -503,6 +546,18 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
+		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
+		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
+		const effectEntries: GPUBindGroupLayoutEntry[] = [
+			aoSettings,
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, sampler: {} },
+		];
+		this.defineLayout(LAYOUT_EFFECT, 'effect', [...effectEntries, unfiltered(3)]);
+		this.defineLayout(LAYOUT_EFFECT_DEPTH_MS, 'effect depth ms', [
+			...effectEntries,
+			unfiltered(3, true),
+		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -613,18 +668,45 @@ export class Pipelines {
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
-	/** Adds a bind group layout under an id that no other layout has. */
-	defineLayout(id: number, label: string, entries: GPUBindGroupLayoutEntry[]): void {
-		if (this.layouts[id]) throw new Error(`bind group layout ${id} already exists`);
-		this.layouts[id] = this.device.createBindGroupLayout({ label, entries });
+	/**
+	 * Adds a bind group layout under an id that no other layout has. With `onFirstUse`, the layout
+	 * is made only when a pipeline or a bind group first needs it, for a layout that some devices
+	 * cannot make.
+	 */
+	defineLayout(
+		id: number,
+		label: string,
+		entries: GPUBindGroupLayoutEntry[],
+		onFirstUse = false,
+	): void {
+		if (this.layouts[id] || this.laterLayouts[id])
+			throw new Error(`bind group layout ${id} already exists`);
+		if (onFirstUse) this.laterLayouts[id] = { label, entries };
+		else this.layouts[id] = this.device.createBindGroupLayout({ label, entries });
 	}
 
 	/**
-	 * Adds a custom material's template: the standard material's template with the material's WGSL,
-	 * in the shader variants that the plugin built, which also read the first texture coordinates.
-	 * A material with textures binds them in the slots of the maps' layout.
+	 * Adds a template of the sketch's compiled WGSL. A custom material's is the standard material's
+	 * template with the material's WGSL, in the shader variants that the plugin built, which also
+	 * read the first texture coordinates. A material with textures binds them in the slots of the
+	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and a custom tone
+	 * curve's binds as the final pass or its bloom build does.
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
+		const { kind } = shader;
+		if (kind !== undefined) {
+			this.defineTemplate(id, {
+				label: kind === 'effect' ? `custom effect ${id}` : `custom tone curve ${id}`,
+				shader: shader.variants,
+				pipeline: 'main',
+				layouts: [
+					kind === 'effect' ? LAYOUT_EFFECT : kind === 'final' ? LAYOUT_FINAL : LAYOUT_FINAL_BLOOM,
+				],
+				multisampledLayouts: kind === 'effect' ? [LAYOUT_EFFECT_DEPTH_MS] : undefined,
+				vertexBuffers: [],
+			});
+			return;
+		}
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
 			shader: shader.variants,
@@ -665,8 +747,12 @@ export class Pipelines {
 
 	layout(id: number): GPUBindGroupLayout {
 		const layout = this.layouts[id];
-		if (!layout) throw new Error(`unknown bind group layout ${id}`);
-		return layout;
+		if (layout) return layout;
+		const later = this.laterLayouts[id];
+		if (!later) throw new Error(`unknown bind group layout ${id}`);
+		const made = this.device.createBindGroupLayout(later);
+		this.layouts[id] = made;
+		return made;
 	}
 
 	/** Creates the shader module of `shader` ahead of the pipelines that will share it. */
@@ -710,15 +796,22 @@ export class Pipelines {
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		const skins = (permutation & PERMUTATION_SKIN) !== 0;
-		const layouts = skins ? this.skinLayouts : this.pipelineLayouts;
-		let layout = layouts[template];
+		const byIndex = (permutation & PERMUTATION_INSTANCE_INDEX) !== 0;
+		const multisampled =
+			t.multisampledLayouts !== undefined && (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
+		const key = template * 8 + (skins ? 1 : 0) + (byIndex ? 2 : 0) + (multisampled ? 4 : 0);
+		let layout = this.pipelineLayouts.get(key);
 		if (!layout) {
-			const groups = skins ? [...t.layouts, LAYOUT_JOINTS] : t.layouts;
+			const groups = [
+				...(multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts),
+				...(skins ? [LAYOUT_JOINTS] : []),
+				...(byIndex ? [LAYOUT_INSTANCE_INDEX] : []),
+			];
 			layout = this.device.createPipelineLayout({
 				label: t.label,
 				bindGroupLayouts: groups.map((id) => this.layout(id)),
 			});
-			layouts[template] = layout;
+			this.pipelineLayouts.set(key, layout);
 		}
 		return {
 			label: t.label,

@@ -29,7 +29,17 @@ enable draw_index;
 // On WebGPU each instance brings three rows of its world matrix and its material id as
 // instance-rate vertex attributes, after the vertex attributes' locations, never through a storage
 // buffer, so the same vertex stage runs in WebGPU's compatibility mode. The culling shader has
-// already moved each matrix by its cell's offset. On WebGL2 (the WEBGL2 builds) the vertex shader
+// already moved each matrix by its cell's offset.
+//
+// The INSTANCE_INDEX builds, which only WebGPU's test switch for index-only instance data draws
+// with (decision record D-23), read storage buffers in the vertex stage, which compatibility mode
+// may lack. Each instance brings only its source's index as an instance-rate attribute, which the
+// culling shader wrote. The vertex shader reads the source's world matrix, its entry in the bucket
+// table and its bucket's record, and adds its cell's offset from the view's culling parameters,
+// as the culling shader does for the copies. These four bindings form the group after the
+// template's own groups: after the frame's, the maps' and the joint texture's, where it has them.
+//
+// On WebGL2 (the WEBGL2 builds) the vertex shader
 // finds its instance in the frame's index list, directly or through a cluster of rows, reads the
 // matrix rows from a data texture, and adds the offset of the cell that the list entry names. It
 // takes the material from its draw's record. The DRAW_INDEX builds draw many buckets in one
@@ -56,6 +66,12 @@ enable draw_index;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
+/// An index list entry, or an entry of the bucket table, holds its row, cluster or bucket in the
+/// bits below CELL_SHIFT, and the index of the row's grid cell above them.
+const CELL_SHIFT: u32 = 23u;
+/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
+const MAX_CELLS: u32 = 512u;
+
 #ifdef WEBGL2
 /// World matrices per row of a data texture are 1 << MATRIX_ROW_SHIFT, three texels each.
 const MATRIX_ROW_SHIFT: u32 = 9u;
@@ -63,11 +79,6 @@ const MATRIX_ROW_SHIFT: u32 = 9u;
 const INDEX_ROW_SHIFT: u32 = 11u;
 /// A cluster texture entry that names no row: a place past the end of a batch's last cluster.
 const NO_ROW: u32 = 0xffffffffu;
-/// An index list entry holds its row, or its cluster, in the bits below CELL_SHIFT, and the index
-/// of the row's grid cell above them.
-const CELL_SHIFT: u32 = 23u;
-/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
-const MAX_CELLS: u32 = 512u;
 #ifdef DRAW_INDEX
 /// Draw records one multi-draw call reads.
 const DRAW_RECORDS: u32 = 256u;
@@ -114,17 +125,74 @@ struct CellOffsets {
 /// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
 /// shaders read them too, and read no storage buffers, so they have a data texture of their own.
 @group(0) @binding(2) var custom_values: texture_2d<f32>;
+#ifdef INSTANCE_INDEX
+/// The bit of a bucket table entry that marks an occluder, above the entry's bucket and below its
+/// cell index.
+const OCCLUDER: u32 = 1u << 22u;
+
+/// The start of the view's culling parameters: its planes and counts, then the offset from the
+/// camera to the center of each grid cell, by cell index.
+struct InstanceCells {
+    planes: array<vec4f, 6>,
+    counts: vec4u,
+    offsets: array<vec4f, MAX_CELLS>,
+}
+
+/// A bucket record, as the culling shader reads it: of its words, the vertex shader reads the
+/// material and the first joint of a skin that it skins.
+struct InstanceBucket {
+    base: u32,
+    material: u32,
+    radius: f32,
+    first_draw: u32,
+    draws: u32,
+    center_x: f32,
+    center_y: f32,
+    center_z: f32,
+    first_joint: u32,
+    indices: u32,
+}
+
+// The group after the template's own: the frame's, then the maps' in the builds that sample maps
+// (JOINTS_AFTER_MAPS), then the joint texture's in the SKIN builds.
+#ifdef JOINTS_AFTER_MAPS
+#ifdef SKIN
+@group(3) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(3) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(3) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(3) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+#else
+@group(2) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(2) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(2) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(2) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+#endif
+#else ifdef SKIN
+@group(2) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(2) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(2) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(2) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+#else
+@group(1) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(1) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(1) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(1) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+#endif
+#endif
 #endif
 
 /// What a vertex shader invocation learns of its instance. On WebGPU: the three rows of the
-/// instance's world matrix that give x, y and z, then its ids. On WebGL2: the instance's number in its draw, and with
-/// DRAW_INDEX, the draw's number in its multi-draw call.
+/// instance's world matrix that give x, y and z, then its ids, or in the INSTANCE_INDEX builds its
+/// source's index. On WebGL2: the instance's number in its draw, and with DRAW_INDEX, the draw's
+/// number in its multi-draw call.
 struct InstanceIn {
 #ifdef WEBGL2
     @builtin(instance_index) instance: u32,
 #ifdef DRAW_INDEX
     @builtin(draw_index) draw: u32,
 #endif
+#else ifdef INSTANCE_INDEX
+    @location(9) source: u32,
 #else
     @location(9) row_x: vec4f,
     @location(10) row_y: vec4f,
@@ -293,6 +361,20 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
 }
 #endif
 
+#ifdef INSTANCE_INDEX
+/// The instance of source `source`: its world matrix moved by its cell's offset from the camera,
+/// and its bucket's material and first joint, as the culling shader would copy them.
+fn instance_by_index(source: u32) -> Instance {
+    let entry = instance_entries[source];
+    let bucket = instance_buckets[entry & (OCCLUDER - 1u)];
+    let offset = instance_cells.offsets[entry >> CELL_SHIFT];
+    let row_x = instance_matrices[source * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
+    let row_y = instance_matrices[source * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
+    let row_z = instance_matrices[source * 3u + 2u] + vec4f(0.0, 0.0, 0.0, offset.z);
+    return Instance(row_x, row_y, row_z, bucket.material, bucket.first_joint, 0u, true);
+}
+#endif
+
 /// The instance that a vertex shader invocation draws.
 fn find_instance(i: InstanceIn) -> Instance {
 #ifdef WEBGL2
@@ -301,6 +383,8 @@ fn find_instance(i: InstanceIn) -> Instance {
 #else
     return instance_of(draws.items[0], i.instance);
 #endif
+#else ifdef INSTANCE_INDEX
+    return instance_by_index(i.source);
 #else
     return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, 0u, true);
 #endif

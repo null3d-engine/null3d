@@ -1828,6 +1828,11 @@ export class InstanceBatch {
 	destroyedFrame = -1;
 	/** @internal The batch's pointer event handlers, from its first `on`. */
 	pointerListeners: PointerListeners | undefined = undefined;
+	/**
+	 * @internal The sprite, point or line batch whose rows this batch holds, which hits and pointer
+	 * events name in its place.
+	 */
+	face: SpriteBatch | PointBatch | LineBatch | undefined = undefined;
 
 	/** @internal */
 	constructor(
@@ -1910,13 +1915,26 @@ export class InstanceBatch {
 	 * The event's `instance` names the row.
 	 */
 	on(type: ObjectEventType, handler: ObjectEventHandler): void {
-		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
-		this.scene.pointerEvents.add(this, type, handler);
+		this.listen(this, type, handler);
 	}
 
 	/** Removes a handler that `on` added for events of `type`. */
 	off(type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.scene.pointerEvents.remove(this, type, handler);
+		this.unlisten(this, type, handler);
+	}
+
+	/**
+	 * @internal Adds `handler` for events of `type` on `target`: this batch, or the sprite, point or
+	 * line batch whose rows it holds.
+	 */
+	listen(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
+		if (DEV) checkLive('on', { destroyedFrame: this.destroyedFrame, describe: () => 'a batch' });
+		this.scene.pointerEvents.add(target, type, handler);
+	}
+
+	/** @internal Removes a handler that `listen` added. */
+	unlisten(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.scene.pointerEvents.remove(target, type, handler);
 	}
 
 	/** @internal A batch has no parent for its pointer events to go on to. */
@@ -1947,6 +1965,7 @@ export class InstanceBatch {
 		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
 		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
 		this.scene.forgetListeners(this);
+		if (this.face) this.scene.forgetListeners(this.face);
 		this.destroyedFrame = this.scene.frame;
 		// The next read of the arrays asks the core for them again, and the core refuses a
 		// destroyed batch.
@@ -2988,6 +3007,10 @@ export class Scene {
 						: undefined;
 			if (problem)
 				throw new EngineError('E1417', `${call}() got ${source.describe()}, which ${problem}.`);
+			if (DEV && source.parts.some((part) => part.bindPose))
+				console.warn(
+					`${call}() draws the skinned meshes of ${source.describe()} in their bind pose, because their rest pose differs from it and batches do not skin. Use scene.instantiate to draw them at rest.`,
+				);
 			return this.createParts(source.parts, count, options, call);
 		}
 		const mesh = source;
@@ -3037,7 +3060,7 @@ export class Scene {
 		const { center } = options;
 		if (DEV && center && !(Number.isFinite(center[0]) && Number.isFinite(center[1])))
 			throw new EngineError('E1203', `${call}() got [${center}] for center.`);
-		const [, batch] = await this.spriteBatch(call, options.count, options, columns, rows, 'blend');
+		const [, batch] = await this.spriteBatch(call, options.count, options, [columns, rows], false);
 		return batch;
 	}
 
@@ -3055,23 +3078,26 @@ export class Scene {
 		const { positions, colors, size = 1 } = options;
 		const count = pointCount(call, positions, colors);
 		POINT_CHECKS.size(size, call);
-		const [sprites, batch] = await this.spriteBatch(call, count, options, 1, 1, 'opaque');
-		return sprites.pointBatch(batch, POINT_CHECKS, positions, colors, size);
+		const [sprites, batch, instances] = await this.spriteBatch(call, count, options, [1, 1], true);
+		const points = sprites.pointBatch(batch, POINT_CHECKS, positions, colors, size);
+		instances.face = points;
+		return points;
 	}
 
 	/**
 	 * Downloads the sprite code on first use, and creates a sprite batch of `count` rows with the
-	 * look, layers and origin of `options`, an atlas of `columns` by `rows` frames, and `alphaMode`
-	 * when the options give none.
+	 * look, layers and origin of `options` and an atlas of `columns` by `rows` frames. A batch of
+	 * `points` is opaque when the options give no alpha mode, and sprites blend. Returns the batch
+	 * and the instance batch that holds its rows.
 	 */
 	private async spriteBatch(
 		call: string,
 		count: number,
 		options: SpriteLook,
-		columns: number,
-		rows: number,
-		alphaMode: AlphaMode,
-	): Promise<[typeof import('./sprites'), SpriteBatch]> {
+		[columns, rows]: readonly [number, number],
+		points: boolean,
+	): Promise<[typeof import('./sprites'), SpriteBatch, InstanceBatch]> {
+		const alphaMode: AlphaMode = points ? 'opaque' : 'blend';
 		const { core, makers } = this;
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
@@ -3095,6 +3121,7 @@ export class Scene {
 				columns,
 				rows,
 				options.sizeAttenuation === false,
+				points,
 			),
 			call,
 		);
@@ -3106,8 +3133,9 @@ export class Scene {
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
+		instances.face = batch;
 		if (layers !== undefined) batch.setLayers(layers);
-		return [sprites, batch];
+		return [sprites, batch, instances];
 	}
 
 	/**
@@ -3155,6 +3183,7 @@ export class Scene {
 		this.rememberBatch(instances);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new lines.LineBatch(core, id, points, parts.material, instances, LINE_CHECKS);
+		instances.face = batch;
 		batch.positions.set(positions);
 		if (colors) batch.colors.set(colors);
 		if (layers !== undefined) batch.setLayers(layers);
@@ -3357,6 +3386,12 @@ export class Scene {
 					const batch = this.batchSlots[id & SLOT_MASK];
 					return batch && (batch.id === id || batch.parts.includes(id)) ? batch : undefined;
 				},
+				writeCamera: (input) => {
+					const camera = this.activeCamera;
+					const live = camera !== undefined && camera.destroyedFrame === -1 ? camera : undefined;
+					this.frameCameras.queryCamera(live, input);
+				},
+				writeRayCamera: (input) => this.frameCameras.rayCamera(input),
 			});
 		return this.sceneQueries;
 	}

@@ -20,7 +20,8 @@ use null3d_core::animation::{
     REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
 };
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
-use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
+use null3d_core::bvh::query::{NO_TRIANGLE, QueryHit, QueryScene, SceneQueries};
+use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
@@ -44,6 +45,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::effects::{EFFECT_FLOATS, Effect};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
@@ -178,6 +180,8 @@ struct Engine {
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
     /// The environment's values that TypeScript writes (`constants::environment_value`).
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
+    /// The uniforms of the custom effect that TypeScript sets next with `setEffect`.
+    effect_values: Box<[f32; EFFECT_FLOATS]>,
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
@@ -399,10 +403,12 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
 /// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
-/// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
-/// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
-/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid.
-/// The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
+/// the vertex shader of each pass, not in a compute pass. With `index_instances`, WebGPU's vertex
+/// shaders read each culled instance by index from storage buffers, not from a copy that the
+/// culling shader writes, for the test of decision record D-23. With `large_world`, each object's
+/// position holds whole cells besides its 32-bit part, so positions keep their precision at any
+/// distance. With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth
+/// pyramid. The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
@@ -421,6 +427,7 @@ pub fn init_engine(
     cell_culling: bool,
     depth_prepass: bool,
     vertex_skinning: bool,
+    index_instances: bool,
     large_world: bool,
     gpu_occlusion: bool,
     shadow_depth_bits: u32,
@@ -484,6 +491,7 @@ pub fn init_engine(
                 cell_culling,
                 depth_prepass,
                 vertex_skinning,
+                index_instances,
                 gpu_occlusion,
                 cascade_depth,
                 ..RendererConfig::default()
@@ -505,6 +513,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
+        effect_values: Box::new([0.0; EFFECT_FLOATS]),
     });
     0
 }
@@ -514,6 +523,44 @@ pub fn init_engine(
 #[wasm_bindgen(js_name = environmentValues)]
 pub fn environment_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
+/// The address of a custom effect's uniforms, the floats that TypeScript writes before it calls
+/// `setEffect`.
+#[wasm_bindgen(js_name = effectValues)]
+pub fn effect_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.effect_values[..])))
+}
+
+/// Sets the custom effect at place `index` in the order effects run, from the next frame on: the
+/// effect whose compiled WGSL has render pipeline template `template`, with the flags
+/// (`constants::effect_flag`) and the uniforms at `effectValues`. A new place goes after the last
+/// one. Template 0 removes the effect at `index` and every one after it. The TypeScript API checks
+/// the places and the uniforms.
+#[wasm_bindgen(js_name = setEffect)]
+pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
+    with_engine(|e| {
+        let effect = (template != 0).then_some(Effect {
+            template,
+            depth: flags & constants::effect_flag::DEPTH != 0,
+            values: *e.effect_values,
+        });
+        e.renderer.settings_mut().set_effect(index as usize, effect);
+        0
+    })
+}
+
+/// Makes the final pass map HDR color with the custom tone curve whose compiled WGSL has render
+/// pipeline templates from `template` on, from the next frame on: the pass's build at `template`
+/// and its bloom build at the next. Template 0 returns to the tone mapping that `setOutput` sets.
+#[wasm_bindgen(js_name = setToneCurve)]
+pub fn set_tone_curve(template: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_tone_curve((template != 0).then_some(template));
+        0
+    })
 }
 
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes
@@ -941,9 +988,10 @@ pub fn create_batch_part(
 
 /// Creates a sprite batch: `capacity` sprites drawn with `mesh`, a quad around their anchor, and
 /// `material`, a sprite material. Frames come from an atlas of `columns` by `rows`, and with
-/// `screen_size` the sizes are in CSS pixels of the screen rather than in world units. Returns
-/// its id.
+/// `screen_size` the sizes are in CSS pixels of the screen rather than in world units. `points`
+/// marks a batch of points, which a raycast's point threshold reaches. Returns its id.
 #[wasm_bindgen(js_name = createSpriteBatch)]
+#[allow(clippy::too_many_arguments)]
 pub fn create_sprite_batch(
     capacity: u32,
     dynamic: bool,
@@ -952,8 +1000,10 @@ pub fn create_sprite_batch(
     columns: u32,
     rows: u32,
     screen_size: bool,
+    points: bool,
 ) -> u32 {
     let look = SpriteLook::new(columns, rows, screen_size);
+    let look = if points { look.as_points() } else { look };
     value_with_engine(|e| {
         add_batch(e, capacity, mesh, |batches, radius| {
             batches.create_sprites(capacity, dynamic, mesh, material, radius, look)
@@ -2944,7 +2994,11 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
     out[query::HIT_SLOT as usize] = slot;
     out[query::HIT_BATCH as usize] = batch;
     out[query::HIT_ROW as usize] = row;
-    out[query::HIT_TRIANGLE as usize] = f64::from(hit.triangle);
+    out[query::HIT_TRIANGLE as usize] = if hit.triangle == NO_TRIANGLE {
+        -1.0
+    } else {
+        f64::from(hit.triangle)
+    };
     out[query::HIT_DISTANCE as usize] = f64::from(hit.distance);
     let point = query::HIT_POINT as usize;
     out[point..point + 3].copy_from_slice(&hit.point);
@@ -2972,6 +3026,35 @@ fn ray_from(numbers: &[f64], t_max: f64) -> Option<WorldRay> {
     WorldRay::toward(origin, direction).map(|ray| ray.with_max(t_max as f32))
 }
 
+/// What a raycast's input gives the rows of sprite, point and line batches: its thresholds, and
+/// the camera that they face. Each query reads it once, so it stays out of line.
+#[inline(never)]
+fn row_query(input: &[f64]) -> RowQuery {
+    let at = |i: u32| input[i as usize];
+    let three = |i: u32| [at(i), at(i + 1), at(i + 2)];
+    let unit = |i: u32| three(i).map(|v| v as f32);
+    let threshold = |i: u32| (at(i) >= 0.0).then(|| at(i) as f32);
+    let kind = at(query::INPUT_CAMERA) as u32;
+    let camera = (kind != query::CAMERA_NONE).then(|| QueryCamera {
+        eye: three(query::INPUT_EYE),
+        right: unit(query::INPUT_RIGHT),
+        up: unit(query::INPUT_UP),
+        forward: unit(query::INPUT_FORWARD),
+        perspective: kind == query::CAMERA_PERSPECTIVE,
+        pixel: [
+            at(query::INPUT_PIXEL) as f32,
+            at(query::INPUT_PIXEL + 1) as f32,
+        ],
+        near: at(query::INPUT_NEAR) as f32,
+        far: at(query::INPUT_FAR) as f32,
+    });
+    RowQuery {
+        camera,
+        point_threshold: threshold(query::INPUT_POINT_THRESHOLD),
+        line_threshold: threshold(query::INPUT_LINE_THRESHOLD),
+    }
+}
+
 /// The parts of the engine that a query uses, with the scene's trees brought up to date.
 struct QueryParts<'a> {
     queries: &'a mut SceneQueries,
@@ -2995,6 +3078,7 @@ fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
             scene: &e.scene,
             batches: &e.batches,
             meshes: e.renderer.settings(),
+            rows: row_query(&e.query_input),
         };
         if let Err(error) = e.queries.sync(&view, jobs) {
             return core_failure(error);

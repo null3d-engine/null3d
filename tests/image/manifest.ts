@@ -164,6 +164,44 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the custom effects' tests. */
+const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
+
+/**
+ * Two custom effects, one that reads the pixels beside each pixel and one that reads the scene's
+ * depth, and a custom tone curve, on every tier. Effects added in the other order with orders that
+ * restore it, and effects added during play, draw the same image. Compatibility mode starts on the
+ * 8-bit path for MSAA, and the effects move it to HDR color with FXAA, as bloom does. A device with
+ * no HDR target runs no effects: the page's switch that turns HDR off stands in for one, and must
+ * draw the scene without them. At half the render scale the effects draw into the corners of the
+ * same targets.
+ */
+function effectsTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${EFFECTS_SKETCH}${query}`,
+		hold: 1,
+	});
+	return [
+		test('effects-off', ''),
+		test('effects', '?effects'),
+		{ ...test('effects-reversed', '?effects&reversed'), reference: 'effects' },
+		{ ...test('effects-later', '?effects&later'), reference: 'effects' },
+		test('effects-curve', '?curve'),
+		test('effects-bloom-curve', '?effects&bloom&curve'),
+		test('effects-scale-50', '?scale=0.5&effects'),
+		{
+			...test('effects-8-bit', '?effects&curve'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'effects-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the HDR limit tests: light past the largest 16-bit float. */
 export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
 
@@ -531,6 +569,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: [`compression=${family}`],
 		reference: 'ktx2',
 	})),
+	// A KTX2 file of UASTC HDR data beside the same values as half floats made in code: BC6H where
+	// the device has BC formats, and shared-exponent floats without them, as ?compression=none
+	// makes it. Both draw the half floats' image, so the second borrows the first's references.
+	{
+		name: 'ktx2-hdr',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'ktx2-hdr-rgb9e5',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['compression=none'],
+		reference: 'ktx2-hdr',
+	},
+	// glTF files whose texture is the same picture as PNG, as WebP and as AVIF through their
+	// extensions, as AVIF with a PNG fallback, and as AVIF named by address. Every square draws the
+	// PNG's picture.
+	{
+		name: 'gltf-image-formats',
+		sketch: 'tests/pages/sketches/gltf-image-formats-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
 	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates,
@@ -680,6 +744,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
@@ -1515,11 +1580,47 @@ const HALF_PRECISION_TESTS = [
 	eightBitTest('aces'),
 ];
 
+/**
+ * The tests that draw again with vertex shaders that read each culled instance by index from
+ * storage buffers, as `?instances=index` asks on core WebGPU (decision record D-23): objects with an
+ * instance batch, cells far from the origin, the standard material's maps, cascaded shadows, point
+ * light shadows, skinned characters from the skinning pass and skinned in the vertex shader,
+ * outlines, see-through objects beside culled ones, custom materials, which keep the culling
+ * shader's copies, S1-cells and S4. Each copy must draw its test's image. Compatibility mode and
+ * WebGL2 ignore the switch, so the copies draw on core WebGPU only, in their test's first thread
+ * mode.
+ */
+const INDEX_INSTANCE_TESTS = [
+	'scene',
+	'cells-1000km',
+	'standard-maps',
+	'shadows',
+	'point-shadows',
+	'skinning-shadows',
+	'skinning-vertex',
+	'outline-hidden',
+	'transparency',
+	'custom-textures',
+	's1-cells',
+	's4',
+];
+
+/** A test again with `?instances=index`, on core WebGPU, in its first thread mode. */
+function withIndexInstances(name: string): ImageTest {
+	const test = copyWithSwitch(name, 'index', 'instances=index');
+	return {
+		...test,
+		tiers: ['webgpu'],
+		...(test.modes && { modes: test.modes.slice(0, 1) }),
+	};
+}
+
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	...FEATURE_TESTS,
 	...PREPASS_SCENES.map(withPrepass),
 	...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
+	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */

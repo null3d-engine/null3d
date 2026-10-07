@@ -135,6 +135,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
@@ -202,6 +203,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 mod ids {
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::effects::MAX_EFFECTS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
@@ -283,8 +285,10 @@ mod ids {
     /// The placeholder that views without a depth pyramid bind in its place.
     pub const NO_PYRAMID: u32 = OCCLUSION + 2 * MAX_VIEWS as u32;
 
+    /// The uniform buffer of the custom effects' blocks.
+    pub const EFFECTS: u32 = NO_PYRAMID + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = NO_PYRAMID + 1;
+    pub const PAGES: u32 = EFFECTS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -304,8 +308,10 @@ mod ids {
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
+    /// The texture that custom effects bind in place of the scene's depth when they read none.
+    pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_OUTLINE + 1;
+    pub const TARGETS: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -318,8 +324,10 @@ mod ids {
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The sampler that reads four texels of the shadow map at once.
     pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
+    /// The linear sampler of the custom effects.
+    pub const EFFECT_SAMPLER: u32 = 6;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 6;
+    pub const SAMPLERS: u32 = 7;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -337,15 +345,19 @@ mod ids {
     pub const OCCLUSION_LATE: u32 = 10;
     pub const PYRAMID: u32 = 11;
 
-    /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
+    /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
+    /// the group of the pipelines that read their instances by index.
     pub const fn frame_group(view: ViewId) -> u32 {
-        1 + 2 * view.index() as u32
+        1 + 3 * view.index() as u32
     }
     pub const fn cull_group(view: ViewId) -> u32 {
         frame_group(view) + 1
     }
+    pub const fn index_group(view: ViewId) -> u32 {
+        frame_group(view) + 2
+    }
     /// The final pass's group, after every view's.
-    pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
+    pub const FINAL_GROUP: u32 = 1 + 3 * MAX_VIEW_IDS as u32;
     /// The light clustering pass's group.
     pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
     /// Each camera view's group of its depth prepass, after the light clustering pass's group.
@@ -364,8 +376,10 @@ mod ids {
     pub const fn pyramid_group(view: ViewId) -> u32 {
         AO_GROUPS + AO_STEPS as u32 + view.index() as u32
     }
-    /// The bind groups of materials' maps, after the depth pyramids'.
-    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32 + MAX_VIEWS as u32;
+    /// The bind group of each custom effect, after the depth pyramids'.
+    pub const EFFECT_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32 + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after the effects'.
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -403,6 +417,10 @@ pub struct RendererConfig {
     /// True to skin skinned meshes in the vertex shader of each pass that draws them, false to
     /// skin each once per frame in the skinning pass.
     pub vertex_skinning: bool,
+    /// True when the vertex shaders of the culled buckets read each instance by index from
+    /// storage buffers, where their templates can, instead of a copy that the culling shader
+    /// writes. A test switch asks for it on core WebGPU (decision record D-23).
+    pub index_instances: bool,
     /// True to cull each camera view in two phases against a depth pyramid of what it drew, so
     /// objects that others hide do not draw. The depth prepass turns it off.
     pub gpu_occlusion: bool,
@@ -423,6 +441,7 @@ impl Default for RendererConfig {
             light_limits: LightLimits::default(),
             depth_prepass: false,
             vertex_skinning: false,
+            index_instances: false,
             gpu_occlusion: false,
             cascade_depth: CascadeDepth::default(),
         }
@@ -547,6 +566,12 @@ impl GpuDrivenRenderer {
                             buffer: ids::AO,
                             first_group: ids::AO_GROUPS,
                         },
+                        effects: EffectIds {
+                            buffer: ids::EFFECTS,
+                            sampler: ids::EFFECT_SAMPLER,
+                            first_group: ids::EFFECT_GROUPS,
+                            blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -554,16 +579,16 @@ impl GpuDrivenRenderer {
                 graph.set_occlusion(config.gpu_occlusion);
                 graph
             },
-            layout: Layout::new(Drawn::Scene),
-            casters: Layout::new(Drawn::Casters),
-            outlined: Layout::new(Drawn::Outlined),
+            layout: Layout::new(Drawn::Scene, config.index_instances),
+            casters: Layout::new(Drawn::Casters, config.index_instances),
+            outlined: Layout::new(Drawn::Outlined, config.index_instances),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             outline_made: false,
             layout_prepass: false,
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, false),
-            culling: Culling::default(),
+            culling: Culling::new(config.index_instances),
             pyramids: Pyramids::default(),
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
@@ -795,6 +820,12 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
+        self.graph.set_effects(
+            self.settings.effects(),
+            self.settings.clock_seconds(),
+            self.settings.camera_projection(input.canvas),
+        );
+        self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());

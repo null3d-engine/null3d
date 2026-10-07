@@ -1,6 +1,6 @@
 # D-40: Two-phase GPU occlusion culling on WebGPU
 
-Status: method decided, 2026-10-04; off on every preset (D-22); the stall between passes open for the owner; the iPad's timings pending. Task: M2-I1.
+Status: method decided, 2026-10-04; off on every preset (D-22); the stall between passes open for the owner; the iPad's timings 2026-10-07 (D-22). Task: M2-I1.
 
 Summary: Marked occluders that showed last frame and look large draw their depth at one sample per pixel. A compute pass builds a depth pyramid in a storage buffer, and a second culling phase tests every object against it, so the image equals culling without it and no object shows a frame late. Its shaders load on first use, once a scene marks an occluder.
 
@@ -92,7 +92,7 @@ Option (a3). Marked occluders that look large draw their depth at one sample per
 - `concepts/culling`, `concepts/quality-presets` and `api/objects` describe it.
 - The culling stage is full. Its group binds 8 storage buffers: the matrices, the bucket table and records, the compacted instances, the indirect draws with the history, the layer table, the cell order and the pyramid. That is the most that every device allows one shader stage, compatibility mode included. A feature that culls with more data must share one of these buffers, as the history shares the indirect draws', or read it from a texture.
 - The hidden share comes from the room's geometry (`hiddenShare` in `bench/scenes/room.ts`), not from a count on the GPU. The draw list has no buffer readback until M2-D6 adds one. A readback of the instance counts would let `engine.measure` report what it hides on WebGPU too, in `occludedEntries`.
-- Safari 26 encodes a render bundle with indirect draws again at every `executeBundles` (5.9). The occluders' pass adds one bundle per camera view, so Safari before 27.2 pays that cost twice for the camera. The iPad run measures it.
+- Safari 26 encodes a render bundle with indirect draws again at every `executeBundles` (5.9). The occluders' pass adds one bundle per camera view, so Safari before 27.2 pays that cost twice for the camera. On the owner's iPad in Safari 26.6.2, culling took 0.34 ms more GPU time per frame in the room scene. The render worker's CPU time did not grow. The run does not show the bundle's own share ([D-22](D-22-occlusion-presets.md)).
 - FXAA images vary by a few dozen pixels from run to run, with or without culling. The cause is not known.
 - Later options: find and remove the stall between passes. Test shadow casters against a light's own pyramid. Build every level in one dispatch, as AMD's single-pass downsampler does.
 

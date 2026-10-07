@@ -36,7 +36,7 @@ import type { WasmError } from '../shared/wasm';
 import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
 import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
 import { type AnimationRig, destroyRig, loadAnimationRig } from './animation';
-import { affineOf, multiplyAffine } from './gltf-math';
+import { affineOf, growBox, multiplyAffine } from './gltf-math';
 import type {
 	BlockerData,
 	GltfData,
@@ -337,11 +337,11 @@ async function buildPrefab(
 		}));
 		const light = n.light < 0 ? undefined : lights[n.light];
 		if (n.skinned) {
-			// Joints move the mesh in the space of the copy's group. A mesh that one joint moves
-			// rests where that joint does.
-			const rest = n.skin >= 0 ? IDENTITY : n.transform;
-			for (const part of parts)
+			// Joints move the mesh in the space of the copy's group, where the parser boxed it.
+			parts.forEach((part, k) => {
+				const rest = mesh?.primitives[k]?.rest;
 				node({ name: n.name, parent: 0, transform: IDENTITY, ...part, skinned: true, rest });
+			});
 			const isObject = (n.joint ?? -1) < 0 && parents.has(index);
 			placed.push(isObject ? node({ name: n.name, parent, transform: n.transform }) : -1);
 			continue;
@@ -714,7 +714,8 @@ function lightTemplate(light: LightData): LightTemplate {
 
 /**
  * The model's meshes as parts of instance batches, each with its place in the model's space, and
- * the bounds of every mesh in that space, the instances of instancing nodes included.
+ * the bounds of every mesh in that space, the instances of instancing nodes included. A mesh that
+ * joints move has its box in that space already, and draws in a batch where it lies at rest.
  */
 function partsOf(
 	template: readonly TemplateNode[],
@@ -723,43 +724,35 @@ function partsOf(
 	instancing: readonly InstancingTemplate[],
 ): { parts: PartTemplate[]; bounds: ReturnType<typeof boundsOf> } {
 	const worlds: Float64Array[] = [];
-	const boxes = new Map<MeshGeometry, readonly [number[], number[]]>();
+	const primitives = new Map<MeshGeometry, PrimitiveData>();
 	data.meshes.forEach((mesh, k) => {
 		const made = meshes[k];
 		if (!made) return;
 		mesh.primitives.forEach((p, j) => {
-			boxes.set(made[j] as MeshGeometry, [p.min, p.max]);
+			primitives.set(made[j] as MeshGeometry, p);
 		});
 	});
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];
-	const grow = (m: Float64Array, box: readonly [number[], number[]] | undefined) => {
-		if (!box) return;
-		for (let corner = 0; corner < 8; corner++) {
-			const p = [0, 1, 2].map(
-				(axis) => ((corner >> axis) & 1 ? box[1][axis] : box[0][axis]) as number,
-			);
-			for (let r = 0; r < 3; r++) {
-				const v =
-					(m[r * 4] as number) * (p[0] as number) +
-					(m[r * 4 + 1] as number) * (p[1] as number) +
-					(m[r * 4 + 2] as number) * (p[2] as number) +
-					(m[r * 4 + 3] as number);
-				min[r] = Math.min(min[r] as number, v);
-				max[r] = Math.max(max[r] as number, v);
-			}
-		}
+	const grow = (m: Float64Array, mesh: MeshGeometry) => {
+		const p = primitives.get(mesh);
+		if (p) growBox(m, p.min, p.max, min, max);
 	};
 	const parts: PartTemplate[] = [];
 	template.forEach((node, k) => {
-		// A mesh that a joint moves counts where the joint rests.
-		const local = affineOf(node.rest ?? node.transform);
+		const local = affineOf(node.transform);
 		worlds[k] =
 			node.parent < 0 ? local : multiplyAffine(worlds[node.parent] as Float64Array, local);
 		const world = worlds[k] as Float64Array;
 		if (node.mesh && node.material) {
-			parts.push({ mesh: node.mesh, material: node.material, matrix: Float32Array.from(world) });
-			grow(world, boxes.get(node.mesh));
+			const { rest } = node;
+			parts.push({
+				mesh: node.mesh,
+				material: node.material,
+				matrix: Float32Array.from(rest?.matrix ?? world),
+				...(rest?.exact === false && { bindPose: true }),
+			});
+			grow(world, node.mesh);
 		}
 	});
 	for (const spec of instancing) {
@@ -771,7 +764,7 @@ function partsOf(
 				...spec.scales.subarray(r * 3, r * 3 + 3),
 			]);
 			const placed = multiplyAffine(world, row);
-			for (const part of spec.parts) grow(placed, boxes.get(part.mesh));
+			for (const part of spec.parts) grow(placed, part.mesh);
 		}
 	}
 	const empty = min[0] === Infinity;

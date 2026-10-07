@@ -82,6 +82,7 @@ export type {
 	ProgressHandler,
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
+export type { Effect, EffectOptions } from './scene/effects';
 export type {
 	BuiltinEnvironmentName,
 	Environment,
@@ -110,6 +111,7 @@ export type {
 	OutlineSettings,
 	Post,
 	PostSettings,
+	ToneCurve,
 	ToneMapping,
 	VignetteSettings,
 } from './scene/post';
@@ -117,6 +119,7 @@ export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
 export type {
 	OverlapHit,
 	QueryOptions,
+	QueryTarget,
 	RaycastBatchHits,
 	RaycastHit,
 	RaycastOptions,
