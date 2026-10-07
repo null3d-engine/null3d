@@ -154,6 +154,15 @@ On WebGPU, the prepass costs 0.1 to 0.35 ms on the S25 and nothing measurable on
 - (a) The prepass on for WebGL2 at every preset, WebGPU unchanged. It fixes Low and Medium on the iPad, and the images stay the same: the prepass image tests above match their images without it. Its costs are the doubled draw calls and a second pass over the vertices.
 - (b) Take derivatives out of the WebGL2 shaders. Rejected. It fixes only Low and below, as MSAA writes the sample mask in every shader from Medium up: Medium drew 16.1 fps with it. It also changes the look. The highlight softening measures the normal's change across the pixel, and has no equal without derivatives. Texture reads would need gradients from ray differentials, which match only where the tangent frame is exact.
 
+The change itself ran on the same iPad on 7 October 2026, after a heat check at 60 fps (commit `ad8cc15b6`, runs `20261007-074151-bench` to `20261007-080409-bench`). Each figure is round 1, then round 2 in reverse order.
+
+| S4 on WebGL2 | Frames per second | CPU time per frame |
+| --- | --- | --- |
+| Low, the prepass by default | 60.0 and 60.0 | 0.94 ms |
+| Low with `?prepass=off` | 37.4 and 35.9 | 1.38 ms |
+| Medium, the prepass by default | 37.0 and 36.7 | 1.82 ms |
+| Medium with `?prepass=off` | 16.8 and 16.8 | 4.31 and 4.35 ms |
+
 ### Ties of equal depth
 
 The prepass changes which surface wins where two opaque surfaces have exactly the same depth.
@@ -165,6 +174,7 @@ The prepass changes which surface wins where two opaque surfaces have exactly th
 | Either path with the prepass | The prepass draws with the test above, and the opaque pass then tests `equal` and writes no depth (`DrawKey::after_prepass`) | The surface drawn last |
 | three.js | `LessEqualDepth` by default | The surface drawn last |
 
+- The prepass changes no picture that the image tests cover. On 7 October 2026, with the prepass on by default, all 230 WebGL2 image tests passed against their existing references in Chrome on the Mac's GPU. The prepass copies drew with `?prepass=off`, and they passed too.
 - So, by default, WebGL2 and WebGPU now disagree on ties. WebGL2 then agrees with three.js. The depth precision test's tie tile shows the flip on every path with `?prepass=on`.
 - The draw order behind "first" and "last" is the engine's own: the opaque pass draws in pipeline and mesh order, not in the scene's order. So no page can choose the winner of a tie on either path, before or after this change. The docs tell users to give such surfaces a depth bias.
 - Objects that stay out of the prepass (alpha-masked, blended, lines, materials that skip depth writes) draw with the strict test against the prepass's depth. A masked surface at exactly the depth of a prepass surface therefore always loses, where without the prepass the draw order decides.
