@@ -5,7 +5,7 @@
 // the file while the sketch builds the objects, so they wait less for their pipelines.
 
 import type { ShaderFeature } from '../generated/shader-features';
-import type { PreloadSender } from '../shared/images';
+import { GENERATORS_PRELOAD, type PreloadSender } from '../shared/images';
 
 /** Asks the thread that draws for the shader files of the features that the sketch will use. */
 export class ShaderPreloads {
@@ -21,6 +21,16 @@ export class ShaderPreloads {
 		if (this.asked.has(feature)) return;
 		this.asked.add(feature);
 		this.send([feature]);
+	}
+
+	/**
+	 * Asks for the code and shaders of the GPU's environment generator, once, which a loading HDR
+	 * file will need. The thread that draws loads them and builds the pipelines during the download.
+	 */
+	needGenerators(): void {
+		if (this.asked.has(GENERATORS_PRELOAD)) return;
+		this.asked.add(GENERATORS_PRELOAD);
+		this.send([GENERATORS_PRELOAD]);
 	}
 
 	/**
