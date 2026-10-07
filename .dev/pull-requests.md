@@ -33,6 +33,7 @@ The `Docs-Checked:` trailer names the page that holds the reason, or says why th
 - Build and run the quick checks again before you push the merge: lint, types, docs, skills and unit tests. Then rerun the browser and image tests only of the areas that the merge's conflicts touched. The queue runs every test on top of main.
 - `bun run docs` reads the engine's types, and they import the shader modules. Build the modules first, with `bun run shaders` or `bun run build`. Without them, the generator leaves generated sections out of `docs/api/engine.md`.
 - Run a branch's own copy of a hook's tool, such as `tools/hooks/check-trailers.ts`, from that branch's checkout. Another checkout's copy can be older, and refuse a valid `Size-Growth:` name.
+- Never put a trailer on a merge commit, such as the commit that merges main. The merge queue squashes a pull request with the messages of its plain commits only, so it drops a merge commit's trailers. A local size check reads every commit and still passes. An empty plain commit can carry the trailers instead.
 
 ## A branch that edited the old table of tested devices
 
