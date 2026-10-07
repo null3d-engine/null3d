@@ -13,12 +13,18 @@
 //! keep an edge list: two indices for each edge of each of its triangles, in its page after the
 //! indices it had then. The storage makes the edge lists the first time the view asks for them,
 //! and from then on gives each new part its own.
+//!
+//! Removing meshes packs the storage again: the parts, joint spheres, reaches and delta texels of
+//! the meshes that stay move down over those of the removed ones, in each page and in each list,
+//! so a scene that loads and drops models keeps the same memory. A removal reports where each
+//! page and the delta texels first changed ([`MeshMoves`]), and the GPU copies upload again from
+//! there. A removed mesh's id goes to the next mesh added.
 
 use null3d_core::bvh::mesh::Triangles;
 use null3d_gpu::drawlist::vertex;
 
 use crate::geometry::Geometry;
-use crate::morph::{MorphError, MorphTargets, with_ranges};
+use crate::morph::{MORPH_LOCATION, MorphError, MorphTargets, with_ranges};
 
 /// The most vertices one part of a mesh uses, and the most a WebGL2 page holds: what 16-bit
 /// indices reach below 65,535, the index that WebGL2 always reads as a primitive restart.
@@ -46,6 +52,8 @@ pub struct MeshPart {
     pub base_vertex: u32,
     /// The vertices that the part holds, from its first one in its page on.
     pub vertex_count: u32,
+    /// The page's vertex where the part's vertices start.
+    pub first_vertex: u32,
 }
 
 /// Where one mesh lives.
@@ -68,6 +76,9 @@ pub struct MeshSlot {
     pub targets: u32,
     /// Where each target's reach starts in the storage's list of them.
     first_reach: u32,
+    /// The mesh's delta texels: `texels` of the storage's list of them, from `first_texel` on.
+    first_texel: u32,
+    texels: u32,
 }
 
 /// One shared buffer or page: interleaved vertices of one format, as the GPU reads their bytes,
@@ -143,6 +154,19 @@ pub struct MeshStorage {
     edges: bool,
     /// True while draws take each part's edge list in place of its triangles.
     drawing_edges: bool,
+    /// True for each id whose mesh is live.
+    live: Vec<bool>,
+    /// The ids of removed meshes, which the next meshes take lowest first.
+    free: Vec<u32>,
+}
+
+/// Where a removal changed the storage's data, which the GPU copies then upload again.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MeshMoves {
+    /// Each changed page: its index, its first changed vertex byte, and its first changed index.
+    pub pages: Vec<(u32, usize, usize)>,
+    /// The first delta texel that changed, if any did.
+    pub morph_texels: Option<u32>,
 }
 
 /// A mesh's triangles in their order, as its parts' pages hold them: what queries test.
@@ -200,6 +224,8 @@ impl MeshStorage {
             edge_parts: Vec::new(),
             edges: false,
             drawing_edges: false,
+            live: Vec::new(),
+            free: Vec::new(),
         }
     }
 
@@ -207,8 +233,11 @@ impl MeshStorage {
         &self.pages
     }
 
+    /// The live mesh with id `id`.
     pub fn mesh(&self, id: u32) -> Option<&MeshSlot> {
-        self.meshes.get(id as usize)
+        self.meshes
+            .get(id as usize)
+            .filter(|_| self.live[id as usize])
     }
 
     /// The joint spheres of a skinned mesh, one per joint it names (see [`joint_spheres`]), or
@@ -246,19 +275,21 @@ impl MeshStorage {
         self.morph_texels.extend_from_slice(&sparse.texels);
         let mesh = &mut self.meshes[id as usize];
         mesh.targets = targets.targets;
+        mesh.first_texel = first;
+        mesh.texels = sparse.texels.len() as u32;
         mesh.first_reach = self.reaches.len() as u32;
         self.reaches.extend_from_slice(&sparse.reach);
         Ok(id)
     }
 
-    /// The number of meshes.
+    /// The number of mesh ids handed out, removed ones included.
     pub fn count(&self) -> u32 {
         self.meshes.len() as u32
     }
 
     /// The triangles of mesh `id`, for queries, or `None` for an id that names no mesh.
     pub fn triangles(&self, id: u32) -> Option<MeshTriangles<'_>> {
-        let mesh = self.meshes.get(id as usize)?;
+        let mesh = self.mesh(id)?;
         let first = mesh.first_part as usize;
         let parts = &self.parts[first..first + mesh.part_count as usize];
         Some(MeshTriangles {
@@ -326,7 +357,7 @@ impl MeshStorage {
         }
     }
 
-    /// Adds a mesh and returns its id.
+    /// Adds a mesh and returns its id: the lowest id of a removed mesh, or a new one.
     pub fn add(&mut self, geometry: &Geometry) -> Result<u32, MeshError> {
         let vertex_count = geometry.vertex_count() as u32;
         let indices = &geometry.indices;
@@ -342,6 +373,7 @@ impl MeshStorage {
         let (max_vertices, max_indices) = self.part_limits(geometry.format)?;
         let first_part = self.parts.len() as u32;
         reserve(&mut self.meshes, 1)?;
+        reserve(&mut self.live, 1)?;
         let placed = if vertex_count <= max_vertices && indices.len() <= max_indices {
             self.place(geometry.format, &geometry.vertices, indices)
                 .map(|part| self.parts.push(part))
@@ -349,8 +381,11 @@ impl MeshStorage {
             self.split(geometry, max_vertices, max_indices)
         };
         if let Err(error) = placed {
-            // No mesh names the parts placed so far, so nothing draws them.
-            self.parts.truncate(first_part as usize);
+            // The parts placed so far sit at the ends of their pages, which no upload has reached,
+            // so taking them out moves nothing that the GPU holds.
+            let mut parts = Gaps::default();
+            parts.add(first_part, self.parts.len() as u32 - first_part);
+            self.take_out(parts, Gaps::default(), Gaps::default(), Gaps::default());
             return Err(error);
         }
         if self.edges {
@@ -365,7 +400,7 @@ impl MeshStorage {
             .fold(0.0f32, f32::max);
         let first_sphere = self.spheres.len() as u32;
         self.spheres.extend(joint_spheres(geometry));
-        self.meshes.push(MeshSlot {
+        let slot = MeshSlot {
             format: geometry.format,
             first_part,
             part_count: self.parts.len() as u32 - first_part,
@@ -375,8 +410,198 @@ impl MeshStorage {
             first_sphere,
             targets: 0,
             first_reach: 0,
-        });
-        Ok(self.meshes.len() as u32 - 1)
+            first_texel: 0,
+            texels: 0,
+        };
+        let lowest = (0..self.free.len()).min_by_key(|&k| self.free[k]);
+        Ok(match lowest.map(|k| self.free.swap_remove(k)) {
+            Some(id) => {
+                self.meshes[id as usize] = slot;
+                self.live[id as usize] = true;
+                id
+            }
+            None => {
+                self.meshes.push(slot);
+                self.live.push(true);
+                self.meshes.len() as u32 - 1
+            }
+        })
+    }
+
+    /// Removes the live meshes among `ids`, packs the storage over their data, and returns where
+    /// the data changed. Other ids are skipped. The removed ids stay taken until
+    /// [`MeshStorage::release`] gives them to later meshes.
+    pub fn remove(&mut self, ids: &[u32]) -> MeshMoves {
+        let (mut parts, mut spheres, mut reaches, mut texels) = Default::default();
+        for &id in ids {
+            if self.mesh(id).is_none() {
+                continue;
+            }
+            let mesh = self.meshes[id as usize];
+            Gaps::add(&mut parts, mesh.first_part, mesh.part_count);
+            Gaps::add(&mut spheres, mesh.first_sphere, mesh.joints);
+            Gaps::add(&mut reaches, mesh.first_reach, mesh.targets);
+            Gaps::add(&mut texels, mesh.first_texel, mesh.texels);
+            self.live[id as usize] = false;
+            self.meshes[id as usize].part_count = 0;
+        }
+        self.take_out(parts, spheres, reaches, texels)
+    }
+
+    /// Gives the ids of removed meshes to the next meshes added, lowest first. Ids of live meshes
+    /// are skipped.
+    pub fn release(&mut self, ids: &[u32]) {
+        for &id in ids {
+            let removed = self.live.get(id as usize) == Some(&false);
+            if removed && !self.free.contains(&id) {
+                self.free.push(id);
+            }
+        }
+    }
+
+    /// Takes runs of the lists out, packs the pages over the parts in `parts`, and moves the
+    /// live meshes' data down to match. Returns where the data changed.
+    fn take_out(
+        &mut self,
+        mut parts: Gaps,
+        mut spheres: Gaps,
+        mut reaches: Gaps,
+        mut texels: Gaps,
+    ) -> MeshMoves {
+        for gaps in [&mut parts, &mut spheres, &mut reaches, &mut texels] {
+            gaps.close();
+        }
+        let mut moves = MeshMoves::default();
+        if parts.is_empty() && texels.is_empty() {
+            return moves;
+        }
+        // Each page's runs of removed vertices and indices: the parts' triangles and edge lists.
+        let mut pages: Vec<(Gaps, Gaps)> = Vec::new();
+        pages.resize_with(self.pages.len(), Default::default);
+        for &(start, len) in &parts.runs {
+            for k in start as usize..(start + len) as usize {
+                let part = self.parts[k];
+                let (vertices, indices) = &mut pages[part.page as usize];
+                vertices.add(part.first_vertex, part.vertex_count);
+                indices.add(part.first_index, part.index_count);
+                if let Some(edges) = self.edge_parts.get(k) {
+                    indices.add(edges.first_index, edges.index_count);
+                }
+            }
+        }
+        // The first changed vertex byte and index of each page, or `usize::MAX` for none.
+        let mut changed = vec![(usize::MAX, usize::MAX); self.pages.len()];
+        for (p, (vertices, indices)) in pages.iter_mut().enumerate() {
+            vertices.close();
+            indices.close();
+            if vertices.is_empty() && indices.is_empty() {
+                continue;
+            }
+            let page = &mut self.pages[p];
+            let stride = vertex::stride(page.format) as usize;
+            vertices.squeeze(&mut page.vertices, stride);
+            indices.squeeze(&mut page.indices, 1);
+            let mut first_index = indices.first().map_or(usize::MAX, |i| i as usize);
+            if self.packing == Packing::Pages && !vertices.is_empty() {
+                // Indices name vertices of the page, so those past a removed run move down.
+                for (k, index) in page.indices.iter_mut().enumerate() {
+                    let moved = vertices.before(u32::from(*index));
+                    if moved > 0 {
+                        *index -= moved as u16;
+                        first_index = first_index.min(k);
+                    }
+                }
+            }
+            let first_vertex = vertices.first().map_or(usize::MAX, |v| v as usize * stride);
+            changed[p] = (first_vertex, first_index);
+        }
+        let packing = self.packing;
+        let moved = |part: &mut MeshPart, index_gaps: &Gaps, vertex_gaps: &Gaps| {
+            part.first_index -= index_gaps.before(part.first_index);
+            part.first_vertex -= vertex_gaps.before(part.first_vertex);
+            part.base_vertex = match packing {
+                Packing::SharedBuffers => part.first_vertex,
+                Packing::Pages => 0,
+            };
+        };
+        // Only the live parts move: the runs hold the removed ones, which go next.
+        for (k, part) in self.parts.iter_mut().enumerate() {
+            if !parts.holds(k as u32) {
+                let (vertices, indices) = &pages[part.page as usize];
+                moved(part, indices, vertices);
+            }
+        }
+        for (k, part) in self.edge_parts.iter_mut().enumerate() {
+            if !parts.holds(k as u32) {
+                let (vertices, indices) = &pages[part.page as usize];
+                moved(part, indices, vertices);
+            }
+        }
+        let edge_parts = parts
+            .runs
+            .iter()
+            .filter(|(start, _)| (*start as usize) < self.edge_parts.len());
+        let edge_parts = Gaps::from_runs(
+            edge_parts.map(|&(start, len)| (start, len.min(self.edge_parts.len() as u32 - start))),
+        );
+        parts.squeeze(&mut self.parts, 1);
+        edge_parts.squeeze(&mut self.edge_parts, 1);
+        spheres.squeeze(&mut self.spheres, 1);
+        reaches.squeeze(&mut self.reaches, 1);
+        texels.squeeze(&mut self.morph_texels, 1);
+        for id in 0..self.meshes.len() {
+            if !self.live[id] {
+                continue;
+            }
+            let mesh = &mut self.meshes[id];
+            mesh.first_part -= parts.before(mesh.first_part);
+            mesh.first_sphere -= spheres.before(mesh.first_sphere);
+            mesh.first_reach -= reaches.before(mesh.first_reach);
+            let shift = texels.before(mesh.first_texel);
+            if shift == 0 || mesh.texels == 0 {
+                continue;
+            }
+            mesh.first_texel -= shift;
+            let mesh = *mesh;
+            self.shift_morph_entries(&mesh, shift, &mut changed);
+        }
+        moves.pages = changed
+            .iter()
+            .enumerate()
+            .filter(|(_, first)| **first != (usize::MAX, usize::MAX))
+            .map(|(p, &(vertices, indices))| {
+                let page = &self.pages[p];
+                (
+                    p as u32,
+                    vertices.min(page.vertices.len()),
+                    indices.min(page.indices.len()),
+                )
+            })
+            .collect();
+        moves.morph_texels = texels.first();
+        moves
+    }
+
+    /// Moves the first entry that each vertex of a morphed mesh names down by `shift` texels,
+    /// after the texels before its own moved, and lowers each page's first changed vertex byte.
+    fn shift_morph_entries(&mut self, mesh: &MeshSlot, shift: u32, changed: &mut [(usize, usize)]) {
+        let Some(offset) = vertex::offset(mesh.format, MORPH_LOCATION) else {
+            return;
+        };
+        let stride = vertex::stride(mesh.format) as usize;
+        let first = mesh.first_part as usize;
+        for part in &self.parts[first..first + mesh.part_count as usize] {
+            let page = &mut self.pages[part.page as usize];
+            let start = part.first_vertex as usize * stride;
+            for v in 0..part.vertex_count as usize {
+                let at = start + v * stride + offset as usize;
+                let bytes: [u8; 4] = page.vertices[at..at + 4].try_into().expect("four bytes");
+                let entry = f32::from_le_bytes(bytes) - shift as f32;
+                page.vertices[at..at + 4].copy_from_slice(&entry.to_le_bytes());
+            }
+            let first_changed = &mut changed[part.page as usize].0;
+            *first_changed = (*first_changed).min(start);
+        }
     }
 
     /// The most vertices and indices one part of a format can have: what 16-bit indices reach,
@@ -391,8 +616,9 @@ impl MeshStorage {
         Ok((vertices, indices))
     }
 
-    /// Puts one part's vertices and part-local indices into the last page of their format, or
-    /// into a new page when they do not fit it, and returns where the part landed. It reserves
+    /// Puts one part's vertices and part-local indices into the first page of their format with
+    /// room for them, which may be room that removed meshes left, or into a new page when none
+    /// has room, and returns where the part landed. It reserves
     /// every byte first, with room for the part's edge list, so it fails before it changes a page.
     fn place(
         &mut self,
@@ -412,14 +638,18 @@ impl MeshStorage {
                     || page.vertex_count() + count <= MAX_PAGE_VERTICES)
         };
         reserve(&mut self.parts, 1)?;
-        let page_index = match self.pages.iter().rposition(|page| page.format == format) {
-            Some(last) if fits(&self.pages[last]) => {
-                let page = &mut self.pages[last];
+        let room = self
+            .pages
+            .iter()
+            .position(|page| page.format == format && fits(page));
+        let page_index = match room {
+            Some(first) => {
+                let page = &mut self.pages[first];
                 reserve(&mut page.vertices, vertices.len())?;
                 reserve(&mut page.indices, indices_placed)?;
-                last
+                first
             }
-            _ => {
+            None => {
                 let mut page = Page {
                     format,
                     ..Page::default()
@@ -447,6 +677,7 @@ impl MeshStorage {
             index_count: indices.len() as u32,
             base_vertex,
             vertex_count: count,
+            first_vertex,
         })
     }
 
@@ -552,6 +783,104 @@ pub fn joint_spheres(geometry: &Geometry) -> Vec<[f32; 4]> {
         }
     }
     spheres
+}
+
+/// Runs of entries that a removal takes out of a list: each run's start and length, in order,
+/// and the entries taken out up to the end of each run.
+#[derive(Debug, Default)]
+struct Gaps {
+    runs: Vec<(u32, u32)>,
+    ends: Vec<u32>,
+}
+
+impl Gaps {
+    /// Gaps of runs that are in order already and do not overlap.
+    fn from_runs(runs: impl Iterator<Item = (u32, u32)>) -> Self {
+        let mut gaps = Gaps::default();
+        for (start, len) in runs {
+            gaps.add(start, len);
+        }
+        gaps.close();
+        gaps
+    }
+
+    /// Adds a run of `len` entries from `start` on, in its place among the others: a removal
+    /// takes out a few runs, so finding the place costs less than a sort's code. An empty run
+    /// adds nothing.
+    fn add(&mut self, start: u32, len: u32) {
+        if len > 0 {
+            let at = self.runs.partition_point(|&(s, _)| s < start);
+            self.runs.insert(at, (start, len));
+        }
+    }
+
+    /// Joins runs that touch, and counts the entries before each end. Call it once every run is
+    /// in.
+    fn close(&mut self) {
+        let mut joined: Vec<(u32, u32)> = Vec::with_capacity(self.runs.len());
+        for &(start, len) in &self.runs {
+            match joined.last_mut() {
+                Some((first, length)) if *first + *length >= start => {
+                    *length = (*length).max(start + len - *first);
+                }
+                _ => joined.push((start, len)),
+            }
+        }
+        self.runs = joined;
+        let mut taken = 0;
+        self.ends = self
+            .runs
+            .iter()
+            .map(|&(_, len)| {
+                taken += len;
+                taken
+            })
+            .collect();
+    }
+
+    fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+    }
+
+    /// The first entry taken out, if any is.
+    fn first(&self) -> Option<u32> {
+        self.runs.first().map(|&(start, _)| start)
+    }
+
+    /// True when a run holds entry `at`.
+    fn holds(&self, at: u32) -> bool {
+        match self.runs.partition_point(|&(start, _)| start <= at) {
+            0 => false,
+            k => at < self.runs[k - 1].0 + self.runs[k - 1].1,
+        }
+    }
+
+    /// The entries taken out before entry `at`, which no run holds.
+    fn before(&self, at: u32) -> u32 {
+        match self.runs.partition_point(|&(start, _)| start < at) {
+            0 => 0,
+            k => self.ends[k - 1],
+        }
+    }
+
+    /// Takes the runs out of `list`, whose entries each hold `unit` values, and keeps the other
+    /// entries in their order.
+    fn squeeze<T: Copy>(&self, list: &mut Vec<T>, unit: usize) {
+        let Some(&(first, _)) = self.runs.first() else {
+            return;
+        };
+        let mut to = first as usize * unit;
+        for (k, &(start, len)) in self.runs.iter().enumerate() {
+            let from = ((start + len) as usize * unit).min(list.len());
+            let end = self
+                .runs
+                .get(k + 1)
+                .map_or(list.len(), |&(next, _)| next as usize * unit);
+            list.copy_within(from..end, to);
+            to += end - from;
+        }
+        list.truncate(to);
+    }
 }
 
 /// The part of a mesh that [`MeshStorage::split`] builds.
@@ -813,6 +1142,7 @@ mod tests {
             positions: Some(&positions),
             normals: None,
             tangents: None,
+            colors: None,
         };
         let sparse = targets.sparse(vertices, 0).unwrap();
         for packing in [Packing::SharedBuffers, Packing::Pages] {
@@ -1039,6 +1369,241 @@ mod tests {
         assert_eq!(storage.pages().len(), 2);
         for page in storage.pages() {
             assert!(page.buffer_bytes().1 <= 256);
+        }
+    }
+
+    /// A skinned column of `rings` rings of four vertices, each ring moved by its own joint.
+    fn column(rings: u32) -> Geometry {
+        let mut g = Geometry {
+            format: vertex::JOINTS | vertex::WEIGHTS,
+            ..Geometry::default()
+        };
+        for ring in 0..rings {
+            for [x, z] in [[0.5, 0.0], [-0.5, 0.0], [0.0, 0.5], [0.0, -0.5]] {
+                for v in [x, ring as f32, z, 0.0, 1.0, 0.0] {
+                    g.vertices.extend_from_slice(&f32::to_le_bytes(v));
+                }
+                g.vertices.extend_from_slice(&[ring as u8, 0, 0, 0]);
+                for w in [1.0f32, 0.0, 0.0, 0.0] {
+                    g.vertices.extend_from_slice(&w.to_le_bytes());
+                }
+            }
+        }
+        g.indices = (0..rings * 4 - 2).flat_map(|v| [v, v + 1, v + 2]).collect();
+        g
+    }
+
+    /// The bytes of each page's vertices and indices.
+    fn page_sizes(storage: &MeshStorage) -> Vec<(usize, usize)> {
+        let pages = storage.pages();
+        pages
+            .iter()
+            .map(|p| (p.vertices.len(), p.indices.len()))
+            .collect()
+    }
+
+    #[test]
+    fn removed_meshes_leave_the_others_drawing_the_same_vertices_from_packed_pages() {
+        let meshes = [
+            box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap(),
+            sphere(0.5, [16, 8]),
+            column(4),
+            box_geometry(2.0, 1.0, 0.5, [2, 2, 2]).unwrap(),
+            sphere(1.0, [8, 4]),
+        ];
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            for edges in [false, true] {
+                let mut storage = MeshStorage::new(packing);
+                storage.draw_edges(edges);
+                let ids: Vec<u32> = meshes.iter().map(|m| storage.add(m).unwrap()).collect();
+                let moves = storage.remove(&[ids[1], ids[3]]);
+                assert!(!moves.pages.is_empty(), "{packing:?}");
+                assert_eq!(moves.morph_texels, None);
+                assert!(storage.mesh(ids[1]).is_none() && storage.triangles(ids[3]).is_none());
+                // The same pages as a storage that never held the removed meshes.
+                let mut kept = MeshStorage::new(packing);
+                kept.draw_edges(edges);
+                for k in [0, 2, 4] {
+                    kept.add(&meshes[k]).unwrap();
+                }
+                assert_eq!(
+                    page_sizes(&storage),
+                    page_sizes(&kept),
+                    "{packing:?}, {edges}"
+                );
+                for k in [0, 2, 4] {
+                    let id = ids[k];
+                    if edges {
+                        let lines = drawn_lines(&storage, id).len();
+                        assert_eq!(lines, meshes[k].indices.len());
+                    }
+                    storage.draw_edges(false);
+                    assert_eq!(
+                        resolved_vertices(&storage, id),
+                        original_vertices(&meshes[k])
+                    );
+                    storage.draw_edges(edges);
+                    let slot = storage.mesh(id).unwrap();
+                    assert_eq!(storage.joint_spheres(slot), joint_spheres(&meshes[k]));
+                }
+                // Once released, the removed ids go to the next meshes, lowest first.
+                storage.release(&[ids[3], ids[1], ids[0]]);
+                assert_eq!(storage.add(&meshes[3]).unwrap(), ids[1]);
+                assert_eq!(storage.add(&meshes[1]).unwrap(), ids[3]);
+                storage.draw_edges(false);
+                assert_eq!(
+                    resolved_vertices(&storage, ids[3]),
+                    original_vertices(&meshes[1])
+                );
+                assert_eq!(storage.count(), 5);
+            }
+        }
+    }
+
+    #[test]
+    fn a_page_reports_where_a_removal_changed_it() {
+        let a = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let b = sphere(0.5, [16, 8]);
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let ids = [&a, &b, &a].map(|m| storage.add(m).unwrap());
+            let stride = vertex::stride(a.format) as usize;
+            let moves = storage.remove(&[ids[1]]);
+            // Until its release, a removed id stays taken.
+            let next = storage.add(&a).unwrap();
+            assert_eq!(next, 3);
+            storage.remove(&[next]);
+            assert_eq!(
+                moves.pages,
+                [(0, a.vertex_count() * stride, a.indices.len())],
+                "{packing:?}"
+            );
+            // Removing the last mesh moves nothing, so the page changed only past its end.
+            let moves = storage.remove(&[ids[2]]);
+            let page = &storage.pages()[0];
+            assert_eq!(moves.pages, [(0, page.vertices.len(), page.indices.len())]);
+            // An id that names no live mesh changes nothing.
+            assert_eq!(storage.remove(&[ids[2], 9]), MeshMoves::default());
+        }
+    }
+
+    #[test]
+    fn adding_and_removing_a_mesh_again_and_again_keeps_the_same_memory() {
+        let kept = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let big = grid(300, 300, vertex::UV0);
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            storage.add(&kept).unwrap();
+            let mut first = None;
+            for round in 0..20 {
+                let id = storage.add(&big).unwrap();
+                let small = storage.add(&kept).unwrap();
+                storage.remove(&[id, small]);
+                storage.release(&[id, small]);
+                let sizes = (page_sizes(&storage), storage.parts.len(), storage.count());
+                match &first {
+                    None => first = Some(sizes),
+                    Some(first) => assert_eq!(&sizes, first, "{packing:?}, round {round}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_split_mesh_comes_out_of_every_page_it_took() {
+        let big = grid(300, 300, vertex::UV0);
+        let small = grid(2, 2, vertex::UV0);
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let before = storage.add(&small).unwrap();
+            let id = storage.add(&big).unwrap();
+            let after = storage.add(&small).unwrap();
+            storage.remove(&[id]);
+            assert_eq!(
+                resolved_vertices(&storage, before),
+                original_vertices(&small)
+            );
+            assert_eq!(
+                resolved_vertices(&storage, after),
+                original_vertices(&small)
+            );
+            let vertices: usize = storage
+                .pages()
+                .iter()
+                .map(|p| p.vertex_count() as usize)
+                .sum();
+            assert_eq!(vertices, small.vertex_count() * 2, "{packing:?}");
+        }
+    }
+
+    #[test]
+    fn a_removed_morphed_mesh_gives_back_its_deltas_and_later_meshes_name_theirs_again() {
+        use crate::morph::{MorphTargets, with_ranges};
+
+        let mesh = grid(4, 4, 0);
+        let vertices = mesh.vertex_count();
+        let lift = |dy: f32| {
+            let mut positions = vec![0.0; vertices * 3];
+            for v in (0..vertices).step_by(3) {
+                positions[v * 3 + 1] = dy;
+            }
+            positions
+        };
+        let (first, second) = (lift(1.0), lift(2.0));
+        let targets = |positions| MorphTargets {
+            targets: 1,
+            positions: Some(positions),
+            normals: None,
+            tangents: None,
+            colors: None,
+        };
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            let a = storage.add_morphed(&mesh, &targets(&first)).unwrap();
+            let b = storage.add_morphed(&mesh, &targets(&second)).unwrap();
+            let texels = storage.morph_texels().len() / 2;
+            let moves = storage.remove(&[a]);
+            assert_eq!(moves.morph_texels, Some(0));
+            assert_eq!(storage.morph_texels().len(), texels, "{packing:?}");
+            // The second mesh's vertices name its entries from the first texel now, as a storage
+            // that held it alone gives.
+            let alone = targets(&second).sparse(vertices, 0).unwrap();
+            assert_eq!(storage.morph_texels(), alone.texels);
+            let expected = original_vertices(&with_ranges(&mesh, &alone.ranges));
+            assert_eq!(resolved_vertices(&storage, b), expected, "{packing:?}");
+            assert_eq!(storage.reach(storage.mesh(b).unwrap()), alone.reach);
+        }
+    }
+
+    /// The time that removals take in a large storage: `cargo test --release -p null3d-render
+    /// removal_timings -- --ignored --nocapture`. D-75 records the figures.
+    #[test]
+    #[ignore = "a timing run, for the decision record"]
+    #[allow(clippy::disallowed_methods)] // A native test times itself with the system clock.
+    fn removal_timings() {
+        use std::time::Instant;
+        // 2,000 meshes of 1,089 vertices and 6,144 indices each: 70 MB of vertices.
+        let mesh = grid(32, 32, vertex::UV0);
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            for (label, count) in [("first mesh", 1), ("first 50 meshes", 50)] {
+                let mut storage = MeshStorage::new(packing);
+                let ids: Vec<u32> = (0..2000).map(|_| storage.add(&mesh).unwrap()).collect();
+                let bytes: usize = storage.pages().iter().map(|p| p.vertices.len()).sum();
+                let start = Instant::now();
+                let moves = storage.remove(&ids[..count]);
+                let took = start.elapsed();
+                let moved: usize = moves
+                    .pages
+                    .iter()
+                    .map(|&(p, v, _)| storage.pages()[p as usize].vertices.len() - v)
+                    .sum();
+                println!(
+                    "{packing:?}, {label}: {:.2} ms, {} of {} vertex bytes to upload again",
+                    took.as_secs_f64() * 1000.0,
+                    moved,
+                    bytes
+                );
+            }
         }
     }
 }

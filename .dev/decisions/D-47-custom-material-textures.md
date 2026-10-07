@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-J3.
 
+Summary: A custom material's WGSL declares `var name: texture_2d<f32>;`; the build binds it as a texture array in a map slot, declares `nameSampler`, and gives each texture function the layer, which the material's custom values hold for both stages. Up to 6 textures. The uniform room stays at 32 numbers less one per texture: the largest measured effect takes 17. `material.destroy()` draws nothing from the next frame and frees the id, and the template's pipelines, once nothing uses them.
+
 ## Question
 
 Three questions about custom materials (`materials.shader`):

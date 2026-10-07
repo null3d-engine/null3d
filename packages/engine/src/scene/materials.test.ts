@@ -47,6 +47,7 @@ import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
+import { ShaderTemplates } from './shader-templates';
 import { Texture, type Textures } from './textures';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -158,7 +159,10 @@ function fakeCore() {
 		maps,
 		destroyed,
 		biases,
-		materials: new Materials(core, (template, shader) => sent.push([template, shader])),
+		materials: new Materials(
+			core,
+			new ShaderTemplates((template, shader) => sent.push([template, shader])),
+		),
 	};
 }
 
@@ -468,6 +472,50 @@ describe('Material.set', () => {
 		expect(error.message).toStartWith(
 			'E1103: materials.unlit.set() got a material that is not from this engine.',
 		);
+	});
+});
+
+describe('hot updates of a custom material', () => {
+	/** WGSL of a custom material under a hot update key, with its own stand-in variants. */
+	const hotMaterial = (key: string, build: string) => ({
+		...compiledMaterial(),
+		variants: { [build]: { permutation: 0, wgsl: null, glsl: null } },
+		hot: key,
+	});
+
+	test('send the new shader of every material under the key to the thread that draws', () => {
+		const { sent, materials } = fakeCore();
+		const first = hotMaterial('src/glow.wgsl', 'first');
+		materials.shader({ wgsl: first });
+		materials.shader({ wgsl: compiledMaterial() });
+		const newer = hotMaterial('src/glow.wgsl', 'newer');
+		materials.updateShaders([
+			{ key: 'src/glow.wgsl', shader: newer },
+			{ key: 'src/other.wgsl', shader: hotMaterial('src/other.wgsl', 'other') },
+		]);
+		expect(sent.map(([template, shader]) => [template, Object.keys(shader.variants)])).toEqual([
+			[SHADING_CUSTOM_FIRST, ['first']],
+			[SHADING_CUSTOM_FIRST + 1, []],
+			[SHADING_CUSTOM_FIRST, ['newer']],
+		]);
+	});
+
+	test('give later materials the newest shader under their key, in the same template', () => {
+		const { shadings, sent, materials } = fakeCore();
+		const first = hotMaterial('src/sketch.ts#0', 'first');
+		materials.updateShaders([
+			{ key: 'src/sketch.ts#0', shader: hotMaterial('src/sketch.ts#0', 'newer') },
+		]);
+		materials.shader({ wgsl: first });
+		// The module ran again, as after a reload of the sketch alone, with the same key.
+		materials.shader({ wgsl: hotMaterial('src/sketch.ts#0', 'again') });
+		expect(shadings).toEqual([
+			standardCustom(SHADING_CUSTOM_FIRST),
+			standardCustom(SHADING_CUSTOM_FIRST),
+		]);
+		expect(sent.map(([template, shader]) => [template, Object.keys(shader.variants)])).toEqual([
+			[SHADING_CUSTOM_FIRST, ['newer']],
+		]);
 	});
 });
 

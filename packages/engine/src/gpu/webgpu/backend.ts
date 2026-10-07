@@ -2,17 +2,26 @@
 // replays binary draw lists into WebGPU calls. The replay loop reads 32-bit words from a view on
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
+import { messageOf } from '../../errors/message';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { DEV } from '../../shared/dev';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
-import { Pipelines, type RenderTemplate } from './pipelines';
+import { IndirectArguments } from './indirect-arguments';
+import { Pipelines, type RenderTemplate, SKIN_BUILDS } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
 import { StagingRing } from './staging';
 import { UploadRoutes } from './upload-routes';
+
+/**
+ * The operands of a `CreateRenderPipeline` command: its id, template, permutation, color and depth
+ * formats, sample count, state flags, vertex format, and depth bias and slope.
+ */
+const RENDER_PIPELINE_OPERANDS = 10;
 
 const TEXTURE_FORMATS: (GPUTextureFormat | undefined)[] = [];
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
@@ -22,18 +31,21 @@ TEXTURE_FORMATS[G.FORMAT_RGBA16_FLOAT] = 'rgba16float';
 TEXTURE_FORMATS[G.FORMAT_RG11B10_UFLOAT] = 'rg11b10ufloat';
 TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
+TEXTURE_FORMATS[G.FORMAT_DEPTH16_UNORM] = 'depth16unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
 TEXTURE_FORMATS[G.FORMAT_R32_UINT] = 'r32uint';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM] = 'astc-4x4-unorm';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM_SRGB] = 'astc-4x4-unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM] = 'bc7-rgba-unorm';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM_SRGB] = 'bc7-rgba-unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_BC6H_RGB_UFLOAT] = 'bc6h-rgb-ufloat';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM] = 'etc2-rgb8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM_SRGB] = 'etc2-rgb8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 TEXTURE_FORMATS[G.FORMAT_R32_FLOAT] = 'r32float';
+TEXTURE_FORMATS[G.FORMAT_RGBA32_UINT] = 'rgba32uint';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
@@ -63,6 +75,19 @@ COMPARE_FUNCTIONS[G.COMPARE_GREATER] = 'greater';
 COMPARE_FUNCTIONS[G.COMPARE_NOT_EQUAL] = 'not-equal';
 COMPARE_FUNCTIONS[G.COMPARE_GREATER_EQUAL] = 'greater-equal';
 COMPARE_FUNCTIONS[G.COMPARE_ALWAYS] = 'always';
+
+/**
+ * The compute pipelines that a preloaded feature's file builds at once, each a template and its
+ * permutation bits: their layouts are fixed, so the scene need not draw first.
+ */
+const PRECOMPILED: Readonly<Record<string, readonly (readonly [number, number])[]>> = {
+	skinning: SKIN_BUILDS.map((bits) => [G.TEMPLATE_SKIN, bits] as const),
+	occlusion: [
+		[G.TEMPLATE_OCCLUSION_EARLY, 0],
+		[G.TEMPLATE_OCCLUSION_LATE, 0],
+		[G.TEMPLATE_DEPTH_PYRAMID, 0],
+	],
+};
 
 /** Reads a code from a table, and fails with its kind when the table has no entry for it. */
 function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
@@ -97,6 +122,14 @@ export class WebGPUBackend {
 	 */
 	private readonly parked: Uint32Array[] = [];
 	/**
+	 * In development builds, the operands of each render pipeline of a custom material, by
+	 * pipeline id, which a hot update of the material's shader builds again.
+	 */
+	private readonly customOperands = new Map<number, Uint32Array>();
+	/** The newest hot rebuild of each pipeline, by pipeline id, and the count of rebuilds so far. */
+	private readonly swaps = new Map<number, number>();
+	private swapCount = 0;
+	/**
 	 * The operands of each `CreateComputePipeline` whose shader file has not arrived yet: the
 	 * skinning pass's, which loads with the first skinned mesh. Each builds once its file arrives.
 	 */
@@ -114,6 +147,10 @@ export class WebGPUBackend {
 	 * an indirect draw again at every execution, which costs its GPU process milliseconds per frame.
 	 */
 	private readonly bundles: (Uint32Array | undefined)[] = [];
+	/** Each indirect draw's own copy of its arguments, for the render passes that hold several. */
+	private readonly indirect: IndirectArguments;
+	/** `commandEncoder` as a function made once, for helpers that record commands outside a pass. */
+	private readonly openEncoder = () => this.commandEncoder();
 	private readonly pipelines: Pipelines;
 	/** Staging buffers for the uploads that writeBuffer copies slowly. */
 	private readonly staging: StagingRing;
@@ -167,13 +204,10 @@ export class WebGPUBackend {
 		this.pipelines = new Pipelines(device, shaders);
 		this.pipelines.prebuildMipmaps();
 		this.staging = new StagingRing(device);
+		this.indirect = new IndirectArguments(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(device)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(device));
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -213,6 +247,44 @@ export class WebGPUBackend {
 
 	/** The texture the canvas shows this frame, or an offscreen target standing in for it. */
 	canvasTarget: GPUTexture | undefined;
+
+	/**
+	 * The color targets that resolved into the canvas, by id, and while a capture draws into a
+	 * stand-in for the canvas, a texture of the same kind for each of them, which every pass of the
+	 * capture draws into in its place. On the Galaxy S25 (Adreno 830), a multisampled color texture
+	 * whose first resolve went into the canvas resolves nothing into any other texture, so the
+	 * stand-in for the canvas stayed empty.
+	 */
+	private readonly canvasResolved = new Set<number>();
+	private readonly resolveStandIns = new Map<number, GPUTexture>();
+
+	/** Ends a capture: the frames draw into the canvas again, and the capture's own targets go. */
+	endCapture(): void {
+		this.canvasTarget = undefined;
+		for (const texture of this.resolveStandIns.values()) texture.destroy();
+		this.resolveStandIns.clear();
+	}
+
+	/** The view that a render pass draws its color into, before it resolves into `resolveId`. */
+	private colorView(id: number, resolveId: number): GPUTextureView | undefined {
+		if (!this.canvasTarget) {
+			if (resolveId === 0) this.canvasResolved.add(id);
+			return this.targetView(id);
+		}
+		if (!this.canvasResolved.has(id)) return this.targetView(id);
+		let standIn = this.resolveStandIns.get(id);
+		if (!standIn) {
+			const texture = this.need(this.textures, id, 'render target');
+			standIn = this.device.createTexture({
+				size: [texture.width, texture.height],
+				format: texture.format,
+				sampleCount: texture.sampleCount,
+				usage: texture.usage,
+			});
+			this.resolveStandIns.set(id, standIn);
+		}
+		return standIn.createView();
+	}
 
 	private targetView(id: number): GPUTextureView | undefined {
 		if (id === G.NO_TARGET) return undefined;
@@ -277,6 +349,7 @@ export class WebGPUBackend {
 
 	/** Destroys a texture, or releases a view. */
 	private releaseTexture(id: number): void {
+		this.canvasResolved.delete(id);
 		this.textures[id]?.destroy();
 		this.textures[id] = undefined;
 		this.bindingViews[id] = undefined;
@@ -377,9 +450,8 @@ export class WebGPUBackend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
-		generators[name].run(this.device, texture);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
+		code.run(this.device, texture, source);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -423,7 +495,7 @@ export class WebGPUBackend {
 	private submit(): void {
 		if (!this.encoder && !this.staging.pending) return;
 		const encoder = this.commandEncoder();
-		this.timer?.resolve(encoder);
+		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;
@@ -468,10 +540,49 @@ export class WebGPUBackend {
 		return i;
 	}
 
-	/** True while a pipeline is building. Pipelines whose shaders arrived start to build first. */
+	/**
+	 * True while a pipeline is building. Pipelines whose shaders arrived start to build first, and
+	 * so do those of custom materials whose shader a hot update replaced.
+	 */
 	get building(): boolean {
+		if (DEV && this.images.replaced.length > 0) this.swapReplaced();
 		if (this.parked.length > 0 || this.parkedCompute.length > 0) this.unpark();
 		return this.builds > 0;
+	}
+
+	/**
+	 * Builds each pipeline of a custom material whose shader a hot update replaced again, in the
+	 * background. The old pipeline draws until the new one is built, so no frame loses the
+	 * material's objects. A pipeline that fails to build keeps the old one and logs why.
+	 */
+	private swapReplaced(): void {
+		if (!DEV) return;
+		for (const template of this.images.replaced.splice(0)) {
+			const shader = this.images.shaders.get(template);
+			// A template that no pipeline has used takes the new shader at its first use.
+			if (!shader || !this.pipelines.has(template)) continue;
+			this.pipelines.replaceCustom(template, shader);
+			for (const [id, operands] of this.customOperands) {
+				if (operands[1] !== template) continue;
+				const swap = ++this.swapCount;
+				this.swaps.set(id, swap);
+				this.builds++;
+				this.counts.pipelines++;
+				const keep = (error: unknown) =>
+					console.error(
+						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${messageOf(error)}`,
+					);
+				Promise.resolve()
+					.then(() => this.device.createRenderPipelineAsync(this.renderDescriptor(operands, 0)))
+					.then((pipeline) => {
+						// A pipeline destroyed meanwhile stays gone, and a later swap wins.
+						if (this.swaps.get(id) === swap) this.renderPipelines[id] = pipeline;
+					}, keep)
+					.finally(() => {
+						this.builds--;
+					});
+			}
+		}
 	}
 
 	/**
@@ -491,16 +602,17 @@ export class WebGPUBackend {
 	/**
 	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
 	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the skinning pass's pipelines, whose layout is fixed. A render pipeline also needs the targets,
-	 * the vertex format and the state of the objects that draw with it, which the scene gives, so
-	 * `scene.warmUp()` builds those. Skinning's builds for the vertex shader serve only the
-	 * `?skinning=vertex` switch, and are left out.
+	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
+	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
+	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's builds for the vertex
+	 * shader serve only the `?skinning=vertex` switch, and are left out.
 	 */
 	precompile(feature: string, module: FirstUseShaders): void {
-		if (feature === 'skinning') {
-			for (const bits of [0, G.PERMUTATION_VERTEX_TANGENT])
+		const compute = PRECOMPILED[feature];
+		if (compute) {
+			for (const [template, bits] of compute)
 				this.device
-					.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN, bits))
+					.createComputePipelineAsync(this.pipelines.compute(template, bits))
 					.catch(() => undefined);
 			return;
 		}
@@ -580,17 +692,9 @@ export class WebGPUBackend {
 			this.parked.push(words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 			return;
 		}
-		const descriptor = this.pipelines.render(
-			words[a + 1] as number,
-			words[a + 2] as number,
-			this.format(words[a + 3] as number),
-			this.format(words[a + 4] as number),
-			words[a + 5] as number,
-			words[a + 6] as number,
-			words[a + 7] as number,
-			(words[a + 8] as number) | 0,
-			floatOfBits(words[a + 9] as number),
-		);
+		const descriptor = this.renderDescriptor(words, a);
+		if (DEV && this.images.shaders.has(words[a + 1] as number))
+			this.customOperands.set(id, words.slice(a, a + RENDER_PIPELINE_OPERANDS));
 		if (!background) {
 			this.renderPipelines[id] = device.createRenderPipeline(descriptor);
 			return;
@@ -600,6 +704,21 @@ export class WebGPUBackend {
 		device.createRenderPipelineAsync(descriptor).then(
 			(pipeline) => this.built(this.renderPipelines, id, pipeline),
 			(error: unknown) => this.failed(error),
+		);
+	}
+
+	/** How to build the render pipeline of a `CreateRenderPipeline` command with its operands at `a`. */
+	private renderDescriptor(words: Uint32Array, a: number): GPURenderPipelineDescriptor {
+		return this.pipelines.render(
+			words[a + 1] as number,
+			words[a + 2] as number,
+			this.format(words[a + 3] as number),
+			this.format(words[a + 4] as number),
+			words[a + 5] as number,
+			words[a + 6] as number,
+			words[a + 7] as number,
+			(words[a + 8] as number) | 0,
+			floatOfBits(words[a + 9] as number),
 		);
 	}
 
@@ -621,6 +740,10 @@ export class WebGPUBackend {
 			this.builds--;
 		}
 		this.renderPipelines[id] = undefined;
+		if (DEV) {
+			this.customOperands.delete(id);
+			this.swaps.delete(id);
+		}
 	}
 
 	private failed(error: unknown): void {
@@ -653,14 +776,22 @@ export class WebGPUBackend {
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
 			switch (op) {
-				case G.OP_CREATE_BUFFER:
+				case G.OP_CREATE_BUFFER: {
 					this.counts.objects++;
 					this.buffers[words[a] as number]?.destroy();
+					// Where draws copy their arguments, a buffer of indirect draws is also a source of
+					// copies: a render pass with several of its draws copies each one's arguments out
+					// (see ./indirect-arguments.ts).
+					const usage = words[a + 2] as number;
 					this.buffers[words[a] as number] = device.createBuffer({
 						size: words[a + 1] as number,
-						usage: words[a + 2] as number,
+						usage:
+							this.indirect.copying && usage & G.BUFFER_USAGE_INDIRECT
+								? usage | G.BUFFER_USAGE_COPY_SRC
+								: usage,
 					});
 					break;
+				}
 				case G.OP_WRITE_BUFFER: {
 					const target = this.need(this.buffers, words[a] as number, 'buffer');
 					const offset = words[a + 1] as number;
@@ -805,7 +936,7 @@ export class WebGPUBackend {
 					const flags = words[a + 8] as number;
 					const setup = this.renderPass;
 					setup.setColor(
-						this.targetView(words[a] as number),
+						this.colorView(words[a] as number, words[a + 1] as number),
 						this.targetView(words[a + 1] as number),
 						(flags & G.PASS_CLEAR_COLOR) !== 0,
 						(flags & G.PASS_STORE_COLOR) !== 0,
@@ -820,6 +951,7 @@ export class WebGPUBackend {
 						a + 7,
 					);
 					setup.setTimestampWrites(this.timer?.passWrites(true));
+					this.indirect.begin(words, i + length, end, this.bundles, this.buffers, this.openEncoder);
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					this.skipDraws = false;
 					break;
@@ -994,14 +1126,16 @@ export class WebGPUBackend {
 					words[a + 4] as number,
 				);
 				return true;
-			case G.OP_DRAW_INDEXED_INDIRECT:
+			case G.OP_DRAW_INDEXED_INDIRECT: {
+				const id = words[a] as number;
+				const offset = words[a + 1] as number;
+				const copy = this.indirect.take(id, offset);
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
-				pass.drawIndexedIndirect(
-					this.need(this.buffers, words[a] as number, 'buffer'),
-					words[a + 1] as number,
-				);
+				if (copy) pass.drawIndexedIndirect(copy, 0);
+				else pass.drawIndexedIndirect(this.need(this.buffers, id, 'buffer'), offset);
 				return true;
+			}
 			default:
 				return false;
 		}
@@ -1033,6 +1167,7 @@ export class WebGPUBackend {
 		for (const texture of this.textures) texture?.destroy();
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
+		this.indirect.destroy();
 		this.copyBuffer?.destroy();
 		this.destroyRetired();
 	}

@@ -50,7 +50,9 @@ scene.instantiate(ship);
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--lod` | Adds levels of detail to each mesh of 256 triangles or more | No levels |
+| `--lod` | Adds levels of detail to each mesh of 64 triangles or more | No levels |
+| `--simplify <share>` | Keeps this share of each mesh's triangles, from 0 to 1, as far as `--simplify-error` allows | 1: every triangle |
+| `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC, several times larger than ETC1S, with less loss | `size` |
 | `--compression <none\|meshopt>` | `none` leaves the file's buffers uncompressed | `meshopt` |
@@ -63,6 +65,7 @@ scene.instantiate(ship);
 
 | Data | In the output | Why |
 | --- | --- | --- |
+| Equal meshes, materials, textures and vertex data | One copy, which every node that used a copy then uses | The engine draws all objects of one mesh and material together, and uploads each mesh once |
 | Triangle order | Reordered for the GPU's vertex cache, and vertices in the order that triangles use them | The GPU shades fewer vertices and reads memory in order |
 | Positions | 16-bit integers in 16,384 steps across each mesh, with `KHR_mesh_quantization` | Half the size of floats. A mesh 100 m long gets steps of 6 mm |
 | Normals and tangents | 8-bit integers | A quarter of the size. Directions stay within about 1 degree |
@@ -135,9 +138,26 @@ In 40 sets of photographed materials at 1024 x 1024, each ETC1S color map took a
 
 ## Levels of detail
 
-`--lod` adds three levels to each mesh of 256 triangles or more, with about a half, a quarter and an eighth of its triangles. Each level shares the mesh's vertices, so only its indices add to the file. The levels go into the file with `MSFT_lod`, with the screen coverage at which each level's error falls under one pixel of a 1080-pixel screen. A level that would save little is left out.
+`--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above. The levels stop when a level would keep more than three quarters of the triangles above it. Each level shares the mesh's vertices, so only its indices add to the file.
+
+The command plans the levels as follows:
+
+1. It welds the vertices of each mesh part for planning. Copies of a vertex at one place merge when their texture coordinates and colors match and their normals lie within 20 degrees. Exporters often leave such copies, and they stop the simplifier.
+2. It simplifies with meshoptimizer, with the normals and the vertex colors in the error. Texture seams and the borders between mesh parts stay in place. Normal seams may move, so a model of flat faces still simplifies.
+3. A skinned mesh simplifies in its skeleton's rest pose, as it draws. Meshes with joints or morph targets keep their triangles more even, so they bend well.
+4. Each level stores its error: the largest distance between its surface and the full mesh's, in the units of the mesh's positions. Each level's error is at least 1.5 times the error of the level above, so the levels change at distances well apart.
+
+The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. A model whose file already has levels keeps them.
+
+Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
 The engine does not draw levels of detail yet, and draws the full mesh. three.js's `GLTFLoader` also ignores `MSFT_lod`.
+
+### Fewer triangles in the full mesh
+
+`--simplify` lowers the full mesh itself, as gltfpack's `-si` does. `--simplify 0.5` aims to keep half of each mesh's triangles. The surface may move by no more than `--simplify-error` times the mesh's size, so a mesh may keep more. A mesh that cannot lose triangles within that limit keeps them all. The vertices that no triangle uses then leave the file.
+
+The default limit, a hundredth of each mesh's size, changes little that a viewer can see. A model that draws small on the screen, such as the characters of a crowd, can take a larger limit.
 
 ## The budget report
 
@@ -146,6 +166,8 @@ The engine does not draw levels of detail yet, and draws the full mesh. three.js
 | First line | The model's files before and after, the `.glb` file alone, and the time the command took |
 | `draws` | The objects that the scene draws, with each instance of an instancing node, the parts and meshes they draw, the triangles at full detail, and the vertices the file stores |
 | `size` | The scene's size in its own units, from the meshes' bounds |
+| `levels of detail` | The meshes that got levels, and their triangles at each level, the full meshes first |
+| `merged copies` | The meshes, materials, textures and vertex data that merged into an equal copy |
 | Textures | Each group of textures that share a size, a format and a color space |
 | `texture memory` | The textures' GPU memory with every mip level: where the GPU takes ETC2 and ASTC, as phones, tablets and Macs do; where it takes only BC7, as most Windows PCs do; and with no compressed format |
 | `blockers` | The meshes that got blockers, and their triangles |
@@ -171,7 +193,7 @@ The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your 
 bun add -d @null3d/cli
 ```
 
-The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `maxTextureSize`, `textureQuality`, `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
+The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `simplify`, `simplifyError`, `maxTextureSize`, `textureQuality`, `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
 
 ```ts
 // vite.config.ts
@@ -220,6 +242,8 @@ The output is one KTX2 file:
 Both formats filter on every GPU the engine supports. `rgb9e5ufloat` stores three 9-bit values with one shared exponent, in half the memory of `rgba16float`. In tests, the two formats differed by under a tenth of a step of 255 after tone mapping. Both hold light up to about 65,000, and the command clamps brighter texels, such as the middle of an unclipped sun.
 
 three.js prefilters an HDR file in the browser on every visit, with `PMREMGenerator`. The command does it once, before you publish. Your page then downloads the filtered file and does no work before it draws. The same file gives the same bytes on every computer.
+
+`assets.loadEnvironment` also takes the HDR file itself, for maps that change, such as files that users upload. A worker reads the file, and the GPU filters it at load with this command's steps, so the two maps match. [Assets](../api/assets.md#environments) gives what it reads and costs.
 
 `--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. It blurs the room by 0.04 radians first, as three.js's examples do with `fromScene(room, 0.04)`. The engine makes the same room on the GPU when `assets.builtinEnvironment('room')` asks for it, so its package ships no file. The engine's tests compare its map with this command's.
 

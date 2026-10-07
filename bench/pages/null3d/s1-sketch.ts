@@ -19,8 +19,12 @@
 // allocation sample of the tiles' marks and their cap.
 // The `environment` switch lights the swarm with the built-in room, and turns it and changes its
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
-// light.
-import { defineSketch, type Environment, type SketchContext } from '@null3d/engine';
+// light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
+// changes a color uniform of each every frame through an array changed in place, for the
+// allocation sample of post.setEffectUniform and the effects' passes.
+// The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
+// the decoders' work in the engine's workers.
+import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
@@ -46,21 +50,52 @@ export default defineSketch(async (context) => {
 	if (outlined) createOutlined(context);
 	const moveCasters = switches.has('tileShadows') ? createTileShadows(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
-	const vignette = { offset: 1, darkness: 1 };
+	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
 	const line = { width: 2 };
 	const outlineSettings = { outline: line };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
+	if (switches.has('decode')) void decodeWithoutEnd(context);
 	const ao = switches.has('ao');
 	const occlusion = { ao: { intensity: 1 } };
 	if (ao) context.quality.set({ aoScale: 0.5 });
 	const bloom = switches.has('bloom');
 	const glow = { bloom: { intensity: 0.15 } };
+	const effects = switches.has('effects');
+	const tint = effects
+		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
+		: undefined;
+	const haze = effects
+		? context.post.addEffect({ wgsl: HAZE, uniforms: { color: '#b0c4d8', density: 0.002 } })
+		: undefined;
+	// The effects' colors, changed in place, so a frame's calls allocate no array.
+	const warm: [number, number, number] = [1, 0.95, 0.9];
+	const mist: [number, number, number] = [0.43, 0.55, 0.69];
 	// The environment's options, changed in place, as the grading's settings are.
 	const turn: [number, number, number] = [0, 0, 0];
 	const lighting = { intensity: 1, rotation: turn };
 	let room: Environment | undefined;
+	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
+	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
+	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
+	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
+	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
+	// whose opaque material writes no depth, which makes any background draw before the objects
+	// with no depth test, and `extraBox` adds the same box with a material that writes depth.
+	const skyMode = switches.get('sky');
+	const sky = skyMode !== null && skyMode !== 'room' && skyMode !== 'texture';
+	if (skyMode === 'texture') context.scene.setBackground(createGradient(context));
+	if (switches.has('backgroundFirst')) addSmallBox(context, false);
+	if (switches.has('extraBox')) addSmallBox(context, true);
+	const sun: [number, number, number] = [0, 0.2, -1];
+	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
+	const skyBackground = { sky: skySettings };
+	if (sky) context.scene.setBackground(skyBackground);
+	if (skyMode === 'room')
+		void context.assets.builtinEnvironment('room').then((loaded) => {
+			context.scene.setBackground(loaded);
+		});
 	if (switches.has('environment'))
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
@@ -80,6 +115,11 @@ export default defineSketch(async (context) => {
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.scene.setEnvironment(room, lighting);
 		}
+		if (sky && skyMode !== 'still') {
+			sun[1] = 0.2 + 0.15 * Math.sin(t);
+			skySettings.time = t;
+			context.scene.setBackground(skyBackground);
+		}
 		if (ao) {
 			occlusion.ao.intensity = 0.75 + 0.25 * Math.sin(t);
 			context.post.set(occlusion);
@@ -88,9 +128,15 @@ export default defineSketch(async (context) => {
 			glow.bloom.intensity = 0.15 + 0.05 * Math.sin(t);
 			context.post.set(glow);
 		}
+		if (tint && haze) {
+			warm[2] = 0.9 + 0.1 * Math.sin(t);
+			context.post.setEffectUniform(tint, 'color', warm);
+			mist[0] = 0.43 + 0.05 * Math.cos(t);
+			context.post.setEffectUniform(haze, 'color', mist);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
-		vignette.offset = 1 + 0.25 * Math.cos(t);
+		vignette.size = 1 + 0.25 * Math.cos(t);
 		context.post.set(settings);
 	};
 	pose(time.now);
@@ -100,6 +146,48 @@ export default defineSketch(async (context) => {
 		},
 	};
 });
+
+/** A custom effect that tints each pixel toward a color. */
+const TINT = /* wgsl */ `
+struct Uniforms { color: vec3f, amount: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    return vec4f(mix(input.color.rgb, input.color.rgb * uniforms.color, uniforms.amount), input.color.a);
+}
+`;
+
+/** A custom effect that fades each pixel toward a color by its distance from the camera. */
+const HAZE = /* wgsl */ `
+struct Uniforms { color: vec3f, density: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    let fade = 1.0 - exp(-effectDistance(input.uv) * uniforms.density);
+    return vec4f(mix(input.color.rgb, uniforms.color * input.color.a, fade), input.color.a);
+}
+`;
+
+/** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
+const LAMP = '/samples/sources/khronos/StainedGlassLamp/glTF-KTX-BasisU';
+/** The meshopt sample model, which the `decode` switch loads after each round of textures. */
+const MESHOPT_CUBE = '/samples/sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf';
+
+/**
+ * Loads the KTX2 sample model's textures, all at once, and the meshopt sample model, round after
+ * round until the page closes. The textures go as soon as they arrive. The frames meanwhile show
+ * what the decoders' work in the engine's workers costs the frame loop.
+ */
+async function decodeWithoutEnd({ assets }: SketchContext): Promise<void> {
+	const gltf = (await (await fetch(`${LAMP}/StainedGlassLamp.gltf`)).json()) as {
+		images: { uri: string }[];
+	};
+	for (;;) {
+		const textures = await Promise.all(
+			gltf.images.map(({ uri }) => assets.loadTexture(`${LAMP}/${uri}`)),
+		);
+		for (const texture of textures) texture.destroy();
+		await assets.loadGltf(MESHOPT_CUBE);
+	}
+}
 
 /** The number of outlined boxes that the `outline` switch adds. */
 const OUTLINED_BOXES = 16;
@@ -184,4 +272,28 @@ function createLabels({ scene, ui }: SketchContext, count: number): void {
 		});
 		ui.trackLabel(anchor, `label-${k}`, { offset: [0, 1, 0] });
 	}
+}
+
+/** Adds a small unlit box at the swarm's center, whose material writes depth or not. */
+function addSmallBox({ scene, geometry, materials }: SketchContext, depthWrite: boolean): void {
+	scene.createMesh({
+		mesh: geometry.box({ width: 0.5, height: 0.5, depth: 0.5 }),
+		material: materials.unlit({ color: '#ffffff', depthWrite }),
+	});
+}
+
+/** A texture of a smooth gradient, made from data, about as large as the view it fills. */
+function createGradient({ textures }: SketchContext): Texture {
+	const width = 1024;
+	const height = 512;
+	const data = new Uint8Array(width * height * 4);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const at = (y * width + x) * 4;
+			data[at] = (x * 255) / (width - 1);
+			data[at + 1] = (y * 255) / (height - 1);
+			data[at + 2] = 160;
+			data[at + 3] = 255;
+		}
+	return textures.fromData({ width, height, data, colorSpace: 'srgb' });
 }

@@ -8,6 +8,7 @@
 // away after it. Each runs in every thread mode, and the moves and clicks on every GPU path.
 import { expect, type Page, test } from '@playwright/test';
 import { allocatingPlaces } from '../lib/allocations.ts';
+import { ALONE } from '../lib/alone.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -258,23 +259,19 @@ for (const mode of ENGINE_MODES)
 		await expectLines(send, ['click right', 'ray right']);
 	});
 
-test('pointer events allocate nothing', async ({ page }) => {
+test('pointer events allocate nothing', ALONE, async ({ page }) => {
 	const send = await open(page, 'threads=off');
 	await send('loop');
 	// Each frame of the loop with events enters the left box, presses, clicks, then moves to the
 	// right box: its handlers count four events, and the group's two.
-	const handled = await page.evaluate(() =>
-		(globalThis as { __null3dPointerLoop?: (iterations: number) => number }).__null3dPointerLoop?.(
-			2,
-		),
-	);
-	expect(handled).toBeGreaterThan(0);
-	const runLoop = (iterations: number, runs: number) =>
+	const loop = (iterations: number, runs: number) =>
 		page.evaluate(
 			({ iterations, runs }) => {
-				const loop = (globalThis as { __null3dPointerLoop?: (iterations: number) => number })
+				const run = (globalThis as { __null3dPointerLoop?: (iterations: number) => number })
 					.__null3dPointerLoop;
-				for (let run = 0; run < runs; run++) loop?.(iterations);
+				let handled = 0;
+				for (let k = 0; k < runs; k++) handled += run?.(iterations) ?? 0;
+				return handled;
 			},
 			{ iterations, runs },
 		);
@@ -285,6 +282,9 @@ test('pointer events allocate nothing', async ({ page }) => {
 		// The dispatch, the rays from the frame cameras, the raycasts and the core's glue.
 		counted:
 			/\/packages\/engine\/(src\/scene\/(pointer-events|frame-cameras|queries|scene|memory)\.ts|dist\/wasm\/)/,
+		pauseEngine: true,
 	};
-	expect(await allocatingPlaces(page, plan, runLoop)).toEqual([]);
+	expect(await allocatingPlaces(page, plan, loop)).toEqual([]);
+	// The paused engine's handlers still ran the loop's events.
+	expect(await loop(2, 1)).toBeGreaterThan(0);
 });

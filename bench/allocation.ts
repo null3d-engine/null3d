@@ -28,8 +28,11 @@
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
 // line's width every frame. `--tile-shadows` adds two point lights and two spot lights that cast
 // shadows to S1, with casters that circle them, so tiles of the shadow atlas draw again every
-// frame. `--environment` lights S1 with the built-in room, and turns it and changes its intensity
-// every frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build
+// frame. `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
+// changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
+// turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
+// moves its sun and its clouds every frame. `--prepass` turns the depth prepass on, in any scene.
+// It samples the production build
 // of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
@@ -54,8 +57,11 @@
 //   bun run bench:allocation --labels 256 --gpu webgl2
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
+//   bun run bench:allocation --effects --gpu webgl2
+//   bun run bench:allocation --sky --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
-import { chromium, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
 	type HeapProfile,
@@ -99,7 +105,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
- *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's;
+ *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's. The
+ *   canvas hands out a new texture each frame, so the view of it must be made each frame too. The
+ *   backend's `colorView` makes it, and the browser counts it there, about 34 bytes on S1;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
@@ -127,6 +135,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'render-worker': {
 		'replay webgpu/backend.ts': 320,
 		'commandEncoder webgpu/backend.ts': 32,
+		'colorView webgpu/backend.ts': 48,
 		'draw render/loop.ts': 64,
 		'drawFrame render/scene-renderer.ts': 192,
 		'(IDLE)': 48,
@@ -160,6 +169,12 @@ const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
  * in all, on the Mac.
  */
 const BLOOM_REPLAY_BUDGET = 15 * 64;
+
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--effects`:
+ * the encoders of the two effects' render passes, at bloom's allowance per pass.
+ */
+const EFFECTS_REPLAY_BUDGET = 2 * 64;
 
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
@@ -211,16 +226,15 @@ async function main(): Promise<void> {
 	const dev = args.includes(DEV_OPTION);
 	const noInline = args.includes('--no-inline');
 	const server = await serveBenchPages({ dev });
-	const browser = await chromium.launch({
+	const browser = await launchInWindow({
 		channel: 'chrome',
-		headless: false,
 		args: [
 			`--remote-debugging-port=${DEBUG_PORT}`,
 			...(noInline ? ['--js-flags=--no-turbo-inlining --no-maglev-inlining'] : []),
 		],
 	});
 	try {
-		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
+		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
@@ -254,7 +268,11 @@ async function main(): Promise<void> {
 			throw new Error('--tile-shadows adds shadowed spot and point lights to S1 only');
 		const environment = args.includes('--environment') ? '&environment' : '';
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}`;
+		const effects = args.includes('--effects') ? '&effects' : '';
+		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
+		const sky = args.includes('--sky') ? '&sky' : '';
+		if (sky && scene !== 's1') throw new Error('--sky draws behind S1 only');
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -346,7 +364,8 @@ async function main(): Promise<void> {
 				const replay = name === 'replay webgpu/backend.ts';
 				const extra =
 					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
-					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0);
+					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
+					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(

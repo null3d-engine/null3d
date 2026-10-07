@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readEnvironmentFile } from './environment-file';
+import { isPanoramaFile, readEnvironmentFile } from './environment-file';
 
 const IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -88,7 +88,7 @@ describe('environment files', () => {
 			return 'read';
 		};
 		expect(refusal(new TextEncoder().encode('not a texture at all, just text').buffer)).toBe(
-			'it is not a KTX2 file',
+			'it is neither a KTX2 file from bunx @null3d/cli assets env nor a Radiance (.hdr) or OpenEXR (.exr) file',
 		);
 		expect(refusal({ vkFormat: 37 })).toStartWith('its texels have the Vulkan format 37');
 		expect(refusal({ faces: 1 })).toBe('it is not a cube map of square faces');
@@ -101,5 +101,15 @@ describe('environment files', () => {
 			'its null3d.environment data holds no 27 numbers of diffuse light',
 		);
 		expect(refusal({ data: '{sh' })).toBe('its null3d.environment data is not JSON');
+	});
+});
+
+describe('HDR files', () => {
+	test('tell Radiance and OpenEXR files by their first bytes', () => {
+		const head = (text: string) => new TextEncoder().encode(text);
+		expect(isPanoramaFile(head('#?RADIANCE\n'))).toBe(true);
+		expect(isPanoramaFile(Uint8Array.of(0x76, 0x2f, 0x31, 0x01, 2))).toBe(true);
+		expect(isPanoramaFile(Uint8Array.of(0xab, 0x4b, 0x54, 0x58))).toBe(false);
+		expect(isPanoramaFile(head('#'))).toBe(false);
 	});
 });

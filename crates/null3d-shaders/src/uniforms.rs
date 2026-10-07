@@ -1,8 +1,10 @@
-//! A custom material's uniforms: the fields of `struct Uniforms` in its WGSL. The build packs
-//! them into the material's row of custom values, which holds eight `vec4f`s, and writes the
-//! function that loads them, so the template can fill its `material` from the row. The engine
-//! writes each uniform's value at the offset that the build gives it. The layers of the
-//! material's textures take the row's last floats, one each, so the uniforms fit in the rest.
+//! The uniforms of a custom material or a custom effect: the fields of `struct Uniforms` in its
+//! WGSL. The build packs them into eight `vec4f`s and writes the function that loads them. A
+//! material's uniforms live in its row of custom values, from which the template fills its
+//! `material`. The layers of the material's textures take the row's last floats, one each, so
+//! the uniforms fit in the rest. An effect's uniforms live in its uniform block, from which the
+//! effect template fills its `uniforms`. The engine writes each uniform's value at the offset that
+//! the build gives it.
 
 use serde::Serialize;
 
@@ -19,8 +21,30 @@ pub(crate) const ROW_FLOATS: u32 = 32;
 /// The component names of a `vec4f`, in order.
 const COMPONENTS: &str = "xyzw";
 
-/// The name of the function that the build writes to load the uniforms.
-pub(crate) const LOADER: &str = "load_material_uniforms";
+/// The name of the function that the build writes to load a material's uniforms.
+pub(crate) const MATERIAL_LOADER: &str = "load_material_uniforms";
+
+/// The name of the function that the build writes to load an effect's uniforms.
+pub(crate) const EFFECT_LOADER: &str = "load_effect_uniforms";
+
+/// What owns the uniforms, which decides where the loader reads them and how messages name it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Owner {
+    /// A custom material: the loader reads the material's row of custom values.
+    Material,
+    /// A custom effect: the loader reads the vectors of the effect's uniform block.
+    Effect,
+}
+
+impl Owner {
+    /// The owner as a message names it, with its article.
+    fn noun(self) -> &'static str {
+        match self {
+            Self::Material => "a custom material",
+            Self::Effect => "a custom effect",
+        }
+    }
+}
 
 /// One uniform, where the engine writes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -86,14 +110,14 @@ fn struct_body(tokens: &[Token]) -> Option<usize> {
     None
 }
 
-/// Reads `struct Uniforms` from a custom material's WGSL, when it has one, and writes its loader.
-/// The material's `textures` take the row's last floats. Problems name the fields' places in
-/// `source`.
+/// Reads `struct Uniforms` from the WGSL of `owner`, when it has one, and writes its loader. A
+/// material's `textures` take the row's last floats. Problems name the fields' places in `source`.
 pub(crate) fn read(
     tokens: &[Token],
     source: &str,
     path: &str,
     textures: u32,
+    owner: Owner,
 ) -> Result<Option<Uniforms>, Vec<Problem>> {
     let room = ROW_FLOATS - textures;
     let Some(open) = struct_body(tokens) else {
@@ -153,8 +177,9 @@ pub(crate) fn read(
                 path,
                 place(name),
                 format!(
-                    "the uniform `{}` does not fit: a custom material's uniforms hold {ROW_FLOATS} numbers at most{textures}, with each vec3f and vec4f starting a group of four. Pack small values into a vec4f, or remove some uniforms.",
-                    name.text
+                    "the uniform `{}` does not fit: the uniforms of {} hold {ROW_FLOATS} numbers at most{textures}, with each vec3f and vec4f starting a group of four. Pack small values into a vec4f, or remove some uniforms.",
+                    name.text,
+                    owner.noun()
                 ),
             ));
             break;
@@ -166,7 +191,7 @@ pub(crate) fn read(
         return Err(problems);
     }
     Ok(Some(Uniforms {
-        loader: loader(&fields),
+        loader: loader(&fields, owner),
         fields: fields
             .into_iter()
             .map(|(name, ty, offset)| Uniform {
@@ -178,17 +203,26 @@ pub(crate) fn read(
     }))
 }
 
-/// The function that loads the uniforms from a material's row of custom values, one `vec4f` at
-/// a time, for each `vec4f` that holds a field.
-fn loader(fields: &[(&str, UniformType, u32)]) -> String {
-    let mut code = format!(
-        "\n// The uniforms of material `id`, from its row of custom values, as the build packed them.\nfn {LOADER}(id: u32) -> {STRUCT} {{\n    var u: {STRUCT};\n"
-    );
+/// The function that loads the uniforms of `owner`, one `vec4f` at a time, for each `vec4f` that
+/// holds a field: from a material's row of custom values, or from an effect's uniform block.
+fn loader(fields: &[(&str, UniformType, u32)], owner: Owner) -> String {
+    let mut code = match owner {
+        Owner::Material => format!(
+            "\n// The uniforms of material `id`, from its row of custom values, as the build packed them.\nfn {MATERIAL_LOADER}(id: u32) -> {STRUCT} {{\n    var u: {STRUCT};\n"
+        ),
+        Owner::Effect => format!(
+            "\n// The effect's uniforms, from its uniform block, as the build packed them.\nfn {EFFECT_LOADER}() -> {STRUCT} {{\n    var u: {STRUCT};\n"
+        ),
+    };
     let mut loaded = None;
     for (name, ty, offset) in fields {
         let part = offset / 4;
         if loaded != Some(part) {
-            code.push_str(&format!("    let v{part} = custom_value(id, {part}u);\n"));
+            let fetch = match owner {
+                Owner::Material => format!("custom_value(id, {part}u)"),
+                Owner::Effect => format!("effect_value({part}u)"),
+            };
+            code.push_str(&format!("    let v{part} = {fetch};\n"));
             loaded = Some(part);
         }
         let first = (offset % 4) as usize;

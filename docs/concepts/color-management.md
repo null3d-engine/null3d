@@ -60,7 +60,7 @@ A strong light can make a surface many times brighter than white. The scene keep
 - `rgba16float` on WebGPU. Where the device can draw into `rg11b10ufloat` and the canvas is opaque, the scene color takes that format instead, which needs half the memory.
 - `RGBA16F` on WebGL2, where the device can draw float targets in the anti-aliasing mode.
 
-The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It applies the tone mapping to the exposed color. It then encodes the result as sRGB and adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it.
+The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It darkens the edges with the vignette, when the sketch sets one, and applies the tone mapping to the exposed color. It then encodes the result as sRGB. Last, after any color grading table, it adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it.
 
 ### The 8-bit path
 

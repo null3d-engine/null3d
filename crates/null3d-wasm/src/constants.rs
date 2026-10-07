@@ -5,7 +5,7 @@ use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
     MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
-use null3d_core::cells::CELL_SIZE;
+use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
@@ -109,6 +109,12 @@ pub mod map_slot {
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
+/// The flags of an effect that `setEffect` takes.
+pub mod effect_flag {
+    /// The effect reads the scene's depth.
+    pub const DEPTH: u32 = 1;
+}
+
 /// The numbers that `textureStat` reads from the texture store.
 /// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
 /// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
@@ -126,9 +132,9 @@ pub mod post_value {
     /// The colors of the table's first texels, red first, then of its last texels.
     pub const LUT_DOMAIN_MIN: u32 = 5;
     pub const LUT_DOMAIN_MAX: u32 = 8;
-    /// The vignette's offset and darkness.
-    pub const VIGNETTE_OFFSET: u32 = 11;
-    pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// The vignette's intensity and size. Its falloff and roundness come after bloom's values.
+    pub const VIGNETTE_INTENSITY: u32 = 11;
+    pub const VIGNETTE_SIZE: u32 = 12;
     /// Ambient occlusion's radius, thickness, distance exponent, distance falloff, scale, samples
     /// and intensity.
     pub const AO_RADIUS: u32 = 13;
@@ -147,8 +153,11 @@ pub mod post_value {
     /// Bloom's blend (0 mixes, 1 adds, 2 screens), then the share of each of its 10 levels.
     pub const BLOOM_BLEND: u32 = 28;
     pub const BLOOM_WEIGHTS: u32 = 29;
+    /// The vignette's falloff and roundness.
+    pub const VIGNETTE_FALLOFF: u32 = 39;
+    pub const VIGNETTE_ROUNDNESS: u32 = 40;
     /// The values in the block.
-    pub const COUNT: u32 = 39;
+    pub const COUNT: u32 = 41;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
@@ -165,6 +174,48 @@ pub mod environment_value {
     pub const COUNT: u32 = 31;
 }
 
+/// The places of the background's values in the block that `backgroundValues` gives: 32-bit floats
+/// that TypeScript writes before it calls `setBackgroundSource`, as the environment's values come.
+pub mod background_value {
+    /// The factor of the background's light.
+    pub const INTENSITY: u32 = 0;
+    /// An environment's blur, as a roughness from 0 to 1.
+    pub const BLUR: u32 = 1;
+    /// A cube map's or an environment's turn as Euler angles in radians, in the order X, Y, Z.
+    pub const ROTATION: u32 = 2;
+    /// The sky's values, with the names of three.js's `Sky` uniforms: a point toward the sun, then
+    /// one number each.
+    pub const SUN_POSITION: u32 = 5;
+    pub const TURBIDITY: u32 = 8;
+    pub const RAYLEIGH: u32 = 9;
+    pub const MIE_COEFFICIENT: u32 = 10;
+    pub const MIE_DIRECTIONAL_G: u32 = 11;
+    pub const CLOUD_SCALE: u32 = 12;
+    pub const CLOUD_SPEED: u32 = 13;
+    pub const CLOUD_COVERAGE: u32 = 14;
+    pub const CLOUD_DENSITY: u32 = 15;
+    pub const CLOUD_ELEVATION: u32 = 16;
+    pub const TIME: u32 = 17;
+    /// 1 where the sky shows the sun's disc, else 0.
+    pub const SUN_DISC: u32 = 18;
+    /// The values in the block.
+    pub const COUNT: u32 = 19;
+}
+
+/// What `setBackgroundSource` draws behind every object.
+pub mod background_kind {
+    /// Only the background color.
+    pub const NONE: u32 = 0;
+    /// A 2D texture that fills the view.
+    pub const TEXTURE: u32 = 1;
+    /// An environment map, which can blur.
+    pub const ENVIRONMENT: u32 = 2;
+    /// A cube map of six images.
+    pub const CUBEMAP: u32 = 3;
+    /// three.js's analytic sky.
+    pub const SKY: u32 = 4;
+}
+
 pub mod texture_stat {
     /// The GPU bytes that every texture array holds, free layers included.
     pub const MEMORY_BYTES: u32 = 0;
@@ -176,7 +227,7 @@ pub mod texture_stat {
     pub const LARGEST_FRAME_BYTES: u32 = 3;
     /// Textures with an image that is not on the GPU yet.
     pub const WAITING: u32 = 4;
-    /// Images sent so far, which is the last image id handed out.
+    /// The last image id handed out, or 0 before the first.
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
@@ -233,11 +284,13 @@ pub mod mesh_arrays {
 
 /// The morph target arrays that `createMeshFromArrays` finds in the staging words after the
 /// indices: the deltas of the positions, the normals and the tangents, each three 32-bit floats
-/// per vertex of each target, target after target, in this order.
+/// per vertex of each target, then of the colors, four 32-bit floats per vertex of each target,
+/// target after target, in this order.
 pub mod morph_arrays {
     pub const POSITIONS: u32 = 1;
     pub const NORMALS: u32 = 2;
     pub const TANGENTS: u32 = 4;
+    pub const COLORS: u32 = 8;
 }
 
 /// The first detail of an E1206 failure: what is wrong with the arrays. The second detail is the
@@ -255,8 +308,8 @@ pub mod arrays_problem {
     /// The morph targets move one vertex more than 255 times, or every mesh's morph targets
     /// together pass what the engine holds. The second detail is that limit in texels.
     pub const MORPH_TOO_LARGE: u32 = 8;
-    /// A morph target array does not hold three values per vertex of each target. The second
-    /// detail is the array: 0 for positions, 1 for normals and 2 for tangents.
+    /// A morph target array does not hold its values per vertex of each target. The second
+    /// detail is the array: 0 for positions, 1 for normals, 2 for tangents and 3 for colors.
     pub const MORPH_LENGTH: u32 = 9;
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
@@ -371,7 +424,9 @@ pub mod animation_problem {
 /// of the numbers they read and write. Every array holds 64-bit floats.
 pub mod query {
     /// The query's input: a ray's origin and direction, then its far limit; a sphere's centre,
-    /// then its radius at the far limit's place; or a box's lowest and highest corners.
+    /// then its radius at the far limit's place; or a box's lowest and highest corners. A
+    /// raycast's input goes on with its thresholds and the camera that sprites, points and lines
+    /// face, from `INPUT_POINT_THRESHOLD` on.
     pub const INPUT: u32 = 0;
     /// The hit records that queries write, `HIT_FLOATS` numbers each.
     pub const HITS: u32 = 1;
@@ -381,9 +436,33 @@ pub mod query {
     pub const RAYS: u32 = 3;
 
     /// Numbers in the input array.
-    pub const INPUT_FLOATS: u32 = 8;
+    pub const INPUT_FLOATS: u32 = 26;
     /// Where the input holds the far limit or the radius.
     pub const INPUT_LIMIT: u32 = 6;
+    /// The point threshold, or a number below 0 for none.
+    pub const INPUT_POINT_THRESHOLD: u32 = 7;
+    /// The line threshold, or a number below 0 for none.
+    pub const INPUT_LINE_THRESHOLD: u32 = 8;
+    /// The camera's kind: one of `CAMERA_NONE`, `CAMERA_PERSPECTIVE` and `CAMERA_ORTHOGRAPHIC`.
+    pub const INPUT_CAMERA: u32 = 9;
+    /// The camera's position in the world, three numbers.
+    pub const INPUT_EYE: u32 = 10;
+    /// The camera's unit axes to the right, up and along its view, three numbers each.
+    pub const INPUT_RIGHT: u32 = 13;
+    pub const INPUT_UP: u32 = 16;
+    pub const INPUT_FORWARD: u32 = 19;
+    /// The world units of a CSS pixel across and up the view: at a depth of 1 for a perspective
+    /// camera.
+    pub const INPUT_PIXEL: u32 = 22;
+    /// The distances to the camera's near and far planes.
+    pub const INPUT_NEAR: u32 = 24;
+    pub const INPUT_FAR: u32 = 25;
+    /// No camera: rays miss the rows that need one.
+    pub const CAMERA_NONE: u32 = 0;
+    /// A perspective camera.
+    pub const CAMERA_PERSPECTIVE: u32 = 1;
+    /// An orthographic camera.
+    pub const CAMERA_ORTHOGRAPHIC: u32 = 2;
     /// Numbers per ray of a batch.
     pub const RAY_FLOATS: u32 = 6;
 
@@ -464,7 +543,7 @@ pub fn typescript() -> String {
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
-        ("CELL", &[("SIZE", CELL_SIZE as u32)]),
+        ("CELL", &[("SIZE", CELL_SIZE as u32), ("MAX", MAX_CELLS)]),
         (
             "LIGHT_KIND",
             &[
@@ -538,6 +617,19 @@ pub fn typescript() -> String {
                 ("RAYS", query::RAYS),
                 ("INPUT_FLOATS", query::INPUT_FLOATS),
                 ("INPUT_LIMIT", query::INPUT_LIMIT),
+                ("INPUT_POINT_THRESHOLD", query::INPUT_POINT_THRESHOLD),
+                ("INPUT_LINE_THRESHOLD", query::INPUT_LINE_THRESHOLD),
+                ("INPUT_CAMERA", query::INPUT_CAMERA),
+                ("INPUT_EYE", query::INPUT_EYE),
+                ("INPUT_RIGHT", query::INPUT_RIGHT),
+                ("INPUT_UP", query::INPUT_UP),
+                ("INPUT_FORWARD", query::INPUT_FORWARD),
+                ("INPUT_PIXEL", query::INPUT_PIXEL),
+                ("INPUT_NEAR", query::INPUT_NEAR),
+                ("INPUT_FAR", query::INPUT_FAR),
+                ("CAMERA_NONE", query::CAMERA_NONE),
+                ("CAMERA_PERSPECTIVE", query::CAMERA_PERSPECTIVE),
+                ("CAMERA_ORTHOGRAPHIC", query::CAMERA_ORTHOGRAPHIC),
                 ("RAY_FLOATS", query::RAY_FLOATS),
                 ("HIT_FLOATS", query::HIT_FLOATS),
                 ("HIT_SLOT", query::HIT_SLOT),
@@ -683,13 +775,14 @@ pub fn typescript() -> String {
                 ("SHADOWS", debug_view::code::SHADOWS),
             ],
         ),
-        // The kinds of fog that `setFog` takes.
+        // The fog curves that `setFog` takes, and its code for no fog.
         (
-            "FOG_KIND",
+            "FOG_CURVE",
             &[
-                ("NONE", fog::kind::NONE),
-                ("LINEAR", fog::kind::LINEAR),
-                ("EXP2", fog::kind::EXP2),
+                ("NONE", fog::curve::NONE),
+                ("LINEAR", fog::curve::LINEAR),
+                ("EXP2", fog::curve::EXP2),
+                ("EXPONENTIAL", fog::curve::EXPONENTIAL),
             ],
         ),
         (
@@ -727,6 +820,16 @@ pub fn typescript() -> String {
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
             ],
         ),
+        // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
+        // TypeScript writes at `effectValues` first.
+        (
+            "EFFECT",
+            &[
+                ("MAX", null3d_render::effects::MAX_EFFECTS as u32),
+                ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
+                ("DEPTH", effect_flag::DEPTH),
+            ],
+        ),
         (
             "POST_VALUE",
             &[
@@ -737,8 +840,10 @@ pub fn typescript() -> String {
                 ("LUT_INTENSITY", post_value::LUT_INTENSITY),
                 ("LUT_DOMAIN_MIN", post_value::LUT_DOMAIN_MIN),
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
-                ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
-                ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("VIGNETTE_INTENSITY", post_value::VIGNETTE_INTENSITY),
+                ("VIGNETTE_SIZE", post_value::VIGNETTE_SIZE),
+                ("VIGNETTE_FALLOFF", post_value::VIGNETTE_FALLOFF),
+                ("VIGNETTE_ROUNDNESS", post_value::VIGNETTE_ROUNDNESS),
                 ("AO_RADIUS", post_value::AO_RADIUS),
                 ("AO_THICKNESS", post_value::AO_THICKNESS),
                 ("AO_DISTANCE_EXPONENT", post_value::AO_DISTANCE_EXPONENT),
@@ -762,6 +867,37 @@ pub fn typescript() -> String {
                 ("ROTATION", environment_value::ROTATION),
                 ("SH", environment_value::SH),
                 ("COUNT", environment_value::COUNT),
+            ],
+        ),
+        (
+            "BACKGROUND_VALUE",
+            &[
+                ("INTENSITY", background_value::INTENSITY),
+                ("BLUR", background_value::BLUR),
+                ("ROTATION", background_value::ROTATION),
+                ("SUN_POSITION", background_value::SUN_POSITION),
+                ("TURBIDITY", background_value::TURBIDITY),
+                ("RAYLEIGH", background_value::RAYLEIGH),
+                ("MIE_COEFFICIENT", background_value::MIE_COEFFICIENT),
+                ("MIE_DIRECTIONAL_G", background_value::MIE_DIRECTIONAL_G),
+                ("CLOUD_SCALE", background_value::CLOUD_SCALE),
+                ("CLOUD_SPEED", background_value::CLOUD_SPEED),
+                ("CLOUD_COVERAGE", background_value::CLOUD_COVERAGE),
+                ("CLOUD_DENSITY", background_value::CLOUD_DENSITY),
+                ("CLOUD_ELEVATION", background_value::CLOUD_ELEVATION),
+                ("TIME", background_value::TIME),
+                ("SUN_DISC", background_value::SUN_DISC),
+                ("COUNT", background_value::COUNT),
+            ],
+        ),
+        (
+            "BACKGROUND_KIND",
+            &[
+                ("NONE", background_kind::NONE),
+                ("TEXTURE", background_kind::TEXTURE),
+                ("ENVIRONMENT", background_kind::ENVIRONMENT),
+                ("CUBEMAP", background_kind::CUBEMAP),
+                ("SKY", background_kind::SKY),
             ],
         ),
         (
@@ -806,6 +942,7 @@ pub fn typescript() -> String {
                 ("FORMAT_ASTC_SRGB", format::ASTC_4X4_UNORM_SRGB),
                 ("FORMAT_BC7", format::BC7_RGBA_UNORM),
                 ("FORMAT_BC7_SRGB", format::BC7_RGBA_UNORM_SRGB),
+                ("FORMAT_BC6H", format::BC6H_RGB_UFLOAT),
                 ("FORMAT_ETC2_RGB", format::ETC2_RGB8_UNORM),
                 ("FORMAT_ETC2_RGB_SRGB", format::ETC2_RGB8_UNORM_SRGB),
                 ("FORMAT_ETC2_RGBA", format::ETC2_RGBA8_UNORM),
@@ -866,6 +1003,7 @@ pub fn typescript() -> String {
                 ("POSITIONS", morph_arrays::POSITIONS),
                 ("NORMALS", morph_arrays::NORMALS),
                 ("TANGENTS", morph_arrays::TANGENTS),
+                ("COLORS", morph_arrays::COLORS),
                 ("MAX_WEIGHTS", null3d_core::morph::MAX_WEIGHTS),
                 ("MAX_TARGETS", null3d_core::morph::MAX_TARGETS),
                 ("WEIGHTS_PER_JOINT", null3d_core::morph::WEIGHTS_PER_JOINT),

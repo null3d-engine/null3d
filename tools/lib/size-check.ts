@@ -63,20 +63,22 @@ export type BaseChoice =
 	| { branch: string; why: string };
 
 /**
- * The base of the size check. `--base <ref>` names it. A push to main in CI compares with the commit
- * before. A merge queue run compares with the commit that its group builds on, which holds the pull
- * requests ahead of it in the queue: the queue squashes each pull request into one commit on top of
- * that commit, so it is the commit before. Otherwise the base is HEAD's merge base with main, or
- * with the branch that a pull request targets. CI builds a pull request as GitHub's merge of it
- * into that branch, so there the merge base is the branch's commit that the pull request was merged
- * into.
+ * The base of the size check. `--base <ref>` names it. A push to main compares with the commit
+ * before: main squashes each pull request into one commit, so that commit's growth is the pull
+ * request's, and its message holds the trailers exactly as the squash kept them. A merge queue run
+ * compares with the commit that its group builds on, which holds the pull requests ahead of it in
+ * the queue: the queue squashes each pull request into one commit on top of that commit, so it is
+ * the commit before too. Otherwise the base is HEAD's merge base with main, or with the branch that
+ * a pull request targets. CI builds a pull request as GitHub's merge of it into that branch, so
+ * there the merge base is the branch's commit that the pull request was merged into.
  */
 export function chooseBase(
 	ref: string | undefined,
 	env: Readonly<Record<string, string | undefined>>,
 ): BaseChoice {
 	if (ref) return { ref, why: 'the commit that --base names' };
-	if (env.GITHUB_EVENT_NAME === 'push') return { ref: 'HEAD^', why: 'the commit before on main' };
+	if (env.GITHUB_EVENT_NAME === 'push')
+		return { ref: 'HEAD^', why: 'the commit before on the branch, which the squash builds on' };
 	if (env.GITHUB_EVENT_NAME === 'merge_group')
 		return {
 			ref: 'HEAD^',

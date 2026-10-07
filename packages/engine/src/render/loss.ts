@@ -4,6 +4,7 @@
 // GPU device outlive the renderer. WebGPU errors that the device reports later, outside any error
 // scope, are heard here too.
 
+import { LOST_EVENTS, RESTORED_EVENTS } from '../gpu/webgl2/context';
 import { DEV } from '../shared/dev';
 
 /** How long a lost WebGL2 context may take to come back before the engine gives up on it. */
@@ -21,10 +22,6 @@ export function deviceLoss(device: GPUDevice, simulated: () => boolean): Promise
 		});
 	});
 }
-
-/** Both names of each context event: an offscreen canvas and a canvas element name them apart. */
-const LOST_EVENTS = ['contextlost', 'webglcontextlost'];
-const RESTORED_EVENTS = ['contextrestored', 'webglcontextrestored'];
 
 /**
  * Resolves when the browser takes the WebGL2 context away. Once `released` aborts, as when the

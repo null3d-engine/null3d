@@ -46,6 +46,8 @@ pub struct Occluders {
     meshes: Vec<BlockerMesh>,
     /// By mesh id: [`UNBUILT`], [`NOT_BLOCKER`], or the index of the mesh's blocker plus one.
     by_mesh: Vec<u32>,
+    /// The places of blockers that removed meshes gave back.
+    free: Vec<u32>,
     /// The frame's candidates: the nearest distance of each as the bits of a float, which sort as
     /// whole numbers since none is negative, and its slot. Then scratch space for their sort.
     distances: Vec<u32>,
@@ -214,14 +216,37 @@ impl Occluders {
             self.by_mesh.resize(id + 1, UNBUILT);
         }
         match self.by_mesh[id] {
-            UNBUILT | NOT_BLOCKER => {
-                self.meshes.try_reserve(1)?;
-                self.meshes.push(blocker);
-                self.by_mesh[id] = self.meshes.len() as u32;
-            }
+            UNBUILT | NOT_BLOCKER => self.by_mesh[id] = self.store(blocker)?,
             index => self.meshes[index as usize - 1] = blocker,
         }
         Ok(())
+    }
+
+    /// Forgets the blocker of each mesh of `ids`, which a removal took out, so a later mesh with
+    /// the id builds its own. `ids` count from 0. The blockers' places go to later blockers.
+    pub fn forget(&mut self, ids: &[u32]) {
+        for &id in ids {
+            let Some(entry) = self.by_mesh.get_mut(id as usize + 1) else {
+                continue;
+            };
+            if *entry != UNBUILT && *entry != NOT_BLOCKER {
+                let index = *entry as usize - 1;
+                self.meshes[index] = BlockerMesh::default();
+                self.free.push(index as u32);
+            }
+            *entry = UNBUILT;
+        }
+    }
+
+    /// Stores a blocker in a free place or a new one, and returns its index plus one.
+    fn store(&mut self, blocker: BlockerMesh) -> Result<u32, TryReserveError> {
+        if let Some(index) = self.free.pop() {
+            self.meshes[index as usize] = blocker;
+            return Ok(index + 1);
+        }
+        self.meshes.try_reserve(1)?;
+        self.meshes.push(blocker);
+        Ok(self.meshes.len() as u32)
     }
 
     /// The index of a mesh's blocker, built the first time, or `None` for a mesh that never
@@ -241,11 +266,7 @@ impl Occluders {
                 .triangles(mesh - 1)
                 .and_then(|t| BlockerMesh::build(&t));
             self.by_mesh[id] = match built {
-                Some(blocker) => {
-                    self.meshes.try_reserve(1)?;
-                    self.meshes.push(blocker);
-                    self.meshes.len() as u32
-                }
+                Some(blocker) => self.store(blocker)?,
                 None => NOT_BLOCKER,
             };
         }

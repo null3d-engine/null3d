@@ -291,6 +291,7 @@ fn queries_give_brute_force_answers_as_the_scene_changes() {
             scene: &scene,
             batches: &batches,
             meshes: &meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
         // A second sync of the same frame changes nothing.
@@ -427,6 +428,7 @@ fn queries_follow_late_updates_and_batch_updates() {
             scene,
             batches,
             meshes: &meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
         queries.raycast(&view, &ray, u32::MAX).map(|h| h.distance)
@@ -488,6 +490,7 @@ fn a_late_move_after_a_query_counts_in_later_frames() {
             scene,
             batches: &batches,
             meshes: &meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
         let forward = WorldRay::new([0.0, height, 0.0], [0.0, 0.0, -1.0]);
@@ -535,6 +538,7 @@ fn missing_rays_of_a_batch_miss() {
         scene: &scene,
         batches: &batches,
         meshes: &meshes,
+        rows: Default::default(),
     };
     queries.sync(&view, jobs).unwrap();
     let directions = [
@@ -568,6 +572,7 @@ fn queries_before_the_first_frame_find_nothing() {
         scene: &scene,
         batches: &batches,
         meshes: &meshes,
+        rows: Default::default(),
     };
     queries.sync(&view, &jobs).unwrap();
     let ray = WorldRay::new([0.0; 3], [0.0, 0.0, -1.0]);
@@ -637,6 +642,7 @@ fn stored_trees_take_the_place_of_builds() {
         scene: &scene,
         batches: &batches,
         meshes: &meshes,
+        rows: Default::default(),
     };
     queries.sync(&view, jobs).unwrap();
     assert_eq!(queries.mesh_bvh(2).unwrap().to_bytes(), stored);
@@ -667,4 +673,55 @@ fn stored_trees_take_the_place_of_builds() {
         hits += u32::from(found.is_some());
     }
     assert!(hits > 200, "{hits} of 400 rays hit");
+}
+
+/// A removed mesh's tree goes, and the next mesh with its id gets a tree of its own at the next
+/// sync: a stored one when it brings one, or one built for it.
+#[test]
+fn a_removed_mesh_gives_its_tree_to_the_next_mesh_with_its_id() {
+    let workers = Workers::start(2);
+    let jobs = workers.jobs();
+    let mut rng = Rng::new(23);
+    let mut meshes = meshes(&mut rng);
+    let mut scene = SceneStorage::with_capacity(4);
+    let batches = BatchTable::with_capacity(1);
+    let mut queries = SceneQueries::new();
+    let build = |meshes: &Meshes, id: u32| MeshBvh::build(&meshes.mesh(id).unwrap()).unwrap();
+    let h = scene.reserve().unwrap();
+    scene.set_local_radius(h, 2.0).unwrap();
+    let create = [Command::create(h, Handle::NONE, 1, flags::VISIBLE)];
+    scene.apply_commands(&create, 1).unwrap();
+    scene.update_transforms(jobs);
+    let sync = |queries: &mut SceneQueries, meshes: &Meshes| {
+        let view = QueryScene {
+            scene: &scene,
+            batches: &batches,
+            meshes,
+            rows: Default::default(),
+        };
+        queries.sync(&view, jobs).unwrap();
+    };
+    sync(&mut queries, &meshes);
+    let sphere = build(&meshes, 1).to_bytes();
+    assert_eq!(queries.mesh_bvh(1).unwrap().to_bytes(), sphere);
+    // Mesh 1 goes, and the box takes its id.
+    queries.forget_meshes(&[1, 99]);
+    assert_eq!(
+        queries.mesh_bvh(1).unwrap().to_bytes(),
+        MeshBvh::default().to_bytes()
+    );
+    meshes.meshes.swap(0, 2);
+    sync(&mut queries, &meshes);
+    assert_eq!(
+        queries.mesh_bvh(1).unwrap().to_bytes(),
+        build(&meshes, 1).to_bytes()
+    );
+    // The terrain takes the id next, with a tree that its file stored.
+    queries.forget_meshes(&[1]);
+    meshes.meshes.swap(0, 1);
+    let stored = grown_tree(&build(&meshes, 1).to_bytes(), 0.25);
+    let tree = MeshBvh::from_bytes(&stored, &meshes.mesh(1).unwrap()).unwrap();
+    queries.store_mesh_bvh(1, tree).unwrap();
+    sync(&mut queries, &meshes);
+    assert_eq!(queries.mesh_bvh(1).unwrap().to_bytes(), stored);
 }

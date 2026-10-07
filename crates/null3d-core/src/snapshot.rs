@@ -14,9 +14,10 @@
 //!
 //! # Protocol
 //!
-//! Frames are numbered from 1. Two atomic words, each on its own cache line, carry the handoff:
-//! `published` holds the newest finished frame, and `acknowledged` the newest frame the render
-//! worker finished reading. Both start at 0.
+//! Frames are numbered from 1, and step and compare as [`crate::frames`] says, so the count goes
+//! round. Below, `f - 1` is the frame before `f`, and "at least" compares by that order. Two atomic
+//! words, each on its own cache line, carry the handoff: `published` holds the newest finished
+//! frame, and `acknowledged` the newest frame the render worker finished reading. Both start at 0.
 //!
 //! Sketch worker (producer), frame `f`:
 //!
@@ -52,6 +53,7 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::arena::Pod;
+use crate::frames::{frame_after, next_frame, previous_frame};
 use crate::instances::BatchTable;
 use crate::scene::SceneStorage;
 use crate::shared::CachePadded;
@@ -204,9 +206,11 @@ impl FrameHandoff {
     /// Producer: true when frame `frame` may start writing its buffers and slot. It is the frame
     /// after the last published one, and the render worker has finished frame `frame - 2`.
     pub fn can_write(&self, frame: u32) -> bool {
-        frame != 0
-            && self.published.0.load(Ordering::Relaxed) == frame - 1
-            && frame.wrapping_sub(self.acknowledged.0.load(Ordering::Acquire)) <= 2
+        next_frame(self.published.0.load(Ordering::Relaxed)) == frame
+            && !frame_after(
+                previous_frame(previous_frame(frame)),
+                self.acknowledged.0.load(Ordering::Acquire),
+            )
     }
 
     /// Producer: the snapshot slot of `frame`.
@@ -231,8 +235,8 @@ impl FrameHandoff {
     /// acknowledged frame. Frames are never skipped.
     pub fn next_readable(&self) -> Option<u32> {
         let published = self.published.0.load(Ordering::Acquire);
-        let next = self.acknowledged.0.load(Ordering::Relaxed).wrapping_add(1);
-        (published.wrapping_sub(next) < 2).then_some(next)
+        let next = next_frame(self.acknowledged.0.load(Ordering::Relaxed));
+        (!frame_after(next, published)).then_some(next)
     }
 
     /// Consumer: the snapshot slot of `frame`.
@@ -269,7 +273,7 @@ impl FrameProducer<'_> {
     /// Starts the next frame when its buffers are free, or returns `None` while the render
     /// worker still reads them.
     pub fn try_begin(&mut self) -> Option<FrameWrite<'_>> {
-        let frame = self.handoff.published().wrapping_add(1);
+        let frame = next_frame(self.handoff.published());
         self.handoff.can_write(frame).then_some(FrameWrite {
             handoff: self.handoff,
             frame,
@@ -353,6 +357,7 @@ impl Drop for FrameRead<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frames::FIRST_FRAME;
 
     #[test]
     fn upload_ranges_merge_and_overflow() {
@@ -428,5 +433,29 @@ mod tests {
             w.publish();
             assert_eq!(consumer.try_read().unwrap().frame(), frame);
         }
+    }
+
+    #[test]
+    fn the_handoff_keeps_its_order_where_the_frame_count_goes_round() {
+        let mut handoff = FrameHandoff::new(1);
+        let last = u32::MAX - 1;
+        handoff.published_word().store(last - 1, Ordering::Relaxed);
+        handoff
+            .acknowledged_word()
+            .store(last - 1, Ordering::Relaxed);
+        let (mut producer, mut consumer) = handoff.split();
+        let w = producer.try_begin().unwrap();
+        assert_eq!(w.frame(), last);
+        w.publish();
+        // The frame after the last is the first, which writes the other buffer.
+        let w = producer.try_begin().unwrap();
+        assert_eq!(w.frame(), FIRST_FRAME);
+        w.publish();
+        // Frame 2 reuses the last frame's buffer: it waits for the render worker.
+        assert!(producer.try_begin().is_none());
+        assert_eq!(consumer.try_read().map(|r| r.frame()), Some(last));
+        assert_eq!(producer.try_begin().map(|w| w.frame()), Some(2));
+        assert_eq!(consumer.try_read().map(|r| r.frame()), Some(FIRST_FRAME));
+        assert!(consumer.try_read().is_none());
     }
 }

@@ -1,11 +1,14 @@
 enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
-#import null3d::fog::{apply_fog, fog_factor}
+#import null3d::fog::{fog_color, fog_factor}
 #import null3d::globals::{Frame, Material}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
+#ifdef WEBGL2
+#import null3d::tables::{materials}
+#endif
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
 // instance's world matrix and material come from, and positions in clip space. A template's vertex
@@ -29,7 +32,17 @@ enable draw_index;
 // On WebGPU each instance brings three rows of its world matrix and its material id as
 // instance-rate vertex attributes, after the vertex attributes' locations, never through a storage
 // buffer, so the same vertex stage runs in WebGPU's compatibility mode. The culling shader has
-// already moved each matrix by its cell's offset. On WebGL2 (the WEBGL2 builds) the vertex shader
+// already moved each matrix by its cell's offset.
+//
+// The INSTANCE_INDEX builds, which only WebGPU's test switch for index-only instance data draws
+// with (decision record D-23), read storage buffers in the vertex stage, which compatibility mode
+// may lack. Each instance brings only its source's index as an instance-rate attribute, which the
+// culling shader wrote. The vertex shader reads the source's world matrix, its entry in the bucket
+// table and its bucket's record, and adds its cell's offset from the view's row of the cell offsets
+// texture, as the culling shader does for the copies. These five bindings form the group after the
+// template's own groups: after the frame's, the maps' and the joint texture's, where it has them.
+//
+// On WebGL2 (the WEBGL2 builds) the vertex shader
 // finds its instance in the frame's index list, directly or through a cluster of rows, reads the
 // matrix rows from a data texture, and adds the offset of the cell that the list entry names. It
 // takes the material from its draw's record. The DRAW_INDEX builds draw many buckets in one
@@ -45,7 +58,7 @@ enable draw_index;
 // texture of indices beside it gives each source row its first joint, laid out as the index list is.
 //
 // The MORPH builds, which only WebGL2 has, add each vertex's morph target deltas times their
-// weights before skinning (`morph_vertex`). The vertex's morph attribute names its entries in the
+// weights before skinning (`morph_vertex`), its color's too. The vertex's morph attribute names its entries in the
 // texture of deltas, which follows the joint texture in the data textures' group, beside the
 // texture of weights. The second half of the rows of the texture of indices gives each source row
 // the first texel of its morph weights. WebGPU morphs in its skinning pass instead.
@@ -56,6 +69,12 @@ enable draw_index;
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
+/// An index list entry, or an entry of the bucket table, holds its row, cluster or bucket in the
+/// bits below CELL_SHIFT, and the index of the row's grid cell above them.
+const CELL_SHIFT: u32 = 23u;
+/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
+const MAX_CELLS: u32 = 512u;
+
 #ifdef WEBGL2
 /// World matrices per row of a data texture are 1 << MATRIX_ROW_SHIFT, three texels each.
 const MATRIX_ROW_SHIFT: u32 = 9u;
@@ -63,11 +82,6 @@ const MATRIX_ROW_SHIFT: u32 = 9u;
 const INDEX_ROW_SHIFT: u32 = 11u;
 /// A cluster texture entry that names no row: a place past the end of a batch's last cluster.
 const NO_ROW: u32 = 0xffffffffu;
-/// An index list entry holds its row, or its cluster, in the bits below CELL_SHIFT, and the index
-/// of the row's grid cell above them.
-const CELL_SHIFT: u32 = 23u;
-/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
-const MAX_CELLS: u32 = 512u;
 #ifdef DRAW_INDEX
 /// Draw records one multi-draw call reads.
 const DRAW_RECORDS: u32 = 256u;
@@ -88,8 +102,6 @@ struct CellOffsets {
     items: array<vec4f, MAX_CELLS>,
 }
 
-/// The material table: row `id` holds material `id`, one texel per `vec4f` of its `Material`.
-@group(0) @binding(1) var materials: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> cell_offsets: CellOffsets;
 @group(1) @binding(0) var<uniform> draws: DrawTable;
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
@@ -114,17 +126,77 @@ struct CellOffsets {
 /// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
 /// shaders read them too, and read no storage buffers, so they have a data texture of their own.
 @group(0) @binding(2) var custom_values: texture_2d<f32>;
+#ifdef INSTANCE_INDEX
+/// The bit of a bucket table entry that marks an occluder, above the entry's bucket and below its
+/// cell index.
+const OCCLUDER: u32 = 1u << 22u;
+
+/// The start of the view's culling parameters: its planes, then its counts, whose last names the
+/// view's row of the cell offsets texture.
+struct InstanceCells {
+    planes: array<vec4f, 6>,
+    counts: vec4u,
+}
+
+/// A bucket record, as the culling shader reads it: of its words, the vertex shader reads the
+/// material and the first joint of a skin that it skins.
+struct InstanceBucket {
+    base: u32,
+    material: u32,
+    radius: f32,
+    first_draw: u32,
+    draws: u32,
+    center_x: f32,
+    center_y: f32,
+    center_z: f32,
+    first_joint: u32,
+    indices: u32,
+}
+
+// The group after the template's own: the frame's, then the maps' in the builds that sample maps
+// (JOINTS_AFTER_MAPS), then the joint texture's in the SKIN builds.
+#ifdef JOINTS_AFTER_MAPS
+#ifdef SKIN
+@group(3) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(3) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(3) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(3) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(3) @binding(4) var instance_offsets: texture_2d<f32>;
+#else
+@group(2) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(2) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(2) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(2) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(2) @binding(4) var instance_offsets: texture_2d<f32>;
+#endif
+#else ifdef SKIN
+@group(2) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(2) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(2) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(2) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(2) @binding(4) var instance_offsets: texture_2d<f32>;
+#else
+@group(1) @binding(0) var<uniform> instance_cells: InstanceCells;
+@group(1) @binding(1) var<storage, read> instance_matrices: array<vec4f>;
+@group(1) @binding(2) var<storage, read> instance_entries: array<u32>;
+@group(1) @binding(3) var<storage, read> instance_buckets: array<InstanceBucket>;
+@group(1) @binding(4) var instance_offsets: texture_2d<f32>;
+#endif
+#endif
 #endif
 
 /// What a vertex shader invocation learns of its instance. On WebGPU: the three rows of the
-/// instance's world matrix that give x, y and z, then its ids. On WebGL2: the instance's number in its draw, and with
-/// DRAW_INDEX, the draw's number in its multi-draw call.
+/// instance's world matrix that give x, y and z, then its ids, or in the INSTANCE_INDEX builds its
+/// source's index. On WebGL2: the instance's number in its draw, and with DRAW_INDEX, the draw's
+/// number in its multi-draw call.
 struct InstanceIn {
 #ifdef WEBGL2
     @builtin(instance_index) instance: u32,
 #ifdef DRAW_INDEX
     @builtin(draw_index) draw: u32,
 #endif
+#else ifdef INSTANCE_INDEX
+    @location(9) source: u32,
 #else
     @location(9) row_x: vec4f,
     @location(10) row_y: vec4f,
@@ -184,10 +256,17 @@ fn custom_value(id: u32, k: u32) -> vec4f {
 const NO_FOG: u32 = 4u;
 
 /// Exposed linear color `c` of a fragment at `relative`, its position relative to the camera, seen
-/// through the scene's fog, whose color the core exposes. A material with fog off keeps its color.
+/// through the scene's fog, whose color the core exposes and the sun may light. A material with fog
+/// off keeps its color.
 fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
-    let fog_on = (u32(m.strengths.z) & NO_FOG) == 0u;
-    return apply_fog(c, frame.fog.color.xyz, select(0.0, fog_factor(frame.fog, relative), fog_on));
+    if ((u32(m.strengths.z) & NO_FOG) != 0u) {
+        return c;
+    }
+    let factor = fog_factor(frame.fog, relative);
+    if (factor == 0.0) {
+        return c;
+    }
+    return mix(c, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.
@@ -195,10 +274,20 @@ fn map_ready(layer: f32) -> bool {
     return layer >= 0.0;
 }
 
+/// Layers of one unit in a map's layer as a row holds it: the most layers of a texture array. On
+/// WebGL2 a standard material's maps share a few units, and the row holds the unit of each map
+/// times this, plus its layer. Elsewhere the unit is 0.
+const UNIT_LAYERS: u32 = 256u;
+
 /// The texture array layer to sample for a map's layer as a row holds it: the layer, or 0 for a
 /// map that draws nothing, which the caller then ignores.
 fn map_layer(layer: f32) -> u32 {
-    return u32(max(layer, 0.0));
+    return u32(max(layer, 0.0)) % UNIT_LAYERS;
+}
+
+/// The shared unit that a map's layer, as a row holds it, samples: 0 for a map that draws nothing.
+fn map_unit(layer: f32) -> u32 {
+    return u32(max(layer, 0.0)) / UNIT_LAYERS;
 }
 
 /// The bit of a material's flags that makes its fragments write premultiplied color, for the
@@ -286,6 +375,20 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
 }
 #endif
 
+#ifdef INSTANCE_INDEX
+/// The instance of source `source`: its world matrix moved by its cell's offset from the camera,
+/// and its bucket's material and first joint, as the culling shader would copy them.
+fn instance_by_index(source: u32) -> Instance {
+    let entry = instance_entries[source];
+    let bucket = instance_buckets[entry & (OCCLUDER - 1u)];
+    let offset = textureLoad(instance_offsets, vec2u(entry >> CELL_SHIFT, instance_cells.counts.w), 0);
+    let row_x = instance_matrices[source * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
+    let row_y = instance_matrices[source * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
+    let row_z = instance_matrices[source * 3u + 2u] + vec4f(0.0, 0.0, 0.0, offset.z);
+    return Instance(row_x, row_y, row_z, bucket.material, bucket.first_joint, 0u, true);
+}
+#endif
+
 /// The instance that a vertex shader invocation draws.
 fn find_instance(i: InstanceIn) -> Instance {
 #ifdef WEBGL2
@@ -294,6 +397,8 @@ fn find_instance(i: InstanceIn) -> Instance {
 #else
     return instance_of(draws.items[0], i.instance);
 #endif
+#else ifdef INSTANCE_INDEX
+    return instance_by_index(i.source);
 #else
     return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, 0u, true);
 #endif
@@ -414,11 +519,12 @@ fn skinned_direction(s: Skin, d: vec3f) -> vec3f {
 /// Texels per row of the morph texture.
 const MORPH_TEXELS_PER_ROW: u32 = 2048u;
 
-/// A vertex of the mesh before skinning: its position, normal and tangent direction.
+/// A vertex of the mesh before skinning: its position, normal, tangent direction and color.
 struct Morphed {
     position: vec3f,
     normal: vec3f,
     tangent: vec3f,
+    color: vec4f,
 }
 
 /// Texel `k` of the texture of deltas.
@@ -433,15 +539,16 @@ fn morph_weight_texel(k: u32) -> vec4f {
 
 /// A vertex moved by its morph targets, as three.js moves it: each entry that the vertex's morph
 /// attribute `range` names adds its deltas times its target's weight, from the instance's weights.
-/// The attribute holds the first entry's texel, then the entry count times four plus 1 when the
-/// entries hold a normal's delta and 2 when they hold a tangent's. The skinning pass on WebGPU
-/// morphs the same way.
+/// The attribute holds the first entry's texel, then the entry count times eight plus 1 when the
+/// entries hold a normal's delta, 2 when they hold a tangent's and 4 when they hold a color's. A
+/// morphed color is clamped to the range 0 to 1, as the glTF specification asks. The skinning pass
+/// on WebGPU morphs the same way.
 fn morph_vertex(found: Instance, range: vec2f, rest: Morphed) -> Morphed {
     var out = rest;
     let first = u32(range.x);
     let word = u32(range.y);
-    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u);
-    let count = word >> 2u;
+    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u) + ((word >> 2u) & 1u);
+    let count = word >> 3u;
     for (var k = 0u; k < count; k++) {
         let at = first + k * stride;
         let entry = morph_texel(at);
@@ -458,7 +565,14 @@ fn morph_vertex(found: Instance, range: vec2f, rest: Morphed) -> Morphed {
         }
         if (word & 2u) != 0u {
             out.tangent += w * morph_texel(next).xyz;
+            next += 1u;
         }
+        if (word & 4u) != 0u {
+            out.color += w * morph_texel(next);
+        }
+    }
+    if (word & 4u) != 0u {
+        out.color = saturate(out.color);
     }
     return out;
 }

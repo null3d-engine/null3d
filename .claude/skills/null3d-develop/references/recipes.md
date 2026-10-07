@@ -15,7 +15,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 9. HTML settings panel that controls the scene
 10. Day and night: sun, sky and environment (0.2)
 11. Physics with a library in the sketch worker
-12. Minimap with a second camera (0.2)
+12. Minimap with a second camera (later in 0.2)
 13. Screenshots
 14. Video on a surface, with frames from the page
 15. Custom full-screen effect (0.2)
@@ -272,6 +272,7 @@ try {
 }
 ```
 
+- `onProgress` reports `memory-wait` when the browser has refused the engine's memory for 10 s (0.2). The engine then tries for about 35 s more before E1109, so show a "taking longer than usual" message.
 - Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
 - Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
 - `createEngine` rejects when the browser cannot run the engine. Examples are Safari before 18 and every iPhone or iPad browser before iOS 18 (E1306), and a browser without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
@@ -314,6 +315,10 @@ UI libraries need the DOM, so they live on the page. Each change sends one messa
 ```ts
 const sun = scene.createDirectionalLight({ direction: [0, -1, 0], intensity: 3, castShadows: true });
 const dir = vec3.create();
+const sunPosition: [number, number, number] = [0, 1, 0];
+const settings = { sunPosition, turbidity: 8, rayleigh: 2, time: 0 };  // three.js's Sky uniforms
+const sky = { sky: settings };
+scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.3 });
 let t = 0.3; // 0 = midnight, 0.5 = noon
 return {
   onUpdate(dt) {
@@ -323,12 +328,16 @@ return {
     sun.setDirection(dir[0], dir[1], dir[2]);
     const daylight = math.clamp(-dir[1] * 2, 0, 1);
     sun.setIntensity(3 * daylight);
-    scene.setBackground({ sky: { sunDirection: dir, turbidity: 8, rayleigh: 2 } });
+    sunPosition[0] = -dir[0];                                // toward the sun
+    sunPosition[1] = -dir[1];
+    sunPosition[2] = -dir[2];
+    settings.time += dt;                                     // the clouds drift
+    scene.setBackground(sky);
   },
 };
 ```
 
-Calling `setBackground` every frame is fine: sky parameters are uniform values and do not recompile anything. Docs: `api/scene`, `concepts/lighting`.
+Calling `setBackground` every frame is fine: the sky's settings are values, not shader builds, and the call allocates nothing. Keep one settings object and change it in place. The sky lights nothing, so the sun light and an environment light the scene. Docs: `api/scene`, `concepts/lighting`.
 
 ## 11. Physics with a library in the sketch worker
 
@@ -360,31 +369,18 @@ return {
 
 WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`.
 
-## 12. Minimap with a second camera (0.2)
+## 12. Minimap with a second camera (later in 0.2)
 
 ```ts
 const MAP = 1 << 2;                                    // layer for map-only markers
 const mapCamera = scene.createOrthographicCamera({ height: 200, near: 1, far: 500, position: [0, 300, 0], target: [0, 0, 0] });
 mapCamera.setLayers(1 | MAP);
 render.addPass({ name: 'Minimap', kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256], before: 'Post' });
-post.addEffect({
-  name: 'minimap-overlay',
-  stage: 'final',
-  textures: { map: textures.fromPass('minimap') },
-  wgsl: /* wgsl */ `
-    fn effect(input: EffectInput) -> vec4f {
-      let c = sampleScene(input.uv);
-      let size = vec2f(256.0) / input.resolution;          // the map's size in screen UV
-      let local = (input.uv - vec2f(1.0 - size.x - 0.02, 0.02)) / size;
-      if (all(local >= vec2f(0.0)) && all(local <= vec2f(1.0))) {
-        return textureSampleLevel(map, mapSampler, local, 0.0);
-      }
-      return c;
-    }`,
-});
+const map = materials.unlit({ map: textures.fromPass('minimap') });
+// Show `map` on a plane in front of a second view, or on a screen in the world.
 ```
 
-Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). From 0.2, a minimap or picture in picture works with a render-to-texture pass and a final effect. The effect samples the map with `textureSampleLevel` because the branch differs between pixels, and WGSL forbids implicit-mip sampling there (`references/shaders.md`, section 8). Docs: `guides/custom-passes`, `api/post`.
+Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). A minimap or picture in picture needs a render-to-texture pass, which is not built yet; check `guides/custom-passes` before using it. Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -436,21 +432,20 @@ Each frame costs one decode-and-resize on the page and one upload in the render 
 ## 15. Custom full-screen effect (0.2)
 
 ```ts
-post.addEffect({
-  name: 'pixelate',
-  stage: 'final',                   // runs in the merged final pass, after tone mapping
-  uniforms: { size: 4 },
-  wgsl: /* wgsl */ `
-    fn effect(input: EffectInput) -> vec4f {
-      let px = max(effect.size, 1.0);
-      let uv = floor(input.fragCoord.xy / px) * px / input.resolution;
-      return sampleScene(uv);
-    }`,
-});
-post.setEffectUniform('pixelate', 'size', 8);
+const pixelate = /* wgsl */ `
+  struct Uniforms { size: f32 }
+
+  fn effect(input: EffectInput) -> vec4f {
+    let px = max(uniforms.size, 1.0);
+    let center = (floor(input.pixel / px) + 0.5) * px;   // the middle of this pixel's block
+    return effectColor(center / input.size);
+  }`;
+
+const blocks = post.addEffect({ wgsl: pixelate, uniforms: { size: 4 } });
+post.setEffectUniform(blocks, 'size', 8);
 ```
 
-Per-pixel effects merge into the single final pass, so they add no extra full-screen pass. Effects that read neighboring pixels many times, such as blurs, get their own pass: `stage: 'hdr'`. Docs: `api/post`, `references/shaders.md` section 6.
+The effect runs on HDR color before bloom and the tone curve, in a full-screen pass of its own. Each effect adds one pass, so put several per-pixel looks in one function. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
 ## 16. Very large worlds (0.2)
 
@@ -469,7 +464,7 @@ const trees = scene.createInstances(treeMesh, 5000, { material: bark, origin: ti
 // trees.positions rows are relative to the origin, so they stay small and precise
 ```
 
-The engine stores positions relative to cells 1,024 m wide, and each frame it sends the GPU one camera-to-cell offset per cell in use. So objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. With `largeWorld: true`, setters keep each position exact: without it, a position you set moves in steps of 0.5 m at the Earth's radius. Batch origins work in both modes. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. At most 512 cells are in use at once: keep thinly spread content under a few parents, which share their root's cell. Docs: `concepts/large-worlds`.
+The engine stores positions relative to cells 1,024 m wide, and each frame it sends the GPU one camera-to-cell offset per cell in use. So objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. With `largeWorld: true`, setters keep each position exact: without it, a position you set moves in steps of 0.5 m at the Earth's radius. Batch origins work in both modes. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. At most 512 cells are in use at once: keep thinly spread content under a few parents, which share their root's cell. When they run out, the console warns once, and new far content jitters. Docs: `concepts/large-worlds`.
 
 ## 17. Move a player with keys, a gamepad or touch
 

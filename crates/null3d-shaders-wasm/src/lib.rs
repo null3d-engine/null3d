@@ -10,6 +10,9 @@
 //! - `compile_material()` builds a custom material's WGSL, a [`MaterialSource`], into every
 //!   variant of the engine's template for custom materials, which the module holds with the
 //!   shader manifest. The output is a [`MaterialOutput`](null3d_shaders::MaterialOutput).
+//! - `compile_effect()` builds a custom effect's or a custom tone curve's WGSL, an
+//!   [`EffectSource`], into every variant of the engine's effect template or of its final pass.
+//!   The output is an [`EffectOutput`](null3d_shaders::EffectOutput).
 //! - `build()` builds a whole manifest, as the native `shader-build` command does. The request is
 //!   the manifest and every file, the library modules too, as [`Inputs`], and the output is an
 //!   [`Output`](null3d_shaders::Output).
@@ -24,7 +27,8 @@ use std::collections::BTreeMap;
 use std::sync::Once;
 
 use null3d_shaders::{
-    BuildError, Compiler, Inputs, MaterialSource, MaterialTemplate, Problem, Response, ShaderSource,
+    BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, PostTemplates,
+    Problem, Response, ShaderSource,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -44,6 +48,9 @@ thread_local! {
     static COMPILER: RefCell<Option<Compiler>> = const { RefCell::new(None) };
     /// The template of custom materials, read on the first call of `compile_material`.
     static TEMPLATE: RefCell<Option<MaterialTemplate>> = const { RefCell::new(None) };
+    /// The templates of custom effects and tone curves, read on the first call of
+    /// `compile_effect`.
+    static POST_TEMPLATES: RefCell<Option<PostTemplates>> = const { RefCell::new(None) };
 }
 
 /// Makes the request buffer `length` bytes long and returns where it starts.
@@ -77,6 +84,24 @@ pub extern "C" fn compile_material() {
             };
             let result = with_compiler(|compiler| compiler.compile_material(&template, &material));
             *slot = Some(template);
+            result
+        })
+    });
+}
+
+/// Builds the custom effect or tone curve in the request into the engine's effect template or
+/// final pass.
+#[unsafe(no_mangle)]
+pub extern "C" fn compile_effect() {
+    respond(|request| {
+        let effect: EffectSource = parse(request)?;
+        POST_TEMPLATES.with_borrow_mut(|slot| {
+            let templates = match slot.take() {
+                Some(templates) => templates,
+                None => PostTemplates::load(&inputs())?,
+            };
+            let result = with_compiler(|compiler| compiler.compile_effect(&templates, &effect));
+            *slot = Some(templates);
             result
         })
     });

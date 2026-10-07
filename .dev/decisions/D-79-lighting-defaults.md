@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-05, under the rulings of [D-53](D-53-technique-defaults.md) (4 and 11). On 2026-10-06 the owner picked AgX's punchy look as the default. The shimmer page's phone runs are pending. Date: 2026-10-05. Task: M2-E7.
 
+Summary: Roughness floors at 0.045, as in three.js r187 and Filament. Filament's specular anti-aliasing kernel replaces three.js's term, with 44 to 47% less shimmer on the Mac, and horizon fading dims environment reflections that a normal map tilts below the surface. AgX with Filament's punchy look is the default curve, at no measurable cost on the Mac; ACES stays for ports.
+
 ## Question
 
 [D-53](D-53-technique-defaults.md) set four defaults for lit materials. Ruling 11 puts specular anti-aliasing on with Filament's kernel. Ruling 4 makes AgX the tone curve of new scenes. The review also asked for three.js r187's roughness floor and for horizon fading. How does each one work in the engine? What do prototypes L3 (shimmer) and L7 (the look test) show? How do the strict tests against three.js keep working?

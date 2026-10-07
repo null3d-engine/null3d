@@ -1,8 +1,9 @@
 // The standard and unlit materials, for their image tests. `?scene=grid` draws the grid of
 // bench/scenes/standard-grid.ts: spheres over metalness (rows, from 0 at the top to 1) and roughness
-// (columns, from 0 to 1), lit by a sun and an ambient light. `?scene=grid&env=room` or `&env=venice`
-// lights the grid with an environment alone (bench/scenes/standard-grid.ts), and `&rotate` turns
-// the environment a quarter turn. ?tone=none turns off the engine's
+// (columns, from 0 to 1), lit by a sun and an ambient light. `?scene=grid&env=room`, `&env=venice`
+// or `&env=studio` lights the grid with an environment alone (bench/scenes/standard-grid.ts):
+// a file's map from the asset tool, or with `&hdr` the HDR file itself, which the engine filters at
+// load. `&rotate` turns the environment a quarter turn. ?tone=none turns off the engine's
 // default curve, as the parity test asks: the grid's three.js twin draws with no tone mapping,
 // three.js's default. `?scene=features` draws what a material fixes when it is created, in
 // pairs: an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a
@@ -46,7 +47,9 @@ export default defineSketch(async (ctx) => {
 		const env =
 			'builtin' in source
 				? await assets.builtinEnvironment(source.builtin)
-				: await assets.loadEnvironment(sampleEnvironment(source.hdr));
+				: await assets.loadEnvironment(
+						params.has('hdr') ? source.hdr : sampleEnvironment(source.hdr),
+					);
 		const rotation = params.has('rotate') ? GRID_ENVIRONMENT_ROTATION : undefined;
 		world.setEnvironment(env, { rotation });
 	} else {

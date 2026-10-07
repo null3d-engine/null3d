@@ -11,8 +11,12 @@ import { replyToPage } from './protocol';
 export class DrawingHost {
 	drawing: Drawing<Renderer> | undefined;
 	private stopping = false;
-	/** Settles once the drawing that is starting has started or failed. */
-	private starting: Promise<unknown> = Promise.resolve();
+	/**
+	 * Settles once the drawing that is starting has started or failed. It settles with no value, so
+	 * a worker that keeps its canvas after the stop does not keep the stopped drawing through it,
+	 * nor the engine's memory that the drawing reads.
+	 */
+	private starting: Promise<void> = Promise.resolve();
 
 	/**
 	 * Keeps the drawing that `start` makes. A drawing that starts after the page asked the worker
@@ -27,7 +31,10 @@ export class DrawingHost {
 			await drawing.stop();
 			return undefined;
 		});
-		this.starting = started.catch(() => {});
+		this.starting = started.then(
+			() => {},
+			() => {},
+		);
 		return started;
 	}
 

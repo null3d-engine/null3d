@@ -56,9 +56,12 @@ export default defineSketch((context) => {
 	// The page's ?shadowFilter= switch tries another filter than the preset's.
 	const filter = new URL(import.meta.url).searchParams.get('shadowFilter');
 	if (filter) context.quality.set({ shadowFilter: Number(filter) as 3 | 5 });
+	// The page's ?shadowCascadeBlend= switch measures the band between cascades against none.
+	const blend = new URL(import.meta.url).searchParams.get('shadowCascadeBlend');
+	if (blend) context.quality.set({ shadowCascadeBlend: Number(blend) });
 	const reportQuality = watchQuality(context);
 
-	scene.setFog({ type: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });
+	scene.setFog({ curve: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });
 
 	const generators: Record<S4Generator, (options: object) => MeshGeometry> = {
 		box: (options) => geometry.box(options),

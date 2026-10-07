@@ -140,10 +140,10 @@ describe('chooseBase', () => {
 		});
 	});
 
-	it('compares a push to main with the commit before', () => {
-		expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', GITHUB_REF_NAME: 'main' })).toEqual({
+	it('compares a push to main with the commit before, which the squash builds on', () => {
+		expect(chooseBase(undefined, { GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '' })).toEqual({
 			ref: 'HEAD^',
-			why: 'the commit before on main',
+			why: 'the commit before on the branch, which the squash builds on',
 		});
 	});
 

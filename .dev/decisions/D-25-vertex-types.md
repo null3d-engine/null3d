@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03. Task: M2-A1.
 
+Summary: Take every type that glTF's `KHR_mesh_quantization` allows for each attribute, and keep it on the GPU. WebGPU reads plain integers as normalized fractions, and a pipeline constant multiplies them back: integer meshes drew their float twins' image exactly on the Mac's GPU and on SwiftShader.
+
 ## Question
 
 Meshes from glTF files often keep their vertices in 8-bit and 16-bit integers, as the `KHR_mesh_quantization` extension allows. Which types does each vertex attribute take, and how does a vertex format record them? And how do shaders read plain integers, which glTF reads as whole numbers, on WebGPU, which has no vertex format that reads them so?

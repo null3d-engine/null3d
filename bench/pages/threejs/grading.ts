@@ -23,7 +23,7 @@ import {
 	GRADING_INTENSITY,
 	GRADING_LUTS,
 	GRADING_SUN,
-	GRADING_VIGNETTE,
+	GRADING_VIGNETTE_THREE,
 } from '../../scenes/grading';
 import { showPageName } from '../lib/fit';
 import { packRows } from '../lib/pixels';
@@ -74,8 +74,8 @@ run('hold', async () => {
 		const vignette = new ShaderPass(VignetteShader);
 		const { offset, darkness } = vignette.uniforms;
 		if (!offset || !darkness) throw new Error('VignetteShader has no offset or darkness uniform');
-		offset.value = GRADING_VIGNETTE.offset;
-		darkness.value = GRADING_VIGNETTE.darkness;
+		offset.value = GRADING_VIGNETTE_THREE.offset;
+		darkness.value = GRADING_VIGNETTE_THREE.darkness;
 		composer.addPass(vignette);
 	}
 	document.body.append(renderer.domElement);

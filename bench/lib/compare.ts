@@ -182,8 +182,9 @@ export const MEASURE_NAMES = Object.keys(MEASURES) as Measure[];
 
 /**
  * How much slower the new build may get before the comparison fails: a share of the baseline's
- * median, and at least a fixed time. The browser's timer counts in steps of 5 microseconds, so a
- * small time can move by a whole step from run to run.
+ * median, and at least a fixed time. The fixed time decides on pages whose frames take well under
+ * a millisecond, where a share of the frame is a few steps of the browser's 5-microsecond timer
+ * and a short stall moves a round far.
  */
 export interface Rule {
 	share: number;
@@ -191,16 +192,35 @@ export interface Rule {
 }
 
 /**
- * The rule of each measure: the smallest of those tested that no job comparing two identical
- * builds on GitHub's Mac machine broke, so that such builds do not fail. The engine's own work is
- * the busiest thread's time less the scene's update: a small difference of two larger times,
- * which moves more from run to run, so its rule is wider. .dev/benchmarks.md gives the
+ * The rule of each measure, chosen by replaying the recorded comparisons of identical builds on
+ * GitHub's Mac machine: no recorded comparison breaks it, with the noise check below. The engine's
+ * own work is the busiest thread's time less the scene's update: a small difference of two larger
+ * times, which moves more from run to run, so its share is wider. .dev/benchmarks.md gives the
  * measurements.
  */
 export const RULES: Readonly<Record<Measure, Rule>> = {
-	'busiest-thread': { share: 0.05, floorMs: 0.01 },
-	'own-work': { share: 0.15, floorMs: 0.02 },
+	'busiest-thread': { share: 0.08, floorMs: 0.05 },
+	'own-work': { share: 0.15, floorMs: 0.05 },
 };
+
+/**
+ * How many times its rounds' noise a change must reach to count as slower or faster. A run whose
+ * rounds spread far, as on a busy machine, then needs a larger change to fail.
+ */
+export const NOISE_TIMES = 2;
+
+/**
+ * The noise of a change: the standard error of the median of the rounds' ratios, estimated from
+ * their spread. The median absolute deviation, times 1.4826, estimates the standard deviation, and
+ * times 1.2533 over the root of the count, the error of a median. Both factors hold for values
+ * spread as a normal distribution. The deviation ignores the odd round that a stall moves far.
+ */
+export function roundNoise(ratios: readonly number[]): number {
+	if (ratios.length < 2) return 0;
+	const middle = median(ratios);
+	const deviation = median(ratios.map((ratio) => Math.abs(ratio - middle)));
+	return (1.4826 * 1.2533 * deviation) / Math.sqrt(ratios.length);
+}
 
 /** The most that the new build may add to a baseline median of `baselineMs` under a rule. */
 export function allowedMs(baselineMs: number, rule: Rule): number {
@@ -243,11 +263,16 @@ export interface Comparison {
 	 * build's value over the baseline's, less 1. Above 0 is slower.
 	 */
 	change: number;
+	/** The change's noise, as a share like the change: see `roundNoise`. */
+	noise: number;
 	/** The change in milliseconds: the change times the baseline's median. */
 	deltaMs: number;
 	/** The most the change may add under the measure's rule, in milliseconds. */
 	allowedMs: number;
-	/** Slower or faster by more than the measure's rule allows, or the same within it. */
+	/**
+	 * Slower or faster by more than the measure's rule allows and by more than `NOISE_TIMES` its
+	 * noise, or the same.
+	 */
 	result: 'slower' | 'faster' | 'same';
 	/** The expected-change trailer that names this measure, when one does. */
 	expected: ExpectedChange | null;
@@ -293,12 +318,14 @@ function gpuMedian(runs: readonly BuildRun[]): number | null {
  * Compares the kept runs of the two builds, page by page and measure by measure. The builds ran in
  * turns, so each round holds a run of each build measured moments apart, and the change is the
  * median of the rounds' changes: a machine that changes speed between rounds changes both runs of
- * a round alike. A page with too few rounds in which both builds have a kept run is named instead.
+ * a round alike. A change counts only beyond the measure's rule and beyond its rounds' noise. A
+ * page with too few rounds in which both builds have a kept run is named instead.
  */
 export function compareBuilds(
 	{ kept, dropped }: Pick<RunSelection, 'kept' | 'dropped'>,
 	expected: readonly ExpectedChange[] = [],
 	rules: Readonly<Record<Measure, Rule>> = RULES,
+	noiseTimes = NOISE_TIMES,
 ): BuildComparison {
 	const all = [...kept, ...dropped.map(({ run }) => run)];
 	const pages = [...new Map(all.map((run) => [pageName(run), run])).values()];
@@ -329,9 +356,11 @@ export function compareBuilds(
 			const after = valuesOf(next.map((run) => value(run.result)));
 			const ratios = pairs.filter(([b]) => value(b) > 0).map(([b, n]) => value(n) / value(b));
 			const change = ratios.length > 0 ? median(ratios) - 1 : 0;
+			const noise = roundNoise(ratios);
 			const deltaMs = change * before.median;
 			const allowed = allowedMs(before.median, rules[measure]);
-			const slower = deltaMs > allowed;
+			const clear = Math.abs(change) > noiseTimes * noise;
+			const slower = clear && deltaMs > allowed;
 			const named = (entry: ExpectedChange) => names(entry, { scene, kind, measure });
 			out.comparisons.push({
 				scene,
@@ -341,9 +370,10 @@ export function compareBuilds(
 				new: after,
 				rounds: pairs.length,
 				change,
+				noise,
 				deltaMs,
 				allowedMs: allowed,
-				result: slower ? 'slower' : deltaMs < -allowed ? 'faster' : 'same',
+				result: slower ? 'slower' : clear && deltaMs < -allowed ? 'faster' : 'same',
 				expected: slower ? (expected.find(named) ?? null) : null,
 			});
 		}
@@ -570,7 +600,7 @@ export function judge(
 			.filter((c) => c.result === 'slower' && c.expected === null)
 			.map(
 				(c) =>
-					`${pageName(c)}, ${MEASURES[c.measure].name}: ${percentText(c)} slower (medians ${ms3(c.baseline.median)} ms and ${ms3(c.new.median)} ms)`,
+					`${pageName(c)}, ${MEASURES[c.measure].name}: ${percentText(c)} slower, noise ${noiseText(c)} (medians ${ms3(c.baseline.median)} ms and ${ms3(c.new.median)} ms)`,
 			),
 	];
 	return {
@@ -588,6 +618,9 @@ function percentText({ change }: Pick<Comparison, 'change'>): string {
 	const percent = change * 100;
 	return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`;
 }
+
+/** The change's noise as a percentage. */
+const noiseText = ({ noise }: Pick<Comparison, 'noise'>) => `${(noise * 100).toFixed(1)}%`;
 
 const spread = (v: BuildValues) => `${ms3(v.median)} (${ms3(v.min)} to ${ms3(v.max)})`;
 
@@ -652,14 +685,14 @@ export function compareReport(
 		'',
 		...verdictLines(verdict),
 		'',
-		'| Scene | Page | Measure | Baseline ms, median (lowest to highest run) | New ms | Change | Result |',
-		'| --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Measure | Baseline ms, median (lowest to highest run) | New ms | Change | Noise | Result |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
 		...result.comparisons.map(
 			(c) =>
-				`| ${c.scene} | ${c.kind} | ${MEASURES[c.measure].name} | ${spread(c.baseline)} | ${spread(c.new)} | ${percentText(c)} | ${resultText(c)} |`,
+				`| ${c.scene} | ${c.kind} | ${MEASURES[c.measure].name} | ${spread(c.baseline)} | ${spread(c.new)} | ${percentText(c)} | ${noiseText(c)} | ${resultText(c)} |`,
 		),
 		'',
-		`Each run gives the median CPU time per frame of the busiest thread, and of the engine's own work on it. The change is the median over rounds of the new build's run against the baseline's, and a page fails when ${limits}.`,
+		`Each run gives the median CPU time per frame of the busiest thread, and of the engine's own work on it. The change is the median over rounds of the new build's run against the baseline's. Its noise is the standard error of that median, from the spread of the rounds. A page fails when ${limits}, and the change is more than ${NOISE_TIMES} times its noise.`,
 	];
 	const gpu = result.gpu.filter((g) => g.baselineMs !== null || g.newMs !== null);
 	if (gpu.length > 0)

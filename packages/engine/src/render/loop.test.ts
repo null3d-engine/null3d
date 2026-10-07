@@ -3,7 +3,15 @@ import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
-import { type FramePacing, HoldLoop, type RenderLoop, runRenderLoop, wakeDelayMs } from './loop';
+import {
+	CAPTURE_WAIT_CALLBACKS,
+	type FramePacing,
+	HoldLoop,
+	nextFrameTaken,
+	type RenderLoop,
+	runRenderLoop,
+	wakeDelayMs,
+} from './loop';
 import type { FrameInput, Renderer } from './renderer';
 
 /** Frame callbacks that the loops asked for, which the test runs in place of a display. */
@@ -166,6 +174,71 @@ describe('the hold loop', () => {
 		await held;
 		expect(drawn).toEqual([7]);
 		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(7);
+	});
+});
+
+describe("a capture's wait for the next frame", () => {
+	let loop: RenderLoop | undefined;
+	afterEach(() => loop?.stop());
+
+	/** Waits for the next frame, and reports whether the wait has ended. */
+	function waitForFrame(slots: Int32Array): { ended: boolean } {
+		const state = { ended: false };
+		void nextFrameTaken(slots).then(() => {
+			state.ended = true;
+		});
+		return state;
+	}
+
+	it('lets the loop take and draw its next frame before it ends', async () => {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
+		refresh(DISPLAY_HZ, 3);
+		const wait = waitForFrame(slots);
+		await Promise.resolve();
+		expect(wait.ended).toBe(false);
+		refresh(DISPLAY_HZ, 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(true);
+		expect(drawn).toEqual([1, 2, 3, 4]);
+		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(4);
+	});
+
+	it('waits on through callbacks that take no frame', async () => {
+		const { control, metrics, slots, renderer } = setup();
+		loop = runRenderLoop(renderer, control, metrics, {});
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		refresh(DISPLAY_HZ, 1);
+		const wait = waitForFrame(slots);
+		refresh(DISPLAY_HZ, 5);
+		await Promise.resolve();
+		expect(wait.ended).toBe(false);
+		Atomics.store(slots, Slot.FramesPublished, 2);
+		refresh(DISPLAY_HZ, 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(true);
+	});
+
+	it('ends at once while the engine is paused or stopped', async () => {
+		const { slots } = setup();
+		Atomics.store(slots, Slot.Paused, 1);
+		const paused = waitForFrame(slots);
+		Atomics.store(slots, Slot.Paused, 0);
+		Atomics.store(slots, Slot.Running, 0);
+		const stopped = waitForFrame(slots);
+		await Promise.resolve();
+		expect([paused.ended, stopped.ended]).toEqual([true, true]);
+	});
+
+	it('gives up when no frame comes, as after a sketch error', async () => {
+		const { slots } = setup();
+		const wait = waitForFrame(slots);
+		refresh(DISPLAY_HZ, CAPTURE_WAIT_CALLBACKS - 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(false);
+		refresh(DISPLAY_HZ, 1);
+		await Promise.resolve();
+		expect(wait.ended).toBe(true);
 	});
 });
 

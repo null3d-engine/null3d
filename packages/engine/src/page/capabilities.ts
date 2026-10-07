@@ -2,9 +2,11 @@
 // engine never decides anything from browser or GPU names. The report is plain JSON, so test
 // runners can store it and compare it across devices.
 
+import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DeviceHints } from '../quality/chooser';
+import { spawnWorker } from '../shared/worker-start';
 import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -71,7 +73,8 @@ const WEBGL2_EXTENSIONS = [
 
 /**
  * The color that the float render target test clears to. One channel is above 1, which high
- * dynamic range color needs, and every value is exact as a 16-bit float.
+ * dynamic range color needs, and every value is exact as a 16-bit float and in the packed format.
+ * A format without alpha reads back an alpha of 1.
  */
 const FLOAT_TARGET_COLOR = [2, 0.5, 0.25, 1] as const;
 
@@ -139,17 +142,19 @@ export interface WebGL2Report {
 	} | null;
 	/**
 	 * Whether the device renders into float textures, which high dynamic range color needs. The
-	 * engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer
-	 * with the texture is complete. `readsBack` says whether a clear to a known color, with a value
-	 * above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that
-	 * the format takes, or 0 where the device does not render into it. WebGL2 renders into both
-	 * formats with `EXT_color_buffer_float`, and into the 16-bit one with
-	 * `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
+	 * engine tests a 16-bit and a 32-bit float RGBA texture, and the 32-bit packed format
+	 * `R11F_G11F_B10F`, which holds three channels in half the bytes of the 16-bit one. `complete`
+	 * says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a
+	 * known color, with a value above 1, reads back as floats. `samples` is the most samples per
+	 * pixel for antialiasing that the format takes, or 0 where the device does not render into it.
+	 * WebGL2 renders into the three formats with `EXT_color_buffer_float`, and into the 16-bit one
+	 * with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
 	 * format passes both tests, and with MSAA takes 4 samples. Null without WebGL2.
 	 */
 	floatRenderTargets: {
 		rgba16f: { complete: boolean; readsBack: boolean; samples: number };
 		rgba32f: { complete: boolean; readsBack: boolean; samples: number };
+		r11fG11fB10f: { complete: boolean; readsBack: boolean; samples: number };
 	} | null;
 	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
@@ -186,8 +191,25 @@ export interface CapabilityReport extends DeviceHints {
 	webgpu: WebGPUReport;
 	/** What WebGL2 offers. */
 	webgl2: WebGL2Report;
-	/** What a dedicated worker can do, or why the probe worker failed. */
-	worker: WorkerProbe | { error: string };
+	/** What a dedicated worker can do, or why the probe worker gave no answer. */
+	worker: WorkerProbe | WorkerProbeFailure;
+}
+
+/**
+ * Why the probe worker gave no answer, in `CapabilityReport.worker`. The engine then draws on the
+ * page's thread, and `engine.mode.renderFallback` names the reason.
+ *
+ * @category api/engine
+ */
+export interface WorkerProbeFailure {
+	/**
+	 * `no-answer` when neither probe worker answered within its time limit, which a stalled GPU
+	 * call or a very busy machine causes. `failed-to-start` when the worker's script failed to load
+	 * or run.
+	 */
+	failure: 'no-answer' | 'failed-to-start';
+	/** The failure in words. */
+	error: string;
 }
 
 async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPUReport> {
@@ -375,6 +397,7 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 			floatRenderTargets: {
 				rgba16f: probeFloatTarget(gl, gl.RGBA16F),
 				rgba32f: probeFloatTarget(gl, gl.RGBA32F),
+				r11fG11fB10f: probeFloatTarget(gl, gl.R11F_G11F_B10F),
 			},
 			renderer: debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : null,
 		};
@@ -388,23 +411,79 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 /**
  * How long the probe worker's GPU checks may take once its script runs. A GPU call that never
  * returns ends the wait. The script's download does not count: the network or the server can delay
- * it for any time, and the browser reports a download that fails.
+ * it for any time, and the browser reports a download that fails. The checks take milliseconds,
+ * so a worker that has not answered by then is stalled. A second worker then gets a longer wait,
+ * because a page that gives up draws on its own thread for the whole session.
  */
-const WORKER_PROBE_TIMEOUT_MS = 5000;
+const WORKER_PROBE_TIMEOUTS_MS = [5000, 10_000] as const;
 
-function probeWorker(): Promise<WorkerProbe | { error: string }> {
+/**
+ * Runs the probe worker, with each of `timeoutsMs` in turn as its time limit while it gives no
+ * answer. A worker that fails to start is not tried again.
+ */
+export async function probeWorker(
+	timeoutsMs: readonly number[] = WORKER_PROBE_TIMEOUTS_MS,
+): Promise<WorkerProbe | WorkerProbeFailure> {
+	for (const timeoutMs of timeoutsMs) {
+		const result = await probeWorkerOnce(timeoutMs);
+		if (!('failure' in result) || result.failure !== 'no-answer') return result;
+	}
+	const limits = timeoutsMs.map((ms) => `${ms / 1000} s`).join(', then ');
+	return {
+		failure: 'no-answer',
+		error: `no probe worker answered within its time limit (${limits})`,
+	};
+}
+
+/**
+ * The probe worker's answer that the page's engine starts share. Firefox makes a new WebGL2
+ * context wait for the WebGL work that other contexts have queued, such as a shader link. On a
+ * software renderer an engine's links take seconds, so a start's probe can outlast its time
+ * limits while another engine on the page starts. A worker's abilities hold for the page's life,
+ * so one full answer serves every later start. A failure is not kept.
+ */
+let pageProbe: Promise<WorkerProbe | WorkerProbeFailure> | undefined;
+
+/**
+ * The probe worker's answer for the page: the kept answer, the answer of a probe that is running,
+ * or a new probe's, with `timeoutsMs` as its time limits.
+ */
+export function pageWorkerProbe(
+	timeoutsMs: readonly number[] = WORKER_PROBE_TIMEOUTS_MS,
+): Promise<WorkerProbe | WorkerProbeFailure> {
+	if (pageProbe) return pageProbe;
+	const probe = probeWorker(timeoutsMs);
+	pageProbe = probe;
+	void probe.then((result) => {
+		if ('failure' in result && pageProbe === probe) pageProbe = undefined;
+	});
+	return probe;
+}
+
+/** Drops the kept answer, as after a lost GPU, so that the next start probes again. */
+export function forgetWorkerProbe(): void {
+	pageProbe = undefined;
+}
+
+/** Runs one probe worker, which must answer within `timeoutMs` of its script's start. */
+function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFailure> {
 	return new Promise((resolve) => {
 		let worker: Worker;
 		try {
-			worker = new Worker(new URL('../workers/probe-worker.ts', import.meta.url), {
-				type: 'module',
-			});
+			worker = spawnWorker(
+				() =>
+					new Worker(new URL('../workers/probe-worker.ts', import.meta.url), {
+						type: 'module',
+						name: 'null3d-probe',
+					}),
+				(code, message) => new EngineError(code, message),
+			);
 		} catch (e) {
-			resolve({ error: messageOf(e) });
+			resolve({ failure: 'failed-to-start', error: messageOf(e) });
 			return;
 		}
 		let timer: ReturnType<typeof setTimeout> | undefined;
-		const finish = (result: WorkerProbe | { error: string }) => {
+		const finish = (result: WorkerProbe | WorkerProbeFailure) => {
 			clearTimeout(timer);
 			worker.terminate();
 			resolve(result);
@@ -412,12 +491,15 @@ function probeWorker(): Promise<WorkerProbe | { error: string }> {
 		worker.onmessage = ({ data }: MessageEvent<ProbeMessage>) => {
 			if (data !== 'loaded') return finish(data);
 			timer = setTimeout(
-				() => finish({ error: 'the probe worker did not answer' }),
-				WORKER_PROBE_TIMEOUT_MS,
+				() => finish({ failure: 'no-answer', error: 'the probe worker did not answer' }),
+				timeoutMs,
 			);
 		};
 		worker.onerror = (event) =>
-			finish({ error: event.message || 'the probe worker failed to start' });
+			finish({
+				failure: 'failed-to-start',
+				error: event.message || 'the probe worker failed to start',
+			});
 	});
 }
 
@@ -449,7 +531,7 @@ export async function probeCapabilities(
 	powerPreference?: PowerPreference,
 	hints: DeviceHints = readDeviceHints(),
 ): Promise<CapabilityReport> {
-	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), probeWorker()]);
+	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',

@@ -19,6 +19,8 @@ import { controlLabels, controlViews, createControlBuffer, Slot } from '../share
 import type { CoreGlue } from '../shared/core';
 import { type LabelRegion, labelSequence, presentLabels } from '../shared/labels';
 import { Ui } from '../sketch/ui';
+import { Cubemap } from './background';
+import { Environment } from './environment';
 import { FrameCameras } from './frame-cameras';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
@@ -44,6 +46,7 @@ const AT = {
 	read: 1540,
 	matrix: 1544,
 	cells: 2048,
+	background: 3072,
 };
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 /** The frame that the fake scene says it runs. */
@@ -94,8 +97,9 @@ function fakeCore(largeWorld = false) {
 		setPerspectiveCamera: () => 0,
 		setOrthographicCamera: () => 0,
 		setBackground: (r: number, g: number, b: number) => backgrounds.push([r, g, b]) && 0,
-		setBackgroundTexture: (texture: number) => {
-			if (texture !== DESTROYED_TEXTURE) return backgrounds.push(texture) && 0;
+		backgroundValues: () => AT.background,
+		setBackgroundSource: (kind: number, texture: number) => {
+			if (texture !== DESTROYED_TEXTURE) return backgrounds.push([kind, texture]) && 0;
 			failure = { code: 1101, details: [texture & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
@@ -129,8 +133,13 @@ function fakeCore(largeWorld = false) {
 			control.slotFloats[Slot.CanvasCssWidth] = cssWidth;
 			control.slotFloats[Slot.CanvasCssHeight] = cssHeight;
 		},
-		/** The background calls: a color's linear components, or a texture's handle (0 for none). */
+		/**
+		 * The background calls: a color's linear components, or a source's kind and its texture's
+		 * handle (0 for none).
+		 */
 		backgrounds,
+		/** The block of the background's values. */
+		backgroundValues: () => [...f32(AT.background, C.BACKGROUND_VALUE_COUNT)],
 		box,
 		ball,
 		paint,
@@ -400,13 +409,78 @@ describe('scene.setBackground', () => {
 	const texture = (handle: number) =>
 		new Texture(handle, 4, 4, 1, 'rgba8unorm', 'srgb', 0, undefined as unknown as Textures);
 
+	const none = [C.BACKGROUND_KIND_NONE, 0];
+
 	test('a texture keeps the color, and a color takes the place of a texture', () => {
 		const { scene, backgrounds } = fakeCore();
 		scene.setBackground('#ff0000');
 		scene.setBackground(texture(9));
-		expect(backgrounds).toEqual([[1, 0, 0], 0, 9]);
+		expect(backgrounds).toEqual([[1, 0, 0], none, [C.BACKGROUND_KIND_TEXTURE, 9]]);
 		scene.setBackground([0, 0, 1]);
-		expect(backgrounds.slice(3)).toEqual([[0, 0, 1], 0]);
+		expect(backgrounds.slice(3)).toEqual([[0, 0, 1], none]);
+	});
+
+	test('an environment and a cube map take their options, and a call without them the defaults', () => {
+		const { scene, backgrounds, backgroundValues } = fakeCore();
+		const sh = new Float32Array(27);
+		const env = new Environment(texture(11), 16, 5, 'rgb9e5ufloat', sh);
+		scene.setBackground(env, { intensity: 0.5, blur: 0.25, rotation: [0, 1, 2] });
+		expect(backgrounds).toEqual([[C.BACKGROUND_KIND_ENVIRONMENT, 11]]);
+		const values = backgroundValues();
+		expect(values[C.BACKGROUND_VALUE_INTENSITY]).toBe(0.5);
+		expect(values[C.BACKGROUND_VALUE_BLUR]).toBe(0.25);
+		expect(values.slice(C.BACKGROUND_VALUE_ROTATION, C.BACKGROUND_VALUE_ROTATION + 3)).toEqual([
+			0, 1, 2,
+		]);
+		scene.setBackground(new Cubemap(texture(12), 16));
+		expect(backgrounds[1]).toEqual([C.BACKGROUND_KIND_CUBEMAP, 12]);
+		const reset = backgroundValues();
+		expect(reset[C.BACKGROUND_VALUE_INTENSITY]).toBe(1);
+		expect(reset[C.BACKGROUND_VALUE_BLUR]).toBe(0);
+		expect(reset.slice(C.BACKGROUND_VALUE_ROTATION, C.BACKGROUND_VALUE_ROTATION + 3)).toEqual([
+			0, 0, 0,
+		]);
+	});
+
+	test("the sky takes three.js's settings and defaults", () => {
+		const { scene, backgrounds, backgroundValues } = fakeCore();
+		scene.setBackground({ sky: { sunPosition: [1, 2, 3], turbidity: 10, showSunDisc: false } });
+		expect(backgrounds).toEqual([[C.BACKGROUND_KIND_SKY, 0]]);
+		const values = backgroundValues();
+		const at = (place: number) => values[place] as number;
+		expect(
+			values.slice(C.BACKGROUND_VALUE_SUN_POSITION, C.BACKGROUND_VALUE_SUN_POSITION + 3),
+		).toEqual([1, 2, 3]);
+		expect(at(C.BACKGROUND_VALUE_TURBIDITY)).toBe(10);
+		expect(at(C.BACKGROUND_VALUE_RAYLEIGH)).toBe(1);
+		expect(at(C.BACKGROUND_VALUE_MIE_COEFFICIENT)).toBeCloseTo(0.005, 7);
+		expect(at(C.BACKGROUND_VALUE_MIE_DIRECTIONAL_G)).toBeCloseTo(0.8, 6);
+		expect(at(C.BACKGROUND_VALUE_CLOUD_COVERAGE)).toBeCloseTo(0.4, 6);
+		expect(at(C.BACKGROUND_VALUE_CLOUD_SCALE)).toBeCloseTo(0.0002, 9);
+		expect(at(C.BACKGROUND_VALUE_TIME)).toBe(0);
+		expect(at(C.BACKGROUND_VALUE_SUN_DISC)).toBe(0);
+		scene.setBackground({ sky: {} });
+		const sun = backgroundValues().slice(
+			C.BACKGROUND_VALUE_SUN_POSITION,
+			C.BACKGROUND_VALUE_SUN_POSITION + 3,
+		);
+		expect(sun[1]).toBeCloseTo(0.0349, 6);
+		expect(backgroundValues()[C.BACKGROUND_VALUE_SUN_DISC]).toBe(1);
+	});
+
+	test('settings that a background does not take throw before the core sees them', () => {
+		const { scene, backgrounds } = fakeCore();
+		const cases: [() => void, string][] = [
+			[() => scene.setBackground(texture(9), { blur: 0.5 }), 'E1213'],
+			[() => scene.setBackground({ sky: {} }, { rotation: [0, 1, 0] }), 'E1213'],
+			[() => scene.setBackground({ sky: { sunPosition: [0, 0, 0] } }), 'E1108'],
+			[() => scene.setBackground({ sky: { cloudCoverage: 2 } }), 'E1108'],
+			[() => scene.setBackground({ sky: { turbidity: Number.NaN } }), 'E1203'],
+			[() => scene.setBackground(texture(9), { intensity: -1 }), 'E1108'],
+			[() => scene.setBackground({} as never), 'E1204'],
+		];
+		for (const [call, code] of cases) expect(thrown(call).message).toStartWith(`${code}:`);
+		expect(backgrounds).toEqual([]);
 	});
 
 	test('a destroyed texture throws E1101', () => {

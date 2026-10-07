@@ -69,7 +69,7 @@ An option that the engine does not know, such as `wrap: 'tile'` or `anisotropy: 
 
 ## KTX2 files
 
-`assets.loadTexture` also loads KTX2 files of Basis Universal data, in ETC1S or UASTC, as `basisu` and `toktx` write them. The GPU keeps such a texture in a compressed format. It takes a quarter or an eighth of the GPU memory of `rgba8unorm`, and uploads that many fewer bytes.
+`assets.loadTexture` also loads KTX2 files of Basis Universal data, in ETC1S, UASTC or UASTC HDR, as `basisu` and `toktx` write them. The GPU keeps such a texture in a compressed format. It takes a quarter or an eighth of the GPU memory of `rgba8unorm`, and uploads that many fewer bytes.
 
 ```ts
 const bricks = await assets.loadTexture('/tex/bricks.ktx2', { wrap: 'repeat' });
@@ -82,19 +82,21 @@ The engine turns the file's data into the first format on its list that the devi
 | --- | --- |
 | UASTC | `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` or `etc2-rgba8unorm`, `rgba8unorm` |
 | ETC1S | `etc2-rgb8unorm` or `etc2-rgba8unorm`, `bc7-rgba-unorm`, `astc-4x4-unorm`, `rgba8unorm` |
+| UASTC HDR | `bc6h-rgb-ufloat`, `rgb9e5ufloat` |
 
 - UASTC keeps the most detail in ASTC and BC7. ETC1S data is ETC1 data, which ETC2 takes as it is. Without alpha, ETC2 also takes half the memory of the other formats.
 - Phones and tablets have ASTC and ETC2. Desktop GPUs have BC7, and Macs with Apple chips have all three. A device with none gets `rgba8unorm`.
 - On WebGL2, a device with BC7 gets `bc7-rgba-unorm` for both kinds of data. Some desktop drivers, such as Mesa on Linux, offer ETC2 and ASTC on GPUs without them. They then decode those textures in software on the page's thread, which stalls the page. WebGPU offers a format only where the GPU has it.
-- A texture whose width or height is not a multiple of 4 texels gets `rgba8unorm` too, at 4 to 8 times the memory. WebGPU keeps compressed textures in whole blocks of 4 x 4 texels. Development builds warn when a file loads this way. `bunx @null3d/cli assets optimize` writes sides that are whole blocks.
+- UASTC HDR data holds colors brighter than white, with no alpha. A device with BC formats gets `bc6h-rgb-ufloat`, at 1 byte per texel. Devices without BC formats, such as the iPad and most phones, get `rgb9e5ufloat`: three 9-bit values with a shared exponent, at 4 bytes per texel. That is half the memory of `rgba16float`, and every device filters it. WebGPU and WebGL2 have no ASTC format for HDR data. The texture is always `linear`.
+- A texture whose width or height is not a multiple of 4 texels gets `rgba8unorm` too, at 4 to 8 times the memory. HDR data then gets `rgb9e5ufloat`. WebGPU keeps compressed textures in whole blocks of 4 x 4 texels. Development builds warn when a file loads this way. `bunx @null3d/cli assets optimize` writes sides that are whole blocks.
 - `texture.format` says which format the device got, and `texture.bytes` its GPU memory.
 
 A KTX2 file takes the texture options above, with these differences:
 
 - The texture has the mip levels that the file holds. The GPU cannot make mip levels of compressed texels, so encode the file with them, as `basisu -mipmap` and `toktx --genmipmap` do. `mipmaps: false` keeps level 0 alone.
-- The color space comes from the file, which `basisu` writes as sRGB unless you give it `-linear`. The `colorSpace` option overrides it.
+- The color space comes from the file, which `basisu` writes as sRGB unless you give it `-linear`. The `colorSpace` option overrides it. HDR data is always linear, so in development builds `colorSpace: 'srgb'` throws E1208 for it.
 - The file's first row goes to v = 0, the bottom of a plane, as with three.js's `KTX2Loader`. glTF models expect that order. For a plane, encode the file flipped, as `basisu -y_flip` does. Compressed rows cannot turn over. So in development builds, `flipY: true` throws E1208, and so does `premultipliedAlpha: true`. A production build ignores both.
-- A KTX2 file of several layers makes a texture of several layers. Cube maps, 3D textures, UASTC HDR data and KTX2 files of other formats throw [E1412](../errors/E1412.md).
+- A KTX2 file of several layers makes a texture of several layers. Cube maps, 3D textures and KTX2 files of other formats throw [E1412](../errors/E1412.md).
 - A file whose sides pass `textures.maxSize` throws E1412 before the transcoder runs. So do files of more than 256 layers or more mip levels than the size has. A file of more than 256 MiB of texels in the device's format throws it too.
 - `texture.update` throws E1208 on a texture from a KTX2 file. Load the file again instead.
 
@@ -143,9 +145,11 @@ A texture's `width`, `height` and `depth` give its size, and `bytes` its GPU mem
 
 Textures of one size, one format and one number of mip levels share a 2D texture array on the GPU. Each texture takes one layer of the array. Materials whose maps are in one array share one bind group when they sample their maps the same way. The GPU then switches textures less often between draws.
 
-An array holds at most 256 layers, the most that an iPad allows. It starts with room for a few textures, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. When a size has more than 256 textures, a second array holds the rest. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array.
+An array holds at most 256 layers, the most that an iPad allows. It starts with room for a few textures, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. When a size has more than 256 textures, a second array holds the rest. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array. A texture in `rgb9e5ufloat` has one too, because WebGL2 cannot copy that format.
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
+
+WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. Maps in one array that sample the same way share one of the six. So a material whose color maps have one size and whose data maps have one size takes two. Each compressed map takes one of its own. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A glTF material needs more than six only when its seven maps all differ in size, format or sampling.
 
 A texture can be at most 4096 texels wide and tall, the most that every WebGPU device allows. On a WebGL2 device that allows less, the device's own limit applies: at least 2048 texels. `textures.maxSize` gives the limit, and a larger image throws E1208.
 
@@ -175,7 +179,7 @@ Color maps, such as the base color of a surface, store sRGB colors. The GPU turn
 
 ## GPU memory
 
-A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers, so a half-full array costs as much as a full one.
+A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. An `rgb9e5ufloat` texel takes 4 bytes. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers, so a half-full array costs as much as a full one.
 
 ## Both GPU paths
 
@@ -194,12 +198,13 @@ The engine keeps no copy of an image or of data once its upload is done, which s
 ```ts
 type CompressedTextureFormat =
 	| 'astc-4x4-unorm'
+	| 'bc6h-rgb-ufloat'
 	| 'bc7-rgba-unorm'
 	| 'etc2-rgb8unorm'
 	| 'etc2-rgba8unorm';
 ```
 
-A compressed format, which stores blocks of 4 x 4 texels in a quarter or an eighth of the GPU memory of `rgba8unorm`. A texture from a KTX2 file takes the one that the device supports: `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` without alpha or `etc2-rgba8unorm` with it. The names are WebGPU's, and a texture's `colorSpace` says whether sampling decodes sRGB.
+A compressed format, which stores blocks of 4 x 4 texels in a quarter or an eighth of the GPU memory of `rgba8unorm`. A texture from a KTX2 file takes the one that the device supports: `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` without alpha or `etc2-rgba8unorm` with it. A KTX2 file of high dynamic range data becomes `bc6h-rgb-ufloat`, which holds three half floats per texel and no alpha, where the device has BC formats. The names are WebGPU's, and a texture's `colorSpace` says whether sampling decodes sRGB.
 
 ### `Texture`
 

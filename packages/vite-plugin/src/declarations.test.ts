@@ -3,7 +3,12 @@ import { readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture } from '../../../tools/lib/fixture';
 import { declarationPath, wgslDeclaration, writeWgslDeclaration } from './declarations';
-import type { CompiledMaterial, CompiledShader } from './shader-types';
+import type {
+	CompiledEffect,
+	CompiledMaterial,
+	CompiledShader,
+	CompiledToneCurve,
+} from './shader-types';
 import { compileWgslFile } from './wgsl';
 
 /**
@@ -88,6 +93,40 @@ export default shader;
 	});
 });
 
+describe('the declarations of effects and tone curves', () => {
+	it('gives an effect the type of each uniform', () => {
+		const effect: CompiledEffect = {
+			kind: 'effect',
+			uniforms: [
+				{ name: 'amount', type: 'f32', offset: 0 },
+				{ name: 'tint', type: 'vec3f', offset: 4 },
+			],
+			depth: false,
+			variants: {},
+		};
+		expect(wgslDeclaration('/project/src/glow.wgsl', effect)).toBe(`${HEADER}\
+import type { CompiledEffect } from '@null3d/vite-plugin';
+
+declare const shader: CompiledEffect<{
+	readonly amount: 'f32';
+	readonly tint: 'vec3f';
+}>;
+export default shader;
+`);
+		const plain: CompiledEffect = { ...effect, uniforms: [] };
+		expect(wgslDeclaration('glow.wgsl', plain)).toContain(
+			'declare const shader: CompiledEffect<Record<never, never>>;',
+		);
+	});
+
+	it('gives a tone curve its own type', () => {
+		const curve: CompiledToneCurve = { kind: 'toneCurve', variants: {} };
+		expect(wgslDeclaration('glow.wgsl', curve)).toContain(
+			"import type { CompiledToneCurve } from '@null3d/vite-plugin';\n\ndeclare const shader: CompiledToneCurve;",
+		);
+	});
+});
+
 describe('writeWgslDeclaration', () => {
 	it('writes the declaration beside the file, and leaves an unchanged one alone', () => {
 		const root = fixture({ 'glow.wgsl': '' });
@@ -114,13 +153,13 @@ describe('writeWgslDeclaration', () => {
 });
 
 describe.skipIf(!ENABLED)('the declarations in the repository', () => {
-	it('match what the plugin writes for their WGSL files', () => {
+	it('match what the plugin writes for their WGSL files', async () => {
 		for (const path of [
 			'tests/fixtures/typed-uniforms/waves.wgsl',
 			'tests/pages/sketches/shaders/tint.wgsl',
 		]) {
 			const file = join(ROOT, path);
-			const compiled = compileWgslFile(path, file, readFileSync(file, 'utf8'));
+			const compiled = await compileWgslFile(path, file, readFileSync(file, 'utf8'));
 			if ('error' in compiled) throw new Error(compiled.error.message);
 			expect(readFileSync(declarationPath(file), 'utf8')).toBe(
 				wgslDeclaration(file, compiled.shader),

@@ -140,11 +140,14 @@ pub(crate) fn create(list: &mut DrawList, texture: u32) -> Result<(), RecordErro
     Ok(())
 }
 
-/// Records the upload of the table's texels into the texture that [`create`] made.
+/// Records the upload of the table's texels into the texture that [`create`] made, or into the
+/// first rows of another `RGBA32_FLOAT` texture from texel `column` across, as WebGL2 keeps it
+/// beside the material table's rows.
 pub(crate) fn upload(
     list: &mut DrawList,
     arena: &mut UploadArena,
     texture: u32,
+    column: u32,
 ) -> Result<(), RecordError> {
     // The core keeps the half floats, a quarter of the texels' bytes, and writes the texels here:
     // the scale, the bias, and two zeros.
@@ -157,7 +160,7 @@ pub(crate) fn upload(
     let bytes = BYTES as u32;
     list.push(
         Op::WriteTexture,
-        &[texture, 0, 0, 0, 0, SIZE, SIZE, 1, at, bytes],
+        &[texture, 0, column, 0, 0, SIZE, SIZE, 1, at, bytes],
     )?;
     Ok(())
 }
@@ -184,6 +187,20 @@ mod tests {
             .collect();
         // The copy's code also names a few hex numbers after the table: the half-float masks.
         assert_eq!(&halves[..HALVES.len()], &HALVES[..]);
+    }
+
+    #[test]
+    fn the_shaders_find_the_table_where_each_path_keeps_it() {
+        let tables = include_str!("../../null3d-shaders/wgsl/lib/tables.wgsl");
+        for line in [
+            format!("const DFG_SIZE: u32 = {SIZE}u;"),
+            format!(
+                "const DFG_COLUMN: u32 = {}u;",
+                crate::materials::MATERIAL_TEXELS
+            ),
+        ] {
+            assert!(tables.contains(&line), "lib/tables.wgsl lacks {line}");
+        }
     }
 
     #[test]

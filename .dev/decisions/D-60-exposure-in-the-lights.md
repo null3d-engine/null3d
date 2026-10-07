@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-E6.
 
+Summary: The core multiplies the exposure into every light, the background color and the fog color, and the shaders into the colors of materials and textures; the final pass's exposure is 1. A sun of 100,000 lux at EV100 15 then stores values near 1, and the image tests keep their references. `ev100` multiplies with `exposure`; point and spot lights take `intensityUnit: 'lumen'` as three.js's `power` does. Bloom's threshold is multiplied by the exposure, not divided.
+
 ## Question
 
 Where does the exposure scale the scene's color, so that scenes in real units stay inside the range of a 16-bit float? And how do the new inputs, `post.set({ ev100 })` and the lights' `intensityUnit`, combine with three.js's units? Ports keep those units ([D-52](D-52-intent-parity.md)).

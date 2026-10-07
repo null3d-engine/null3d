@@ -3,7 +3,8 @@
 //! - `ao`: ambient occlusion, as three.js's GTAOPass finds it, which darkens the ambient light of
 //!   the camera's opaque pass
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
-//! - `background`: a texture that the camera's view draws behind every object
+//! - `background`: what the camera's view draws behind every object: a texture, an environment, a
+//!   cube map or three.js's sky
 //! - `bloom`: light that spreads from the scene's brightest parts, as three.js's UnrealBloomPass
 //!   spreads it: a bright pass and five blurred levels that the final pass adds
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
@@ -17,7 +18,8 @@
 //! - `environment`: the scene's environment map, which standard materials reflect and take
 //!   diffuse light from, and its part of each frame's uniform block
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas, and grades it
-//! - `fog`: the scene's fog, with three.js's formulas, and its part of each frame's uniform block
+//! - `fog`: the scene's fog, by distance, height and sun glow, and its part of each frame's uniform
+//!   block
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
 //! - `frame_data`: the per-frame uniform block the shaders read
 //! - `frame_graph`: the engine's passes on the render graph, and the recording of its plan
@@ -46,7 +48,7 @@
 
 pub mod ao;
 pub mod arrays;
-mod background;
+pub mod background;
 pub mod bloom;
 pub mod camera;
 mod cells;
@@ -54,6 +56,7 @@ pub mod cpu_culled;
 pub mod debug_lines;
 pub mod debug_view;
 pub mod dfg;
+pub mod effects;
 pub mod environment;
 mod final_pass;
 pub mod fog;

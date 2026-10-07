@@ -10,11 +10,11 @@
 #import null3d::noise
 
 // The output transform: tone mapping, sRGB encoding and dithering. The final pass applies it to
-// the scene color. On the 8-bit path each fragment shader applies it itself. The tone mapping
-// curves come from the color module, which follows three.js's formulas, so a scene looks as it does
-// in three.js with the same curve and exposure. AgX's punchy look is Filament's, which three.js
-// does not offer. The HALF builds take the curves and the sRGB encoding from the half precision
-// module instead.
+// the scene color, and dithers last, after its other steps. On the 8-bit path each fragment shader
+// applies it itself. The tone mapping curves come from the color module, which follows three.js's
+// formulas, so a scene looks as it does in three.js with the same curve and exposure. AgX's punchy
+// look is Filament's, which three.js does not offer. The HALF builds take the curves and the sRGB
+// encoding from the half precision module instead.
 //
 // The scene's color is exposed color: the exposure scales each light where it starts, not the
 // scene color at the end. The core multiplies it into the frame's lights, its fog color and its
@@ -58,19 +58,25 @@ fn tone_map(exposed: vec3f, settings: Output) -> vec3f {
     return tone_map_aces(exposed);
 }
 
-/// A value from 0 to 1 that looks random from pixel to pixel, and stays the same for a pixel on
-/// every frame: a hash of the pixel's column and row.
+/// Triangle noise from -1 to 1 that looks random from pixel to pixel, and stays the same for a pixel
+/// on every frame: the sum of two values from 0 to 1, made from the two halves of a hash of the
+/// pixel's column and row, less 1. Values near 0 come most often. Noise of this shape leaves the
+/// same amount of noise at every brightness, where noise of even spread leaves bands at some
+/// (Mikkel Gjoel, "Banding in Games", 2016).
 fn pixel_noise(pixel: vec2f) -> f32 {
     let hash = null3d::noise::pcg(u32(pixel.x) + null3d::noise::pcg(u32(pixel.y)));
-    return null3d::noise::to_unit(hash);
+    return f32((hash & 0xffffu) + (hash >> 16u)) / 65535.0 - 1.0;
 }
 
-/// Encodes linear color from 0 to 1 as sRGB for an 8-bit target, and dithers it by up to half a
-/// step of that target, so smooth gradients show no bands. A color that the target holds exactly
-/// keeps its value.
+/// The dither of canvas pixel `pixel` for an 8-bit target: triangle noise of up to one step of
+/// that target, which hides the bands of smooth gradients.
+fn dither(pixel: vec2f) -> f32 {
+    return pixel_noise(pixel) / 255.0;
+}
+
+/// Encodes linear color from 0 to 1 as sRGB for an 8-bit target, and dithers it.
 fn encode(c: vec3f, pixel: vec2f) -> vec3f {
-    let dither = (pixel_noise(pixel) - 0.5) / 255.0;
-    return linear_to_srgb(c) + dither;
+    return linear_to_srgb(c) + dither(pixel);
 }
 
 /// The color that a scene shader writes for exposed linear color `c` at framebuffer position

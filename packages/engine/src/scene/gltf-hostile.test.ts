@@ -3,10 +3,15 @@
 
 import { describe, expect, test } from 'bun:test';
 import { MeshoptEncoder } from 'meshoptimizer/encoder';
+import { shippedDecoder } from '../../../../tests/lib/meshopt-checks';
 import { armBuilder, GltfBuilder, type GltfJson } from '../../../../tests/pages/lib/gltf-files';
-import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
+import {
+	avifHeader,
+	jpegHeader,
+	pngHeader,
+	webpHeader,
+} from '../../../../tests/pages/lib/image-headers';
 import { modelAllowance } from './file-limits';
-import { meshoptDecoder } from './gltf-meshopt';
 import { type GltfData, GltfError, parseGltf, readContainer } from './gltf-parse';
 
 const URL_OF = 'https://example.com/models/hostile.glb';
@@ -78,7 +83,7 @@ describe('names that every JavaScript object has', () => {
 	});
 
 	test('a meshopt mode and filter named "constructor" are refused', async () => {
-		const decode = await meshoptDecoder();
+		const decode = await shippedDecoder();
 		for (const [field, words] of [
 			['mode', 'has the mode constructor'],
 			['filter', 'has the filter constructor'],
@@ -129,7 +134,7 @@ describe("a file's total allocation", () => {
 	});
 
 	test('meshopt data that decodes to far more than its file stops at the limit', async () => {
-		const decode = await meshoptDecoder();
+		const decode = await shippedDecoder();
 		const b = new GltfBuilder().uses('EXT_meshopt_compression', true);
 		const count = 2_097_150;
 		const data = MeshoptEncoder.encodeGltfBuffer(
@@ -233,6 +238,18 @@ describe('images that claim more pixels than a texture holds', () => {
 			'image 0 cannot become a texture: its header gives 65536 x 65536 pixels, larger than the 4096 a side that it may have',
 		);
 		expect(refusal(textured([jpegHeader(8192, 64)], 'image/jpeg'))[1]).toContain('8192 x 64');
+	});
+
+	test('WebP and AVIF images that claim too many pixels fail the same way', () => {
+		for (const [bytes, mimeType] of [
+			[webpHeader(16383, 16383, 'lossless'), 'image/webp'],
+			[webpHeader(1, 65536), 'image/webp'],
+			[avifHeader(512, 512, [[8192, 8192]]), 'image/avif'],
+		] as const) {
+			const [code, message] = refusal(textured([bytes], mimeType));
+			expect(code).toBe('E1416');
+			expect(message).toContain('larger than the 4096 a side that it may have');
+		}
 	});
 
 	test("images within a texture's size still stop at the file's cap on decoded pixels", () => {

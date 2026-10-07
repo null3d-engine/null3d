@@ -1197,7 +1197,9 @@ impl SceneStorage {
                 let mask = command.a & flags::SETTABLE;
                 let f = &mut self.flags[slot as usize];
                 *f = (*f & !mask) | (command.b & mask);
-                if mask & flags::BOUNDS != 0 {
+                // A new world bounding sphere, or a new occluder mark, which the WebGPU builder
+                // keeps in the object's entry of its culling table, rewrites the object's data.
+                if mask & (flags::BOUNDS | flags::OCCLUDER) != 0 {
                     self.dirty.set(slot);
                 }
             }
@@ -1612,7 +1614,7 @@ impl UpdateContext<'_> {
         for i in dynamic {
             self.compute(self.order[(level.start + i) as usize], root);
         }
-        let previous_frame = self.frame.wrapping_sub(1);
+        let previous_frame = crate::frames::previous_frame(self.frame);
         for i in range.start.max(dynamic_count)..range.end.max(dynamic_count) {
             let slot = self.order[(level.start + i) as usize];
             let s = slot as usize;
@@ -1868,6 +1870,28 @@ mod tests {
             assert!(!scene.changed().get(still_slot), "frame {frame}");
         }
         assert_eq!(frame, 3);
+    }
+
+    #[test]
+    fn a_static_change_in_the_last_frame_of_the_count_reaches_the_other_buffer_in_the_first() {
+        use crate::frames::{FIRST_FRAME, next_frame, previous_frame};
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let last = previous_frame(FIRST_FRAME);
+        scene.apply_commands(&[c], previous_frame(last)).unwrap();
+        scene.update_transforms(&jobs);
+        let slot = scene.resolve(h).unwrap() as usize;
+        scene.positions_mut()[slot * 3] = 50.0;
+        scene.mark_dirty(h).unwrap();
+        scene.begin_frame(last);
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, h), [50.0, 0.0, 0.0]);
+        // The first frame copies the row that the last frame changed into its own buffer.
+        scene.begin_frame(next_frame(last));
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, h), [50.0, 0.0, 0.0]);
+        assert_eq!(scene.world(0).matrix(slot), scene.world(1).matrix(slot));
     }
 
     #[test]
@@ -2958,6 +2982,7 @@ mod tests {
         );
         let slot = scene.resolve(h).unwrap() as usize;
         assert_eq!(scene.current_world().sphere(slot)[2], 3_072.0);
+        assert_eq!(scene.cell_table().refused(), 1);
         // Once a cell frees up, the next update of the object moves it there.
         scene.cell_table_mut().release(5);
         scene.set_position(h, [0.0, 0.0, 3_073.0]).unwrap();

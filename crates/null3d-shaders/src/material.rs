@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 
 use null3d_gpu::drawlist::vertex;
 
-use crate::manifest::{Manifest, Pipeline, Target, Variant};
+use crate::manifest::{Manifest, Pipeline, Shader, Target, Variant};
 use crate::position::locate;
 use crate::scan::{Token, find_function, tokenize};
 use crate::textures::{self, Texture};
-use crate::uniforms::{self, Uniform};
+use crate::uniforms::{self, Owner, Uniform};
 use crate::{
     BuildError, Compiler, Inputs, MANIFEST_PATH, Position, Problem, VariantOutput, features,
 };
@@ -103,20 +103,33 @@ pub struct MaterialTemplate {
 impl MaterialTemplate {
     /// Finds the template in a manifest and its files.
     pub fn load(inputs: &Inputs) -> Result<Self, BuildError> {
+        Self::marked(inputs, "custom materials", "custom_materials", |shader| {
+            shader.custom_materials
+        })
+    }
+
+    /// Finds the one shader of a manifest that `marked` picks, the template of `what`, which the
+    /// manifest marks with `flag`.
+    pub(crate) fn marked(
+        inputs: &Inputs,
+        what: &str,
+        flag: &str,
+        marked: impl Fn(&Shader) -> bool,
+    ) -> Result<Self, BuildError> {
         let manifest = Manifest::parse(&inputs.manifest).map_err(|messages| {
             messages
                 .into_iter()
                 .map(|message| Problem::in_file(MANIFEST_PATH, message))
                 .collect::<BuildError>()
         })?;
-        let mut marked = manifest
+        let mut found = manifest
             .shaders
             .into_values()
-            .filter(|shader| shader.custom_materials);
-        let (Some(shader), None) = (marked.next(), marked.next()) else {
+            .filter(|shader| marked(shader));
+        let (Some(shader), None) = (found.next(), found.next()) else {
             return Err(Problem::in_file(
                 MANIFEST_PATH,
-                "custom materials need one template: mark exactly one shader with `custom_materials = true`.",
+                format!("{what} need one template: mark exactly one shader with `{flag} = true`."),
             )
             .into());
         };
@@ -124,7 +137,7 @@ impl MaterialTemplate {
             Problem::in_file(
                 MANIFEST_PATH,
                 format!(
-                    "the template for custom materials, \"{}\", does not exist.",
+                    "the template for {what}, \"{}\", does not exist.",
                     shader.file
                 ),
             )
@@ -140,9 +153,56 @@ impl MaterialTemplate {
         })
     }
 
-    /// The lines of the template before a custom material's first line.
+    /// The lines of the template before the first line of the WGSL that joins it.
     fn lines(&self) -> u32 {
         self.source.bytes().filter(|&byte| byte == b'\n').count() as u32
+    }
+
+    /// The template's source, which ends with a line break.
+    pub(crate) fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// The template's render pipelines.
+    pub(crate) fn pipelines(&self) -> &BTreeMap<String, Pipeline> {
+        &self.pipelines
+    }
+
+    /// The template's variants.
+    pub(crate) fn variants(&self) -> &BTreeMap<String, Variant> {
+        &self.variants
+    }
+
+    /// Points the problems of a build of the template with `own`, the WGSL that joined it after
+    /// the template's last line from file `path`, at the lines of `own`. A problem in the
+    /// template's own lines loses its place and gets `note`.
+    pub(crate) fn place_problems(
+        &self,
+        errors: &mut BuildError,
+        path: &str,
+        own: &str,
+        note: &str,
+    ) {
+        let before = self.lines();
+        let own = own.bytes().filter(|&byte| byte == b'\n').count() as u32 + 1;
+        for problem in &mut errors.problems {
+            if problem.file.as_deref() != Some(path) {
+                continue;
+            }
+            // A problem without a line, such as a GLSL writer's refusal of a WGSL form, can come
+            // from the joined code as well as from the template, so it gets no note.
+            match problem.line {
+                None => {}
+                Some(line) if line > before && line - before <= own => {
+                    problem.line = Some(line - before);
+                }
+                Some(_) => {
+                    problem.line = None;
+                    problem.column = None;
+                    problem.message = format!("{}\n{note}", problem.message);
+                }
+            }
+        }
     }
 }
 
@@ -154,6 +214,38 @@ pub struct MaterialSource {
     pub path: String,
     /// The WGSL: functions that the template calls, and anything they use.
     pub source: String,
+    /// The share of the builds to make, or `None` for every build.
+    #[serde(default)]
+    pub share: Option<Share>,
+}
+
+/// One share of a custom material's builds, so that several threads build one material at once
+/// and the caller joins their outputs. A share holds the builds whose place in the build order,
+/// counted from 0, leaves `index` when divided by `count`. Every share also holds the WebGPU builds
+/// without permutation bits, which give the vertex inputs that each output carries.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Share {
+    pub index: u32,
+    pub count: u32,
+}
+
+impl Share {
+    /// True when the share holds the build at `place` in the build order, of `variant`.
+    pub(crate) fn holds(self, place: u32, variant: &Variant, permutation: u32) -> bool {
+        place % self.count == self.index
+            || (permutation == 0 && variant.targets.contains(&Target::Wgsl))
+    }
+
+    /// The problem of a share that holds no place, or None.
+    fn problem(self) -> Option<Problem> {
+        (self.count == 0 || self.index >= self.count).then(|| {
+            Problem::general(format!(
+                "the shader compiler got share {} of {}: a share's index is below its count.",
+                self.index, self.count
+            ))
+        })
+    }
 }
 
 /// A custom material, built into every variant of the template, or a full shader.
@@ -250,13 +342,16 @@ fn built_inputs(built: &BTreeMap<String, VariantOutput>, entry: &str) -> (Vec<u3
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
 
 impl Compiler {
-    /// Builds a custom material's WGSL into every variant of the template. Problems in the WGSL
-    /// name its own lines; problems in the template's lines say so.
+    /// Builds a custom material's WGSL into every variant of the template, or into the builds of
+    /// its share. Problems in the WGSL name its own lines; problems in the template's lines say so.
     pub fn compile_material(
         &mut self,
         template: &MaterialTemplate,
         material: &MaterialSource,
     ) -> Result<MaterialOutput, BuildError> {
+        if let Some(problem) = material.share.and_then(Share::problem) {
+            return Err(BuildError::from_iter([problem]));
+        }
         let path = material.path.as_str();
         let tokens = tokenize(&material.source);
         let (vertex_entries, fragment_entries) = entry_points(&tokens);
@@ -291,8 +386,8 @@ impl Compiler {
             }
         };
         let room = texture_fields.len() as u32;
-        let uniforms =
-            uniforms::read(&tokens, &material.source, path, room).unwrap_or_else(|found| {
+        let uniforms = uniforms::read(&tokens, &material.source, path, room, Owner::Material)
+            .unwrap_or_else(|found| {
                 problems.extend(found);
                 None
             });
@@ -323,12 +418,15 @@ impl Compiler {
                 // WebGPU they draw skinned meshes from the skinning pass's vertices, so they need no
                 // SKIN builds there. WebGL2 skins in the vertex shader, so its builds keep the bit.
                 // They have no MORPH builds, which would double their WebGL2 builds again: on
-                // WebGL2 they draw morphed meshes at rest (decision record D-51).
+                // WebGL2 they draw morphed meshes at rest (decision record D-51). They read their
+                // instances from the culling shader's copies on every path, so they have no
+                // INSTANCE_INDEX builds (decision record D-23).
                 let skins = !variant.targets.contains(&Target::Wgsl);
+                let left_out = ["HALF", "MORPH", "INSTANCE_INDEX"];
                 let permutations = variant
                     .permutations
                     .iter()
-                    .filter(|bit| *bit != "HALF" && *bit != "MORPH" && (skins || *bit != "SKIN"))
+                    .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
                     .cloned()
                     .collect();
                 let variant = Variant {
@@ -347,34 +445,11 @@ impl Compiler {
             &source,
             &template.pipelines,
             &variants,
+            material.share,
             &str::to_owned,
             &mut errors,
         );
-        let before = template.lines();
-        let own = material
-            .source
-            .bytes()
-            .filter(|&byte| byte == b'\n')
-            .count() as u32
-            + 1;
-        for problem in &mut errors.problems {
-            if problem.file.as_deref() != Some(path) {
-                continue;
-            }
-            // A problem without a line, such as a GLSL writer's refusal of a WGSL form, can come
-            // from the material's own code as well as from the template, so it gets no note.
-            match problem.line {
-                None => {}
-                Some(line) if line > before && line - before <= own => {
-                    problem.line = Some(line - before);
-                }
-                Some(_) => {
-                    problem.line = None;
-                    problem.column = None;
-                    problem.message = format!("{}\n{TEMPLATE_NOTE}", problem.message);
-                }
-            }
-        }
+        template.place_problems(&mut errors, path, &material.source, TEMPLATE_NOTE);
         let vertex_entry = template.pipelines.values().next().map(|p| p.vertex.clone());
         let (locations, attributes) = built_inputs(&built, &vertex_entry.unwrap_or_default());
         errors.or(MaterialOutput {
@@ -449,6 +524,7 @@ impl Compiler {
             &source,
             &pipelines,
             &variants,
+            material.share,
             &str::to_owned,
             &mut errors,
         );

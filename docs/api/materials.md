@@ -119,6 +119,8 @@ A normal map takes its frame from the mesh's tangents when the mesh has them, as
 
 Until a map's image reaches the GPU, the material draws as without that map.
 
+On WebGL2, the maps of one material share at most six textures on the GPU. Maps with the same size, format and sampling count once, so a material rarely reaches the limit. [Texture arrays](textures.md#texture-arrays) says which maps a material drops past it.
+
 ## Texture coordinate transform
 
 `uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time.
@@ -320,7 +322,7 @@ WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` bloc
 
 | Member | Description |
 | --- | --- |
-| `readonly kind: 'material' \| 'shader'` | `'material'` for the functions of a custom material, and `'shader'` for a whole shader. |
+| `readonly kind: 'material' \| 'effect' \| 'toneCurve' \| 'shader'` | `'material'` for the functions of a custom material, `'effect'` for a custom effect, `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader. |
 
 ### `DepthBias`
 

@@ -12,6 +12,7 @@ import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
 import type { WAKE } from '../shared/wake';
+import type { WgslUpdate } from '../shared/wgsl-updates';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 
 export interface CoreHandoff {
@@ -93,6 +94,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	fps?: number;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
+	/** One port to each job worker, by index, for the on-demand loader's tasks. */
+	taskPorts: MessagePort[];
 	/** Each engine thread's name and the roles it runs, for `debug.frameStats`. */
 	threads: [string, number[]][];
 };
@@ -107,7 +110,12 @@ export type RenderWorkerInit = CoreHandoff &
 		imagePort: MessagePort;
 	};
 
-export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
+export type JobWorkerInit = CoreHandoff & {
+	type: 'init';
+	index: number;
+	/** The port that the on-demand loader sends this worker its tasks through. */
+	taskPort: MessagePort;
+};
 
 /**
  * A request any worker that owns a renderer takes: a capture, which it answers with the frame's
@@ -180,6 +188,8 @@ export type SketchWorkerMessage =
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }
+	/** Hot updates of the project's WGSL on the dev server, for the sketch's custom materials. */
+	| { type: 'wgsl'; updates: readonly WgslUpdate[] }
 	/** Ends the sketch worker's waits, where the threads wake each other with messages. */
 	| typeof WAKE;
 

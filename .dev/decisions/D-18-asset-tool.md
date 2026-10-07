@@ -2,6 +2,8 @@
 
 Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05, with near-constant tracks stored once by the owner's ruling of that day. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
 
+Summary: JavaScript on the official WebAssembly encoders, with the formats that the engine also reads from its Rust core built to WebAssembly, and the Vite plugin running the same steps with a cache. Every machine writes the same bytes. One encoder per thread did S6's 144 textures in 18 to 26 s on the Mac, against 130 s for the native encoder with all cores on one texture at a time.
+
 ## Question
 
 `bunx @null3d/cli assets optimize` turns glTF models into files that load and draw fast. Their meshes are quantized and reordered for the GPU's vertex cache, with levels of detail on request, and their textures are KTX2 files. Later commands add environment maps, conversions, blocker meshes and prebuilt BVHs. Which language and which encoders build the tool? And where do the formats that both the tool and the engine read come from?
@@ -138,7 +140,7 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 | Colors, joint weights | Normalized bytes; weights keep their sum at one | |
 | Index buffers | 16 bits when the vertices allow | |
 | Compression | `EXT_meshopt_compression` by default, lossless; `--compression none` leaves it out | The engine decodes meshopt in its loader's worker and downloads the decoder only for such files ([D-34](D-34-meshopt-decoding.md)). glTF-Transform writes the EXT form only, which the engine reads as it reads the KHR form |
-| Levels of detail | A half, a quarter and an eighth of the triangles, under an error of a tenth of the mesh, in `MSFT_lod` | The extension that exists for levels; three.js and the engine ignore it until they read levels |
+| Levels of detail | Planned by error, each about half the level above, in `MSFT_lod` with each level's error ([D-91](D-91-level-planning.md)) | The extension that exists for levels; three.js and the engine ignore it until they read levels |
 | Texture sizes | Each side at its nearest power of two, then halved together to fit 2048, and at least 4 | Full mip chains, fewer sizes for the engine's texture arrays, and whole 4 x 4 blocks, which the compressed formats need ([D-59](D-59-file-limits.md)) |
 | ETC1S | Quality 128, effort 2 | The basisu command's defaults |
 | UASTC | The default level, no rate-distortion pass, Zstandard | Normal maps keep their detail |
@@ -152,7 +154,7 @@ The dequantizing transform goes where it moves nothing else:
 - A skin puts it in its inverse bind matrices.
 - A node with children, a camera, a light, an animated transform or a place in a skeleton keeps its transform. Its mesh moves to a new child node.
 
-The simplifier keeps the seams where vertices at one place differ in normals or coordinates. In a mesh of flat faces, such as Kenney's buildings, every edge is a seam, and nothing simplifies. A level that saves too little tries again with the seams free to move. Before that change, 2 of the 213 Kenney models got levels, and after it 91 did.
+The simplifier keeps the seams where vertices at one place differ in normals or coordinates. In a mesh of flat faces, such as Kenney's buildings, every edge is a seam, and nothing simplifies. A level that saves too little tries again with the seams free to move. Before that change, 2 of the 213 Kenney models got levels, and after it 91 did. [D-91](D-91-level-planning.md) replaced this planning on 7 October 2026: 162 models now get levels.
 
 ### Clips
 

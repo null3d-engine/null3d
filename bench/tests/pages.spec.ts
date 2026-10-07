@@ -2,7 +2,7 @@
 // three.js pages, which must show the scene. The image test manifest compares null3D's hold frames
 // with their references, and the parity command compares them with three.js's.
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
@@ -121,6 +121,70 @@ const shortRunCount = (scene: (typeof SCENES)[number]): number =>
 			? createS4().count
 			: shortRunAsked(scene);
 
+/**
+ * Where a short run on SwiftShader counts as far slower than usual. On CI's runners, null3D started
+ * S4 in about 30 seconds, preset check included, and finished 0.3 to 0.4 frames a second. A start
+ * of twice that, or a third of that frame rate, means that the page itself got slower.
+ */
+const SWIFTSHADER_SLOWEST = { startMs: 60_000, completedFps: 0.1 };
+
+/** A run's frames, start time and frame rates, as one line for the log. */
+function runFigures(result: BenchReport): string {
+	const start = result.stats?.load?.engineStartMs;
+	const rate = (fps: number | null | undefined) => (fps == null ? 'no' : fps.toFixed(2));
+	return [
+		`${result.frames} frames counted`,
+		`start ${start === undefined ? 'not reported' : `${(start / 1000).toFixed(1)} s`}`,
+		`${rate(result.stats?.presentedFps)} frames a second presented`,
+		`${rate(result.stats?.completedFps)} finished`,
+	].join(', ');
+}
+
+/** Fails a run whose start or frame rate is far from the usual SwiftShader figures. */
+function expectUsualSpeed(name: string, result: BenchReport): void {
+	const start = result.stats?.load?.engineStartMs;
+	const fps = result.stats?.completedFps;
+	if (start !== undefined)
+		expect(start, `${name} took far longer than usual to start`).toBeLessThan(
+			SWIFTSHADER_SLOWEST.startMs,
+		);
+	if (fps != null)
+		expect(fps, `${name} drew far fewer frames than usual`).toBeGreaterThan(
+			SWIFTSHADER_SLOWEST.completedFps,
+		);
+}
+
+/**
+ * Runs a page's short benchmark with the switches after its seconds. A slow runner can make
+ * SwiftShader take seconds over each frame of S4, so that no frame both starts and finishes inside
+ * the measured time, and the run counts none. The page then runs once more with twice the time.
+ * Such a run prints both tries' figures as a warning, and fails when either try was far slower than
+ * usual, so the second try never hides a slower page. Runs on real GPUs never repeat.
+ */
+async function runShortBenchmark(
+	page: Page,
+	scene: (typeof SCENES)[number],
+	kind: PageKind,
+	switches = `n=${shortRunAsked(scene)}`,
+): Promise<BenchReport> {
+	const run = (seconds: number) =>
+		runPage<BenchReport>(page, pagePath(scene, kind, `seconds=${seconds}&${switches}`));
+	const seconds = shortRunSeconds(scene, kind);
+	const first = await run(seconds);
+	if (!SWIFTSHADER) return first;
+	const name = `${scene} on ${kind} (${switches})`;
+	console.log(`${name} on SwiftShader: ${runFigures(first)}`);
+	if (first.frames > 0) return first;
+	test.slow();
+	const second = await run(seconds * 2);
+	const message = `${name} counted no frame on SwiftShader in ${seconds} s, so it ran again for ${seconds * 2} s. First try: ${runFigures(first)}. Second try: ${runFigures(second)}.`;
+	console.log(`::warning title=A second try on SwiftShader::${message}`);
+	test.info().annotations.push({ type: 'second try on SwiftShader', description: message });
+	expectUsualSpeed(`${name}'s first try`, first);
+	expectUsualSpeed(`${name}'s second try`, second);
+	return second;
+}
+
 interface Report extends PageReport {
 	scene: string;
 	renderer: string;
@@ -144,6 +208,9 @@ interface BenchReport extends Report {
 	stats: {
 		drawCalls: { median: number; p99: number };
 		gpuPassMs: { name: string }[] | null;
+		presentedFps?: number;
+		completedFps?: number | null;
+		load?: { engineStartMs: number };
 	};
 }
 
@@ -218,10 +285,7 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 		test(`${scene} on ${kind} runs a short benchmark`, async ({ page }) => {
 			skipWhereTooSlow(`${scene} on ${kind}`);
 			if (isPhoneScene(scene)) await page.setViewportSize(PHONE_VIEWPORT);
-			const result = await runPage<BenchReport>(
-				page,
-				pagePath(scene, kind, `seconds=${shortRunSeconds(scene, kind)}&n=${shortRunAsked(scene)}`),
-			);
+			const result = await runShortBenchmark(page, scene, kind);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			expect(result.n).toBe(shortRunCount(scene));
 			expect(result.frames).toBeGreaterThan(0);
@@ -256,10 +320,7 @@ for (const kind of [
 	test(`s2 with shadows on ${kind} runs a short benchmark and shades its hold frame`, async ({
 		page,
 	}) => {
-		const result = await runPage<BenchReport>(
-			page,
-			pagePath('s2', kind, `seconds=${shortRunSeconds('s2', kind)}&n=${SHORT_RUN_COUNT}&shadows=2`),
-		);
+		const result = await runShortBenchmark(page, 's2', kind, `n=${SHORT_RUN_COUNT}&shadows=2`);
 		expect(result.frames).toBeGreaterThan(0);
 		const { width, height } = PARITY_CANVAS;
 		const brightness = async (switches: string) => {
@@ -274,43 +335,32 @@ for (const kind of [
  * The draw calls of S4's frames at Low with the governor off, as the gate's GPU comparison on the
  * iPad runs it. On WebGPU the GPU culls, so the draw calls do not depend on the view: the camera's
  * opaque pass and each shadow cascade draw S4's buckets, and the final pass draws one triangle.
- * Low keeps its far cascade to its turns of 4 frames, though S4's cars drive through it (D-16).
- * So most frames draw the near cascade alone, and one frame in 4 draws both. A new pass or draw
- * in these frames costs every phone that runs S4, so a change to these figures needs its reason
- * in .dev/implementation-notes.md.
+ * S4's cars drive through Low's far cascade, and far cascades follow moving casters on every
+ * preset (D-16), so every frame draws both cascades. A new pass or draw in these frames costs
+ * every phone that runs S4, so a change to this figure needs its reason in
+ * .dev/implementation-notes.md.
  */
-const S4_LOW_DRAW_CALLS = { nearCascadeOnly: 56, bothCascades: 63 };
+const S4_LOW_DRAW_CALLS = 63;
 /** The passes of S4's frames at Low: the culling, the cascades, the scene and the final pass. */
 const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
-/** Enough measured frames to hold a frame that draws the far cascade, which draws 1 in 4. */
-const S4_LOW_FRAMES_WITH_TURNS = 8;
 
 function s4LowPassesTest(): void {
-	test('s4 on null3d-webgpu at Low draws the far cascade in its turns and no other pass', async ({
+	test('s4 on null3d-webgpu at Low draws both cascades in every frame and no other pass', async ({
 		page,
 	}) => {
 		await page.setViewportSize(PHONE_VIEWPORT);
-		const result = await runPage<BenchReport>(
-			page,
-			pagePath(
-				's4',
-				'null3d-webgpu',
-				`seconds=${shortRunSeconds('s4', 'null3d-webgpu')}&preset=low&governor=off`,
-			),
-		);
+		const result = await runShortBenchmark(page, 's4', 'null3d-webgpu', 'preset=low&governor=off');
 		expect(result.frames).toBeGreaterThan(0);
 		const { drawCalls, gpuPassMs } = result.stats;
-		expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS.nearCascadeOnly);
-		if (result.frames >= S4_LOW_FRAMES_WITH_TURNS)
-			expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS.bothCascades);
-		else expect(drawCalls.p99).toBeLessThanOrEqual(S4_LOW_DRAW_CALLS.bothCascades);
+		expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS);
+		expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS);
 		// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
 		if (gpuPassMs) {
 			const passes = gpuPassMs
 				.map((part) => part.name)
 				.filter((name) => name !== 'copies' && name !== 'between passes');
 			expect(S4_LOW_PASSES).toEqual(expect.arrayContaining(passes));
-			expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES.slice(0, 4)));
+			expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES));
 		}
 	});
 }

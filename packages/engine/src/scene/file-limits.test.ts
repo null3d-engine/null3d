@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
+import {
+	avifHeader,
+	jpegHeader,
+	pngHeader,
+	webpHeader,
+} from '../../../../tests/pages/lib/image-headers';
 import { FILE_LIMITS, FileBudget, imageSize, imageTooLarge, modelAllowance } from './file-limits';
 
 describe('imageSize', () => {
@@ -10,7 +15,37 @@ describe('imageSize', () => {
 		expect(imageSize(jpegHeader(30, 20, 5000))).toEqual([30, 20]);
 	});
 
+	test("reads each kind of WebP's first chunk", () => {
+		expect(imageSize(webpHeader(300, 200, 'lossy'))).toEqual([300, 200]);
+		expect(imageSize(webpHeader(16383, 1, 'lossless'))).toEqual([16383, 1]);
+		expect(imageSize(webpHeader(65536, 65536, 'extended'))).toEqual([65536, 65536]);
+	});
+
+	test("takes an AVIF's largest image spatial extents, as an alpha plane or a grid adds more", () => {
+		expect(imageSize(avifHeader(640, 480))).toEqual([640, 480]);
+		expect(
+			imageSize(
+				avifHeader(512, 512, [
+					[512, 512],
+					[65536, 64],
+				]),
+			),
+		).toEqual([65536, 512]);
+	});
+
 	test('gives nothing for other formats and for headers cut short', () => {
+		expect(imageSize(webpHeader(64, 64, 'lossy').slice(0, 24))).toBeUndefined();
+		expect(imageSize(avifHeader(64, 64).slice(0, 40))).toBeUndefined();
+		// An ISO file of another brand, such as a HEIC photo, is not an AVIF.
+		const heic = avifHeader(64, 64);
+		heic.set(new TextEncoder().encode('heic'), 8);
+		heic.set(new TextEncoder().encode('heix'), 16);
+		heic.set(new TextEncoder().encode('heix'), 20);
+		expect(imageSize(heic)).toBeUndefined();
+		// A box that claims more bytes than the file holds is read up to the file's end.
+		const long = avifHeader(64, 64);
+		new DataView(long.buffer).setUint32(24, 0xffffffff);
+		expect(imageSize(long)).toEqual([64, 64]);
 		expect(imageSize(new TextEncoder().encode('GIF89a'))).toBeUndefined();
 		expect(imageSize(new Uint8Array())).toBeUndefined();
 		expect(imageSize(pngHeader(64, 64).slice(0, 20))).toBeUndefined();

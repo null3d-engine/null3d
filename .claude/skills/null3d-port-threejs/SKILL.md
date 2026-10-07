@@ -103,7 +103,7 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`. It 
 | `matrixAutoUpdate = false` on still objects | Nothing | Objects are static by default and cost nothing until a setter changes them |
 | `renderer.compile` or `compileAsync` after loading | `await scene.warmUp()` in the sketch, and wait for `engine.firstFrame` on the page | The first frame waits for its pipelines; warm up a later loading stage before you show it |
 | Resize handlers and `setSize` | Nothing | The engine follows the canvas size |
-| `EffectComposer` pass chains | `post.set` (tone mapping now, effects in 0.2) and `post.addEffect` (0.2) | The chain is built in and merged into few passes |
+| `EffectComposer` pass chains | `post.set` settings, and `post.addEffect` (0.2) for each custom `ShaderPass` | The chain is built in and merged into few passes. Each custom effect is a full-screen pass of its own |
 | `localStorage` in scene code | Keep it on the page, or use IndexedDB, which workers have | Workers have no `localStorage` |
 
 ## 4. Settings that change the look

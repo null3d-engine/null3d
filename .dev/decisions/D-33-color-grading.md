@@ -1,6 +1,8 @@
 # D-33: Color grading and the vignette
 
-Status: decided, 2026-10-03. Date: 2026-10-03. Task: M2-F3.
+Status: decided, 2026-10-03; by the owner on 2026-10-04, the vignette moves into HDR and the dither runs last. Date: 2026-10-03. Task: M2-F3.
+
+Summary: Values of the final pass's settings, not shader builds, so turning them on builds no pipeline. Tables are 3D textures of the texture store in 8-bit color; `post.set` takes `LUTPass`'s and `VignetteShader`'s numbers, and draws on every path, the 8-bit path included.
 
 ## Question
 
@@ -83,4 +85,6 @@ The owner settled the vignette's default that evening, as ruling 3 of [D-53](D-5
 - Tables stay after the tone curve: grading tools author them for display color. No grading controls come in M2 (ruling 25). When they come, a job worker bakes them with the tone curve into one 32³ table on each change, as Filament does.
 - The `lut-vignette` parity scene keeps its strict limit until the vignette moves. Then the vignette gets null3D's own references and a sanity comparison, and the table keeps its strict test in a scene without a vignette.
 
-The work is the proposed task M2-F9, with `R11F_G11F_B10F` scene color on WebGL2 after prototype P3.
+The work is task M2-F9. Prototype P3 then measured `R11F_G11F_B10F` scene color on WebGL2, and WebGL2 keeps `RGBA16F` ([D-77](D-77-final-pass-order-and-formats.md#the-phones-p3)).
+
+[D-77](D-77-final-pass-order-and-formats.md) records the build: the vignette's new settings and its falloff, the dither, and the WebGL2 format's probe and switch. The `lut-vignette` parity scene became a sanity comparison.

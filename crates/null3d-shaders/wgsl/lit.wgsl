@@ -20,12 +20,15 @@ enable draw_index;
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
-// a sampler of its own. A map reads
+// a sampler. A map reads
 // the first texture coordinates, or the second where the material's flags say so, through the
 // material's texture coordinate transform. A map whose image is not on the GPU yet has no layer,
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
 // tangents with VERTEX_TANGENT, and otherwise from how the position and the texture coordinates
-// change between pixels, as three.js's getTangentFrame makes it.
+// change between pixels, as three.js's getTangentFrame makes it. On WebGPU each map has a texture
+// array and a sampler of its own. WebGL2 gives a stage only 16 texture units, so there the maps
+// share a few units: maps whose texture arrays and samplers are the same share one, and each map's
+// layer in the row also names its unit.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
 // shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the
@@ -64,7 +67,7 @@ enable draw_index;
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
-#import null3d::mesh::{map_layer, map_ready, straight_texel, world_direction}
+#import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
 #endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -93,24 +96,22 @@ const SECOND_UV: u32 = 256u;
 var<private> specular_texel: vec4f;
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
-// records and the data textures: each slot's texture array, then each slot's sampler.
+// records and the data textures. On WebGPU it holds each slot's texture array, then each slot's
+// sampler. On WebGL2 it holds the shared units' texture arrays from binding 0, and their samplers
+// from the binding after the last slot's texture.
 #ifdef WEBGL2
-@group(3) @binding(0) var base_color_map: texture_2d_array<f32>;
-@group(3) @binding(1) var metal_rough_map: texture_2d_array<f32>;
-@group(3) @binding(2) var normal_map: texture_2d_array<f32>;
-@group(3) @binding(3) var occlusion_map: texture_2d_array<f32>;
-@group(3) @binding(4) var emissive_map: texture_2d_array<f32>;
-@group(3) @binding(5) var light_map: texture_2d_array<f32>;
-@group(3) @binding(6) var specular_intensity_map: texture_2d_array<f32>;
-@group(3) @binding(7) var specular_color_map: texture_2d_array<f32>;
-@group(3) @binding(8) var base_color_sampler: sampler;
-@group(3) @binding(9) var metal_rough_sampler: sampler;
-@group(3) @binding(10) var normal_sampler: sampler;
-@group(3) @binding(11) var occlusion_sampler: sampler;
-@group(3) @binding(12) var emissive_sampler: sampler;
-@group(3) @binding(13) var light_sampler: sampler;
-@group(3) @binding(14) var specular_intensity_sampler: sampler;
-@group(3) @binding(15) var specular_color_sampler: sampler;
+@group(3) @binding(0) var unit_0_map: texture_2d_array<f32>;
+@group(3) @binding(1) var unit_1_map: texture_2d_array<f32>;
+@group(3) @binding(2) var unit_2_map: texture_2d_array<f32>;
+@group(3) @binding(3) var unit_3_map: texture_2d_array<f32>;
+@group(3) @binding(4) var unit_4_map: texture_2d_array<f32>;
+@group(3) @binding(5) var unit_5_map: texture_2d_array<f32>;
+@group(3) @binding(8) var unit_0_sampler: sampler;
+@group(3) @binding(9) var unit_1_sampler: sampler;
+@group(3) @binding(10) var unit_2_sampler: sampler;
+@group(3) @binding(11) var unit_3_sampler: sampler;
+@group(3) @binding(12) var unit_4_sampler: sampler;
+@group(3) @binding(13) var unit_5_sampler: sampler;
 #else
 @group(1) @binding(0) var base_color_map: texture_2d_array<f32>;
 @group(1) @binding(1) var metal_rough_map: texture_2d_array<f32>;
@@ -157,6 +158,36 @@ fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
 fn transformed_uv(uv: vec2f, uv_u: vec4f, uv_v: vec4f) -> MapUv {
     let at = vec2f(dot(uv_u.xyz, vec3f(uv, 1.0)), dot(uv_v.xyz, vec3f(uv, 1.0)));
     return MapUv(at, dpdx(at), dpdy(at));
+}
+
+/// The texel of the map of `slot`, whose layer as the row holds it is `layer`, at `at`.
+fn map_texel(slot: u32, layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+#ifdef WEBGL2
+    switch map_unit(layer) {
+        case 0u: { return textureSampleGrad(unit_0_map, unit_0_sampler, at.uv, l, at.dx, at.dy); }
+        case 1u: { return textureSampleGrad(unit_1_map, unit_1_sampler, at.uv, l, at.dx, at.dy); }
+        case 2u: { return textureSampleGrad(unit_2_map, unit_2_sampler, at.uv, l, at.dx, at.dy); }
+        case 3u: { return textureSampleGrad(unit_3_map, unit_3_sampler, at.uv, l, at.dx, at.dy); }
+        case 4u: { return textureSampleGrad(unit_4_map, unit_4_sampler, at.uv, l, at.dx, at.dy); }
+        default: { return textureSampleGrad(unit_5_map, unit_5_sampler, at.uv, l, at.dx, at.dy); }
+    }
+#else
+    switch slot {
+        case 0u: { return textureSampleGrad(base_color_map, base_color_sampler, at.uv, l, at.dx, at.dy); }
+        case 1u: { return textureSampleGrad(metal_rough_map, metal_rough_sampler, at.uv, l, at.dx, at.dy); }
+        case 2u: { return textureSampleGrad(normal_map, normal_sampler, at.uv, l, at.dx, at.dy); }
+        case 3u: { return textureSampleGrad(occlusion_map, occlusion_sampler, at.uv, l, at.dx, at.dy); }
+        case 4u: { return textureSampleGrad(emissive_map, emissive_sampler, at.uv, l, at.dx, at.dy); }
+        case 5u: { return textureSampleGrad(light_map, light_sampler, at.uv, l, at.dx, at.dy); }
+        case 6u: {
+            return textureSampleGrad(specular_intensity_map, specular_intensity_sampler, at.uv, l, at.dx, at.dy);
+        }
+        default: {
+            return textureSampleGrad(specular_color_map, specular_color_sampler, at.uv, l, at.dx, at.dy);
+        }
+    }
+#endif
 }
 #endif
 
@@ -296,75 +327,37 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     let position_dy = dpdy(input.relativePosition) * ROWS_UP;
     let position_dx = dpdx(input.relativePosition);
     if map_ready(m.maps.x) {
-        let at = map_uv(flags, 0u, first, second);
-        let sampled = textureSampleGrad(
-            base_color_map,
-            base_color_sampler,
-            at.uv,
-            map_layer(m.maps.x),
-            at.dx,
-            at.dy,
-        );
-        let texel = straight_texel(m, sampled);
+        let texel = straight_texel(m, map_texel(0u, m.maps.x, map_uv(flags, 0u, first, second)));
         s.baseColor *= texel.rgb;
         s.alpha *= texel.a;
     }
     if map_ready(m.maps.y) {
-        let at = map_uv(flags, 1u, first, second);
-        let layer = map_layer(m.maps.y);
-        let texel = textureSampleGrad(metal_rough_map, metal_rough_sampler, at.uv, layer, at.dx, at.dy);
+        let texel = map_texel(1u, m.maps.y, map_uv(flags, 1u, first, second));
         s.roughness *= texel.g;
         s.metalness *= texel.b;
     }
     if map_ready(m.maps.w) {
-        let at = map_uv(flags, 3u, first, second);
-        let layer = map_layer(m.maps.w);
-        let texel = textureSampleGrad(occlusion_map, occlusion_sampler, at.uv, layer, at.dx, at.dy);
+        let texel = map_texel(3u, m.maps.w, map_uv(flags, 3u, first, second));
         s.occlusion = (texel.r - 1.0) * m.strengths.x + 1.0;
     }
     if map_ready(m.more_maps.x) {
-        let at = map_uv(flags, 4u, first, second);
-        let layer = map_layer(m.more_maps.x);
-        let texel = textureSampleGrad(emissive_map, emissive_sampler, at.uv, layer, at.dx, at.dy);
-        s.emissive *= texel.rgb;
+        s.emissive *= map_texel(4u, m.more_maps.x, map_uv(flags, 4u, first, second)).rgb;
     }
     if map_ready(m.more_maps.y) {
-        let at = map_uv(flags, 5u, first, second);
-        let layer = map_layer(m.more_maps.y);
-        let texel = textureSampleGrad(light_map, light_sampler, at.uv, layer, at.dx, at.dy);
+        let texel = map_texel(5u, m.more_maps.y, map_uv(flags, 5u, first, second));
         s.irradiance = texel.rgb * m.strengths.y;
     }
     specular_texel = vec4f(1.0);
     if map_ready(m.more_maps.z) {
-        let at = map_uv(flags, 6u, first, second);
-        let layer = map_layer(m.more_maps.z);
-        let texel = textureSampleGrad(
-            specular_intensity_map,
-            specular_intensity_sampler,
-            at.uv,
-            layer,
-            at.dx,
-            at.dy,
-        );
-        specular_texel.a = texel.a;
+        specular_texel.a = map_texel(6u, m.more_maps.z, map_uv(flags, 6u, first, second)).a;
     }
     if map_ready(m.more_maps.w) {
-        let at = map_uv(flags, 7u, first, second);
-        let layer = map_layer(m.more_maps.w);
-        let texel = textureSampleGrad(
-            specular_color_map,
-            specular_color_sampler,
-            at.uv,
-            layer,
-            at.dx,
-            at.dy,
-        );
+        let texel = map_texel(7u, m.more_maps.w, map_uv(flags, 7u, first, second));
         specular_texel = vec4f(texel.rgb, specular_texel.a);
     }
     if map_ready(m.maps.z) {
         let at = map_uv(flags, 2u, first, second);
-        let layer = map_layer(m.maps.z);
-        let texel = textureSampleGrad(normal_map, normal_sampler, at.uv, layer, at.dx, at.dy);
+        let texel = map_texel(2u, m.maps.z, at);
         let bent = vec3f((texel.xy * 2.0 - 1.0) * m.surface.zw, texel.z * 2.0 - 1.0);
         let normal = input.normal;
         let facing = select(-1.0, 1.0, input.frontFacing);
@@ -429,7 +422,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let source_tangent = vec3f(0.0);
 #endif
 #ifdef MORPH
-    let rest = morph_vertex(found, v.morph, Morphed(mesh_position(v.position), v.normal, source_tangent));
+    var source = Morphed(mesh_position(v.position), v.normal, source_tangent, vec4f(1.0));
+#ifdef VERTEX_COLOR
+    source.color = v.vertex_color;
+#endif
+    let rest = morph_vertex(found, v.morph, source);
     let rest_position = rest.position;
     let rest_normal = rest.normal;
     let rest_tangent = rest.tangent;
@@ -456,7 +453,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.normal = world_normal(found, normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
+#ifdef MORPH
+    out.vertex_color = rest.color;
+#else
     out.vertex_color = v.vertex_color;
+#endif
 #endif
 #ifdef MAPS
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));

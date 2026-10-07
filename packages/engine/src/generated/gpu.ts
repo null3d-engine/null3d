@@ -65,6 +65,9 @@ export const FORMAT_ETC2_RGBA8_UNORM = 17;
 export const FORMAT_ETC2_RGBA8_UNORM_SRGB = 18;
 export const FORMAT_RGB9E5_UFLOAT = 19;
 export const FORMAT_R32_FLOAT = 20;
+export const FORMAT_BC6H_RGB_UFLOAT = 21;
+export const FORMAT_DEPTH16_UNORM = 22;
+export const FORMAT_RGBA32_UINT = 23;
 
 export const VIEW_2D = 0;
 export const VIEW_2D_ARRAY = 1;
@@ -117,9 +120,14 @@ export const LAYOUT_BLOOM = 9;
 export const LAYOUT_FINAL_BLOOM = 10;
 export const LAYOUT_JOINTS = 11;
 export const LAYOUT_SKIN = 12;
+export const LAYOUT_DEPTH_PYRAMID = 14;
 export const LAYOUT_AO_DEPTH = 16;
 export const LAYOUT_AO_DEPTH_MS = 17;
 export const LAYOUT_AO = 18;
+export const LAYOUT_BACKGROUND = 19;
+export const LAYOUT_INSTANCE_INDEX = 20;
+export const LAYOUT_EFFECT = 21;
+export const LAYOUT_EFFECT_DEPTH_MS = 22;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -138,6 +146,8 @@ export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
 export const PERMUTATION_OUTLINE_VISIBLE = 65536;
+export const PERMUTATION_INSTANCE_INDEX = 131072;
+export const PERMUTATION_DEPTH_MULTISAMPLED = 262144;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -170,6 +180,7 @@ export const STATE_BLEND_ADDITIVE = 64;
 export const STATE_BLEND_MULTIPLY = 96;
 export const STATE_DEPTH_EQUAL = 128;
 export const STATE_NO_COLOR_WRITE = 256;
+export const STATE_DEPTH_OR_EQUAL = 1024;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
@@ -191,12 +202,17 @@ export const TEMPLATE_SKIN = 20;
 export const TEMPLATE_OUTLINE_MASK = 21;
 export const TEMPLATE_SPRITE = 22;
 export const TEMPLATE_SPRITE_MAP = 23;
+export const TEMPLATE_OCCLUSION_EARLY = 24;
+export const TEMPLATE_OCCLUSION_LATE = 25;
+export const TEMPLATE_DEPTH_PYRAMID = 28;
 export const TEMPLATE_LINE = 29;
 export const TEMPLATE_LINE_LIT = 30;
 export const TEMPLATE_AO_DEPTH = 31;
 export const TEMPLATE_AO_DEPTH_MS = 32;
 export const TEMPLATE_AO = 33;
 export const TEMPLATE_AO_DENOISE = 34;
+export const TEMPLATE_BACKGROUND_CUBE = 35;
+export const TEMPLATE_BACKGROUND_SKY = 36;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -216,32 +232,37 @@ export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
+export const SIZE_INDEX_STRIDE = 16;
 export const SIZE_FRAME_UNIFORM_BYTES = 512;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
-export const SIZE_BUCKET_WORDS = 9;
+export const SIZE_BUCKET_WORDS = 10;
 export const SIZE_MATRIX_TEXELS = 3;
 export const SIZE_MATRICES_PER_TEXTURE_ROW = 512;
 export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;
 export const SIZE_LIGHT_RECORD_BYTES = 64;
-export const SIZE_LIGHTS_PER_TEXTURE_ROW = 512;
+export const SIZE_LIGHTS_PER_TEXTURE_ROW = 256;
+export const SIZE_GRID_WORDS_PER_TEXTURE_ROW = 4096;
 export const SIZE_DRAW_RECORD_BYTES = 16;
 export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
 export const SIZE_MATERIAL_BYTES = 144;
 export const SIZE_MAP_SLOTS = 8;
+export const SIZE_SHARED_MAP_UNITS = 6;
 export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
+export const SIZE_CULL_OCCLUSION_BYTES = 96;
 export const SIZE_LINE_VERTEX_BYTES = 16;
-export const SIZE_SHADOW_UNIFORM_BYTES = 352;
+export const SIZE_SHADOW_UNIFORM_BYTES = 368;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
+export const SIZE_BACKGROUND_UNIFORM_BYTES = 128;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
-export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4];
+export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4, 16, 2, 16];
 /** Texels on each side of a block of each format, by format code. */
-export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1];
+export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 4, 1, 1];
 /** Each vertex attribute type by code: its bytes per value, its largest value (1 for floats), and whether it reads as fractions. */
 export const VERTEX_TYPES: readonly (readonly [bytes: number, max: number, normalized: boolean])[] = [[4, 1, false], [1, 255, true], [1, 127, true], [2, 65535, true], [2, 32767, true], [1, 255, false], [1, 127, false], [2, 65535, false], [2, 32767, false]];
 /** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */

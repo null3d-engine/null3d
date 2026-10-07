@@ -10,6 +10,7 @@ import {
 	loadCore,
 	MAX_MAXIMUM_MIB,
 	MEMORY_RETRY_MS,
+	MEMORY_WAIT_NOTICE_MS,
 	MIN_MAXIMUM_MIB,
 	maximumPages,
 	memoryMaximumMiB,
@@ -276,7 +277,7 @@ describe('loadCore', () => {
 		}) as typeof fetch;
 		await loadCore('threaded');
 		expect(asked).toHaveLength(1);
-		expect(asked[0]).toEndWith('/threaded/null3d_bg.wasm?no-inline');
+		expect(asked[0]).toEndWith('/threaded/null3d_bg.wasm');
 	});
 
 	it('creates the shared memory with the maximum it is asked for', async () => {
@@ -414,13 +415,19 @@ describe("the page's early core download", () => {
 
 describe('createSharedMemory', () => {
 	const DESCRIPTOR = { initial: 18, maximum: 16_384, shared: true };
-	/** A browser that refuses the memory `refusals` times, and the waits between the tries. */
+	/**
+	 * A browser that refuses the memory `refusals` times, the waits between the tries, and a clock
+	 * that the waits move on, with the times at which the page heard that the engine still waits.
+	 */
 	function browser(refusals: number) {
 		const pauses: number[] = [];
+		const notices: number[] = [];
 		let tries = 0;
+		let now = 0;
 		const memory = {} as WebAssembly.Memory;
 		return {
 			pauses,
+			notices,
 			tries: () => tries,
 			create: () => {
 				tries++;
@@ -429,6 +436,10 @@ describe('createSharedMemory', () => {
 			},
 			pause: async (ms: number) => {
 				pauses.push(ms);
+				now += ms;
+			},
+			stillWaiting: () => {
+				notices.push(now);
 			},
 			memory,
 		};
@@ -447,20 +458,50 @@ describe('createSharedMemory', () => {
 		expect(busy.pauses).toEqual([50, 100, 200]);
 	});
 
-	it('fails with E1109 after about 10 seconds of refusals', async () => {
+	it('frees room once, at the first refusal, and not when the browser has room', async () => {
+		let freed = 0;
+		const freeRoom = () => {
+			freed++;
+		};
+		const room = browser(0);
+		await createSharedMemory(DESCRIPTOR, room.create, room.pause, freeRoom);
+		expect(freed).toBe(0);
+		const busy = browser(3);
+		await createSharedMemory(DESCRIPTOR, busy.create, busy.pause, freeRoom);
+		expect(freed).toBe(1);
+	});
+
+	it('fails with E1109 after about 45 seconds of refusals, and tells the page once at 10', async () => {
 		const full = browser(Number.POSITIVE_INFINITY);
 		let error: EngineError | undefined;
 		try {
-			await createSharedMemory(DESCRIPTOR, full.create, full.pause);
+			await createSharedMemory(DESCRIPTOR, full.create, full.pause, () => {}, full.stillWaiting);
 		} catch (e) {
 			error = e as EngineError;
 		}
 		expect(error).toBeInstanceOf(EngineError);
 		expect(error?.code).toBe('E1109');
 		expect(error?.message).toContain(
-			"the browser refused the engine's shared memory of 1024 MiB 9 times over 10 seconds: Out of memory.",
+			"the browser refused the engine's shared memory of 1024 MiB 13 times over 45 seconds: Out of memory.",
 		);
 		expect(full.pauses).toEqual([...MEMORY_RETRY_MS]);
-		expect(full.pauses.reduce((sum, ms) => sum + ms, 0)).toBe(9_550);
+		expect(full.pauses).toEqual([50, 100, 200, 400, 800, 1600, 3200, 6400, 8000, 8000, 8000, 8000]);
+		expect(full.pauses.reduce((sum, ms) => sum + ms, 0)).toBe(44_750);
+		// The first refusal after 10 s of waits, at the try 12.75 s in.
+		expect(full.notices).toEqual([12_750]);
+		expect(full.notices[0]).toBeGreaterThanOrEqual(MEMORY_WAIT_NOTICE_MS);
+	});
+
+	it('tells the page only when a try after 10 seconds of waits is refused too', async () => {
+		const busy = browser(8);
+		expect(
+			await createSharedMemory(DESCRIPTOR, busy.create, busy.pause, () => {}, busy.stillWaiting),
+		).toBe(busy.memory);
+		expect(busy.notices).toEqual([]);
+		const late = browser(9);
+		expect(
+			await createSharedMemory(DESCRIPTOR, late.create, late.pause, () => {}, late.stillWaiting),
+		).toBe(late.memory);
+		expect(late.notices).toEqual([12_750]);
 	});
 });

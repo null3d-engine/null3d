@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. Sections 1 to 5 and 8 to 10 apply now, apart from the parts marked (0.2). Do not ship code that uses those until their docs pages say they are built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are custom post effects and tone curves (0.2). Sections 1 to 6 and 8 to 10 apply now, apart from the parts marked (0.2) that say they come later. Custom passes (section 7) are not built yet. Do not ship code that uses a part until its docs page says it is built.
 
 ## Contents
 
@@ -11,8 +11,8 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 3. Built-in values
 4. Uniforms, textures and per-instance data
 5. Vertex offsets and full shaders
-6. Custom post effects (0.2)
-7. Custom passes (0.2)
+6. Custom post effects and tone curves (0.2)
+7. Custom passes (later in 0.2)
 8. Portable WGSL rules
 9. Imports from the shader library
 10. Debugging shaders
@@ -24,7 +24,7 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
 | Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows use the unmoved vertices) |
 | Something the lighting model cannot express (holograms, custom lighting) | Full shader | No: you write everything |
-| A full-screen image effect | Post effect (section 6) | Not applicable |
+| A full-screen image effect, or a tone curve of your own | Post effect or tone curve (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
 
 Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change. The docs pages' status says what is built: `shaders/surface-functions`, `shaders/builtins`, `guides/custom-shaders`.
@@ -237,28 +237,56 @@ fn fs(in: Varyings) -> @location(0) vec4f {
 - `null3d::mesh` gives `find_instance`, `clip_position`, `relative_position`, `world_normal` and `finish`; positions are relative to the camera.
 - Full shaders get no lighting, shadows or fog, no standard values and no uniforms. Import `null3d::lighting` or `null3d::fog` helpers for your own.
 
-## 6. Custom post effects (0.2)
+## 6. Custom post effects and tone curves (0.2)
+
+An effect is a WGSL function that the engine calls for each pixel, in a full-screen pass of its own. It runs on linear HDR color after the exposure, before bloom and the tone curve. Engine docs: `guides/custom-passes`, `api/post`.
 
 ```ts
-post.addEffect({
-  name: 'vignette-pulse',
-  stage: 'final',           // 'final': after tone mapping, merged into the final pass
-                            // 'hdr': before tone mapping, own pass, may read neighbors freely
-  uniforms: { strength: 0.35 },
-  wgsl: /* wgsl */ `
-    fn effect(input: EffectInput) -> vec4f {
-      // EffectInput: uv, fragCoord, resolution; helpers: sampleScene(uv), sampleDepth(uv)
-      let c = sampleScene(input.uv);
-      let d = distance(input.uv, vec2f(0.5));
-      let v = 1.0 - effect.strength * (0.8 + 0.2 * sin(frame.time * 2.0)) * d * d * 2.0;
-      return vec4f(c.rgb * v, c.a);
-    }`,
-});
+const pulse = /* wgsl */ `
+  struct Uniforms { strength: f32 }
+
+  fn effect(input: EffectInput) -> vec4f {
+    let d = distance(input.uv, vec2f(0.5));
+    let v = 1.0 - uniforms.strength * (0.8 + 0.2 * sin(input.time * 2.0)) * d * d * 2.0;
+    return vec4f(input.color.rgb * v, input.color.a);
+  }`;
+
+const vignette = post.addEffect({ wgsl: pulse, uniforms: { strength: 0.35 } });
+post.setEffectUniform(vignette, 'strength', 0.5);   // allocates nothing; fine every frame
+post.removeEffect(vignette);
 ```
 
-Effects in the `final` stage share one pass with the others. So they should read the scene at their own pixel, or at most a few nearby pixels. Blurs and other wide filters belong in the `hdr` stage.
+- Exactly `fn effect(input: EffectInput) -> vec4f`; the build rejects another signature.
+- `EffectInput` has five fields:
+  - `color`: the pixel's linear HDR color, multiplied by coverage in alpha.
+  - `uv`: (0, 0) at the top left, (1, 1) at the bottom right.
+  - `pixel`: the pixel's center, in pixels from the top left.
+  - `size`: the render size in pixels.
+  - `time`: the sketch time in seconds.
+- Other pixels: `effectColor(uv)` reads with a linear filter, and `effectPixel(vec2i)` reads one pixel exactly. Both clamp to the image's edge.
+- Depth: `effectDepth(uv)` (1 near, 0 far, 0 where nothing drew), `effectViewPosition(uv)` (z negative in front) and `effectDistance(uv)` (world units along the view). Calling one makes the effect read depth, on all three GPU paths.
+- Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects take no textures.
+- Library imports work: `#import null3d::noise::{random2}`. Do not declare `uniforms`, or names that start with `effect`.
+- `order` sets the run order, lowest first; ties run in the order added. At most 8 effects; a ninth throws E1213.
+- Each effect costs a full-screen pass, 8 bytes read and written per pixel. Join per-pixel looks into one function rather than adding several effects, above all on phones.
+- Effects need HDR color, as bloom does. In compatibility mode with MSAA, the first effect moves the engine to HDR with FXAA. On a WebGL2 device with no float target they stay off, with a warning in development builds.
+- Return premultiplied color: keep `input.color.a`, and multiply colors you mix in by it, as `mix(c.rgb, fogColor * c.a, t)` does.
 
-## 7. Custom passes (0.2)
+A custom tone curve replaces the built-in curves in the final pass:
+
+```ts
+const reinhard = /* wgsl */ `
+  fn toneCurve(color: vec3f) -> vec3f {
+    return color / (vec3f(1.0) + color);
+  }`;
+
+post.set({ toneMapping: reinhard });   // post.set({ toneMapping: 'aces' }) returns to a built-in curve
+```
+
+- Exactly `fn toneCurve(color: vec3f) -> vec3f`. The input is exposed linear color after bloom. The engine clamps the result to 0 to 1, then encodes sRGB, dithers and grades.
+- A curve takes no uniforms. It needs HDR color, as effects do; on a device with no HDR target the built-in curve stays.
+
+## 7. Custom passes (later in 0.2)
 
 ```ts
 render.addPass({
@@ -269,7 +297,7 @@ render.addPass({
   wgsl: /* wgsl */ `fn pass(input: PassInput) -> vec4f { let d = readDepth(input.uv); return vec4f(d, 0.0, 0.0, 1.0); }`,
   before: 'Post',
 });
-const heat = textures.fromPass('heat');   // use it in a material or effect
+const heat = textures.fromPass('heat');   // use it in a material
 ```
 
 - `kind: 'scene'` draws objects with a camera and a layer mask, optionally with a `materialOverride`.
@@ -303,7 +331,7 @@ The build resolves imports before translating, and adds only the functions the s
 - `null3d::noise`: integer hashes, `random`, and value, Perlin, simplex, Worley and fractal noise. Each noise has a 2D and a 3D form, such as `simplex2` and `fbm3(p, octaves)`. The hashes give the same bits on every GPU, so a pattern looks the same everywhere.
 - `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx` and `tone_map_neutral`.
 - `null3d::lighting`: `lambert`, and three.js's physically based functions, such as `brdf_ggx`, `pbr_material` and `direct_light`.
-- `null3d::fog`: `fog_linear` and `fog_exp2`, with three.js's formulas.
+- `null3d::fog`: the curves `fog_linear` and `fog_exp2`, with three.js's formulas, and `fog_exponential`. Pass each curve the point's straight-line distance from the camera, as the engine does, so the fog stays put as the camera turns. The module also has `fog_height_ratio`, which thins the fog with height, `fog_color`, which adds the sun's glow, and `apply_fog`.
 - `null3d::vertex`: instance transforms, `transform_normal` for uneven scale, and `to_clip`.
 - `null3d::depth`: `linear_depth` and the view-z conversions for the engine's reversed depth, which hold on both GPU paths.
 - `null3d::sdf`: signed distances of shapes, and ways to combine them.
@@ -316,5 +344,5 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 - A surface function's error names its own line in your file. An error that says it is in the engine's standard material usually comes from a name clash or a whole-module import.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene, in development builds. A debug view ignores custom shaders.
-- Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2). Until then, editing a shader reloads the page.
+- Shader hot reload (0.2): on the dev server, an edit to a `.wgsl` file reaches the running page without a reload. So does an edit to only the WGSL of tagged literals in a script. The old shader draws until the new one builds. A WGSL error shows in Vite's overlay and the page keeps the last shader that compiled. These changes reload the page: a material's uniforms, textures or vertex attributes, other code in the script, and a whole shader. So does an edit to a custom post effect or tone curve. (`guides/custom-shaders`)
 - Check both backends: `?gpu=webgl2` runs the translated shaders.

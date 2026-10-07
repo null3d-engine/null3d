@@ -3,7 +3,7 @@ id: getting-started/hosting
 title: Hosting and cross-origin isolation
 status: experimental
 since: "0.1"
-summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; worker scripts from the page's origin; the Content-Security-Policy; Brotli; the third-party notices; the single-threaded fallback."
+summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; the single-threaded fallback."
 ---
 
 # Hosting and cross-origin isolation
@@ -41,12 +41,6 @@ With `require-corp`, the browser loads a file from another origin only when that
 
 Files from the page's own origin need nothing.
 
-## Serve the build from the page's origin
-
-Serve the files of the production build, `dist/` with its `assets/` folder, from the same origin as the HTML page. The engine's worker scripts are among them, and a browser starts a worker only from a script on the page's own origin. No header changes that rule. If Vite's `base` option points at a CDN, the browser refuses the engine's first worker, and `createEngine` rejects with [E1405](../errors/E1405.md).
-
-Models, textures and other files that your sketch loads may come from a CDN, with CORS or CORP as above.
-
 ## Content-Security-Policy
 
 The engine starts under a strict policy. Send this one, or add its parts to your own:
@@ -55,13 +49,53 @@ The engine starts under a strict policy. Send this one, or add its parts to your
 Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
 ```
 
-- `script-src 'self' 'wasm-unsafe-eval'`: the engine core, the meshopt decoder and the KTX2 transcoder are WebAssembly, and a policy blocks WebAssembly unless it holds `'wasm-unsafe-eval'`. This keyword allows WebAssembly and no JavaScript `eval`. Without it, `createEngine` rejects with [E1418](../errors/E1418.md).
-- `worker-src 'self'`: the engine's sketch, render, job and probe workers, and the workers of the glTF loader and the KTX2 transcoder.
+- `script-src 'self' 'wasm-unsafe-eval'`: the engine core, the meshopt decoder and the KTX2 transcoder are WebAssembly, and a policy blocks WebAssembly unless it holds `'wasm-unsafe-eval'`. This keyword allows WebAssembly and no JavaScript `eval`. Without it, `createEngine` rejects with [E1418](../errors/E1418.md). The engine needs no `'unsafe-eval'`.
+- `worker-src 'self'`: the engine's sketch, render, job and probe workers, and the glTF loader's worker.
 - `connect-src`: the engine downloads its `.wasm` files and your sketch module from the page's origin, which `default-src 'self'` allows. Add the origin of each CDN that your sketch loads models or textures from.
 
 The engine needs no inline script and no inline style. It sets styles from code, which a policy does not block. A page's own inline `<style>` element needs `style-src 'self' 'unsafe-inline'`.
 
 A worker follows the policy of its own script's response, not the page's. A host that sends the header on every file, as the examples below do for the isolation headers, applies the same policy to the workers.
+
+## The engine's files on a CDN
+
+The production build's files, `dist/assets/`, may come from another origin than the HTML page, such as a CDN. Point Vite's `base` option at the CDN, and serve the HTML page from your own origin:
+
+```ts
+// vite.config.ts
+export default defineConfig({ base: 'https://cdn.example.com/my-game/', plugins: [null3d()] });
+```
+
+A browser starts a worker only from a script of the page's own origin. So for each worker, the engine makes a small script in the page's memory, at a `blob:` address, which has the page's origin. That script imports the worker's real script from the CDN. You copy no worker file to your own origin.
+
+The CDN must send this header on every file of the build: the scripts, the workers' scripts and the `.wasm` files.
+
+```http
+Access-Control-Allow-Origin: *
+```
+
+It may name the page's origin in place of `*`. `Cross-Origin-Resource-Policy` alone does not serve, because the engine imports modules and downloads `.wasm` files in CORS mode. The HTML page still sends the two isolation headers. Without them the engine runs single-threaded, as on any host.
+
+A worker that starts from a `blob:` address follows the page's policy. Add these parts to the page's policy, with your CDN's origin:
+
+```http
+Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; worker-src 'self' blob: https://cdn.example.com; connect-src 'self' https://cdn.example.com
+```
+
+- `blob:` in `worker-src`: the engine starts each worker from a `blob:` address.
+- The CDN in `worker-src`: Firefox checks the modules that a worker imports, such as your sketch, against `worker-src`.
+- The CDN in `script-src`: the page's and the workers' scripts come from there.
+- The CDN in `connect-src`: the engine downloads its `.wasm` files from there.
+
+When an item is missing, `createEngine` rejects with a code that names it, or a load that needs a file from the CDN does:
+
+| Missing | Error |
+| --- | --- |
+| `blob:` or the CDN in `worker-src`, or the CDN in `connect-src` | [E1422](../errors/E1422.md), which names the directive |
+| `Access-Control-Allow-Origin` on a file | [E1423](../errors/E1423.md), which names the CDN |
+| `'wasm-unsafe-eval'` in `script-src` | [E1418](../errors/E1418.md) |
+
+Without the CDN in `script-src`, the browser blocks the page's own script before the engine runs, and the browser's console names the directive.
 
 ## Two builds
 
