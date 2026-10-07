@@ -49,7 +49,7 @@ import {
 	s6PartTransform,
 } from '../../scenes/s6';
 import { chosenPreset, type TwinSettings, twinSettings } from '../lib/preset';
-import { S6_KIT_URL, S6_TOWERS_URL } from '../lib/s6-city';
+import { loadedBytes, S6_KIT_URL, S6_TOWERS_URL } from '../lib/s6-city';
 import { labelLayer, labelTag, pickedText } from '../lib/s6-labels';
 import { castCascadedShadows } from './cascades';
 import { type BuildContext, runThreePage, type Three } from './harness';
@@ -420,12 +420,4 @@ async function postProcessing(
 			composer.setSize(w, h);
 		},
 	};
-}
-
-/** The bytes of the files that the page downloaded, from its resource timings. */
-function loadedBytes(): number {
-	let bytes = 0;
-	for (const entry of performance.getEntriesByType('resource') as PerformanceResourceTiming[])
-		bytes += entry.encodedBodySize;
-	return bytes;
 }

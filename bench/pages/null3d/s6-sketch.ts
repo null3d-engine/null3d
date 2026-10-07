@@ -46,7 +46,7 @@ import {
 	s6LabelId,
 	s6PartTransform,
 } from '../../scenes/s6';
-import { S6_KIT_URL, S6_TOWERS_URL } from '../lib/s6-city';
+import { loadedBytes, S6_KIT_URL, S6_TOWERS_URL } from '../lib/s6-city';
 import { followPath, readCount, readGovernor, watchQuality } from './sketch-common';
 
 /** Objects that a frame creates at most while the city streams in. */
@@ -269,12 +269,4 @@ function kitPartsOf(kit: Prefab, data: S6Data): KitPart[][] {
 		parts[model] = list;
 	}
 	return parts;
-}
-
-/** The bytes of the scene's files that this thread downloaded, from its resource timings. */
-function loadedBytes(): number {
-	let bytes = 0;
-	for (const entry of performance.getEntriesByType('resource') as PerformanceResourceTiming[])
-		bytes += entry.encodedBodySize;
-	return bytes;
 }
