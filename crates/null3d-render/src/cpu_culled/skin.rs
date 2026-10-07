@@ -284,6 +284,16 @@ impl Skins {
         ])
     }
 
+    /// The morph texture, which a removal of meshes changes.
+    pub(super) fn morph_mut(&mut self) -> &mut MorphTexture {
+        &mut self.morph
+    }
+
+    /// The morph texture.
+    pub(super) fn morph(&self) -> &MorphTexture {
+        &self.morph
+    }
+
     /// Forgets the textures, so they are made and filled again, after the thread that draws
     /// replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {

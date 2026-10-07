@@ -530,6 +530,16 @@ impl MorphTexture {
         write_texels(list, self.weights, texels, WEIGHT_BYTES, at)
     }
 
+    /// Uploads the delta texels again from texel `first` on, where a removal of meshes moved them.
+    pub(crate) fn deltas_moved(&mut self, first: u32) {
+        self.uploaded = self.uploaded.min(first);
+    }
+
+    /// The GPU bytes of the texture of deltas.
+    pub(crate) fn delta_bytes(&self) -> u64 {
+        u64::from(self.delta_rows) * u64::from(TEXTURE_WIDTH) * u64::from(DELTA_BYTES)
+    }
+
     /// Forgets the textures, after the thread that draws replaced the GPU.
     pub(crate) fn forget_gpu(&mut self) {
         self.delta_rows = 0;

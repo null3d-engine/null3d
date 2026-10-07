@@ -35,7 +35,7 @@ import { compileOnce, type WasmFile } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
 import { bootstrapFailure, spawnWorker } from '../shared/worker-start';
 import type { GltfAnswer, GltfDecoder, GltfRequest } from '../workers/gltf-worker';
-import { type AnimationRig, loadAnimationRig } from './animation';
+import { type AnimationRig, destroyRig, loadAnimationRig } from './animation';
 import { affineOf, multiplyAffine } from './gltf-math';
 import type {
 	BlockerData,
@@ -266,16 +266,24 @@ export async function loadGltf(
 		context.materials.shaders.need('morph');
 	const textures = await makeTextures(context, data, bitmaps, address, call);
 	const materials = new FileMaterials(context, data, textures);
+	const made: Made = { meshes: [] };
 	try {
 		materials.makeBase();
-		return await buildPrefab(context, data, textures, materials, address, call);
+		return await buildPrefab(context, data, textures, materials, made, address, call);
 	} catch (error) {
-		// A load that fails frees the textures and materials it made. Meshes and skeletons have no
-		// destroy call yet, so they stay.
+		// A load that fails frees everything it made. No object uses any of it yet.
 		materials.destroy();
 		for (const texture of textures) texture?.destroy();
+		context.geometry.destroyMeshes(made.meshes, call);
+		if (made.rig) destroyRig(context.core, made.rig);
 		throw error;
 	}
+}
+
+/** The meshes and the rig that a load made so far, which a failed load frees. */
+interface Made {
+	meshes: MeshGeometry[];
+	rig?: AnimationRig;
 }
 
 /** The prefab of a parsed file, once its textures and materials exist. */
@@ -284,17 +292,19 @@ async function buildPrefab(
 	data: GltfData,
 	textures: readonly (Texture | undefined)[],
 	materials: FileMaterials,
+	made: Made,
 	address: URL,
 	call: string,
 ): Promise<Prefab> {
 	// Only the meshes that nodes draw: joints move copies of some of the file's meshes.
 	const meshes: (MeshGeometry[] | undefined)[] = [];
 	const meshOf = (k: number) => {
-		meshes[k] ??= makeMeshes(context, data.meshes[k] as MeshData, address, call);
+		meshes[k] ??= makeMeshes(context, data.meshes[k] as MeshData, made.meshes, address, call);
 		return meshes[k];
 	};
 	const lights = data.lights.map(lightTemplate);
 	const rig = await makeRig(context, data, address, call);
+	if (rig) made.rig = rig;
 	const template: TemplateNode[] = [
 		{
 			name: '',
@@ -379,6 +389,12 @@ async function buildPrefab(
 		materials.list(),
 		textures.filter((t): t is Texture => t !== undefined),
 		rig,
+		{
+			meshes: made.meshes,
+			materials: materials.all(),
+			geometry: context.geometry,
+			error: context.scene.checks.error,
+		},
 	);
 }
 
@@ -512,11 +528,12 @@ function isKtx2(bytes: Uint8Array): boolean {
 
 /**
  * The engine's meshes of a glTF mesh, one for each primitive, with the stored tree and the blocker
- * that the asset tool gave each primitive.
+ * that the asset tool gave each primitive. Each mesh also goes into `out` as it is made.
  */
 function makeMeshes(
 	context: GltfContext,
 	mesh: MeshData,
+	out: MeshGeometry[],
 	address: URL,
 	call: string,
 ): MeshGeometry[] {
@@ -550,6 +567,7 @@ function makeMeshes(
 				`${call}() could not read ${address}: primitive ${k} of mesh "${mesh.name}" makes no mesh: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
+		out.push(made);
 		if (p.bvh && !storeTree(context.core, made.id, p.bvh, call) && DEV)
 			console.warn(
 				`${call}() found a stored tree in ${address} that does not fit primitive ${k} of mesh "${mesh.name}", so raycasts build their own. Optimize the file again.`,
@@ -604,6 +622,11 @@ class FileMaterials {
 	/** The materials in the file's order. */
 	list(): Material[] {
 		return this.base;
+	}
+
+	/** Every material made so far: the file's, and the other ways that primitives draw them. */
+	all(): Material[] {
+		return [...this.made.values()];
 	}
 
 	/** Destroys every material made so far, for a load that fails. */

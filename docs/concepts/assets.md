@@ -109,7 +109,9 @@ A primitive that names an accessor another primitive also names shares that acce
 
 Each frame sends at most the preset's texture upload budget to the GPU: 2 MiB on Low, up to 16 MiB on Ultra. A larger texture goes up over several frames, and the engine then makes its mip levels on the GPU. A mesh goes up whole in the frame after the call that makes it. [Quality presets](quality-presets.md) lists the budget of each preset, and `quality.set({ uploadBytesPerFrame })` changes it.
 
-Each texture reports its GPU memory in `memoryBytes`. The engine counts this memory, but it does not hold textures to a budget yet.
+Each texture reports its GPU memory in `memoryBytes`. The engine counts this memory, but it does not hold textures to a budget yet. `geometry.memoryBytes` gives the GPU memory of all meshes.
+
+`prefab.destroy()` frees a model with its meshes, materials, textures, skeleton and clips, and `mesh.destroy()` frees one mesh. The next models and meshes take the memory that they gave back. [Freeing a model](../api/assets.md#freeing-a-model) gives the order of the calls.
 
 ## From three.js
 
@@ -119,6 +121,7 @@ Each texture reports its GPU memory in `memoryBytes`. The engine counts this mem
 | A `BufferAttribute` of an `Int16Array` with `normalized: true` | `{ array: new Int16Array(values), normalized: true }` in `geometry.fromArrays` |
 | `new GLTFLoader().loadAsync(url)`, then `scene.add(gltf.scene)` | `const prefab = await assets.loadGltf(url)`, then `scene.instantiate(prefab)` |
 | `gltf.scene.clone()` or `SkeletonUtils.clone` for each copy | `scene.instantiate(prefab)` for each copy, which shares the GPU data |
+| `dispose()` on each geometry, material and texture of a glTF scene | `prefab.destroy()`, after destroying its copies |
 | `GLTFLoader` with `KTX2Loader` and its transcoder path | `assets.loadGltf(url)`. The engine ships the transcoder |
 | `GLTFLoader` with `setMeshoptDecoder(MeshoptDecoder)` | `assets.loadGltf(url)`. The engine ships the decoder, and downloads it with the first compressed file |
 | `GLTFLoader` with a quantized mesh | `assets.loadGltf(url)`. A glTF node's transform becomes the object's transform, so the integers stay on the GPU |
