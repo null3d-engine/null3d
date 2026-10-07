@@ -139,6 +139,7 @@ On the owner's iPad (Safari, Limit Frame Rate on), the plan passed 10 of 10 page
 
 - The iPad's GPU time varies by 0.3 to 0.5 ms from page to page, more than one pass costs. So these figures show no saving on WebGPU, and no loss.
 - The joined shaders built on both GPU paths. On WebGL2 the group took 216 ms and the fold 415 ms at scale 1. On WebGPU each took about 820 ms, both asked in the same frame. Later pages built in 14 to 17 ms.
+- The 38 effect image pages also passed on the iPad, 38 of 38 (run `20261007-152006-checks`, 7 October 2026). Each joined image matched its separate-pass twin's reference on all three GPU paths, so Safari draws joined shaders right.
 - WebGL2 on the iPad has no GPU timer. Joining cut the render worker's CPU time instead. At a render scale of 1 the effects added 0.00 ms joined and 0.14 ms separate. At 0.5 they added 0.08 and 0.18 ms. On the heavy page they added 0.02 and 0.50 ms, from 0.58 to 1.08 ms separate. Each joined pass saves a pass's draw calls and state changes.
 
 On the cloud Pixel 10 (PowerVR D-Series, Chrome 149), the plan passed 10 of 10 pages on 7 October 2026 (run `20261007-081526-effects-joined`). Every page held 60 Hz.
