@@ -38,7 +38,7 @@ use null3d_gpu::drawlist::{
 
 use super::ids;
 use super::layout::Layout;
-use super::pyramid::{Levels, MAX_LEVELS};
+use super::pyramid::Levels;
 use crate::cells::{CellCulling, CellMask};
 use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes,
@@ -63,9 +63,9 @@ const RANGE_BYTES: u32 = 16;
 /// order.
 const OCCLUSION_OFFSET: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES * RANGE_BYTES;
 /// Words of the occlusion phases' values: the view-projection matrix, the render size, the
-/// pyramid's levels, the first set's draws, where the history starts and an occluder's least span,
-/// then each level's shape.
-const OCCLUSION_WORDS: usize = 16 + 4 + 4 + 4 * MAX_LEVELS;
+/// pyramid's levels, the first set's draws, where the history starts and an occluder's least span.
+/// The shader works out each level's shape from the render size.
+const OCCLUSION_WORDS: usize = 16 + 4 + 4;
 /// Bytes of the culling parameters: the planes, the offset from the camera to each cell, the runs
 /// of the cell order, then the occlusion phases' values.
 pub(super) const CULL_PARAMS_BYTES: u32 = OCCLUSION_OFFSET + sizes::CULL_OCCLUSION_BYTES;
@@ -149,7 +149,7 @@ const OCCLUDER_SPAN_DIVISOR: u32 = 16;
 /// The occlusion phases' values in a view's culling parameters: the view-projection matrix for
 /// positions relative to its camera, the render size, the pyramid's levels, the first phase's
 /// draws and the word of the indirect draws' buffer where the history starts, after both phases'
-/// draws, and each level's shape.
+/// draws, and an occluder's least span.
 fn occlusion_words(frame: &ViewFrame, levels: &Levels, draws: u32) -> [u32; OCCLUSION_WORDS] {
     let mut words = [0u32; OCCLUSION_WORDS];
     for (word, value) in words.iter_mut().zip(frame.uniform.view_proj) {
@@ -162,7 +162,6 @@ fn occlusion_words(frame: &ViewFrame, levels: &Levels, draws: u32) -> [u32; OCCL
     words[21] = draws;
     words[22] = 2 * draws * sizes::INDIRECT_WORDS;
     words[23] = width.max(height).div_ceil(OCCLUDER_SPAN_DIVISOR);
-    words[24..].copy_from_slice(levels.shapes.as_flattened());
     words
 }
 

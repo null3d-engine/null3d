@@ -1204,10 +1204,10 @@ pub mod sizes {
     /// there is at most one per pair of cells, and one more for the sources that move.
     pub const MAX_CULL_RANGES: u32 = MAX_CELLS / 2 + 1;
     /// Bytes of the occlusion phases' values at the end of the culling parameters: the
-    /// view-projection matrix, the render size, the depth pyramid's levels and where the second
-    /// phase's draws and the history start, then 16 levels' shapes. Views that cull in one phase
-    /// leave them unset, but the parameters have room for them.
-    pub const CULL_OCCLUSION_BYTES: u32 = 352;
+    /// view-projection matrix, the render size, the depth pyramid's levels, where the second
+    /// phase's draws and the history start, and an occluder's least span. Views that cull in one
+    /// phase leave them unset, but the parameters have room for them.
+    pub const CULL_OCCLUSION_BYTES: u32 = 96;
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;

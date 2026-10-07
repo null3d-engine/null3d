@@ -57,7 +57,9 @@ const WORKGROUP_SIZE: u32 = 128u;
 const MAX_LEVELS: u32 = 16u;
 
 /// What the occlusion phases read: the view-projection matrix for positions relative to the
-/// camera, the render size, and the depth pyramid's levels.
+/// camera, the render size, and the depth pyramid's levels. The levels' shapes follow from the
+/// render size (see `level_shape`), so no thread reads a table of this uniform block at an index of
+/// its own: the Galaxy S25's driver can give every thread one thread's entry of such a table.
 struct Occlusion {
     view_proj: mat4x4f,
     /// The render size in pixels, wide and high, and two spares.
@@ -66,8 +68,6 @@ struct Occlusion {
     /// set's, the word where the history starts in the indirect draws' buffer, and the pixels that
     /// an occluder's bounds span at least, wide or high.
     info: vec4u,
-    /// Each level's width and height in texels, where it starts in the pyramid, and a spare.
-    levels: array<vec4u, MAX_LEVELS>,
 }
 
 struct CullParams {
@@ -283,10 +283,25 @@ fn quotient_bounds(a0: f32, a1: f32, b0: f32, b1: f32) -> vec2f {
     return vec2f(min(min(q.x, q.y), min(q.z, q.w)), max(max(q.x, q.y), max(q.z, q.w)));
 }
 
-/// The farthest depth that the pyramid's `level` holds over texels `t0` to `t1`, which lie at most
+/// The width and height in texels of the pyramid's `level`, and where it starts in the pyramid.
+/// Level 0 halves the render size each way, rounding up, and each later level halves the one
+/// before it, so level L is the render size over 2^(L + 1), rounded up. The levels follow the
+/// word that counts the occluders. The loop runs the same passes in every thread.
+fn level_shape(level: u32) -> vec3u {
+    let size = vec2u(params.occlusion.size.xy);
+    var start = 1u;
+    for (var l = 0u; l < MAX_LEVELS; l++) {
+        if l < level {
+            let below = (size + vec2u((2u << l) - 1u)) >> vec2u(l + 1u);
+            start += below.x * below.y;
+        }
+    }
+    return vec3u((size + vec2u((2u << level) - 1u)) >> vec2u(level + 1u), start);
+}
+
+/// The farthest depth that the level of `shape` holds over texels `t0` to `t1`, which lie at most
 /// one texel apart each way.
-fn farthest(level: u32, t0: vec2u, t1: vec2u) -> f32 {
-    let shape = params.occlusion.levels[level];
+fn farthest(shape: vec3u, t0: vec2u, t1: vec2u) -> f32 {
     let row0 = shape.z + t0.y * shape.x;
     let row1 = shape.z + t1.y * shape.x;
     return min(
@@ -358,11 +373,11 @@ fn occluded(center: vec3f, radius: f32) -> bool {
         level = u32(firstLeadingBit(span - 1u));
     }
     level = min(level, o.info.x - 1u);
-    let shape = o.levels[level];
+    let shape = level_shape(level);
     let texel = f32(2u << level);
     let last = shape.xy - vec2u(1u);
     let t0 = min(vec2u(bounds.low / texel), last);
     let t1 = min(min(vec2u(bounds.high / texel), last), t0 + vec2u(1u));
-    return bounds.nearest < farthest(level, t0, t1);
+    return bounds.nearest < farthest(shape, t0, t1);
 }
 #endif

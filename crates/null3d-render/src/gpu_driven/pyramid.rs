@@ -265,6 +265,34 @@ impl Pyramids {
 mod tests {
     use super::*;
 
+    /// The culling shader works out each level's shape from the render size alone: level L is the
+    /// render size over 2^(L + 1), rounded up, and starts after the count word and the levels
+    /// before it. Its tests read the levels at those places.
+    #[test]
+    fn each_levels_shape_follows_from_the_render_size_as_the_culling_shader_works_it_out() {
+        for (width, height) in [
+            (1, 1),
+            (2, 1),
+            (320, 180),
+            (1280, 720),
+            (1919, 1081),
+            (4097, 3),
+        ] {
+            let levels = Levels::of(width, height);
+            let mut start = 1;
+            for (level, shape) in levels.shapes().iter().enumerate() {
+                let at = |side: u32| (side + (2u32 << level) - 1) >> (level + 1);
+                assert_eq!(
+                    shape[..3],
+                    [at(width), at(height), start],
+                    "level {level} of {width} x {height}"
+                );
+                start += at(width) * at(height);
+            }
+            assert_eq!(start, levels.floats);
+        }
+    }
+
     #[test]
     fn levels_halve_rounding_up_down_to_one_texel() {
         let levels = Levels::of(1920, 1080);
