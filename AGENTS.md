@@ -160,6 +160,17 @@ Published Markdown (every page under `docs/`, the skills, the README, the packag
 
 The docs style check catches the mechanical part of these rules. It blocks build-process words such as milestone and checkpoint, and the command line tool run by the wrong name. It checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
 
+## Record the reasons
+
+The owner set this rule on 7 October 2026. Each pull request records the reasons for its changes in `.dev/`, in the same pull request:
+
+- A design choice or an owner's ruling goes in a [decision record](.dev/decisions/README.md), or in an addendum to one. It gives the problem, the figures, the options rejected, and who decided and when.
+- A bug fix gives the cause, and why the fix is right, in the guide or record that owns the area. Examples are the [implementation notes](.dev/implementation-notes.md), the [image tests](.dev/image-tests.md) and the [benchmarks](.dev/benchmarks.md).
+- A device run goes in the [tested devices](.dev/tested-devices.md) record, as a row or in an existing row.
+- A lesson about the work itself goes in the guide that covers it, such as [pull requests and parallel work](.dev/pull-requests.md).
+
+Pull request text, commit messages, status notes and chat are not enough. A reader of `.dev/` must find the reason there. The `Docs-Checked:` trailer names the `.dev` page that holds the reason.
+
 ## Commit gates
 
 `bun install` sets up git hooks that keep the docs in line with the code. Never skip them with `--no-verify`: CI runs the same checks and fails the pull request.

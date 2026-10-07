@@ -1,6 +1,6 @@
 # D-76: 16-bit depth for the shadow cascades
 
-Status: decided. Date: 2026-10-06. Task: M2-R8. Pending: the iPad runs, and the S25's shadow image tests with Chrome 149 and an older Chrome.
+Status: decided. Date: 2026-10-06. Task: M2-R8. Pending: the iPad runs. The S25's shadow image tests passed on 2026-10-07.
 
 Summary: The cascades store 16-bit depth and the tiles keep 32-bit floats. Each cascade floors the bias toward the light and the plane margin at 1.5 depth steps, 21.6 mm in S4's last cascade. Each also snaps along the light to whole steps. Without the snap S4's shadows flickered (0.095% of pixels); with it the S25 and Pixel 9 pass. Cascade memory halves: Ultra 256 to 128 MiB, Medium and High 48 to 24 MiB, with the same GPU time.
 
@@ -96,6 +96,15 @@ The Automate S25 (Chrome 149) and Pixel 9 ran S4 again with the snap and D-73's 
 
 Over both phones and paths, the edge offset was 0.081 to 0.086 px and the contact gap 0.030 to 0.034 px. The acne on flat surfaces was 0.011% to 0.073%. Each page held its target frame rate in every frame. The S25's screen ran at 30 Hz, so its timings are only a guide. The Pixel 9's GPU time is higher than on 5 October (6.36 ms). That run had the governor on and no cascade blend, so the two figures do not compare.
 
+The Automate S25 ran the 21 shadow image tests on main at 80a97ab51, which holds this work, on 7 October 2026. The tests are shadows, the 1, 2 and 4 cascade pages, the 5 x 5 filter, spot shadows and point shadows. Each ran on WebGPU, compatibility mode and WebGL2. They ran in Chrome 149 and in Samsung Internet 30.0. Its Chromium 143 is the oldest Chromium that BrowserStack offers on this phone. BrowserStack opens Chrome 149 whatever Chrome version a session asks for.
+
+| Browser | 16-bit cascades, as built | 32-bit cascades (`?shadowdepth=32`) |
+| --- | --- | --- |
+| Chrome 149 | 22 of 22 | 22 of 22 |
+| Samsung Internet 30.0 (Chromium 143) | 22 of 22 | 22 of 22 |
+
+The runs are `20261007-033205-checks` (16-bit) and `20261007-034206-checks` (32-bit); each count includes the capabilities page. So the older Chromium draws the shadows right, and decision 28 adds no guard.
+
 How the data was produced: `bun run test:images -g "shadow|depth-bias|debug-view|vertex-types|ao-|grading|material-maps|outline|skinning|s4|s5|s1"`, with `CI=1` for SwiftShader. The contact checks ran with `bunx playwright test shadow-contact.spec.ts`, once as built and once with `NULL3D_SWITCHES=shadowdepth=32`.
 
 ## Decision
@@ -110,4 +119,5 @@ How the data was produced: `bun run test:images -g "shadow|depth-bias|debug-view
 
 - `crates/null3d-render/src/shadows.rs` holds `CascadeDepth` and `CasterPasses`. Each caster bucket has a pipeline for the cascades and one for the tiles, each only while that kind of shadow is on ([implementation notes](../implementation-notes.md#shadows)).
 - [Shadows](../../docs/concepts/shadows.md#bias) and [Quality presets](../../docs/concepts/quality-presets.md#the-settings-of-each-preset) give the format, the floor and the memory of each preset.
-- Pending device runs: S4 on the iPad, each page against its `-depth32` twin, on WebGPU and WebGL2. The shadow image tests also run on the S25 with Chrome 149 or later and, if BrowserStack offers one, an older Chrome. Decision 28 adds a guard only if the older Chrome draws wrong shadows.
+- Pending device runs: S4 on the iPad, each page against its `-depth32` twin, on WebGPU and WebGL2.
+- The S25's shadow image tests passed in Chrome 149 and in Samsung Internet's Chromium 143, so decision 28 adds no guard (Data).
