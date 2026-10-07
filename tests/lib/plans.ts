@@ -55,6 +55,7 @@ import {
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
+import { STOP_TIMEOUT_MS } from '../../packages/engine/src/page/stop-jobs.ts';
 import {
 	choosePreset,
 	type DeviceHints,
@@ -1671,7 +1672,21 @@ interface RestartRound {
 	/** The room when it came back, or when the page stopped waiting for it. */
 	roomLater?: number;
 	roomWaitMs?: number;
+	/** The shared memories that the starts made, and those that the browser refused. */
+	memoriesMade?: number;
+	memoriesRefused?: number;
+	/** Each start's stop: how long it took, and the job workers that started and that stopped. */
+	starts?: { stopMs: number; jobs: number; jobsStopped: number }[];
 }
+
+/**
+ * The stops of a round after which the engine kept no memory for the next start: a stop that
+ * waited out its timeout, or whose job workers did not all report that they stopped.
+ */
+const uncleanStops = (round: RestartRound) =>
+	(round.starts ?? []).filter(
+		({ stopMs, jobs, jobsStopped }) => stopMs >= STOP_TIMEOUT_MS || jobsStopped < jobs,
+	).length;
 
 /** What the restart page reports about the engine's starts and stops. */
 export interface RestartResult {
@@ -1742,6 +1757,20 @@ export function restartProblems(
 		`${words.cycle} ${round.cycles + 1} of ${result.cycles}${which} failed: ${round.error}${lastSteps(round.trail)}`;
 	const problems: string[] = [];
 	if (engine.error) problems.push(failed(engine, ''));
+	// Each start on the page after the first takes the memory that the page kept from the stop
+	// before, unless that stop was not clean (D-98). Engines in frames keep theirs in the frame's
+	// page, which goes with the frame.
+	const made = engine.memoriesMade ?? 0;
+	const unclean = uncleanStops(engine);
+	if (
+		threaded &&
+		!engine.error &&
+		(start === 'engine' || start === 'canvas-kept') &&
+		made > 1 + unclean
+	)
+		problems.push(
+			`the ${engine.cycles} ${words.cycles} made ${made} shared memories, after ${unclean} stops that were not clean: each start after a clean stop should take the memory that the page kept`,
+		);
 	if (!roomLost(result.room, engine)) return problems;
 	const lostText = `it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`;
 	// The workers that stay with kept canvases may hold memory until a start needs it, which the

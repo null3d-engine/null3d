@@ -49,6 +49,7 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
+import { memoryImportLimits } from '../packages/engine/src/shared/wasm-limits';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
 import { keptCommits } from './hooks/check-trailers';
@@ -124,6 +125,11 @@ interface Variant {
 	wasmOptFeatures: string[];
 	/** True when the glue needs `releaseInstance` (`addReleaseInstance`). */
 	releasesInstance: boolean;
+	/**
+	 * True when the core's heap takes back the pages of a reused memory, from one page past the
+	 * linker's memory (`crates/null3d-wasm/src/heap.rs`), which `checkHeapStart` checks.
+	 */
+	reclaimsHeap: boolean;
 }
 
 const COMMON_WASM_FEATURES = [
@@ -160,6 +166,7 @@ export const VARIANTS: Variant[] = [
 		cargoArgs: ['-Z', 'build-std=panic_abort,std'],
 		wasmOptFeatures: [...COMMON_WASM_FEATURES, '--enable-threads'],
 		releasesInstance: true,
+		reclaimsHeap: true,
 	},
 	{
 		name: 'single',
@@ -167,6 +174,7 @@ export const VARIANTS: Variant[] = [
 		cargoArgs: [],
 		wasmOptFeatures: COMMON_WASM_FEATURES,
 		releasesInstance: false,
+		reclaimsHeap: false,
 	},
 ];
 
@@ -189,6 +197,20 @@ export function addReleaseInstance(glue: string): string {
 	const clears = views.map((view) => `    ${view} = null;\n`).join('');
 	return `${glue}\nexport function releaseInstance() {\n    wasmModule = wasmInstance = wasm = undefined;\n${clears}}\n`;
 }
+/**
+ * Checks that wasm-bindgen added exactly one page to the memory that the linker laid out, for its
+ * thread counter and the stack of a starting thread. The core's heap starts after that page when it
+ * takes back the pages of a reused memory, so another count would let it overwrite them.
+ */
+export function checkHeapStart(linked: Uint8Array, bound: Uint8Array): void {
+	const before = memoryImportLimits(linked)?.initial;
+	const after = memoryImportLimits(bound)?.initial;
+	if (before === undefined || after !== before + 1)
+		throw new Error(
+			`wasm-bindgen made the threaded core's memory ${after ?? 'unknown'} pages from the linker's ${before ?? 'unknown'}, not one page more: update BINDGEN_PAGES in crates/null3d-wasm/src/heap.rs for this wasm-bindgen version`,
+		);
+}
+
 /** The locked version of a package in Cargo.lock. */
 export function lockedVersion(cargoLock: string, name: string): string {
 	const match = cargoLock.match(
@@ -339,15 +361,8 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 	);
 	const outDir = `${OUT_DIR}/${variant.name}`;
 	rmSync(join(root, outDir), { recursive: true, force: true });
-	run(bindgen, [
-		'--target',
-		'web',
-		'--out-dir',
-		outDir,
-		'--out-name',
-		'null3d',
-		`${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`,
-	]);
+	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
+	run(bindgen, ['--target', 'web', '--out-dir', outDir, '--out-name', 'null3d', linked]);
 	if (variant.releasesInstance) {
 		const glue = join(root, outDir, 'null3d.js');
 		writeFileSync(glue, addReleaseInstance(readFileSync(glue, 'utf8')));
@@ -362,6 +377,8 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 		'-o',
 		wasm,
 	]);
+	if (variant.reclaimsHeap)
+		checkHeapStart(readFileSync(join(root, linked)), readFileSync(join(root, wasm)));
 }
 
 /**

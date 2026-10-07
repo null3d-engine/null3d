@@ -8,7 +8,7 @@ summary: "Cascades that stay still as the camera turns and blend where they meet
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches neither cast nor receive shadows yet. A masked material's map does not cut holes in its shadow yet, so it casts its mesh's whole shape. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches neither cast nor receive shadows yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -286,6 +286,8 @@ The tiles of spot and point lights compare each read with the depth at the surfa
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
 - The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. [Render layers](render-layers.md) explains masks.
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
+- A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape, as in three.js.
+- A custom material casts its mesh's whole shape: its alpha comes from its own WGSL, which the shadow pass does not run.
 - `setCastShadows` and `setReceiveShadows` rebuild the engine's tables of what it draws, as `setMaterial` does. Set them at setup rather than in every frame.
 
 ## What shadows cost
@@ -294,6 +296,8 @@ Each cascade that draws in a frame has a render pass that draws its casters' dep
 
 - On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
+
+A masked caster runs a fragment shader that tests its alpha, where other casters run none. So cut-out foliage costs more GPU time in each shadow pass than solid shapes. Its shader builds load the first time a masked caster draws, and it casts no shadow until they are ready. To load them before the first frame instead, pass `preload: ['cutout']` to `createEngine`.
 
 Each layer of the shadow map takes 2 bytes per texel: 8 MiB at 2,048 texels on each side. That is half of what 32-bit depth takes, and each cascade's pass writes half the bytes. On a phone's GPU, which keeps a pass's depth in its own fast memory and then writes it out, those writes cost bandwidth. Each read of the map fetches half the bytes too. [Quality presets](quality-presets.md#the-settings-of-each-preset) gives the memory of each preset. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says. On WebGL2 they read each texel on its own: 16 or 36 reads. Surfaces in a band between two cascades read both cascades, so twice as many.
 
@@ -317,6 +321,7 @@ WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth tex
 - The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.
 - The CSM addon's `fade` option blends the cascades where they meet. null3D blends them by default, over the `shadowCascadeBlend` band. `fade: false` hands over at once, as `shadowCascadeBlend: 0` does.
 - A spot or point light's `shadow.mapSize` has no equivalent. The quality preset sets the size of every tile. `shadow.camera` has none either, as the tiles fit the light by themselves.
+- A material with `alphaTest` cuts its shadow at `alphaTest` in three.js, and so does a masked material in null3D, at `alphaCutoff`. With `alphaToCoverage`, three.js cuts at 0.5, and null3D at `alphaCutoff`. With `alphaHash`, three.js casts the whole shape, and null3D a hashed shadow.
 - three.js draws a spot or point light's shadow map in every frame. null3D draws a tile only when its light or a caster in its range moves.
 
 ## Related pages

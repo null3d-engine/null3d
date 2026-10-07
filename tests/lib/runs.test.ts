@@ -1014,6 +1014,33 @@ describe('the checks plan', () => {
 		).toEqual([
 			'the browser did not get back the memory of stopped engines within 31 s: it had room for 6 shared memories before 10 starts and stops, and for 2 after',
 		]);
+		expect(
+			judge(
+				restart.check,
+				result({ kinds: { engine: { ...engine, memoriesMade: 1 } } }),
+				NONE_MISSING,
+			),
+		).toEqual([]);
+		expect(
+			judge(
+				restart.check,
+				result({ kinds: { engine: { ...engine, memoriesMade: 3 } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			'the 10 starts and stops made 3 shared memories, after 0 stops that were not clean: each start after a clean stop should take the memory that the page kept',
+		]);
+		const stops = [
+			{ stopMs: 2_000, jobs: 6, jobsStopped: 5 },
+			{ stopMs: 300, jobs: 6, jobsStopped: 6 },
+		];
+		expect(
+			judge(
+				restart.check,
+				result({ kinds: { engine: { ...engine, memoriesMade: 2, starts: stops } } }),
+				NONE_MISSING,
+			),
+		).toEqual([]);
 		const failed = {
 			cycles: 2,
 			error: 'the engine start took more than 20 s',

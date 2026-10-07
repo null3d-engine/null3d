@@ -15,6 +15,7 @@ import {
 	type QualityPreset,
 	type QualitySettings,
 } from '../../packages/engine/src/quality/presets.ts';
+import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 import {
@@ -48,7 +49,7 @@ interface QualityResult {
 		crashedStarts: number;
 		memoryMaximumMiB: number | null;
 	};
-	tier: string;
+	tier: Tier;
 	hints: { coarsePointer: boolean; screenMinEdge: number; deviceMemoryGB: number | null };
 	sketch: SketchReport & { preset: string };
 	changed?: SketchReport;
@@ -97,7 +98,7 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const) {
 				expected,
 				expected,
 			]);
-			const settings = presetSettings(expected as QualityPreset);
+			const settings = presetSettings(expected as QualityPreset, {}, result.tier);
 			expect(settingsOf(result.sketch)).toEqual(settings);
 			// The core took the preset's texture settings before the sketch's setup ran.
 			expect(result.sketch.core).toEqual({
@@ -252,7 +253,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			page,
 			`gpu=${gpu}&preset=medium&set=${JSON.stringify(changes)}`,
 		);
-		expect(result.changed?.settings).toEqual({ ...presetSettings('medium'), ...changes });
+		expect(result.changed?.settings).toEqual({
+			...presetSettings('medium', {}, gpu),
+			...changes,
+		});
 		expect(result.changed?.core).toEqual({ uploadBudget: 1024 * 1024, maxAnisotropy: 2 });
 	});
 }
