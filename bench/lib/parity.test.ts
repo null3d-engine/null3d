@@ -38,6 +38,7 @@ import {
 	passesWithBaseline,
 	type RgbaImage,
 	readJobCounts,
+	readSwitches,
 	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIER_PAIRS,
 	TIERS,
@@ -430,10 +431,16 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-blend-off',
+			'null3d-webgl2-blend-off',
 			'null3d-webgpu-sky',
 			'null3d-webgl2-sky',
 			'null3d-webgpu-sky-clear',
 			'null3d-webgpu-sky-room',
+			'null3d-webgpu-sky-texture',
+			'null3d-webgpu-first',
+			'null3d-webgpu-sky-room-first',
+			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -488,6 +495,21 @@ describe('the pages', () => {
 		expect(pagePath('s1', 'null3d-webgpu-sky-clear')).toBe(
 			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=clear',
 		);
+		expect(pagePath('s1', 'null3d-webgpu-sky-texture')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=texture',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-sky-room-first')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=room&backgroundFirst',
+		);
+	});
+
+	test('runs the pages without the cascade band on the pipelined pages with the band at 0', () => {
+		expect(pagePath('s4', 'null3d-webgpu-blend-off', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowCascadeBlend=0&seconds=2',
+		);
+		expect(pagePath('s4', 'null3d-webgl2-blend-off')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgl2&shadowCascadeBlend=0',
+		);
 	});
 
 	test('sweeps job worker counts on the null3D pages only', () => {
@@ -504,10 +526,16 @@ describe('the pages', () => {
 			'null3d-webgl2-half',
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
+			'null3d-webgpu-blend-off',
+			'null3d-webgl2-blend-off',
 			'null3d-webgpu-sky',
 			'null3d-webgl2-sky',
 			'null3d-webgpu-sky-clear',
 			'null3d-webgpu-sky-room',
+			'null3d-webgpu-sky-texture',
+			'null3d-webgpu-first',
+			'null3d-webgpu-sky-room-first',
+			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -528,6 +556,12 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
 			'webgpu',
 			'webgpu',
 			'webgl2',
@@ -619,6 +653,26 @@ describe('parseParityArgs', () => {
 		);
 		expect(() => parseParityArgs(['--switches', 'shadows=3', '--save-baselines'])).toThrow(
 			'use --save-baselines without --switches',
+		);
+	});
+
+	test('takes switch names with hyphens and values with hyphens or commas', () => {
+		const text = 'display-check=off&depth=reversed-gl&compression=bc,etc2&hold=2.5&bench';
+		expect(readSwitches(text, '--switches')).toBe(text);
+	});
+
+	test('names the switch that does not have the form, or says the switches are missing', () => {
+		expect(() => readSwitches('?display-check=off', '--switches')).toThrow(
+			'--switches: give page switches without the ?',
+		);
+		expect(() => readSwitches('preset=low&display_check=off', '--switches')).toThrow(
+			'--switches: "display_check=off" is not a page switch. Give names of letters and hyphens',
+		);
+		expect(() => readSwitches('-check=off', '--switches')).toThrow('"-check=off" is not');
+		expect(() => readSwitches('shadows=3&', '--switches')).toThrow('a switch is empty');
+		expect(() => readSwitches('shadows=a b', '--switches')).toThrow('"shadows=a b" is not');
+		expect(() => readSwitches(undefined, 'NULL3D_SWITCHES')).toThrow(
+			'NULL3D_SWITCHES: give page switches: names of letters and hyphens',
 		);
 	});
 

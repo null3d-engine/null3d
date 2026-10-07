@@ -20,7 +20,7 @@
 // The `environment` switch lights the swarm with the built-in room, and turns it and changes its
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light.
-import { defineSketch, type Environment, type SketchContext } from '@null3d/engine';
+import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
@@ -63,9 +63,19 @@ export default defineSketch(async (context) => {
 	let room: Environment | undefined;
 	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
 	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
-	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel.
+	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
+	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
+	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
+	// whose opaque material writes no depth, which makes any background draw before the objects
+	// with no depth test.
 	const skyMode = switches.get('sky');
-	const sky = skyMode !== null && skyMode !== 'room';
+	const sky = skyMode !== null && skyMode !== 'room' && skyMode !== 'texture';
+	if (skyMode === 'texture') context.scene.setBackground(createGradient(context));
+	if (switches.has('backgroundFirst'))
+		context.scene.createMesh({
+			mesh: context.geometry.box({ width: 0.5, height: 0.5, depth: 0.5 }),
+			material: context.materials.unlit({ color: '#ffffff', depthWrite: false }),
+		});
 	const sun: [number, number, number] = [0, 0.2, -1];
 	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
 	const skyBackground = { sky: skySettings };
@@ -202,4 +212,20 @@ function createLabels({ scene, ui }: SketchContext, count: number): void {
 		});
 		ui.trackLabel(anchor, `label-${k}`, { offset: [0, 1, 0] });
 	}
+}
+
+/** A texture of a smooth gradient, made from data, about as large as the view it fills. */
+function createGradient({ textures }: SketchContext): Texture {
+	const width = 1024;
+	const height = 512;
+	const data = new Uint8Array(width * height * 4);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const at = (y * width + x) * 4;
+			data[at] = (x * 255) / (width - 1);
+			data[at + 1] = (y * 255) / (height - 1);
+			data[at + 2] = 160;
+			data[at + 3] = 255;
+		}
+	return textures.fromData({ width, height, data, colorSpace: 'srgb' });
 }

@@ -218,7 +218,7 @@ pub mod texture_stat {
     pub const LARGEST_FRAME_BYTES: u32 = 3;
     /// Textures with an image that is not on the GPU yet.
     pub const WAITING: u32 = 4;
-    /// Images sent so far, which is the last image id handed out.
+    /// The last image id handed out, or 0 before the first.
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;

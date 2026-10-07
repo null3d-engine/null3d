@@ -73,6 +73,7 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         filter: 3,
         far_interval: 2,
         follow_movers: true,
+        ..ShadowQuality::default()
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
     let shadow = SunShadow {

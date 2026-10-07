@@ -5,17 +5,26 @@ description: >-
   cache, and a job downloads them again only after Playwright's version changes. The cache saves
   only when the workflow's SAVE_CACHES is true.
 
+inputs:
+  cache-only:
+    description: >-
+      "true" only keeps the Actions cache current: when the cache already holds this version, the
+      step downloads and installs nothing.
+    default: "false"
+
 runs:
   using: composite
   steps:
     - uses: actions/cache/restore@v4
       id: restore
       with:
+        lookup-only: ${{ inputs.cache-only }}
         path: |
           ~/.cache/ms-playwright
           ~/.cache/playwright-debs
         key: playwright-chromium-${{ runner.os }}-${{ hashFiles('tests/package.json', 'bench/package.json') }}
     - name: Install Chromium and its packages
+      if: inputs.cache-only != 'true' || steps.restore.outputs.cache-hit != 'true'
       shell: bash
       working-directory: tests
       run: |

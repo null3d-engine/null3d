@@ -7,6 +7,14 @@
 // runs the loop many times in short runs. Chrome optimizes in the background, and on a busy
 // machine a round can still sample code that it has not finished. So a check samples again after
 // more warm-up, a few times at most. Code that allocates does so in every round.
+//
+// A page whose engine runs on the page's own thread draws the engine's frames between the loop's
+// runs, and the profiler samples those frames too. In the first seconds after the start, the
+// browser has not yet optimized the code that runs once per frame, so that code boxes the numbers
+// it computes, a few in each frame, until about 14 s after the start. The frame loop's own
+// allocation check, `bun run bench:allocation`, waits 30 s for this reason. One frame in a sample
+// then counts against the loop. So the check pauses such an engine first, as the loop under test
+// needs no frames.
 import type { Page } from '@playwright/test';
 
 /** How a check warms the loop up and samples it. */
@@ -19,6 +27,11 @@ export interface SamplingPlan {
 	sampledIterations: number;
 	/** The source files whose allocations count, by their address. */
 	counted: RegExp;
+	/**
+	 * True for a page that runs an engine on its own thread. The check then pauses it through the
+	 * page's `__null3dSetPaused`, so no frame runs while the profiler samples.
+	 */
+	pauseEngine?: boolean;
 }
 
 /** A place that allocates: its function, file and line, and its bytes per iteration. */
@@ -64,6 +77,13 @@ export async function allocatingPlaces(
 	plan: SamplingPlan,
 	runLoop: (iterations: number, runs: number) => Promise<unknown>,
 ): Promise<Allocation[]> {
+	if (plan.pauseEngine)
+		await page.evaluate(() => {
+			const setPaused = (globalThis as { __null3dSetPaused?: (paused: boolean) => void })
+				.__null3dSetPaused;
+			if (!setPaused) throw new Error('the page offers no __null3dSetPaused to pause its engine');
+			setPaused(true);
+		});
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send('HeapProfiler.enable');
 	let over: Allocation[] = [];

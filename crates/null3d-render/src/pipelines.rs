@@ -22,6 +22,7 @@
 //! The test for equal depth needs both passes to give each pixel the same depth, to the last bit.
 //! Each GPU path draws the prepass in the way that does so on it ([`Prepass`]).
 
+use null3d_core::frames::frame_after;
 use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags, template};
 
 use crate::frame::RecordError;
@@ -239,6 +240,13 @@ impl DrawKey {
     }
 }
 
+/// True when a pipeline that the list of frame `created` made is built, for a builder whose thread
+/// that draws last drew every pipeline built in frame `pipelines_built`: `created` is that frame or
+/// one before it. Frames compare by their order around the count, which goes round.
+pub fn built_by(created: u32, pipelines_built: u32) -> bool {
+    !frame_after(created, pipelines_built)
+}
+
 /// The render pipelines that a frame builder draws with, by key. Ids count from 1 in the order in
 /// which keys first come, and the GPU has the pipelines of the first `created` keys.
 #[derive(Debug, Default)]
@@ -349,7 +357,7 @@ impl PipelineCache {
                 && self
                     .created_in
                     .get(index)
-                    .is_some_and(|&frame| frame <= pipelines_built))
+                    .is_some_and(|&frame| built_by(frame, pipelines_built)))
     }
 
     /// True when every pipeline of `ids` draws, by [`Self::built`].
@@ -547,6 +555,32 @@ mod tests {
             "a new device builds each pipeline again"
         );
         assert!(cache.built(first, 9));
+    }
+
+    #[test]
+    fn a_pipeline_created_in_the_last_frame_of_the_count_draws_once_the_first_frame_is_built() {
+        use null3d_core::frames::{FIRST_FRAME, previous_frame};
+        let last = previous_frame(FIRST_FRAME);
+        assert!(built_by(last, FIRST_FRAME));
+        assert!(!built_by(FIRST_FRAME, last));
+        assert!(built_by(FIRST_FRAME, 2));
+        let mut cache = PipelineCache::default();
+        let mut list = DrawList::with_capacity(256);
+        let id = cache.id(lit(0).in_pass(TARGETS));
+        cache.create_new(&mut list, last).unwrap();
+        assert!(!cache.built(id, previous_frame(last)));
+        assert!(cache.built(id, last));
+        assert!(
+            cache.built(id, FIRST_FRAME),
+            "frame 1 follows the last frame"
+        );
+        let late = cache.id(lit(vertex::UV0).in_pass(TARGETS));
+        cache.create_new(&mut list, FIRST_FRAME).unwrap();
+        assert!(
+            !cache.built(late, last),
+            "the last frame comes before frame 1"
+        );
+        assert!(cache.built(late, FIRST_FRAME));
     }
 
     #[test]

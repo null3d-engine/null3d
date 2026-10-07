@@ -2,7 +2,7 @@
 // the runner page found itself in, and a row of that record, ready to paste. The runner page and the
 // runner tool both use this file, so it imports nothing from Node or the DOM.
 
-import { GPU_PATH_NAMES, type GpuPath, skippedPathsText } from './gpu-paths.ts';
+import { GPU_PATH_NAMES, type GpuPath, SOFTWARE_RENDERER, skippedPathsText } from './gpu-paths.ts';
 
 /** The browsers that the runner page tells apart. */
 export type BrowserName =
@@ -275,9 +275,6 @@ export function osText({ userAgentData }: DeviceFacts): string {
 	const version = platformVersion.replace(/(\.0)+$/, '');
 	return version ? `${platform} ${version}` : platform;
 }
-
-/** GPU names that mark drawing on the CPU, as on a machine or a virtual machine without a GPU. */
-const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|basic render driver/i;
 
 /** The GPU as the browser names it: the WebGL2 renderer, and WebGPU's adapter details. */
 function gpuText(gpu: GpuFacts | undefined): string {
