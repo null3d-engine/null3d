@@ -50,6 +50,7 @@ import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
+import { ShaderTemplates } from './shader-templates';
 import { Texture, type Textures } from './textures';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -161,7 +162,10 @@ function fakeCore() {
 		maps,
 		destroyed,
 		biases,
-		materials: new Materials(core, (template, shader) => sent.push([template, shader])),
+		materials: new Materials(
+			core,
+			new ShaderTemplates((template, shader) => sent.push([template, shader])),
+		),
 	};
 }
 

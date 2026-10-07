@@ -87,6 +87,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				refused: 'E1416',
 				undecodable: 'E1412',
 				claimsHuge: 'E1416',
+				brokenAvif: 'E1412',
 			});
 			// One thread loads every file, so the loader and its worker download once. No file holds
 			// meshopt data, so the decoder does not download.

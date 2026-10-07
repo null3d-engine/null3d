@@ -1,6 +1,8 @@
 # D-82: Transparency parity: two-sided blending, alpha to coverage, the alpha hash and cut-out shadows
 
-Status: decided; the owner confirmed alpha to coverage on by default on 2026-10-07. Date: 2026-10-05. Task: M2-J6.
+Status: decided; the owner confirmed alpha to coverage on by default on 2026-10-07; the cost runs on the iPad and the cloud S25 are pending. Date: 2026-10-05. Task: M2-J6.
+
+Summary: A double-sided blended run draws its back faces, then its front faces, unless `forceSinglePass` is set. Masks take alpha to coverage by default: the pipeline's where the target has alpha, the shader's `sample_mask` on WebGPU's `rg11b10ufloat`. `alphaMode: 'hash'` ports three.js's alpha hash, and masked casters cut their shadows at their own cutoff.
 
 ## Question
 

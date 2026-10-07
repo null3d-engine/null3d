@@ -109,6 +109,12 @@ pub mod map_slot {
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
+/// The flags of an effect that `setEffect` takes.
+pub mod effect_flag {
+    /// The effect reads the scene's depth.
+    pub const DEPTH: u32 = 1;
+}
+
 /// The numbers that `textureStat` reads from the texture store.
 /// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
 /// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
@@ -687,13 +693,14 @@ pub fn typescript() -> String {
                 ("SHADOWS", debug_view::code::SHADOWS),
             ],
         ),
-        // The kinds of fog that `setFog` takes.
+        // The fog curves that `setFog` takes, and its code for no fog.
         (
-            "FOG_KIND",
+            "FOG_CURVE",
             &[
-                ("NONE", fog::kind::NONE),
-                ("LINEAR", fog::kind::LINEAR),
-                ("EXP2", fog::kind::EXP2),
+                ("NONE", fog::curve::NONE),
+                ("LINEAR", fog::curve::LINEAR),
+                ("EXP2", fog::curve::EXP2),
+                ("EXPONENTIAL", fog::curve::EXPONENTIAL),
             ],
         ),
         (
@@ -729,6 +736,16 @@ pub fn typescript() -> String {
                 ("REFLECTANCE", param::REFLECTANCE as u32),
                 ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
+            ],
+        ),
+        // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
+        // TypeScript writes at `effectValues` first.
+        (
+            "EFFECT",
+            &[
+                ("MAX", null3d_render::effects::MAX_EFFECTS as u32),
+                ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
+                ("DEPTH", effect_flag::DEPTH),
             ],
         ),
         (
@@ -810,6 +827,7 @@ pub fn typescript() -> String {
                 ("FORMAT_ASTC_SRGB", format::ASTC_4X4_UNORM_SRGB),
                 ("FORMAT_BC7", format::BC7_RGBA_UNORM),
                 ("FORMAT_BC7_SRGB", format::BC7_RGBA_UNORM_SRGB),
+                ("FORMAT_BC6H", format::BC6H_RGB_UFLOAT),
                 ("FORMAT_ETC2_RGB", format::ETC2_RGB8_UNORM),
                 ("FORMAT_ETC2_RGB_SRGB", format::ETC2_RGB8_UNORM_SRGB),
                 ("FORMAT_ETC2_RGBA", format::ETC2_RGBA8_UNORM),

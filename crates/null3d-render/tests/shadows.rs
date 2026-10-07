@@ -68,7 +68,7 @@ fn operands(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
 fn shadow_maps(commands: &[(Op, Vec<u32>)]) -> Vec<Vec<u32>> {
     operands(commands, Op::CreateTexture)
         .into_iter()
-        .filter(|o| o[4] == format::DEPTH32_FLOAT && o[8] == view::D2_ARRAY)
+        .filter(|o| format::is_depth(o[4]) && o[8] == view::D2_ARRAY)
         .collect()
 }
 
@@ -123,6 +123,10 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
     };
     assert_eq!(atlas[1..4], [1, 1, 1]);
     assert_eq!(map[1..4], [1024, 1024, 3]);
+    assert_eq!(
+        [map[4], atlas[4]],
+        [format::DEPTH16_UNORM, format::DEPTH32_FLOAT]
+    );
     let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
     assert_eq!(map[5], usage);
     let views = operands(&commands, Op::CreateTextureView);
@@ -200,7 +204,7 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
         [
             permutation::CASTER_OFFSET,
             format::NONE,
-            format::DEPTH32_FLOAT,
+            format::DEPTH16_UNORM,
             1,
             state_flags::CULL_FRONT,
             0,
@@ -229,7 +233,7 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
         .collect();
     assert_eq!(cascades.len(), 3);
     for (formats, draws) in cascades {
-        assert_eq!(*formats, [format::NONE, format::DEPTH32_FLOAT, 1]);
+        assert_eq!(*formats, [format::NONE, format::DEPTH16_UNORM, 1]);
         assert_eq!(*draws, 2);
     }
 }

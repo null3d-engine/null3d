@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-09-29. Task: M0-D3.
 
+Summary: Keep the replay loop in TypeScript, the faster of the two on the S24+ in every scene.
+
 ## Question
 
 The render worker replays each frame's binary draw list into WebGPU or WebGL2 calls. Does that loop run in TypeScript, reading the list through typed-array views, or in Rust compiled to WebAssembly, calling the browser's APIs through wasm-bindgen imports?

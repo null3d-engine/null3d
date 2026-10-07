@@ -439,6 +439,8 @@ describe('the pages', () => {
 			'null3d-webgl2-two-pass',
 			'null3d-webgpu-hash',
 			'null3d-webgl2-hash',
+			'null3d-webgpu-depth32',
+			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
 			'null3d-webgl2-timed',
@@ -487,6 +489,15 @@ describe('the pages', () => {
 		);
 	});
 
+	test('runs the 32-bit shadow cascade pages on the pipelined pages with the depth switch', () => {
+		expect(pagePath('s4', 'null3d-webgpu-depth32', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowdepth=32&seconds=2',
+		);
+		expect(pagePath('s4', 'null3d-webgl2-depth32')).toBe(
+			'/bench/pages/null3d/s4.html?gpu=webgl2&shadowdepth=32',
+		);
+	});
+
 	test('runs the pages without the cascade band on the pipelined pages with the band at 0', () => {
 		expect(pagePath('s4', 'null3d-webgpu-blend-off', 'seconds=2')).toBe(
 			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowCascadeBlend=0&seconds=2',
@@ -516,6 +527,8 @@ describe('the pages', () => {
 			'null3d-webgl2-two-pass',
 			'null3d-webgpu-hash',
 			'null3d-webgl2-hash',
+			'null3d-webgpu-depth32',
+			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
 			'null3d-webgl2-timed',

@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 
 use null3d_gpu::drawlist::vertex;
 
-use crate::manifest::{Manifest, Pipeline, Target, Variant};
+use crate::manifest::{Manifest, Pipeline, Shader, Target, Variant};
 use crate::position::locate;
 use crate::scan::{Token, find_function, tokenize};
 use crate::textures::{self, Texture};
-use crate::uniforms::{self, Uniform};
+use crate::uniforms::{self, Owner, Uniform};
 use crate::{
     BuildError, Compiler, Inputs, MANIFEST_PATH, Position, Problem, VariantOutput, features,
 };
@@ -103,20 +103,33 @@ pub struct MaterialTemplate {
 impl MaterialTemplate {
     /// Finds the template in a manifest and its files.
     pub fn load(inputs: &Inputs) -> Result<Self, BuildError> {
+        Self::marked(inputs, "custom materials", "custom_materials", |shader| {
+            shader.custom_materials
+        })
+    }
+
+    /// Finds the one shader of a manifest that `marked` picks, the template of `what`, which the
+    /// manifest marks with `flag`.
+    pub(crate) fn marked(
+        inputs: &Inputs,
+        what: &str,
+        flag: &str,
+        marked: impl Fn(&Shader) -> bool,
+    ) -> Result<Self, BuildError> {
         let manifest = Manifest::parse(&inputs.manifest).map_err(|messages| {
             messages
                 .into_iter()
                 .map(|message| Problem::in_file(MANIFEST_PATH, message))
                 .collect::<BuildError>()
         })?;
-        let mut marked = manifest
+        let mut found = manifest
             .shaders
             .into_values()
-            .filter(|shader| shader.custom_materials);
-        let (Some(shader), None) = (marked.next(), marked.next()) else {
+            .filter(|shader| marked(shader));
+        let (Some(shader), None) = (found.next(), found.next()) else {
             return Err(Problem::in_file(
                 MANIFEST_PATH,
-                "custom materials need one template: mark exactly one shader with `custom_materials = true`.",
+                format!("{what} need one template: mark exactly one shader with `{flag} = true`."),
             )
             .into());
         };
@@ -124,7 +137,7 @@ impl MaterialTemplate {
             Problem::in_file(
                 MANIFEST_PATH,
                 format!(
-                    "the template for custom materials, \"{}\", does not exist.",
+                    "the template for {what}, \"{}\", does not exist.",
                     shader.file
                 ),
             )
@@ -140,9 +153,56 @@ impl MaterialTemplate {
         })
     }
 
-    /// The lines of the template before a custom material's first line.
+    /// The lines of the template before the first line of the WGSL that joins it.
     fn lines(&self) -> u32 {
         self.source.bytes().filter(|&byte| byte == b'\n').count() as u32
+    }
+
+    /// The template's source, which ends with a line break.
+    pub(crate) fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// The template's render pipelines.
+    pub(crate) fn pipelines(&self) -> &BTreeMap<String, Pipeline> {
+        &self.pipelines
+    }
+
+    /// The template's variants.
+    pub(crate) fn variants(&self) -> &BTreeMap<String, Variant> {
+        &self.variants
+    }
+
+    /// Points the problems of a build of the template with `own`, the WGSL that joined it after
+    /// the template's last line from file `path`, at the lines of `own`. A problem in the
+    /// template's own lines loses its place and gets `note`.
+    pub(crate) fn place_problems(
+        &self,
+        errors: &mut BuildError,
+        path: &str,
+        own: &str,
+        note: &str,
+    ) {
+        let before = self.lines();
+        let own = own.bytes().filter(|&byte| byte == b'\n').count() as u32 + 1;
+        for problem in &mut errors.problems {
+            if problem.file.as_deref() != Some(path) {
+                continue;
+            }
+            // A problem without a line, such as a GLSL writer's refusal of a WGSL form, can come
+            // from the joined code as well as from the template, so it gets no note.
+            match problem.line {
+                None => {}
+                Some(line) if line > before && line - before <= own => {
+                    problem.line = Some(line - before);
+                }
+                Some(_) => {
+                    problem.line = None;
+                    problem.column = None;
+                    problem.message = format!("{}\n{note}", problem.message);
+                }
+            }
+        }
     }
 }
 
@@ -291,8 +351,8 @@ impl Compiler {
             }
         };
         let room = texture_fields.len() as u32;
-        let uniforms =
-            uniforms::read(&tokens, &material.source, path, room).unwrap_or_else(|found| {
+        let uniforms = uniforms::read(&tokens, &material.source, path, room, Owner::Material)
+            .unwrap_or_else(|found| {
                 problems.extend(found);
                 None
             });
@@ -357,31 +417,7 @@ impl Compiler {
             &str::to_owned,
             &mut errors,
         );
-        let before = template.lines();
-        let own = material
-            .source
-            .bytes()
-            .filter(|&byte| byte == b'\n')
-            .count() as u32
-            + 1;
-        for problem in &mut errors.problems {
-            if problem.file.as_deref() != Some(path) {
-                continue;
-            }
-            // A problem without a line, such as a GLSL writer's refusal of a WGSL form, can come
-            // from the material's own code as well as from the template, so it gets no note.
-            match problem.line {
-                None => {}
-                Some(line) if line > before && line - before <= own => {
-                    problem.line = Some(line - before);
-                }
-                Some(_) => {
-                    problem.line = None;
-                    problem.column = None;
-                    problem.message = format!("{}\n{TEMPLATE_NOTE}", problem.message);
-                }
-            }
-        }
+        template.place_problems(&mut errors, path, &material.source, TEMPLATE_NOTE);
         let vertex_entry = template.pipelines.values().next().map(|p| p.vertex.clone());
         let (locations, attributes) = built_inputs(&built, &vertex_entry.unwrap_or_default());
         errors.or(MaterialOutput {

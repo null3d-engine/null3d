@@ -46,9 +46,11 @@ export interface Null3dPageOptions {
  * `outline` adds outlined boxes to S1, `labels` adds that many labeled objects to S1, whose
  * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
  * point light shadows on, `environment` lights S1 with the built-in room, which turns every
- * frame, and `sides` draws S2's boxes see-through and double-sided: `two` draws each one's back
- * faces, then its front faces, and `one` draws both in one draw, and `alpha=hash` draws S2's boxes with
- * the alpha hash.
+ * frame, `effects` adds two custom effects to S1, whose uniforms change every frame,
+ * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
+ * decoders' work in the engine's workers, and `sides` draws S2's boxes see-through and
+ * double-sided: `two` draws each one's back faces, then its front faces, and `one` draws both in one
+ * draw, and `alpha=hash` draws S2's boxes with the alpha hash.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -65,6 +67,8 @@ const SKETCH_SWITCHES = [
 	'environment',
 	'sides',
 	'alpha',
+	'effects',
+	'decode',
 ] as const;
 
 /**

@@ -23,7 +23,7 @@ A frame has three kinds of cost, and each has its own fixes.
 | --- | --- | --- | --- |
 | Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
 | Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, LODs, fewer point and spot lights |
-| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `depthPrepass` for heavy overdraw (section 7) |
+| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw (section 7) |
 
 On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. Both paths list the same lights for each cluster (`concepts/lighting`).
 
@@ -99,7 +99,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
 - Shadows: leave `cascades` and `mapSize` out of a light's `shadow` options, so the preset sets them: two cascades of 1,024 texels on Low, for phones. Keep `distance` no longer than the scene needs. Far cascades draw every few frames by preset. On every preset they draw every frame while a dynamic object touches them, so moving shadows never trail. Set `followMovingCasters: false` to keep their turns where moving objects stay far and small; their shadows then trail by up to the interval less one frame. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. A shadowed spot light draws its casters into one tile of the shadow atlas, and a point light into six. Low and Medium turn point light shadows off and give the atlas fewer tiles, so avoid shadowed point lights on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
-- Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. Prefabs to free with `destroy()` come in 0.2.
+- Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. (0.2) Between levels, destroy the old level's copies, then `prefab.destroy()`: the next level reuses the memory (`api/assets`).
 - For comparison runs, fix the refresh rate at 60 Hz and start with a cool, charged device (engine docs `guides/phones`).
 
 ## 6. Memory
@@ -134,12 +134,13 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
 | Spot and point light shadows | `shadowTiles`, `shadowTileSize`, `pointLightShadows` (High and Ultra only) | At the start |
 | Depth prepass | `depthPrepass`, off on every preset | At the start |
+| GPU occlusion culling | `gpuOcclusion`, off on every preset (WebGPU only) | At the start |
 | Engine memory | `memoryMaximumMiB` | Before the engine loads |
 
-The table marks its other rows as planned, such as the light caps and the texture memory budget. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's.
+The table marks its other rows as planned, such as the light caps and the texture memory budget. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades` and `depthPrepass`.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 ### The governor
@@ -161,6 +162,12 @@ Read the current render scale in `quality.renderScale`, and the shadow settings 
 With `createEngine({ depthPrepass: true })`, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. It saves GPU time only where objects hide many others and their shading costs much, such as a street of lit buildings.
 
 Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chrome on a MacBook Pro, the prepass raised its GPU time per frame on WebGPU from 0.28 ms to 0.40 ms. On WebGL2 it doubled the draw calls. Both GPU paths draw the prepass, with the same image as without it. Blended objects and alpha-cutoff materials stay out of the prepass. Custom materials and sprites join it with their own vertex shader, so their vertex offsets keep their depth. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
+
+### GPU occlusion culling
+
+With `gpuOcclusion` on, each camera draws the depth of the opaque objects that showed in its last frame and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. Only objects that `setOccluder(true)` marks hide others. Every preset leaves it off, because on a fast desktop GPU its passes cost more than they saved. It runs only on WebGPU, and not with the depth prepass. Engine docs: `concepts/culling`.
+
+It pays where walls and large objects hide many detailed objects, such as the streets of a city. In open scenes it costs a little. Compare the scene's GPU time with `?occlusion=on` and `?occlusion=off` before you change the preset's choice. Shadow passes and see-through objects do not use it.
 
 ### Half precision
 
@@ -212,7 +219,7 @@ Performance advice for three.js and other engines assumes things that do not hol
 | Merge meshes to cut draw calls | Objects that share a mesh and material already share one draw. Merge only different small static meshes, to cut buckets |
 | Share materials so objects share a shader | Every material already shares its pipeline. Share materials anyway: each mesh and material pair is its own draw |
 | Compile shaders before the first frame | The first frame waits for its pipelines. Wait for `engine.firstFrame`; warm up later stages with `scene.warmUp()` |
-| Download every shader before play | Skinning, morph targets, bloom, ambient occlusion, sprites, lines, texture backgrounds, alpha to coverage (`'coverage'`), the alpha hash (`'hash'`) and masked shadows (`'cutout'`) download their shaders on first use. A masked object casts no shadow until `'cutout'` loads. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials. Leave the list out otherwise: each listed file grows the start |
+| Download every shader before play | Skinning, morph targets, bloom, ambient occlusion, sprites, lines, texture backgrounds, alpha to coverage (`'coverage'`), the alpha hash (`'hash'`), masked shadows (`'cutout'`) and GPU occlusion culling (`'occlusion'`) download their shaders on first use. A masked object casts no shadow until `'cutout'` loads. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials. Leave the list out otherwise: each listed file grows the start |
 | Turn off matrix updates for still objects | Objects are static by default and cost nothing until a setter changes them |
 | Set a needs-update flag after a change | Setters mark changes themselves |
 | Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |

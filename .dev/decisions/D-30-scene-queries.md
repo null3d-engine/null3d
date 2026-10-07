@@ -1,6 +1,8 @@
 # D-30: Raycasts and overlap queries over the scene
 
-Status: decided. Date: 2026-10-03. Task: M2-D2.
+Status: decided, 2026-10-03; input checks in every build added on 2026-10-04. Date: 2026-10-03. Task: M2-D2.
+
+Summary: Queries write into the caller's hit objects and arrays and allocate nothing. Overlap queries test triangles. Each item's box comes from its mesh, instance rows join the trees, and mesh trees build on the first query. Raycasts give three.js's Raycaster hits, with its layer default and face rules. Every build refuses query input that is not finite in 32 bits, at no cost the Mac could measure.
 
 ## Question
 
