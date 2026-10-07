@@ -56,6 +56,7 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - `quality/preset-docs.ts` holds the preset table's docs text in the same way. The compiler asks for an entry there for each setting in `quality/presets.ts`, and runtime code must not import it.
 - The page hands the key names (`shared/key-codes.ts`) to the sketch worker when it starts it, as it does the error fixes. The sketch worker's file then holds no copy of the list.
 - The input ring's record format is plain constants, not enums. The bundler writes a constant into the code as a number, while a TypeScript enum ships as an object that holds each member's name. A `const enum` ships the same object.
+- In Rust that the WebAssembly files hold, write `max` and `min`, not `clamp`, when a bound is not a constant. Its check that the bounds are in order panics with a message that prints them. That pulls in the code that formats floats. In the raycasts of sprites, points and lines ([#382](https://github.com/null3d-engine/null3d/pull/382)), `f64::clamp` added about 17 KB before Brotli. A `twiggy diff` of two builds with function names showed it.
 
 ## Quality presets
 
@@ -315,6 +316,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - A panic stops a call with a trap. The panic hook writes a response first. The wrapper then drops the instance, because a trap can leave its memory in any state.
 - The build drops the function names and skips wasm-opt. On this module, wasm-opt took longer than the whole build and saved 0.4% after Brotli, with no speed gain.
 - The shader composer rewrites each file before naga reads it, and imported names get longer. Its own error reports count columns in that copy, so the build maps each place back to the original file.
+- naga renames a name that two modules share, in every program that joins them. That makes the text longer, and it once renamed a custom material's own argument. So library code gives each name its own word. It uses plain early returns too, because naga writes an `||` in GLSL as a local variable and an if-else ([D-74](decisions/D-74-native-fog.md)).
 
 ## The asset tool
 
@@ -558,6 +560,12 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 - So at its start the engine doubles the canvas's buffer for a moment and reads its computed CSS size. A side whose CSS size follows the buffer keeps the size it showed, as an inline style. A canvas that CSS sizes keeps its shape and gets no style.
 - The drawing buffer stays within the GPU's largest texture: WebGPU's default limit of 8192, or WebGL2's `MAX_TEXTURE_SIZE`. A larger canvas draws at a lower pixel ratio, which `engine.viewport.pixelRatio` reports.
 - CI's browsers run at a pixel ratio of 1, where such a canvas never grows. The browser tests run a project on a high-density screen to cover it.
+
+## Writes to storage in WGSL
+
+- WGSL lets a store to one component of a vector in a storage buffer access the whole vector. A GPU may do it as a read of the vector, then a write of all of it.
+- So two invocations that write different components of one `vec4` race, on any GPU, and one write can be lost. Give each invocation whole vectors of its own, or use atomics.
+- The vertex shaders that read instance data by index (D-23) first wrote four 32-bit indices into each 16-byte entry, one per invocation. SwiftShader drew every image right, and Apple's GPUs lost writes. One index per entry ended it.
 
 ## Failures on the GPU
 
