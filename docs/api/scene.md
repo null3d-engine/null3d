@@ -287,7 +287,7 @@ Options for `scene.instantiate`: where the copy's group goes, and settings for a
 | --- | --- |
 | `castShadows?: boolean` | True makes every mesh of the copy cast the shadows of a directional light. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on every mesh of the copy. The default is false. |
-| `occluder?: boolean` | True makes every mesh of the copy block the view for software occlusion culling on WebGL2, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset tool gave blockers block, and the others do not. |
+| `occluder?: boolean` | True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the asset tool gave blockers block, and the others do not. |
 | `layers?: number` | The layers of every object of the copy and of its instance batches, as a 32-bit mask. Left out, they keep the default, 1, which is layer 0. |
 
 ### `MeshOptions`
@@ -302,7 +302,7 @@ Options for `scene.createMesh`.
 | `material: Material` | How the surface looks, from `ctx.materials`. |
 | `castShadows?: boolean` | True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The default is false. |
 | `receiveShadows?: boolean` | True makes shadows fall on the mesh, like `setReceiveShadows(true)`. The default is false. Unlit materials show no shadows. |
-| `occluder?: boolean` | True makes the mesh block the view for software occlusion culling on WebGL2, like `setOccluder(true)`. The default is false. |
+| `occluder?: boolean` | True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like `setOccluder(true)`. The default is false. |
 
 ### `NodeOptions`
 

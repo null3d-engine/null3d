@@ -586,7 +586,7 @@ impl CpuCulledRenderer {
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
         self.layout_prepass = self.graph.depth_prepass();
-        let prepass = Prepass::OwnVertexShader.if_on(self.layout_prepass);
+        let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
             settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,

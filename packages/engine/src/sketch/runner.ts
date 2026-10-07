@@ -279,6 +279,7 @@ export class SketchRunner {
 			device.depthPrepass,
 			device.vertexSkinning,
 			device.largeWorld,
+			device.gpuOcclusion,
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');

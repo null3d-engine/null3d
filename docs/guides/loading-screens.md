@@ -140,6 +140,7 @@ Most shaders come with the engine's start. The shaders of a feature that many ga
 | `'sprites'` | with the first sprite batch |
 | `'lines'` | with the first line batch |
 | `'background'` | with the first texture background |
+| `'occlusion'` | with the first object that `setOccluder(true)` marks, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders |
 
 Each feature's file is 1 to 19 KB after Brotli. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 
