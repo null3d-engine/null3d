@@ -288,7 +288,13 @@ function pageItem(
 		switches = [],
 		timeoutSeconds = 30,
 		load,
-	}: { switches?: readonly string[]; timeoutSeconds?: number; load?: Load } = {},
+		ownTab = false,
+	}: {
+		switches?: readonly string[];
+		timeoutSeconds?: number;
+		load?: Load;
+		ownTab?: boolean;
+	} = {},
 ): PlanItem<Check> {
 	const query = switches.filter(Boolean).join('&');
 	const file = `${TEST_PAGES}${page}.html${query ? `?${query}` : ''}`;
@@ -297,6 +303,7 @@ function pageItem(
 		path: load ? loadPath(load, file.slice(1)) : file,
 		timeoutSeconds,
 		check,
+		...(ownTab && { ownTab: true as const }),
 	};
 }
 
@@ -528,7 +535,11 @@ export function checksPlan(): PlanItem<Check>[] {
 				`frame-restarts-${slug(mode.name)}`,
 				'shared-memory',
 				{ kind: 'restarts', mode, start: 'frame' },
-				{ switches: ['kinds=frame', mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+				{
+					switches: ['kinds=frame', mode.query],
+					timeoutSeconds: RESTARTS_TIMEOUT_SECONDS,
+					ownTab: true,
+				},
 			),
 		),
 		...TIERS.flatMap((tier) =>
@@ -552,7 +563,11 @@ export function checksPlan(): PlanItem<Check>[] {
 					`${start}-restarts-${slug(mode.name)}`,
 					'shared-memory',
 					{ kind: 'restarts', mode, start },
-					{ switches: [`kinds=${start}`, mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+					{
+						switches: [`kinds=${start}`, mode.query],
+						timeoutSeconds: RESTARTS_TIMEOUT_SECONDS,
+						ownTab: start === 'frame-destroyed',
+					},
 				),
 			),
 		),
@@ -1643,7 +1658,8 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
  * it gets a note through `note` instead; more than that fails where the engines are `threaded`. The
  * single-threaded build takes no shared memory, so any room it loses is address space. Room that
  * engines on kept canvases left held gets a note too: their starts go past the room, so a start
- * fails when that memory stops it.
+ * fails when that memory stops it. So does room that stopped engines in removed frames left held,
+ * which Safari keeps with the frame's page.
  */
 export function restartProblems(
 	result: RestartResult,
@@ -1667,6 +1683,17 @@ export function restartProblems(
 		return problems;
 	}
 	const { again } = engine;
+	// Safari can keep a removed frame's whole page, and all that it reaches, for minutes, even a
+	// page with no engine (D-92). So room that stopped engines in removed frames left held gets a
+	// note. Restarts on the page stop their engines with no frame, and still fail on it.
+	if (start === 'frame-destroyed') {
+		if (again?.error) problems.push(failed(again, ' in the second round'));
+		else
+			note?.(
+				`Safari kept the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: ${lostText}${again ? `, and for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}` : ''}`,
+			);
+		return problems;
+	}
 	if (!again)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: ${lostText}`,

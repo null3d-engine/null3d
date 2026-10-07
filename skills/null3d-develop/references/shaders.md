@@ -331,7 +331,7 @@ The build resolves imports before translating, and adds only the functions the s
 - `null3d::noise`: integer hashes, `random`, and value, Perlin, simplex, Worley and fractal noise. Each noise has a 2D and a 3D form, such as `simplex2` and `fbm3(p, octaves)`. The hashes give the same bits on every GPU, so a pattern looks the same everywhere.
 - `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx` and `tone_map_neutral`.
 - `null3d::lighting`: `lambert`, and three.js's physically based functions, such as `brdf_ggx`, `pbr_material` and `direct_light`.
-- `null3d::fog`: `fog_linear` and `fog_exp2`, with three.js's formulas.
+- `null3d::fog`: the curves `fog_linear` and `fog_exp2`, with three.js's formulas, and `fog_exponential`. Pass each curve the point's straight-line distance from the camera, as the engine does, so the fog stays put as the camera turns. The module also has `fog_height_ratio`, which thins the fog with height, `fog_color`, which adds the sun's glow, and `apply_fog`.
 - `null3d::vertex`: instance transforms, `transform_normal` for uneven scale, and `to_clip`.
 - `null3d::depth`: `linear_depth` and the view-z conversions for the engine's reversed depth, which hold on both GPU paths.
 - `null3d::sdf`: signed distances of shapes, and ways to combine them.

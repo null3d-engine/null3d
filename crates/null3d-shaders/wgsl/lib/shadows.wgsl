@@ -37,9 +37,10 @@ struct ShadowCascades {
     /// their cascade by their distance from the camera, or 0 by their distance along its view, and
     /// 0.
     biases: vec4f,
-    /// The texels on each side of each layer, the size of one texel in texture coordinates, and
-    /// the texels on each side of the filter's square: 3 or 5, or less for the comparison
-    /// sampler's own blend of four texels.
+    /// The texels on each side of each layer, the size of one texel in texture coordinates, the
+    /// texels on each side of the filter's square: 3 or 5, or less for the comparison sampler's
+    /// own blend of four texels, and the step between two depths that the map stores: 1 / 65,535
+    /// for 16-bit depth, or 0 for floats.
     kernel: vec4f,
     /// The camera that draws, relative to the camera that fitted the cascades, whose distances
     /// pick each receiver's cascade: 0 unless another camera fitted them, as the debug API's
@@ -93,6 +94,10 @@ const MAX_PLANE_SLOPE: f32 = 10.0;
 /// How far below a receiver's plane, in meters, a caster must lie for the filter to ignore it. It
 /// only needs to cover the rounding of depths.
 const PLANE_MARGIN: f32 = 0.01;
+/// The fewest steps of a cascade's stored depth that a receiver's bias toward the light and its
+/// plane's margin cover. A step is the cascade's box length over 65,535 in 16-bit depth: about
+/// 14 mm in a far cascade 200 m out, more than the margin and the default bias.
+const DEPTH_STEPS_FLOOR: f32 = 1.5;
 
 /// The plane of a receiver in the texels of a cascade: where the receiver's own point lies, in
 /// texels from the map's corner, its depth there less `PLANE_MARGIN`, and how much its depth
@@ -131,7 +136,9 @@ fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec
 /// `size` texels on each side. The cascade's projection is orthographic: each row of the matrix's
 /// upper 3 x 3 part is one of the light's axes, scaled. So the plane stays a plane in the map, and
 /// the depth's change per texel comes straight from the normal in the light's axes: along each
-/// axis, the normal's share there over its share toward the light, scaled by the rows' sizes.
+/// axis, the normal's share there over its share toward the light, scaled by the rows' sizes. The
+/// plane lies `PLANE_MARGIN` below the receiver, or `DEPTH_STEPS_FLOOR` steps of the cascades'
+/// stored depth where those are longer.
 fn receiver_plane(
     view_proj: mat4x4f,
     relative: vec3f,
@@ -165,7 +172,7 @@ fn receiver_plane(
     let steepness = min(1.0, MAX_PLANE_SLOPE * cosine / max(sine, 1e-4));
     let scales = vec2f(dot(row_x, row_x), dot(row_y, row_y)) * flip * size;
     let slope = -(dot(row_z, row_z) / n.z) * n.xy / scales * steepness;
-    let margin = PLANE_MARGIN * dot(row_z, to_light);
+    let margin = max(PLANE_MARGIN * dot(row_z, to_light), DEPTH_STEPS_FLOOR * cascades.kernel.w);
     return ReceiverPlane(at, clip.z - margin, slope);
 }
 
@@ -274,6 +281,20 @@ fn sun_filtered(kernel: vec4f, uv: vec2f, layer: u32, depth: f32, plane: Receive
     return sum / 144.0;
 }
 
+/// The main directional light's bias toward the light and its normal bias in cascade `cascade`, in
+/// meters. The bias toward the light covers at least `DEPTH_STEPS_FLOOR` steps of the depth that
+/// the cascade stores, which grow with the length of its box. The cascade's matrix gives the
+/// change in depth over one meter along the light in its third row.
+fn sun_biases(cascade: u32) -> vec2f {
+    let row = vec3f(
+        cascades.view_proj[cascade][0].z,
+        cascades.view_proj[cascade][1].z,
+        cascades.view_proj[cascade][2].z,
+    );
+    let least = DEPTH_STEPS_FLOOR * cascades.kernel.w / length(row);
+    return vec2f(max(cascades.biases.x, least), cascades.biases.y);
+}
+
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
 /// `relative` is the point's position relative to the camera, `normal` its unit normal, which
 /// moves the point off its own surface before the lookup, and `to_light` the unit direction toward
@@ -341,7 +362,7 @@ fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
 /// texels move it.
 fn sun_clip(cascade: u32, relative: vec3f, normal: vec3f, to_light: vec3f) -> vec4f {
     let texel = cascades.texels[cascade];
-    let offset = bias_offset(normal, to_light, cascades.biases.xy, texel);
+    let offset = bias_offset(normal, to_light, sun_biases(cascade), texel);
     return cascades.view_proj[cascade] * vec4f(relative + offset, 1.0);
 }
 

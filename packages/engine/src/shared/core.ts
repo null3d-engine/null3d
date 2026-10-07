@@ -42,6 +42,7 @@ export interface CoreGlue extends CoreErrors {
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
 		largeWorld: boolean,
+		shadowDepthBits: number,
 	): number;
 	/**
 	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
@@ -262,6 +263,13 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/**
+	 * Destroys `count` meshes whose ids `meshArrays`'s words hold: their data goes at once, and the
+	 * next frame gives their ids to later meshes once no object or batch names them.
+	 */
+	destroyMeshes(count: number): number;
+	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
+	meshMemoryBytes(): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
@@ -497,17 +505,22 @@ export interface CoreGlue extends CoreErrors {
 	/** Draws the texture `texture` behind every object in the camera's view, or none with 0. */
 	setBackgroundTexture(texture: number): number;
 	/**
-	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
-	 * linear fog, and the density of exponential squared fog.
+	 * The scene's fog: its curve (`FOG_CURVE_*`), or none, its linear color, the density of
+	 * exponential and exponential squared fog, the near and far distances of linear fog, the height
+	 * where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 	 */
 	setFog(
-		kind: number,
+		curve: number,
 		r: number,
 		g: number,
 		b: number,
+		density: number,
 		near: number,
 		far: number,
-		density: number,
+		height: number,
+		heightFalloff: number,
+		sunGlow: number,
+		sunGlowExponent: number,
 	): number;
 	/**
 	 * Draws the scene with a debug view (`DEBUG_VIEW_*`), or with its materials with
@@ -525,6 +538,11 @@ export interface CoreGlue extends CoreErrors {
 	 * (`ANIMATION_REST_FLOATS` floats), then its inverse bind matrix (12 floats, row-major 3 × 4).
 	 */
 	createSkeleton(joints: number): number;
+	/**
+	 * Destroys a skeleton with its clips and joint masks. Fails with 1111 while an animated
+	 * instance uses it.
+	 */
+	destroySkeleton(skeleton: number): number;
 	/**
 	 * Creates a clip from the staging words: `tracks` headers of `ANIMATION_TRACK_WORDS` words
 	 * (joint, channel, interpolation, key count), then each track's key times and values, resampled
@@ -659,6 +677,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'meshRadius',
+	'destroyMeshes',
+	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
 	'setMaterialValues',
@@ -711,6 +731,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initAnimations',
 	'animationStaging',
 	'createSkeleton',
+	'destroySkeleton',
 	'createClip',
 	'createClipLater',
 	'clipReady',

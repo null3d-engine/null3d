@@ -61,7 +61,7 @@ use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
-use null3d_render::shadows::ShadowQuality;
+use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
@@ -105,6 +105,9 @@ mod codes {
     /// (`constants::animation_problem`). No public call raises it yet, so the TypeScript error
     /// table does not list it.
     pub const BAD_ANIMATION: u32 = 1218;
+    /// A destroy named a skeleton that a live animated instance still uses; the second detail is
+    /// the instance.
+    pub const IN_USE: u32 = 1111;
     /// A function that needs the engine ran before `initEngine`, or `initEngine` ran twice.
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).
@@ -154,6 +157,9 @@ struct Engine {
     animations: Option<Animations>,
     /// The morph weights of morphed objects, which TypeScript writes.
     morphs: MorphWeights,
+    /// The ids of meshes that `destroyMeshes` removed, counting from 1, which the next frame
+    /// gives to later meshes once no object or batch names them.
+    removed_meshes: Vec<u32>,
     /// The clips that job workers resample in the background, by `createClipLater` ticket, each
     /// with its skeleton's id.
     clip_jobs: Vec<Option<(u32, Arc<ClipJob>)>>,
@@ -398,6 +404,7 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
 /// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
 /// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
@@ -417,6 +424,7 @@ pub fn init_engine(
     depth_prepass: bool,
     vertex_skinning: bool,
     large_world: bool,
+    shadow_depth_bits: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -445,6 +453,7 @@ pub fn init_engine(
         transparent,
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
+    let cascade_depth = CascadeDepth::from_bits(shadow_depth_bits);
     *cell = Some(Engine {
         scene: if large_world {
             SceneStorage::with_large_world(scene_capacity)
@@ -462,6 +471,7 @@ pub fn init_engine(
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
+                cascade_depth,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -475,6 +485,7 @@ pub fn init_engine(
                 cell_culling,
                 depth_prepass,
                 vertex_skinning,
+                cascade_depth,
                 ..RendererConfig::default()
             }))
         },
@@ -486,6 +497,7 @@ pub fn init_engine(
         lines: LineStore::default(),
         animations: None,
         morphs: MorphWeights::new(),
+        removed_meshes: Vec::new(),
         clip_jobs: Vec::new(),
         queries: SceneQueries::new(),
         query_input: [0.0; query::INPUT_FLOATS as usize],
@@ -719,6 +731,9 @@ pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
         e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
         e.structure_changed |= e.scene.take_structure_changed();
+        if !e.removed_meshes.is_empty() {
+            release_mesh_ids(e);
+        }
         match applied {
             Ok(()) => 0,
             Err(failure) => {
@@ -1556,6 +1571,81 @@ fn staged_values(words: &[u32], ty: Type, count: usize) -> Values<'_> {
     Values::integers(data, ty.normalized())
 }
 
+// The data goes at once, so the frame loop never moves it. The ids stay taken until the next
+// frame starts, after it applies the commands that destroy the objects that drew the meshes, so a
+// sketch can destroy its objects and then the meshes in one callback.
+/// Destroys `count` meshes whose ids, counting from 1, the staging words hold: their data goes,
+/// the meshes after them in each page move down, and the next frame gives their ids to later
+/// meshes. Fails, destroying none, for an id that names no live mesh.
+#[wasm_bindgen(js_name = destroyMeshes)]
+pub fn destroy_meshes(count: u32) -> u32 {
+    with_engine(|e| {
+        let mut ids = std::mem::take(&mut e.staging);
+        ids.truncate(count as usize);
+        let meshes = e.renderer.settings().meshes();
+        let unknown = ids
+            .iter()
+            .copied()
+            .find(|&mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_none());
+        if let Some(mesh) = unknown {
+            return render_failure(render_detail::UNKNOWN_MESH, mesh);
+        }
+        e.queries.forget_meshes(&ids);
+        e.removed_meshes.extend_from_slice(&ids);
+        for id in &mut ids {
+            *id -= 1;
+        }
+        e.renderer.remove_meshes(&ids);
+        e.structure_changed = true;
+        0
+    })
+}
+
+/// Gives the ids of removed meshes to later meshes, but those that a created object or a live
+/// batch still names: they wait for a later frame, so a stray object draws nothing rather than
+/// another mesh. It runs only in a frame after a destroy, and allocates nothing.
+fn release_mesh_ids(e: &mut Engine) {
+    // The top bit marks an id that something still names; ids never reach it.
+    const HELD: u32 = 1 << 31;
+    let removed = &mut e.removed_meshes;
+    removed.sort_unstable();
+    let mut hold = |mesh: u32| {
+        if let Ok(k) = removed.binary_search_by_key(&mesh, |&id| id & !HELD) {
+            removed[k] |= HELD;
+        }
+    };
+    let created = e.scene.created();
+    for (slot, &mesh) in e.scene.meshes().iter().enumerate() {
+        if mesh != 0 && created.get(slot as u32) {
+            hold(mesh);
+        }
+    }
+    for (_, batch) in e.batches.iter() {
+        hold(batch.mesh());
+    }
+    let meshes = e.renderer.settings_mut().meshes_mut();
+    removed.retain_mut(|id| {
+        if *id & HELD != 0 {
+            *id &= !HELD;
+            return true;
+        }
+        meshes.release(&[*id - 1]);
+        false
+    });
+}
+
+/// The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas, as the
+/// frames recorded so far made them.
+#[wasm_bindgen(js_name = meshMemoryBytes)]
+pub fn mesh_memory_bytes() -> f64 {
+    let mut bytes = 0.0;
+    with_engine(|e| {
+        bytes = e.renderer.mesh_gpu_bytes() as f64;
+        0
+    });
+    bytes
+}
+
 /// The distance from a mesh's origin to its farthest vertex, or 0 for an unknown mesh.
 #[wasm_bindgen(js_name = meshRadius)]
 pub fn mesh_radius(mesh: u32) -> f32 {
@@ -2360,12 +2450,35 @@ pub fn set_debug_view(view: u32) -> u32 {
     })
 }
 
-/// The scene's fog: its kind (`constants::fog_kind`), its linear color, the near and far distances
-/// of linear fog, and the density of exponential squared fog.
+/// The scene's fog: its curve (`constants::fog_curve`), or no fog, its linear color, the density of
+/// exponential and exponential squared fog, the near and far distances of linear fog, the height
+/// where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 #[wasm_bindgen(js_name = setFog)]
-pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: f32) -> u32 {
+#[allow(clippy::too_many_arguments)]
+pub fn set_fog(
+    curve: u32,
+    r: f32,
+    g: f32,
+    b: f32,
+    density: f32,
+    near: f32,
+    far: f32,
+    height: f32,
+    height_falloff: f32,
+    sun_glow: f32,
+    sun_exponent: f32,
+) -> u32 {
     with_engine(|e| {
-        let fog = Fog::from_code(kind, [r, g, b], near, far, density);
+        let values = [
+            density,
+            near,
+            far,
+            height,
+            height_falloff,
+            sun_glow,
+            sun_exponent,
+        ];
+        let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
         0
     })
@@ -2382,6 +2495,7 @@ pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: 
 fn animation_failure(error: AnimationError) -> u32 {
     let (problem, at) = match error {
         AnimationError::Core(error) => return core_failure(error),
+        AnimationError::SkeletonInUse { instance } => return fail(codes::IN_USE, [1, instance]),
         AnimationError::Joints { joints } => (animation_problem::JOINTS, joints),
         AnimationError::Parent { joint, .. } => (animation_problem::PARENT, joint),
         AnimationError::Length { array, .. } => (animation_problem::LENGTH, array),
@@ -2614,6 +2728,27 @@ pub fn clip_ready(ticket: u32) -> u32 {
             .add_clip(skeleton, clip)
             .map_err(animation_failure)?;
         Ok(clip + 1)
+    })
+}
+
+/// Removes `skeleton` with its clips and joint masks; their ids go to later ones. Fails while an
+/// animated instance uses it. Clips of it that job workers still resample are dropped.
+#[wasm_bindgen(js_name = destroySkeleton)]
+pub fn destroy_skeleton(skeleton: u32) -> u32 {
+    with_engine(|e| {
+        let id = skeleton.wrapping_sub(1);
+        let Some(animations) = e.animations.as_mut() else {
+            return fail(codes::NOT_READY, [2, 0]);
+        };
+        if let Err(error) = animations.remove_skeleton(id) {
+            return animation_failure(error);
+        }
+        for job in &mut e.clip_jobs {
+            if job.as_ref().is_some_and(|(of, _)| *of == id) {
+                *job = None;
+            }
+        }
+        0
     })
 }
 

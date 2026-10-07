@@ -690,13 +690,14 @@ pub fn typescript() -> String {
                 ("SHADOWS", debug_view::code::SHADOWS),
             ],
         ),
-        // The kinds of fog that `setFog` takes.
+        // The fog curves that `setFog` takes, and its code for no fog.
         (
-            "FOG_KIND",
+            "FOG_CURVE",
             &[
-                ("NONE", fog::kind::NONE),
-                ("LINEAR", fog::kind::LINEAR),
-                ("EXP2", fog::kind::EXP2),
+                ("NONE", fog::curve::NONE),
+                ("LINEAR", fog::curve::LINEAR),
+                ("EXP2", fog::curve::EXP2),
+                ("EXPONENTIAL", fog::curve::EXPONENTIAL),
             ],
         ),
         (
