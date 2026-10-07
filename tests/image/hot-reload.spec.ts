@@ -14,14 +14,30 @@ import null3d from '../../packages/vite-plugin/src/index.ts';
 import { sourceResolve } from '../../tools/lib/source-condition.ts';
 import { REPO_ROOT } from '../lib/server.ts';
 
-/** What the fixture's page publishes for the test. */
+/** What the engine's measurements give the test. */
+interface HotStats {
+	skippedDraws: number;
+	pipelines: number;
+}
+
+/** What the fixture's page publishes for the test, and the measurement that the test runs there. */
 interface HotPage {
 	__hot: {
-		engine: { measure(seconds: number): Promise<{ skippedDraws: number; pipelines: number }> };
+		engine: { measure(seconds: number): Promise<HotStats> };
 		colors(): Promise<number[][]>;
 		load: number;
 	};
+	__measuring?: { running: boolean; done: Promise<HotStats> };
 }
+
+/** How long each of the back-to-back measurements lasts, in seconds. */
+const MEASURE_WINDOW_S = 1;
+
+/**
+ * How long an edit may take to show. A busy machine can take more than ten seconds for the first
+ * edit, which compiles every variant of a material.
+ */
+const EDIT_TIMEOUT_MS = 90_000;
 
 /**
  * The channel that a pixel shows most clearly, or `other` for a dark pixel or one without a clear
@@ -40,7 +56,7 @@ async function columns(page: Page): Promise<string[]> {
 }
 
 /** Waits until the columns show `expected`, and returns how long that took in milliseconds. */
-async function shows(page: Page, expected: string[], timeoutMs = 20_000): Promise<number> {
+async function shows(page: Page, expected: string[], timeoutMs = EDIT_TIMEOUT_MS): Promise<number> {
 	const start = performance.now();
 	await expect.poll(() => columns(page), { timeout: timeoutMs, intervals: [50] }).toEqual(expected);
 	return performance.now() - start;
@@ -49,6 +65,38 @@ async function shows(page: Page, expected: string[], timeoutMs = 20_000): Promis
 /** The number that the page draws anew each time it loads. */
 function loadOf(page: Page): Promise<number> {
 	return page.evaluate(() => (globalThis as unknown as HotPage).__hot.load);
+}
+
+/**
+ * Starts measuring the engine in back-to-back windows until `stopMeasuring`, so that the totals
+ * cover every edit however long the edits take. One fixed window would miss an edit that lands
+ * after it ends.
+ */
+function startMeasuring(page: Page): Promise<void> {
+	return page.evaluate((windowS) => {
+		const hot = globalThis as unknown as HotPage;
+		const measuring = { running: true, done: Promise.resolve({ skippedDraws: 0, pipelines: 0 }) };
+		measuring.done = (async () => {
+			const totals = { skippedDraws: 0, pipelines: 0 };
+			while (measuring.running) {
+				const stats = await hot.__hot.engine.measure(windowS);
+				totals.skippedDraws += stats.skippedDraws;
+				totals.pipelines += stats.pipelines;
+			}
+			return totals;
+		})();
+		hot.__measuring = measuring;
+	}, MEASURE_WINDOW_S);
+}
+
+/** Ends the measurement that `startMeasuring` started, and returns its totals. */
+function stopMeasuring(page: Page): Promise<HotStats> {
+	return page.evaluate(() => {
+		const measuring = (globalThis as unknown as HotPage).__measuring;
+		if (!measuring) throw new Error('no measurement is running');
+		measuring.running = false;
+		return measuring.done;
+	});
 }
 
 /** Replaces text in a file of the copy, which must hold it. */
@@ -60,7 +108,7 @@ function edit(file: string, from: string, to: string): void {
 
 for (const tier of TIERS) {
 	test(`WGSL edits show without a page reload on ${tier}`, async ({ page }) => {
-		test.setTimeout(180_000);
+		test.setTimeout(420_000);
 		const root = join(REPO_ROOT, 'target/hot-reload', `${tier}-${process.pid}`);
 		rmSync(root, { recursive: true, force: true });
 		mkdirSync(root, { recursive: true });
@@ -87,16 +135,14 @@ for (const tier of TIERS) {
 			const sketch = join(root, 'sketch.ts');
 
 			// Each edit shows with every object drawn in every frame meanwhile.
-			const measured = page.evaluate(() =>
-				(globalThis as unknown as HotPage).__hot.engine.measure(6),
-			);
+			await startMeasuring(page);
 			edit(tint, 'vec3f(1.0, 0.0, 0.0)', 'vec3f(0.0, 1.0, 0.0)');
 			const fileMs = await shows(page, ['green', 'blue', 'green']);
 			edit(sketch, 's.emissive = vec3f(0.0, 0.0, 1.0)', 's.emissive = vec3f(1.0, 0.0, 0.0)');
 			const literalMs = await shows(page, ['green', 'red', 'green']);
 			edit(sketch, 'finish(vec3f(0.0, 1.0, 0.0)', 'finish(vec3f(0.0, 0.0, 1.0)');
 			const fullMs = await shows(page, ['green', 'red', 'blue']);
-			const stats = await measured;
+			const stats = await stopMeasuring(page);
 			// The times from each edit to its first frame read back, for the guides' figures.
 			const description = `${tier}: file ${fileMs.toFixed(0)} ms, literal ${literalMs.toFixed(0)} ms, full shader ${fullMs.toFixed(0)} ms`;
 			test.info().annotations.push({ type: 'hot update', description });
@@ -108,7 +154,7 @@ for (const tier of TIERS) {
 			// WGSL that does not compile shows in the overlay, and the old shader keeps drawing.
 			edit(tint, 'vec3f(0.0, 1.0, 0.0)', 'vec3f(0.0, 1.0, 0.0) 2.0');
 			const overlay = page.locator('vite-error-overlay');
-			await expect(overlay).toBeAttached({ timeout: 20_000 });
+			await expect(overlay).toBeAttached({ timeout: EDIT_TIMEOUT_MS });
 			const message = await overlay.evaluate(
 				(element) => element.shadowRoot?.querySelector('.message-body')?.textContent ?? '',
 			);
