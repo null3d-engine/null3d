@@ -100,7 +100,7 @@ describe('the gate steps', () => {
 		const runs = (list: object[]) => `[${list.map((r) => JSON.stringify(r)).join(',')}]`;
 		const ci = {
 			workflowName: 'CI',
-			event: 'merge_group',
+			event: 'push',
 			status: 'completed',
 			conclusion: 'success',
 		};
@@ -119,16 +119,18 @@ describe('the gate steps', () => {
 			workflowResult(runs([{ ...bench, status: 'in_progress', conclusion: '' }, ci, bench])),
 		).toEqual({ figure: 'CI: success, Benchmarks: in_progress', verdict: 'fail' });
 		expect(workflowResult(runs([ci])).figure).toBe('CI: success, Benchmarks: no run');
-		// Main's own CI run, newer than the queue's, runs only the jobs that keep caches.
-		const mainRun = { ...ci, event: 'push', conclusion: 'failure' };
-		expect(workflowResult(runs([mainRun, ci, bench])).verdict).toBe('pass');
-		expect(workflowResult(runs([{ ...mainRun, conclusion: 'success' }, bench]))).toEqual({
+		// A pull request's run tested GitHub's merge of it into an older main, not this commit.
+		const pullRun = { ...ci, event: 'pull_request', conclusion: 'failure' };
+		expect(workflowResult(runs([pullRun, ci, bench])).verdict).toBe('pass');
+		expect(workflowResult(runs([{ ...pullRun, conclusion: 'success' }, bench]))).toEqual({
 			figure: 'CI: no run, Benchmarks: success',
 			verdict: 'fail',
 		});
-		// A full run started by hand counts for a commit that reached main without the queue.
+		// A full run started by hand counts as main's own run does, and the newer of them decides.
 		const byHand = { ...ci, event: 'workflow_dispatch' };
-		expect(workflowResult(runs([mainRun, byHand, bench])).verdict).toBe('pass');
+		expect(workflowResult(runs([byHand, { ...ci, conclusion: 'failure' }, bench])).verdict).toBe(
+			'pass',
+		);
 		expect(workflowResult(runs([{ ...byHand, conclusion: 'failure' }, ci, bench])).verdict).toBe(
 			'fail',
 		);

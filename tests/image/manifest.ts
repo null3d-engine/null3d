@@ -340,6 +340,45 @@ function gradingTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the dark tone tests, where an 8-bit canvas shows bands first. */
+const DARK_TONES_SKETCH = 'tests/pages/sketches/dark-tones-sketch.ts';
+
+/**
+ * Dark tones on every tier. A strong vignette over a flat dark background: the dither runs last,
+ * after the vignette, so its noise keeps one step of depth in the dark corners. The 8-bit path
+ * darkens the linear value of display color instead of HDR color, and must still draw the HDR
+ * path's image: on 5 October 2026 no pixel differed past the threshold. A point light's
+ * falloff over a dark floor: a long dark gradient. On WebGL2 the packed small float format must
+ * draw the gradient as 16-bit floats do, with no bands. Core WebGPU draws in that format already
+ * where the device can.
+ */
+function darkToneTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${DARK_TONES_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('dark-vignette', '?vignette'),
+		{
+			...test('dark-vignette-8-bit', '?vignette'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'dark-vignette',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+		test('dark-gradient', '?gradient'),
+		{
+			...test('dark-gradient-small-float', '?gradient'),
+			tiers: ['webgl2'],
+			switches: ['scene-format=rg11b10'],
+			reference: 'dark-gradient',
+		},
+	];
+}
+
 /** The sketch of the outline tests: a sphere half behind a wall and a box (bench/scenes/outline.ts). */
 const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
 
@@ -783,6 +822,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...occlusionTests(),
 	...gradingTests(),
+	...darkToneTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.
 	{

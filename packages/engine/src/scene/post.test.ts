@@ -19,7 +19,7 @@ function post(
 	blooms: [boolean, ...number[]][];
 	aos: [boolean, ...number[]][];
 	luts: number[][];
-	vignettes: [boolean, number, number][];
+	vignettes: [boolean, ...number[]][];
 	outlines: number[][];
 	reads: () => number;
 } {
@@ -27,13 +27,14 @@ function post(
 	const blooms: [boolean, ...number[]][] = [];
 	const aos: [boolean, ...number[]][] = [];
 	const luts: number[][] = [];
-	const vignettes: [boolean, number, number][] = [];
+	const vignettes: [boolean, ...number[]][] = [];
 	const outlines: number[][] = [];
 	const block = Float32Array.of(
 		...[1, 0.15, 0, 0.1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
 		...[0.25, 1, 1, 1, 1, 16, 1],
 		...[1, 1, 1, 1, 1, 1, 0, 2],
 		...[0, 0.28, 0.1872, 0.1359, 0.1012, 0.0754, 0.0562, 0.0419, 0.1223, 0, 0],
+		...[2, 0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -51,7 +52,8 @@ function post(
 				return 0;
 			},
 			setBloom(on: boolean) {
-				const weights = [...block.subarray(C.POST_VALUE_BLOOM_WEIGHTS, C.POST_VALUE_COUNT)];
+				const first = C.POST_VALUE_BLOOM_WEIGHTS;
+				const weights = [...block.subarray(first, first + 10)];
 				blooms.push([
 					on,
 					...[
@@ -76,7 +78,13 @@ function post(
 				return 0;
 			},
 			setVignette(on: boolean) {
-				vignettes.push([on, at(C.POST_VALUE_VIGNETTE_OFFSET), at(C.POST_VALUE_VIGNETTE_DARKNESS)]);
+				vignettes.push([
+					on,
+					at(C.POST_VALUE_VIGNETTE_INTENSITY),
+					at(C.POST_VALUE_VIGNETTE_SIZE),
+					at(C.POST_VALUE_VIGNETTE_FALLOFF),
+					at(C.POST_VALUE_VIGNETTE_ROUNDNESS),
+				]);
 				return 0;
 			},
 			setOutline(on: boolean) {
@@ -234,18 +242,26 @@ describe('post.set', () => {
 		expect(luts).toEqual([sent, quarter, [0, ...quarter.slice(1)], quarter]);
 	});
 
-	it('turns the vignette on with three.js defaults and the values given, and keeps them while off', () => {
+	it('turns the vignette on with its defaults and the values given, and keeps them while off', () => {
 		const { post: output, vignettes } = post();
 		output.set({ vignette: {} });
-		output.set({ vignette: { darkness: 1.5 } });
+		output.set({ vignette: { intensity: 1.5, falloff: 3 } });
 		output.set({ vignette: false });
-		output.set({ vignette: { offset: 0.75 } });
+		output.set({ vignette: { size: 0.75, roundness: 0.5 } });
 		expect(vignettes).toEqual([
-			[true, 1, 1],
-			[true, 1, 1.5],
-			[false, 1, 1.5],
-			[true, 0.75, 1.5],
+			[true, 1, 1, 2, 0],
+			[true, 1.5, 1, 3, 0],
+			[false, 1.5, 1, 3, 0],
+			[true, 1.5, 0.75, 3, 0.5],
 		]);
+	});
+
+	it("refuses three.js's vignette settings with the settings that take their numbers", () => {
+		const { post: output } = post();
+		const port = { offset: 1.2, darkness: 0.8 } as unknown as PostSettings['vignette'];
+		expect(() => output.set({ vignette: port })).toThrow(
+			'Set size to the offset and intensity to the darkness',
+		);
 	});
 
 	it("gives a camera's exposure for its EV100 with Filament's formula", () => {
@@ -275,7 +291,7 @@ describe('post.set', () => {
 	it('makes its view of the values once, and again only after the memory grew', () => {
 		const { post: output, reads } = post();
 		output.set({ exposure: 1.25 });
-		output.set({ lutIntensity: 0.5, vignette: { offset: 1.5 } });
+		output.set({ lutIntensity: 0.5, vignette: { size: 1.5 } });
 		expect(reads()).toBe(1);
 	});
 
@@ -306,8 +322,11 @@ describe('post.set', () => {
 			{ lutIntensity: 1.5 },
 			{ vignette: 1 },
 			{ vignette: { amount: 0.3 } },
-			{ vignette: { offset: -1 } },
-			{ vignette: { darkness: -0.5 } },
+			{ vignette: { offset: 1 } },
+			{ vignette: { intensity: -0.5 } },
+			{ vignette: { size: -1 } },
+			{ vignette: { falloff: 0 } },
+			{ vignette: { roundness: 1.5 } },
 			{ ao: true },
 			{ ao: { strength: 1 } },
 			{ ao: { radius: -1 } },
@@ -344,7 +363,7 @@ describe('post.set', () => {
 		for (const ev100 of [Number.NaN, Number.NEGATIVE_INFINITY, true, '15'])
 			expect(() => output.set({ ev100 } as PostSettings)).toThrow('E1203');
 		expect(() => output.set({ lutIntensity: Number.NaN })).toThrow('E1203');
-		expect(() => output.set({ vignette: { offset: Number.POSITIVE_INFINITY } })).toThrow('E1203');
+		expect(() => output.set({ vignette: { size: Number.POSITIVE_INFINITY } })).toThrow('E1203');
 		expect(() => output.set({ ao: { radius: Number.NaN } })).toThrow('E1203');
 	});
 });

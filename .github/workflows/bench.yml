@@ -11,7 +11,7 @@ name: Benchmarks
 #
 # On main it runs at most once an hour, on main's newest commit, against the last commit on main
 # that a run measured, so one run measures every merge since then. Each run holds 3 Mac machines
-# for about 20 minutes, and GitHub gives about 5 at once, which the merge queue's Safari jobs need,
+# for about 20 minutes, and GitHub gives about 5 at once, which CI's Safari jobs need,
 # so main gets no run for each push. When no merge came since the last measured commit, the run
 # stops after choosing the commits, before any Mac machine starts. A run measured its commit when
 # its report merged the shards into a whole comparison, whether the verdict passed or failed. So a
@@ -193,7 +193,7 @@ jobs:
     # software GPU draws the larger scenes at under one frame per second and takes the processor
     # from the engine's threads, so its CPU times vary far more between identical builds. Each shard
     # runs every third page of the plan in both builds, and fails when its own pages fail. GitHub
-    # gives 5 Mac machines at once, which the merge queue's Safari and Firefox jobs share, so
+    # gives 5 Mac machines at once, which CI's Safari jobs share, so
     # .dev/benchmarks.md says how the count was chosen. To change it, change the list.
     name: benchmark (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [commits, build]
