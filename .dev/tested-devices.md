@@ -65,9 +65,9 @@ The Where fact names the place of each run: the owner's phone, tablet or Mac, Te
 
 | Device | OS | Browser | GPU | GPU paths | Where | Known issues | Runs |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| CI's Linux machines (GitHub's ubuntu-24.04 image) | Ubuntu 24.04.5 | Chromium 153.0.8010.12, headless, through Playwright 1.63.0 | SwiftShader, the software GPU | WebGPU, compatibility mode, WebGL2 | GitHub Actions, in the merge queue | Some frames take 300 to 400 ms, so CI skips the governor's stress test ([Device sessions](devices.md#the-governor-plan)) | [Runs](tested-devices/ci-linux-machines-chromium/) |
+| CI's Linux machines (GitHub's ubuntu-24.04 image) | Ubuntu 24.04.5 | Chromium 153.0.8010.12, headless, through Playwright 1.63.0 | SwiftShader, the software GPU | WebGPU, compatibility mode, WebGL2 | GitHub Actions, in each full CI run: pull requests ready for review, and main after each merge | Some frames take 300 to 400 ms, so CI skips the governor's stress test ([Device sessions](devices.md#the-governor-plan)) | [Runs](tested-devices/ci-linux-machines-chromium/) |
 | CI's Mac machines (GitHub's macos-15-arm64 image, 20260907) | macOS 15.7.9 | Firefox 155.0.1, from the image's software list | | WebGPU; no WebGL2 | GitHub Actions, in the merge queue | | [Runs](tested-devices/ci-mac-machines-firefox/) |
-| CI's Mac machines (GitHub's macos-15-arm64 image, 20260907) | macOS 15.7.9 | Safari 26.6.1, from the image's software list | | WebGL2; no WebGPU | GitHub Actions, in the merge queue | Safari can lose a request that the runner page sends ([Device sessions](devices.md#the-runner)) | [Runs](tested-devices/ci-mac-machines-safari/) |
+| CI's Mac machines (GitHub's macos-15-arm64 image, 20260907) | macOS 15.7.9 | Safari 26.6.1, from the image's software list | | WebGL2; no WebGPU | GitHub Actions, in each full CI run: pull requests ready for review, and main after each merge | Safari can lose a request that the runner page sends ([Device sessions](devices.md#the-runner)) | [Runs](tested-devices/ci-mac-machines-safari/) |
 
 <!-- null3d:tested-devices:end -->
 
