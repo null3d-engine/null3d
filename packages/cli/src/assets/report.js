@@ -5,6 +5,8 @@ import { counted } from '../text.js';
 /** @import { Document, Mesh, Node } from '@gltf-transform/core' */
 /** @import { TextureRecord } from './textures.js' */
 /** @import { SpatialReport } from './spatial.js' */
+/** @import { DedupReport } from './dedup.js' */
+/** @import { MeshLevels } from './levels.js' */
 
 /**
  * @typedef {object} TextureGroup Textures of one size, format and color space. The engine keeps
@@ -25,6 +27,9 @@ import { counted } from '../text.js';
  * @property {number} triangles The triangles that the scene draws at full detail.
  * @property {number} vertices The vertices that the file stores.
  * @property {number} lodMeshes Meshes with levels of detail.
+ * @property {number[]} lodTriangles The triangles of each mesh's levels, the full meshes first,
+ *   added up level by level: the second figure adds each mesh's first lower level.
+ * @property {DedupReport} merged The parts that merged into an equal part.
  * @property {SpatialReport} spatial Blockers and stored trees.
  * @property {{ min: number[], max: number[] }} bounds The scene's box in its own space.
  * @property {TextureRecord[]} textures
@@ -290,15 +295,40 @@ function drawn(doc) {
 }
 
 /**
+ * The triangles of the meshes with levels at each level, the full meshes first. A mesh with
+ * fewer levels adds its lowest level to the deeper figures.
+ *
+ * @param {MeshLevels[]} levels
+ */
+function levelTriangles(levels) {
+	const depth = Math.max(0, ...levels.map((mesh) => mesh.levels.length));
+	return Array.from({ length: depth + (depth > 0 ? 1 : 0) }, (_, k) =>
+		levels.reduce((sum, { prims, levels: lower }) => {
+			if (k === 0)
+				return (
+					sum +
+					prims.reduce((n, prim) => {
+						const count = prim.getAttribute('POSITION')?.getCount() ?? 0;
+						return n + (prim.getIndices()?.getCount() ?? count) / 3;
+					}, 0)
+				);
+			return (
+				sum + /** @type {{ triangles: number }} */ (lower[Math.min(k, lower.length) - 1]).triangles
+			);
+		}, 0),
+	);
+}
+
+/**
  * The report's figures for a model, from its document after every step.
  *
  * @param {Document} doc
- * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], files: Map<string, Uint8Array>, lodMeshes: number, spatial: SpatialReport, ms: number }} facts
+ * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], files: Map<string, Uint8Array>, levels: MeshLevels[], merged: DedupReport, spatial: SpatialReport, ms: number }} facts
  * @returns {ModelReport}
  */
 export function modelReport(
 	doc,
-	{ name, inputBytes, modelBytes, textures, files, lodMeshes, spatial, ms },
+	{ name, inputBytes, modelBytes, textures, files, levels, merged, spatial, ms },
 ) {
 	const root = doc.getRoot();
 	const positions = new Set(
@@ -316,7 +346,9 @@ export function modelReport(
 		modelBytes,
 		...drawn(doc),
 		vertices: [...positions].reduce((sum, a) => sum + /** @type {any} */ (a).getCount(), 0),
-		lodMeshes,
+		lodMeshes: levels.length,
+		lodTriangles: levelTriangles(levels),
+		merged,
 		spatial,
 		textures,
 		textureGroups: textureGroups(textures),
@@ -386,7 +418,20 @@ export function reportLines(report) {
 		`  draws ${counted(report.objects, 'object')} of ${counted(report.parts, 'part')} in ${meshes(report.meshes)}: ${report.triangles.toLocaleString('en-US')} triangles, ${report.vertices.toLocaleString('en-US')} stored vertices`,
 		`  size ${size.map((v) => Number(v.toPrecision(3))).join(' x ')}`,
 	];
-	if (report.lodMeshes > 0) lines.push(`  levels of detail for ${meshes(report.lodMeshes)}`);
+	if (report.lodMeshes > 0)
+		lines.push(
+			`  levels of detail for ${meshes(report.lodMeshes)}: ${report.lodTriangles.map((n) => n.toLocaleString('en-US')).join(', ')} triangles`,
+		);
+	const { textures, materials, accessors, meshes: equalMeshes } = report.merged;
+	const parts = [
+		[equalMeshes, 'mesh', 'meshes'],
+		[materials, 'material', 'materials'],
+		[textures, 'texture', 'textures'],
+		[accessors, 'accessor', 'accessors'],
+	]
+		.filter(([n]) => /** @type {number} */ (n) > 0)
+		.map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+	if (parts.length > 0) lines.push(`  merged copies: ${parts.join(', ')}`);
 	lines.push(...spatialLines(report.spatial));
 	if (report.textures.length > 0) {
 		const m = report.textureMemory;
