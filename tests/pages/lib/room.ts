@@ -54,14 +54,25 @@ export interface RoomCount {
 	room: number;
 	/** Set when the browser refused a memory below the cap, so the count is the whole room. */
 	error?: string;
+	/** Refusals that a later ask in the same count got past. */
+	passing?: number;
 }
 
 /**
- * Counts the room up to `cap`, then lets the browser find the counted memories unused. When the
- * browser refused one, the page asks for one more once they are garbage. Safari refuses it too and
- * runs a full collection, which finds them; otherwise Safari can keep them until a later refusal,
- * and the next count finds less room. A count that reached the cap asks for no more, since the
- * browser would grant it.
+ * The pauses before a count asks again after a refusal, one for each ask in a row. Safari refuses a
+ * new memory while it still holds memories that the page dropped, and the refusal makes it free
+ * them, but not always at once. On CI's Mac, at each of 18 refusals of a count, the same request a
+ * moment later was granted. Twice, 3 more asks at once were refused too, and a count 1 s later
+ * found the cap. So only a refusal that holds through these pauses ends a count.
+ */
+const ASK_PAUSES_MS = [50, 100, 200, 400];
+
+/**
+ * Counts the room up to `cap`, then lets the browser find the counted memories unused. A refusal
+ * ends the count only when it holds through a few more asks, each after a short pause. When it
+ * held, the page asks for one more memory once the counted ones are garbage. Safari refuses it too
+ * and runs a full collection, which finds them; otherwise Safari can keep them until a later
+ * refusal, and the next count finds less room. A count that reached the cap asks for no more, since the browser would grant it.
  */
 export async function countRoom(
 	cap = ROOM_CAP,
@@ -70,12 +81,28 @@ export async function countRoom(
 	let counted: RoomCount;
 	{
 		const memories: WebAssembly.Memory[] = [];
-		try {
-			while (memories.length < cap) memories.push(allocateMemory(maximumPages));
-			counted = { room: memories.length };
-		} catch (e) {
-			counted = { room: memories.length, error: (e as Error).message };
+		let passing = 0;
+		let refusedInRow = 0;
+		let error: string | undefined;
+		while (memories.length < cap) {
+			try {
+				memories.push(allocateMemory(maximumPages));
+				passing += refusedInRow;
+				refusedInRow = 0;
+				error = undefined;
+			} catch (e) {
+				error = (e as Error).message;
+				const pause = ASK_PAUSES_MS[refusedInRow];
+				if (pause === undefined) break;
+				refusedInRow++;
+				await sleep(pause);
+			}
 		}
+		counted = {
+			room: memories.length,
+			...(error === undefined ? {} : { error }),
+			...(passing > 0 ? { passing } : {}),
+		};
 	}
 	if (counted.error === undefined) return counted;
 	await sleep(0);
