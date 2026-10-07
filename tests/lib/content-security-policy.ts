@@ -11,3 +11,9 @@ export const STRICT_POLICY =
 
 /** The strict policy without `'wasm-unsafe-eval'`, which stops every WebAssembly compile. */
 export const POLICY_WITHOUT_WASM = STRICT_POLICY.replace(" 'wasm-unsafe-eval'", '');
+
+/**
+ * The strict policy, with data: in connect-src for the test pages' small asset files, which the
+ * build makes into data: addresses, as Vite does with a project's small files.
+ */
+export const STRICT_POLICY_WITH_DATA = `${STRICT_POLICY}; connect-src 'self' data:`;

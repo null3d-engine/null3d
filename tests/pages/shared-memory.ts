@@ -417,6 +417,7 @@ run('shared-memory', async () => {
 		maximumPages: MAXIMUM_PAGES,
 		room: before?.room,
 		roomError: before?.error,
+		roomPassing: before?.passing,
 		cycles,
 		kinds,
 	};
