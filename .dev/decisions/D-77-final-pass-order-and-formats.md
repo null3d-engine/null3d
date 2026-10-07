@@ -10,6 +10,11 @@ Summary: The vignette multiplies HDR color before the tone curve, with intensity
 2. Where does the dither run, with what noise, and how deep?
 3. Does WebGL2 draw scene color in `R11F_G11F_B10F`, as core WebGPU draws `rg11b10ufloat`?
 
+## Who decided
+
+- The owner ruled on 4 October 2026 that the vignette moves into HDR and the dither runs last ([D-53](D-53-technique-defaults.md) ruling 3, [D-33](D-33-color-grading.md)'s status).
+- The settings, the falloff, the noise and the WebGL2 format's rule were chosen in this record on 5 October 2026, from the data below. The format's default follows P3's phone runs.
+
 ## Rule
 
 - The vignette multiplies HDR color before the tone curve, as Filament, URP, Bevy and Babylon.js do. A port maps `VignetteShader`'s `offset` to a size and `darkness` to an intensity (D-53, the analysis's porting table).
