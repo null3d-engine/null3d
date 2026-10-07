@@ -1526,10 +1526,10 @@
       "id": "vignette",
       "category": "Post-processing",
       "three": "VignetteShader / VignetteEffect",
-      "status": "direct",
+      "status": "changed",
       "since": "0.2",
-      "target": "post.set({ vignette: { offset, darkness } })",
-      "notes": "VignetteShader's offset and darkness keep their meanings. The postprocessing library's VignetteEffect matches with its ESKIL technique; its default technique darkens with another curve, so tune the two numbers.",
+      "target": "post.set({ vignette: { intensity, size, falloff, roundness } })",
+      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; the default falloff of 2 and roundness of 0 give a close match. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bVignette(Shader|Effect)\\b"
     },

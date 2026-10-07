@@ -461,7 +461,10 @@ export interface CoreGlue extends CoreErrors {
 	 * from the next frame on, with the post-processing values' intensity and domain.
 	 */
 	setLut(texture: number): number;
-	/** Turns the vignette on with the post-processing values' offset and darkness, or off. */
+	/**
+	 * Turns the vignette on with the post-processing values' intensity, size, falloff and roundness,
+	 * or off.
+	 */
 	setVignette(on: boolean): number;
 	/** Turns outlines on with the post-processing values' line colors and width, or off. */
 	setOutline(on: boolean): number;
