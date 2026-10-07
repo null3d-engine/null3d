@@ -1,8 +1,8 @@
 # D-43: How WebGL2 draws the depth prepass
 
-Status: decided for correctness, 2026-10-04; the device timings pending. Task: M2-R2.
+Status: decided for correctness, 2026-10-04. The addendum of 2026-10-07 turns the prepass on for WebGL2 at every preset, by the owner's decision. Tasks: M2-R2 and M2-R22.
 
-Summary: With each shading pipeline's own vertex shader and a fragment shader that writes nothing. A depth-only program of its own gave other depths in Chrome on the Mac, though both mark the position invariant, and the shadows test lost 57.8% of its image. The shared vertex shader gives the seven prepass tests' images bit for bit on the Mac.
+Summary: With each shading pipeline's own vertex shader and a fragment shader that writes nothing. A depth-only program of its own gave other depths in Chrome on the Mac, though both mark the position invariant, and the shadows test lost 57.8% of its image. The shared vertex shader gives the seven prepass tests' images bit for bit on the Mac. Since 2026-10-07, every preset draws the prepass on WebGL2. On Apple GPUs, WebGL2 shaded hidden pixels in S4, and the prepass restores their early rejection. The cause on the iPad is under investigation.
 
 ## Question
 
@@ -97,6 +97,109 @@ Line batches stay out of the prepass on both paths. Their fragment shader cuts o
 
 - `Prepass` in `crates/null3d-render/src/pipelines.rs` names the two ways, and each frame builder picks its own. The WebGL2 builder's prepass replays the opaque pass's calls first, from the same index list, draw records and frame group. It leaves out the draws without a prepass pipeline.
 - `buildPermutation` in `packages/engine/src/gpu/webgl2/programs.ts` reads the `PREPASS` bit on a mesh template. The GLSL files no longer hold the shadow depth template's `PREPASS` builds.
-- `depthPrepass` now works on both paths. Every preset still leaves it off, until device timings show where it pays.
+- `depthPrepass` now works on both paths. Every preset still leaves it off, until device timings show where it pays. Since 7 October 2026, every preset turns it on for WebGL2 ([the addendum](#addendum-2026-10-07-the-prepass-on-for-webgl2-at-every-preset)).
 - The prepass image tests run on all three tiers. The bench pages that end in `-prepass` time it in turns with the pages without it.
 - The docs pages `concepts/quality-presets`, `concepts/backends`, `concepts/render-graph`, `concepts/architecture`, `api/engine`, `api/quality` and `guides/performance`, and the develop skill, no longer say that WebGL2 draws without the prepass.
+
+## Addendum, 2026-10-07: the prepass on for WebGL2 at every preset
+
+Owner decision, 7 October 2026: every preset draws the depth prepass on WebGL2, on every device. WebGPU and its compatibility mode keep it off on every preset. The `depthPrepass` option of `createEngine` and the `?prepass=` switch still replace the preset's choice on each path.
+
+### Why WebGL2 was slow on the iPad: under investigation
+
+On the owner's iPad Pro 11-inch (2018, A12X Bionic), WebGL2 took about three times WebGPU's GPU time per pixel in S4, at every preset. Apple GPUs remove hidden surfaces before they shade (HSR), so each pixel is normally shaded about once. In S4 on WebGL2, hidden pixels were shaded, and a depth prepass restores their early rejection. The prepass's gain is measured below. Its cause on the iPad is not confirmed yet.
+
+What is measured so far:
+
+- Safari and Chrome draw WebGL2 on Apple hardware through ANGLE's Metal backend. On every Apple GPU, ANGLE writes an all-enabled sample mask in each fragment shader that uses derivatives. With MSAA it writes one in every fragment shader (`AddSampleMaskDeclaration` in `TranslatorMSL.cpp`, `ANGLEWriteHelperSampleMask` from `DisplayMtl.mm`, `ANGLESampleMaskWriteEnabled` in `ProgramPrelude.cpp`). ANGLE counts every implicit-level texture read, such as `texture()`, as a derivative (`UsesDerivatives` in `ParseContext.cpp`).
+- The workaround is deliberate. Apple GPUs merge neighbouring triangles of a draw, which gives wrong derivatives along their shared edges (Mesa commit `c12153cd`). On an M5 Max with macOS 26.6.2, native Metal without the mask still picked wrong mip levels near a shared edge.
+- On the M5 Max, a shader that writes the sample mask costs what a never-taken `discard` costs. A native Metal test drew full-screen opaque layers. Against one layer, the mask cost 1.1x at 16 layers, 2.3x at 32 and 4x at 64. Plain shaders stayed at 1.0x to 1.25x. In Chrome on that Mac, turning ANGLE's `writeHelperSampleMask` off halved the GPU time of a 32-layer page's derivative rows. WebGPU in Chrome on the Mac showed the same split (2.2x at 32 layers).
+- On the iPad's A12X, WebGPU in Safari lost HSR for any shader that writes the sample mask. There 16 layers cost 15.8x to 16.2x one layer, as `discard`, depth output and blending did. Plain shaders and implicit-level reads cost 1.0x.
+- But on the same iPad, a standalone WebGL2 page in Safari kept HSR. Its derivative modes (none, `texture()`, `fwidth()`) changed the time by 0 to 4%, with 4x MSAA too. Blending, a real HSR loss, cost 20x to 38x there (run `20261007-084504-angle-repro-heavy`). So ANGLE's sample mask, as that page exercises it, does not explain S4's loss on the iPad.
+- Open lead: something in null3D's own generated WebGL2 shaders, such as `gl_FragDepth` writes, `discard` or alpha to coverage, may make them punch-through. That check is under way.
+- Removing the derivatives from the engine's shaders gave 60 fps at Low but nothing at Medium (16.1 fps). That test also removed shading work, so it does not isolate a cause.
+- Apple documents only `discard` and depth writes as things that reduce HSR. The sample mask's effect is measured, not documented.
+
+The prepass works whatever the cause: its opaque pass shades only where the depth equals the prepass's, so early depth rejection skips the hidden pixels.
+
+### Figures
+
+S4 on the owner's iPad Pro 11-inch in Safari, the governor off, `?render=main`, 20-second runs with 90-second rests. Two rounds ran in reverse order at Low, and one round at Medium.
+
+| Run | Low, frames per second | Medium, frames per second (frame time) |
+| --- | --- | --- |
+| WebGPU | 60.0 and 60.0 (GPU 10.18 ms) | 59.3 (GPU 14.73 ms), 6 October |
+| WebGPU with the prepass | | 57.1 (GPU 18.60 ms) |
+| WebGL2 | 38.5 and 37.5 | 17.3 (57 ms) |
+| WebGL2 with the prepass | 60.0 and 60.0 | 37.1 (27 ms) |
+| WebGL2 with derivatives taken out | 60.0 | 16.1 (61 ms) |
+| WebGL2 with the pixel ratio at 1 | 60.0 and 60.0 | |
+| WebGL2 with unlit materials | 60.0 and 60.0 | |
+| WebGL2 with half precision | 37.4 and 37.0 | |
+| WebGL2 with 8-bit color | 35.7 and 35.6 | |
+
+| Runs | Names |
+| --- | --- |
+| The Low set | `20261007-030718-bench` to `20261007-040019-bench` |
+| Low with derivatives out | `20261007-040356-bench` |
+| Medium, and with derivatives out | `20261007-040637-bench`, `20261007-040914-bench` |
+| Medium with the prepass, WebGL2 and WebGPU | `20261007-042807-bench`, `20261007-043049-bench` |
+| WebGPU at Medium without the prepass | `20261006-010647-bench` |
+
+Half precision and 8-bit color changed nothing, so the cost was not in the shading math or the target format. The derivatives switch was a test build only: it made `dFdx`, `dFdy` and `fwidth` give zero, and read every texture at level 0.
+
+The prepass's cost where the GPU removes hidden surfaces itself came from BrowserStack's Galaxy S25 and Pixel 9 in Chrome. S4 ran with and without it, in two rounds in reverse order (runs `20261007-041042-bench` to `20261007-050909-bench`).
+
+| Device | Frame rate | WebGPU GPU time with the prepass | WebGL2 |
+| --- | --- | --- | --- |
+| Galaxy S25 | 30 fps in every run, the screen's rate | +0.1 ms at Low (7.34 to 7.44 ms), +0.35 ms at Medium (12.26 to 12.62 ms) | CPU time 0.86 to 0.98 ms either way. No GPU timer |
+| Pixel 9 | 59.4 to 60.1 fps in every run | No change above the noise: Low 7.18 against 7.05 ms, Medium 9.08 against 8.95 ms | CPU time 3.13 to 3.49 ms, with no pattern. No GPU timer |
+
+On WebGPU, the prepass costs 0.1 to 0.35 ms on the S25 and nothing measurable on the Pixel 9. It costs about 4 ms at Medium on the iPad. So WebGPU keeps it off. On WebGL2 on Android, both phones held their frame caps with it. The render worker's CPU time did not change. The prepass doubles WebGL2's draw calls, as in S2 above.
+
+### Options
+
+- (a) The prepass on for WebGL2 at every preset, WebGPU unchanged. It fixes Low and Medium on the iPad, and the images stay the same: the prepass image tests above match their images without it. Its costs are the doubled draw calls and a second pass over the vertices.
+- (b) Take derivatives out of the WebGL2 shaders. Rejected. It fixes only Low and below, as MSAA writes the sample mask in every shader from Medium up: Medium drew 16.1 fps with it. It also changes the look. The highlight softening measures the normal's change across the pixel, and has no equal without derivatives. Texture reads would need gradients from ray differentials, which match only where the tangent frame is exact.
+
+The change itself ran on the same iPad on 7 October 2026, after a heat check at 60 fps (commit `ad8cc15b6`, runs `20261007-074151-bench` to `20261007-080409-bench`). Each figure is round 1, then round 2 in reverse order.
+
+| S4 on WebGL2 | Frames per second | CPU time per frame |
+| --- | --- | --- |
+| Low, the prepass by default | 60.0 and 60.0 | 0.94 ms |
+| Low with `?prepass=off` | 37.4 and 35.9 | 1.38 ms |
+| Medium, the prepass by default | 37.0 and 36.7 | 1.82 ms |
+| Medium with `?prepass=off` | 16.8 and 16.8 | 4.31 and 4.35 ms |
+
+### Ties of equal depth
+
+The prepass changes which surface wins where two opaque surfaces have exactly the same depth.
+
+| Path | Opaque pass's depth test | Winner of a tie |
+| --- | --- | --- |
+| WebGPU and compatibility mode (prepass off) | `greater` in reversed depth (`depthCompare` in `gpu/webgpu/pipelines.ts`) | The surface drawn first |
+| WebGL2 without the prepass | `GREATER`, or `LESS` in the standard depth mode (`nearerPasses` in `gpu/webgl2/backend.ts`) | The surface drawn first |
+| Either path with the prepass | The prepass draws with the test above, and the opaque pass then tests `equal` and writes no depth (`DrawKey::after_prepass`) | The surface drawn last |
+| three.js | `LessEqualDepth` by default | The surface drawn last |
+
+- The prepass changes no picture that the image tests cover. On 7 October 2026, with the prepass on by default, all 230 WebGL2 image tests passed in Chrome on the Mac's GPU. They compared with the existing references. The prepass copies drew with `?prepass=off`, and they passed too.
+- So, by default, WebGL2 and WebGPU now disagree on ties. WebGL2 then agrees with three.js. The depth precision test's tie tile shows the flip on every path with `?prepass=on`.
+- The draw order behind "first" and "last" is the engine's own: the opaque pass draws in pipeline and mesh order, not in the scene's order. So no page can choose the winner of a tie on either path, before or after this change. The docs tell users to give such surfaces a depth bias.
+- Objects that stay out of the prepass (alpha-masked, blended, lines, materials that skip depth writes) draw with the strict test against the prepass's depth. A masked surface at exactly the depth of a prepass surface therefore always loses, where without the prepass the draw order decides.
+- No engine feature depends on a tie. Decals and ground markings use the material's `depthBias`, which the prepass keeps (the `depth-bias` image test matches with the prepass). The transparent pass, sprites and lines test against the same nearest depth with or without the prepass. Outlines draw their mask in a pass of their own. Only the depth precision page's tie tile tests a tie, and that page now turns the prepass off.
+- Making the paths agree would mean `greater-equal` (`LEQUAL` in the standard mode) in the opaque pass without the prepass, on both paths. Every path would then show the surface drawn last, as three.js does. That changes WebGPU's images wherever surfaces tie, and the depth precision page would draw its nearer surface first.
+- Owner decision, 7 October 2026: ties stay as they are. WebGL2 with the prepass shows the surface drawn last, and WebGPU shows the surface drawn first. The depth tests do not change. The draw order is the engine's own, so no page could choose a tie's winner before either. Overlapping surfaces should use a depth bias. The user docs say that an exact tie has no defined winner, and that the winner may differ between GPU paths.
+
+### Consequences of the addendum
+
+- The preset table (`quality/presets.ts`) takes a `webgl2` row of values where WebGL2 differs. Only `depthPrepass` has one. `presetValue`, `presetSettings` and `checkedSettings` take the GPU path, and the docs table prints WebGL2's value beside the others.
+- GPU occlusion culling stays WebGPU-only, so the prepass turns nothing off on WebGL2. Ambient occlusion and software occlusion culling work with it as before.
+- Two opaque surfaces at exactly the same depth now show the one drawn last on WebGL2 by default. The depth precision page turns the prepass off, as its tie tile counts that case.
+- The prepass image copies draw on WebGL2 with `?prepass=off`, and on the WebGPU tiers with `?prepass=on`. Each must match its test's image.
+- Each opaque pipeline on WebGL2 comes with its prepass pipeline, and each opaque draw draws twice. The first frame and an object's warm-up build the prepass pipelines too, so play builds none: the warm-up check passed every other condition with them. Its counts on WebGL2 are now twice the scene's pipelines plus the final pass's, and 2 for an added object. The scene test expects twice the opaque draws.
+
+### Open
+
+- S4 at Medium on WebGL2 still takes about 27 ms per frame on the iPad, against WebGPU's 15 ms. The MSAA resolve and the 5 x 5 shadow filter are the likely costs. A task of its own measures and fixes them.
+- The cause of the hidden pixel cost on the iPad's WebGL2 is not confirmed. The generated WebGL2 shaders are being checked for `gl_FragDepth` writes, `discard` and alpha to coverage. Record the cause here when it is found.
+- The owner reported ANGLE's helper sample mask on 7 October 2026: [WebKit bug 326660](https://bugs.webkit.org/show_bug.cgi?id=326660) and [ANGLE issue 570876469](https://issues.angleproject.org/issues/570876469). Its cost is measured on the Mac. The reports ask for a cheaper fix that keeps HSR, as the workaround itself is correct. Both are open. WebKit bug 234006, an MSAA slowdown under ANGLE's Metal backend with no known cause, may be related.
