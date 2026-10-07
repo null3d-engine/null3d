@@ -336,15 +336,21 @@ describe('assets optimize on the test scene', () => {
 			.find((n) => n.getName() === 'Ball')!;
 		const lod = lodOf(ball)!;
 		const levels = lod.listLevels();
-		expect(levels.length).toBe(3);
+		expect(levels.length).toBeGreaterThanOrEqual(3);
 		const triangles = [ball, ...levels].map(
 			(n) => n.getMesh()!.listPrimitives()[0]!.getIndices()!.getCount() / 3,
 		);
 		expect(triangles[0]).toBe(48 * 24 * 2);
 		for (let k = 1; k < triangles.length; k++)
-			expect(triangles[k]!).toBeLessThan(triangles[k - 1]! * 0.8);
+			expect(triangles[k]!).toBeLessThan(triangles[k - 1]! * 0.75);
+		// Each level's error, in the units of the ball's stored positions, grows by half or more.
+		const errors = lod.getErrors();
+		expect(errors.length).toBe(levels.length);
+		expect(errors[0]!).toBeGreaterThan(0);
+		for (let k = 1; k < errors.length; k++)
+			expect(errors[k]!).toBeGreaterThanOrEqual(errors[k - 1]! * 1.5 * (1 - 1e-6));
 		const coverage = lod.getCoverage();
-		expect(coverage.length).toBe(4);
+		expect(coverage.length).toBe(levels.length + 1);
 		expect(coverage.at(-1)).toBe(0);
 		for (let k = 1; k < coverage.length; k++) expect(coverage[k]!).toBeLessThan(coverage[k - 1]!);
 		for (const level of levels) {
@@ -359,6 +365,12 @@ describe('assets optimize on the test scene', () => {
 			.listNodes()
 			.filter((n) => lodOf(n) !== null);
 		expect(withLevels.map((n) => n.getName())).toEqual(['Ball']);
+		const report = (await lodMeshopt).report;
+		expect(report.lodMeshes).toBe(1);
+		expect(report.lodTriangles).toEqual(triangles);
+		expect(reportLines(report).join('\n')).toContain(
+			`  levels of detail for 1 mesh: ${triangles.map((n) => n.toLocaleString('en-US')).join(', ')} triangles`,
+		);
 	});
 
 	it('reads Draco data, and writes the meshes without it', async () => {
@@ -425,6 +437,10 @@ describe('assets optimize on the test scene', () => {
 			objects: 8,
 			triangles: 6 * 2 * 6 + 2 + 48 * 24 * 2,
 			lodMeshes: 0,
+			lodTriangles: [],
+			// The stand and the posts are boxes of one shape, apart from the posts' colors, so their
+			// positions, normals, coordinates and indices merge.
+			merged: { textures: 0, materials: 0, accessors: 4, meshes: 0 },
 		});
 		// The ball, the stand and the post enclose space; the floor is one flat square. No part
 		// has the triangles of a stored tree by default.
@@ -497,6 +513,16 @@ describe('the command', () => {
 			bvh: 5000,
 		});
 		expect(parseOptimizeArgs(['a', 'b', '--bvh', '0']).options.bvh).toBe(0);
+		expect(parseOptimizeArgs(['a', 'b']).options).toMatchObject({
+			simplify: 1,
+			simplifyError: 0.01,
+		});
+		expect(
+			parseOptimizeArgs(['a', 'b', '--simplify', '0.5', '--simplify-error', '0.05']).options,
+		).toMatchObject({ simplify: 0.5, simplifyError: 0.05 });
+		for (const bad of ['0', '1.5', 'half'])
+			expect(() => parseOptimizeArgs(['a', 'b', '--simplify', bad])).toThrow(`not "${bad}"`);
+		expect(() => parseOptimizeArgs(['a', 'b', '--simplify-error', '2'])).toThrow('not "2"');
 		for (const bad of ['-1', '1.5', 'all'])
 			expect(() => parseOptimizeArgs(['a', 'b', `--bvh=${bad}`])).toThrow(`not "${bad}"`);
 	});
