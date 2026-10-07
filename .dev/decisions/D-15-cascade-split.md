@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03. Pull request: #211.
 
+Summary: Lean 65% toward the logarithmic spread: S4's ground gets texels 3.5 times finer, and shadows at eye height stay under twice as coarse. The filter keeps its weighting.
+
 ## Question
 
 The directional light's cascades split the camera's view by distance. The split blends two spreads. In an even spread each cascade has the same length. In a logarithmic spread each cascade is a fixed number of times longer than the one before. How far should the split lean toward the logarithmic spread?

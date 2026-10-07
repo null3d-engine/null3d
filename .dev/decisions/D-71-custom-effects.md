@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-05; the Mac's timings 2026-10-06, the iPad's pending. Task: M2-F5.
 
+Summary: `post.addEffect` runs a sketch's WGSL as a full-screen pass on HDR color, after the scene and before bloom and the tone curve. One pass per effect in `order`, at most 8, through two shared targets. Effects read any pixel and the scene's depth on all three tiers, with up to 32 floats of typed uniforms. `post.set({ toneMapping })` takes WGSL with `fn toneCurve`, built into the final pass. Both need HDR color, as bloom does: compatibility mode with MSAA moves to HDR with FXAA.
+
 ## Question
 
 How do a sketch's own full-screen effects and its own tone curve join the post-processing chain?

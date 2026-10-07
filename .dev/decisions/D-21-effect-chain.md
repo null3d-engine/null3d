@@ -2,6 +2,8 @@
 
 Status: decided for the 8-bit path, 2026-10-03. Decided for ambient occlusion's placement and method, 2026-10-04. Decided again for bloom's method, 2026-10-05: the mip chain, after [D-53](D-53-technique-defaults.md) ruling 1 and prototype P2. Pending: the final chain's GPU time on the Galaxy S25, the Pixel 9 and the Pixel 11 (the `bloom-sizes` plan). Also pending: bloom's and ambient occlusion's cost on the iPad (the `ao` plan). Date: 2026-10-03. Tasks: M2-F1, M2-F2, M2-F7.
 
+Summary: Bloom draws a mip chain sized on the canvas's shorter side, the only bloom in the core: 13-tap steps down with a Karis average, tent steps up, one read in the final pass, levels in `rgba16float`. Bases of 128 on Low and 512 elsewhere; the governor halves it with no GPU object. It reads 7.6 texels per pixel at 1080p against 10.8, and costs 0.79 to 0.85 ms on the Mac. PowerVR pays about 0.28 ms per pass, so smaller bases with fewer levels save there. Ports map `UnrealBloomPass` and pmndrs settings through the porting skill. Compatibility mode with MSAA moves to HDR color with FXAA when bloom turns on. Ambient occlusion runs `GTAOPass`'s steps at half size and darkens only the ambient light: 0.04% of the pixels differ from `GTAOPass`, at 46% of its GPU time.
+
 ## Question
 
 1. How does bloom spread light: the chain of mip levels that most engines draw, or the steps of three.js's `UnrealBloomPass`? With the chain, which base size does each preset take, and in which format? Which side of the canvas sets the size, and how do ports keep their look?
