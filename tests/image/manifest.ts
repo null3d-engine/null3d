@@ -1605,14 +1605,15 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
 }
 
 /**
- * The scenes that the depth prepass draws again on every tier, which must match their images
- * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
- * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
- * cuts a slab, S2, and skinned characters with shadows. The depth debug view replaces every
- * material, and a background texture and the sky draw after the prepass, behind its depth, in its
- * render pass. Custom materials draw their prepass depth with their own vertex shader, a vertex
- * offset that samples a texture among them. The shadows test's ground, which the near plane cuts,
- * caught WebGL2's prepass when it drew with a program of its own (D-43).
+ * The scenes that draw again with the depth prepass switched the other way from their GPU path's
+ * presets, which must match their images: with it on the WebGPU tiers, and without it on WebGL2,
+ * whose presets draw it. The scenes are shadows, masked cards that stay out of the prepass, decals
+ * whose depth bias the prepass keeps, see-through objects that draw after it, an orthographic
+ * camera whose near plane cuts a slab, S2, and skinned characters with shadows. The depth debug
+ * view replaces every material, and a background texture and the sky draw after the prepass,
+ * behind its depth, in its render pass. Custom materials draw their prepass depth with their own
+ * vertex shader, a vertex offset that samples a texture among them. The shadows test's ground,
+ * which the near plane cuts, caught WebGL2's prepass when it drew with a program of its own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1649,13 +1650,19 @@ function withGpuOcclusion(name: string): ImageTest {
 	};
 }
 
-/** A prepass scene's test again with ?prepass=on, in its first thread mode. */
-function withPrepass(name: string): ImageTest {
-	const test = copyWithSwitch(name, 'prepass', 'prepass=on');
-	return {
-		...test,
-		...(test.modes && { modes: test.modes.slice(0, 1) }),
-	};
+/**
+ * A prepass scene's test again in its first thread mode: with ?prepass=on on the WebGPU tiers, and
+ * with ?prepass=off on WebGL2.
+ */
+function prepassCopies(name: string): ImageTest[] {
+	const on = copyWithSwitch(name, 'prepass', 'prepass=on');
+	const off = copyWithSwitch(name, 'no-prepass', 'prepass=off');
+	const modes = on.modes && { modes: on.modes.slice(0, 1) };
+	const tiers = tiersOf(on);
+	return [
+		{ ...on, ...modes, tiers: tiers.filter((tier) => tier !== 'webgl2') },
+		{ ...off, ...modes, tiers: tiers.filter((tier) => tier === 'webgl2') },
+	].filter((test) => test.tiers.length > 0);
 }
 
 /**
@@ -1712,7 +1719,7 @@ function withIndexInstances(name: string): ImageTest {
 
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	...FEATURE_TESTS,
-	...PREPASS_SCENES.map(withPrepass),
+	...PREPASS_SCENES.flatMap(prepassCopies),
 	...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
