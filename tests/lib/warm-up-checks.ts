@@ -34,7 +34,8 @@ const ADDED_PIXELS = 100;
  * What is wrong with a warm-up page's result on a GPU path; empty when nothing is. WebGPU also
  * builds its compute pipelines in the first frame, and every path the final pass's, which the
  * 8-bit path runs while the render scale can drop. WebGL2's presets draw the depth prepass, so
- * each of its opaque pipelines comes with a prepass pipeline.
+ * each of its opaque pipelines comes with a prepass pipeline. The first frame and an object's
+ * warm-up build that one too, so play still builds none and no frame waits for it.
  */
 export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): string[] {
 	const problems = result.failures.map((code) => `the engine failed with ${code}`);

@@ -196,6 +196,7 @@ The prepass changes which surface wins where two opaque surfaces have exactly th
 - GPU occlusion culling stays WebGPU-only, so the prepass turns nothing off on WebGL2. Ambient occlusion and software occlusion culling work with it as before.
 - Two opaque surfaces at exactly the same depth now show the one drawn last on WebGL2 by default. The depth precision page turns the prepass off, as its tie tile counts that case.
 - The prepass image copies draw on WebGL2 with `?prepass=off`, and on the WebGPU tiers with `?prepass=on`. Each must match its test's image.
+- Each opaque pipeline on WebGL2 comes with its prepass pipeline, and each opaque draw draws twice. The first frame and an object's warm-up build the prepass pipelines too, so play builds none: the warm-up check passed every other condition with them. Its counts on WebGL2 are now twice the scene's pipelines plus the final pass's, and 2 for an added object. The scene test expects twice the opaque draws.
 
 ### Open
 
