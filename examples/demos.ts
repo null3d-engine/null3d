@@ -123,7 +123,7 @@ export const DEMOS: readonly Demo[] = [
 		name: 'post-effects',
 		title: 'Post effects',
 		summary:
-			'Crates under neon lights, with bloom, ambient occlusion, an outline and a vignette. Every 3 seconds the color grading table changes: none, warm, then cool.',
+			'Crates under neon lights, with bloom, ambient occlusion, an outline, a vignette and a custom lens effect. Every 3 seconds the color grading table changes: none, warm, then cool.',
 		hold: 4,
 	},
 	{

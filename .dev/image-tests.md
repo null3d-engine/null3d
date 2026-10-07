@@ -43,10 +43,10 @@ Each demo in `examples/` is a sketch that the examples page runs live and the ma
 - A demo can post a `label` message with `{ id, text, active }`. The examples page then makes an element for the label, binds it with `engine.labels.bind`, and shows the text. The picking demo uses this. The image tests read only the engine's pixels, so they do not show labels.
 - The demos use only lights that light surfaces now: no hemisphere lights, which are stored but do not light yet. On 8 October 2026, three demos with hemisphere lights drew their scenes much darker than planned.
 
-Known faults that the demos show, found on 8 October 2026 while M2-L5 made them:
+Checks of the demos, made on 8 October 2026 while M2-L5 made them:
 
-- With ambient occlusion and a custom effect both on, the scene's colors are wrong on all three GPU paths. Crates that draw blue and pink with either one alone draw red and olive with both. So the post effects demo leaves out its custom effect until the fault is fixed.
-- Ambient occlusion draws dark dots along the bottom row and the right column of the image. The post effects demo's references hold these dots. A fix changes those references.
+- Ambient occlusion draws dark dots along the bottom row and the right column of the image. The cause is a normal that is not a number at the occlusion texture's edge. The post effects demo's references hold these dots, so the fix of that fault makes them again.
+- A first look suggested that ambient occlusion and a custom effect together gave wrong colors. That comparison was not fair. The image with both drew brown crates, and the images with one drew gray-blue crates. A fair test drew one scene twice: with occlusion alone, and with occlusion and an effect that changes nothing. Both drew the same pixels. So compare effects in one scene, with an effect that returns its input, before you report a fault.
 
 ## Visual checks
 

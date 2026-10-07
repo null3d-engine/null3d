@@ -1,14 +1,26 @@
 // Post effects: crates stand in the corner of a dark room under neon lights, and the camera sways in
 // front of them. Bloom spreads the neon's light past its edges, ambient occlusion darkens the corner
-// and the ground under the crates, an outline marks one crate, and a vignette darkens the edges.
-// Every 3 seconds the color grading table changes: none, then a warm table, then a cool one, each
-// from a .cube file.
+// and the ground under the crates, an outline marks one crate, and a vignette darkens the edges. A
+// custom effect splits red from blue toward the edges, as a cheap lens does. Every 3 seconds the
+// color grading table changes: none, then a warm table, then a cool one, each from a .cube file.
 import { defineSketch } from '@null3d/engine';
 
 /** The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives it. */
 const sampleUrl = (path: string) => `/samples/${path}`;
 /** Seconds that each color grading table shows. */
 const STEP = 3;
+
+// Moves red out and blue in, by up to `shift` pixels at the corners.
+const fringe = /* wgsl */ `
+struct Uniforms { shift: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    let toward = (input.uv - vec2f(0.5)) * uniforms.shift / input.size;
+    let red = effectColor(input.uv + toward).r;
+    let blue = effectColor(input.uv - toward).b;
+    return vec4f(red, input.color.g, blue, input.color.a);
+}
+`;
 
 export default defineSketch(async ({ scene, assets, geometry, materials, post, quality, time }) => {
 	const [warm, cool] = await Promise.all([
@@ -23,6 +35,7 @@ export default defineSketch(async ({ scene, assets, geometry, materials, post, q
 		outline: { color: '#ffd166', width: 2 },
 		vignette: { intensity: 0.8, size: 1.1 },
 	});
+	post.addEffect({ wgsl: fringe, uniforms: { shift: 6 } });
 
 	scene.setBackground('#07080c');
 	const camera = scene.createPerspectiveCamera({ fov: 45 });
