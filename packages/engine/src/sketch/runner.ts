@@ -32,7 +32,7 @@ import {
 } from '../generated/core';
 import { FORMAT_CANVAS } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
-import type { CoreDevice } from '../page/limits';
+import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
@@ -245,6 +245,8 @@ export class SketchRunner {
 	private readonly debugDraw: DebugDraw | undefined;
 	/** The sketch's labels, which each frame projects. */
 	private readonly ui: Ui;
+	/** True once the sketch thread has warned that the grid cells ran out. */
+	private cellsWarned = false;
 	readonly context: SketchContext;
 
 	/**
@@ -924,6 +926,10 @@ export class SketchRunner {
 		if (this.followEffects()) restart = true;
 		if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
 		glue.updateBatches(frame);
+		if (!this.cellsWarned && glue.cellsRefused() !== 0) {
+			this.cellsWarned = true;
+			console.warn(cellTableWarning());
+		}
 		this.endPhase(Phase.Batches);
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));
 		const height = Math.max(1, Atomics.load(slots, Slot.CanvasHeight));

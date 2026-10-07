@@ -4,7 +4,7 @@
 // links again.
 import { expect, test } from '@playwright/test';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
-import { pageResult } from '../lib/page-result.ts';
+import { pageResultWhileProgressing } from '../lib/page-result.ts';
 import { glslProgramsOf } from '../pages/lib/shader-list.ts';
 
 interface ShaderResult {
@@ -26,12 +26,21 @@ const realGpu = !process.env.CI;
 
 /**
  * The most GLSL programs that one part compiles. CI's SwiftShader takes about 70 ms for each, so a
- * part needs about 10 s of its 30 s.
+ * part needs about 10 s when the machine is not busy.
  */
 const PROGRAMS_PER_PART = 150;
 
 /** Enough parts that none holds more than that many programs. */
 const PARTS = Math.ceil(glslProgramsOf(await everyShader()).length / PROGRAMS_PER_PART);
+
+/**
+ * A part fails when its page notes no new step for this long. The page notes a step after each
+ * batch of GLSL programs and after every few WGSL modules, so a busy machine slows a part without
+ * failing it, while a stuck compile still fails.
+ */
+const STALL_MS = 30_000;
+/** The most time a part may take in all, far more than it takes alone. */
+const PART_LIMIT_MS = 5 * 60_000;
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -39,8 +48,9 @@ for (let part = 1; part <= PARTS; part++)
 	test(`the generated GLSL compiles and links in WebGL2 and the WGSL compiles in WebGPU, part ${part} of ${PARTS}`, async ({
 		page,
 	}) => {
+		test.setTimeout(PART_LIMIT_MS);
 		await page.goto(`shaders.html?part=${part}&parts=${PARTS}`);
-		const result = await pageResult<ShaderResult>(page, 30_000);
+		const result = await pageResultWhileProgressing<ShaderResult>(page, STALL_MS);
 		expect(result.error).toBeUndefined();
 		expect(result.failures).toEqual([]);
 		expect(result.glslPrograms).toBeGreaterThan(0);
@@ -95,9 +105,10 @@ function fakeMetalFault(fault: string): void {
 test("the shaders page links a program again after Safari's Metal fault, and lists it", async ({
 	page,
 }) => {
+	test.setTimeout(PART_LIMIT_MS);
 	await page.addInitScript(fakeMetalFault, METAL_FAULT);
 	await page.goto(`shaders.html?part=1&parts=${PARTS}`);
-	const result = await pageResult<ShaderResult>(page, 30_000);
+	const result = await pageResultWhileProgressing<ShaderResult>(page, STALL_MS);
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
 	expect(result.relinked).toHaveLength(1);

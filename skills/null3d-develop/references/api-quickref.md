@@ -63,7 +63,7 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
-engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });

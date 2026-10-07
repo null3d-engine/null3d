@@ -50,6 +50,7 @@ import {
 	handovers,
 	type ItemResult,
 	inLanes,
+	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
 	pickItems,
@@ -57,6 +58,7 @@ import {
 	readResult,
 	readShard,
 	repeatItems,
+	rerunsInNewTab,
 	runName,
 	shardItems,
 	turnBatches,
@@ -64,7 +66,7 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
-import { handoverName } from './tab-end.ts';
+import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
 describe('turnBatches', () => {
@@ -204,6 +206,33 @@ describe('waitForRunners', () => {
 			expect(finished).toEqual(['mac-safari']);
 			expect(handovers(plan.run, 'mac-safari', new Set([1]))).toEqual([2]);
 		}));
+
+	it('hands the run to a new runner page around pages of their own and after a set number of pages', () => {
+		const ran = (pages: number, lastOwnTab = false) => ({ pages, lastOwnTab });
+		expect(handsOver({ ownTab: true }, ran(0))).toBe(false);
+		expect(handsOver({ ownTab: true }, ran(1))).toBe(true);
+		expect(handsOver({}, ran(1, true))).toBe(true);
+		expect(handsOver({}, ran(5))).toBe(false);
+		expect(handsOver({}, ran(5), PAGES_PER_TAB)).toBe(false);
+		expect(handsOver({}, ran(PAGES_PER_TAB), PAGES_PER_TAB)).toBe(true);
+		// Fewer pages than Safari's 8 fast slots, so one runner page never uses them all up.
+		expect(PAGES_PER_TAB).toBeLessThan(8);
+	});
+
+	it('runs a page once more in a new runner page when memory that Safari kept explains its failure', () => {
+		for (const problem of [
+			"E1109: the browser refused the engine's shared memory of 1024 MiB 13 times over 45 seconds: Out of memory.",
+			'E1302: the render worker lost its GPU: the WebGL2 context was lost, in hold mode',
+			'the browser did not get back the memory of engines in removed frames: it had room for 10 shared memories before 43 starts in frames, and for 7 after',
+			'RangeError: Out of memory',
+		])
+			expect(rerunsInNewTab('Safari', ['another problem', problem])).toBe(true);
+		expect(rerunsInNewTab('Safari', ['the image differs from its reference in 812 pixels'])).toBe(
+			false,
+		);
+		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
+		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
+	});
 
 	it('ends the turn of a runner whose handover found no new runner page', () =>
 		withRun(['a', 'b'], async (plan) => {
@@ -1037,6 +1066,23 @@ describe('the checks plan', () => {
 			'the browser did not get back the memory of engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts in frames, and for 0 after',
 		]);
 		expect(judge(inFrames.check, result({}), NONE_MISSING)).toEqual(['the page started no engine']);
+		// A fall that the second round held is Safari's, not a leak in the engine: a note.
+		const frameNotes: string[] = [];
+		const fellInFrames = (again: object) =>
+			result({ kinds: { frame: { ...engine, roomLater: 4, again: { ...engine, ...again } } } });
+		expect(
+			judge(inFrames.check, fellInFrames({ room: 4, roomLater: 3 }), NONE_MISSING, {
+				...context,
+				note: (t: string) => frameNotes.push(t),
+			}),
+		).toEqual([]);
+		expect(frameNotes).toEqual([
+			'Safari kept memory from the first round of engines in removed frames, and the second round held the room: it had room for 6 shared memories before 10 starts in frames, and for 4 after, and for 3 after 10 more',
+		]);
+		// Room that the second round loses too still fails.
+		expect(judge(inFrames.check, fellInFrames({ room: 4, roomLater: 2 }), NONE_MISSING)).toEqual([
+			'the browser did not get back the memory of engines in removed frames in two rounds: it had room for 6 shared memories before 10 starts in frames, and for 4 after, then for 2 after 10 more within 31 s',
+		]);
 		const kept = items.find((item) => item.id === 'canvas-kept-restarts-pipelined');
 		const destroyedInFrames = items.find(
 			(item) => item.id === 'frame-destroyed-restarts-pipelined',

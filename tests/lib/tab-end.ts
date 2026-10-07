@@ -22,6 +22,22 @@ export const progressName = (id: string) => `${id}.progress`;
  */
 export const handoverName = (from: number) => `handover-${from}`;
 
+/**
+ * Whether a runner page that can hand over hands the run to a new runner page before the next page:
+ * when that page or the last one it ran wants a runner page of its own, or when it has run
+ * `tabEvery` pages. A runner page that ran no page yet keeps the run.
+ */
+export function handsOver(
+	next: { ownTab?: boolean },
+	ran: { pages: number; lastOwnTab: boolean },
+	tabEvery?: number,
+): boolean {
+	if (ran.pages === 0) return false;
+	return (
+		next.ownTab === true || ran.lastOwnTab || (tabEvery !== undefined && ran.pages >= tabEvery)
+	);
+}
+
 /** Who recorded that a tab ended: the runner page that the browser reloaded, or the runner tool. */
 export type TabEndRecorder = 'runner page' | 'runner tool';
 

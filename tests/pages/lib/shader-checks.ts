@@ -215,6 +215,9 @@ export async function checkGlslPrograms(
 	};
 }
 
+/** How many WGSL modules the page checks between the steps it notes in its trail. */
+const WGSL_PROGRESS_EVERY = 20;
+
 /** True for a WGSL module that does math in 16-bit floats, which needs `shader-f16`. */
 const enablesF16 = (code: string) => /^enable f16;/m.test(code);
 
@@ -249,6 +252,7 @@ export async function checkWgslModules(
 		if (messages.length > 0)
 			failures.push({ shader: name, stage: 'wgsl', log: messages.join('\n') });
 		checked++;
+		if (checked % WGSL_PROGRESS_EVERY === 0) progress(`WGSL: ${checked} modules checked`);
 	}
 	device.destroy();
 	return { webgpu: true, modules: checked, skipped };

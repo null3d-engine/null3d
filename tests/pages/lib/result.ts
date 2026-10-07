@@ -136,7 +136,16 @@ export function toBase64(bytes: Uint8Array): string {
 }
 
 export async function publish(name: string, result: Record<string, unknown>): Promise<void> {
-	const report = { page: name, userAgent: navigator.userAgent, url: location.href, ...result };
+	// An engine that draws on the page when a worker was meant to keeps the page's steps, which show
+	// how its probe worker went.
+	const fellBack = (result.mode as { renderFallback?: unknown } | undefined)?.renderFallback;
+	const report = {
+		page: name,
+		userAgent: navigator.userAgent,
+		url: location.href,
+		...result,
+		...(fellBack && !('trail' in result) ? { trail: [...trail] } : {}),
+	};
 	window.__null3dResult = report;
 	const status = document.getElementById('status');
 	// A demo keeps its scene on screen, so its status stays one line, unless the page failed.

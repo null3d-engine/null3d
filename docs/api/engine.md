@@ -202,7 +202,7 @@ What the browser and device can do, as plain JSON. The engine picks its build an
 | `transferControlToOffscreen: boolean` | True when a page canvas can hand its drawing to a worker. |
 | `webgpu: WebGPUReport` | What WebGPU offers. |
 | `webgl2: WebGL2Report` | What WebGL2 offers. |
-| `worker: WorkerProbe \| { error: string; }` | What a dedicated worker can do, or why the probe worker failed. |
+| `worker: WorkerProbe \| WorkerProbeFailure` | What a dedicated worker can do, or why the probe worker gave no answer. |
 
 ### `createEngine`
 
@@ -292,6 +292,7 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `presetCheck: PresetCheck \| null` | What the preset check measured, or null when no check ran. The engine checks the preset when it chose it from the device: after the first frame, it measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. A later start of the sketch in the same browser on the same device takes the stored result instead, and starts at its preset. `reused` is then true. |
 | `crashedStarts: number` | The starts of this sketch before this one that crashed the tab, one after another, as the engine's note in `localStorage` records them. After one, the engine starts a preset lower, and after two at `low`. |
 | `memoryMaximumMiB: number \| null` | The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not shared. |
+| `renderFallback: RenderFallback \| null` | Why the page draws when a worker was meant to, or null when the thread that draws is the one that the options asked for. `report.worker` holds the probe's answer. |
 
 ### `EngineOptions`
 
@@ -441,6 +442,14 @@ type LatencyMode = 'pipelined' | 'low';
 
 How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame while the sketch computes the next one. In `low` mode, the sketch worker draws each frame right after its update.
 
+### `RenderFallback`
+
+```ts
+type RenderFallback = WorkerProbeFailure['failure'] | 'no-surface';
+```
+
+Why the engine draws on the page's thread when its options asked a worker to draw: - `no-answer`: the probe worker, and a second one after it, gave no answer within their time limits. A stalled GPU call or a very busy machine causes this. - `failed-to-start`: the probe worker's script failed to load or run. - `no-surface`: a worker cannot draw with the GPU path here, as the browser offers no context of it for an `OffscreenCanvas` in a worker.
+
 ### `ShaderFeature`
 
 ```ts
@@ -542,6 +551,17 @@ What a dedicated worker can do, in `CapabilityReport.worker`. A render worker ne
 | `requestAnimationFrame: boolean` | True when workers have `requestAnimationFrame`. |
 | `offscreenWebGL2: boolean` | True when a worker can draw with WebGL2 into an `OffscreenCanvas`. |
 | `offscreenWebGPU: boolean` | True when a worker can draw with WebGPU into an `OffscreenCanvas`. |
-| `error?: string` | Why the probe failed, when it did. |
+| `webgpuError?: string` | Why the WebGPU check failed, when it threw. The WebGL2 check's answer still holds. |
+
+### `WorkerProbeFailure`
+
+Interface `WorkerProbeFailure`.
+
+Why the probe worker gave no answer, in `CapabilityReport.worker`. The engine then draws on the page's thread, and `engine.mode.renderFallback` names the reason.
+
+| Member | Description |
+| --- | --- |
+| `failure: 'no-answer' \| 'failed-to-start'` | `no-answer` when neither probe worker answered within its time limit, which a stalled GPU call or a very busy machine causes. `failed-to-start` when the worker's script failed to load or run. |
+| `error: string` | The failure in words. |
 
 <!-- null3d:api:end -->

@@ -16,8 +16,8 @@ export interface WorkerProbe {
 	offscreenWebGL2: boolean;
 	/** True when a worker can draw with WebGPU into an `OffscreenCanvas`. */
 	offscreenWebGPU: boolean;
-	/** Why the probe failed, when it did. */
-	error?: string;
+	/** Why the WebGPU check failed, when it threw. The WebGL2 check's answer still holds. */
+	webgpuError?: string;
 }
 
 /**
@@ -56,7 +56,7 @@ async function probe(): Promise<WorkerProbe> {
 			device.destroy();
 		}
 	} catch (e) {
-		result.error = messageOf(e);
+		result.webgpuError = messageOf(e);
 	}
 	return result;
 }
