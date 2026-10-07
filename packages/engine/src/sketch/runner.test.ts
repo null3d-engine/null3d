@@ -64,13 +64,15 @@ const textureOption = (option: number, value: number) => `setTextureOption ${opt
  * frame step it takes and each texture setting it gets. It keeps the arguments of some calls in
  * `calls`. Its transform updates clear the dirty bits, as the core's do. With `grows`, each frame
  * step grows the memory, which detaches the views of a memory that is not shared, as the
- * single-threaded build's is. Its other calls do nothing.
+ * single-threaded build's is. `cellsRefused` gives the core's count of refused grid cells. Its
+ * other calls do nothing.
  */
 function fakeGlue(
 	log: string[],
 	memory: WebAssembly.Memory,
 	calls: unknown[][] = [],
 	grows = false,
+	cellsRefused = () => 0,
 ): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
@@ -80,6 +82,7 @@ function fakeGlue(
 		sceneArrays: block,
 		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
+		cellsRefused,
 	};
 	const clearDirty = () =>
 		new Uint32Array(
@@ -170,7 +173,8 @@ const MEDIUM: QualityStart = {
  * A runner of a sketch whose callbacks come from `callbacks`, with a log of what each frame ran.
  * `quality` replaces the page's quality start. With `drawing`, a stand-in for the thread that
  * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in. With
- * `grows`, each frame step grows the memory. The log also shows the settings that the page got.
+ * `grows`, each frame step grows the memory. `cellsRefused` gives the core's count of refused grid
+ * cells. The log also shows the settings that the page got.
  */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
@@ -181,12 +185,14 @@ async function start(
 		grows = false,
 		holdSeconds,
 		shared = false,
+		cellsRefused,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
 		grows?: boolean;
 		holdSeconds?: number;
 		shared?: boolean;
+		cellsRefused?: () => number;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -204,7 +210,7 @@ async function start(
 		() => {},
 		metrics,
 		{
-			glue: fakeGlue(log, memory, calls, grows),
+			glue: fakeGlue(log, memory, calls, grows, cellsRefused),
 			memory,
 			control,
 			keyCodes: [],
@@ -375,6 +381,25 @@ describe('SketchRunner', () => {
 			expect(error).toHaveBeenCalledTimes(1);
 		} finally {
 			error.mockRestore();
+		}
+	});
+
+	it('warns once, from the first frame in which the grid cells ran out', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			let refused = 0;
+			const { runner } = await start(() => ({}), undefined, { cellsRefused: () => refused });
+			runner.step(0);
+			runner.step(16);
+			expect(warn).not.toHaveBeenCalled();
+			refused = 1;
+			runner.step(32);
+			refused = 5;
+			runner.step(48);
+			expect(warn).toHaveBeenCalledTimes(1);
+			expect(String(warn.mock.calls[0]?.[0])).toContain(`all ${C.CELL_MAX} grid cells are in use`);
+		} finally {
+			warn.mockRestore();
 		}
 	});
 

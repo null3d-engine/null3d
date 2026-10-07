@@ -28,6 +28,7 @@ export const FLAG_OCCLUDER = 128;
 export const LAYERS_DEFAULT = 1;
 
 export const CELL_SIZE = 1024;
+export const CELL_MAX = 512;
 
 export const LIGHT_KIND_DIRECTIONAL = 1;
 export const LIGHT_KIND_POINT = 2;
