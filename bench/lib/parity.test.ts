@@ -537,6 +537,8 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgl2',
 			'webgl2',
 			'webgl2',
 		]);
