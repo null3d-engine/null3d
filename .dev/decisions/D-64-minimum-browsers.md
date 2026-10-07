@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-05. Date: 2026-10-05. Task: M2-N1.
 
+Summary: Safari 17 and older are too old, and null3D does not support them; Chrome and Edge 91 and Firefox 89 stay. A cloud iPhone 13 in Safari 17.5 refused the engine's 1,024 MiB of shared memory and failed one WebGL2 shader, and no work goes into either. The engine refuses older Safari with a start error.
+
 ## Question
 
 Which Safari versions does null3D support? Safari 16.4 is the first with WebAssembly SIMD, which the engine's core needs. On 4 October 2026 a cloud iPhone 13 in Safari 17.5 refused the engine's shared memory and failed one WebGL2 shader. Does work go into those faults, or is Safari 17 too old to support?

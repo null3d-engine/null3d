@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-10-04. Date: 2026-10-04. Task: M2-N1.
 
+Summary: Match what files and authors mean strictly: glTF, materials, color spaces, units and animation. Looks are "equivalent or better": each feature defaults to the best technique, and the porting skill maps three.js settings onto it. The core has no three.js-look modes; the few that ports truly need go in an opt-in `three-compat` add-on. Benchmarks compare equal work, and pixel tests against three.js cover only shared building blocks. Built-in assets are made at run time, and heavy features ship as add-on modules.
+
 ## Question
 
 What does "parity with three.js" mean for null3D? Must a port look the same as its three.js original, pixel for pixel? Or must it only show what the files and the author meant, with each look drawn by the best technique?

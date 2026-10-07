@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03. Task: M1-K5, for T-28.
 
+Summary: Store each sketch's preset check result in `localStorage` for a week, and skip the check on a matching repeat visit: about 1 s saved per preset measured on the iPad. A check during play would show the switch and fight the governor; a shorter check for known GPUs needs GPU names.
+
 ## Question
 
 When the page leaves the quality preset to the engine, the preset check measures the scene after the setup, and `createEngine` waits for it. On the 11-inch iPad Pro it takes about 1 s for each preset that it measures. How can the first frame of play come sooner without losing what the check decides?

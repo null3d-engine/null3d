@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-05. Date: 2026-10-05. Task: M2-E8.
 
+Summary: Fog by each point's straight-line distance from the camera, so it stays still as the camera turns, with three curves: exponential by default, and three.js's exponential squared and linear, which the port maps `FogExp2` and `Fog` onto. Height fog integrates an exponential density exactly along each ray, and a sun glow scatters the main directional light. A branch on the frame's values, with no new shader build, in the same 48 bytes.
+
 ## Question
 
 null3D's fog copied three.js's: linear fog or exponential squared fog, by depth along the camera's view. [D-52](D-52-intent-parity.md) asks for the best technique by default, with three.js's look reached through the port. Decision 13 of [D-53](D-53-technique-defaults.md) names the target: one fog with radial distance, height and sun light, and a curve setting. How is it measured, how does height enter, where does the sun's light come from, and what does it cost?
