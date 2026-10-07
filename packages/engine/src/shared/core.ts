@@ -451,6 +451,22 @@ export interface CoreGlue extends CoreErrors {
 	/** Turns outlines on with the post-processing values' line colors and width, or off. */
 	setOutline(on: boolean): number;
 	/**
+	 * The address of a custom effect's uniforms (`EFFECT_FLOATS` 32-bit floats), which TypeScript
+	 * writes before it calls `setEffect`.
+	 */
+	effectValues(): number;
+	/**
+	 * Sets the custom effect at a place in the order effects run, from the next frame on: its render
+	 * pipeline template, its flags (`EFFECT_DEPTH`) and the uniforms at `effectValues`. Template 0
+	 * removes the effect at the place and every one after it.
+	 */
+	setEffect(index: number, template: number, flags: number): number;
+	/**
+	 * Maps HDR color with the custom tone curve whose builds take the render pipeline templates from
+	 * `template` on, or with the curve that `setOutput` sets for 0, from the next frame on.
+	 */
+	setToneCurve(template: number): number;
+	/**
 	 * The address of the block of the environment's values (`ENVIRONMENT_VALUE_*`), 32-bit floats
 	 * that TypeScript writes before it calls `setEnvironment`.
 	 */
@@ -702,6 +718,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'environmentValues',
 	'setEnvironment',
 	'setOutline',
+	'effectValues',
+	'setEffect',
+	'setToneCurve',
 	'setCanvasOutput',
 	'setRenderScaling',
 	'setPixelRatio',

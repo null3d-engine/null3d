@@ -320,7 +320,7 @@ WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` bloc
 
 | Member | Description |
 | --- | --- |
-| `readonly kind: 'material' \| 'shader'` | `'material'` for the functions of a custom material, and `'shader'` for a whole shader. |
+| `readonly kind: 'material' \| 'effect' \| 'toneCurve' \| 'shader'` | `'material'` for the functions of a custom material, `'effect'` for a custom effect, `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader. |
 
 ### `DepthBias`
 

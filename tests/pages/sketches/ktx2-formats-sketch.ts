@@ -1,6 +1,6 @@
 // KTX2 files in a live engine, for the KTX2 test. The sketch loads the ETC1S file twice at once,
-// the UASTC file with alpha, the ramp whose size takes no compressed format, and the ETC1S file
-// without its mip levels. It records the code of each call that must fail. Once every texture is
+// the UASTC file with alpha, the ramp whose size takes no compressed format, the ETC1S file
+// without its mip levels, and the UASTC HDR file. It records the code of each call that must fail. Once every texture is
 // on the GPU, it sends the page the format, color space, size and GPU bytes of each texture. The
 // files' addresses come from the sketch module's own, so a production build ships them.
 import { defineSketch, EngineError } from '@null3d/engine';
@@ -8,6 +8,7 @@ import { defineSketch, EngineError } from '@null3d/engine';
 const ETC1S = new URL('../assets/textures/quarters-etc1s.ktx2', import.meta.url);
 const UASTC = new URL('../assets/textures/quarters-uastc.ktx2', import.meta.url);
 const RAMP = new URL('../assets/textures/ramp-uastc.ktx2', import.meta.url);
+const HDR = new URL('../assets/textures/quarters-hdr.ktx2', import.meta.url);
 
 /** The code of the error that a call throws or rejects with, or 'none'. */
 async function codeOf(call: () => unknown): Promise<string> {
@@ -34,6 +35,7 @@ export default defineSketch(async ({ assets, textures, page }) => {
 		assets.loadTexture(UASTC),
 		assets.loadTexture(RAMP),
 		assets.loadTexture(ETC1S, { mipmaps: false }),
+		assets.loadTexture(HDR),
 	]);
 	const broken = brokenFile();
 	const codes = {
