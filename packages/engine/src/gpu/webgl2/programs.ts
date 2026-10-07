@@ -47,6 +47,7 @@ import {
 	type ShaderVariants,
 } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
+import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
@@ -171,6 +172,17 @@ export interface Pipeline {
 	readonly mode: number;
 	/** The layout of its template's own vertex buffer, for a template that draws no mesh. */
 	readonly vertices: GPUVertexBufferLayout | undefined;
+}
+
+/**
+ * The template of a custom shader. A custom material's prepass draws with its own vertex shader,
+ * as every mesh's does. A custom effect's or tone curve's template draws one triangle, as the
+ * final pass does.
+ */
+export function customTemplate(shader: CustomShader): GlslTemplate {
+	return shader.kind === undefined
+		? { shader: shader.variants, pipeline: 'main', meshPrepass: true }
+		: { shader: shader.variants, pipeline: 'main' };
 }
 
 /** The engine's render pipeline templates, by template id, from the shaders the device loaded. */
@@ -306,6 +318,23 @@ export const METAL_FAULT = 'MSL compilation error';
  */
 export const RELINK_TAIL = '\n// null3d: second link\n';
 
+/** True when the program's link failed with Safari's random Metal fault. */
+export function metalFault(gl: WebGL2RenderingContext, p: Program): boolean {
+	return gl.getProgramInfoLog(p.program)?.includes(METAL_FAULT) === true;
+}
+
+/**
+ * Starts the second link of a program whose link failed with Safari's random Metal fault: it
+ * deletes the GL program and its shaders, and links the sources again into a new GL program.
+ */
+export function relink(gl: WebGL2RenderingContext, p: Program): void {
+	for (const shader of p.shaders) gl.deleteShader(shader);
+	gl.deleteProgram(p.program);
+	const relinked = link(gl, p.source, RELINK_TAIL);
+	p.program = relinked.program;
+	p.shaders = relinked.shaders;
+}
+
 /** The error of a program whose link failed, with the logs of its program and shaders. */
 function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Error {
 	const logs = p.shaders
@@ -327,12 +356,8 @@ function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Err
  */
 export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
-		if (!gl.getProgramInfoLog(p.program)?.includes(METAL_FAULT)) throw linkError(gl, p, '');
-		for (const shader of p.shaders) gl.deleteShader(shader);
-		gl.deleteProgram(p.program);
-		const relinked = link(gl, p.source, RELINK_TAIL);
-		p.program = relinked.program;
-		p.shaders = relinked.shaders;
+		if (!metalFault(gl, p)) throw linkError(gl, p, '');
+		relink(gl, p);
 		if (!gl.getProgramParameter(p.program, gl.LINK_STATUS))
 			throw linkError(gl, p, ' twice, the second time after a fault in its Metal');
 	}

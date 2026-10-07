@@ -12,6 +12,7 @@ import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
 import type { WAKE } from '../shared/wake';
+import type { WgslUpdate } from '../shared/wgsl-updates';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 
 export interface CoreHandoff {
@@ -187,6 +188,8 @@ export type SketchWorkerMessage =
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }
+	/** Hot updates of the project's WGSL on the dev server, for the sketch's custom materials. */
+	| { type: 'wgsl'; updates: readonly WgslUpdate[] }
 	/** Ends the sketch worker's waits, where the threads wake each other with messages. */
 	| typeof WAKE;
 

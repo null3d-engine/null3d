@@ -38,6 +38,7 @@ import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
+import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
 import { spawnWorker } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
@@ -1283,6 +1284,12 @@ async function startEngine(
 		stopJobs();
 		waitForJobWorkersToLeave(slots);
 	};
+	/** On the dev server, hands each hot update of WGSL to the thread that runs the sketch. */
+	const updateShaders = (event: Event) => {
+		const updates = (event as CustomEvent<readonly WgslUpdate[]>).detail;
+		if (localRunner) localRunner.updateShaders(updates);
+		else threads?.sketch?.worker.postMessage({ type: 'wgsl', updates });
+	};
 	/**
 	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
 	 * It works from any point of the start. Then it drops the page's engine, lets go of the page's
@@ -1299,6 +1306,7 @@ async function startEngine(
 			Atomics.store(slots, Slot.Paused, 2);
 			stopJobs();
 			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
+			globalThis.removeEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 			statsSwitch.show(false);
 			for (const slot of [
 				Slot.Running,
@@ -1581,6 +1589,7 @@ async function startEngine(
 		};
 
 		if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+		if (DEV) globalThis.addEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 
 		/**
 		 * Hands the core to the job workers, each with a port for the on-demand loader's tasks. A stop
