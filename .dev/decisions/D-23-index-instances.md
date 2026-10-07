@@ -2,6 +2,8 @@
 
 Status: decided for now: the index path stays a test switch, off by default. The owner's iPad timing is still to come and can reopen it. Date: 2026-10-05. Task: M2-K1 (T-23).
 
+Summary: The culling pass writes a 4-byte source index per visible instance in place of a 64-byte copy, and the vertex shaders read the matrix, material and cell offset from storage buffers, behind `?instances=index` on core WebGPU only. Twelve scenes draw the same images both ways, to the pixel, on the Mac's GPU and SwiftShader. The builds load on first use, 15.1 to 16.7 KB after Brotli each. On the device cloud, S1 is 13% faster on a Galaxy S25 and 1.4% slower on an iPad, and S1-static changes by less than 2% on both; the Mac shows no change. No device saves the 5% of GPU time in S1-static that a capability flag needs, so it stays off by default.
+
 ## Question
 
 On WebGPU, each view's culling pass copies every visible instance into a compacted buffer. A copy holds three rows of the world matrix and a vector of ids: 64 bytes. The vertex shaders read the copy as instance-rate vertex attributes, as hard rule 7 asks. On core WebGPU, vertex shaders can also read storage buffers. Should the culling pass write only each visible source's index, 4 bytes, and the vertex shader read the rest by that index?

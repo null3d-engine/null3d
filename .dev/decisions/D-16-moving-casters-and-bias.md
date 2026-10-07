@@ -1,6 +1,8 @@
 # D-16: Moving casters in far cascades, and where shadows meet their casters
 
-Status: decided. Date: 2026-10-03, with the owner's two rulings for Low of 2026-10-05; the second supersedes the first. Tasks: M1-F3 and M1-K5.
+Status: decided. Date: 2026-10-03, with the owner's two rulings for Low of 2026-10-05; the second supersedes the first. On 2026-10-06 the owner dropped the cache of Low's still casters and accepted the cost of following moving casters. The addendum of 2026-10-07 measures the receiver plane's cost on the iPad and gives the plane a cheaper form. Tasks: M1-F3 and M1-K5.
+
+Summary: A far cascade draws in every frame while a moving caster touches its box, which adds no memory, on every preset. Low kept its far cascade's turns after the gate's iPad comparison, until the iPad soak showed every car's shadow jerking behind it in S4 (`followMovingCasters`, which also stops the governor's far cascade step while off). A cache of Low's still casters was built and dropped on 2026-10-06, as following cost about 0.1 ms on the cloud iPad. The owner accepted its 0.3 ms on the owner's iPad. The biases are in meters (0.01 and 0.02 m), scaled by each surface's angle to the light and capped at one texel, and receivers pick their cascade by their distance from the camera, so the lit lines at casters' bases are thinner and change less as the view turns.
 
 ## Question
 
@@ -296,6 +298,7 @@ After the acne on S4's pavements, option 1 of the flat caster options applies. E
 - An iPad check of S4 at Medium on WebGPU, after this change, is still to come.
 - `receiver_plane` and `read_depth` in `crates/null3d-shaders/wgsl/lib/shadows.wgsl` give each read its depth, with `PLANE_MARGIN` and `MAX_PLANE_SLOPE`. The plane comes from the normal that the shading passes to `sun_shadow`. A normal map's normal tilts it, which can light a read that a bumpy surface's own plane would shadow.
 - The acne check (`acneFigures` in `tests/pages/lib/shadow-check.ts`) runs in the visual page. `CONTACT_LIMITS` holds the slab views' acne figures, and `VISUAL_LIMITS` S4's. The benchmark summary and the device runner's bench plan print S4's figure as "Flat-surface acne".
+- The owner's iPad (Safari 26.6.2) judged the Low ruling on 5 October 2026. S4 ran at Low on WebGPU with the governor off, 30 s for each side, in the order A, B, A, B. Side A was main at 1533939f, and side B the fix at 84e2bd47. GPU time per frame: A 11.33 and 11.35 ms, B 10.35 and 10.47 ms. The fix saves 0.93 ms, 8%. Main drew 63 calls in every frame. The fix drew 56 in most frames and 63 at the 95th percentile, as on the Mac. CPU time stayed at 0.16 to 0.20 ms, and every run held 60 fps in every second. Earlier that day, in other sessions on the same iPad, the gate commit took 10.10 ms and the older commit f46c0686 took 9.16 ms.
 
 ## Addendum, 2026-10-05: one depth per texel
 
@@ -471,4 +474,15 @@ The owner ruled on 6 October 2026, at about 23:55 (rulings 11 and 12). The plane
 ### Consequences
 
 - The image tests of the sun's shadows, S2, S4, the lit materials and the cascade seam passed against the existing references, with none changed: 92 of 92 on the Mac's GPU and 92 of 92 on SwiftShader. The shadow checks, contact, turn and moving shadow specs passed too: 96 of 96 on the Mac's GPU, and 93 with 3 skipped on SwiftShader.
-- The iPad's figures for the cheaper form follow in this record once the iPad has run it.
+- On the owner's iPad Pro 11-inch (Safari 26.6.2), S4 at Low on WebGPU with the governor off, the cheaper form wins back about 0.1 ms. Five builds ran in turns, 30 s each, 2 rounds, all at 60 fps, and every run passed the shadow image check. GPU time per frame, the mean of the 2 rounds:
+
+  | Build | GPU ms per frame |
+  | --- | --- |
+  | gr-a11: the older commit f46c0686, with the new GPU timer | 9.68 |
+  | gr-q3: main at 8699fab4e without #353, with the cascade loop fix | 10.79 |
+  | gr-q3p: gr-q3 with the cheaper form | 10.71 |
+  | gr-m0: main at 90729ce39 | 11.20 |
+  | gr-m: gr-m0 with the cheaper form | 11.10 |
+
+  Main with the cheaper form takes 1.42 ms (15%) more than the older commit. The plane takes about 1.1 ms of that, and #359's far layers about 0.3 ms. S4 at Low still holds 60 fps, with about a third of the frame spare. The runs are 20261006-160634-bench to 20261006-163236-bench.
+- The owner ruled on 7 October 2026, at about 00:40 ([D-83](D-83-gate-rulings-2026-10-06.md), ruling 13): the cost is accepted, and the gate's GPU item closes. A new task, proposed as M2-R25, finds why the plane costs this much on Apple GPUs, and a cheaper method.

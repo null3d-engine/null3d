@@ -2,6 +2,8 @@
 
 Status: proposed | decided. Date: <date>. Task: <task ID, if any>.
 
+Summary: <The choice and its main figures, in one to three sentences. `bun run decisions` lists it.>
+
 ## Question
 
 <The decision to make, in one or two sentences.>
@@ -23,4 +25,4 @@ How the data was produced: <commands, runs, dates>.
 
 ## Consequences
 
-<What changes in the code, the docs and the skills. Add the record to the table in README.md.>
+<What changes in the code, the docs and the skills.>

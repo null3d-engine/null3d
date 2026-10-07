@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-D5.
 
+Summary: The sketch places each label with each frame's camera, with the code of `worldToScreen`. The thread that draws copies the shown frame's places into the control buffer under a sequence counter, and the page moves only the elements that moved half a pixel. Elements sit where three.js's `CSS2DRenderer` puts them, to within 0.0005 pixels.
+
 ## Question
 
 `ui.trackLabel(object, id, { offset })` in the sketch and `engine.labels.bind(id, element)` on the page put an HTML element over a scene object. In pipelined mode the thread that draws shows an older frame than the one the sketch computes, and under GPU backpressure older still. Where does the engine place each label, how does the place reach the page, and how does the page move the element?

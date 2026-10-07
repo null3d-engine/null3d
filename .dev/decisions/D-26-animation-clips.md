@@ -2,6 +2,8 @@
 
 Status: decided by its rule on 2026-10-03; the iPad timings are in, and the phone timings are pending. Changed by the owner on 2026-10-05: a track that moves by under a millionth counts as constant ([Near-constant tracks](#near-constant-tracks-5-october-2026)). Date: 2026-10-03. Tasks: M2-C1, and M2-B7 for the change.
 
+Summary: Keys at one rate per clip, 30 per second unless the file's own grid is coarser; rotations in 16 bits per component; a track that moves by under a millionth stored once; blends as three.js's mixer, joint by joint. Poses stay within 1.0e-4 of three.js, skinning matrices within 3.6e-4.
+
 ## Question
 
 How should the core store, sample and blend animation clips? Sampling a crowd on the job workers must be cheap, and poses must match three.js's `AnimationMixer`.
