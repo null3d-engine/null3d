@@ -73,8 +73,8 @@ fn brdf_ggx(
 /// The scale and bias of the split-sum approximation of specular light from all directions, for a
 /// view at `n_dot_v` and a perceptual `roughness`. It reads three.js's table of these terms, as
 /// three.js does, filtered between the nearest four entries. The engine binds the table in group
-/// 0 at binding 3 of its mesh pipelines, or in the material table's texture on WebGL2, and a shader
-/// that calls this function binds it there too.
+/// 0 at binding 3 of its mesh pipelines, and a shader that calls this function binds it there too.
+/// On WebGL2 the table sits in the material table's texture instead.
 /// The function reads the table with `textureLoad`, so the table needs no sampler and no
 /// filterable format.
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2f {
