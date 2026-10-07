@@ -1,7 +1,9 @@
 // The examples page. Without ?demo= it lists the demos. With ?demo=<name> it runs that demo's sketch
 // on a canvas that fills the window. The engine reads its own switches from the address: ?hold=2
 // draws the frame at 2 seconds that the demo's image test holds, and ?gpu=webgl2 forces a GPU tier.
-import { createEngine } from '@null3d/engine';
+// A demo's sketch can post 'label' messages: the page then shows each label's text in an element
+// that follows the label's object.
+import { createEngine, type Engine } from '@null3d/engine';
 import { DEMOS, type Demo } from './demos';
 
 const params = new URLSearchParams(location.search);
@@ -43,6 +45,34 @@ function listDemos(): void {
 	);
 }
 
+/** The message that a demo posts to show a label, or to change its text. */
+interface LabelMessage {
+	/** The id that the sketch tracks the label under with ui.trackLabel. */
+	id: string;
+	text: string;
+	/** True to highlight the label, such as for a selected object. */
+	active?: boolean;
+}
+
+/** Shows the labels that the demo posts, each in an element that follows the label's object. */
+function showLabels(engine: Engine, layer: HTMLElement): void {
+	const tags = new Map<string, HTMLElement>();
+	engine.onSketchMessage((type, data) => {
+		if (type !== 'label') return;
+		const { id, text, active = false } = data as LabelMessage;
+		let tag = tags.get(id);
+		if (!tag) {
+			tag = element('div');
+			tag.className = 'label';
+			layer.append(tag);
+			tags.set(id, tag);
+			engine.labels.bind(id, tag);
+		}
+		tag.textContent = text;
+		tag.classList.toggle('active', active);
+	});
+}
+
 async function runDemo(demo: Demo): Promise<void> {
 	document.title = `${demo.title}: null3D demos`;
 	const canvas = element('canvas');
@@ -61,12 +91,17 @@ async function runDemo(demo: Demo): Promise<void> {
 	panel.append(element('h1', demo.title), element('p', demo.summary));
 	if (demo.controls) panel.append(element('p', demo.controls));
 	panel.append(links);
-	main.replaceWith(canvas, panel);
+	// The labels' layer covers the canvas, and lets the pointer through to it.
+	const labels = element('div');
+	labels.className = 'labels';
+	main.replaceWith(canvas, labels, panel);
 	try {
-		await createEngine({
+		const engine = await createEngine({
 			canvas,
 			sketch: new URL(`/examples/${demo.name}/sketch.ts`, location.origin),
+			largeWorld: demo.largeWorld,
 		});
+		showLabels(engine, labels);
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';

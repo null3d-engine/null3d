@@ -8,7 +8,8 @@
 // records and publishes a frame of the scene as it stands, with none of the sketch's code, so the
 // thread that draws builds its pipelines. In hold mode it seeds this thread's math.random and routes
 // Math.random to it, steps the sketch to the held time in fixed steps after the setup, and publishes
-// the last frame alone. Hold mode reads no input, so the held frame never depends on it. In
+// the last frame alone. Hold mode reads no input and no display preference, so the held frame never
+// depends on them: the sketch sees no request for reduced motion and hears of no change. In
 // development builds, the frame's debug drawing reaches the core just before the frame records;
 // release builds give the sketch calls that do nothing. Each core step of the frame can grow the
 // engine's memory, so the views of it are made again after each step that sketch code or a
@@ -425,7 +426,7 @@ export class SketchRunner {
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {
-					return Atomics.load(slots, Slot.ReducedMotion) !== 0;
+					return holdSeconds === undefined && Atomics.load(slots, Slot.ReducedMotion) !== 0;
 				},
 				onChange: (handler) => {
 					this.preferenceHandlers.add(handler);
@@ -879,11 +880,11 @@ export class SketchRunner {
 			if (this.holdSeconds === undefined) {
 				this.input.beginFrame(frame, (frame - time.frame) | 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
-			}
-			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
-			if (reducedMotion !== this.reducedMotion) {
-				this.reducedMotion = reducedMotion;
-				this.notify(this.preferenceHandlers, undefined);
+				const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
+				if (reducedMotion !== this.reducedMotion) {
+					this.reducedMotion = reducedMotion;
+					this.notify(this.preferenceHandlers, undefined);
+				}
 			}
 			const change = this.quality.takeChange();
 			if (change !== 0) {
