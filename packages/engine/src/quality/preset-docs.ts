@@ -100,7 +100,7 @@ export const SETTING_DOCS: {
 export interface SettingRow {
 	name: AnySettingName;
 	label: string;
-	/** Each preset's value in words, from Low to Ultra. */
+	/** Each preset's value in words, from Low to Ultra, with WebGL2's own where it differs. */
 	values: string[];
 	changes: SettingChange;
 	/** True for a setting that the engine applies; false for a planned one. */
@@ -117,7 +117,12 @@ export function settingRows(): SettingRow[] {
 		return {
 			name,
 			label: docs.label,
-			values: setting.presets.map((value) => print(value)),
+			values: setting.presets.map((value, preset) => {
+				const webgl2 = setting.webgl2?.[preset] ?? value;
+				return webgl2 === value
+					? print(value)
+					: `${print(value)} (${TIER_DOCS.webgl2}: ${print(webgl2)})`;
+			}),
 			changes: setting.changes,
 			built: name in QUALITY_SETTINGS,
 			setting,

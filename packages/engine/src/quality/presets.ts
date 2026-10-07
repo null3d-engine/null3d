@@ -8,6 +8,7 @@
 // test keeps the two lists equal. A sketch changes only the settings that change during play.
 
 import { EngineError } from '../errors/engine-error';
+import type { Tier } from '../shared/tier';
 
 /** Bytes in a mebibyte. */
 export const MIB = 1024 * 1024;
@@ -49,6 +50,8 @@ export type SettingValues =
 export interface Setting {
 	/** The value on each preset, from Low to Ultra. */
 	presets: readonly [unknown, unknown, unknown, unknown];
+	/** The value on each preset on WebGL2, from Low to Ultra, where WebGL2 differs. */
+	webgl2?: readonly [unknown, unknown, unknown, unknown];
 	changes: SettingChange;
 	values: SettingValues;
 }
@@ -209,10 +212,12 @@ export const QUALITY_SETTINGS = {
 		values: 'flag',
 	},
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
-	// pixel once. It stays off on every preset: it made S2's GPU time per frame 45% longer on the
-	// Mac (Benchmarks, "The depth prepass").
+	// pixel once. WebGL2 draws it on every preset: on Apple GPUs, WebGL2 shades hidden pixels that
+	// the prepass's early depth rejection skips. The other paths leave it off: there the GPU removes
+	// hidden surfaces itself, and the second pass only adds time (D-43).
 	depthPrepass: {
 		presets: [false, false, false, false],
+		webgl2: [true, true, true, true],
 		changes: 'start',
 		values: 'flag',
 	},
@@ -247,9 +252,10 @@ export const QUALITY_SETTINGS = {
 /** The name of a setting that the engine applies. */
 export type QualitySettingName = keyof typeof QUALITY_SETTINGS;
 
-/** A setting's value type, from its values on the presets. */
+/** A setting's value type, from its values on the presets, WebGL2's own among them. */
 export type SettingValue<K extends QualitySettingName> =
-	(typeof QUALITY_SETTINGS)[K]['presets'][number];
+	| (typeof QUALITY_SETTINGS)[K]['presets'][number]
+	| ((typeof QUALITY_SETTINGS)[K] extends { webgl2: readonly (infer V)[] } ? V : never);
 
 /**
  * The quality settings that a sketch reads and changes through `ctx.quality`. Each starts at the
@@ -393,8 +399,9 @@ export interface QualitySettings {
 	pointLightShadows: boolean;
 	/**
 	 * True when the engine draws the depth of the opaque objects before it shades them, so it
-	 * shades each pixel once, for its nearest surface. The setting is fixed when the engine starts:
-	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it.
+	 * shades each pixel once, for its nearest surface. Every preset turns it on for WebGL2 and off
+	 * for WebGPU. The setting is fixed when the engine starts: the page's `depthPrepass` option of
+	 * `createEngine` sets it, and `set` does not take it.
 	 */
 	depthPrepass: boolean;
 	/**
@@ -451,25 +458,29 @@ export function lowered(preset: QualityPreset, steps: number): QualityPreset {
 	return QUALITY_PRESETS[Math.max(0, presetIndex(preset) - steps)] ?? 'low';
 }
 
-/** A setting's value on a preset. */
+/** A setting's value on a preset, on the GPU path `tier`, or on WebGPU without it. */
 export function presetValue<K extends QualitySettingName>(
 	name: K,
 	preset: QualityPreset,
+	tier?: Tier,
 ): SettingValue<K> {
-	return QUALITY_SETTINGS[name].presets[presetIndex(preset)] as SettingValue<K>;
+	const setting: Setting = QUALITY_SETTINGS[name];
+	const values = (tier === 'webgl2' && setting.webgl2) || setting.presets;
+	return values[presetIndex(preset)] as SettingValue<K>;
 }
 
 /**
- * The settings that a sketch starts with on `preset`: the preset's values, and the values in
- * `options` where the page's options give them.
+ * The settings that a sketch starts with on `preset` and the GPU path `tier`: the preset's values,
+ * and the values in `options` where the page's options give them.
  */
 export function presetSettings(
 	preset: QualityPreset,
 	options: Partial<QualitySettings> = {},
+	tier?: Tier,
 ): QualitySettings {
 	const settings: Record<string, unknown> = {};
 	for (const name of SKETCH_SETTINGS)
-		settings[name] = (options as Record<string, unknown>)[name] ?? presetValue(name, preset);
+		settings[name] = (options as Record<string, unknown>)[name] ?? presetValue(name, preset, tier);
 	return settings as unknown as QualitySettings;
 }
 
@@ -505,9 +516,10 @@ export function checkedSettings(
 	from: QualityPreset,
 	to: QualityPreset,
 	options: Partial<QualitySettings> = {},
+	tier?: Tier,
 ): QualitySettings {
-	const start = presetSettings(from, options);
-	return to === from ? start : presetSettings(to, { ...options, ...startValues(start) });
+	const start = presetSettings(from, options, tier);
+	return to === from ? start : presetSettings(to, { ...options, ...startValues(start) }, tier);
 }
 
 /** "a, b or c", for the choices in an error message. */

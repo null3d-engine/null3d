@@ -35,3 +35,30 @@ tools/fixtures/*/Cargo.lock
 
 # Working copies of parallel helpers
 .claude/worktrees/
+
+# Generated files, which `bun install`, the git hooks and `bun run docs` write (tools/lib/generated.ts,
+# D-105). Written pages link to them.
+.claude/skills/
+.dev/tested-device-tables.md
+docs/api/reference/
+docs/concepts/quality-preset-tables.md
+docs/errors/
+docs/pages.md
+docs/porting/threejs-mapping.md
+docs/shaders/library.md
+skills/null3d-port-threejs/references/api-mapping.md
+skills/null3d-port-threejs/references/threejs-mapping.json
+# Placeholder pages of planned pages. Take a page off this list when you write it.
+docs/api/render.md
+docs/cookbook/index.md
+docs/getting-started/project-structure.md
+docs/guides/deploying.md
+docs/guides/multiple-views.md
+docs/guides/video-textures.md
+docs/porting/react-three-fiber.md
+docs/porting/threejs-loop-and-threads.md
+docs/porting/threejs-materials.md
+docs/porting/threejs-overview.md
+docs/porting/threejs-shaders.md
+docs/porting/threejs-unsupported.md
+docs/porting/verification.md
