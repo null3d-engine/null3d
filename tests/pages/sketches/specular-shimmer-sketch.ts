@@ -5,6 +5,9 @@
 //   jump from one triangle to the next.
 // - `smooth`: a grid of large spheres of many triangles, 40 to 60 pixels across, with roughness
 //   from 0.05 to 0.3. Their normals turn smoothly.
+// - `tiny`: a dense grid of smooth spheres about 4 pixels across, with roughness from 0.045 to
+//   0.15. Their highlights are narrower than a pixel, which is the case that specular
+//   anti-aliasing is for.
 // - `bumps`: a large metal sphere with roughness 0.2 under a fine normal map of bumps, whose
 //   detail no change of the mesh's own normal shows.
 // A sun lights each scene. The camera orbits slowly: the page sends a time in its 'at' message,
@@ -15,7 +18,7 @@ import { defineSketch, type SketchContext } from '@null3d/engine';
 /** The camera's turn about the scene, in radians per second of sketch time. */
 export const ORBIT_SPEED = 0.01;
 /** The scenes that ?scene= names. */
-export const SHIMMER_SCENES = ['small', 'smooth', 'bumps'] as const;
+export const SHIMMER_SCENES = ['small', 'smooth', 'tiny', 'bumps'] as const;
 export type ShimmerScene = (typeof SHIMMER_SCENES)[number];
 
 const params = new URL(import.meta.url).searchParams;
@@ -63,6 +66,23 @@ function smooth({ scene, materials, geometry }: SketchContext): void {
 				mesh: sphere,
 				material,
 				position: [(column - (columns - 1) / 2) * 2, (row - (rows - 1) / 2) * 2, 0],
+			});
+	}
+}
+
+/** A dense grid of smooth spheres, each a few pixels across. */
+function tiny({ scene, materials, geometry }: SketchContext): void {
+	const columns = 48;
+	const rows = 24;
+	const sphere = geometry.sphere({ radius: 0.07, widthSegments: 32, heightSegments: 16 });
+	for (let column = 0; column < columns; column++) {
+		const roughness = 0.045 + (0.105 * column) / (columns - 1);
+		const material = materials.standard({ color: '#d8c8a8', metalness: 1, roughness });
+		for (let row = 0; row < rows; row++)
+			scene.createMesh({
+				mesh: sphere,
+				material,
+				position: [(column - (columns - 1) / 2) * 0.28, (row - (rows - 1) / 2) * 0.28, 0],
 			});
 	}
 }
@@ -124,7 +144,7 @@ export default defineSketch((context) => {
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.05 });
 	const camera = scene.createPerspectiveCamera({ fov: 30, near: 0.5, far: 200 });
 	scene.setActiveCamera(camera);
-	({ small, smooth, bumps })[SCENE](context);
+	({ small, smooth, tiny, bumps })[SCENE](context);
 	const orbit = (seconds: number) => {
 		const angle = 0.2 + seconds * ORBIT_SPEED;
 		camera.setPosition(Math.sin(angle) * 16, 1.2, Math.cos(angle) * 16);
