@@ -433,3 +433,11 @@ export function rowLimitWarning(sources: number, webgl2: boolean): string | unde
 		: "devices with WebGPU's default limits";
 	return `null3D: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but ${smallest} draw at most ${count(portable)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`;
 }
+
+/**
+ * The warning that the sketch thread gives once, the first time an object or an instance row
+ * enters a new grid cell while every cell is in use.
+ */
+export function cellTableWarning(): string {
+	return `null3D: all ${C.CELL_MAX} grid cells are in use, so an object or instance row that entered a new cell went into the origin's cell instead. There it has only the precision of a 32-bit position, and far from the origin it jitters as the camera moves. Keep far content in fewer cells: put far objects under a few parent objects, which share their root's cell, or create and destroy them as the camera moves.`;
+}

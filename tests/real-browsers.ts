@@ -23,6 +23,7 @@
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan skinning-webgpu --lan ipad-safari
 //   bun tests/real-browsers.ts --plan animation --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan jitter --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
@@ -43,7 +44,9 @@
 //                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
 //                       transform feedback, skinning-webgpu, which times the same two ways on
 //                       WebGPU, with a compute pass that skins once per frame, animation, which times the core's animation step on
-//                       the job workers for crowds of 100 and 500 characters, governor, which runs the quality governor's stress
+//                       the job workers for crowds of 100 and 500 characters, jitter, which flies a
+//                       camera past objects at the origin and 1,000 km and 6,378 km out on each GPU
+//                       path, and compares each object's motion from frame to frame, governor, which runs the quality governor's stress
 //                       test on each GPU path: every live step down and back up under a load,
 //                       then a scene too heavy for the GPU whose frame rate the governor must bring
 //                       back, tab-memory, which grows GPU textures, GPU buffers and a WebAssembly
@@ -167,6 +170,7 @@ import {
 	governorSummary,
 	gpuPathOf,
 	itemsNeeded,
+	jitterSummary,
 	judge,
 	MEMORY_LIMIT_CHECKS,
 	type MissingAllowed,
@@ -1457,6 +1461,7 @@ async function runPlan(
 			overloadSummary,
 			skinningSummary,
 			animationSummary,
+			jitterSummary,
 			tabMemorySummary,
 			soakSummary,
 			warmUpTimeSummary,
