@@ -30,7 +30,9 @@
 // shadows to S1, with casters that circle them, so tiles of the shadow atlas draw again every
 // frame. `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--prepass` turns the depth prepass on, in any scene. It samples the production build
+// turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
+// moves its sun and its clouds every frame. `--prepass` turns the depth prepass on, in any scene.
+// It samples the production build
 // of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
@@ -56,6 +58,7 @@
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
+//   bun run bench:allocation --sky --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
@@ -102,7 +105,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
- *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's;
+ *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's. The
+ *   canvas hands out a new texture each frame, so the view of it must be made each frame too. The
+ *   backend's `colorView` makes it, and the browser counts it there, about 34 bytes on S1;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
@@ -130,6 +135,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'render-worker': {
 		'replay webgpu/backend.ts': 320,
 		'commandEncoder webgpu/backend.ts': 32,
+		'colorView webgpu/backend.ts': 48,
 		'draw render/loop.ts': 64,
 		'drawFrame render/scene-renderer.ts': 192,
 		'(IDLE)': 48,
@@ -264,7 +270,9 @@ async function main(): Promise<void> {
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
 		const effects = args.includes('--effects') ? '&effects' : '';
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}`;
+		const sky = args.includes('--sky') ? '&sky' : '';
+		if (sky && scene !== 's1') throw new Error('--sky draws behind S1 only');
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.

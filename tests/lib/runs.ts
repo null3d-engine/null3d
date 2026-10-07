@@ -74,9 +74,8 @@ export interface Plan<Check = unknown> {
 	skipMissing?: { report: string; allowed: MissingAllowed };
 	/**
 	 * Where the runner tool can open runner pages, a runner page hands the run to a new one after it
-	 * has run this many pages. Each engine start in Safari can take one of the 8 fast slots that
-	 * its process has for WebAssembly memories, and Safari can keep a dropped one held while later
-	 * pages ask for memory. A new runner page starts with none of what the pages before it kept.
+	 * has run this many pages. Memory that earlier pages left held builds up in one Safari process,
+	 * such as what a removed frame reaches. A new runner page starts with none of it.
 	 */
 	tabEvery?: number;
 }

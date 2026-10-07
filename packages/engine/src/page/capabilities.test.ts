@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import type { WorkerProbe } from '../workers/probe-worker';
-import { probeFloatTarget, probeWorker } from './capabilities';
+import { forgetWorkerProbe, pageWorkerProbe, probeFloatTarget, probeWorker } from './capabilities';
 
 const GL = {
 	TEXTURE_2D: 0x0de1,
@@ -189,5 +189,37 @@ describe('the worker probe', () => {
 			error: 'the script did not load',
 		});
 		expect(counts).toMatchObject({ started: 1, terminated: 1 });
+	});
+});
+
+describe("the page's worker probe", () => {
+	const Native = globalThis.Worker;
+	afterEach(() => {
+		globalThis.Worker = Native;
+		forgetWorkerProbe();
+	});
+
+	it('gives starts that ask at once the answer of one worker', async () => {
+		const counts = fakeProbeWorkers(['answers', 'answers']);
+		const answers = await Promise.all([pageWorkerProbe([10]), pageWorkerProbe([10])]);
+		expect(answers).toEqual([ANSWER, ANSWER]);
+		expect(counts.started).toBe(1);
+	});
+
+	it('keeps a full answer for later starts, until a lost GPU drops it', async () => {
+		const counts = fakeProbeWorkers(['answers', 'answers']);
+		expect(await pageWorkerProbe([10])).toEqual(ANSWER);
+		expect(await pageWorkerProbe([10])).toEqual(ANSWER);
+		expect(counts.started).toBe(1);
+		forgetWorkerProbe();
+		expect(await pageWorkerProbe([10])).toEqual(ANSWER);
+		expect(counts.started).toBe(2);
+	});
+
+	it('keeps no failure, so the next start probes again', async () => {
+		const counts = fakeProbeWorkers(['stalls', 'answers']);
+		expect(await pageWorkerProbe([10])).toMatchObject({ failure: 'no-answer' });
+		expect(await pageWorkerProbe([10])).toEqual(ANSWER);
+		expect(counts.started).toBe(2);
 	});
 });

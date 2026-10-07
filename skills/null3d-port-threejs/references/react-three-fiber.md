@@ -148,7 +148,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React (0.2) |
 | drei `<Text>`, `<Text3D>` | Not in 1.0: HTML labels, a text texture, or a text mesh baked into glTF |
 | drei `<Instances>`, `<Instance>`, `<Merged>` | `scene.createInstances` |
-| drei `<Sky>` | `scene.setBackground({ sky: { ... } })` (0.2) |
+| drei `<Sky>` | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, ... } })` (0.2), with the same props; drop `distance` |
 | drei `<Stars>` | `scene.createPoints` (0.2) |
 | drei `<Float>` | A sine offset in `onUpdate` |
 | drei `<Center>`, `<Bounds>` | `prefab.bounds` (0.2) and a camera fit computed at setup |
