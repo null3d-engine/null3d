@@ -81,10 +81,11 @@ run('replay', async () => {
 	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);
 	materials.set([0.8, 0.1, 0.1, 1], 0);
 	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
-	// The planes, the instance count and the view's layers, then the offset from the camera to each
-	// grid cell, then the runs of the cell order. Every instance here lies in cell 0, whose zero
-	// offset keeps the positions in world space, and no run is listed, so thread i culls instance i.
-	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS + 4 * G.SIZE_MAX_CULL_RANGES);
+	// The planes, the instance count, the view's layers, the run count and the view's row of the
+	// cell offsets texture, then the runs of the cell order, then room for the occlusion phases'
+	// values, which this view leaves unset. Every instance here lies in cell 0, whose zero offset in
+	// row 0 keeps the positions in world space, and no run is listed, so thread i culls instance i.
+	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
@@ -136,6 +137,9 @@ run('replay', async () => {
 		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
 		// The shadow atlas's tiles, which the frame group binds; no light casts shadows here.
 		[16, G.SIZE_SHADOW_TILES_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
+		// The depth pyramid of occlusion culling, which the culling group binds and this view,
+		// which culls in one phase, never reads.
+		[17, 16, U.STORAGE, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -236,6 +240,20 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D,
 	);
+	// The offset from the camera to each grid cell, which the culling group binds: cell 0 in row 0,
+	// whose offset is zero, as a new texture reads.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		7,
+		1,
+		1,
+		1,
+		G.FORMAT_RGBA32_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		1,
+		1,
+		G.VIEW_2D,
+	);
 	// The environment's cube map, which the frame group binds, and its sampler: a blank cube,
 	// which the frame's values, all zero, say not to read.
 	memory.push(
@@ -304,14 +322,15 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		8,
-		...[10, 5, 6, 7, 8, 9, 11, 12].flatMap((buffer, binding) => [
+		10,
+		...[10, 5, 6, 7, 8, 9, 11, 12, 17].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
 			buffer,
 			0,
 			0,
 		]),
+		...[9, G.RESOURCE_TEXTURE, 7, 0, 0],
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);

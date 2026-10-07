@@ -7,6 +7,7 @@ import type { PowerPreference } from '../page/capabilities';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
+import type { FramePacing } from '../render/loop';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
@@ -52,15 +53,11 @@ export interface CapturedFrame {
 }
 
 /** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */
-export interface RendererSetup {
+export interface RendererSetup extends FramePacing {
 	canvas: OffscreenCanvas;
 	tier: Tier;
 	forceCompat: boolean;
 	powerPreference?: PowerPreference;
-	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
-	fps?: number;
-	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
-	queue?: number;
 	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
 	hold?: boolean;
 	/** How ?gl-timing asks the WebGL2 path to time each WebGL call for a benchmark page. */
@@ -96,6 +93,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	fps?: number;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
+	/** One port to each job worker, by index, for the on-demand loader's tasks. */
+	taskPorts: MessagePort[];
 	/** Each engine thread's name and the roles it runs, for `debug.frameStats`. */
 	threads: [string, number[]][];
 };
@@ -110,7 +109,12 @@ export type RenderWorkerInit = CoreHandoff &
 		imagePort: MessagePort;
 	};
 
-export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
+export type JobWorkerInit = CoreHandoff & {
+	type: 'init';
+	index: number;
+	/** The port that the on-demand loader sends this worker its tasks through. */
+	taskPort: MessagePort;
+};
 
 /**
  * A request any worker that owns a renderer takes: a capture, which it answers with the frame's

@@ -49,7 +49,7 @@ Imported names follow two rules:
 | [`null3d::noise`](#null3dnoise) | Hashes, random numbers and noise. |
 | [`null3d::color`](#null3dcolor) | Color in linear space: sRGB encoding and decoding, luminance, HSV, and the tone mapping curves that three.js offers. |
 | [`null3d::lighting`](#null3dlighting) | Lighting in linear color: the Lambert model, and the physically based model of glTF's metallic-roughness materials with the formulas of three.js's MeshStandardMaterial. |
-| [`null3d::fog`](#null3dfog) | Fog with three.js's formulas. |
+| [`null3d::fog`](#null3dfog) | The scene's fog. |
 | [`null3d::vertex`](#null3dvertex) | Helpers for vertex shaders: instance transforms, and positions relative to the camera. |
 | [`null3d::depth`](#null3ddepth) | Depth values and distances. |
 | [`null3d::sdf`](#null3dsdf) | Signed distance functions, after Inigo Quilez's formulas. |
@@ -596,7 +596,7 @@ The GGX specular reflectance for one light, as three.js's `BRDF_GGX`: the GGX di
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2f
 ```
 
-The scale and bias of the split-sum approximation of specular light from all directions, for a view at `n_dot_v` and a perceptual `roughness`. It reads three.js's table of these terms, as three.js does, filtered between the nearest four entries. The engine binds the table in group 0 at binding 3 of its mesh pipelines, and a shader that calls this function binds it there too. The function reads the table with `textureLoad`, so the table needs no sampler and no filterable format.
+The scale and bias of the split-sum approximation of specular light from all directions, for a view at `n_dot_v` and a perceptual `roughness`. It reads three.js's table of these terms, as three.js does, filtered between the nearest four entries. The engine binds the table in group 0 at binding 3 of its mesh pipelines, and a shader that calls this function binds it there too. On WebGL2 the table sits in the material table's texture instead. The function reads the table with `textureLoad`, so the table needs no sampler and no filterable format.
 
 ### `environment_brdf`
 
@@ -694,9 +694,9 @@ A surface of glTF's metallic-roughness model at one point, set up for lighting a
 
 - `base_color`: The base color, which metals reflect.
 - `diffuse`: The color of diffuse light: the base color without its metallic part.
-- `specular`: The dielectric reflectance at normal incidence, 0.04.
+- `specular`: The dielectric reflectance at normal incidence: 0.04, unless `with_specular` changes it.
 - `specular_blended`: The reflectance at normal incidence, blended from `specular` toward the base color by metalness.
-- `specular_grazing`: The reflectance at grazing angles.
+- `specular_grazing`: The reflectance at grazing angles: 1, unless `with_specular` changes it.
 - `roughness`: The perceptual roughness, from 0.0525 to 1.
 - `metalness`: The metalness, from 0 to 1.
 
@@ -707,6 +707,14 @@ fn pbr_material(base_color: vec3f, metalness: f32, roughness: f32, geometry_roug
 ```
 
 Sets up a PbrMaterial as three.js does. It raises `roughness` to at least 0.0525, adds `geometry_roughness`, and keeps the sum at 1 or less. `geometry_roughness` softens highlights where the normal changes fast between pixels. Pass 0 to leave it out.
+
+### `with_specular`
+
+```wgsl
+fn with_specular(m: PbrMaterial, reflectance: f32, color: vec3f, intensity: f32) -> PbrMaterial
+```
+
+A PbrMaterial with the dielectric specular values of glTF's KHR_materials_ior and KHR_materials_specular. It sets them as three.js's MeshPhysicalMaterial does. `reflectance` is `((ior - 1) / (ior + 1))^2`, which the color tints up to a reflectance of 1, and `intensity` scales. Metals keep their base color, and their grazing reflectance stays 1. A reflectance of 0.04 with a white color at full intensity gives `m` back unchanged.
 
 ### `Reflected`
 
@@ -748,15 +756,15 @@ The light that a PBR surface reflects from an environment map, as three.js's `RE
 
 ## `null3d::fog`
 
-Fog with three.js's formulas. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog depth is the distance from the camera along its view direction, which three.js takes from the view-space position. The engine's shaders mix their linear color with the scene's fog, before any tone mapping and encoding.
+The scene's fog. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog measures each point's straight-line distance from the camera, so a point keeps its fog as the camera turns. The fog can thin with height, and can glow toward the sun. The engine's shaders mix their exposed linear color with the fog before any tone mapping and encoding.  Per pixel, the fog costs a square root, one `exp` and a `pow` for the sun glow. Fog that thins with height adds an `exp` and a division. The fog is a branch on the frame's values, not a permutation bit, so every scene shares the same shader builds.
 
-### `NONE`
+### `OFF`
 
 ```wgsl
-const NONE: u32 = 0u;
+const OFF: u32 = 0u;
 ```
 
-No fog, as `Fog.kind` names it.
+No fog, as `Fog.curve` names it.
 
 ### `LINEAR`
 
@@ -764,7 +772,7 @@ No fog, as `Fog.kind` names it.
 const LINEAR: u32 = 1u;
 ```
 
-Linear fog, as three.js's `Fog`.
+Linear fog: none up to a near distance, full from a far one, and a smooth step between them.
 
 ### `EXP2`
 
@@ -772,38 +780,42 @@ Linear fog, as three.js's `Fog`.
 const EXP2: u32 = 2u;
 ```
 
-Exponential squared fog, as three.js's `FogExp2`.
+Exponential squared fog: a factor of 1 - exp(-(density × distance)²).
+
+### `EXPONENTIAL`
+
+```wgsl
+const EXPONENTIAL: u32 = 3u;
+```
+
+Exponential fog: a factor of 1 - exp(-density × distance), which light through an even haze follows.
 
 ### `Fog`
 
 ```wgsl
 struct Fog {
     color: vec4f,
-    forward: vec4f,
-    far: f32,
-    kind: u32,
+    shape: vec4f,
+    sun_glow: f32,
+    sun_exponent: f32,
+    spare: f32,
+    curve: u32,
 }
 ```
 
-The scene's fog, as the engine writes it into each frame's values for the camera that draws. Each three-component value shares a `vec4f` with a scalar, so the frame's values lay out the same on every GPU path.
+The scene's fog, as the engine writes it into each frame's values for the camera that draws.
 
-- `color`: The linear fog color in `xyz`, and the density of exponential squared fog in `w`.
-- `forward`: The camera's unit view direction in `xyz`, which fog depth follows, and where linear fog starts in `w`.
-- `far`: Where linear fog hides everything.
-- `kind`: The kind of fog: `NONE`, `LINEAR` or `EXP2`.
-
-### `fog_depth`
-
-```wgsl
-fn fog_depth(relative_position: vec3f, forward: vec3f) -> f32
-```
-
-The fog depth of a point: its distance from the camera along the camera's unit `forward` direction. `relative_position` is the point's position relative to the camera.
+- `color`: The exposed linear fog color in `xyz`, and the fog's density at its base height in `w`.
+- `shape`: Where linear fog starts in `x`, and where it hides everything in `y`. How fast the fog thins with height in `z`: 0 for fog that is the same at every height. In `w`, the fog's density at the camera's height, as a share of its density at its base height.
+- `sun_glow`: How much of the sun's light the fog scatters toward the camera: 0 for no glow.
+- `sun_exponent`: The power of the glow's fall away from the sun: higher values make the glow smaller.
+- `spare`: Fills the block to a multiple of 16 bytes.
+- `curve`: The fog's curve: `OFF`, `LINEAR`, `EXP2` or `EXPONENTIAL`.
 
 ### `fog_linear`
 
 ```wgsl
-fn fog_linear(depth: f32, near: f32, far: f32) -> f32
+fn fog_linear(distance: f32, near: f32, far: f32) -> f32
 ```
 
 The factor of linear fog, as three.js's `Fog`: 0 up to `near`, 1 from `far`, and a smooth step between them. `near` must be less than `far`.
@@ -811,10 +823,42 @@ The factor of linear fog, as three.js's `Fog`: 0 up to `near`, 1 from `far`, and
 ### `fog_exp2`
 
 ```wgsl
-fn fog_exp2(depth: f32, density: f32) -> f32
+fn fog_exp2(distance: f32, density: f32) -> f32
 ```
 
 The factor of exponential squared fog, as three.js's `FogExp2`, for a `density` such as 0.02.
+
+### `fog_exponential`
+
+```wgsl
+fn fog_exponential(distance: f32, density: f32) -> f32
+```
+
+The factor of exponential fog: the share of light that an even haze of `density` scatters over `distance`.
+
+### `fog_height_ratio`
+
+```wgsl
+fn fog_height_ratio(climb: f32) -> f32
+```
+
+The mean density along a ray from the camera, as a share of the density at the camera's height. Its input, the climb, is the falloff times the ray's rise, where the falloff is how fast the density falls with height. The share is (1 - exp(-climb)) / climb. Near 0 the share takes the first terms of its series: 1 - climb/2 + climb²/6. It takes the series below a climb of 0.01, where the exact form loses digits to cancellation, and limits the exponent to 40, so the share stays finite in 32-bit floats.
+
+### `fog_factor`
+
+```wgsl
+fn fog_factor(fog: Fog, relative_position: vec3f) -> f32
+```
+
+The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where the scene has no fog. The curve takes the point's distance, scaled by the mean density along the way where the fog thins with height. Fog at its base density hides as much over that path as the fog hides on the way to the point.
+
+### `fog_color`
+
+```wgsl
+fn fog_color(fog: Fog, relative_position: vec3f, light_direction: vec3f, light_color: vec3f) -> vec3f
+```
+
+The color of the scene's `fog` toward a point, by its position relative to the camera. It is the fog's color, plus the sun's light that the fog scatters toward the camera. That light is brightest toward the sun. `light_direction` is the unit direction that the sun's light travels, and `light_color` its exposed color.
 
 ### `apply_fog`
 
@@ -823,14 +867,6 @@ fn apply_fog(c: vec3f, fog_color: vec3f, factor: f32) -> vec3f
 ```
 
 A color seen through fog: `c` blended toward `fog_color` by the fog factor.
-
-### `fog_factor`
-
-```wgsl
-fn fog_factor(fog: Fog, relative_position: vec3f) -> f32
-```
-
-The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where the scene has no fog.
 
 ## `null3d::vertex`
 

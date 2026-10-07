@@ -1,10 +1,12 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. Nine more set what the
+// ?check=fresh, ?wake=message, ?hdr=off, ?half= and ?compression=. More switches set what the
 // benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
 // shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for culling
 // without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for occlusion
-// culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU, and
+// culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU,
+// ?instances=index for vertex shaders that read instance data by index on core WebGPU,
+// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth, and
 // ?texture-cache=off for KTX2 files that transcode on every load. ?hold
 // starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
 // running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
@@ -48,6 +50,9 @@ export type SketchThread = 'worker' | 'main';
  * @category api/engine
  */
 export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
+
+/** The bits per texel of the shadow cascades' depth. */
+export type ShadowDepthBits = 16 | 32;
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
@@ -98,6 +103,12 @@ export interface Switches {
 	 */
 	wakeByMessage: boolean;
 	/**
+	 * False when ?display-check=off stops the checks of the display where the page's thread draws.
+	 * The checks draw nothing at two callbacks now and then while the frames run slower than the
+	 * display, and the switch lets a run measure what they cost.
+	 */
+	displayChecks: boolean;
+	/**
 	 * False when ?hdr=off makes the engine take the 8-bit path, where the scene shaders tone map
 	 * themselves, on a device that draws HDR color.
 	 */
@@ -120,8 +131,8 @@ export interface Switches {
 	prepass: boolean | undefined;
 	/**
 	 * True when ?occlusion=on turns occlusion culling on, false when ?occlusion=off turns it off,
-	 * and undefined to leave it to the page's options and the quality preset. It sets software
-	 * occlusion culling on WebGL2.
+	 * and undefined to leave it to the page's options and the quality preset. It sets GPU occlusion
+	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
 	/**
@@ -130,6 +141,17 @@ export interface Switches {
 	 * two against each other.
 	 */
 	vertexSkinning: boolean;
+	/**
+	 * True when ?instances=index makes the vertex shaders on core WebGPU read each culled instance
+	 * by index from storage buffers, instead of a copy of its matrix that the culling shader
+	 * writes, to measure the two against each other. Compatibility mode and WebGL2 ignore it.
+	 */
+	indexInstances: boolean;
+	/**
+	 * The bits per texel of the shadow cascades' depth: 32 when ?shadowdepth=32 asks for 32-bit
+	 * floats, to measure them against the 16-bit depth that the engine stores otherwise.
+	 */
+	shadowDepthBits: ShadowDepthBits;
 	/**
 	 * False when ?texture-cache=off makes KTX2 files transcode on every load, with no cache of
 	 * transcoded textures, to time the cache against it.
@@ -240,12 +262,15 @@ export function parseSwitches(search: string): Switches {
 		freshShaders: params.get('shaders') === 'fresh',
 		freshCheck: params.get('check') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
+		displayChecks: params.get('display-check') !== 'off',
 		hdr: params.get('hdr') !== 'off',
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
 		vertexSkinning: params.get('skinning') === 'vertex',
+		indexInstances: params.get('instances') === 'index',
+		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),

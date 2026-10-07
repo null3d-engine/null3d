@@ -230,6 +230,15 @@ export const CLOUD_DEVICES: readonly CloudDevice[] = [
 		browserVersion: '18.4',
 		allowNoWebgpu: true,
 	},
+	{
+		runner: 'bsmactahoe-safari',
+		tier: 'B',
+		os: 'OS X',
+		osVersion: 'Tahoe',
+		browser: 'safari',
+		browserVersion: '26.4',
+		allowNoWebgpu: true,
+	},
 ];
 
 /** The device list's entry for a runner, or undefined when the list has none. */

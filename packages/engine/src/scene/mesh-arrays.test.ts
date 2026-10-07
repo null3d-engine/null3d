@@ -15,6 +15,7 @@ import {
 	MESH_ARRAYS_NORMALS,
 	MESH_ARRAYS_UVS,
 	MESH_ARRAYS_WEIGHTS,
+	MORPH_COLORS,
 	MORPH_NORMALS,
 	MORPH_POSITIONS,
 } from '../generated/core';
@@ -117,9 +118,35 @@ describe('the shape checks of geometry.fromArrays', () => {
 				'got 9 numbers in morphTargets.positions[1] for 4 vertices, not 12.',
 			],
 			[{ positions: [lift], names: ['Smile', 'Blink'] }, 'got 2 morph target names for 1 targets.'],
+			[
+				{ colors: [new Float32Array(12)] },
+				"got morphTargets.colors but no colors; color targets move the mesh's own colors.",
+			],
 		];
 		for (const [morphTargets, message] of cases)
 			expect(arraysProblem({ ...QUAD, morphTargets })).toBe(message);
+	});
+
+	test('take as many numbers per vertex in color targets as the colors hold', () => {
+		const rgb = new Float32Array(12);
+		const rgba = new Float32Array(16);
+		const tint = { ...QUAD, colors: rgb, morphTargets: { colors: [rgb, rgb] } };
+		expect(arraysProblem(tint)).toBeUndefined();
+		expect(arraysProblem({ ...QUAD, colors: rgba, morphTargets: { colors: [rgba] } })).toBe(
+			undefined,
+		);
+		expect(arraysProblem({ ...QUAD, colors: rgba, morphTargets: { colors: [rgb] } })).toBe(
+			'got 12 numbers in morphTargets.colors[0] for 4 vertices, not 16.',
+		);
+		expect(
+			arraysProblem({
+				...QUAD,
+				colors: rgb,
+				morphTargets: { positions: [rgb], colors: [rgb, rgb] },
+			}),
+		).toBe(
+			'got 2 morph targets in colors and 1 in another list; every list needs one array per target.',
+		);
 	});
 });
 
@@ -236,6 +263,41 @@ describe('meshes from arrays in engine memory', () => {
 		const at = 256 + (12 + 12 + 6) * 4;
 		const deltas = new Float32Array(memory.buffer, at, 48);
 		expect([deltas[0], deltas[12], deltas[24], deltas[47]]).toEqual([1, 3, 2, 2]);
+	});
+
+	test('put color targets last, four numbers per vertex, with an alpha of 0 for colors without one', () => {
+		const { core, memory, asked } = fakeCore();
+		const colors = new Uint8Array(12).fill(255);
+		const red = new Float32Array(12).map((_, k) => (k % 3 === 0 ? 0.5 : 0));
+		const up = new Float32Array(12).fill(1);
+		const morphTargets = { colors: [red], positions: [up] };
+		expect(meshFromArrays(core, { ...QUAD, colors, morphTargets }, 'geometry.fromArrays')).toBe(7);
+		// Positions 12 words, normals 12, colors 3, indices 6, then 12 words of position deltas
+		// and 16 of color deltas.
+		expect(asked[0]).toMatchObject({
+			words: 12 + 12 + 3 + 6 + 12 + 16,
+			targets: 1,
+			morph: MORPH_POSITIONS | MORPH_COLORS,
+		});
+		const at = 256 + (12 + 12 + 3 + 6 + 12) * 4;
+		const deltas = Array.from(new Float32Array(memory.buffer, at, 16));
+		expect(deltas).toEqual([0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0]);
+		// A bad color delta names its place in the array as given: the core counts four numbers
+		// per vertex, and the array three.
+		const badColor = fakeCore({
+			code: 1206,
+			details: [ARRAYS_PROBLEM_MORPH_NOT_FINITE, (3 << 28) | 9],
+		});
+		const bad = red.slice();
+		bad[7] = Number.NaN;
+		try {
+			meshFromArrays(badColor.core, { ...QUAD, colors, morphTargets: { colors: [bad] } }, 'f');
+			throw new Error('the mesh was built');
+		} catch (error) {
+			expect((error as EngineError).message).toStartWith(
+				'E1206: f() got NaN at morphTargets.colors[0][7].',
+			);
+		}
 	});
 
 	test('that the core refuses name the value it found wrong', () => {

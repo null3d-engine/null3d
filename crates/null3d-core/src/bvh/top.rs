@@ -23,8 +23,8 @@ use std::ops::Range;
 use super::build::{SahScratch, build_sah_parallel};
 use super::morton::{MortonInput, MortonScratch, build_morton, node_room};
 use super::{
-    Aabb, BoxQuery, Node, Ray, SphereQuery, ray_box_entry, refit_nodes, walk_near_first,
-    walk_overlap,
+    Aabb, BoxQuery, Node, Ray, RayBoxes, Reach, SphereQuery, refit_nodes, walk_boxes_any,
+    walk_boxes_near_first, walk_overlap,
 };
 use crate::cells::{CELL_SIZE, CellCoords, CellTable, MAX_CELLS};
 use crate::clusters::{count_cells, group_by_cell, grow, morton_sort};
@@ -107,7 +107,14 @@ impl WorldRay {
 
 /// A point relative to a cell's centre, computed in 64-bit floats and rounded once.
 pub fn in_cell(point: [f64; 3], cell: CellCoords) -> [f32; 3] {
-    std::array::from_fn(|k| (point[k] - f64::from(cell[k]) * f64::from(CELL_SIZE)) as f32)
+    let centre = cell_centre(cell);
+    std::array::from_fn(|k| (point[k] - centre[k]) as f32)
+}
+
+/// A cell's centre in the world.
+#[inline(always)]
+pub fn cell_centre(cell: CellCoords) -> [f64; 3] {
+    cell.map(|c| f64::from(c) * f64::from(CELL_SIZE))
 }
 
 /// A cell's subtree: the cell, its root node, and the box around its items in its frame.
@@ -430,10 +437,20 @@ impl TopTree {
     pub fn raycast(
         &self,
         ray: &WorldRay,
+        hit: impl FnMut(u32, &Ray) -> Option<f32>,
+    ) -> Option<(u32, f32)> {
+        self.raycast_reaching(ray, &Reach::NONE, hit)
+    }
+
+    /// The nearest hit as [`TopTree::raycast`] finds it, with every box grown by `reach`.
+    pub fn raycast_reaching(
+        &self,
+        ray: &WorldRay,
+        reach: &Reach,
         mut hit: impl FnMut(u32, &Ray) -> Option<f32>,
     ) -> Option<(u32, f32)> {
         let mut entries = [(0.0f32, 0u32); MAX_CELLS as usize];
-        let n = self.cells_entered(ray, &mut entries);
+        let n = self.cells_entered(ray, reach, &mut entries);
         let mut best = None;
         let mut t_max = ray.t_max;
         for &(enter, r) in &entries[..n] {
@@ -443,17 +460,24 @@ impl TopTree {
             let root = &self.roots[r as usize];
             let mut local = ray.in_cell(root.coords);
             local.t_max = t_max;
-            walk_near_first(&self.nodes, root.node, &local, |first, count, limit| {
-                let mut limit = limit;
-                for &item in &self.order[first as usize..(first + count) as usize] {
-                    let id = self.ids[item as usize];
-                    if let Some(t) = hit(id, &local.with_max(limit)) {
-                        limit = t;
-                        best = Some((id, t));
+            let boxes = RayBoxes::reaching(&local, reach, cell_centre(root.coords));
+            walk_boxes_near_first(
+                &self.nodes,
+                root.node,
+                &boxes,
+                t_max,
+                |first, count, limit| {
+                    let mut limit = limit;
+                    for &item in &self.order[first as usize..(first + count) as usize] {
+                        let id = self.ids[item as usize];
+                        if let Some(t) = hit(id, &local.with_max(limit)) {
+                            limit = t;
+                            best = Some((id, t));
+                        }
                     }
-                }
-                limit
-            });
+                    limit
+                },
+            );
             if let Some((_, t)) = best {
                 t_max = t;
             }
@@ -463,22 +487,50 @@ impl TopTree {
 
     /// True when `hit` reports a hit on any item whose box the ray meets. It stops at the first.
     /// `hit` gets the item's id and the ray in its cell's frame.
-    pub fn raycast_any(&self, ray: &WorldRay, mut hit: impl FnMut(u32, &Ray) -> bool) -> bool {
+    pub fn raycast_any(&self, ray: &WorldRay, hit: impl FnMut(u32, &Ray) -> bool) -> bool {
+        self.raycast_any_reaching(ray, &Reach::NONE, hit)
+    }
+
+    /// True when `hit` reports a hit as in [`TopTree::raycast_any`], with every box grown by
+    /// `reach`.
+    pub fn raycast_any_reaching(
+        &self,
+        ray: &WorldRay,
+        reach: &Reach,
+        mut hit: impl FnMut(u32, &Ray) -> bool,
+    ) -> bool {
         self.roots.iter().any(|root| {
             let local = ray.in_cell(root.coords);
-            ray_box_entry(&local, &root.bounds).is_some()
-                && super::walk_any(&self.nodes, root.node, &local, |first, count| {
-                    self.order[first as usize..(first + count) as usize]
-                        .iter()
-                        .any(|&item| hit(self.ids[item as usize], &local))
-                })
+            let boxes = RayBoxes::reaching(&local, reach, cell_centre(root.coords));
+            boxes.entry(&root.bounds, local.t_max).is_some()
+                && walk_boxes_any(
+                    &self.nodes,
+                    root.node,
+                    &boxes,
+                    local.t_max,
+                    |first, count| {
+                        self.order[first as usize..(first + count) as usize]
+                            .iter()
+                            .any(|&item| hit(self.ids[item as usize], &local))
+                    },
+                )
         })
     }
 
     /// Calls `visit` with the id of every item whose box the ray meets, and the ray in its
     /// cell's frame, in no set order.
-    pub fn raycast_all(&self, ray: &WorldRay, mut visit: impl FnMut(u32, &Ray)) {
-        self.raycast_any(ray, |id, local| {
+    pub fn raycast_all(&self, ray: &WorldRay, visit: impl FnMut(u32, &Ray)) {
+        self.raycast_all_reaching(ray, &Reach::NONE, visit);
+    }
+
+    /// Calls `visit` as [`TopTree::raycast_all`] does, with every box grown by `reach`.
+    pub fn raycast_all_reaching(
+        &self,
+        ray: &WorldRay,
+        reach: &Reach,
+        mut visit: impl FnMut(u32, &Ray),
+    ) {
+        self.raycast_any_reaching(ray, reach, |id, local| {
             visit(id, local);
             false
         });
@@ -540,12 +592,14 @@ impl TopTree {
         }
     }
 
-    /// Writes each cell root the ray enters, as its entry distance and index, nearest first,
-    /// and returns how many.
-    fn cells_entered(&self, ray: &WorldRay, out: &mut [(f32, u32)]) -> usize {
+    /// Writes each cell root the ray enters, its box grown by `reach`, as its entry distance and
+    /// index, nearest first, and returns how many.
+    fn cells_entered(&self, ray: &WorldRay, reach: &Reach, out: &mut [(f32, u32)]) -> usize {
         let mut n = 0;
         for (i, root) in self.roots.iter().enumerate() {
-            if let Some(t) = ray_box_entry(&ray.in_cell(root.coords), &root.bounds) {
+            let local = ray.in_cell(root.coords);
+            let boxes = RayBoxes::reaching(&local, reach, cell_centre(root.coords));
+            if let Some(t) = boxes.entry(&root.bounds, local.t_max) {
                 out[n] = (t, i as u32);
                 n += 1;
             }

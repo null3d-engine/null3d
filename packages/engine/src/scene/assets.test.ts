@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
-import { Assets } from './assets';
+import { stopHelperWorkers } from '../shared/helper-workers';
+import { GENERATORS_PRELOAD } from '../shared/images';
+import { Assets, type ModelMakers } from './assets';
 import { Environment } from './environment';
+import { ShaderPreloads } from './shader-preloads';
 import type { Texture, TextureOptions, Textures } from './textures';
 
 const PAGE = 'https://game.example/levels/one.html';
@@ -271,11 +274,40 @@ describe('environments', () => {
 		]);
 	});
 
+	test('read an HDR file in its worker, and ask for the generator before the download ends', async () => {
+		const flat = (text: string) => [...new TextEncoder().encode(text)];
+		const hdr = Uint8Array.from([
+			...flat('#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2 +X 4\n'),
+			...Array.from({ length: 8 }, () => [128, 128, 128, 129]).flat(),
+		]);
+		serve({ 'https://game.example/env/sky.hdr': hdr });
+		const { textures, cubes } = cubeTextures();
+		const sent: (readonly string[])[] = [];
+		const materials = { shaders: new ShaderPreloads((features) => sent.push(features)) };
+		const assets = new Assets(textures, PAGE, { materials } as unknown as ModelMakers);
+		const loading = assets.loadEnvironment('/env/sky.hdr');
+		expect(sent).toEqual([[GENERATORS_PRELOAD]]);
+		try {
+			const env = await loading;
+			expect([env.size, env.levels, env.format]).toEqual([256, 6, 'rgb9e5ufloat']);
+			// Light of 1 everywhere: the first coefficient is the integral of its basis function.
+			expect(env.sh[0]).toBeCloseTo(0.282095 * 4 * Math.PI, 4);
+			const panorama = cubes[0]?.[3] as unknown as { width: number; gain: number };
+			expect([cubes[0]?.slice(0, 3), panorama.width, panorama.gain]).toEqual([
+				[256, 6, 'rgb9e5ufloat'],
+				4,
+				1,
+			]);
+		} finally {
+			stopHelperWorkers();
+		}
+	});
+
 	test('a file that is no environment map gives E1412, and an unknown name E1213', async () => {
 		serve({ 'https://game.example/env/flat.ktx2': 'not a ktx2 file' });
 		const assets = new Assets(cubeTextures().textures, PAGE);
 		expect(await codeOf(assets.loadEnvironment('/env/flat.ktx2'))).toBe(
-			'E1412: assets.loadEnvironment() could not read https://game.example/env/flat.ktx2 as an environment map: it is not a KTX2 file.',
+			'E1412: assets.loadEnvironment() could not read https://game.example/env/flat.ktx2 as an environment map: it is neither a KTX2 file from bunx @null3d/cli assets env nor a Radiance (.hdr) or OpenEXR (.exr) file.',
 		);
 		expect(
 			await codeOf(

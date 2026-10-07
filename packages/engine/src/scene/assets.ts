@@ -1,14 +1,15 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
-// by the KTX2 transcoder (ktx2.ts), by the color grading table readers (lut-files.ts) or by the
-// environment map reader (environment-file.ts), outside the sketch's frames, and a count of the
-// downloads for loading screens. Built-in environments need no file: the GPU makes them
-// (builtin-environments.ts). Relative addresses resolve against the page's address, in every thread
+// by the KTX2 transcoder (ktx2.ts), by the color grading table readers (lut-files.ts), by the
+// environment map reader (environment-file.ts) or by the HDR file readers (panorama.ts), outside
+// the sketch's frames, and a count of the downloads for loading screens. Built-in environments need
+// no file: the GPU makes them (builtin-environments.ts), as it filters HDR files. Relative addresses resolve against the page's address, in every thread
 // mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
 // address at the same time share one download; the HTTP cache keeps everything else.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
+import { Cubemap } from './background';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { Lut } from './lut';
@@ -120,15 +121,15 @@ export class Assets {
 
 	/**
 	 * Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a
-	 * texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it
-	 * supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the
-	 * device supports, with the file's mip levels, and the first KTX2 file loads the transcoder.
-	 * The engine keeps the transcoded texels in the browser's Cache Storage, so a later load of a
-	 * file with the same bytes skips the transcoder. Throws E1411 when the file does not download,
-	 * E1413 when a server of another origin does not allow the page to read it, E1412 when the file
-	 * does not decode or passes a limit of the engine's (a KTX2 file larger than the device's
-	 * textures, before it transcodes), E1406 when the transcoder does not load, and E1208 for
-	 * options the engine does not know.
+	 * texture from it. The browser decodes PNG, JPEG, WebP and AVIF files. A KTX2 file of ETC1S or
+	 * UASTC data becomes the compressed format that the device supports, with the file's mip
+	 * levels, and UASTC HDR data becomes BC6H or shared-exponent floats. The first KTX2 file loads
+	 * the transcoder. The engine keeps the transcoded texels in the browser's Cache Storage, so a
+	 * later load of a file with the same bytes skips the transcoder.
+	 * Throws E1411 when the file does not download, E1413 when a server of another origin does not
+	 * allow the page to read it, E1412 when the file does not decode or passes a limit of the
+	 * engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the
+	 * transcoder does not load, and E1208 for options the engine does not know.
 	 */
 	async loadTexture(url: string | URL, options: LoadTextureOptions = {}): Promise<Texture> {
 		const call = 'assets.loadTexture';
@@ -187,6 +188,44 @@ export class Assets {
 	}
 
 	/**
+	 * Downloads six images and makes a `Cubemap` from them, a sky box for `scene.setBackground`, as
+	 * three.js's `CubeTextureLoader` does: the faces toward +X, -X, +Y, -Y, +Z and -Z, in that order,
+	 * each square and of one size, at most 2,048 pixels a side. The images decode off the sketch's
+	 * frames and upload in the frames after the call. A cube map does not light the scene: for
+	 * light, and for a background that blurs, make an environment with `bunx @null3d/cli assets
+	 * env`. Throws E1411, E1412 or E1413 as `loadTexture` does, E1412 also when the faces are not
+	 * square or not of one size, and E1208 when `urls` does not hold six addresses.
+	 */
+	async loadCubemap(urls: readonly (string | URL)[]): Promise<Cubemap> {
+		const call = 'assets.loadCubemap';
+		if (!Array.isArray(urls) || urls.length !== 6)
+			throw new EngineError(
+				'E1208',
+				`${call}() got ${String(urls)}, which takes the addresses of six images: +X, -X, +Y, -Y, +Z and -Z.`,
+			);
+		const limit = Math.min(this.textures.maxSize, CUBE_FACE_LIMIT);
+		const faces = await Promise.all(
+			urls.map(async (url) => {
+				const address = this.resolve(url);
+				const blob = await this.file(address, call);
+				// A face keeps its first row at the top, as three.js uploads a cube texture's images.
+				return decode(blob, address, { flipY: false }, call, limit);
+			}),
+		);
+		const size = (faces[0] as ImageBitmap).width;
+		const odd = faces.findIndex((face) => face.width !== size || face.height !== size);
+		if (odd >= 0) {
+			const face = faces[odd] as ImageBitmap;
+			for (const image of faces) image.close();
+			throw new EngineError(
+				'E1412',
+				`${call}() got a face of ${face.width} x ${face.height} pixels at ${urls[odd]}, after a first face of ${size} x ${(faces[0] as ImageBitmap).height}. Give six square faces of one size.`,
+			);
+		}
+		return new Cubemap(this.textures.fromCubeImages(faces, call), size);
+	}
+
+	/**
 	 * Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for
 	 * `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader`
 	 * read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along;
@@ -223,16 +262,25 @@ export class Assets {
 	}
 
 	/**
-	 * Downloads an environment map that `bunx @null3d/cli assets env` made, a KTX2 file, and makes
-	 * an `Environment` from it, for `scene.setEnvironment`. The map's cube texture uploads in the
-	 * frames after the call, and the scene draws without the environment until it is on the GPU.
-	 * The first environment loads the file reader. Throws E1411 or E1413 as `loadTexture` does,
-	 * E1412 when the file is not an environment map that the engine reads, and E1406 when the
-	 * reader does not load.
+	 * Downloads an environment and makes an `Environment` from it, for `scene.setEnvironment`. It
+	 * takes a KTX2 file that `bunx @null3d/cli assets env` made, the fast path, or an HDR file: a
+	 * Radiance file (`.hdr`) or an OpenEXR file (`.exr`) of an equirectangular panorama, as
+	 * three.js's `HDRLoader` and `EXRLoader` read them with `PMREMGenerator`.
+	 *
+	 * A KTX2 map's cube texture uploads in the frames after the call, and the scene draws without
+	 * the environment until it is on the GPU. A worker reads an HDR file, off the sketch's
+	 * frames. The GPU then filters it for each roughness, with the asset tool's filter, in the next
+	 * frame, before that frame draws: call it while the scene loads, since a call during play makes
+	 * one long frame. Light brighter than a 16-bit float keeps its share of the rough reflections
+	 * and the diffuse light, and the sharpest level stops at 65,408, as in the tool's files. The
+	 * first file of each kind loads its reader. Throws E1411 or E1413 as `loadTexture` does, E1412
+	 * when the file is not one that the engine reads, and E1406 when a reader does not load.
 	 */
 	async loadEnvironment(url: string | URL): Promise<Environment> {
 		const call = 'assets.loadEnvironment';
-		return this.environment(this.resolve(url), call);
+		const address = this.resolve(url);
+		if (HDR_FILE.test(address.pathname)) this.prepareHdr();
+		return this.environment(address, call);
 	}
 
 	/**
@@ -242,7 +290,7 @@ export class Assets {
 	 * It resolves once the code and the shaders that make the map are ready. The next frame then
 	 * makes the whole map before it draws, so the first frame with the environment already has its
 	 * light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a
-	 * call during play makes one long frame. The first one loads the code that makes it, about 7 KB
+	 * call during play makes one long frame. The first one loads the code that makes it, about 8 KB
 	 * after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its
 	 * code does not download.
 	 */
@@ -273,9 +321,14 @@ export class Assets {
 			this.file(address, call),
 			environmentReader(call, String(address)),
 		]);
+		const bytes = await file.arrayBuffer();
+		if (reader.isPanoramaFile(new Uint8Array(bytes))) {
+			this.prepareHdr();
+			return this.panorama(bytes, address, call);
+		}
 		let map: import('./environment-file').EnvironmentFile;
 		try {
-			map = reader.readEnvironmentFile(await file.arrayBuffer());
+			map = reader.readEnvironmentFile(bytes);
 		} catch (error) {
 			throw new EngineError(
 				'E1412',
@@ -285,6 +338,44 @@ export class Assets {
 		const { size, levels, format, texels, sh } = map;
 		const texture = this.textures.fromCube(size, levels, format, texels, call);
 		return new Environment(texture, size, levels, format, sh);
+	}
+
+	/**
+	 * Starts what an HDR file needs while it downloads: the generators' code and shaders on the
+	 * thread that draws, and the reader with its worker here. A failure waits for the load that
+	 * needs them, which reports it.
+	 */
+	private prepareHdr(): void {
+		this.makers?.materials.shaders.needGenerators();
+		panoramaLoader().then(
+			(loader) => loader.startPanoramaReader((code, message) => new EngineError(code, message)),
+			() => undefined,
+		);
+	}
+
+	/**
+	 * Reads a Radiance or OpenEXR file in the panorama worker, and makes its cube texture on the
+	 * GPU with the environment generator.
+	 */
+	private async panorama(bytes: ArrayBuffer, address: URL, call: string): Promise<Environment> {
+		let loader: typeof import('./panorama');
+		try {
+			loader = await panoramaLoader();
+		} catch (error) {
+			throw new EngineError(
+				'E1406',
+				`the HDR file reader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
+			);
+		}
+		const { size, levels } = loader.PANORAMA_MAP;
+		const { panorama, sh } = await loader.readPanoramaFile(
+			bytes,
+			address,
+			call,
+			(code, message) => new EngineError(code, message),
+		);
+		const texture = await this.textures.fromGenerator(panorama, size, levels, call);
+		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 
 	/**
@@ -490,6 +581,20 @@ function rewritten(at: URL, file: URL, options: LoadGltfOptions, call: string): 
 	return new URL(answer, at);
 }
 
+/** The ends of the addresses of Radiance and OpenEXR files. */
+const HDR_FILE = /\.(hdr|exr)$/i;
+
+/** The HDR file loader, once its import started. A failed import lets the next load try again. */
+let panoramaImport: Promise<typeof import('./panorama')> | undefined;
+
+function panoramaLoader(): Promise<typeof import('./panorama')> {
+	panoramaImport ??= import('./panorama').catch((error: unknown) => {
+		panoramaImport = undefined;
+		throw error;
+	});
+	return panoramaImport;
+}
+
 type EnvironmentReader = typeof import('./environment-file');
 
 /**
@@ -525,9 +630,12 @@ async function loadModule(address: URL, call: string): Promise<typeof import('./
  */
 const HEADER_BYTES = 1 << 20;
 
+/** The largest side of a cube map's faces that every GPU path allows: WebGL2's least cube map size. */
+const CUBE_FACE_LIMIT = 2048;
+
 /**
- * Decodes an image file as `options` ask, or throws E1412. A PNG or JPEG file whose header gives a
- * side longer than `maxSide` fails before the browser decodes it.
+ * Decodes an image file as `options` ask, or throws E1412. A PNG, JPEG, WebP or AVIF file whose
+ * header gives a side longer than `maxSide` fails before the browser decodes it.
  */
 async function decode(
 	blob: Blob,

@@ -23,6 +23,7 @@
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan skinning-webgpu --lan ipad-safari
 //   bun tests/real-browsers.ts --plan animation --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan jitter --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
@@ -44,7 +45,9 @@
 //                       WebGL2 with 1 to 4 shadow cascades: in every pass, or once per frame with
 //                       transform feedback, skinning-webgpu, which times the same two ways on
 //                       WebGPU, with a compute pass that skins once per frame, animation, which times the core's animation step on
-//                       the job workers for crowds of 100 and 500 characters, governor, which runs the quality governor's stress
+//                       the job workers for crowds of 100 and 500 characters, jitter, which flies a
+//                       camera past objects at the origin and 1,000 km and 6,378 km out on each GPU
+//                       path, and compares each object's motion from frame to frame, governor, which runs the quality governor's stress
 //                       test on each GPU path: every live step down and back up under a load,
 //                       then a scene too heavy for the GPU whose frame rate the governor must bring
 //                       back, tab-memory, which grows GPU textures, GPU buffers and a WebAssembly
@@ -103,9 +106,17 @@
 //   --attended         someone is at the devices of --lan, so a plan whose pages end their tab,
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
+//   --front             browser apps on a Mac open in front, at the window size they choose. Without
+//                       it, they open in the background, and Safari's and Firefox's runner windows
+//                       move almost wholly past the main display's left edge, at a small size, or at
+//                       their own size in timed plans
+// In Safari, a page that fails with a refused memory, a lost GPU or context, or room for shared
+// memory that did not come back runs once more in a new runner page after the run, and fails only
+// if it fails again there. Each such rerun prints as RERUN and goes into the run's results.
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
-// results depend on. After a fixed plan, it prints each browser's row for the record of tested
-// devices, from what the runner page found about its browser, device and GPU. A runner whose name
+// results depend on. After a fixed plan, it prints each browser's entry for the record of tested
+// devices, from what the runner page found about its browser, device and GPU: the run's file and
+// the folder where it goes. A runner whose name
 // names one browser warns when its page ran in another.
 import { execFileSync, spawn } from 'node:child_process';
 import {
@@ -130,7 +141,22 @@ import {
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
+import {
+	factsOf,
+	RECORD_DIR,
+	readRecord,
+	recordFiles,
+	runEntryText,
+} from '../tools/lib/tested-devices.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
+import {
+	type AppWindow,
+	appWindow,
+	frontApp,
+	giveFocusBack,
+	PARKED_APPS,
+	parkWindow,
+} from './lib/app-window.ts';
 import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
 import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
 import type { CloudSessions } from './lib/cloud-sessions.ts';
@@ -142,7 +168,7 @@ import {
 	NO_FRAMES,
 	type NoFramesRecord,
 	noFramesText,
-	testedDeviceRow,
+	testedDeviceEntry,
 } from './lib/device-record.ts';
 import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
@@ -156,6 +182,7 @@ import {
 	governorSummary,
 	gpuPathOf,
 	itemsNeeded,
+	jitterSummary,
 	judge,
 	MEMORY_LIMIT_CHECKS,
 	type MissingAllowed,
@@ -180,6 +207,7 @@ import {
 	keepsRefusingMemory,
 	OOM_WINDOW_PAGES,
 	outOfMemory,
+	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
 	type PlanPlace,
@@ -190,6 +218,7 @@ import {
 	readShard,
 	receivedAt,
 	repeatItems,
+	rerunsInNewTab,
 	runName,
 	SHARD_FORMAT,
 	type Shard,
@@ -264,6 +293,8 @@ export interface Options {
 	cloudBuild?: string;
 	/** The cloud keeps each session's network log, which slows the session's loads a little. */
 	networkLogs?: boolean;
+	/** Browser apps on a Mac open in front, at their own window size. */
+	front?: boolean;
 	/** Browser apps on this machine: macOS app names, such as Safari, or Linux commands' names, such as Firefox. */
 	apps: string[];
 	android: string[];
@@ -273,7 +304,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -336,6 +367,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--cloud-build') options.cloudBuild = args[++i];
 		else if (arg === '--network-logs') options.networkLogs = true;
 		else if (arg === '--attended') options.attended = true;
+		else if (arg === '--front') options.front = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
 		else options.apps.push(arg);
 	}
@@ -436,24 +468,25 @@ export const shieldsText = (state: ShieldsState | null) =>
 const browserOf = (device: DeviceFacts) => device.browser ?? detectBrowser(device);
 
 /**
- * Prints a row of the record of tested devices for each runner whose page started, ready to paste
- * into `.dev/tested-devices.md`.
+ * Prints each runner's entry for the record of tested devices, for the runners whose page started:
+ * the run's file, and the folder where it goes, or a new folder's README.
  */
-function printRecordRows(
+function printRecordEntries(
 	run: string,
 	runners: readonly LaunchedRunner[],
 	summary: Readonly<Record<string, RunnerSummary>>,
 ): void {
-	const rows = runners.flatMap(({ name, launch }) => {
+	const { rows } = readRecord(recordFiles(REPO_ROOT));
+	const entries = runners.flatMap(({ name, launch }) => {
 		const device = readDevice(run, name);
 		const counts = summary[name];
-		return device && counts
-			? [testedDeviceRow({ run, launch: launch.kind, device, ...counts })]
-			: [];
+		if (!device || !counts) return [];
+		const entry = testedDeviceEntry({ run, launch: launch.kind, device, ...counts });
+		return [runEntryText(rows, run, factsOf(entry.facts), entry.plans, entry.result)];
 	});
-	if (rows.length > 0)
+	if (entries.length > 0)
 		console.log(
-			`\nRows for the record of tested devices (.dev/tested-devices.md):\n${rows.join('\n')}\n`,
+			`\nEntries for the record of tested devices (${RECORD_DIR}/). Add the commit to the plans, and what the run found to the result:\n\n${entries.join('\n')}`,
 		);
 }
 
@@ -498,7 +531,7 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
  * waits on the network, or a session on a device cloud that opens a waiting page.
  */
 type Launch =
-	| { kind: AppMachine; app: string }
+	| AppLaunch
 	| { kind: 'android'; browser: string }
 	| { kind: 'lan' }
 	| { kind: 'cloud'; device: CloudDevice };
@@ -510,6 +543,9 @@ type Launches = ReadonlyMap<string, Launch>;
 /** The kind of machine whose browser apps a run opens: a Mac, or a Linux machine such as CI's. */
 type AppMachine = 'mac' | 'linux';
 
+/** A browser app on this machine, and how its window opens on a Mac. */
+type AppLaunch = { kind: AppMachine; app: string; window?: AppWindow };
+
 /** The machine that this tool runs on, which opens its browser apps. */
 function appMachine(): AppMachine {
 	if (process.platform === 'darwin') return 'mac';
@@ -518,15 +554,17 @@ function appMachine(): AppMachine {
 }
 
 /** True for a runner that is a browser app on this machine. */
-const isApp = (launch: Launch | undefined): launch is { kind: AppMachine; app: string } =>
+const isApp = (launch: Launch | undefined): launch is AppLaunch =>
 	launch?.kind === 'mac' || launch?.kind === 'linux';
 
 function runnersOf(options: Options): LaunchedRunner[] {
 	const machine = options.apps.length > 0 ? appMachine() : 'mac';
+	const timed = TIMED_PLANS.has(options.plan) || options.plan === SCALE_PLAN;
+	const window = appWindow(options.front === true, Boolean(process.env.CI), timed);
 	const runners: LaunchedRunner[] = options.apps.map((app) => ({
 		name: `${machine}-${slug(app)}`,
 		device: machine,
-		launch: { kind: machine, app },
+		launch: { kind: machine, app, ...(machine === 'mac' && { window }) },
 	}));
 	if (options.android.length > 0) {
 		const phone = slug(phoneModel());
@@ -553,17 +591,32 @@ const imageDevice = (runner: LaunchedRunner) =>
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
 
+/** The apps whose runner window did not move in this run, which the tool told once. */
+const unparked = new Set<string>();
+
 /**
  * Opens the runner page in a browser app and says whether it did. On a Mac, a launch that hangs,
  * as behind a first-launch prompt on a machine that nobody watches, fails after a minute instead
- * of stopping the whole run. On Linux, the app's command by its name in lowercase opens the page:
- * the first call starts the browser, which keeps running, and a later call hands the page to it.
+ * of stopping the whole run. There the app opens in the background unless the run asks for the
+ * front, and the runner window of an app that the tool can move goes almost wholly past the main
+ * display's left edge. Should the app take focus all the same, the app in front before gets it back.
+ * On Linux, the app's command by its name in lowercase opens the page: the first call starts the
+ * browser, which keeps running, and a later call hands the page to it.
  */
-function openApp(app: string, url: string): boolean {
+function openApp({ app, window }: AppLaunch, url: string): boolean {
 	try {
-		if (process.platform === 'darwin')
-			execFileSync('open', ['-a', app, url], { timeout: OPEN_TIMEOUT_MS });
-		else {
+		if (process.platform === 'darwin') {
+			const before = window?.background ? frontApp() : undefined;
+			const background = window?.background ? ['-g'] : [];
+			execFileSync('open', [...background, '-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+			const why =
+				window?.park && PARKED_APPS.has(app) ? parkWindow(app, url, window.small) : undefined;
+			if (why && !unparked.has(app)) {
+				unparked.add(app);
+				console.log(`${app}: its runner window stays where the app put it: ${why}`);
+			}
+			giveFocusBack(before);
+		} else {
 			const command = execFileSync('which', [slug(app)], { encoding: 'utf8' }).trim();
 			spawn(command, [url], { detached: true, stdio: 'ignore' })
 				.on('error', (e) => console.log(`${app} stopped: ${e.message}`))
@@ -576,9 +629,13 @@ function openApp(app: string, url: string): boolean {
 	}
 }
 
-/** The address of a run's runner page for one runner, from the plan item at `from` when given. */
-const runnerUrl = (baseUrl: string, run: string, runner: string, from?: number) =>
-	`${baseUrl}/tests/pages/runner.html?run=${run}&runner=${runner}${from ? `&from=${from}` : ''}`;
+/**
+ * The address of a run's runner page for one runner, from the plan item at `from` when given. With
+ * `tabs`, the runner page hands the run over before and after a page that runs in a runner page of
+ * its own, since the tool then opens the next runner page.
+ */
+const runnerUrl = (baseUrl: string, run: string, runner: string, from?: number, tabs = false) =>
+	`${baseUrl}/tests/pages/runner.html?run=${run}&runner=${runner}${from ? `&from=${from}` : ''}${tabs ? '&tabs' : ''}`;
 
 /** Where cloud devices reach the dev server's HTTPS port, through BrowserStack Local. */
 const CLOUD_URL = `https://bs-local.com:${HTTPS_PORT}`;
@@ -604,9 +661,9 @@ async function openRunners(
 	const opened: string[] = [];
 	for (const name of names) {
 		const launch = launches.get(name) as Launch;
-		const url = runnerUrl(baseUrl, run, name);
+		const url = runnerUrl(baseUrl, run, name, undefined, isApp(launch));
 		if (isApp(launch)) {
-			if (openApp(launch.app, url)) opened.push(name);
+			if (openApp(launch, url)) opened.push(name);
 		} else if (launch.kind === 'cloud') {
 			if (await cloud?.open(name, cloudRunnerUrl(name))) opened.push(name);
 		} else {
@@ -690,6 +747,21 @@ function inspectMac(run: string, runner: string, count: number, since: number): 
 			// Reports that the tool cannot read stay where they are.
 		}
 	return `screen ${locked ? 'locked' : 'not locked'}; ${pressure}; web content processes: ${webContent.join(', ') || 'none'}; crash reports: ${crashes.join(', ') || 'none'}; evidence in ${prefix}*`;
+}
+
+/**
+ * Keeps the Mac's display awake while the runner lasts. Once the screen saver locks the screen,
+ * Safari gives pages no animation frames, so every later page waits for a first frame that never
+ * comes. The screen saver starts only while nothing keeps the display awake.
+ */
+function keepDisplayAwake(): void {
+	if (process.platform !== 'darwin') return;
+	const child = spawn('caffeinate', ['-d', '-i', '-w', String(process.pid)], {
+		stdio: 'ignore',
+		detached: true,
+	});
+	child.on('error', () => {});
+	child.unref();
 }
 
 /**
@@ -790,6 +862,18 @@ export class QuietRecovery {
 		return true;
 	}
 
+	/**
+	 * Opens a new runner page at the plan's item `from`, where a runner page handed the run over
+	 * because a page runs in a runner page of its own. These new pages do not count against the few
+	 * that a runner gets for stopped pages.
+	 */
+	readonly onHandover = (name: string, from: number): boolean => {
+		const item = this.plan.items[from];
+		if (!item || !this.reopener.reopen(name, from)) return false;
+		console.log(`${name}: opened a new runner page for ${item.id}`);
+		return true;
+	};
+
 	/** The note for a page where a runner page went quiet once and a new one ran it again. */
 	noteFor(name: string, id: string): string | undefined {
 		return this.stalls.get(name)?.get(id) === 1
@@ -818,14 +902,14 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 				: 'no evidence: the tool looks only at a Mac',
 		reopen: (runner, from) => {
 			const launch = launches.get(runner);
-			const url = runnerUrl(baseUrl, run, runner, from);
+			const url = runnerUrl(baseUrl, run, runner, from, isApp(launch));
 			if (launch?.kind === 'android') {
 				openOnPhone(launch.browser, url);
 				return true;
 			}
 			if (!isApp(launch)) return false;
 			if (launch.app === 'Safari') closeSafariRunner(run, runner);
-			return openApp(launch.app, url);
+			return openApp(launch, url);
 		},
 	};
 }
@@ -929,7 +1013,9 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'bloom-sizes',
 	'environment',
 	'ao',
+	'effects',
 	'occlusion',
+	'gpu-occlusion',
 	'overload',
 	'soak',
 	'texture-cache',
@@ -1196,13 +1282,16 @@ async function runPlan(
 	launches: Launches,
 	local: DevServer,
 	cloud?: CloudSessions,
-): Promise<number> {
+	rerun = false,
+): Promise<PlanOutcome> {
 	const run = runName(options.plan);
+	const reruns = new Map<string, { item: PlanItem<Check>; verdict: string[] }[]>();
 	const timed = TIMED_PLANS.has(options.plan);
 	const paths = withGpuPaths(items, options.missing);
 	const plan = writePlan(run, paths.items, {
 		...(REPORT_ON_TOP_PLANS.has(options.plan) && { reportOnTop: true }),
 		...(timed && { measureRefresh: true }),
+		tabEvery: PAGES_PER_TAB,
 		...paths.flags,
 	});
 	const recovery = new QuietRecovery(plan, deviceReopener(run, launches, local.url));
@@ -1226,6 +1315,7 @@ async function runPlan(
 			await waitForRunners(plan, await openRunners([name], launches, run, local.url, cloud), {
 				onFinish: (runner) => console.log(`${runner}: finished`),
 				onQuiet: recovery.onQuiet,
+				onHandover: recovery.onHandover,
 				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
 				...(remote && {
 					startMs: CLOUD_START_MS,
@@ -1363,7 +1453,11 @@ async function runPlan(
 			} else {
 				counts.fail++;
 				if (item.check.kind === 'image') imageFailures++;
-				console.log(`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}`);
+				const again = !rerun && rerunsInNewTab(browser.name, verdict);
+				if (again) reruns.set(name, [...(reruns.get(name) ?? []), { item, verdict }]);
+				console.log(
+					`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}${again ? ' (RERUN: runs once more in a new runner page)' : ''}`,
+				);
 			}
 			for (const text of notes) console.log(`      note: ${text}`);
 			const heat = heatByRunner.get(name)?.get(item.id);
@@ -1382,6 +1476,7 @@ async function runPlan(
 			overloadSummary,
 			skinningSummary,
 			animationSummary,
+			jitterSummary,
 			tabMemorySummary,
 			soakSummary,
 			warmUpTimeSummary,
@@ -1405,10 +1500,54 @@ async function runPlan(
 		if (unreliableTiming) console.log(refreshText(name, launches.get(name), unreliableTiming));
 		if (endedEarly) console.log(endedEarlyText(name, endedEarly));
 	}
-	printRecordRows(run, runners, summary);
+	printRecordEntries(run, runners, summary);
 	console.log(`results: ${join(RUNS_DIR, run)}`);
 	if (imageFailures > 0)
 		console.log('Review the new and changed images with their diffs: bun run images:review');
+	return { run, failures, reruns };
+}
+
+/** A plan's run: its name, its failures, and the failed pages that run once more, by runner. */
+interface PlanOutcome {
+	run: string;
+	failures: number;
+	reruns: Map<string, { item: PlanItem<Check>; verdict: string[] }[]>;
+}
+
+/**
+ * Runs each page that failed in Safari in a way that kept memory explains once more, each in a new
+ * runner page, and returns the run's failures: those of the first run, less the pages that passed
+ * the second time. Each rerun is printed, and recorded in the first run's results as `reruns`, so
+ * a fault that a second run hides stays in the record.
+ */
+async function rerunInNewTabs(
+	outcome: PlanOutcome,
+	options: Options,
+	runners: readonly LaunchedRunner[],
+	launches: Launches,
+	local: DevServer,
+	cloud?: CloudSessions,
+): Promise<number> {
+	let failures = outcome.failures;
+	for (const [name, pages] of outcome.reruns) {
+		const runner = runners.find((r) => r.name === name);
+		if (!runner) continue;
+		console.log(
+			`\nRERUN ${name}: ${pages.length} pages failed in a way that memory Safari kept explains. Each runs once more in a new runner page, and fails only if it fails again: ${pages.map(({ item }) => item.id).join(', ')}`,
+		);
+		const items = pages.map(({ item }) => ({ ...item, ownTab: true as const }));
+		const again = await runPlan(options, items, [runner], launches, local, cloud, true);
+		failures += again.failures - pages.length;
+		const record = {
+			rerunIn: again.run,
+			pages: pages.map(({ item, verdict }) => ({ id: item.id, firstVerdict: verdict })),
+			failedAgain: again.failures,
+		};
+		writeRunnerFile(outcome.run, name, 'reruns', record);
+		console.log(
+			`RERUN ${name}: ${pages.length - again.failures} of ${pages.length} passed in a new runner page, ${again.failures} failed again (run ${again.run})`,
+		);
+	}
 	return failures;
 }
 
@@ -1585,6 +1724,7 @@ async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
+	if (options.apps.length > 0) keepDisplayAwake();
 	const launches = new Map(runners.map((runner) => [runner.name, runner.launch]));
 	const cloud = cloudSessions(options);
 	if (options.android.length > 0 || options.lan.length > 0) {
@@ -1619,9 +1759,10 @@ async function main(): Promise<void> {
 		const names = builds.map(({ name }) => name);
 		if (names.length > 0)
 			for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl, names);
-		failures = items
-			? await runPlan(options, items, runners, launches, local, cloud)
-			: await runScale(options, runners, launches, local);
+		if (items) {
+			const outcome = await runPlan(options, items, runners, launches, local, cloud);
+			failures = await rerunInNewTabs(outcome, options, runners, launches, local, cloud);
+		} else failures = await runScale(options, runners, launches, local);
 	} finally {
 		await cloud?.closeAll();
 		forgetCloud?.();

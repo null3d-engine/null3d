@@ -102,6 +102,9 @@ export async function startCorePage(
 			false,
 			false,
 			false,
+			false,
+			false,
+			16,
 		),
 	);
 	const { workers, stopped } = await startWorkers(module, memory, jobWorkers);

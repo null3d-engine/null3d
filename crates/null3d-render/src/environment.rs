@@ -136,7 +136,7 @@ pub(crate) fn entries(map: u32, sampler: u32) -> [u32; ENTRY_WORDS] {
 /// three.js's `Matrix4.makeRotationFromEuler` builds the rotation. A rotation's inverse is its
 /// transpose, so each row here is a column of the rotation, as three.js's `envMapRotation` holds
 /// it.
-fn inverse_rotation([x, y, z]: [f32; 3]) -> [[f32; 4]; 3] {
+pub(crate) fn inverse_rotation([x, y, z]: [f32; 3]) -> [[f32; 4]; 3] {
     let (b, a) = x.sin_cos();
     let (d, c) = y.sin_cos();
     let (f, e) = z.sin_cos();

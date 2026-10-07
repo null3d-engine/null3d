@@ -5,7 +5,7 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades, the far cascade interval and the governor', () => {
+	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode and the pixel ratio', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
@@ -17,6 +17,9 @@ describe('readRunOptions', () => {
 			shadowCascades: null,
 			shadowMapSize: null,
 			shadowFilter: null,
+			shadowCascadeBlend: null,
+			antialias: null,
+			maxPixelRatio: null,
 			governor: true,
 		});
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
@@ -30,12 +33,20 @@ describe('readRunOptions', () => {
 			shadowCascades: null,
 			shadowMapSize: null,
 			shadowFilter: null,
+			shadowCascadeBlend: null,
+			antialias: null,
+			maxPixelRatio: null,
 			governor: true,
 		});
 		expect(read('?shadowCascades=2&shadowMapSize=1024&shadowFilter=5')).toMatchObject({
 			shadowCascades: 2,
 			shadowMapSize: 1024,
 			shadowFilter: 5,
+		});
+		expect(read('?shadowCascadeBlend=0').shadowCascadeBlend).toBe(0);
+		expect(read('?antialias=fxaa&maxPixelRatio=1.5')).toMatchObject({
+			antialias: 'fxaa',
+			maxPixelRatio: 1.5,
 		});
 		expect(read('?soak=30').soak).toBe(30);
 		expect(read('?hold=3.25').hold).toBe(3.25);
@@ -46,6 +57,10 @@ describe('readRunOptions', () => {
 
 	test('takes only off for the governor', () => {
 		expect(() => read('governor=on')).toThrow('"on" is not a valid governor. Use ?governor=off.');
+	});
+
+	test("takes only the engine's modes for antialias", () => {
+		expect(() => read('antialias=taa')).toThrow('"taa" is not a valid antialias.');
 	});
 
 	test('refuses counts and times that make no sense, with a fix in the message', () => {
@@ -69,6 +84,8 @@ describe('readRunOptions', () => {
 			'shadows=2.5',
 			'shadowMapSize=big',
 			'shadowCascades=0',
+			'maxPixelRatio=0.25',
+			'maxPixelRatio=x',
 		]) {
 			expect(() => read(query)).toThrow(/is not valid: use/);
 		}

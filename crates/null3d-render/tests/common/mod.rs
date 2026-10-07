@@ -209,16 +209,34 @@ impl<B: FrameBuilder> World<B> {
     /// of `range` meters and a cone of about 54 degrees, created in the current frame. Its row
     /// goes into the world's light table, which it makes when the world has none.
     pub fn add_spot(&mut self, position: [f32; 3], range: f32) -> Handle {
-        self.add_light(kind::SPOT, position, range)
+        self.add_light(kind::SPOT, position, range).0
     }
 
     /// Adds a point light at `position` that casts shadows, with a range of `range` meters, as
     /// [`World::add_spot`] adds a spot light.
     pub fn add_point(&mut self, position: [f32; 3], range: f32) -> Handle {
-        self.add_light(kind::POINT, position, range)
+        self.add_light(kind::POINT, position, range).0
     }
 
-    fn add_light(&mut self, light_kind: u32, position: [f32; 3], range: f32) -> Handle {
+    /// Adds a directional light that shines straight down and casts shadows in `cascades`
+    /// cascades of 512 texels that reach 40 meters, as [`World::add_spot`] adds a spot light.
+    /// Returns its object and its row in the light table.
+    pub fn add_sun(&mut self, cascades: u32) -> (Handle, u32) {
+        let (object, light) = self.add_light(kind::DIRECTIONAL, [0.0, 10.0, 0.0], 0.0);
+        let table = self.light_table.as_mut().unwrap();
+        for (value, v) in [
+            (value::INTENSITY, 1.0),
+            (value::SHADOW_CASCADES, cascades as f32),
+            (value::SHADOW_MAP_SIZE, 512.0),
+            (value::SHADOW_DISTANCE, 40.0),
+        ] {
+            table.set_value(light, value, v).unwrap();
+        }
+        (object, light)
+    }
+
+    /// Adds a light of `light_kind`, and returns its object and its row in the light table.
+    fn add_light(&mut self, light_kind: u32, position: [f32; 3], range: f32) -> (Handle, u32) {
         let object = self.scene.reserve().unwrap();
         self.scene.set_position(object, position).unwrap();
         // A quarter turn back about X points the light's -Z axis straight down.
@@ -240,7 +258,7 @@ impl<B: FrameBuilder> World<B> {
         let light = table.create(object, light_kind).unwrap();
         table.set_value(light, value::RANGE, range).unwrap();
         table.set_value(light, value::ANGLE, 0.95).unwrap();
-        object
+        (object, light)
     }
 
     /// Adds a view from a second camera at `position`, which looks down -z as the first camera

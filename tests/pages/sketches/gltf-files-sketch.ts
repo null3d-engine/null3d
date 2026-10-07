@@ -3,7 +3,7 @@
 // codes. The sketch posts what it found as `result`.
 import { defineSketch, EngineError, type Mesh } from '@null3d/engine';
 import { armBuilder, blenderMorphBuilder, GltfBuilder, shipBuilder } from '../lib/gltf-files';
-import { pngHeader } from '../lib/image-headers';
+import { avifHeader, pngHeader } from '../lib/image-headers';
 
 /** The address of bytes, for assets.loadGltf. */
 const addressOf = (bytes: Uint8Array, type = 'model/gltf-binary') =>
@@ -43,11 +43,16 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	const binary = addressOf(shipBuilder().bytes(), 'application/octet-stream');
 	const rewritten = (rewriteUrl: (address: URL) => string | null) =>
 		codeOf(addressOf(named, 'model/gltf+json'), { rewriteUrl });
-	// An embedded image whose bytes do not decode, and a PNG header that claims 65,536 pixels a side.
-	const image = (bytes: Uint8Array) => {
+	// An embedded image whose bytes do not decode, a PNG header that claims 65,536 pixels a side,
+	// and an AVIF through EXT_texture_avif whose header is whole but whose image data is missing.
+	const image = (bytes: Uint8Array, mimeType = 'image/png') => {
 		const b = shipBuilder();
-		b.json.images = [{ bufferView: b.view(bytes), mimeType: 'image/png' }];
-		b.json.textures = [{ source: 0 }];
+		b.json.images = [{ bufferView: b.view(bytes), mimeType }];
+		b.json.textures =
+			mimeType === 'image/avif'
+				? [{ extensions: { EXT_texture_avif: { source: 0 } } }]
+				: [{ source: 0 }];
+		if (mimeType === 'image/avif') b.uses('EXT_texture_avif', true);
 		b.json.materials[0].pbrMetallicRoughness = { baseColorTexture: { index: 0 } };
 		return addressOf(b.glb());
 	};
@@ -94,6 +99,7 @@ export default defineSketch(async ({ scene, assets, page }) => {
 		),
 		undecodable: await codeOf(image(new TextEncoder().encode('not an image'))),
 		claimsHuge: await codeOf(image(pngHeader(65536, 65536))),
+		brokenAvif: await codeOf(image(avifHeader(64, 64), 'image/avif')),
 	};
 	page.post('result', {
 		nodes: [copy.find('Ship')?.name, copy.find('Hull')?.name, copy.find('Turret')?.name],

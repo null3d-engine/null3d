@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1, with typed uniforms, custom material textures and `destroy` in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1, with typed uniforms, custom material textures, `destroy`, and the specular and index of refraction values in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -55,10 +55,32 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `normalScale` | Two numbers | `[1, 1]` | How strongly the normal map bends normals along u and v |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
 | `lightMapIntensity` | 0 or more | 1 | The factor of the light map's light |
+| `ior` | 1 or more | 1.5 | The index of refraction of the non-metallic part. It sets how much light the surface reflects head on |
+| `specularIntensity` | 0 to 1 | 1 | The strength of the non-metallic part's specular reflection, at every angle |
+| `specularColor` | A [color](#color), or linear components of 0 or more | White | Tints the non-metallic part's specular reflection head on |
 | `envIntensity` | 0 or more | 1 | The factor of the scene environment's light on the surface, as three.js's `envMapIntensity` |
 | `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
-The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
+The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity` and `specularColor` have those of three.js's `MeshPhysicalMaterial`, as the next section explains. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
+
+## Specular reflection and index of refraction
+
+A surface reflects some light like a mirror, blurred by its roughness. This is its specular reflection. A metal's reflection takes its base color. A non-metal's reflection is white, and weak when you look at the surface head on: 4% of the light with the defaults. It grows to all the light at grazing angles. Three values change the non-metallic part, as glTF's `KHR_materials_ior` and `KHR_materials_specular` extensions do. The engine draws them with the formulas of three.js's `MeshPhysicalMaterial`, in the standard material's own lighting and shaders.
+
+| Value | Head on | At grazing angles |
+| --- | --- | --- |
+| `ior` | Reflects `((ior - 1) / (ior + 1))^2` of the light: 4% at 1.5, as for glass and plastic, 11% at 2, and none at 1 | No change |
+| `specularColor` | Multiplies the reflection, up to all the light. Components above 1 raise it past what `ior` gives | No change: the reflection stays white |
+| `specularIntensity` | Multiplies the reflection | Multiplies it too, so 0 leaves only diffuse light |
+
+Light that the surface reflects does not reach its diffuse color, so a stronger reflection darkens the diffuse part. Metals ignore the three values, and a material with a `metalness` between 0 and 1 blends both parts. The defaults draw exactly as a material without them.
+
+```ts
+// sketch.ts
+// Paint that reflects more than plastic does, and cloth that reflects little.
+const paint = materials.standard({ color: '#8a1020', roughness: 0.25, ior: 1.8 });
+const cloth = materials.standard({ color: '#4a5a70', roughness: 0.8, specularIntensity: 0.3 });
+```
 
 ## Texture maps
 
@@ -88,6 +110,8 @@ const brick = materials.standard({
 | `aoMap` | Standard | R, linear | Darkens ambient light, by `aoMapIntensity` |
 | `emissiveMap` | Standard | RGB, sRGB | Multiplies `emissive` times `emissiveIntensity` |
 | `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
+| `specularIntensityMap` | Standard | A, linear | Its alpha multiplies `specularIntensity` |
+| `specularColorMap` | Standard | RGB, sRGB | Multiplies `specularColor` |
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
 
@@ -95,13 +119,15 @@ A normal map takes its frame from the mesh's tangents when the mesh has them, as
 
 Until a map's image reaches the GPU, the material draws as without that map.
 
+On WebGL2, the maps of one material share at most six textures on the GPU. Maps with the same size, format and sampling count once, so a material rarely reaches the limit. [Texture arrays](textures.md#texture-arrays) says which maps a material drops past it.
+
 ## Texture coordinate transform
 
 `uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time.
 
 ## Color
 
-`color` and `emissive` take an sRGB color, as three.js does: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three components from 0 to 1. The engine converts the color to linear once, when the call receives it. Any other value, such as the name `'red'`, throws E1204.
+`color`, `emissive` and `specularColor` take an sRGB color, as three.js does. That is a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three linear components from 0 to 1. The engine converts the color to linear once, when the call receives it. Any other value, such as the name `'red'`, throws E1204. The linear components of `specularColor` may also exceed 1, as glTF allows.
 
 ## Changing a material
 
@@ -296,7 +322,7 @@ WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` bloc
 
 | Member | Description |
 | --- | --- |
-| `readonly kind: 'material' \| 'shader'` | `'material'` for the functions of a custom material, and `'shader'` for a whole shader. |
+| `readonly kind: 'material' \| 'effect' \| 'toneCurve' \| 'shader'` | `'material'` for the functions of a custom material, `'effect'` for a custom effect, `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader. |
 
 ### `DepthBias`
 
@@ -405,6 +431,8 @@ The texture maps of a standard material. They are fixed when the material is cre
 | `aoMap?: Texture` | Ambient occlusion in red, in linear color, which darkens ambient light. |
 | `emissiveMap?: Texture` | The emissive color map, in sRGB. Its color multiplies `emissive`. |
 | `lightMap?: Texture` | Baked light, added to the ambient light. Light maps usually use the second coordinates. |
+| `specularIntensityMap?: Texture` | The specular intensity in alpha, in linear color. Its alpha multiplies `specularIntensity`. |
+| `specularColorMap?: Texture` | The specular color, in sRGB. Its color multiplies `specularColor`. |
 
 ### `StandardOptions`
 
@@ -427,6 +455,9 @@ The values of a standard material, which `set` changes at any time.
 | `normalScale?: readonly [number, number]` | How strongly the normal map bends normals along u and along v. The default is `[1, 1]`, and negative values flip a direction. |
 | `aoMapIntensity?: number` | How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. |
 | `lightMapIntensity?: number` | The factor of the light map's light: 0 or more. The default is 1. |
+| `ior?: number` | The index of refraction of the surface's non-metallic part, 1 or more, as three.js's `MeshPhysicalMaterial.ior`. It sets how much light the surface reflects when seen head on: `((ior - 1) / (ior + 1))^2`. The default is 1.5, which reflects 4%, as glTF's metallic-roughness model does. |
+| `specularIntensity?: number` | The strength of the specular reflection of the surface's non-metallic part, from 0 to 1, as three.js's `specularIntensity`. It scales the reflection at every angle, so 0 leaves only diffuse light. Metals ignore it. The default is 1. |
+| `specularColor?: ColorInput` | The color that tints the specular reflection of the surface's non-metallic part when seen head on, as three.js's `specularColor`. At grazing angles the reflection stays white, and metals ignore it. It takes the forms that `color` takes, and its three linear components may also exceed 1, as glTF allows, to reflect more than the index of refraction gives, up to all the light. The default is white. |
 | `envIntensity?: number` | The factor of the scene environment's light on the surface, 0 or more, as three.js's `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The default is 1. |
 | `uvTransform?: UvTransform` | Where the maps sit on the texture coordinates. The default leaves them as they are. |
 

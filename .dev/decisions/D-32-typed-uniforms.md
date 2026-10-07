@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-03. Task: M2-J1.
 
+Summary: TypeScript reads `struct Uniforms` from the literal type of tagged WGSL, and the Vite plugin writes a declaration beside each `.wgsl` file, so a wrong uniform name fails the type check. Reading costs about 2 ms of type checking per shader of 13 KB. WGSL that TypeScript cannot read takes any name.
+
 ## Question
 
 A custom material declares its uniforms once, as the fields of `struct Uniforms` in its WGSL. Its `uniforms` option and its `set()` should take only those names, each with a value of its type, and a wrong name should fail the type check. TypeScript cannot read WGSL. How does it learn the names and types?

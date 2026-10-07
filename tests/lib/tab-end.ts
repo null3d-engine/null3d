@@ -1,5 +1,5 @@
 // Pages that may end their tab on purpose, such as the tab memory page, which grows memory until the
-// browser closes the tab. Such a page posts its progress as it goes, under a name beside its result,
+// browser closes the tab, and pages that run in a runner page of their own. Such a page posts its progress as it goes, under a name beside its result,
 // so the dev server keeps how far it got when the tab and the runner page in it die. The runner
 // page, when the browser reloads it, and the runner tool, when the runner page goes quiet, then
 // record that progress as the page's result. The runner page, in the browser, and the runner tool,
@@ -15,6 +15,28 @@ export const REST_AFTER_TAB_END_SECONDS = 150;
 
 /** The name of the record of a page's progress, beside its result. */
 export const progressName = (id: string) => `${id}.progress`;
+
+/**
+ * The name of the record that a runner page posts as it hands the run to a new runner page, which
+ * starts at the plan's item `from`.
+ */
+export const handoverName = (from: number) => `handover-${from}`;
+
+/**
+ * Whether a runner page that can hand over hands the run to a new runner page before the next page:
+ * when that page or the last one it ran wants a runner page of its own, or when it has run
+ * `tabEvery` pages. A runner page that ran no page yet keeps the run.
+ */
+export function handsOver(
+	next: { ownTab?: boolean },
+	ran: { pages: number; lastOwnTab: boolean },
+	tabEvery?: number,
+): boolean {
+	if (ran.pages === 0) return false;
+	return (
+		next.ownTab === true || ran.lastOwnTab || (tabEvery !== undefined && ran.pages >= tabEvery)
+	);
+}
 
 /** Who recorded that a tab ended: the runner page that the browser reloaded, or the runner tool. */
 export type TabEndRecorder = 'runner page' | 'runner tool';

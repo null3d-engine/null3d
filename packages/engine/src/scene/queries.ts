@@ -1,14 +1,17 @@
 // Raycasts and overlap queries. A query writes its input into engine memory, makes one call into
 // the core, and reads the hit records that the core writes back into the caller's own objects
-// and arrays. The views on engine memory are made again only when the memory or the hit array
-// grows, and new hit objects only when the caller's array is too short, so a query allocates
-// nothing in steady state.
+// and arrays. A raycast's input also holds three.js's thresholds and the camera that sprites,
+// points and lines face: the active camera as it stands, or for a pointer event the camera of the
+// frame on screen at the event. The views on engine memory are made again only when the memory or
+// the hit array grows, and new hit objects only when the caller's array is too short, so a query
+// allocates nothing in steady state.
 
 import { checkLayers, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
 import type { Ray } from './frame-cameras';
+import type { LineBatch } from './lines';
 import type { CoreMemory } from './memory';
 import {
 	EVENT_DISTANCE,
@@ -18,6 +21,7 @@ import {
 	EVENT_TRIANGLE,
 } from './pointer-events';
 import type { InstanceBatch, Object3D } from './scene';
+import type { PointBatch, SpriteBatch } from './sprites';
 
 /**
  * The options of every query.
@@ -41,7 +45,27 @@ export interface QueryOptions {
 export interface RaycastOptions extends QueryOptions {
 	/** The farthest hit, in meters from the ray's origin. The default is no limit. */
 	maxDistance?: number;
+	/**
+	 * When set, a ray hits a point that it passes within this many meters of, whatever the point's
+	 * size, as three.js's `Raycaster.params.Points.threshold` does. By default a ray hits the
+	 * square that a point draws.
+	 */
+	pointThreshold?: number;
+	/**
+	 * When set, a ray hits a line that it passes within this many meters of, whatever the line's
+	 * width, as three.js's `Raycaster.params.Line.threshold` does. By default a ray hits a line
+	 * within half its width.
+	 */
+	lineThreshold?: number;
 }
+
+/**
+ * What a query can find: an object, or the batch of a row. That batch is an instance, sprite, point
+ * or line batch.
+ *
+ * @category api/raycast
+ */
+export type QueryTarget = Object3D | InstanceBatch | SpriteBatch | PointBatch | LineBatch;
 
 /**
  * An object that a query found: a scene object, or a row of an instance batch.
@@ -49,9 +73,11 @@ export interface RaycastOptions extends QueryOptions {
  * @category api/raycast
  */
 export interface OverlapHit {
-	/** The object or the instance batch, or null after a raycast that hit nothing. */
-	object: Object3D | InstanceBatch | null;
-	/** The row of an instance batch, or -1 for an object. */
+	/** The object or the batch of a row, or null after a raycast that hit nothing. */
+	object: QueryTarget | null;
+	/**
+	 * The row of a batch: an instance row, a sprite, a point or a line's segment. -1 for an object.
+	 */
 	instance: number;
 }
 
@@ -63,11 +89,18 @@ export interface OverlapHit {
 export interface RaycastHit extends OverlapHit {
 	/** Where the ray hit, in world space. */
 	point: Vec3Like;
-	/** The unit normal of the hit triangle in world space, on the side that faces the ray. */
+	/**
+	 * The unit normal of the hit triangle in world space, on the side that faces the ray. A hit on
+	 * a sprite or a point faces the camera; on a line, or within a threshold, it points back along
+	 * the ray.
+	 */
 	normal: Vec3Like;
 	/** The distance from the ray's origin to the hit, in meters. */
 	distance: number;
-	/** The index of the hit triangle in its mesh, as three.js's `faceIndex`. */
+	/**
+	 * The index of the hit triangle in its mesh, as three.js's `faceIndex`, or -1 for a sprite, a
+	 * point or a line.
+	 */
 	triangle: number;
 }
 
@@ -80,9 +113,9 @@ export interface RaycastHit extends OverlapHit {
 export interface RaycastBatchHits {
 	/** The distance to each ray's closest hit in meters, or -1 when the ray hits nothing. */
 	distances: Float32Array | Float64Array;
-	/** The object or instance batch that each ray hit, or null. */
-	objects?: (Object3D | InstanceBatch | null)[];
-	/** The instance batch row that each ray hit, or -1. */
+	/** The object or the batch of a row that each ray hit, or null. */
+	objects?: (QueryTarget | null)[];
+	/** The row of a batch that each ray hit, or -1. */
 	instances?: Int32Array;
 	/** Each hit's point in world space, three numbers per ray. */
 	points?: Float32Array | Float64Array;
@@ -90,12 +123,16 @@ export interface RaycastBatchHits {
 	normals?: Float32Array | Float64Array;
 }
 
-/** The objects and batches that hit records name, by their slots. */
+/** The objects and batches that hit records name, by their slots, and the cameras of queries. */
 export interface QueryTargets {
 	/** The object in a slot, or undefined. */
 	objectAt(slot: number): Object3D | undefined;
 	/** The live batch with an id, or undefined. */
 	batchAt(id: number): InstanceBatch | undefined;
+	/** Writes the active camera as it stands into a raycast's input, or no camera. */
+	writeCamera(input: Float64Array): void;
+	/** Writes the camera of the last pointer event's ray into a raycast's input. */
+	writeRayCamera(input: Float64Array): void;
 }
 
 /** Names for the values that error messages describe. */
@@ -156,11 +193,16 @@ function checkNotBelowZero(call: string, name: string, value: number, limit: num
 	throw new EngineError('E1108', `${call}() got ${value} for ${name}: pass ${range}.`);
 }
 
-/** Checks a raycast's far limit and layers. */
+/** Checks a raycast's far limit, thresholds and layers. */
 function checkOptions(call: string, options: RaycastOptions | undefined): void {
-	if (options?.maxDistance !== undefined)
+	if (options === undefined) return;
+	if (options.maxDistance !== undefined)
 		checkNotBelowZero(call, 'maxDistance', options.maxDistance, Infinity);
-	if (options?.layers !== undefined) checkLayers(call, options.layers);
+	if (options.pointThreshold !== undefined)
+		checkNotBelowZero(call, 'pointThreshold', options.pointThreshold, F32_MAX);
+	if (options.lineThreshold !== undefined)
+		checkNotBelowZero(call, 'lineThreshold', options.lineThreshold, F32_MAX);
+	if (options.layers !== undefined) checkLayers(call, options.layers);
 }
 
 /** Checks a raycast's ray and options. */
@@ -249,27 +291,46 @@ export class SceneQueries {
 		return result;
 	}
 
-	/** Writes a ray and its far limit into the input array. */
-	private writeRay(origin: Vec3Like, direction: Vec3Like, options?: RaycastOptions): void {
+	/**
+	 * Writes a raycast's far limit, its thresholds and its camera into the input array: the camera
+	 * of the last pointer event's ray with `fromEvent`, or else the active camera.
+	 */
+	private writeOptions(options: RaycastOptions | undefined, fromEvent = false): void {
 		this.views();
+		const input = this.input;
+		input[C.QUERY_INPUT_LIMIT] = options?.maxDistance ?? Infinity;
+		input[C.QUERY_INPUT_POINT_THRESHOLD] = options?.pointThreshold ?? -1;
+		input[C.QUERY_INPUT_LINE_THRESHOLD] = options?.lineThreshold ?? -1;
+		if (fromEvent) this.targets.writeRayCamera(input);
+		else this.targets.writeCamera(input);
+	}
+
+	/** Writes a ray and its options into the input array, as `writeOptions` does. */
+	private writeRay(
+		origin: Vec3Like,
+		direction: Vec3Like,
+		options?: RaycastOptions,
+		fromEvent = false,
+	): void {
+		this.writeOptions(options, fromEvent);
 		const input = this.input;
 		for (let k = 0; k < 3; k++) {
 			input[k] = origin[k] as number;
 			input[3 + k] = direction[k] as number;
 		}
-		input[C.QUERY_INPUT_LIMIT] = options?.maxDistance ?? Infinity;
 	}
 
-	/** The object or batch that the hit record at `at` names, or null for a miss. */
-	private targetAt(at: number): Object3D | InstanceBatch | null {
+	/**
+	 * The object or batch that the hit record at `at` names, or null for a miss. A row of a sprite,
+	 * point or line batch names that batch.
+	 */
+	private targetAt(at: number): QueryTarget | null {
 		const r = this.hits;
 		const slot = r[at + C.QUERY_HIT_SLOT] as number;
 		const { targets } = this;
-		return (
-			(slot !== 0
-				? targets.objectAt(slot)
-				: targets.batchAt(r[at + C.QUERY_HIT_BATCH] as number)) ?? null
-		);
+		if (slot !== 0) return targets.objectAt(slot) ?? null;
+		const batch = targets.batchAt(r[at + C.QUERY_HIT_BATCH] as number);
+		return batch?.face ?? batch ?? null;
 	}
 
 	/** Copies the object and row of hit record `i` into `out`. */
@@ -332,8 +393,8 @@ export class SceneQueries {
 	 * after a miss. The numbers go into an array, as an object's fields would each hold a new number
 	 * in some browsers.
 	 */
-	pick(ray: Ray, layers: number, out: Float64Array): Object3D | InstanceBatch | null {
-		this.writeRay(ray.origin, ray.direction, undefined);
+	pick(ray: Ray, layers: number, out: Float64Array): QueryTarget | null {
+		this.writeRay(ray.origin, ray.direction, undefined, true);
 		if (this.finish(this.core.glue.raycast(C.QUERY_CLOSEST, layers), 'raycast') === 0) return null;
 		const r = this.hits;
 		out[EVENT_DISTANCE] = r[C.QUERY_HIT_DISTANCE] as number;
@@ -390,9 +451,8 @@ export class SceneQueries {
 			this.rayCapacity = count;
 			this.generation = -1;
 		}
-		this.views();
+		this.writeOptions(options);
 		this.rays.set(rays);
-		this.input[C.QUERY_INPUT_LIMIT] = options?.maxDistance ?? Infinity;
 		const found = this.finish(core.glue.raycastBatch(count, layersOf(options)), 'raycastBatch');
 		const r = this.hits;
 		const { distances, objects, instances, points, normals } = out;

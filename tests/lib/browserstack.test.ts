@@ -148,7 +148,7 @@ describe('the device cloud list', () => {
 
 	it("holds tiers A and B, without the guide's Firefox on Windows", () => {
 		expect(CLOUD_DEVICES.filter((d) => d.tier === 'A')).toHaveLength(10);
-		expect(CLOUD_DEVICES.filter((d) => d.tier === 'B')).toHaveLength(11);
+		expect(CLOUD_DEVICES.filter((d) => d.tier === 'B')).toHaveLength(12);
 	});
 });
 

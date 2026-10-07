@@ -6,6 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import { type Build, coreUrls } from '../shared/core';
 import { compileWasm, type MemoryLimits, readMemoryLimits, type WasmError } from '../shared/wasm';
+import { endParkedWorkers } from './ownership';
 
 /**
  * The shared memory's maximum when neither the page nor a quality preset asks for one: 1 GiB. The
@@ -22,11 +23,15 @@ export const MAX_MAXIMUM_MIB = QUALITY_SETTINGS.memoryMaximumMiB.values.max;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
 /**
- * How long to wait before each further try to create the shared memory, in ms: about 10 seconds in
- * all. Safari frees a stopped engine's memory only after collections that the refusals start, which
- * took more than 6 seconds on a slow machine, and on a phone that starts engines one after another.
+ * How long to wait before each further try to create the shared memory, in ms: the waits double
+ * from 50 ms up to 8 s, for about 45 s in all. Safari on a slow Mac gave back the memory that
+ * removed frames held 16 to 40 s later (D-94).
  */
-export const MEMORY_RETRY_MS: readonly number[] = [50, 100, 200, 400, 800, 1600, 3200, 3200];
+export const MEMORY_RETRY_MS: readonly number[] = [
+	50, 100, 200, 400, 800, 1600, 3200, 6400, 8000, 8000, 8000, 8000,
+];
+/** How long the tries wait, in ms, before the page hears that the engine still waits for memory. */
+export const MEMORY_WAIT_NOTICE_MS = 10_000;
 /** The whole wait of the tries, in whole seconds, as the error that ends them gives it. */
 const RETRY_SECONDS = Math.round(MEMORY_RETRY_MS.reduce((sum, ms) => sum + ms, 0) / 1000);
 
@@ -96,19 +101,32 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * shared memory when the address space it keeps for them, or its budget of their pages, is full.
  * A stopped engine's memory counts against both until the engine's workers have finished, which
  * Safari does a moment after the engine stops. So after each refusal the loader waits longer and
- * tries again, for about 10 seconds in all, and a refusal after that fails with E1109. `create` and
- * `pause` stand in for the browser in tests.
+ * tries again, for about 45 seconds in all, and a refusal after that fails with E1109. The first
+ * refusal after 10 seconds of waits also tells the page, through `stillWaiting`. The first refusal also ends
+ * the drawing workers that stopped engines left with their canvases: Safari frees the memory that
+ * such a worker used only once the worker ends. `create`, `pause` and `freeRoom` stand in for the
+ * browser and the page in tests.
  */
 export async function createSharedMemory(
 	descriptor: WebAssembly.MemoryDescriptor,
 	create: (descriptor: WebAssembly.MemoryDescriptor) => WebAssembly.Memory = (d) =>
 		new WebAssembly.Memory(d),
 	pause: (ms: number) => Promise<void> = wait,
+	freeRoom: () => void = () =>
+		endParkedWorkers('when the browser refused the shared memory of a new engine'),
+	stillWaiting: () => void = () => {},
 ): Promise<WebAssembly.Memory> {
+	let waited = 0;
+	let told = false;
 	for (let tries = 1; ; tries++) {
 		try {
 			return create(descriptor);
 		} catch (e) {
+			if (tries === 1) freeRoom();
+			if (!told && waited >= MEMORY_WAIT_NOTICE_MS) {
+				told = true;
+				stillWaiting();
+			}
 			const delay = MEMORY_RETRY_MS[tries - 1];
 			if (delay === undefined) {
 				const mib = Math.ceil((descriptor.maximum ?? descriptor.initial) / PAGES_PER_MIB);
@@ -117,6 +135,7 @@ export async function createSharedMemory(
 					`the browser refused the engine's shared memory of ${mib} MiB ${tries} times over ${RETRY_SECONDS} seconds: ${(e as Error).message}.`,
 				);
 			}
+			waited += delay;
 			await pause(delay);
 		}
 	}
@@ -126,11 +145,13 @@ export async function createSharedMemory(
  * Downloads and compiles a core build. For the threaded build it also creates the shared memory,
  * with the initial size and the maximum that the module's import declares, which the loader reads
  * from the start of the download while the browser compiles the rest. The limits need no file of
- * their own, so a strict Content-Security-Policy has no inline address to block.
+ * their own, so a strict Content-Security-Policy has no inline address to block. `memoryWait` hears
+ * when the browser has refused the memory for 10 seconds and the loader still tries.
  */
 export async function loadCore(
 	build: Build,
 	maximumMiB = DEFAULT_MAXIMUM_MIB,
+	memoryWait?: () => void,
 ): Promise<LoadedCore> {
 	const threaded = build === 'threaded';
 	const url = coreUrls(build).wasm;
@@ -151,6 +172,12 @@ export async function loadCore(
 	return {
 		build,
 		module,
-		memory: await createSharedMemory({ initial: limits.initial, maximum, shared: true }),
+		memory: await createSharedMemory(
+			{ initial: limits.initial, maximum, shared: true },
+			undefined,
+			undefined,
+			undefined,
+			memoryWait,
+		),
 	};
 }

@@ -18,6 +18,15 @@
 //! the fragment shader. Each module writes a source that several of its builds use once, as a
 //! constant at its top, and those builds name the constant. The browser then parses each text once.
 //!
+//! Sources that differ still share most of their text: the same structs, uniforms and functions,
+//! with a few that differ by the build's bits. Each device module also writes a paragraph (the text
+//! between two blank lines) that several of its sources hold once, as a constant before the
+//! sources, and each source names it in its template literal. A module is then several times
+//! smaller before compression, and the browser parses less text. The page joins the paragraphs back
+//! into each source when it evaluates the module. The main module shares whole sources only: a
+//! bundle keeps just the exports it imports, and a minifier keeps a template literal that names a
+//! constant even where nothing reads it.
+//!
 //! A shader that loads on a feature's first use as a whole (`first_use = true` in the manifest),
 //! such as the room's generator, has a module of its own for each target, which the feature's code
 //! imports, so no page downloads it before it uses the feature.
@@ -150,8 +159,8 @@ interface FirstUseFiles {
 /**
  * Imports a device module by its address. A bundler copies the file that an address names once,
  * however many bundles name it, so the page's bundle and each worker's share one copy of each
- * module. `no-inline` keeps Vite from turning a small module into a data: address, which a strict
- * Content Security Policy blocks.
+ * module. The null3D Vite plugin keeps Vite from turning a small module into a data: address,
+ * which a strict Content Security Policy blocks.
  */
 function importShaders<Shaders>(url: URL): Promise<{ SHADERS: Shaders }> {
 	return import(/* @vite-ignore */ url.href);
@@ -553,7 +562,10 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule<'_>, Builds<'_>>
             !output.by_device.contains(*shader) && !output.first_use_shaders.contains(*shader)
         })
         .collect();
-    ts.shared_sources(own.iter().flat_map(|(_, variants)| variants.values()));
+    ts.shared_sources(
+        own.iter().flat_map(|(_, variants)| variants.values()),
+        false,
+    );
     for &(shader, variants) in &own {
         let pipelines = output.pipelines.get(shader).map_or(&[][..], Vec::as_slice);
         ts.line("");
@@ -628,7 +640,7 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule<'_>, Builds<'_>>
 /// A loader table's entry for a device module: its bits, and the import of its file by address.
 fn loader_entry(module: DeviceModule) -> String {
     format!(
-        "{}: () => importShaders(new URL('./{}.{DEVICE_MODULE_EXTENSION}?no-inline', import.meta.url)),",
+        "{}: () => importShaders(new URL('./{}.{DEVICE_MODULE_EXTENSION}', import.meta.url)),",
         module.bits,
         module.stem()
     )
@@ -711,6 +723,7 @@ fn device_module(module: DeviceModule, builds: &Builds<'_>) -> String {
         builds
             .values()
             .flat_map(|variants| variants.values().copied()),
+        true,
     );
     ts.line("");
     let bits: Vec<&str> = module.bit_names().collect();
@@ -760,12 +773,45 @@ fn export_name(shader: &str) -> String {
     format!("{}_SHADER", shader.to_ascii_uppercase())
 }
 
+/// The text between two paragraphs of a source: the blank line that the GLSL and WGSL writers put
+/// between declarations.
+const PARAGRAPH_BREAK: &str = "\n\n";
+
 #[derive(Default)]
 struct Writer {
     out: String,
     depth: usize,
     /// The constant that holds each source that several builds of the module share.
     shared: HashMap<String, String>,
+    /// The constant that holds each paragraph that several sources of the module share.
+    paragraphs: HashMap<String, String>,
+}
+
+/// Counts each distinct item of `items`, in the order of its first use.
+fn first_use_counts<'a>(items: impl Iterator<Item = &'a str>) -> Vec<(&'a str, usize)> {
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    for item in items {
+        let at = *index.entry(item).or_insert_with(|| {
+            counts.push((item, 0));
+            counts.len() - 1
+        });
+        counts[at].1 += 1;
+    }
+    counts
+}
+
+/// Writes `text` as the inside of a template literal.
+fn escape_into(out: &mut String, text: &str) {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '`' => out.push_str("\\`"),
+            '$' if chars.peek() == Some(&'{') => out.push_str("\\$"),
+            _ => out.push(c),
+        }
+    }
 }
 
 /// Every stage source of a build: its WGSL module, and each GLSL program's two shaders.
@@ -806,17 +852,40 @@ impl Writer {
         self.depth * TAB_WIDTH + text.chars().count()
     }
 
-    /// Writes each source that more than one of `builds` uses as a constant, in the order the
-    /// builds first use them, so that `template` names the constant in its place.
-    fn shared_sources<'a>(&mut self, builds: impl Iterator<Item = &'a VariantOutput>) {
-        let mut uses: Vec<(&str, usize)> = Vec::new();
-        let mut index: HashMap<&str, usize> = HashMap::new();
-        for source in builds.flat_map(sources) {
-            let at = *index.entry(source).or_insert_with(|| {
-                uses.push((source, 0));
-                uses.len() - 1
-            });
-            uses[at].1 += 1;
+    /// Writes each paragraph that more than one source of `builds` holds, when `share_paragraphs`
+    /// is true, and then each source that more than one of `builds` uses, as a constant, in the
+    /// order the builds first use them. A source's literal then names the constant of each shared
+    /// paragraph, and `template` names that of a shared source in its place.
+    fn shared_sources<'a>(
+        &mut self,
+        builds: impl Iterator<Item = &'a VariantOutput>,
+        share_paragraphs: bool,
+    ) {
+        let uses = first_use_counts(builds.flat_map(sources));
+        // The module writes each distinct source once, so each counts once.
+        let held = first_use_counts(
+            uses.iter()
+                .filter(|_| share_paragraphs)
+                .flat_map(|&(source, _)| source.split(PARAGRAPH_BREAK)),
+        );
+        let mut paragraphs = Vec::new();
+        for (paragraph, count) in held {
+            let name = format!("PART_{}", paragraphs.len());
+            // A paragraph no longer than its name and the `${}` around it would not shrink.
+            if count > 1 && paragraph.len() > name.len() + 3 {
+                paragraphs.push((paragraph, name));
+            }
+        }
+        if !paragraphs.is_empty() {
+            self.line("");
+            self.line("// Paragraphs that several sources below share, each written once.");
+            for (paragraph, name) in &paragraphs {
+                self.literal(&format!("const {name} = "), paragraph, ";");
+            }
+            self.paragraphs = paragraphs
+                .into_iter()
+                .map(|(paragraph, name)| (paragraph.to_owned(), name))
+                .collect();
         }
         let mut shared = uses.into_iter().filter(|&(_, count)| count > 1).peekable();
         if shared.peek().is_none() {
@@ -842,21 +911,26 @@ impl Writer {
         }
     }
 
-    /// A shader source as a template literal between `before` and `after`. It starts on the line
-    /// of `before` and ends with the closing backtick at the start of a line.
+    /// A shader source as a template literal between `before` and `after`, which names the
+    /// constant of each shared paragraph in its place. It starts on the line of `before` and ends
+    /// with the closing backtick at the start of a line.
     fn literal(&mut self, before: &str, source: &str, after: &str) {
         for _ in 0..self.depth {
             self.out.push('\t');
         }
         self.out.push_str(before);
         self.out.push('`');
-        let mut chars = source.chars().peekable();
-        while let Some(c) = chars.next() {
-            match c {
-                '\\' => self.out.push_str("\\\\"),
-                '`' => self.out.push_str("\\`"),
-                '$' if chars.peek() == Some(&'{') => self.out.push_str("\\$"),
-                _ => self.out.push(c),
+        for (n, paragraph) in source.split(PARAGRAPH_BREAK).enumerate() {
+            if n > 0 {
+                self.out.push_str(PARAGRAPH_BREAK);
+            }
+            match self.paragraphs.get(paragraph) {
+                Some(name) => {
+                    self.out.push_str("${");
+                    self.out.push_str(name);
+                    self.out.push('}');
+                }
+                None => escape_into(&mut self.out, paragraph),
             }
         }
         self.out.push('`');
@@ -1061,8 +1135,8 @@ mod tests {
         assert_eq!(modules.len(), 8);
         let main = &modules["shaders.ts"];
         assert!(main.contains("\treadonly cull: ShaderVariants<never>;\n"));
-        assert!(main.contains("\t3: () => importShaders(new URL('./shaders-glsl-draw-index-tone-map.js?no-inline', import.meta.url)),\n"));
-        let wgsl = "const WGSL_MODULES: DeviceModules = {\n\t0: () => importShaders(new URL('./shaders-wgsl.js?no-inline', import.meta.url)),\n\t2: () => importShaders(new URL('./shaders-wgsl-tone-map.js?no-inline', import.meta.url)),\n};";
+        assert!(main.contains("\t3: () => importShaders(new URL('./shaders-glsl-draw-index-tone-map.js', import.meta.url)),\n"));
+        let wgsl = "const WGSL_MODULES: DeviceModules = {\n\t0: () => importShaders(new URL('./shaders-wgsl.js', import.meta.url)),\n\t2: () => importShaders(new URL('./shaders-wgsl-tone-map.js', import.meta.url)),\n};";
         assert!(main.contains(wgsl), "{main}");
         assert!(main.contains("export const SHADERS = {} as const;"));
         assert!(!main.contains("webgpu_tone_map"));
@@ -1153,14 +1227,14 @@ mod tests {
         let sprites = "	sprites: {
 		bits: 2,
 		modules: {
-			0: () => importShaders(new URL('./shaders-sprites-wgsl.js?no-inline', import.meta.url)),
-			2: () => importShaders(new URL('./shaders-sprites-wgsl-tone-map.js?no-inline', import.meta.url)),
+			0: () => importShaders(new URL('./shaders-sprites-wgsl.js', import.meta.url)),
+			2: () => importShaders(new URL('./shaders-sprites-wgsl-tone-map.js', import.meta.url)),
 		},
 	},
 ";
         assert!(main.contains(sprites), "{main}");
         assert!(main.contains(
-            "			1: () => importShaders(new URL('./shaders-bloom-glsl-draw-index.js?no-inline', import.meta.url)),
+            "			1: () => importShaders(new URL('./shaders-bloom-glsl-draw-index.js', import.meta.url)),
 "
         ));
         assert!(main.contains(
@@ -1172,8 +1246,8 @@ mod tests {
             permutation::BLOOM
         )));
         let start = "const WGSL_MODULES: DeviceModules = {
-	0: () => importShaders(new URL('./shaders-wgsl.js?no-inline', import.meta.url)),
-	2: () => importShaders(new URL('./shaders-wgsl-tone-map.js?no-inline', import.meta.url)),
+	0: () => importShaders(new URL('./shaders-wgsl.js', import.meta.url)),
+	2: () => importShaders(new URL('./shaders-wgsl-tone-map.js', import.meta.url)),
 };";
         assert!(main.contains(start), "{main}");
         let sprites = &modules["shaders-sprites-wgsl-tone-map.js"];
@@ -1226,6 +1300,59 @@ mod tests {
         assert!(glsl.contains("source: `frag \\`a\\` \\${x}`,"), "{glsl}");
         assert!(glsl.contains("source: `frag b`,"), "{glsl}");
         assert!(!glsl.contains("SOURCE_1"), "{glsl}");
+    }
+
+    #[test]
+    fn a_paragraph_that_several_sources_of_a_module_share_is_written_once() {
+        let shared = "uniform vec4 shared_uniform;";
+        let mut output = Output::default();
+        let mut lit = BTreeMap::new();
+        for (name, vertex, fragment) in [
+            (
+                "a",
+                format!("{shared}\n\nvoid a() {{}}"),
+                "short\n\nfrag `a` ${x}",
+            ),
+            ("b", format!("{shared}\n\nvoid b() {{}}"), "short\n\nfrag b"),
+        ] {
+            let mut build = build(Target::Glsl, 0);
+            build.glsl = Some(BTreeMap::from([(
+                "main".to_owned(),
+                glsl_program(&vertex, fragment),
+            )]));
+            lit.insert(name.to_owned(), build);
+        }
+        output.shaders.insert("lit".to_owned(), lit);
+        let main = &modules(&output)[&format!("{MAIN_MODULE}.ts")];
+        assert_eq!(
+            main.matches(shared).count(),
+            2,
+            "the main module shares whole sources only"
+        );
+        output.by_device = ["lit".to_owned()].into();
+        let modules = modules(&output);
+        let glsl = &modules["shaders-glsl.js"];
+        assert_eq!(glsl.matches(shared).count(), 1, "{glsl}");
+        assert!(
+            glsl.contains(&format!("\nconst PART_0 = `{shared}`;\n")),
+            "{glsl}"
+        );
+        assert!(
+            glsl.contains("source: `${PART_0}\n\nvoid a() {}`,"),
+            "{glsl}"
+        );
+        assert!(
+            glsl.contains("source: `${PART_0}\n\nvoid b() {}`,"),
+            "{glsl}"
+        );
+        assert!(
+            glsl.contains("source: `short\n\nfrag \\`a\\` \\${x}`,"),
+            "{glsl}"
+        );
+        assert!(
+            !glsl.contains("PART_1"),
+            "a paragraph shorter than its name stays"
+        );
     }
 
     #[test]

@@ -1039,6 +1039,7 @@ const VARIANT_NAMES: Readonly<Record<string, string>> = {
 	'cells-off': 'no grid cells',
 	half: 'half precision',
 	prepass: 'depth prepass',
+	depth32: '32-bit shadow cascades',
 };
 
 /** The GPU path of a null3D page, in words, with its variant. */

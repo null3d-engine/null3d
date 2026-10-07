@@ -3,12 +3,12 @@ id: concepts/lighting
 title: Lighting and environment
 status: experimental
 since: "0.1"
-summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics."
+summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; sky and environment backgrounds."
 ---
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with environment maps and backgrounds from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -137,9 +137,13 @@ The engine keeps each object's position relative to a grid cell, a cube of space
 
 ## Fog
 
-Fog fades objects toward one color with their distance from the camera, as air does over a landscape. A sketch sets it with `scene.setFog`: linear fog or exponential squared fog, with three.js's formulas and defaults. [Scene](../api/scene.md#fog) lists the options. The distance is the depth along the camera's view direction, for both kinds of camera, so objects at the same depth take the same fog.
+Fog fades objects toward one color with their distance from the camera, as air does over a landscape. A sketch sets it with `scene.setFog`, and [Scene](../api/scene.md#fog) lists the options. The distance is the straight line from the camera to each point. A point therefore keeps its fog as the camera turns, and fog at the screen's edges does not shift. In three.js, fog follows the depth along the camera's view instead. Its fog thins toward the screen's edges and moves as the camera turns.
 
-The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before it encodes the color for the screen. Fog therefore needs no pass and no texture, and adds almost no work. The mix happens in linear color, as in three.js's WebGPURenderer. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
+A curve sets how the fog thickens. The default, exponential fog, follows light through an even haze: each unit of distance hides the same share of what is left. Exponential squared fog and linear fog give three.js's `FogExp2` and `Fog` curves.
+
+Real mist lies low and thins with height. With a `heightFalloff`, the fog's density falls by a factor of e every 1 / `heightFalloff` units up. The engine sums that density along each line of sight with an exact formula, as Filament does. A view down into the mist then sees thick fog, and a view across its top sees thin fog. With a `sunGlow`, the fog toward the main directional light takes some of that light's color, as haze around a low sun does. The glow follows the light and its intensity. Shadows do not block it.
+
+The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color, as in three.js's WebGPURenderer and in WebGLRenderer with a half-float target. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
 
 ## Environment maps
 
@@ -153,18 +157,22 @@ export default defineSketch(async ({ scene, assets, materials, geometry }) => {
   scene.setEnvironment(await assets.builtinEnvironment('room'));
   // Or a file that `bunx @null3d/cli assets env` made from an HDR image, turned and dimmed:
   // scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'), { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
+  // Or the HDR image itself, which the GPU filters at load:
+  // scene.setEnvironment(await assets.loadEnvironment('/hdri/sunset_2k.hdr'));
   const chrome = materials.standard({ color: '#d8d8d8', metalness: 1, roughness: 0.1 });
   scene.createMesh({ mesh: geometry.sphere(), material: chrome });
   return {};
 });
 ```
 
-The engine takes an environment as one KTX2 file, which `bunx @null3d/cli assets env` makes from an HDR image before you publish:
+The fast path is one KTX2 file, which `bunx @null3d/cli assets env` makes from an HDR image before you publish:
 
 - A cube map with one level for each step of roughness. Level 0 holds the light itself, for mirrors. Each smaller level holds the light blurred as a rougher surface reflects it, with the GGX distribution of the standard material.
 - Nine spherical harmonics coefficients, the diffuse light from each direction in a few numbers, as three.js's `LightProbe` holds it.
 
 three.js builds the same data in the browser on every visit with `PMREMGenerator`. The engine reads the finished file, so a page does no prefiltering before it draws. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) gives the command's options and the file's sizes.
+
+The engine also reads the HDR image itself, a Radiance (`.hdr`) or OpenEXR (`.exr`) file, as three.js's `HDRLoader` and `EXRLoader` do with `PMREMGenerator`. A worker reads the file, and the GPU filters it at load with the asset tool's steps. On every GPU path, the map lies on average within a tenth of a step of 255 of the tool's map of the same file. As in the tool's map, light past the 16-bit float limit, such as an unclipped sun, keeps its share of the rough levels.
 
 The built-in room needs no file. The GPU draws three.js's room into a cube map and filters it for each roughness when a sketch first asks for it, as three.js's `PMREMGenerator.fromScene` does. It follows the asset tool's steps, so it gives the same map as `bunx @null3d/cli assets env --builtin room`.
 
@@ -183,7 +191,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 
 | Call | Gives |
 | --- | --- |
-| `assets.loadEnvironment(url)` | An environment from a file of `bunx @null3d/cli assets env` |
+| `assets.loadEnvironment(url)` | An environment from a file of `bunx @null3d/cli assets env`, or from a Radiance or OpenEXR file that the GPU filters at load |
 | `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels. It is blurred as three.js's examples blur it, with `fromScene(room, 0.04)`. The GPU makes it, so no file downloads |
 | `scene.setEnvironment(environment, options)` | Nothing: it lights the scene with the environment from the next frame |
 | `environment.destroy()` | Nothing: it frees the cube map's GPU memory |
@@ -191,12 +199,14 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 ### Cost
 
 - A page downloads the file reader, under 1 KB after Brotli, with its first environment file.
-- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 7 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
+- An HDR file loads the HDR reader and its worker, about 6.5 KB after Brotli, and the code and shaders that make the room. They load while the file downloads. The worker reads a 2K file in about 100 ms on a MacBook Pro, outside the sketch's frames. The GPU then filters the map in the next frame, before that frame draws, in about the room's time. So no frame shows the scene without the file's light. Load HDR files while the scene loads, as you would ask for the room.
+- An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
+- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 8 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
 - Ask for the room while the scene loads. A call during play makes one long frame: on a phone, the time of 3 to 7 frames at 60 frames per second.
 - A map of the default size takes 2 MB of GPU memory. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 the cube map takes one of the 16 texture units that a fragment shader may use. A standard material with all six maps uses 13 of them.
+- On WebGL2 the cube map takes one of the 16 texture units that a fragment shader may use. A standard material with all eight maps, an alpha mask and shadows uses all 16.
 
 The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 
@@ -212,6 +222,46 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 - three.js takes `scene.environmentIntensity` in place of a material's `envMapIntensity` when the material has no map of its own. The engine multiplies the two, so `envIntensity` keeps its meaning with a scene environment.
 - Each material can have its own `envMap` in three.js. The engine has one environment per scene.
 
+## Sky and backgrounds
+
+The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, or three.js's analytic sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  // A low sun over a hazy sky, as three.js's sky example draws it.
+  scene.setBackground({ sky: { sunPosition: [0, 0.07, -1], turbidity: 10, rayleigh: 3 } });
+  // Light from an environment, which the sky does not give.
+  scene.setEnvironment(await assets.builtinEnvironment('room'));
+  return {};
+});
+```
+
+The engine draws a background after the opaque objects, at the far plane, with the depth test. So it shades only the pixels that no object covers, and transparent objects draw over it. While an opaque material has `depthWrite: false` or `depthTest: false`, the background draws before the objects instead, without the depth test, as three.js draws `scene.background`. That material then still shows over the background. A texture fills the view as one triangle. An environment, a cube map and the sky draw as a box around the camera, as three.js draws them. So each pixel takes its color from its own direction. Their light goes into the scene's color like an object's, so exposure and tone mapping change them too.
+
+- An environment's background reads the environment's cube map at the level of the blur's roughness, as three.js reads its PMREM texture with `backgroundBlurriness`. The levels hold the blur already, so a blurred background costs no more than a sharp one.
+- A cube map reads its six images as three.js's `CubeTextureLoader` maps them: seen from inside the cube, mirrored across x.
+- The sky is three.js's `Sky`, the Preetham daylight model, with its sun disc and its clouds. Its formulas and constants are three.js's, in their order. The engine's parity scenes compare the sky, a blurred environment background and a cube map with three.js. Each matches under three.js's own image rule, on every GPU path.
+
+The sky lights nothing. For light that matches it, add a directional light along the sun and an environment, as three.js's examples do.
+
+### Background cost
+
+- Each background is one draw of at most 12 triangles. The sky reads no texture.
+- A background costs only the pixels that no object covers. An opaque material with `depthWrite: false` or `depthTest: false` makes the background draw first, and then every pixel of the view pays for it.
+- An environment or a cube map reads one texel of its cube map per pixel. The sky computes its light in each pixel, and does more work above the horizon while it draws clouds. `cloudCoverage: 0` skips the clouds.
+- The shaders download with the first background of their kind: `'background'` for a texture, an environment or a cube map, and `'sky'` for the sky. A page with neither downloads none of them.
+- The settings are a small block of values that the GPU reads, and the engine writes them again only when they change. Setting or moving a background builds no pipeline. The first background of each kind builds one.
+- A cube map's six images upload in the frames after the load, within the frame's upload budget. Its faces have one level, so large faces seen small can shimmer.
+
+### Backgrounds beside three.js
+
+- three.js's `Sky` and `SkyMesh` are meshes in the scene. The engine's sky is the scene's background, so it draws behind every object, whatever the camera's far plane.
+- three.js's `SkyMesh` moves its clouds by the renderer's clock. The engine's sky moves them by its `time` setting, as three.js's `Sky` does, so a still frame shows the same clouds.
+- Only environments blur. three.js blurs a cube texture by turning it into a PMREM texture first. For a background that blurs, load an environment with `assets.loadEnvironment`.
+- `WebGLRenderer` draws an sRGB cube texture without exposure and tone mapping. The engine changes every background with them, as three.js's `WebGPURenderer` does.
+
 ## Related pages
 
 - [Lights](../api/lights.md): the calls and options of each kind of light.
@@ -220,4 +270,4 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 - [Render layers](render-layers.md): which cameras a light lights.
 - [Materials](../api/materials.md): the standard material, which lights shade.
 - [The asset pipeline](../guides/assets-pipeline.md#environment-maps): the command that makes environment maps.
-- [Assets](../api/assets.md#environments): the calls that load environments.
+- [Assets](../api/assets.md#environments): the calls that load environments and cube maps.

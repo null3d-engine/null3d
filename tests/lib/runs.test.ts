@@ -47,8 +47,10 @@ import { RUNS_DIR } from './report-collector.ts';
 import {
 	batchTimeoutMs,
 	currentItem,
+	handovers,
 	type ItemResult,
 	inLanes,
+	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
 	pickItems,
@@ -56,6 +58,7 @@ import {
 	readResult,
 	readShard,
 	repeatItems,
+	rerunsInNewTab,
 	runName,
 	shardItems,
 	turnBatches,
@@ -63,6 +66,7 @@ import {
 	writePlan,
 	writeRunnerFile,
 } from './runs.ts';
+import { handoverName, handsOver } from './tab-end.ts';
 import { VISUAL_LIMITS } from './visual-checks.ts';
 
 describe('turnBatches', () => {
@@ -178,6 +182,65 @@ describe('waitForRunners', () => {
 			expect(noStart).toEqual(['bspixel10-chrome']);
 		}));
 
+	it('opens a new runner page where a runner page handed the run over, once for each handover', () =>
+		withRun(['a', 'b', 'c'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			writeRunnerFile(plan.run, 'mac-safari', 'a', { ok: true });
+			writeRunnerFile(plan.run, 'mac-safari', handoverName(1), { from: 1 });
+			const handedAt: number[] = [];
+			const finished = await waitForRunners(plan, ['mac-safari'], {
+				quietMs: () => 60_000,
+				onHandover: (runner, from) => {
+					handedAt.push(from);
+					// The new runner page runs b, hands over before c, and the next one finishes.
+					if (from === 1)
+						setTimeout(() => {
+							writeRunnerFile(plan.run, runner, 'b', { ok: true });
+							writeRunnerFile(plan.run, runner, handoverName(2), { from: 2 });
+						}, 50);
+					else setTimeout(() => writeRunnerFile(plan.run, runner, 'done', {}), 50);
+					return true;
+				},
+			});
+			expect(handedAt).toEqual([1, 2]);
+			expect(finished).toEqual(['mac-safari']);
+			expect(handovers(plan.run, 'mac-safari', new Set([1]))).toEqual([2]);
+		}));
+
+	it('hands the run to a new runner page around pages of their own and after a set number of pages', () => {
+		const ran = (pages: number, lastOwnTab = false) => ({ pages, lastOwnTab });
+		expect(handsOver({ ownTab: true }, ran(0))).toBe(false);
+		expect(handsOver({ ownTab: true }, ran(1))).toBe(true);
+		expect(handsOver({}, ran(1, true))).toBe(true);
+		expect(handsOver({}, ran(5))).toBe(false);
+		expect(handsOver({}, ran(5), PAGES_PER_TAB)).toBe(false);
+		expect(handsOver({}, ran(PAGES_PER_TAB), PAGES_PER_TAB)).toBe(true);
+		// Fewer pages than Safari's 8 fast slots, so one runner page never uses them all up.
+		expect(PAGES_PER_TAB).toBeLessThan(8);
+	});
+
+	it('runs a page once more in a new runner page when memory that Safari kept explains its failure', () => {
+		for (const problem of [
+			"E1109: the browser refused the engine's shared memory of 1024 MiB 13 times over 45 seconds: Out of memory.",
+			'E1302: the render worker lost its GPU: the WebGL2 context was lost, in hold mode',
+			'the browser did not get back the memory of engines in removed frames: it had room for 10 shared memories before 43 starts in frames, and for 7 after',
+			'RangeError: Out of memory',
+		])
+			expect(rerunsInNewTab('Safari', ['another problem', problem])).toBe(true);
+		expect(rerunsInNewTab('Safari', ['the image differs from its reference in 812 pixels'])).toBe(
+			false,
+		);
+		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
+		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
+	});
+
+	it('ends the turn of a runner whose handover found no new runner page', () =>
+		withRun(['a', 'b'], async (plan) => {
+			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
+			writeRunnerFile(plan.run, 'mac-safari', handoverName(1), { from: 1 });
+			expect(await waitForRunners(plan, ['mac-safari'], { onHandover: () => false })).toEqual([]);
+		}));
+
 	it('allows the current page its timeout, and time to open it', () => {
 		expect(quietLimitMs(item('a', 95))).toBe(125_000);
 	});
@@ -254,6 +317,15 @@ describe('QuietRecovery', () => {
 		expect(tablet.quiet.onQuiet('ipad-safari', 60, at(p, 0))).toBe(false);
 		expect(tablet.opened).toEqual([]);
 		expect(recovery(p).quiet.onQuiet('mac-safari', 60, undefined)).toBe(false);
+	});
+
+	it('opens a new runner page where one handed the run over, without using up its reopens', () => {
+		const p = plan(['a', 'b', 'c', 'd']);
+		const { quiet, opened } = recovery(p);
+		for (const from of [1, 2, 3]) expect(quiet.onHandover('mac-safari', from)).toBe(true);
+		expect(quiet.onQuiet('mac-safari', 60, at(p, 3))).toBe(true);
+		expect(opened).toEqual([1, 2, 3, 3]);
+		expect(quiet.onHandover('mac-safari', 4)).toBe(false);
 	});
 
 	it('records a page that ended its tab from its progress, and goes on after it', () => {
@@ -592,7 +664,8 @@ describe('the checks plan', () => {
 			['ktx2-webgpu', '/tests/pages/ktx2-files.html?gpu=webgpu'],
 			['ktx2-webgl2', '/tests/pages/ktx2-files.html?gpu=webgl2'],
 		]);
-		// A tablet's WebGL2 context with ASTC and ETC2: ETC1S data goes to ETC2, and UASTC to ASTC.
+		// A tablet's WebGL2 context with ASTC and ETC2: ETC1S data goes to ETC2, UASTC to ASTC, and
+		// UASTC HDR to shared-exponent floats.
 		const texture = (format: string, size: number[], bytes: number, colorSpace = 'srgb') => ({
 			format,
 			colorSpace,
@@ -610,8 +683,9 @@ describe('the checks plan', () => {
 					texture(uastc, [64, 64, 1], 5488),
 					texture('rgba8unorm', [30, 20, 1], 3168, 'linear'),
 					texture('etc2-rgb8unorm', [64, 64, 1], 2048),
+					texture('rgb9e5ufloat', [64, 64, 1], 21844, 'linear'),
 				],
-				memoryBytes: 2744 * 2 + 5488 + 4 * 3168 + 2048,
+				memoryBytes: 2744 * 2 + 5488 + 4 * 3168 + 2048 + 21844,
 				codes: { broken: 'E1412', flipY: 'E1208', update: 'E1208' },
 			},
 		});
@@ -625,10 +699,10 @@ describe('the checks plan', () => {
 		if (!webgl2) throw new Error('the plan lacks the KTX2 page');
 		expect(judge(webgl2.check, result('astc-4x4-unorm'), NONE_MISSING, context)).toEqual([]);
 		expect(notes).toEqual([
-			'KTX2 on webgl2: ETC1S became etc2-rgb8unorm, UASTC astc-4x4-unorm (compressed families: astc, etc2)',
+			'KTX2 on webgl2: ETC1S became etc2-rgb8unorm, UASTC astc-4x4-unorm, UASTC HDR rgb9e5ufloat (compressed families: astc, etc2)',
 		]);
 		expect(judge(webgl2.check, result('etc2-rgba8unorm'), NONE_MISSING, context)).toEqual([
-			'the formats are etc2-rgb8unorm, etc2-rgb8unorm, etc2-rgba8unorm, rgba8unorm, etc2-rgb8unorm, not etc2-rgb8unorm, etc2-rgb8unorm, astc-4x4-unorm, rgba8unorm, etc2-rgb8unorm',
+			'the formats are etc2-rgb8unorm, etc2-rgb8unorm, etc2-rgba8unorm, rgba8unorm, etc2-rgb8unorm, rgb9e5ufloat, not etc2-rgb8unorm, etc2-rgb8unorm, astc-4x4-unorm, rgba8unorm, etc2-rgb8unorm, rgb9e5ufloat',
 		]);
 	});
 
@@ -899,7 +973,7 @@ describe('the checks plan', () => {
 		).toEqual(['the page is not cross-origin isolated', 'the threaded build did not load']);
 	});
 
-	it('starts and stops the engine again and again in every mode, and in frames', () => {
+	it('starts and stops the engine again and again in every mode, on kept canvases, and in frames', () => {
 		const restarts = items.filter((item) => item.check.kind === 'restarts');
 		expect(restarts.map((item) => item.path)).toEqual([
 			'/tests/pages/shared-memory.html',
@@ -910,6 +984,12 @@ describe('the checks plan', () => {
 			'/tests/pages/shared-memory.html?kinds=frame',
 			'/tests/pages/shared-memory.html?kinds=frame&latency=low',
 			'/tests/pages/shared-memory.html?kinds=frame&render=main',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept&latency=low',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed&latency=low',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept&sketch-thread=main',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed&sketch-thread=main',
 		]);
 	});
 
@@ -945,14 +1025,27 @@ describe('the checks plan', () => {
 		]);
 		const notes: string[] = [];
 		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
-		const lostOnce = (again: object) =>
-			result({ kinds: { engine: { ...engine, roomLater: 2, again: { ...engine, ...again } } } });
+		const lostOnce = (again: object, roomLater = 2) =>
+			result({ kinds: { engine: { ...engine, roomLater, again: { ...engine, ...again } } } });
 		expect(
-			judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+			judge(restart.check, lostOnce({ room: 4, roomLater: 4 }, 4), NONE_MISSING, context),
 		).toEqual([]);
 		expect(notes).toEqual([
-			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 4 after, and for 4 after 10 more',
 		]);
+		expect(judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING)).toEqual([
+			'the browser did not get back the memory of stopped engines: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more, more than the 2 that lost address space explains',
+		]);
+		// Room that the second round gets back was late, not lost.
+		expect(judge(restart.check, lostOnce({ room: 2, roomLater: 5 }), NONE_MISSING)).toEqual([]);
+		const singleThreaded = items.find((item) => item.id === 'restarts-single-threaded');
+		if (!singleThreaded) throw new Error('the plan lacks the single-threaded restart page');
+		expect(
+			judge(singleThreaded.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+		).toEqual([]);
+		expect(notes.at(-1)).toBe(
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+		);
 		expect(judge(restart.check, lostOnce({ room: 4, roomLater: 1 }), NONE_MISSING)).toEqual([
 			'the browser did not get back the memory of stopped engines in two rounds: it had room for 6 shared memories before 10 starts and stops, and for 2 after, then for 1 after 10 more within 31 s',
 		]);
@@ -973,6 +1066,108 @@ describe('the checks plan', () => {
 			'the browser did not get back the memory of engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts in frames, and for 0 after',
 		]);
 		expect(judge(inFrames.check, result({}), NONE_MISSING)).toEqual(['the page started no engine']);
+		// A fall that the second round held is Safari's, not a leak in the engine: a note.
+		const frameNotes: string[] = [];
+		const fellInFrames = (again: object) =>
+			result({ kinds: { frame: { ...engine, roomLater: 4, again: { ...engine, ...again } } } });
+		expect(
+			judge(inFrames.check, fellInFrames({ room: 4, roomLater: 3 }), NONE_MISSING, {
+				...context,
+				note: (t: string) => frameNotes.push(t),
+			}),
+		).toEqual([]);
+		expect(frameNotes).toEqual([
+			'Safari kept memory from the first round of engines in removed frames, and the second round held the room: it had room for 6 shared memories before 10 starts in frames, and for 4 after, and for 3 after 10 more',
+		]);
+		// Room that the second round loses too still fails.
+		expect(judge(inFrames.check, fellInFrames({ room: 4, roomLater: 2 }), NONE_MISSING)).toEqual([
+			'the browser did not get back the memory of engines in removed frames in two rounds: it had room for 6 shared memories before 10 starts in frames, and for 4 after, then for 2 after 10 more within 31 s',
+		]);
+		const kept = items.find((item) => item.id === 'canvas-kept-restarts-pipelined');
+		const destroyedInFrames = items.find(
+			(item) => item.id === 'frame-destroyed-restarts-pipelined',
+		);
+		if (!kept || !destroyedInFrames)
+			throw new Error('the plan lacks the restart pages that keep a worker');
+		const keptNotes: string[] = [];
+		expect(
+			judge(
+				kept.check,
+				result({ kinds: { 'canvas-kept': { ...engine, roomLater: 1 } } }),
+				NONE_MISSING,
+				{ ...context, note: (t: string) => keptNotes.push(t) },
+			),
+		).toEqual([]);
+		expect(keptNotes).toEqual([
+			'the workers that stayed with the canvases held memory: it had room for 6 shared memories before 10 starts and stops on kept canvases, and for 1 after',
+		]);
+		expect(
+			judge(
+				kept.check,
+				result({ kinds: { 'canvas-kept': { ...failed, error: 'E1109: refused' } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop on a kept canvas 3 of 10 failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
+		expect(
+			judge(
+				destroyedInFrames.check,
+				result({ kinds: { 'frame-destroyed': { ...failed, error: 'E1109: refused' } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop in a frame 3 of 10 failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
+		// Safari keeps a removed frame's page and what it reaches, so held room there is a note.
+		const destroyedNotes: string[] = [];
+		const heldInFrames = (again?: object) =>
+			result({
+				kinds: {
+					'frame-destroyed': {
+						...engine,
+						roomLater: 2,
+						...(again && { again: { ...engine, ...again } }),
+					},
+				},
+			});
+		const noteDestroyed = { ...context, note: (t: string) => destroyedNotes.push(t) };
+		expect(judge(destroyedInFrames.check, heldInFrames(), NONE_MISSING, noteDestroyed)).toEqual([]);
+		expect(
+			judge(
+				destroyedInFrames.check,
+				heldInFrames({ room: 2, roomLater: 2 }),
+				NONE_MISSING,
+				noteDestroyed,
+			),
+		).toEqual([]);
+		expect(destroyedNotes).toEqual([
+			'Safari kept the memory of stopped engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts and stops in frames, and for 2 after',
+			'Safari kept the memory of stopped engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts and stops in frames, and for 2 after, and for 2 after 10 more within 31 s',
+		]);
+		expect(
+			judge(
+				destroyedInFrames.check,
+				heldInFrames({ room: 2, ...failed, error: 'E1109: refused' }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop in a frame 3 of 10 in the second round failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
+	});
+
+	it('runs the restart pages with frames in runner pages of their own', () => {
+		const own = items.filter((item) => item.ownTab).map((item) => item.id);
+		expect(own).toEqual(
+			items
+				.filter(
+					(item) =>
+						item.check.kind === 'restarts' &&
+						(item.check.start === 'frame' || item.check.start === 'frame-destroyed'),
+				)
+				.map((item) => item.id),
+		);
+		expect(own.length).toBeGreaterThan(0);
 	});
 
 	it('quotes the last steps of a page that gave no result', () => {
@@ -1430,8 +1625,8 @@ describe('the memory plan', () => {
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
 		expect(items[0]).toEqual({
 			id: 'room-256',
-			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&maximum=4096',
-			timeoutSeconds: 90,
+			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&room=full&maximum=4096',
+			timeoutSeconds: 150,
 			check: { kind: 'room', maximumMiB: 256 },
 		});
 		expect(items[1]).toEqual({
@@ -1726,7 +1921,11 @@ describe('parseArgs', () => {
 		expect(planItems(bench)?.every((item) => item.path.endsWith('&half=on&preset=ultra'))).toBe(
 			true,
 		);
-		expect(() => parseArgs(['--switches', '?half=on'])).toThrow('--switches: give page switches');
+		const checks = parseArgs(['--plan', 'governor', '--switches', 'render=main&display-check=off']);
+		expect(checks.switches).toBe('render=main&display-check=off');
+		expect(() => parseArgs(['--switches', '?half=on'])).toThrow(
+			'--switches: give page switches without the ?',
+		);
 	});
 });
 

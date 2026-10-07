@@ -6,11 +6,14 @@ import {
 	blenderMorphBuilder,
 	boxArrays,
 	boxPrimitive,
+	colorMorphBuilder,
 	faceTargets,
 	GltfBuilder,
 	type GltfJson,
+	iorBuilder,
 	morphBuilder,
 	shipBuilder,
+	specularBuilder,
 } from '../../../../tests/pages/lib/gltf-files';
 import {
 	type GltfData,
@@ -27,6 +30,9 @@ const URL_OF = 'https://example.com/models/test.glb';
 function parse(file: Uint8Array, url = URL_OF): GltfData {
 	return parseGltf(readContainer(file, url), new Map(), url);
 }
+
+/** A number rounded to a thousandth, past the steps of 8-bit and 16-bit fractions. */
+const rounded = (value: number) => Math.round(value * 1000) / 1000;
 
 /** The code and message of the error that parsing a file throws. */
 function refusal(file: Uint8Array): [string, string] {
@@ -474,6 +480,76 @@ describe('materials, textures and lights', () => {
 		});
 	});
 
+	test('a material without KHR_materials_specular or KHR_materials_ior takes their defaults', () => {
+		const [red] = parse(shipBuilder().glb()).materials;
+		expect(red).toMatchObject({ ior: 1.5, specularIntensity: 1, specularColor: [1, 1, 1] });
+		expect(red?.maps.specularIntensityMap).toBeUndefined();
+		expect(red?.maps.specularColorMap).toBeUndefined();
+	});
+
+	test('KHR_materials_specular gives the factors, and its textures in their color spaces', () => {
+		const data = parse(specularBuilder().glb());
+		const byName = new Map(data.materials.map((m) => [m.name, m]));
+		expect(byName.get('factor 3')).toMatchObject({
+			specularIntensity: 0.520996,
+			specularColor: [1, 1, 1],
+			ior: 1.5,
+		});
+		expect(byName.get('yellow 2')?.specularColor).toEqual([0.212231, 0.212231, 0]);
+		// Color factors above 1 stay, as glTF allows; the shader caps the reflectance.
+		expect(byName.get('bright 4')?.specularColor).toEqual([25, 25, 25]);
+		const intensity = byName.get('texture 0')?.maps.specularIntensityMap ?? -1;
+		const color = byName.get('gray texture 0')?.maps.specularColorMap ?? -1;
+		expect(data.textures[intensity]).toMatchObject({
+			image: 0,
+			colorSpace: 'linear',
+			filter: 'nearest',
+		});
+		expect(data.textures[color]).toMatchObject({ image: 1, colorSpace: 'srgb' });
+		expect(byName.get('texture 0')?.maps.specularColorMap).toBeUndefined();
+	});
+
+	test('KHR_materials_ior gives the index, and 0 stands for a very large one', () => {
+		const data = parse(iorBuilder().glb());
+		const iors = data.materials.filter((m) => m.name.startsWith('smooth')).map((m) => m.ior);
+		expect(iors).toEqual([1, 1.25, 1.5, 2, 3, 1000]);
+		expect(data.materials.find((m) => m.name === 'half metal ior 2')).toMatchObject({
+			ior: 2,
+			metalness: 0.5,
+			specularIntensity: 0.6,
+			specularColor: [1, 0.6, 0.3],
+		});
+	});
+
+	test('specular and ior values outside their ranges give E1416', () => {
+		const withExtensions = (extensions: GltfJson) => {
+			const b = shipBuilder().uses('KHR_materials_specular').uses('KHR_materials_ior');
+			b.json.materials[0].extensions = extensions;
+			return b.glb();
+		};
+		const cases: [GltfJson, string][] = [
+			[{ KHR_materials_ior: { ior: 0.5 } }, "material 0's ior is 0.5"],
+			[{ KHR_materials_ior: { ior: 'glass' } }, "material 0's ior is glass"],
+			[{ KHR_materials_specular: { specularFactor: 2 } }, "material 0's specularFactor is 2"],
+			[
+				{ KHR_materials_specular: { specularColorFactor: [1, -1, 1] } },
+				"material 0's specularColorFactor has a component below 0",
+			],
+			[
+				{ KHR_materials_specular: { specularColorFactor: [1, 1] } },
+				"material 0's specularColorFactor is not 3 numbers",
+			],
+			[
+				{ KHR_materials_specular: { specularTexture: { index: 9 } } },
+				"material 0's specularTexture",
+			],
+		];
+		for (const [extensions, message] of cases) {
+			const [code, text] = refusal(withExtensions(extensions));
+			expect([code, text.includes(message)]).toEqual(['E1416', true]);
+		}
+	});
+
 	test('KHR_texture_basisu names the KTX2 image of a texture', () => {
 		const b = shipBuilder().uses('KHR_texture_basisu', true);
 		const ktx2 = readFileSync(
@@ -486,6 +562,39 @@ describe('materials, textures and lights', () => {
 		expect(data.textures[0]?.image).toBe(0);
 		expect(data.images[0]?.mimeType).toBe('image/ktx2');
 		expect(data.images[0]?.bytes?.length).toBe(ktx2.length);
+	});
+
+	test('EXT_texture_webp and EXT_texture_avif name the image of a texture, after KTX2', () => {
+		const b = shipBuilder()
+			.uses('EXT_texture_webp', true)
+			.uses('EXT_texture_avif', true)
+			.uses('KHR_texture_basisu');
+		b.json.images = ['image/png', 'image/webp', 'image/avif', 'image/ktx2'].map((mimeType, k) => ({
+			bufferView: b.view(new Uint8Array([k])),
+			mimeType,
+		}));
+		const webp = { EXT_texture_webp: { source: 1 } };
+		const avif = { EXT_texture_avif: { source: 2 } };
+		const basisu = { KHR_texture_basisu: { source: 3 } };
+		b.json.textures = [
+			{ source: 0, extensions: webp },
+			{ source: 0, extensions: avif },
+			{ extensions: { ...avif, ...webp } },
+			{ source: 0, extensions: { ...avif, ...basisu } },
+			{ source: 0 },
+		];
+		const slots = ['baseColorTexture', 'metallicRoughnessTexture'] as const;
+		b.json.materials = b.json.textures.map((_: unknown, k: number) => ({
+			pbrMetallicRoughness: { [slots[k % 2] as string]: { index: k } },
+		}));
+		const data = parse(b.glb());
+		// Each material's map names its image: WebP, AVIF, WebP before AVIF, KTX2 before both, and
+		// the texture's own source without an extension.
+		const images = data.materials.map(({ maps }, k) => {
+			const use = data.textures[(k % 2 ? maps.metalnessRoughnessMap : maps.map) ?? -1];
+			return use && data.images[use.image]?.mimeType;
+		});
+		expect(images).toEqual(['image/webp', 'image/avif', 'image/webp', 'image/ktx2', 'image/png']);
 	});
 
 	test('lights keep glTF units, and spot cones take three.js penumbras', () => {
@@ -646,6 +755,104 @@ describe('skins and clips', () => {
 		expect(new Set(array.filter((_, i) => i % 4 === 0))).toEqual(new Set([5, 1]));
 	});
 
+	/** The box and the place at rest of a node's copy that joints move, rounded. */
+	const restOf = (b: GltfBuilder, name = 'Sleeve') => {
+		const data = parse(b.glb());
+		const node = data.nodes.find((n) => n.name === name);
+		const p = data.meshes[node?.mesh ?? -1]?.primitives[0];
+		return {
+			box: [p?.min.map(rounded), p?.max.map(rounded)],
+			matrix: p?.rest?.matrix.map((v) => rounded(v) + 0),
+			exact: p?.rest?.exact,
+		};
+	};
+	const IDENTITY_ROWS = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+
+	test("a skinned copy's box holds its vertices where its joints place them at rest", () => {
+		expect(restOf(armBuilder())).toEqual({
+			box: [
+				[-0.2, 1, -0.2],
+				[0.2, 3, 0.2],
+			],
+			matrix: IDENTITY_ROWS,
+			exact: true,
+		});
+		// The joints carry the sleeve 2 m further along z, and the skinned node's own place counts
+		// for nothing, as glTF says.
+		const b = armBuilder();
+		b.json.nodes.find((n: GltfJson) => n.name === 'Arm').translation = [0, 0, 3];
+		b.json.nodes.find((n: GltfJson) => n.name === 'Sleeve').translation = [5, 5, 5];
+		expect(restOf(b)).toEqual({
+			box: [
+				[-0.2, 1, 1.8],
+				[0.2, 3, 2.2],
+			],
+			matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 2],
+			exact: true,
+		});
+	});
+
+	test('positions stored as integers, with their scale in the inverse bind matrices, give the same box', () => {
+		// The asset tool's quantization: 14-bit steps of the mesh's volume, with the transform that
+		// turns them back into meters folded into each inverse bind matrix.
+		const b = armBuilder();
+		const tall = boxArrays(0.4).positions.map((p, i) => (i % 3 === 1 ? p * 5 + 2 : p));
+		const offset = [-0.2, 1, -0.2] as const;
+		const step = 2 / 16383;
+		const steps = Uint16Array.from(tall, (p, i) =>
+			Math.round((p - (offset[i % 3] as number)) / step),
+		);
+		b.json.meshes[1].primitives[0].attributes.POSITION = b.positions(steps);
+		const binds = [
+			[0, 2, 1],
+			[0, 1, 1],
+			[0, 3, 1],
+		].flatMap(([x = 0, y = 0, z = 0]) => [
+			...[step, 0, 0, 0, 0, step, 0, 0, 0, 0, step, 0],
+			...[offset[0] - x, offset[1] - y, offset[2] - z, 1],
+		]);
+		b.json.skins[0].inverseBindMatrices = b.accessor(new Float32Array(binds), 16, {
+			type: 'MAT4',
+			count: 3,
+		});
+		const { box, matrix, exact } = restOf(b);
+		expect(box).toEqual([
+			[-0.2, 1, -0.2],
+			[0.2, 3, 0.2],
+		]);
+		// A batch draws the integers through the scale and offset that turn them back.
+		expect(exact).toBe(true);
+		expect(matrix).toEqual([0, 0, 0, -0.2, 0, 0, 0, 1, 0, 0, 0, -0.2]);
+	});
+
+	test('a skinned copy whose rest pose is not its bind pose has no exact place', () => {
+		// Elbow turns a quarter about z at rest, and the skin binds it straight. Shoulder carries
+		// most of the sleeve's weight, and rests where it binds.
+		const b = armBuilder();
+		b.json.nodes.find((n: GltfJson) => n.name === 'Elbow').rotation = [
+			0,
+			0,
+			Math.SQRT1_2,
+			Math.SQRT1_2,
+		];
+		const { box, matrix, exact } = restOf(b);
+		expect(exact).toBe(false);
+		expect(matrix).toEqual(IDENTITY_ROWS);
+		// The upper half swings toward -x.
+		expect(box[0]?.[0]).toBeLessThan(-0.2);
+	});
+
+	test('a copy that one joint moves rests where the joint does', () => {
+		expect(restOf(armBuilder(), 'Sword')).toEqual({
+			box: [
+				[-0.05, 3, 0.95],
+				[0.05, 4, 1.05],
+			],
+			matrix: [0.1, 0, 0, 0, 0, 1, 0, 3.5, 0, 0, 0.1, 1],
+			exact: true,
+		});
+	});
+
 	test('a file without skins or clips has no animation data', () => {
 		expect(parse(shipBuilder().glb()).animation).toBeUndefined();
 	});
@@ -795,6 +1002,50 @@ describe('morph targets', () => {
 		expect(data.animation?.clips.map((c) => c.name)).toEqual(['Talk']);
 	});
 
+	test('COLOR_0 targets read as deltas of as many numbers per vertex as the colors hold', () => {
+		const data = parse(colorMorphBuilder().glb());
+		expect(data.notes).toEqual([]);
+		const [left, middle, right] = data.meshes[0]?.primitives ?? [];
+		const plain = (deltas: Float32Array | undefined) => Array.from(deltas ?? []).map(rounded);
+		// The left panel's colors have alpha and its targets do not, so their alpha deltas are 0.
+		// Its second target is sparse and moves only the right half.
+		expect(left?.morph?.colors).toHaveLength(2);
+		const warm = left?.morph?.colors?.[0] ?? new Float32Array();
+		expect(warm).toHaveLength(49 * 4);
+		expect(plain(warm.subarray(48 * 4, 49 * 4))).toEqual([0.8, -0.5, 0, 0]);
+		const blue = left?.morph?.colors?.[1] ?? new Float32Array();
+		expect(plain(blue.subarray(0, 4))).toEqual([0, 0, 0, 0]);
+		expect(plain(blue.subarray(6 * 4, 7 * 4))).toEqual([-0.2, 0, 0.8, 0]);
+		// The middle panel's deltas of normalized 16-bit integers read as fractions, alpha too.
+		const fade = middle?.morph?.colors?.[0] ?? new Float32Array();
+		expect(plain(fade.subarray(48 * 4, 49 * 4))).toEqual([-0.8, 0.6, 0, -0.5]);
+		// The right panel's targets move only positions.
+		expect(right?.morph?.colors).toBeUndefined();
+		expect(right?.morph?.positions).toHaveLength(2);
+	});
+
+	test('a COLOR_0 target of colors without alpha keeps no alpha delta', () => {
+		const b = colorMorphBuilder();
+		const right = b.json.meshes[0].primitives[2];
+		right.attributes.COLOR_0 = b.accessor(new Float32Array(49 * 3).fill(0.5), 3);
+		right.targets[1].COLOR_0 = b.accessor(
+			new Float32Array(49 * 4).map((_, k) => k % 4),
+			4,
+		);
+		const colors = parse(b.glb()).meshes[0]?.primitives[2]?.morph?.colors;
+		expect(Array.from(colors?.[0] ?? [])).toEqual(new Array(49 * 3).fill(0));
+		expect(Array.from(colors?.[1]?.subarray(0, 6) ?? [])).toEqual([0, 1, 2, 0, 1, 2]);
+	});
+
+	test('a target that leaves out an attribute that another target moves moves it by nothing', () => {
+		const b = morphBuilder();
+		const [up] = b.json.meshes[0].primitives[0].targets;
+		b.json.meshes[0].primitives[0].targets = [{}, up];
+		const morph = parse(b.glb()).meshes[0]?.primitives[0]?.morph;
+		expect(morph?.positions?.[0]?.every((d) => d === 0)).toBe(true);
+		expect(morph?.positions?.[1]?.some((d) => d !== 0)).toBe(true);
+	});
+
 	test('broken morph targets are refused with E1416', () => {
 		const b = morphBuilder();
 		b.json.meshes[0].weights = [1];
@@ -804,7 +1055,13 @@ describe('morph targets', () => {
 		expect(refusal(c.glb())[1]).toContain('3 values for 2 keys of 2');
 		const e = morphBuilder();
 		e.json.meshes[0].primitives[0].targets[1].COLOR_0 = e.accessor(new Float32Array(96), 4);
-		expect(parse(e.glb()).notes.join()).toContain('move COLOR_0, which the engine does not morph');
+		expect(parse(e.glb()).notes.join()).toContain(
+			"move COLOR_0, which the engine does not morph (COLOR_0 needs the primitive's own COLOR_0)",
+		);
+		const f = colorMorphBuilder();
+		const quantized = f.accessor(new Uint8Array(49 * 3), 3);
+		f.json.meshes[0].primitives[0].targets[0].COLOR_0 = quantized;
+		expect(refusal(f.glb())[1]).toContain('COLOR_0 deltas are integers that are not normalized');
 		const d = morphBuilder();
 		d.json.nodes[0].weights = [1, 2, 3];
 		expect(refusal(d.glb())[1]).toContain("node 0's weights is not 2 numbers");

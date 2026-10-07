@@ -1,5 +1,10 @@
 import { expect, type Page, test } from '@playwright/test';
-import { POLICY_WITHOUT_WASM, STRICT_POLICY } from '../lib/content-security-policy.ts';
+import { ALONE } from '../lib/alone.ts';
+import {
+	POLICY_WITHOUT_WASM,
+	STRICT_POLICY,
+	STRICT_POLICY_WITH_DATA,
+} from '../lib/content-security-policy.ts';
 import { ENGINE_MODES, type EngineResult, engineProblems } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -31,16 +36,18 @@ async function withPolicy(page: Page, policy: string): Promise<string[]> {
 test.afterEach(({ page }) => page.unrouteAll({ behavior: 'ignoreErrors' }));
 
 for (const mode of ENGINE_MODES)
-	test(`the engine starts under a strict Content-Security-Policy, ${mode.name}`, async ({
-		page,
-	}) => {
-		const violations = await withPolicy(page, STRICT_POLICY);
-		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
-		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
-		expect(result.error).toBeUndefined();
-		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
-		expect(violations).toEqual([]);
-	});
+	test(
+		`the engine starts under a strict Content-Security-Policy, ${mode.name}`,
+		ALONE,
+		async ({ page }) => {
+			const violations = await withPolicy(page, STRICT_POLICY);
+			await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
+			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+			expect(violations).toEqual([]);
+		},
+	);
 
 for (const mode of ENGINE_MODES.filter(({ name }) =>
 	['pipelined', 'single-threaded'].includes(name),
@@ -56,4 +63,23 @@ for (const mode of ENGINE_MODES.filter(({ name }) =>
 				`^E1418: the page's Content-Security-Policy does not let the ${mode.build} engine core compile: `,
 			),
 		);
+	});
+
+// The KTX2 transcoder and the meshopt decoder run in the engine's workers, which take the page's
+// policy too: their code makes no code from strings, so the policy needs no 'unsafe-eval'.
+for (const mode of ENGINE_MODES.filter(({ name }) =>
+	['pipelined', 'single-threaded'].includes(name),
+))
+	test(`the KTX2 transcoder and the meshopt decoder run under a strict Content-Security-Policy, ${mode.name}`, async ({
+		page,
+	}) => {
+		const violations = await withPolicy(page, STRICT_POLICY_WITH_DATA);
+		await page.goto(`ktx2-files.html?gpu=webgl2&decoders&${mode.query}`);
+		const result = await pageResult<{ error?: string; recorded: { formats: string[] } }>(
+			page,
+			60_000,
+		);
+		expect(result.error).toBeUndefined();
+		expect(result.recorded.formats).toHaveLength(8);
+		expect(violations).toEqual([]);
 	});

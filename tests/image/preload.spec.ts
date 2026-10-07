@@ -20,7 +20,7 @@ interface PreloadResult {
 
 /** The address of a shader file of a feature that loads on first use, with its feature. */
 const FEATURE_FILE =
-	/\/shaders-(ao|background|bloom|lines|morph|skinning|sprites|texcoords)-[^/]*$/;
+	/\/shaders-(ao|background|bloom|lines|morph|skinning|sky|sprites|texcoords)-[^/]*$/;
 
 /** The feature whose file holds each path's builds for morph targets. */
 const MORPH_FILE = { webgpu: 'skinning', webgl2: 'morph' } as const;

@@ -3,16 +3,18 @@
 //!
 //! # Sparse deltas
 //!
-//! A morph target moves some of a mesh's vertices: their positions, and maybe their normals and
-//! tangents. A mesh stores, for each vertex, only the targets that move it, as entries one after
-//! another in the storage's list of delta texels, in half floats. An entry is one texel of the position's delta,
-//! with the target's number in its fourth value, then one texel of the normal's delta and one of
-//! the tangent's, where the mesh's targets move them. The vertex's morph attribute (location 8)
-//! holds its first entry's texel and, as `count * 4 + attributes`, its entry count and whether the
-//! entries hold normals (1) and tangents (2). Both are whole numbers in 32-bit floats, exact below
-//! 2^24. A vertex that no target moves has no entry, so a face whose targets each move a part of it
-//! stores a fraction of what three.js's morph texture holds, which has every vertex of every
-//! target.
+//! A morph target moves some of a mesh's vertices: their positions, and maybe their normals,
+//! tangents and colors. A mesh stores, for each vertex, only the targets that move it, as entries
+//! one after another in the storage's list of delta texels, in half floats. An entry is one texel
+//! of the position's delta, with the target's number in its fourth value, then one texel each of
+//! the normal's, the tangent's and the color's delta, where the mesh's targets move them. The
+//! vertex's morph attribute (location 8) holds its first entry's texel and, as
+//! `count * 8 + attributes`, its entry count and whether the entries hold normals (1), tangents (2)
+//! and colors (4). Both are whole numbers in 32-bit floats, exact below 2^24. A vertex that no
+//! target moves has no entry, so a face whose targets each move a part of it stores a fraction of
+//! what three.js's morph texture holds, which has every vertex of every target.
+//!
+//! A morphed color is clamped to the range 0 to 1, as the glTF specification asks of `COLOR_0`.
 //!
 //! # Weights
 //!
@@ -64,26 +66,35 @@ pub const MORPH_LOCATION: usize = 8;
 pub const ENTRY_NORMALS: u32 = 1;
 /// The attributes bit of an entry that holds a tangent's delta.
 pub const ENTRY_TANGENTS: u32 = 2;
+/// The attributes bit of an entry that holds a color's delta.
+pub const ENTRY_COLORS: u32 = 4;
+/// What the entry count of a morph attribute is multiplied by: one more than every attributes bit.
+pub const ENTRY_COUNT_SCALE: u32 = 8;
 /// The weights base of an object that no block morphs.
 pub const NOT_MORPHED: u32 = u32::MAX;
 
-/// A mesh's morph targets as arrays give them: for each attribute they move, three numbers per
-/// vertex of each target, target after target.
+/// A mesh's morph targets as arrays give them: for each attribute they move, its numbers per vertex
+/// of each target, target after target. Positions, normals and tangents take three numbers per
+/// vertex, and colors four, an alpha after red, green and blue.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MorphTargets<'a> {
     pub targets: u32,
     pub positions: Option<&'a [f32]>,
     pub normals: Option<&'a [f32]>,
     pub tangents: Option<&'a [f32]>,
+    pub colors: Option<&'a [f32]>,
 }
+
+/// The numbers per vertex of each morph target array, in the order of [`MorphTargets::arrays`].
+pub const ARRAY_VALUES: [usize; 4] = [3, 3, 3, 4];
 
 /// Why a mesh's morph targets make no morphed mesh.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MorphError {
-    /// An array does not hold three numbers per vertex of each target, or a mesh has no target.
+    /// An array does not hold its numbers per vertex of each target, or a mesh has no target.
     Length,
-    /// A delta is NaN or infinite: its array, 0 for positions, 1 for normals and 2 for tangents,
-    /// and its place in the array.
+    /// A delta is NaN or infinite: its array, 0 for positions, 1 for normals, 2 for tangents and
+    /// 3 for colors, and its place in the array.
     NotFinite { array: u32, at: u32 },
     /// The targets move one vertex more than [`MAX_VERTEX_ENTRIES`] times, or every mesh's deltas
     /// together would pass [`MAX_DELTA_TEXELS`].
@@ -140,21 +151,28 @@ pub struct SparseDeltas {
     pub reach: Vec<f32>,
 }
 
-impl MorphTargets<'_> {
-    /// Values per entry: the position's texel, then the normal's and the tangent's where the
-    /// targets move them.
+impl<'a> MorphTargets<'a> {
+    /// The arrays in entry order: positions, normals, tangents and colors.
+    pub fn arrays(&self) -> [Option<&'a [f32]>; 4] {
+        [self.positions, self.normals, self.tangents, self.colors]
+    }
+
+    /// The attributes bits of each entry: which deltas follow the position's texel.
     fn attributes(&self) -> u32 {
         u32::from(self.normals.is_some()) * ENTRY_NORMALS
             + u32::from(self.tangents.is_some()) * ENTRY_TANGENTS
+            + u32::from(self.colors.is_some()) * ENTRY_COLORS
     }
 
     /// The sparse entries of a mesh of `vertices` vertices whose first entry lands at texel
     /// `first` of the storage's delta texels.
     pub fn sparse(&self, vertices: usize, first: u32) -> Result<SparseDeltas, MorphError> {
         let targets = self.targets as usize;
-        let length = targets * vertices * 3;
-        let arrays = [self.positions, self.normals, self.tangents];
-        if targets == 0 || arrays.iter().flatten().any(|a| a.len() != length) {
+        let arrays = self.arrays();
+        let fits = |(array, values): (&Option<&[f32]>, &usize)| {
+            array.is_none_or(|a| a.len() == targets * vertices * values)
+        };
+        if targets == 0 || !arrays.iter().zip(&ARRAY_VALUES).all(fits) {
             return Err(MorphError::Length);
         }
         for (k, array) in arrays.iter().enumerate() {
@@ -167,13 +185,17 @@ impl MorphTargets<'_> {
         }
         let attributes = self.attributes();
         let stride = 1 + attributes.count_ones() as usize;
-        let delta = |array: Option<&[f32]>, t: usize, v: usize| -> [f32; 3] {
-            array.map_or([0.0; 3], |a| {
-                let at = (t * vertices + v) * 3;
-                [a[at], a[at + 1], a[at + 2]]
+        // A delta as a texel's four values: an array of three numbers per vertex leaves the fourth 0.
+        let delta = |k: usize, t: usize, v: usize| -> [f32; 4] {
+            let values = ARRAY_VALUES[k];
+            arrays[k].map_or([0.0; 4], |a| {
+                let at = (t * vertices + v) * values;
+                let mut out = [0.0; 4];
+                out[..values].copy_from_slice(&a[at..at + values]);
+                out
             })
         };
-        let moves = |t: usize, v: usize| arrays.iter().any(|a| delta(*a, t, v) != [0.0; 3]);
+        let moves = |t: usize, v: usize| (0..arrays.len()).any(|k| delta(k, t, v) != [0.0; 4]);
         let count = (0..vertices)
             .map(|v| (0..targets).filter(|&t| moves(t, v)).count())
             .try_fold(0usize, |sum, n| {
@@ -193,19 +215,18 @@ impl MorphTargets<'_> {
             let start = first + out.texels.len() as u32;
             let mut entries = 0u32;
             for t in (0..targets).filter(|&t| moves(t, v)) {
-                let [x, y, z] = delta(self.positions, t, v);
+                let [x, y, z, _] = delta(0, t, v);
                 let texel = half_texel([x, y, z, t as f32]);
                 let [x, y, z, _] = texel.map(half_to_f32);
                 out.reach[t] = out.reach[t].max((x * x + y * y + z * z).sqrt());
                 out.texels.push(texel);
-                for array in [self.normals, self.tangents].into_iter().flatten() {
-                    let [x, y, z] = delta(Some(array), t, v);
-                    out.texels.push(half_texel([x, y, z, 0.0]));
+                for k in (1..arrays.len()).filter(|&k| arrays[k].is_some()) {
+                    out.texels.push(half_texel(delta(k, t, v)));
                 }
                 entries += 1;
             }
-            out.ranges
-                .push([start as f32, (entries * 4 + attributes) as f32]);
+            let word = entries * ENTRY_COUNT_SCALE + attributes;
+            out.ranges.push([start as f32, word as f32]);
         }
         Ok(out)
     }
@@ -509,6 +530,16 @@ impl MorphTexture {
         write_texels(list, self.weights, texels, WEIGHT_BYTES, at)
     }
 
+    /// Uploads the delta texels again from texel `first` on, where a removal of meshes moved them.
+    pub(crate) fn deltas_moved(&mut self, first: u32) {
+        self.uploaded = self.uploaded.min(first);
+    }
+
+    /// The GPU bytes of the texture of deltas.
+    pub(crate) fn delta_bytes(&self) -> u64 {
+        u64::from(self.delta_rows) * u64::from(TEXTURE_WIDTH) * u64::from(DELTA_BYTES)
+    }
+
     /// Forgets the textures, after the thread that draws replaced the GPU.
     pub(crate) fn forget_gpu(&mut self) {
         self.delta_rows = 0;
@@ -591,10 +622,11 @@ mod tests {
             positions: Some(&positions),
             normals: Some(&normals),
             tangents: None,
+            colors: None,
         };
         let sparse = targets.sparse(3, 10).unwrap();
         // Vertex 0: two entries of two texels; vertex 1: the normal of target 1; vertex 2: one.
-        assert_eq!(sparse.ranges, vec![[10.0, 9.0], [14.0, 5.0], [16.0, 5.0]]);
+        assert_eq!(sparse.ranges, vec![[10.0, 17.0], [14.0, 9.0], [16.0, 9.0]]);
         assert_eq!(sparse.texels[0].map(half_to_f32), [1.0, 0.0, 0.0, 0.0]);
         assert_eq!(sparse.texels[2].map(half_to_f32), [0.0, 2.0, 0.0, 1.0]);
         assert_eq!(sparse.texels[5].map(half_to_f32), [0.5, 0.0, 0.0, 0.0]);
@@ -621,6 +653,53 @@ mod tests {
             targets.sparse(3, MAX_DELTA_TEXELS - 4).unwrap_err(),
             MorphError::TooLarge
         );
+    }
+
+    #[test]
+    fn a_color_delta_follows_the_other_deltas_of_its_entry() {
+        // Two vertices and two targets: the first moves vertex 0's position, the second only
+        // vertex 1's color, its alpha too.
+        let positions = [[0.0, 1.0, 0.0, 0.0, 0.0, 0.0], [0.0; 6]].concat();
+        let colors = [[0.0; 8], [0.0, 0.0, 0.0, 0.0, 0.5, -0.25, 0.0, -1.0]].concat();
+        let targets = MorphTargets {
+            targets: 2,
+            positions: Some(&positions),
+            normals: None,
+            tangents: None,
+            colors: Some(&colors),
+        };
+        let sparse = targets.sparse(2, 0).unwrap();
+        // Each vertex has one entry of two texels: the position's, then the color's.
+        let word = (ENTRY_COUNT_SCALE + ENTRY_COLORS) as f32;
+        assert_eq!(sparse.ranges, vec![[0.0, word], [2.0, word]]);
+        assert_eq!(sparse.texels[1].map(half_to_f32), [0.0; 4]);
+        assert_eq!(sparse.texels[2].map(half_to_f32), [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(sparse.texels[3].map(half_to_f32), [0.5, -0.25, 0.0, -1.0]);
+        // A color moves no position, so the second target reaches nowhere.
+        assert_eq!(sparse.reach, vec![1.0, 0.0]);
+
+        // Colors take four numbers per vertex of each target.
+        let short = MorphTargets {
+            colors: Some(&colors[..12]),
+            ..targets
+        };
+        assert_eq!(short.sparse(2, 0).unwrap_err(), MorphError::Length);
+        let mut bad = colors.clone();
+        bad[13] = f32::INFINITY;
+        let bad = MorphTargets {
+            colors: Some(&bad),
+            ..targets
+        };
+        assert_eq!(
+            bad.sparse(2, 0).unwrap_err(),
+            MorphError::NotFinite { array: 3, at: 13 }
+        );
+        // The colors' texels count toward the cap on every mesh's deltas.
+        assert_eq!(
+            targets.sparse(2, MAX_DELTA_TEXELS - 3).unwrap_err(),
+            MorphError::TooLarge
+        );
+        assert!(targets.sparse(2, MAX_DELTA_TEXELS - 4).is_ok());
     }
 
     #[test]
@@ -670,6 +749,7 @@ mod tests {
             positions: Some(&positions),
             normals: None,
             tangents: None,
+            colors: None,
         };
         let mut meshes = MeshStorage::new(Packing::Pages);
         let mesh = meshes.add_morphed(&geometry, &targets).unwrap() + 1;

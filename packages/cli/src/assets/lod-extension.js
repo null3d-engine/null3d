@@ -1,12 +1,18 @@
 // Levels of detail in glTF files, as the MSFT_lod extension stores them. A node with levels names
-// the nodes that draw its lower levels, in order, and its extras give the screen coverage below
-// which each level gives way to the next. glTF-Transform drops extensions it does not know, so
-// the tool reads and writes this one itself.
+// the nodes that draw its lower levels, in order. Its extras give the screen coverage below which
+// each level gives way to the next, and the engine's own field, NULL3D_lod_error, gives each lower
+// level's error: the largest distance between its surface and the full mesh's, in the units of
+// the mesh's stored positions, or of the scene that holds its skeleton for a skinned mesh, in its
+// rest pose. glTF-Transform drops extensions it does not know, so the tool reads
+// and writes this one itself.
 import { Extension, ExtensionProperty, PropertyType, RefList } from '@gltf-transform/core';
 
 /** @import { Node, ReaderContext, WriterContext } from '@gltf-transform/core' */
 
 export const MSFT_LOD = 'MSFT_lod';
+
+/** The extras field that holds each lower level's error. */
+export const LOD_ERROR = 'NULL3D_lod_error';
 
 /**
  * A node's lower levels of detail and the screen coverage of each level.
@@ -27,7 +33,7 @@ export class Lod extends ExtensionProperty {
 
 	/** @returns {any} */
 	getDefaults() {
-		return Object.assign(super.getDefaults(), { levels: new RefList(), coverage: [] });
+		return Object.assign(super.getDefaults(), { levels: new RefList(), coverage: [], errors: [] });
 	}
 
 	/**
@@ -63,6 +69,22 @@ export class Lod extends ExtensionProperty {
 	setCoverage(coverage) {
 		return this.set('coverage', coverage);
 	}
+
+	/**
+	 * Each lower level's error, in the order of the levels: the largest distance between its
+	 * surface and the full mesh's, in the units of the mesh's stored positions, or of the scene
+	 * that holds its skeleton for a skinned mesh.
+	 *
+	 * @returns {number[]}
+	 */
+	getErrors() {
+		return this.get('errors');
+	}
+
+	/** @param {number[]} errors */
+	setErrors(errors) {
+		return this.set('errors', errors);
+	}
 }
 
 /**
@@ -95,8 +117,10 @@ export class MSFTLod extends Extension {
 				const level = context.nodes[id];
 				if (level) lod.addLevel(level);
 			}
-			const coverage = /** @type {any} */ (def.extras)?.MSFT_screencoverage;
-			if (Array.isArray(coverage)) lod.setCoverage(coverage.map(Number));
+			const extras = /** @type {any} */ (def.extras);
+			if (Array.isArray(extras?.MSFT_screencoverage))
+				lod.setCoverage(extras.MSFT_screencoverage.map(Number));
+			if (Array.isArray(extras?.[LOD_ERROR])) lod.setErrors(extras[LOD_ERROR].map(Number));
 			context.nodes[index]?.setExtension(MSFT_LOD, /** @type {any} */ (lod));
 		});
 		return this;
@@ -115,7 +139,13 @@ export class MSFTLod extends Extension {
 				ids: lod.listLevels().map((level) => context.nodeIndexMap.get(level)),
 			};
 			const coverage = lod.getCoverage();
-			if (coverage.length > 0) def.extras = { ...def.extras, MSFT_screencoverage: coverage };
+			const errors = lod.getErrors();
+			def.extras = {
+				...def.extras,
+				...(coverage.length > 0 && { MSFT_screencoverage: coverage }),
+				...(errors.length > 0 && { [LOD_ERROR]: errors }),
+			};
+			if (Object.keys(def.extras).length === 0) delete def.extras;
 		}
 		return this;
 	}

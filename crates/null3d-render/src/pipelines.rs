@@ -22,7 +22,8 @@
 //! The test for equal depth needs both passes to give each pixel the same depth, to the last bit.
 //! Each GPU path draws the prepass in the way that does so on it ([`Prepass`]).
 
-use null3d_gpu::drawlist::{DrawList, Op, permutation, state_flags, template};
+use null3d_core::frames::frame_after;
+use null3d_gpu::drawlist::{DrawList, Op, format, permutation, state_flags, template};
 
 use crate::frame::RecordError;
 
@@ -124,12 +125,22 @@ impl PassTargets {
             ..self
         }
     }
+
+    /// The occluders' pass of occlusion culling: the depth target alone, with one sample, whatever
+    /// the scene's samples.
+    pub(crate) const fn occluder_depth(self) -> PassTargets {
+        PassTargets {
+            color_format: format::NONE,
+            samples: 1,
+            ..self.depth_only()
+        }
+    }
 }
 
-/// How a frame builder's depth prepass draws the depth of the pairs that it takes.
+/// How a frame builder draws the depth of opaque pairs before the pass that shades them, if at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Prepass {
-    /// No depth prepass.
+    /// No such pass.
     Off,
     /// With the depth template's prepass build, which computes each position with the same steps
     /// as the shading templates. Every template marks its position invariant, and on WebGPU that
@@ -141,6 +152,9 @@ pub enum Prepass {
     /// both mark the position invariant: ANGLE on Metal did so in Chrome on a Mac. Two programs
     /// with the same vertex shader gave the same depths.
     OwnVertexShader,
+    /// The occluders' pass of occlusion culling: a render pass of its own with no color target,
+    /// whose depth the depth pyramid reads. The pairs then shade as they would without it.
+    Occluders,
 }
 
 impl Prepass {
@@ -169,6 +183,12 @@ impl DrawKey {
         self.state & state_flags::BLEND != 0
     }
 
+    /// True when the pair writes depth wherever it draws, so a background drawn after the opaque
+    /// objects leaves its pixels alone.
+    pub const fn writes_depth(self) -> bool {
+        self.state & (state_flags::NO_DEPTH_WRITE | state_flags::NO_DEPTH_TEST) == 0
+    }
+
     /// The key of the pipeline that draws the pair's depth in the depth prepass with the depth
     /// template ([`Prepass::DepthTemplate`]), or `None` when the pair stays out of the prepass. The
     /// depth template places the vertices of the engine's templates as they do, with the same faces
@@ -190,9 +210,10 @@ impl DrawKey {
             return None;
         }
         let faces = state_flags::CULL_NONE | state_flags::CULL_FRONT;
+        let kept = permutation::SKIN | permutation::INSTANCE_INDEX;
         Some(DrawKey {
             template: template::SHADOW_DEPTH,
-            permutation: permutation::PREPASS | (self.permutation & permutation::SKIN),
+            permutation: permutation::PREPASS | (self.permutation & kept),
             vertex_format: self.vertex_format,
             state: (self.state & faces) | state_flags::NO_COLOR_WRITE,
             bias: self.bias,
@@ -207,6 +228,32 @@ impl DrawKey {
         self.template >= template::CUSTOM_FIRST
             || self.template == template::SPRITE
             || self.template == template::SPRITE_MAP
+    }
+
+    /// True for a pair whose template has WebGPU builds that read each instance by index from
+    /// storage buffers ([`permutation::INSTANCE_INDEX`]): the engine's templates that the culling
+    /// shader draws, apart from those that only tests and development builds draw. Custom
+    /// materials, sprites, lines and meshes skinned in the vertex shader read the culling shader's
+    /// copies.
+    pub const fn reads_index(self) -> bool {
+        permutation::buildable(self.permutation | permutation::INSTANCE_INDEX)
+            && matches!(
+                self.template,
+                template::INSTANCED_LIT
+                    | template::INSTANCED_STANDARD_MAPS
+                    | template::INSTANCED_UNLIT
+                    | template::INSTANCED_UNLIT_MAP
+                    | template::SHADOW_DEPTH
+                    | template::OUTLINE_MASK
+            )
+    }
+
+    /// The same key with the build that reads each instance by index.
+    pub const fn by_index(self) -> DrawKey {
+        DrawKey {
+            permutation: self.permutation | permutation::INSTANCE_INDEX,
+            ..self
+        }
     }
 
     /// The key of the pipeline that shades the pair after the depth prepass drew its depth: it
@@ -231,6 +278,13 @@ impl DrawKey {
             bias: self.bias,
         }
     }
+}
+
+/// True when a pipeline that the list of frame `created` made is built, for a builder whose thread
+/// that draws last drew every pipeline built in frame `pipelines_built`: `created` is that frame or
+/// one before it. Frames compare by their order around the count, which goes round.
+pub fn built_by(created: u32, pipelines_built: u32) -> bool {
+    !frame_after(created, pipelines_built)
 }
 
 /// The render pipelines that a frame builder draws with, by key. Ids count from 1 in the order in
@@ -304,13 +358,20 @@ impl PipelineCache {
     }
 
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
-    /// the one that shades it, and with a depth prepass, the one that draws its depth first, or 0
-    /// for a pair that stays out of the prepass.
+    /// the one that shades it, and with a `prepass`, the one that draws its depth first, or 0 for a
+    /// pair that stays out of it. After a depth prepass the pair shades only at the depth that the
+    /// prepass found; the occluders' pass leaves its shading as it is.
     pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: Prepass) -> (u32, u32) {
         let depth = match key.prepass() {
             Some(depth) if prepass != Prepass::Off => depth,
             _ => return (self.id(key.in_pass(targets)), 0),
         };
+        if prepass == Prepass::Occluders {
+            return (
+                self.id(key.in_pass(targets)),
+                self.id(depth.in_pass(targets.occluder_depth())),
+            );
+        }
         let shading = key.after_prepass().in_pass(targets);
         let depth = if prepass == Prepass::OwnVertexShader || key.places_own_vertices() {
             PipelineKey {
@@ -343,7 +404,7 @@ impl PipelineCache {
                 && self
                     .created_in
                     .get(index)
-                    .is_some_and(|&frame| frame <= pipelines_built))
+                    .is_some_and(|&frame| built_by(frame, pipelines_built)))
     }
 
     /// True when every pipeline of `ids` draws, by [`Self::built`].
@@ -544,6 +605,32 @@ mod tests {
     }
 
     #[test]
+    fn a_pipeline_created_in_the_last_frame_of_the_count_draws_once_the_first_frame_is_built() {
+        use null3d_core::frames::{FIRST_FRAME, previous_frame};
+        let last = previous_frame(FIRST_FRAME);
+        assert!(built_by(last, FIRST_FRAME));
+        assert!(!built_by(FIRST_FRAME, last));
+        assert!(built_by(FIRST_FRAME, 2));
+        let mut cache = PipelineCache::default();
+        let mut list = DrawList::with_capacity(256);
+        let id = cache.id(lit(0).in_pass(TARGETS));
+        cache.create_new(&mut list, last).unwrap();
+        assert!(!cache.built(id, previous_frame(last)));
+        assert!(cache.built(id, last));
+        assert!(
+            cache.built(id, FIRST_FRAME),
+            "frame 1 follows the last frame"
+        );
+        let late = cache.id(lit(vertex::UV0).in_pass(TARGETS));
+        cache.create_new(&mut list, FIRST_FRAME).unwrap();
+        assert!(
+            !cache.built(late, last),
+            "the last frame comes before frame 1"
+        );
+        assert!(cache.built(late, FIRST_FRAME));
+    }
+
+    #[test]
     fn released_templates_destroy_their_pipelines_once_and_never_reuse_their_ids() {
         let custom = |vertex_format| DrawKey {
             template: template::CUSTOM_FIRST,
@@ -723,6 +810,20 @@ mod tests {
         let (shading, depth) = cache.opaque(masked, targets, Prepass::DepthTemplate);
         assert_eq!(depth, 0);
         assert_eq!(cache.keys()[shading as usize - 1], masked.in_pass(targets));
+    }
+
+    #[test]
+    fn occluders_draw_depth_alone_and_shade_as_without_them() {
+        let mut cache = PipelineCache::default();
+        let (shading, depth) = cache.opaque(lit(0), TARGETS, Prepass::Occluders);
+        let keys = cache.keys();
+        assert_eq!(keys[shading as usize - 1], lit(0).in_pass(TARGETS));
+        let depth = keys[depth as usize - 1];
+        assert_eq!(depth.template, template::SHADOW_DEPTH);
+        assert_eq!(
+            (depth.color_format, depth.depth_format, depth.samples),
+            (format::NONE, TARGETS.depth_format, 1)
+        );
     }
 
     #[test]

@@ -42,7 +42,13 @@ import {
 } from '../lib/gpu-paths';
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 import { patientFetch } from '../lib/patient-fetch';
-import { progressName, REST_AFTER_TAB_END_SECONDS, tabEndedResult } from '../lib/tab-end';
+import {
+	handoverName,
+	handsOver,
+	progressName,
+	REST_AFTER_TAB_END_SECONDS,
+	tabEndedResult,
+} from '../lib/tab-end';
 
 interface PlanItem {
 	id: string;
@@ -52,6 +58,8 @@ interface PlanItem {
 	endsTab?: boolean;
 	/** The page times its frames, so its frame stays on top of a report that the plan draws over pages. */
 	timesFrames?: boolean;
+	/** The page runs in a runner page of its own, where the runner tool can open runner pages. */
+	ownTab?: boolean;
 	/** The GPU path that the page needs. */
 	gpu?: GpuPath;
 }
@@ -60,6 +68,8 @@ type Result = { ok: boolean; error?: string } & Record<string, unknown>;
 
 const params = new URLSearchParams(location.search);
 const runner = params.get('runner') ?? 'browser';
+/** The runner tool opens a new runner page when this one hands the run over. */
+const tabs = params.has('tabs');
 const LISTEN_POLL_MS = 2000;
 const RESULT_POLL_MS = 200;
 const PAUSE_BETWEEN_PAGES_MS = 1000;
@@ -454,7 +464,11 @@ async function stopWithoutFrames(run: string, step: string): Promise<never> {
  * frame on top: a canvas hidden under the report barely changes the screen, and a phone may then
  * lower its refresh rate. In a plan that lets the device lack GPU paths, once the capabilities page has reported
  * the device's paths, the page skips each item that needs a path the device lacks: it posts a skip
- * as the item's result, and does not open the item's page.
+ * as the item's result, and does not open the item's page. Where the runner tool opens runner pages,
+ * a page that runs in a runner page of its own gets one: before that page and after it, this page
+ * posts a handover and stops, and the tool opens a new runner page there. In a plan that asks for
+ * it, this page also hands over after it has run that many pages. Pages that it only skips load
+ * nothing, so they run where they are and do not count.
  */
 async function runPlan(run: string, from?: number): Promise<void> {
 	const plan = JSON.parse((await patientFetch(`/__null3d/runs/${run}/plan`)).text) as {
@@ -462,6 +476,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		reportOnTop?: boolean;
 		measureRefresh?: boolean;
 		skipMissing?: { report: string; allowed: MissingAllowed };
+		tabEvery?: number;
 	};
 	await claim(run);
 	const start = from ?? (await resumeAt(run, plan.items));
@@ -479,6 +494,11 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		skipMissing && reportAt >= 0 && reportAt < start
 			? pathsToSkip(await storedResult(run, skipMissing.report), skipMissing.allowed)
 			: [];
+	/**
+	 * How many pages this runner page ran, and whether the last page it ran wanted a runner page of
+	 * its own.
+	 */
+	const ran = { pages: 0, lastOwnTab: false };
 	for (const [index, item] of plan.items.entries()) {
 		if (index < start) continue;
 		report.running(index);
@@ -489,12 +509,19 @@ async function runPlan(run: string, from?: number): Promise<void> {
 			report.finish(index, result);
 			continue;
 		}
+		if (tabs && handsOver(item, ran, plan.tabEvery)) {
+			await post(run, handoverName(index), { from: index, at: new Date().toISOString() });
+			show(`${report.counts()}; ${item.id} runs in a new runner page`);
+			return;
+		}
 		if (item.endsTab)
 			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
 		stage.classList.toggle('report-on-top', plan.reportOnTop === true && !item.timesFrames);
 		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
 		if (runnerRefreshHz === null) await stopWithoutFrames(run, item.id);
 		const result = await runItem(item, run);
+		ran.pages++;
+		ran.lastOwnTab = item.ownTab === true;
 		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);
 		report.finish(index, result);
 		if (skipMissing && index === reportAt) skip = pathsToSkip(result, skipMissing.allowed);
