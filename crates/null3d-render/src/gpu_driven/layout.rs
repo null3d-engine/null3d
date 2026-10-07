@@ -286,6 +286,9 @@ pub(super) struct Layout {
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
     /// entry per bucket.
     key_counts: Vec<(BucketKey, u32)>,
+    /// True when a bucket draws without writing depth, so a background drawn after the objects
+    /// would cover it where nothing lies behind it.
+    pub(super) depthless: bool,
     pub(super) built: bool,
     /// Sizes of the matrix buffer, the bucket table, the layer table, the bucket records and the
     /// cell order, 0 before they exist.
@@ -381,6 +384,7 @@ impl Layout {
 
     /// Empties the buckets, for a layout that draws nothing until it is built again.
     pub(super) fn clear(&mut self) {
+        self.depthless = false;
         self.occluders = 0;
         self.buckets.clear();
         (self.copied, self.indexed) = (0, 0);
@@ -604,6 +608,10 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+        self.depthless = self
+            .key_counts
+            .iter()
+            .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
         if self.key_counts.len() as u32 >= MAX_BUCKETS {
             return Err(RecordError::TooManySources { limit: MAX_BUCKETS });

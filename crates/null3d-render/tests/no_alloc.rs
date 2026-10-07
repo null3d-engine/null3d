@@ -20,6 +20,7 @@ use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
 use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op, format};
+use null3d_render::background::{Background, BackgroundSource};
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
@@ -702,7 +703,12 @@ fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     world
         .renderer
         .settings_mut()
-        .set_background_texture(background);
+        .set_background_source(Some(Background {
+            source: BackgroundSource::Texture(background),
+            intensity: 1.0,
+            blur: 0.0,
+            rotation: [0.0; 3],
+        }));
     world.record(true);
     let textures = world.renderer.settings_mut().textures_mut();
     textures.set_budget(16 * 1024);
