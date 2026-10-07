@@ -61,6 +61,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
 	});
 
+	it('turns GPU occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?occlusion=on').occlusion).toBe(true);
+		expect(parseSwitches('?occlusion=off').occlusion).toBe(false);
+		expect(parseSwitches('').occlusion).toBeUndefined();
+	});
+
 	it('reads the compressed texture families that ?compression= keeps, and none for ?compression=none', () => {
 		expect(parseSwitches('?compression=bc,etc2').compression).toEqual(['bc', 'etc2']);
 		expect(parseSwitches('?compression=astc').compression).toEqual(['astc']);

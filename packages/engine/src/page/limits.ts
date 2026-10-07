@@ -135,6 +135,11 @@ export interface CoreDevice {
 	 * their precision at any distance from the origin.
 	 */
 	largeWorld: boolean;
+	/**
+	 * True when each camera view culls in two phases against a depth pyramid of what it drew.
+	 * Only the WebGPU path culls this way.
+	 */
+	gpuOcclusion: boolean;
 }
 
 /**
@@ -194,6 +199,8 @@ export type DeviceOptions = Pick<
 	depthPrepass: boolean;
 	/** True for positions that keep their precision at any distance from the origin. */
 	largeWorld: boolean;
+	/** True to cull each camera view in two phases against a depth pyramid. */
+	gpuOcclusion: boolean;
 };
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
@@ -322,6 +329,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		vertexSkinning: options.vertexSkinning,
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
+		gpuOcclusion: options.gpuOcclusion,
 	};
 	if (tier !== 'webgl2') {
 		return {

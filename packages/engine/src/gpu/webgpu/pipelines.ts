@@ -11,6 +11,7 @@ import {
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
+	LAYOUT_DEPTH_PYRAMID,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FRAME,
@@ -48,6 +49,7 @@ import {
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
+	TEMPLATE_DEPTH_PYRAMID,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
@@ -60,6 +62,8 @@ import {
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_OCCLUSION_EARLY,
+	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_OUTLINE_MASK,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
@@ -140,6 +144,12 @@ const MAP_SLOTS = Array.from({ length: SIZE_MAP_SLOTS }, (_, slot) => slot);
 
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
+
+/** The entry points of occlusion culling's two phases, in the culling shader's occlusion build. */
+const OCCLUSION_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_OCCLUSION_EARLY]: 'early',
+	[TEMPLATE_OCCLUSION_LATE]: 'late',
+};
 
 /**
  * The skinning pass's builds, by their permutation bits: with the vertex tangent's code for formats
@@ -325,6 +335,13 @@ export class Pipelines {
 	private readonly pipelineLayouts = new Map<number, GPUPipelineLayout>();
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
+	/**
+	 * The builds of occlusion culling's two phases and of its depth pyramid, which arrive with the
+	 * occlusion feature's shader file.
+	 */
+	private readonly occlusion: ShaderVariants;
+	private readonly pyramid: ShaderVariants;
+	private readonly pyramidLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
 	private readonly lightClusters: WgslShader | undefined;
 	private readonly skinLayout: GPUPipelineLayout;
@@ -411,16 +428,28 @@ export class Pipelines {
 				}),
 			),
 		]);
+		const compute = GPUShaderStage.COMPUTE;
+		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
+		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
+		// occluders. Their history shares the buffer of the indirect draws, as eight storage buffers
+		// is all that every device allows a shader stage.
 		this.defineLayout(LAYOUT_CULL, 'cull', [
-			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 4, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 5, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 6, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
+			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
+		]);
+		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
+		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
+		this.defineLayout(LAYOUT_DEPTH_PYRAMID, 'depth pyramid', [
+			{ binding: 0, visibility: compute, buffer: { type: 'uniform', hasDynamicOffset: true } },
+			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 2, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
 		// The view's culling parameters, for the offset from the camera to each cell, the world
 		// matrices, the bucket table and the bucket records, which the vertex shaders of the builds
@@ -605,6 +634,11 @@ export class Pipelines {
 		}
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
+		this.occlusion = shaders.cull_occlusion;
+		this.pyramid = shaders.pyramid;
+		this.pyramidLayout = device.createPipelineLayout({
+			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
+		});
 		this.lightLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_LIGHT_CLUSTERS)],
 		});
@@ -840,16 +874,20 @@ export class Pipelines {
 	}
 
 	/**
-	 * The shader variants of a compute template whose shader loads on first use, the skinning pass's,
-	 * or undefined for a template whose shader the device's module of the start holds.
+	 * The shader variants of a compute template whose shader loads on first use, the skinning pass's
+	 * or one of occlusion culling's, or undefined for a template whose shader the device's module of
+	 * the start holds.
 	 */
 	computeVariants(template: number): ShaderVariants | undefined {
-		return template === TEMPLATE_SKIN ? this.skin : undefined;
+		if (template === TEMPLATE_SKIN) return this.skin;
+		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
 	}
 
 	/**
-	 * How to build a compute pipeline of a template: culling, skinning, or a step of light
-	 * clustering. The skinning pass takes the build of its permutation bits (see `SKIN_BUILDS`).
+	 * How to build a compute pipeline of a template: culling or a phase of occlusion culling, the
+	 * depth pyramid, skinning, or a step of light clustering. The skinning pass takes the build of
+	 * its permutation bits (see `SKIN_BUILDS`).
 	 */
 	compute(template: number, permutation: number): GPUComputePipelineDescriptor {
 		if (template === TEMPLATE_SKIN) {
@@ -869,6 +907,25 @@ export class Pipelines {
 				label: 'cull',
 				layout: this.cullLayout,
 				compute: { module: this.module('cull', this.cull), entryPoint: CULL_ENTRY_POINT },
+			};
+		}
+		const phase = OCCLUSION_ENTRY_POINTS[template];
+		if (phase) {
+			const shader = variantFor(this.occlusion, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no occlusion culling shader");
+			return {
+				label: `occlusion ${phase}`,
+				layout: this.cullLayout,
+				compute: { module: this.module('occlusion', shader), entryPoint: phase },
+			};
+		}
+		if (template === TEMPLATE_DEPTH_PYRAMID) {
+			const shader = variantFor(this.pyramid, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no depth pyramid shader");
+			return {
+				label: 'depth pyramid',
+				layout: this.pyramidLayout,
+				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];

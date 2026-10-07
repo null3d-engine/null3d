@@ -185,6 +185,17 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the
+	 * objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth
+	 * of the marked objects that it showed in the last frame and tests every object against it. It
+	 * saves GPU time where walls and large objects hide many detailed ones; a scene that marks no
+	 * object pays nothing. Every quality preset leaves it off: measure your scene's GPU time with it
+	 * first, as its passes can cost more than they save. It stays fixed while the engine runs, and
+	 * the `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth
+	 * prepass draw without it. Another value fails with E1213.
+	 */
+	gpuOcclusion?: boolean;
+	/**
 	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
 	 * 1 to 256. Each object keeps the weights farthest from 0. Without it, the quality preset sets
 	 * it. WebGPU draws every weight. Another value fails with E1213.
@@ -268,8 +279,10 @@ export interface EngineOptions {
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
-	 * batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so
-	 * there `'morph'` loads the skinning shaders. Listed features download beside the engine's own
+	 * batch, `'background'` with a texture background, and `'occlusion'` with the first object that
+	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the
+	 * skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'`
+	 * shaders to load. Listed features download beside the engine's own
 	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
@@ -1003,6 +1016,7 @@ async function startEngine(
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 	};
@@ -1329,10 +1343,16 @@ async function startEngine(
 		}
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
+		// Occlusion culling on the GPU needs WebGPU's compute passes, and does not run with the depth
+		// prepass, which only the page turns on.
+		const tierSettings =
+			tier === 'webgl2' || pageSettings.depthPrepass
+				? { ...pageSettings, gpuOcclusion: false }
+				: pageSettings;
 		const quality: QualityStart = {
 			preset,
-			settings: checkedSettings(chosen, preset, pageSettings),
-			options: pageSettings,
+			settings: checkedSettings(chosen, preset, tierSettings),
+			options: tierSettings,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
 		};
@@ -1369,6 +1389,7 @@ async function startEngine(
 			transparent: options.transparent === true,
 			depthPrepass: quality.settings.depthPrepass,
 			largeWorld: options.largeWorld === true,
+			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
 		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
 		// first, so the thread that draws starts its download now, while the core downloads.

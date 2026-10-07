@@ -231,6 +231,7 @@ async function start(
 				indexInstances: false,
 				shadowDepthBits: 16,
 				largeWorld: false,
+				gpuOcclusion: false,
 			},
 			capabilities: CAPABILITIES,
 			quality,

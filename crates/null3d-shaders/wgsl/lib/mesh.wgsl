@@ -126,6 +126,10 @@ struct CellOffsets {
 /// shaders read them too, and read no storage buffers, so they have a data texture of their own.
 @group(0) @binding(2) var custom_values: texture_2d<f32>;
 #ifdef INSTANCE_INDEX
+/// The bit of a bucket table entry that marks an occluder, above the entry's bucket and below its
+/// cell index.
+const OCCLUDER: u32 = 1u << 22u;
+
 /// The start of the view's culling parameters: its planes and counts, then the offset from the
 /// camera to the center of each grid cell, by cell index.
 struct InstanceCells {
@@ -362,7 +366,7 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
 /// and its bucket's material and first joint, as the culling shader would copy them.
 fn instance_by_index(source: u32) -> Instance {
     let entry = instance_entries[source];
-    let bucket = instance_buckets[entry & ((1u << CELL_SHIFT) - 1u)];
+    let bucket = instance_buckets[entry & (OCCLUDER - 1u)];
     let offset = instance_cells.offsets[entry >> CELL_SHIFT];
     let row_x = instance_matrices[source * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
     let row_y = instance_matrices[source * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
