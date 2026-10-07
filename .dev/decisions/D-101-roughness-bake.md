@@ -1,6 +1,6 @@
 # D-101: The roughness bake in the asset tool
 
-Status: proposed on 2026-10-08 by the M2-B6 helper. The format choice, option A below, waits for the coordinator's or the owner's ruling. Prototype L3 compares the bake with M2-E7's shader filter on the shimmer page, and may change the default. Date: 2026-10-08. Task: M2-B6.
+Status: decided by the owner on 2026-10-08 at about 00:28 (UTC+8), through the coordinator: option A. Prototype L3's comparison with M2-E7's shader filter is pending, and runs in M2-E7's work after this record's pull request merges. Date: 2026-10-08. Task: M2-B6.
 
 Summary: `assets optimize` bakes each normal map's spread into the roughness mip levels of the material's metal-rough map, with Godot's formula, below the full size. A baked map encodes each level alone in UASTC with RDO, and the tool joins the levels. On BoomBox the metal-rough map grows from 269 KB in ETC1S to 1.65 MB, and the model from 2.1 MB to 3.4 MB. Its mean roughness error falls from 6.7 to about 1.2 steps of 255.
 
@@ -64,7 +64,21 @@ The tool already gives every PNG and JPEG texture sides that are powers of two o
 
 ## Decision
 
-Pending. The branch builds option A.
+Option A, decided by the owner on 2026-10-08 at about 00:28 (UTC+8), through the coordinator. The tool bakes by default, and each baked map is UASTC with RDO at the encoder's default strength.
+
+- On BoomBox, the 2048 x 2048 metal-rough map takes 1.65 MB baked. It took 269 KB unbaked in ETC1S, and would take 3.27 MB baked in plain UASTC. The whole model goes from 2.1 MB to 3.4 MB.
+- ETC1S moved the map's roughness by 6.7 steps of 255 on average, and by up to 244. UASTC with RDO moves it by about 1.2 on average.
+- Khronos's [KTX artist guide](https://github.com/KhronosGroup/3D-Formats-Guidelines/blob/main/KTXArtistGuide.md) also asks for UASTC on packed occlusion, roughness and metalness maps, since ETC1S mixes their channels.
+- Options B and C were weighed and set aside. B costs twice A's bytes for about half a step of 255 less error. C leaves most users with no bake.
+- `--no-roughness-bake`, and `roughnessBake: false` in the Vite plugin, turn the bake off.
+
+## Comparison with the shader filter
+
+Prototype L3 compares three.js's term, M2-E7's shader filter, this bake, and the bake with the filter. That comparison runs in M2-E7's work, with this tool, after this record's pull request merges. B6 is complete without it. The plan sent to M2-E7's helper:
+
+- Add a glTF scene to the shimmer page, beside its `bumps` scene. It holds the same metal sphere of roughness 0.2, under the same normal map of 16 bumps on 256 texels. A metal-rough map gives it that roughness.
+- Build the file in code, as the asset test scene is built. Optimize it twice, with and without `--no-roughness-bake`, and commit both outputs, as the asset test scene's outputs are.
+- Measure the flicker of each file with the filter on and off, on the Mac, the iPad and the cloud phones of L3. The result settles whether the bake stays on by default, and the filter's settings.
 
 ## Consequences
 
