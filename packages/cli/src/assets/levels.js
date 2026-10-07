@@ -2,7 +2,7 @@
 // triangle list with its vertices welded, so that copies an exporter left at one place do not
 // hold it back, and with the normals and colors in its error. Each level simplifies the level
 // above to about half its triangles, until a level saves too little. Each level keeps its error
-// as a distance in the mesh's own units, which the engine compares with the screen it draws to.
+// as a distance in the units the mesh draws in, which the engine compares with the screen.
 import { MathUtils } from '@gltf-transform/core';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { cacheOrder, setIndices, triangleIndices, triangleLists } from './geometry.js';
