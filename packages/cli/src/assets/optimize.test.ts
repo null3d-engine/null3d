@@ -452,11 +452,19 @@ describe('assets optimize on the test scene', () => {
 		);
 		expect(lines).toContain('  no blocker for 1 mesh:\n    floor: ');
 		expect(report.bounds.min.map((v) => Math.round(v * 100) / 100)).toEqual([-3, -0.2, -3]);
+		// The ball's metal-rough map takes its normal map's detail in its roughness levels, and
+		// so UASTC.
 		expect(report.textureGroups).toEqual([
 			{ key: '128x64 etc1s srgb', count: 1 },
-			{ key: '32x32 etc1s linear', count: 1 },
+			{ key: '32x32 uastc linear', count: 1 },
 			{ key: '64x64 uastc linear', count: 1 },
 		]);
+		expect(report.textures.filter((t) => t.baked).map((t) => [t.width, t.height])).toEqual([
+			[32, 32],
+		]);
+		expect(report.unbaked).toEqual([]);
+		expect(report.partialBlocks).toEqual([]);
+		expect(lines).toContain('  roughness levels baked from normal maps: 1 texture');
 		const color = report.textures.find((t) => t.name === 'stripes')!;
 		expect([color.sourceWidth, color.sourceHeight, color.width, color.height]).toEqual([
 			96, 48, 128, 64,
@@ -471,7 +479,7 @@ describe('assets optimize on the test scene', () => {
 			}
 		};
 		expect(report.textureMemory).toEqual({
-			etc2: mips(128, 64, 8) + mips(32, 32, 8) + mips(64, 64, 16),
+			etc2: mips(128, 64, 8) + mips(32, 32, 16) + mips(64, 64, 16),
 			bc7: mips(128, 64, 16) + mips(32, 32, 16) + mips(64, 64, 16),
 			rgba8: mips(128, 64, 0) + mips(32, 32, 0) + mips(64, 64, 0),
 		});
@@ -508,6 +516,8 @@ describe('the command', () => {
 			'takes none or meshopt',
 		);
 		expect(parseOptimizeArgs(['a', 'b']).options).toMatchObject({ blockers: true, bvh: 20_000 });
+		expect(parseOptimizeArgs(['a', 'b']).options.roughnessBake).toBe(true);
+		expect(parseOptimizeArgs(['a', 'b', '--no-roughness-bake']).options.roughnessBake).toBe(false);
 		expect(parseOptimizeArgs(['a', 'b', '--no-blockers', '--bvh', '5000']).options).toMatchObject({
 			blockers: false,
 			bvh: 5000,
