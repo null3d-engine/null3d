@@ -7,10 +7,10 @@ This guide covers how a release is made. [AGENTS.md](../AGENTS.md) holds the rul
 The first release is 1.0, as [Versions](#versions) says. Until then, no step below runs. To release, run the Release workflow from the Actions tab and pick a release type. The workflow:
 
 1. Checks that the newest full CI run of main's latest commit passed. That is main's own run after the merge, or a run started by hand ([D-99](decisions/D-99-no-merge-queue.md)). A pull request's run does not count, because it tested GitHub's merge of the pull request into an older main.
-2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md` and regenerates the docs.
+2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md`.
 3. Opens a pull request. Review the changelog there, and edit `CHANGELOG.md` on that branch if a line needs it.
 
-Merging that pull request runs the Release Publish workflow. It tags the merge commit with the plain version, such as `1.0.0`, and publishes the GitHub Release with the changelog section. Then it builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
+Merging that pull request runs the Release Publish workflow. It builds the shader modules and writes every generated file, which git on main does not keep ([D-105](decisions/D-105-generated-files-out-of-git.md)). It commits them in full on top of the merge commit, and tags that commit with the plain version, such as `1.0.0`. Only the tag points to that commit. The Claude Code plugin, `bunx skills add` and the docs on GitHub read the release from the tag, so they get the skills copy and the generated pages. The workflow then publishes the GitHub Release with the changelog section and each skill's zip file. Then it builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
 
 ## Versions
 

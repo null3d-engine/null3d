@@ -3,16 +3,15 @@
 // opens a pull request; merging that pull request tags the version and publishes it.
 //   bun tools/release.ts [--release-type auto|patch|minor|major]
 //                                   print the next version and its changelog, and change nothing
-//   bun tools/release.ts --apply    also write every version copy, add the section to
-//                                   CHANGELOG.md and regenerate the docs; in CI, write `version`
-//                                   and `changelog` to $GITHUB_OUTPUT
+//   bun tools/release.ts --apply    also write every version copy and add the section to
+//                                   CHANGELOG.md; in CI, write `version` and `changelog` to
+//                                   $GITHUB_OUTPUT
 //   bun tools/release.ts --notes <version>
 //                                   print that version's section of CHANGELOG.md
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { generateDocs, writeGeneratedDocs } from './lib/docs';
 import { readIfExists } from './lib/files';
 import {
 	applyOverride,
@@ -92,7 +91,6 @@ function apply(version: string, changelog: string): void {
 		join(root, CHANGELOG),
 		prependChangelog(readIfExists(root, CHANGELOG) ?? '', changelog),
 	);
-	writeGeneratedDocs(root, generateDocs(root));
 	const output = process.env.GITHUB_OUTPUT;
 	if (output)
 		appendFileSync(

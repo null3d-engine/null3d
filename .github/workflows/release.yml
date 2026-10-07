@@ -71,7 +71,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
 
-      - name: Set the version, write the changelog and regenerate the docs
+      - name: Set the version and write the changelog
         id: release
         env:
           RELEASE_TYPE: ${{ inputs.release-type }}
@@ -100,7 +100,7 @@ jobs:
           git checkout -b "$branch"
           git add -A
           git commit -m "chore(release): ${VERSION}" -m "$(printf '%s\n%s' \
-            'Docs-Checked: release commit; it changes only version numbers, CHANGELOG.md and the regenerated API reference' \
+            'Docs-Checked: release commit; it changes only version numbers and CHANGELOG.md' \
             'Skills-Checked: release commit; no skill shows the version number')"
           git push -u origin "$branch"
 
