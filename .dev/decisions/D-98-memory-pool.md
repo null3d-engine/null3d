@@ -14,16 +14,18 @@ A restart in the same page must not depend on when the browser frees the last en
 
 ## Why Safari needs it
 
-Safari's JavaScript engine gives each of the first 8 WebAssembly memories in a page a "fast" place. That is 4 GiB of address space, so that the code needs no bounds checks. A later memory is bounds-checked, and takes only its maximum. Safari counts the place of a dropped memory as taken until its collector frees the memory.
+Safari's JavaScript engine gives each of the first 8 WebAssembly memories in a page a "fast" place. That is 4 GiB of address space, so that the code needs no bounds checks. A later memory is bounds-checked, and takes only its maximum. A dropped memory's place stays taken until Safari's collector frees the memory.
 
-On 7 October 2026, the repro pages of [D-94](D-94-memory-retry-window.md#open) showed this on the owner's Mac (Safari 26.6.2). A page dropped a memory that held a fast place and asked for one of the same size every 250 ms. Safari refused every request for the 60 s that the page asked, 6 times out of 6. A dropped bounds-checked memory came back at the first request, 6 times out of 6. The fast place came back a few seconds after the page stopped asking. An engine's memory is often one of the first 8 in its page, so it holds a fast place.
+On the owner's iPad (Safari 26.6.2) on 7 October 2026, main's engine failed this way within one page. The page started the engine 50 times in a row. In pipelined mode, Safari refused the 1 GiB memory of the 11th start 13 times over 45 s (E1109). With the sketch on the page, it refused the 7th start the same way. The same pages passed again in a new page. The iPad has room for about 6 such memories, so a few stopped engines that Safari has not freed yet fill it.
+
+An earlier repro on the Mac seemed to show that Safari holds a dropped fast memory for as long as the page keeps asking. The test page itself still reached that memory, so it proved nothing ([D-94](D-94-memory-retry-window.md#open)). With nothing reaching it, Safari gave the place back at the next request. So the pool does not work around a fault in Safari. It removes the request, and with it the wait for Safari's collector, which a quick restart outruns on a device with little room.
 
 ## Options
 
 | Option | Effect | Cost |
 | --- | --- | --- |
-| Keep D-94's retries only | Waits of 3.2 s and more let Safari free the place, so a refused start often waits 3 to 13 s | Every refused restart waits, and a real refusal still fails after 45 s |
-| Longer gaps between the first retries | A refused start stops asking at once, for a few seconds | Every refused start waits, and no measure shows that a few seconds is enough on every Mac |
+| Keep D-94's retries only | A refused start waits until Safari frees a stopped engine's memory | On the owner's iPad, 45 s of retries did not get it back within the page |
+| Longer gaps between the first retries | A refused start waits a few seconds at once | Every refused start waits, and no measure shows that a few seconds is enough |
 | A smaller first memory | None: Safari gives a fast memory 4 GiB of address space at any size | None |
 | Keep the stopped engine's memory in the page for the next engine (chosen) | A restart asks the browser for nothing | The memory's RAM stays taken until a new engine takes it or its time ends |
 
@@ -45,6 +47,16 @@ The restart page (`tests/pages/shared-memory.html`) started and stopped the engi
 | Clearing a heap of 256 MiB and of 1 GiB with `memory.fill` | 1.7 ms and 6.9 ms | | Mac, Safari 26.6.2 |
 | The same | 1.2 ms and 4.8 ms | | Mac, Chrome 155 |
 
+On tablets and phones, the restart pages ran on main d6292d4b5 and on the branch's fix 2f382ab77. The 8 restart pages ran with their usual counts of the room, then 50 starts in a row on 3 of them:
+
+| Device and browser | Main | With the pool |
+| --- | --- | --- |
+| The owner's iPad Pro 11-inch (A12X), Safari 26.6.2 | 8 pages: 7 of 8, one shared memory per start. 50 starts: Safari refused the memory at the 11th start in pipelined mode and at the 7th with the sketch on the page (E1109) | 8 of 8 and 3 of 3; 1 shared memory for each threaded page, none refused |
+| BrowserStack's iPad (10th generation), Safari 27.0 | 8 of 8 and 3 of 3; one memory per start | 8 of 8 and 3 of 3; 1 memory for each threaded page |
+| BrowserStack's Galaxy S25, Chrome 149 | 8 of 8 and 3 of 3; one memory per start | 50 starts: 3 of 3. With the sketch on the page, 6 of 50 stops waited out the 2 s limit, so its starts made 7 memories. The 8 pages did not run: the runner page did not start |
+
+The first branch commit kept each test page's memory after the runner removed the page. On BrowserStack's iPad, each page then left one place of room taken, and the 7th page found none (E1109). The rule below that lets go of the pool on `pagehide` fixed it.
+
 On this Mac, Safari refused no memory on main either. That held in a clean page, with the address space full, and with the room counted after each start. The refusals of D-92 and D-94 came on CI's slower Mac. So the local gain is fewer memories, and faster starts when the address space is full. The pool removes the request that CI's Safari refused.
 
 The restart, failure and engine pages of the checks plan, 53 items, passed in Safari with the pool, twice. The restart pages made 1 memory each in 43 starts. In both runs of the 53, `canvas-kept-restarts-low-latency` found the room at 7 or 8 of 10 after its starts, which is a note. Main gave the same note in the same 53 pages, at 7 of 10. Six runs of the kept-canvas pages on their own found the room at 10 of 10.
@@ -59,7 +71,7 @@ The owner chose the pool on 7 October 2026, in every browser, so that the engine
 - The pool keeps at most 2 memories, for 30 seconds each, and a third stop drops the oldest. React's strict mode and hot reloads start the next engine within a second. A page that stops the engine for good gets its RAM back after 30 seconds.
 - `engine.destroy({ release: true })` empties the pool at once. A page that will not start the engine again soon uses it, most of all on a phone with little memory.
 - A memory serves only an engine with the same core file and the same maximum, as `memory.maximumMiB` or the preset sets it. A memory's maximum is fixed. A larger one would let the engine grow past what the page asked for. An engine with another maximum makes a new memory, and the kept one stays until its time ends.
-- The pool lets go of its memories when the page goes away (`pagehide`). A frame that its page removes runs no more timers, so the 30 seconds never end there. Safari can keep a removed frame's page, and all that it reaches, for minutes ([D-92](D-92-safari-removed-frames.md)). Before this rule, each test page on the cloud iPad left its kept memory held. The seventh page in a row found no room at all (E1109).
+- The pool lets go of its memories when the page goes away (`pagehide`). A frame that its page removes runs no more timers, so the 30 seconds never end there. Safari can keep a removed frame's page, and all that it reaches, for minutes ([D-92](D-92-safari-removed-frames.md)). Before this rule, each test page on BrowserStack's iPad left its kept memory held. The seventh page in a row found no room at all (E1109).
 - A new memory that the browser refuses first lets go of the kept memories, as it ends the drawing workers of kept canvases.
 - The pool lives on the page's global object, so a hot reload's new copy of the engine's code finds it.
 - The single-threaded build needs no pool. The page keeps its core, and the memory that the core made, for the next engine already.
@@ -79,4 +91,5 @@ The heap starts one page after the end of the linker's memory, `__heap_end`. Ver
 - The RAM of a kept memory stays taken for up to 30 seconds after the stop.
 - The restart checks count the kept memory: after the starts, the page reaches 1 memory, and the threaded starts on the page made 1. A restart page whose starts made more fails. With `?release=on`, the page reaches none.
 - The engine API page and the skill's quick reference describe `destroy({ release })`.
+- Open: BrowserStack's Galaxy S25 ran 50 starts with the sketch on the page. There the branch's stops took 1.7 s at the median, and 6 of 50 reached the 2 s limit. On main they took 1.55 s, and none did. Most of each stop waits for job workers that were still starting. In pipelined mode the branch's stops were shorter than main's. The two runs came from different sessions, so this needs a run of both in one session.
 - The decoders make memories of their own in their workers: the meshopt decoder in the glTF worker, and the KTX2 transcoder in the job workers. The pool does not cover them. Whether their memories hold fast places after an engine stops is not measured yet.
