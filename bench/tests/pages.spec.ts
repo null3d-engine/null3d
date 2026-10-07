@@ -40,7 +40,9 @@ const BACKGROUND_TOLERANCE = 2;
 /**
  * An image counts as blank unless more than this share of its pixels differs from the background.
  * S2's small trees cover less than 1% of its hold frame, so its bar is lower. S3's floor covers
- * most of its frame, so its bar is higher.
+ * most of its frame, so its bar is higher. S6's sky leaves no background, so a tenth of its bar
+ * counts the pixels at sharp edges instead: the city's hold frames hold 2 to 5% of them, and a sky
+ * alone almost none.
  */
 const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s1: 0.01,
@@ -50,7 +52,7 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s3: 0.1,
 	s4: 0.5,
 	s5: 0.3,
-	s6: 0.5,
+	s6: 0.1,
 };
 /**
  * Each scene's background color. S4's is its fog's color. S6's sky covers its background, so its
@@ -87,9 +89,15 @@ const PHONE_SCENES: readonly (typeof SCENES)[number][] = ['s4', 's5', 's6'];
 const isPhoneScene = (scene: (typeof SCENES)[number]) => PHONE_SCENES.includes(scene);
 /**
  * Pages that SwiftShader draws too slowly for the tests: S4's three.js twins take minutes over their
- * first frames, with shadows in cascades over 5,000 objects. The tests run them on real GPUs only.
+ * first frames, with shadows in cascades over 5,000 objects. S6's twin on WebGPURenderer held no
+ * frame of the whole city in 90 seconds, and measured no frame of 1,000 objects in its short run,
+ * where its WebGL twin and null3D's pages pass. The tests run them on real GPUs only.
  */
-const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = ['s4 on threejs-webgl', 's4 on threejs-webgpu'];
+const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = [
+	's4 on threejs-webgl',
+	's4 on threejs-webgpu',
+	's6 on threejs-webgpu',
+];
 /** Leaves a page's test out on SwiftShader when SwiftShader draws the page too slowly. */
 const skipWhereTooSlow = (page: string) =>
 	test.skip(
