@@ -448,6 +448,15 @@ describe('the pages', () => {
 			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
+			'null3d-webgpu-sky',
+			'null3d-webgl2-sky',
+			'null3d-webgpu-sky-clear',
+			'null3d-webgpu-sky-room',
+			'null3d-webgpu-sky-texture',
+			'null3d-webgpu-first',
+			'null3d-webgpu-box',
+			'null3d-webgpu-sky-room-first',
+			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -509,6 +518,25 @@ describe('the pages', () => {
 		);
 	});
 
+	test('runs the sky pages on the pipelined pages with the sky switch', () => {
+		expect(pagePath('s1', 'null3d-webgpu-sky', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky&seconds=2',
+		);
+		expect(pagePath('s1', 'null3d-webgl2-sky')).toBe('/bench/pages/null3d/s1.html?gpu=webgl2&sky');
+		expect(pagePath('s1', 'null3d-webgpu-sky-clear')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=clear',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-sky-texture')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=texture',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-sky-room-first')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&sky=room&backgroundFirst',
+		);
+		expect(pagePath('s1', 'null3d-webgpu-box')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&extraBox',
+		);
+	});
+
 	test('runs the pages without the cascade band on the pipelined pages with the band at 0', () => {
 		expect(pagePath('s4', 'null3d-webgpu-blend-off', 'seconds=2')).toBe(
 			'/bench/pages/null3d/s4.html?gpu=webgpu&shadowCascadeBlend=0&seconds=2',
@@ -543,6 +571,15 @@ describe('the pages', () => {
 			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
 			'null3d-webgl2-blend-off',
+			'null3d-webgpu-sky',
+			'null3d-webgl2-sky',
+			'null3d-webgpu-sky-clear',
+			'null3d-webgpu-sky-room',
+			'null3d-webgpu-sky-texture',
+			'null3d-webgpu-first',
+			'null3d-webgpu-box',
+			'null3d-webgpu-sky-room-first',
+			'null3d-webgpu-sky-texture-first',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -572,6 +609,15 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
 			'webgl2',
 			'webgl2',
 		]);

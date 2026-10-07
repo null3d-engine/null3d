@@ -75,7 +75,7 @@
 //! whose texels are gone keeps its layer and draws as without a map until it gets new texels.
 
 use null3d_core::error::CoreError;
-use null3d_core::frames::{frame_after, next_frame};
+use null3d_core::frames::{FIRST_FRAME, frame_after, next_frame};
 use null3d_core::handle::{Handle, SlotAllocator};
 use null3d_gpu::caps::{CUBE_TEXTURE_SIZE, TEXTURE_3D_SIZE};
 use null3d_gpu::drawlist::{
@@ -195,14 +195,28 @@ pub struct UploadStats {
 /// Where a texture's texels come from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {
-    /// Image `id`, which the thread that draws holds, uploaded with the `upload_flags` in `flags`.
-    Image { id: u32, flags: u32 },
+    /// Images `id` to `id + count - 1`, which the thread that draws holds, one for each layer,
+    /// uploaded with the `upload_flags` in `flags`: one image for a 2D texture, and six for a cube
+    /// texture's faces.
+    Image { id: u32, count: u32, flags: u32 },
     /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
     Data { slot: u32 },
     /// Generator `id`, which the thread that draws holds under an image id and runs on the GPU in
     /// one command. The store keeps it until the texture gets other texels or is destroyed, so a
     /// new GPU device runs it again.
     Generated { id: u32 },
+}
+
+impl Source {
+    /// The last image id that the texels take, which the thread that draws must hold before they
+    /// upload or are released, or none for data.
+    fn last_image(self) -> Option<u32> {
+        match self {
+            Self::Image { id, count, .. } => Some(id + count - 1),
+            Self::Generated { id, .. } => Some(id),
+            Self::Data { .. } => None,
+        }
+    }
 }
 
 /// Where a texture is on its way to the GPU.
@@ -599,9 +613,10 @@ impl TextureStore {
     }
 
     /// Creates a cube texture with faces of `size` x `size` texels in `format::RGB9E5_UFLOAT` or
-    /// `format::RGBA16_FLOAT`, with `levels` mip levels and no texels yet. It is read with linear
-    /// filters within and between levels, and its texels bring every level. A face takes at most
-    /// [`CUBE_TEXTURE_SIZE`] texels a side, the least that WebGL2 allows.
+    /// `format::RGBA16_FLOAT`, with `levels` mip levels and no texels yet, whose texels bring every
+    /// level, or in `format::RGBA8_UNORM_SRGB` with one level, whose texels come from six images
+    /// (see [`Self::set_cube_images`]). It is read with linear filters within and between levels.
+    /// A face takes at most [`CUBE_TEXTURE_SIZE`] texels a side, the least that WebGL2 allows.
     pub fn create_cube(
         &mut self,
         size: u32,
@@ -612,7 +627,8 @@ impl TextureStore {
         if size > limit {
             return Err(TextureError::TooLarge { limit });
         }
-        if !matches!(format, format::RGB9E5_UFLOAT | format::RGBA16_FLOAT) {
+        let images = format == format::RGBA8_UNORM_SRGB && levels == 1;
+        if !images && !matches!(format, format::RGB9E5_UFLOAT | format::RGBA16_FLOAT) {
             return Err(TextureError::Unsupported);
         }
         let desc = TextureDesc {
@@ -840,8 +856,43 @@ impl TextureStore {
         let moved = self.resize(texture, width, height)?;
         self.last_image = next_frame(self.last_image);
         let id = self.last_image;
-        self.queue_source(texture, Source::Image { id, flags })?;
+        self.queue_source(
+            texture,
+            Source::Image {
+                id,
+                count: 1,
+                flags,
+            },
+        )?;
         Ok((id, moved))
+    }
+
+    /// Gives a cube texture of 8-bit texels and one mip level six images, one for each face from
+    /// +X to -Z, uploaded with the `upload_flags` in `flags`, and returns the first image's id.
+    /// The caller sends the images to the thread that draws under that id and the five after it,
+    /// in the order of the ids. Texels that were waiting are released unused.
+    pub fn set_cube_images(&mut self, texture: Handle, flags: u32) -> Result<u32, TextureError> {
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if key.kind != Kind::Cube || !format::makes_mipmaps(key.format) || slot.levels > 1 {
+            return Err(TextureError::Unsupported);
+        }
+        // A cube's ids run in a row with no mark between them, so a run that would pass the end
+        // of the circle starts again at the first id.
+        let mut id = next_frame(self.last_image);
+        if id > u32::MAX - view::CUBE_FACES {
+            id = FIRST_FRAME;
+        }
+        self.last_image = id + view::CUBE_FACES - 1;
+        self.queue_source(
+            texture,
+            Source::Image {
+                id,
+                count: view::CUBE_FACES,
+                flags,
+            },
+        )?;
+        Ok(id)
     }
 
     /// Gives a cube texture of `format::RGB9E5_UFLOAT` texels that a generator makes on the GPU,
@@ -1166,10 +1217,18 @@ impl TextureStore {
                 old_id
             };
             // Images upload into and mip levels draw into a texture that textures share, and a
-            // larger one copies its layers. A texture of a format that takes writes only, a 3D
-            // texture and a cube texture take writes only.
-            let usage = if format::writes_only(key.format) || key.kind != Kind::Layers {
+            // larger one copies its layers. Images upload into a cube texture of 8-bit texels too.
+            // A texture of a format that takes writes only, a 3D texture and a cube texture of
+            // floats take writes only.
+            let usage = if format::writes_only(key.format) || key.kind == Kind::Volume {
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST
+            } else if key.kind == Kind::Cube {
+                let images = if format::makes_mipmaps(key.format) {
+                    texture_usage::RENDER_ATTACHMENT
+                } else {
+                    0
+                };
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST | images
             } else {
                 texture_usage::TEXTURE_BINDING
                     | texture_usage::COPY_DST
@@ -1228,17 +1287,20 @@ impl TextureStore {
     /// data is freed.
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         let (arrived, taken) = (self.arrived, self.frames_taken);
-        let due = |r: &Release| match r.source {
-            Source::Image { id, .. } | Source::Generated { id, .. } => {
-                !frame_after(id, arrived) && (r.after == 0 || frame_after(frame, r.after))
+        let due = |r: &Release| match r.source.last_image() {
+            Some(last) => {
+                !frame_after(last, arrived) && (r.after == 0 || frame_after(frame, r.after))
             }
-            Source::Data { .. } => frame_after(taken, r.after),
+            None => frame_after(taken, r.after),
         };
         for release in self.releases.iter().filter(|r| due(r)) {
             match release.source {
-                Source::Image { id, .. } | Source::Generated { id, .. } => {
-                    list.push(Op::ReleaseImage, &[id])?;
+                Source::Image { id, count, .. } => {
+                    for image in id..id + count {
+                        list.push(Op::ReleaseImage, &[image])?;
+                    }
                 }
+                Source::Generated { id, .. } => list.push(Op::ReleaseImage, &[id])?,
                 Source::Data { slot } => self.data[slot as usize] = Vec::new(),
             }
             if let Ok(slot) = self.handles.resolve(release.texture) {
@@ -1289,8 +1351,9 @@ impl TextureStore {
             let State::Queued { source, mut rows } = slot.state else {
                 continue;
             };
-            if let Source::Image { id, .. } | Source::Generated { id, .. } = source
-                && frame_after(id, self.arrived)
+            if source
+                .last_image()
+                .is_some_and(|last| frame_after(last, self.arrived))
             {
                 continue;
             }
@@ -1321,7 +1384,11 @@ impl TextureStore {
                 }
                 let layer = slot.layer + band.layer;
                 let y = band.row * block;
-                if let Source::Image { id: image, flags } = source {
+                if let Source::Image {
+                    id: first, flags, ..
+                } = source
+                {
+                    let image = first + band.layer;
                     list.push(
                         Op::UploadImage,
                         &[id, 0, 0, y, layer, key.width, take, image, flags, 0, y],
@@ -1714,6 +1781,18 @@ mod tests {
         assert_eq!(ops(&commands, Op::UploadImage)[0][7], after);
         assert_eq!(ops(&commands, Op::ReleaseImage), [vec![before]]);
         assert_eq!(h.store.ready_layer(late), Some(1));
+    }
+
+    #[test]
+    fn a_cube_takes_six_ids_in_a_row_that_never_pass_the_end_of_the_circle() {
+        let mut h = Harness::new();
+        let cube = h.store.create_cube(8, 1, format::RGBA8_UNORM_SRGB).unwrap();
+        h.store.last_image = u32::MAX - 4;
+        assert_eq!(h.store.set_cube_images(cube, 0).unwrap(), FIRST_FRAME);
+        assert_eq!(h.store.images_sent(), FIRST_FRAME + 5);
+        h.store.last_image = 41;
+        assert_eq!(h.store.set_cube_images(cube, 0).unwrap(), 42);
+        assert_eq!(h.store.images_sent(), 47);
     }
 
     fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
@@ -2445,6 +2524,34 @@ mod tests {
             ops(&commands, Op::GenerateMipmaps),
             [vec![id, 0]],
             "only the texture from an image makes its levels"
+        );
+    }
+
+    #[test]
+    fn a_cube_of_8_bit_texels_takes_six_images_and_a_cube_of_floats_none() {
+        let mut store = TextureStore::new(IDS, 4096);
+        let cube = store.create_cube(16, 1, format::RGBA8_UNORM_SRGB).unwrap();
+        assert_eq!(store.set_cube_images(cube, 0), Ok(1));
+        let other = store.create_cube(16, 1, format::RGBA8_UNORM_SRGB).unwrap();
+        assert_eq!(
+            store.set_cube_images(other, 0),
+            Ok(7),
+            "after the first six"
+        );
+        let floats = store.create_cube(16, 5, format::RGB9E5_UFLOAT).unwrap();
+        assert_eq!(
+            store.set_cube_images(floats, 0),
+            Err(TextureError::Unsupported)
+        );
+        assert_eq!(
+            store.create_cube(16, 2, format::RGBA8_UNORM_SRGB),
+            Err(TextureError::Unsupported),
+            "images bring one level"
+        );
+        let flat = store.create(desc(16, 16)).unwrap();
+        assert_eq!(
+            store.set_cube_images(flat, 0),
+            Err(TextureError::Unsupported)
         );
     }
 

@@ -40,6 +40,8 @@ try {
 - `sketch`, after the sketch's setup, and after the preset check when one runs;
 - `first-frame`, once the GPU has finished the first frame.
 
+Before `core`, `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. A browser can hold memory that an earlier engine used for a while after it stops, and Safari at times held it for 40 seconds. The engine keeps trying for about 45 seconds in all, then fails with E1109. Show the user that the start takes longer than usual.
+
 An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` stops the engine's threads and rejects with the signal's reason.
 
 `createEngine` rejects with an `EngineError` when the engine cannot start:
@@ -55,7 +57,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
 | [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
-| [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 10 seconds of tries. |
+| [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 45 seconds of tries. |
 | [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
@@ -326,7 +328,7 @@ Options for `createEngine`.
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 | `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
-| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, `'background'` with a texture background, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first hashed material, `'cutout'` with the first masked object that casts shadows, which casts none until its shaders are built, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
+| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, `'background'` with a texture, environment or cube map background, `'sky'` with the sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first hashed material, `'cutout'` with the first masked object that casts shadows, which casts none until its shaders are built, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
 
 ### `ErrorCode`
 
@@ -462,6 +464,7 @@ type ShaderFeature =
 	| 'morph'
 	| 'occlusion'
 	| 'skinning'
+	| 'sky'
 	| 'sprites'
 	| 'texcoords';
 ```

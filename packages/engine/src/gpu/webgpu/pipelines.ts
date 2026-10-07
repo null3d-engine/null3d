@@ -8,6 +8,7 @@ import {
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
+	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
@@ -40,6 +41,7 @@ import {
 	STATE_CULL_FRONT,
 	STATE_CULL_NONE,
 	STATE_DEPTH_EQUAL,
+	STATE_DEPTH_OR_EQUAL,
 	STATE_LINE_LIST,
 	STATE_NO_COLOR_WRITE,
 	STATE_NO_DEPTH_TEST,
@@ -49,6 +51,8 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_CUBE,
+	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
@@ -240,11 +244,12 @@ const ALL_CHANNELS = 0xf;
 
 /**
  * The depth test of a pipeline's state flags, in reversed depth: nearer surfaces pass, every one
- * passes without the test, and only the surface at the target's depth passes after the depth
- * prepass.
+ * passes without the test, only the surface at the target's depth passes after the depth prepass,
+ * and a background at the far plane passes where no object wrote depth.
  */
 function depthCompare(stateFlags: number): GPUCompareFunction {
 	if (stateFlags & STATE_NO_DEPTH_TEST) return 'always';
+	if (stateFlags & STATE_DEPTH_OR_EQUAL) return 'greater-equal';
 	return stateFlags & STATE_DEPTH_EQUAL ? 'equal' : 'greater';
 }
 
@@ -557,6 +562,13 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
 		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
+		// The background's values, which the sky's vertex stage reads too, a cube map and its
+		// filtering sampler.
+		this.defineLayout(LAYOUT_BACKGROUND, 'background', [
+			{ binding: 0, visibility: GPUShaderStage.VERTEX | fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
+			{ binding: 2, visibility: fragment, sampler: {} },
+		]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
 		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
 		const effectEntries: GPUBindGroupLayoutEntry[] = [
@@ -652,9 +664,21 @@ export class Pipelines {
 			label: 'background',
 			shader: shaders.background,
 			pipeline: 'main',
-			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES],
+			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES, LAYOUT_BACKGROUND],
 			vertexBuffers: [],
 		});
+		for (const [id, label, shader] of [
+			[TEMPLATE_BACKGROUND_CUBE, 'background cube', shaders.background_cube],
+			[TEMPLATE_BACKGROUND_SKY, 'background sky', shaders.sky],
+		] as const) {
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME, LAYOUT_BACKGROUND],
+				vertexBuffers: [],
+			});
+		}
 		if (DEV) {
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
