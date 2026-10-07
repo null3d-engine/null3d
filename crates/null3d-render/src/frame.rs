@@ -31,7 +31,7 @@ use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
-use crate::effects::{Effect, MAX_EFFECTS};
+use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -650,6 +650,8 @@ pub struct SceneSettings {
     outline: Option<Outline>,
     /// The sketch's custom effects, in the order they run.
     effects: Vec<Effect>,
+    /// How the sketch joins its effects into groups and folds them into the final pass.
+    effect_joins: EffectJoins,
     /// The first template of the sketch's custom tone curve, while it sets one.
     tone_curve: Option<u32>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
@@ -710,6 +712,7 @@ impl SceneSettings {
             environment: None,
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
+            effect_joins: EffectJoins::default(),
             tone_curve: None,
             clock: [0.0; 4],
             render_scaling: false,
@@ -827,6 +830,32 @@ impl SceneSettings {
             Some(_) => {}
             None => self.effects.truncate(index),
         }
+    }
+
+    /// How the sketch joins its effects.
+    pub(crate) fn effect_joins(&self) -> &EffectJoins {
+        &self.effect_joins
+    }
+
+    /// Makes the `length` effects from place `place` on draw as one group with the joined shader
+    /// of template `template`, from the next recorded frame on, once its pipeline is built. A
+    /// template of 0 ends the group that starts there. Places past [`MAX_EFFECTS`] change nothing.
+    pub fn set_effect_group(&mut self, place: usize, length: usize, template: u32) {
+        if let Some(group) = self.effect_joins.groups.get_mut(place) {
+            *group = if template == 0 {
+                (0, 0)
+            } else {
+                (length.min(MAX_EFFECTS) as u8, template)
+            };
+        }
+    }
+
+    /// Folds the effects from place `first` on into the final pass, with the final pass's fold
+    /// build of template `template`, from the next recorded frame on, while nothing reads the image
+    /// between them and the pass. A template of 0 folds none.
+    pub fn set_effect_fold(&mut self, first: usize, template: u32) {
+        self.effect_joins.fold =
+            (template != 0 && first < MAX_EFFECTS).then_some((first as u8, template));
     }
 
     /// The first template of the custom tone curve, while the sketch sets one and no debug view

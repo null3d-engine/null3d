@@ -204,7 +204,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 mod ids {
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
-    use crate::effects::MAX_EFFECTS;
+    use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
@@ -384,10 +384,11 @@ mod ids {
     pub const fn pyramid_group(view: ViewId) -> u32 {
         BACKGROUND_GROUP + 1 + view.index() as u32
     }
-    /// The bind group of each custom effect, after the depth pyramids'.
+    /// The bind group of each custom effect, and of each group of joined effects, after the depth
+    /// pyramids'.
     pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1 + MAX_VIEWS as u32;
     /// The bind groups of materials' maps, after the effects'.
-    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -835,6 +836,7 @@ impl GpuDrivenRenderer {
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
         self.graph.set_effects(
             self.settings.effects(),
+            self.settings.effect_joins(),
             self.settings.clock_seconds(),
             self.settings.camera_projection(input.canvas),
         );

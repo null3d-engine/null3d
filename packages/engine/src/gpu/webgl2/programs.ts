@@ -148,6 +148,11 @@ export interface Program {
 	 * nothing. Otherwise its first draw waits for the compile.
 	 */
 	background: boolean;
+	/**
+	 * For a joined effects' shader: its template, when its compile started, and whether it failed,
+	 * which leaves its draws drawing nothing while its effects go back to a pass each.
+	 */
+	joined?: { readonly template: number; readonly start: number; failed: boolean };
 }
 
 /** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */

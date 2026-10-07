@@ -232,6 +232,7 @@ async function start(
 				transparent: false,
 				shaderBits: 0,
 				cellCulling: true,
+				joinEffects: true,
 				depthPrepass: false,
 				vertexSkinning: false,
 				indexInstances: false,

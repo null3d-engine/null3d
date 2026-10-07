@@ -492,6 +492,18 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setEffect(index: number, template: number, flags: number): number;
 	/**
+	 * Draws the `length` custom effects from a place on as one group, with the joined shader of
+	 * render pipeline template `template`, from the next frame on, once its pipeline is built.
+	 * Template 0 ends the group that starts at the place.
+	 */
+	setEffectGroup(index: number, length: number, template: number): number;
+	/**
+	 * Folds the custom effects from a place on into the final pass, with the final pass's build of
+	 * render pipeline template `template`, from the next frame on, while nothing reads the image
+	 * between them. Template 0 folds none.
+	 */
+	setEffectFold(index: number, template: number): number;
+	/**
 	 * Maps HDR color with the custom tone curve whose builds take the render pipeline templates from
 	 * `template` on, or with the curve that `setOutput` sets for 0, from the next frame on.
 	 */
@@ -763,6 +775,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOutline',
 	'effectValues',
 	'setEffect',
+	'setEffectGroup',
+	'setEffectFold',
 	'setToneCurve',
 	'setCanvasOutput',
 	'setRenderScaling',

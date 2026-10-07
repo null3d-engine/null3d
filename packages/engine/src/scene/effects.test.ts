@@ -8,25 +8,44 @@ import { Post } from './post';
 import type { CompiledWgsl } from './resources';
 import { ShaderTemplates } from './shader-templates';
 
+/** Pieces whose builds each add `size` characters of WGSL to a host. */
+function pieces(size: number) {
+	const builds = {
+		webgpu: { permutation: 0, wgsl: { items: ['x'.repeat(size)], run: 'run' }, glsl: null },
+	};
+	return { group: builds, fold: builds };
+}
+
 /** A compiled effect with the given uniforms, as the plugin gives it. */
 function effectWgsl(
 	uniforms: { name: string; type: string; offset: number }[] = [],
 	depth = false,
+	joins = true,
+	size = 100,
 ): CompiledWgsl {
-	return { kind: 'effect', uniforms, depth, variants: {} } as unknown as CompiledWgsl;
+	return {
+		kind: 'effect',
+		uniforms,
+		depth,
+		joins,
+		variants: {},
+		pieces: pieces(size),
+	} as unknown as CompiledWgsl;
 }
 
 /** A compiled tone curve. */
-const CURVE = { kind: 'toneCurve', variants: {} } as unknown as CompiledWgsl;
+const CURVE = { kind: 'toneCurve', variants: {}, pieces: pieces(50) } as unknown as CompiledWgsl;
 
 /**
  * A post object whose core keeps the effects that `setEffect` sets, in place, as the core's list
  * does, and records each `setToneCurve` and `setOutput` call and each shader sent to the thread
  * that draws.
  */
-function post(hdrEffects = true) {
+function post(hdrEffects = true, join = true) {
 	const block = new Float32Array(C.EFFECT_FLOATS);
 	const effects: { template: number; flags: number; values: number[] }[] = [];
+	const groups: [number, number][] = [];
+	let fold: [number, number] = [0, 0];
 	const curves: number[] = [];
 	const sent: [number, CustomShader][] = [];
 	let setEffects = 0;
@@ -48,13 +67,24 @@ function post(hdrEffects = true) {
 				curves.push(template);
 				return 0;
 			},
+			setEffectGroup(index: number, length: number, template: number) {
+				groups[index] = [length, template];
+				return 0;
+			},
+			setEffectFold(index: number, template: number) {
+				fold = [index, template];
+				return 0;
+			},
 		},
 		check: (result: number) => result,
 	} as unknown as CoreMemory;
 	const templates = new ShaderTemplates((template, shader) => sent.push([template, shader]));
 	return {
-		post: new Post(core, hdrEffects, true, undefined, templates),
+		post: new Post(core, hdrEffects, true, undefined, templates, join),
 		effects,
+		/** The group that starts at each place that runs, as its length and template. */
+		groups: () => groups.slice(0, effects.length),
+		fold: () => fold,
 		curves,
 		sent,
 		calls: () => setEffects,
@@ -69,15 +99,15 @@ describe('post.addEffect', () => {
 		output.addEffect({ wgsl: tint, order: 2 });
 		output.addEffect({ wgsl: blur });
 		output.addEffect({ wgsl: tint, order: 2 });
-		const first = C.SHADING_CUSTOM_FIRST;
+		// Each WGSL's shader goes once; the templates of joined shaders come between them.
+		const own = sent.filter(([, shader]) => shader.kind === 'effect').map(([t]) => t);
+		expect(own).toHaveLength(2);
+		const [tintTemplate, blurTemplate] = own as [number, number];
+		expect(tintTemplate).toBe(C.SHADING_CUSTOM_FIRST);
 		expect(effects.map((e) => [e.template, e.flags])).toEqual([
-			[first + 1, C.EFFECT_DEPTH],
-			[first, 0],
-			[first, 0],
-		]);
-		expect(sent.map(([template, shader]) => [template, shader.kind])).toEqual([
-			[first, 'effect'],
-			[first + 1, 'effect'],
+			[blurTemplate, C.EFFECT_DEPTH],
+			[tintTemplate, 0],
+			[tintTemplate, 0],
 		]);
 		expect(output.needsHdr).toBe(true);
 	});
@@ -152,6 +182,7 @@ describe('a custom tone curve', () => {
 			[first, 'final'],
 			[first + 1, 'finalBloom'],
 		]);
+		expect(sent[0]?.[1].pieces).toBeDefined();
 		expect(output.needsHdr).toBe(true);
 		output.set({ toneMapping: 'agx' });
 		expect(curves).toEqual([first, 0]);
@@ -167,5 +198,84 @@ describe('a custom tone curve', () => {
 			'did not compile',
 		);
 		expect(() => output.set({ toneMapping: 'filmic' as 'agx' })).toThrow('which is not');
+	});
+});
+
+describe('joined effects', () => {
+	it('groups each effect with the ones after it that read their own pixel, and folds the last group', () => {
+		const { post: output, groups, fold, sent } = post();
+		const own = effectWgsl();
+		const neighbors = effectWgsl([], false, false);
+		output.addEffect({ wgsl: own });
+		output.addEffect({ wgsl: own });
+		output.addEffect({ wgsl: neighbors });
+		output.addEffect({ wgsl: own });
+		const kinds = new Map(sent.map(([template, shader]) => [template, shader]));
+		const [first, second, third, fourth] = groups();
+		// The first two join; the neighbor reader starts a group, and the last effect joins it.
+		expect(first?.[0]).toBe(2);
+		expect(kinds.get(first?.[1] ?? 0)?.kind).toBe('effectGroup');
+		expect(second).toEqual([0, 0]);
+		expect(third?.[0]).toBe(2);
+		expect(fourth).toEqual([0, 0]);
+		const [from, template] = fold();
+		expect(from).toBe(2);
+		const folded = kinds.get(template);
+		expect(folded?.kind).toBe('effectFold');
+		expect(folded?.members?.map((m) => m.slot)).toEqual([2, 3]);
+		expect(folded?.curve).toBeUndefined();
+		// A group's builds wait for the thread that draws to join them.
+		expect(Object.keys(kinds.get(first?.[1] ?? 0)?.variants ?? { x: 1 })).toEqual([]);
+	});
+
+	it('splits a group whose pieces pass the cap, and folds a curve with the last group', () => {
+		const { post: output, groups, fold, sent } = post();
+		const large = effectWgsl([], false, true, 12 * 1024);
+		output.addEffect({ wgsl: large });
+		output.addEffect({ wgsl: large });
+		expect(groups()).toEqual([
+			[1, 0],
+			[1, 0],
+		]);
+		// The last group alone is within the fold's cap only for a smaller effect.
+		expect(fold()).toEqual([1, 0]);
+		output.removeEffect(output.addEffect({ wgsl: large }));
+		const { post: small, fold: smallFold, sent: smallSent } = post();
+		small.addEffect({ wgsl: effectWgsl() });
+		small.set({ toneMapping: CURVE });
+		const folded = new Map(smallSent).get(smallFold()[1]);
+		expect(folded?.kind).toBe('effectFold');
+		const curve = smallSent.find(([, shader]) => shader.kind === 'final')?.[0];
+		expect(folded?.curve).toBe(curve);
+		expect(sent.length).toBeGreaterThan(0);
+	});
+
+	it('draws a group or a fold whose pipeline failed one pass each from then on', () => {
+		const { post: output, groups, fold } = post();
+		output.addEffect({ wgsl: effectWgsl() });
+		output.addEffect({ wgsl: effectWgsl() });
+		const group = groups()[0]?.[1] ?? 0;
+		const folded = fold()[1];
+		expect(group).not.toBe(0);
+		output.dropJoin(group);
+		expect(groups()[0]).toEqual([2, 0]);
+		expect(fold()[1]).toBe(folded);
+		output.dropJoin(folded);
+		expect(fold()).toEqual([0, 0]);
+		// A change of the chain asks for neither again.
+		output.addEffect({ wgsl: effectWgsl(), order: -1 });
+		output.removeEffect(output.addEffect({ wgsl: effectWgsl(), order: -1 }));
+		expect(groups().every(([, template]) => template !== group)).toBe(true);
+	});
+
+	it('joins nothing with ?join=off', () => {
+		const { post: output, groups, fold } = post(true, false);
+		output.addEffect({ wgsl: effectWgsl() });
+		output.addEffect({ wgsl: effectWgsl() });
+		expect(groups()).toEqual([
+			[1, 0],
+			[1, 0],
+		]);
+		expect(fold()).toEqual([1, 0]);
 	});
 });

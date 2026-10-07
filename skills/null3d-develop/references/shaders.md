@@ -239,7 +239,7 @@ fn fs(in: Varyings) -> @location(0) vec4f {
 
 ## 6. Custom post effects and tone curves (0.2)
 
-An effect is a WGSL function that the engine calls for each pixel, in a full-screen pass of its own. It runs on linear HDR color after the exposure, before bloom and the tone curve. Engine docs: `guides/custom-passes`, `api/post`.
+An effect is a WGSL function that the engine calls for each pixel, in a full-screen pass. It runs on linear HDR color after the exposure, before bloom and the tone curve. Engine docs: `guides/custom-passes`, `api/post`.
 
 ```ts
 const pulse = /* wgsl */ `
@@ -268,7 +268,7 @@ post.removeEffect(vignette);
 - Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects take no textures.
 - Library imports work: `#import null3d::noise::{random2}`. Do not declare `uniforms`, or names that start with `effect`.
 - `order` sets the run order, lowest first; ties run in the order added. At most 8 effects; a ninth throws E1213.
-- Each effect costs a full-screen pass, 8 bytes read and written per pixel. Join per-pixel looks into one function rather than adding several effects, above all on phones.
+- A full-screen pass reads and writes 8 bytes per pixel. An effect that reads only its own pixel joins the pass of the effect before it. With bloom and FXAA off, the last pass folds into the final pass. An effect that calls `effectPixel` or `effectColor` starts a pass of its own, so put neighbor reads first in a chain. Add effects before the first frame. On WebGL2 in Chrome on Android, which cannot compile shaders in the background, effects added later draw a pass each.
 - Effects need HDR color, as bloom does. In compatibility mode with MSAA, the first effect moves the engine to HDR with FXAA. On a WebGL2 device with no float target they stay off, with a warning in development builds.
 - Return premultiplied color: keep `input.color.a`, and multiply colors you mix in by it, as `mix(c.rgb, fogColor * c.a, t)` does.
 
