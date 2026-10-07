@@ -9,10 +9,12 @@ the page. Keep that file with the build when you publish it, or show its text in
 credits. Each null3D add-on package adds its own notices to the same file.
 
 ==============================================================================
-Basis Universal: the KTX2 transcoder (basis_transcoder.js, basis_transcoder.wasm)
+Basis Universal: the KTX2 transcoder (basis_transcoder.mjs, basis_transcoder.wasm)
 ==============================================================================
 
-Basis Universal v2.50, from https://github.com/BinomialLLC/basis_universal, unchanged.
+Basis Universal v2.50, from https://github.com/BinomialLLC/basis_universal. null3D builds the
+transcoder from the unchanged v2.50 sources with the official build's settings, changed so
+that its bindings make no code from strings and its script is an ES module for browsers.
 Apache License 2.0. Its NOTICE file:
 
 NOTICE
@@ -269,10 +271,11 @@ The Apache License 2.0, as Basis Universal ships it:
    limitations under the License.
 
 ==============================================================================
-meshoptimizer: the meshopt decoder (the glTF loader's gltf-meshopt file)
+meshoptimizer: the meshopt decoder (meshopt_decoder.wasm, and the gltf-meshopt file)
 ==============================================================================
 
-meshoptimizer 1.3.0, from https://github.com/zeux/meshoptimizer.
+meshoptimizer 1.3.0, from https://github.com/zeux/meshoptimizer: its decoder's SIMD module, taken
+unchanged from the npm package's meshopt_decoder.mjs, and code that calls it as that file does.
 
 MIT License
 

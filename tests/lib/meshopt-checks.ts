@@ -32,3 +32,11 @@ export function withRotatedTriangles(data: GltfData): GltfData {
 		for (const primitive of mesh.primitives) primitive.indices = rotated(primitive.indices);
 	return data;
 }
+
+/** The engine's meshopt decoder, started from the module file that the engine ships. */
+export async function shippedDecoder(): Promise<MeshoptDecode> {
+	const { meshoptDecoder } = await import('../../packages/engine/src/scene/gltf-meshopt.ts');
+	const { MESHOPT_VENDOR, MESHOPT_WASM } = await import('../../tools/lib/meshopt-wasm.ts');
+	const bytes = await Bun.file(join(MESHOPT_VENDOR, MESHOPT_WASM)).arrayBuffer();
+	return meshoptDecoder(await WebAssembly.compile(bytes));
+}
