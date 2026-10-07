@@ -1,14 +1,14 @@
 // Images for texture uploads, on their way from the sketch thread to the thread that draws. The
-// engine core gives each image an id, counting from 1, and the sketch thread sends the images in
-// id order. The thread that draws keeps them in a table and counts each one it receives in the
-// control block, so the core knows which uploads can run. The table outlives each GPU device, so
+// engine core gives each image an id, which steps as frame numbers do, and the sketch thread sends
+// the images in id order. The thread that draws keeps them in a table and notes the id of each one
+// it receives in the control block, so the core knows which uploads can run. The table outlives each GPU device, so
 // a new device can upload the images that it still holds.
 //
 // A texture generator, which fills a texture on the GPU, takes an image id and the same way too:
-// the sketch thread sends its name. The thread that draws loads the generators' code for its GPU
-// path with the first one, and counts the generator only then, so a draw list that names it runs
-// it at once. Arrivals count in id order, so an image that comes while the code loads counts
-// after the generator.
+// the sketch thread sends what it makes, the built-in room's name or a panorama's texels. The
+// thread that draws loads the generators' code for its GPU path with the first one, and notes the
+// generator only then, so a draw list that names it runs it at once. Arrivals are noted in id order,
+// so an image that comes while the code loads is noted after the generator.
 //
 // Custom materials' shaders take the same way, each under its render pipeline template. A backend
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
@@ -16,11 +16,13 @@
 //
 // So do the names of features whose shader files the sketch will need, such as skinning when a
 // glTF file with skins loads. The thread that draws starts to download each feature's file then,
-// before the objects that need it are drawn.
+// before the objects that need it are drawn. A reserved name asks for the generators' code and
+// shaders the same way, while an HDR file still downloads.
 
 import { messageOf } from '../errors/message';
 import type { ShaderVariants } from '../generated/shaders';
-import { Slot } from './control';
+import type { Panorama } from '../scene/panorama-files';
+import { frameAfter, Slot } from './control';
 import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
 
 /**
@@ -34,8 +36,22 @@ export interface CustomShader {
 	readonly textures: number;
 }
 
-/** The names of the generators that fill textures on the GPU: `room`, the built-in room. */
-export type GeneratorName = 'room';
+/**
+ * What a generator makes on the GPU: `room`, the built-in room, or the environment map of a
+ * panorama from an HDR file.
+ */
+export type GeneratorSource = 'room' | Panorama;
+
+/** True for a generator's source, false for an image. */
+function isGenerator(image: ImageBitmap | GeneratorSource): image is GeneratorSource {
+	return typeof image === 'string' || 'texels' in image;
+}
+
+/**
+ * The name that asks the thread that draws for the generators' code and shaders ahead of the first
+ * generator, among the features to preload.
+ */
+export const GENERATORS_PRELOAD = 'environment-generator';
 
 /** The images, texture generators and custom materials' shaders that the thread that draws holds. */
 export class ImageTable {
@@ -47,17 +63,27 @@ export class ImageTable {
 	/** Hears each feature that the sketch asks for, while a renderer runs. */
 	onPreload: ((feature: string) => void) | undefined;
 
-	/** Keeps the features that the sketch asked for, and tells the renderer of each new one. */
+	/**
+	 * Keeps the features that the sketch asked for, and tells the renderer of each new one. The
+	 * generators' name starts to load their code and build their pipelines instead.
+	 */
 	preload(features: readonly string[]): void {
 		for (const feature of features) {
+			if (feature === GENERATORS_PRELOAD) {
+				void this.generatorsReady();
+				continue;
+			}
 			if (this.preloads.has(feature)) continue;
 			this.preloads.add(feature);
 			this.onPreload?.(feature);
 		}
 	}
 
-	/** Each texture generator's name, by its id among the images' ids. */
-	private readonly generators = new Map<number, GeneratorName>();
+	/**
+	 * Each texture generator's source, by its id among the images' ids. The table keeps a
+	 * panorama's texels until the texture goes, so a new GPU device makes its map again.
+	 */
+	private readonly generators = new Map<number, GeneratorSource>();
 	/** The generators' code for the GPU path of the thread that draws, once it has loaded. */
 	private generatorCode: unknown;
 	/** Why the generators' code did not load. */
@@ -102,11 +128,10 @@ export class ImageTable {
 	}
 
 	/**
-	 * Keeps a generator under its id once the generators' code has loaded and the backend has built
-	 * their pipelines, or once either failed, which the command that runs the generator then
-	 * reports.
+	 * Loads the generators' code once, then has the backend build their pipelines, and resolves when
+	 * both are done or either failed. A failure waits for the command that runs a generator.
 	 */
-	async addGenerator(id: number, name: GeneratorName): Promise<void> {
+	private async generatorsReady(): Promise<void> {
 		this.loading ??= this.loader
 			.then((load) => load())
 			.then(
@@ -119,22 +144,31 @@ export class ImageTable {
 			);
 		await this.loading;
 		await this.warmGenerators();
-		this.generators.set(id, name);
 	}
 
 	/**
-	 * The name of the generator under an id, which a draw list's command names, and the
+	 * Keeps a generator under its id once the generators' code has loaded and the backend has built
+	 * their pipelines, or once either failed, which the command that runs the generator then
+	 * reports.
+	 */
+	async addGenerator(id: number, source: GeneratorSource): Promise<void> {
+		await this.generatorsReady();
+		this.generators.set(id, source);
+	}
+
+	/**
+	 * The source of the generator under an id, which a draw list's command names, and the
 	 * generators' code that runs it, as the backend of the thread's GPU path loaded it. Throws when
 	 * the table holds no such generator, or when the code did not load.
 	 */
-	generator<Code>(id: number): [GeneratorName, Code] {
-		const name = this.generators.get(id);
-		if (!name) throw new Error(`draw list names generator ${id}, which does not exist`);
+	generator<Code>(id: number): [GeneratorSource, Code] {
+		const source = this.generators.get(id);
+		if (!source) throw new Error(`draw list names generator ${id}, which does not exist`);
 		if (this.generatorCode === undefined)
 			throw new Error(
-				`the code of the ${name} generator did not download: ${this.generatorFailure}`,
+				`the code of the environment generator did not download: ${this.generatorFailure}`,
 			);
-		return [name, this.generatorCode as Code];
+		return [source, this.generatorCode as Code];
 	}
 
 	/** Keeps an image under its id, and closes one that the id named before. */
@@ -173,8 +207,8 @@ export class ImageTable {
 	}
 }
 
-/** Sends an image, or a texture generator's name, under its id, to the thread that draws. */
-export type ImageSender = (id: number, image: ImageBitmap | GeneratorName) => void;
+/** Sends an image, or what a texture generator makes, under its id, to the thread that draws. */
+export type ImageSender = (id: number, image: ImageBitmap | GeneratorSource) => void;
 
 /** Sends a custom material's shader variants, under its template, to the thread that draws. */
 export type ShaderSender = (template: number, shader: CustomShader) => void;
@@ -188,16 +222,16 @@ export type PreloadSender = (features: readonly string[]) => void;
  */
 type DrawingMessage =
 	| { id: number; image: ImageBitmap }
-	| { id: number; generator: GeneratorName }
+	| { id: number; generator: GeneratorSource }
 	| { template: number; shader: CustomShader }
 	| { preload: readonly string[] };
 
 /**
- * Counts an image that the thread that draws received, and wakes a thread that waits for it, through
- * `to` where another thread runs the sketch.
+ * Notes the id of an image that the thread that draws received, and wakes a thread that waits for
+ * it, through `to` where another thread runs the sketch.
  */
-function countArrival(slots: Int32Array, to?: WakeTarget): void {
-	Atomics.add(slots, Slot.ImagesArrived, 1);
+function noteArrival(slots: Int32Array, id: number, to?: WakeTarget): void {
+	Atomics.store(slots, Slot.ImagesArrived, id);
 	notifySlot(slots, Slot.ImagesArrived, to);
 }
 
@@ -231,8 +265,9 @@ export function sendThrough(port: MessagePort): DrawingSenders {
 	};
 	return {
 		sendImage(id, image) {
-			if (typeof image === 'string') post({ id, generator: image });
-			else post({ id, image }, [image]);
+			if (!isGenerator(image)) post({ id, image }, [image]);
+			else if (typeof image === 'string') post({ id, generator: image });
+			else post({ id, generator: image }, [image.texels.buffer]);
 		},
 		sendShader: (template, shader) => post({ template, shader }),
 		sendPreload: (features) => port.postMessage({ preload: features } satisfies DrawingMessage),
@@ -245,9 +280,9 @@ export function shadersToTable(table: ImageTable): ShaderSender {
 }
 
 /**
- * Keeps images and generators in the table and counts each, through `to` where another thread
- * runs the sketch. An image counts at once and a generator once its code has loaded, but each
- * only after every earlier one, so the count says that every id up to it arrived.
+ * Keeps images and generators in the table and notes the id of each, through `to` where another
+ * thread runs the sketch. An image is noted at once and a generator once its code has loaded, but
+ * each only after every earlier one, so the noted id says that every id up to it arrived.
  */
 function arrivals(table: ImageTable, slots: Int32Array, to?: WakeTarget): ImageSender {
 	let waiting: Promise<void> | undefined;
@@ -259,11 +294,12 @@ function arrivals(table: ImageTable, slots: Int32Array, to?: WakeTarget): ImageS
 		});
 	};
 	return (id, image) => {
+		const generator = isGenerator(image);
 		const arrive = () => {
-			if (typeof image !== 'string') table.set(id, image);
-			countArrival(slots, to);
+			if (!generator) table.set(id, image);
+			noteArrival(slots, id, to);
 		};
-		if (typeof image === 'string')
+		if (generator)
 			after(waiting ?? Promise.resolve(), () => table.addGenerator(id, image).then(arrive));
 		else if (waiting) after(waiting, arrive);
 		else arrive();
@@ -304,8 +340,8 @@ export function drawingSenders(
 }
 
 /**
- * Keeps the images, generators and shaders that arrive through a port in the table, and counts each
- * image and generator. The sketch thread at the port's other end sends nothing until the returned
+ * Keeps the images, generators and shaders that arrive through a port in the table, and notes the id
+ * of each image and generator. The sketch thread at the port's other end sends nothing until the returned
  * function tells it that this thread receives. That thread hears of each arrival through the same
  * port, where it waits for wake messages. A message that the browser cannot read stops this thread
  * with an error, because the sketch's wait for that image would never end.
@@ -324,12 +360,15 @@ export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32
 	return () => port.postMessage(RECEIVING);
 }
 
-/** Resolves once the thread that draws holds every image up to id `sent`. */
+/**
+ * Resolves once the thread that draws holds every image up to id `sent`. Ids go round as frame
+ * numbers do, so they compare by their distance.
+ */
 export async function imagesArrived(slots: Int32Array, sent: number): Promise<void> {
-	let count = Atomics.load(slots, Slot.ImagesArrived);
-	while (count < sent) {
-		const change = slotChangeOrRecheck(slots, Slot.ImagesArrived, count);
+	let arrived = Atomics.load(slots, Slot.ImagesArrived);
+	while (frameAfter(sent, arrived)) {
+		const change = slotChangeOrRecheck(slots, Slot.ImagesArrived, arrived);
 		if (change) await change;
-		count = Atomics.load(slots, Slot.ImagesArrived);
+		arrived = Atomics.load(slots, Slot.ImagesArrived);
 	}
 }

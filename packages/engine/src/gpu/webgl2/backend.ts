@@ -22,7 +22,7 @@
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import {
@@ -273,6 +273,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	const depth = gl.DEPTH_ATTACHMENT;
 	add(G.FORMAT_DEPTH24_PLUS, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, depth);
 	add(G.FORMAT_DEPTH32_FLOAT, gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, depth);
+	add(G.FORMAT_DEPTH16_UNORM, gl.DEPTH_COMPONENT16, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, depth);
 	return formats;
 }
 
@@ -512,11 +513,7 @@ export class WebGL2Backend {
 		this.depth = setDepthMode(gl, depthMode);
 		this.programHost = programHost(gl, this.depth, this.parallel);
 		const host = this.programHost;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(host)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(host));
 		this.depthFunc = this.nearerPasses();
 		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
 		this.clearDepth = this.depth.standard ? 0 : 1;
@@ -1467,8 +1464,7 @@ export class WebGL2Backend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
@@ -1476,11 +1472,12 @@ export class WebGL2Backend {
 		if (this.blend) this.setBlend(0);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
-		generators[name].run(
+		code.run(
 			this.programHost,
 			texture.texture as WebGLTexture,
 			texture.width,
 			texture.mips,
+			source,
 		);
 		this.program = null;
 		this.activeUnit = -1;
@@ -1862,7 +1859,23 @@ export class WebGL2Backend {
 		this.setScissorTest(false);
 		if (this.passToCanvas) return;
 		const framebuffer = this.passFramebuffer;
-		if (this.passResolve !== G.NO_TARGET) {
+		// Tile-based GPUs skip writing a target that the pass discards back to memory. A discard
+		// comes while the pass's framebuffer is still the one drawn into, as ANGLE on Metal ends the
+		// pass, with its stores, at a resolve's blit, which it draws as a pass of its own. The blit
+		// reads the color, so a pass that resolves discards its color after the blit.
+		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
+		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
+		const resolves = this.passResolve !== G.NO_TARGET;
+		const keepsColor = storeColor || resolves;
+		const discard = storeDepth
+			? keepsColor
+				? undefined
+				: DISCARD_COLOR
+			: keepsColor
+				? DISCARD_DEPTH
+				: DISCARD_BOTH;
+		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		if (resolves) {
 			const into =
 				this.passResolve === 0
 					? (this.canvasTarget?.framebuffer ?? null)
@@ -1874,21 +1887,11 @@ export class WebGL2Backend {
 			const height = this.passHeight;
 			gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 		}
-		// Tile-based GPUs then skip writing the multisampled targets back to memory.
-		const storeColor = (this.passFlags & G.PASS_STORE_COLOR) !== 0;
-		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const depth = this.passDepth;
 		if (storeDepth && depth?.renderbuffer && depth.texture) this.copyDepth(framebuffer, depth);
-		const discard = storeColor
-			? storeDepth
-				? undefined
-				: DISCARD_DEPTH
-			: storeDepth
-				? DISCARD_COLOR
-				: DISCARD_BOTH;
-		if (discard) {
+		if (resolves && !storeColor) {
 			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
-			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, discard);
+			gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, DISCARD_COLOR);
 		}
 	}
 

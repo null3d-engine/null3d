@@ -16,7 +16,7 @@ import { BENCH_SCENES, type FeatureScene } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { AO_IMAGE } from '../../bench/scenes/ao.ts';
 import { BLOOM_IMAGE } from '../../bench/scenes/bloom.ts';
-import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { FOG_IMAGE, FOG_SETTINGS, type FogName } from '../../bench/scenes/fog.ts';
 import {
 	MODEL_NAMES,
 	MODEL_SCENES,
@@ -408,6 +408,14 @@ const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.s
  * frame that lost most of the scene fails.
  */
 const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
+
+/**
+ * S5's characters on SwiftShader. Its time grows with the crowd, and the software GPU on CI's
+ * slowest machines took nearly all of the run's limit for the full crowd. A smaller crowd still
+ * skins, blends and shadows every character in rings that fill the frame. The real GPU, Safari and
+ * Firefox draw the full crowd. .dev/decisions/D-88-software-gpu-loads.md gives the figures.
+ */
+const S5_SWIFTSHADER_COUNT = 100;
 
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
@@ -810,6 +818,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The still shadow scene, whose wall throws one long shadow edge across the seam between the
+	// first two cascades. Over the band at the first cascade's far end, its shadow blends into the
+	// second cascade's, so the edge shows no line where they meet.
+	{
+		name: 'shadows-seam',
+		sketch: 'tests/pages/sketches/shadow-scene-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// Car-sized boxes standing on a street, in the last cascade from above, and from a low angle in
 	// the first cascade and in the last. Each box's shadow must meet its base with no lit line
 	// between them.
@@ -1080,10 +1099,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
 	// references of its own.
 	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
-	// Towers on a floor that runs into linear fog and exponential squared fog, lit and unlit, and two
-	// towers whose materials turn fog off. The parity test compares each image with three.js's `Fog`
-	// and `FogExp2`.
-	...(['linear', 'exp2'] as const).map(
+	// Towers on a floor that runs into fog, lit and unlit, and two towers whose materials turn fog
+	// off: each fog curve, fog that thins with height, and fog that glows toward a low sun. The
+	// parity test compares the linear and exponential squared images with three.js's `Fog` and
+	// `FogExp2`.
+	...(Object.keys(FOG_SETTINGS) as FogName[]).map(
 		(fog): ImageTest => ({
 			name: `fog-${fog}`,
 			sketch: `tests/pages/sketches/fog-sketch.ts?fog=${fog}`,
@@ -1122,6 +1142,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// The same spheres lit by HDR files that the engine reads and filters itself at load. The
+	// sunset's Radiance file must draw as the tool's map of it does, so it borrows that test's
+	// references: the scene lights the same from either source. The studio's OpenEXR file has its
+	// own. A worker reads each file, and its panorama reaches the thread that draws in each thread
+	// mode's own way, so the sunset draws in every mode. The GPU filters the panorama in the held
+	// frame, which takes a software GPU as long as the room.
+	{
+		name: 'environment-venice-hdr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=venice&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		reference: 'environment-venice',
+		modes: ALL_MODES,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'environment-studio-exr',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=studio&hdr',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
@@ -1356,7 +1398,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
-	// their frame, so other devices may differ in fewer of their pixels.
+	// their frame, so other devices may differ in fewer of their pixels. S5 draws a smaller crowd on
+	// SwiftShader.
 	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
@@ -1365,6 +1408,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: ['pipelined', 'low latency'],
 			timeoutSeconds: 90,
+			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),

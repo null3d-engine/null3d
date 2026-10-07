@@ -42,7 +42,7 @@ import {
 	TEXTURE_WRAP_REPEAT,
 } from '../generated/core';
 import type { QualitySettingName, QualitySettings } from '../quality/presets';
-import type { GeneratorName, ImageSender } from '../shared/images';
+import type { GeneratorSource, ImageSender } from '../shared/images';
 import type { EnvironmentFormat } from './environment';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
@@ -470,12 +470,13 @@ export class Textures {
 	/**
 	 * @internal A cube texture of shared-exponent floats with faces of `size` texels a side and
 	 * `levels` mip levels, read with linear filters within and between levels, whose texels a
-	 * generator makes on the GPU. It resolves once the thread that draws has loaded the generator's
-	 * code and built its pipelines. The next frame then makes every texel in one submit, before it
-	 * draws, so no frame draws with the texture before its texels are made.
+	 * generator makes on the GPU from `source`: the built-in room, or a panorama, whose texels move
+	 * to the thread that draws. It resolves once that thread has loaded the generator's code and
+	 * built its pipelines. The next frame then makes every texel in one submit, before it draws, so
+	 * no frame draws with the texture before its texels are made.
 	 */
 	async fromGenerator(
-		name: GeneratorName,
+		source: GeneratorSource,
 		size: number,
 		levels: number,
 		call: string,
@@ -487,7 +488,7 @@ export class Textures {
 		let id: number;
 		try {
 			id = core.checkGrowth(core.glue.generateTexture(handle), call, 'a texture');
-			this.send(id, name);
+			this.send(id, source);
 		} catch (error) {
 			texture.destroy();
 			throw error;
@@ -663,7 +664,7 @@ export class Textures {
 		return this.stat(TEXTURE_STAT_MAX_SIZE);
 	}
 
-	/** @internal The images sent to the thread that draws so far. */
+	/** @internal The last image id sent to the thread that draws, or 0 before the first. */
 	get imagesSent(): number {
 		return this.stat(TEXTURE_STAT_IMAGES_SENT);
 	}

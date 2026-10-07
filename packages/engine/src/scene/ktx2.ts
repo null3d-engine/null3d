@@ -4,18 +4,19 @@
 // The sketch thread reads the file's header and picks the format that the device samples best:
 // ASTC, BC7 or ETC2 where the device has them, and RGBA8 elsewhere. High dynamic range data
 // (UASTC HDR) becomes BC6H where the device has BC formats, and shared-exponent floats elsewhere.
-// The Basis Universal transcoder then turns the file's data into that format in a worker of its own,
-// outside the sketch's frames, and hands back every mip level. The texels go into engine memory,
-// and upload a band of rows of blocks per frame as data does.
+// The Basis Universal transcoder then turns the file's data into that format in a job worker, as a
+// task of the on-demand loader (shared/tasks.ts, scene/ktx2-transcode.ts), outside the sketch's
+// frames, and hands back every mip level. The texels go into engine memory, and upload a band of
+// rows of blocks per frame as data does.
 //
-// The loader imports no engine module but constants, types and the WebAssembly download, which no
+// The loader imports no engine module but constants, types, and the on-demand loader, which no
 // thread's first file shares with it. The bundler would move a module that this file shares with
 // its thread's first file into a file of its own, which every page would then download at its
 // start. So the caller hands it the engine's error class.
 //
-// The transcoder is the official build of Basis Universal v2.50 (github.com/BinomialLLC/
-// basis_universal, tag v2_50, webgl/transcoder/build), under the Apache License 2.0, kept
-// unchanged in packages/engine/vendor/basis with its licence and notice.
+// The transcoder is built from Basis Universal v2.50 (github.com/BinomialLLC/basis_universal, tag
+// v2_50) by tools/build-basis-transcoder.ts, under the Apache License 2.0, in
+// packages/engine/vendor/basis with its licence and notice.
 
 import type { EngineError } from '../errors/engine-error';
 import {
@@ -23,20 +24,26 @@ import {
 	CAPABILITY_TEXTURE_BC,
 	CAPABILITY_TEXTURE_ETC2,
 } from '../generated/core';
-import { onEngineStop } from '../shared/helper-workers';
-import { compileWasm } from '../shared/wasm';
+import { runTask, type Task, TaskFailure } from '../shared/tasks';
+import type { WasmError } from '../shared/wasm';
 import type { LoadTextureOptions } from './assets';
 import { FILE_LIMITS } from './file-limits';
 import type { CompressedTextureFormat, Texture, TextureColorSpace, Textures } from './textures';
 
 /**
- * The transcoder's files. Bundlers copy each as it is and give the copy's address. `no-inline`
- * keeps Vite from turning a small file into a data: address: a worker from one has an opaque
- * origin, which may load no script of the page's origin.
+ * The transcoder's task. Its WebAssembly module goes to the workers under the name that the task
+ * (scene/ktx2-transcode.ts) reads it by.
  */
-const WORKER = new URL('../workers/transcoder-worker.js?no-inline', import.meta.url);
-const GLUE = new URL('../../vendor/basis/basis_transcoder.js?no-inline', import.meta.url);
-const WASM = new URL('../../vendor/basis/basis_transcoder.wasm?no-inline', import.meta.url);
+const TRANSCODER: Task = {
+	name: 'ktx2',
+	wasm: [
+		{
+			name: 'basis',
+			url: new URL('../../vendor/basis/basis_transcoder.wasm', import.meta.url),
+			what: 'the KTX2 transcoder',
+		},
+	],
+};
 
 /** The data that a KTX2 file holds: Basis Universal's codecs of color, and UASTC HDR. */
 export type Ktx2Codec = 'etc1s' | 'uastc' | 'uastc-hdr';
@@ -272,139 +279,53 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
 
 /** Makes one of the engine's coded errors: the caller's `EngineError`. */
 export type Ktx2Error = (
-	code: 'E1406' | 'E1412' | 'E1418' | 'E1420',
+	code: Parameters<WasmError>[0] | 'E1412' | 'E1420',
 	message: string,
 ) => EngineError;
 
 /**
- * Downloads and compiles the transcoder's module. Fails with E1406 when it does not download, and
- * with E1418 when the page's Content-Security-Policy blocks WebAssembly.
+ * Transcodes a file, which moves to a job worker, into texels of every level and layer. A file that
+ * the transcoder cannot read fails with E1412, and a transcoder that does not load with E1406, or
+ * with the policy's or the server's code when its file does not download or compile. A file that
+ * waits when the engine stops fails with E1420.
  */
-async function compileTranscoder(error: Ktx2Error): Promise<WebAssembly.Module> {
-	return (await compileWasm(WASM, 'the KTX2 transcoder', error)).module;
-}
-
-/** A request that waits for the transcoder. */
-interface Waiting {
-	resolve(texels: ArrayBuffer): void;
-	reject(error: EngineError): void;
-	address: URL;
-	call: string;
-}
-
-/** What the transcoder's worker answers. */
-interface Answer {
-	id: number;
-	texels?: ArrayBuffer;
-	/** Where it failed: loading the transcoder, or transcoding the file. */
-	stage?: 'load' | 'transcode';
-	error?: string;
-}
-
-/**
- * The transcoder's worker and the requests that wait for it. The worker loads the transcoder's
- * script when it starts, while this thread downloads and compiles its module, which then goes to
- * the worker. A failed start fails every request with E1406, and a later load starts it again.
- */
-class Transcoder {
-	private readonly worker: Worker;
-	private readonly waiting = new Map<number, Waiting>();
-	private next = 0;
-	private failed = false;
-
-	constructor(
-		private readonly error: Ktx2Error,
-		private readonly stopped: () => void,
-	) {
-		this.worker = new Worker(WORKER, { name: 'null3d-transcoder' });
-		this.worker.onmessage = (event: MessageEvent<Answer>) => this.answer(event.data);
-		this.worker.onerror = (event) => {
-			event.preventDefault();
-			this.fail(event.message || 'its script did not load');
-		};
-		this.worker.postMessage({ glue: GLUE.href });
-		compileTranscoder(error).then(
-			(module) => this.worker.postMessage({ module }),
-			(error: EngineError) => this.fail(error),
+async function transcode(
+	file: ArrayBuffer,
+	target: Ktx2Target,
+	levels: number,
+	layers: number,
+	address: URL,
+	call: string,
+	error: Ktx2Error,
+): Promise<ArrayBuffer> {
+	try {
+		return await runTask<ArrayBuffer>(
+			TRANSCODER,
+			{ file, format: target.transcoder, levels, layers },
+			[file],
+			error,
 		);
-	}
-
-	/** Transcodes a file, which moves to the worker, into texels of every level and layer. */
-	transcode(
-		file: ArrayBuffer,
-		target: Ktx2Target,
-		levels: number,
-		layers: number,
-		address: URL,
-		call: string,
-	): Promise<ArrayBuffer> {
-		const id = ++this.next;
-		return new Promise((resolve, reject) => {
-			this.waiting.set(id, { resolve, reject, address, call });
-			this.worker.postMessage({ id, file, format: target.transcoder, levels, layers }, [file]);
-		});
-	}
-
-	private answer({ id, texels, stage, error }: Answer): void {
-		const waiting = this.waiting.get(id);
-		if (!waiting) return;
-		if (texels) {
-			this.waiting.delete(id);
-			waiting.resolve(texels);
-		} else if (stage === 'load') {
-			this.fail(error ?? 'it did not start');
-		} else {
-			this.waiting.delete(id);
-			waiting.reject(
-				this.error(
+	} catch (thrown) {
+		if (!(thrown instanceof TaskFailure)) throw thrown;
+		if (thrown.stage === 'stopped')
+			throw error('E1420', 'a KTX2 texture was still loading when the engine stopped.');
+		throw thrown.stage === 'run'
+			? error(
 					'E1412',
-					`${waiting.call}() could not decode ${waiting.address} as a KTX2 texture: ${error}.`,
-				),
-			);
-		}
+					`${call}() could not decode ${address} as a KTX2 texture: ${thrown.message}.`,
+				)
+			: error(
+					'E1406',
+					`the KTX2 transcoder did not load for ${call}(): ${thrown.message.replace(/\.$/, '')}.`,
+				);
 	}
-
-	/** Fails every waiting request with E1406, or with `reason`'s error, and stops the worker, once. */
-	fail(reason: string | EngineError): void {
-		if (this.failed) return;
-		this.failed = true;
-		this.worker.terminate();
-		this.stopped();
-		for (const { reject, call } of this.waiting.values())
-			reject(
-				typeof reason === 'string'
-					? this.error(
-							'E1406',
-							`the KTX2 transcoder did not load for ${call}(): ${reason.replace(/\.$/, '')}.`,
-						)
-					: reason,
-			);
-		this.waiting.clear();
-	}
-}
-
-/** This thread's transcoder, which starts with the first KTX2 file. */
-let transcoder: Transcoder | undefined;
-
-function transcoderOfThisThread(error: Ktx2Error): Transcoder {
-	if (!transcoder) {
-		const made: Transcoder = new Transcoder(error, () => {
-			forget();
-			if (transcoder === made) transcoder = undefined;
-		});
-		const forget = onEngineStop(() =>
-			made.fail(error('E1420', 'a KTX2 texture was still loading when the engine stopped.')),
-		);
-		transcoder = made;
-	}
-	return transcoder;
 }
 
 /**
- * Makes a texture from a KTX2 file, which moves to the transcoder's worker. The texture takes the
- * format of `ktx2Target`, the color space of the file unless the options give one, and the file's
- * mip levels unless `mipmaps` is false. Throws E1412 for a file that the engine does not load, and
- * E1406 when the transcoder does not load, each made by `error`.
+ * Makes a texture from a KTX2 file, which moves to a job worker for the transcoder. The texture
+ * takes the format of `ktx2Target`, the color space of the file unless the options give one, and
+ * the file's mip levels unless `mipmaps` is false. Throws E1412 for a file that the engine does not
+ * load, and E1406, E1418, E1422 or E1423 when the transcoder does not load, each made by `error`.
  */
 export async function loadKtx2(
 	textures: Textures,
@@ -437,14 +358,7 @@ export async function loadKtx2(
 		console.warn(
 			`${call}() loads ${address} as uncompressed ${target.format}, which takes ${Math.ceil(transcodedBytes(target.format, width, height, levels, layers) / 1024)} KB: its size, ${width} x ${height}, is not a whole number of 4 x 4 blocks. Save it at a size whose sides are multiples of 4, as the asset tool does.`,
 		);
-	const texels = await transcoderOfThisThread(error).transcode(
-		file,
-		target,
-		levels,
-		layers,
-		address,
-		call,
-	);
+	const texels = await transcode(file, target, levels, layers, address, call, error);
 	const expected = transcodedBytes(target.format, width, height, levels, layers);
 	if (texels.byteLength !== expected)
 		throw error(

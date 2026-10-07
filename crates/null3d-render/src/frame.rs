@@ -31,7 +31,7 @@ use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::environment::{Environment, EnvironmentUniform};
-use crate::fog::Fog;
+use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale, Size};
@@ -44,7 +44,8 @@ use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
-    CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades,
+    CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
+    fit_cascades,
 };
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -568,7 +569,7 @@ struct Lighting {
     shadow_quality: ShadowQuality,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
-    fog: Fog,
+    fog: Option<Fog>,
 }
 
 /// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
@@ -602,6 +603,8 @@ pub struct SceneSettings {
     lighting: Lighting,
     /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
     shadow_schedule: CascadeSchedule,
+    /// How the cascades' shadow map stores depth.
+    cascade_depth: CascadeDepth,
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
@@ -642,11 +645,13 @@ pub struct SceneSettings {
 }
 
 impl SceneSettings {
+    /// Settings with no scene content yet, whose cascades' shadow map stores `cascade_depth`.
     pub fn new(
         meshes: MeshStorage,
         max_materials: u32,
         textures: TextureStore,
         canvas: CanvasOutput,
+        cascade_depth: CascadeDepth,
     ) -> Self {
         Self {
             meshes,
@@ -663,9 +668,10 @@ impl SceneSettings {
                 sun_shadow: None,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
-                fog: Fog::None,
+                fog: None,
             },
             shadow_schedule: CascadeSchedule::default(),
+            cascade_depth,
             moving_casters: MovingCasters::default(),
             canvas,
             output: Output::default(),
@@ -1182,6 +1188,11 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
+    /// How the cascades' shadow map stores depth.
+    pub fn cascade_depth(&self) -> CascadeDepth {
+        self.cascade_depth
+    }
+
     /// The shadow filter and how the far cascades update.
     pub fn shadow_quality(&self) -> ShadowQuality {
         self.lighting.shadow_quality
@@ -1230,6 +1241,7 @@ impl SceneSettings {
             normal_bias: shadow.normal_bias,
             distance: shadow.distance,
             filter: quality.filter,
+            blend: quality.blend,
         };
         let [x, y, z, _] = self.lighting.sun_direction;
         let position = scene.cell_position(slot, parity);
@@ -1254,6 +1266,7 @@ impl SceneSettings {
             camera: position,
             layers: shadow.layers,
             drawn,
+            depth: self.cascade_depth,
         })
     }
 
@@ -1300,9 +1313,9 @@ impl SceneSettings {
         self.lighting.background = Some(color);
     }
 
-    /// The fog that every view's objects take, apart from materials that opt out. The background
-    /// takes none.
-    pub fn set_fog(&mut self, fog: Fog) {
+    /// The fog that every view's objects take, apart from materials that opt out, or none. The
+    /// background takes none.
+    pub fn set_fog(&mut self, fog: Option<Fog>) {
         self.lighting.fog = fog;
     }
 
@@ -1403,7 +1416,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
             output: output.uniform(),
-            fog: self.lighting.fog.uniform(camera.forward, output.exposure),
+            fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],

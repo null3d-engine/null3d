@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-05. Task: M2-A7.
 
+Summary: glTF textures take KTX2, then WebP, then AVIF, then their own image, and the browser decodes WebP and AVIF with no decoder shipped. UASTC HDR becomes BC6H with BC formats and `rgb9e5ufloat` elsewhere, an eighth and half the memory of half floats. On WebGL2, BC comes first, so Mesa's emulated ETC2 and ASTC never load; the choice reads formats alone.
+
 ## Question
 
 Three choices in the texture loaders:

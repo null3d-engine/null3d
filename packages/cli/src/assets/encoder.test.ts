@@ -1,7 +1,6 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { encodePng } from '../png.js';
 import { ENCODER_FILES, encodeTexture, texturePixels } from './encoder.js';
@@ -29,10 +28,10 @@ const OFFICIAL_BUILD = {
 
 const TRANSCODER = join(import.meta.dir, '../../../engine/vendor/basis');
 
-/** The engine's transcoder, as its official build loads under Node. */
+/** The engine's transcoder, which the engine ships as an ES module. */
 async function loadTranscoder() {
-	const require = createRequire(import.meta.url);
-	const basis = await require(join(TRANSCODER, 'basis_transcoder.js'))({
+	const { default: start } = await import(join(TRANSCODER, 'basis_transcoder.mjs'));
+	const basis = await start({
 		wasmBinary: readFileSync(join(TRANSCODER, 'basis_transcoder.wasm')),
 	});
 	basis.initializeBasis();

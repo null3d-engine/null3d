@@ -346,9 +346,12 @@ pub mod format {
     /// and no alpha: high dynamic range color in an eighth of the bytes of `RGBA16_FLOAT`
     /// (`Capabilities::TEXTURE_BC`).
     pub const BC6H_RGB_UFLOAT: u32 = 21;
+    /// Depth as a 16-bit unsigned normalized number: half the bytes of `DEPTH32_FLOAT`, with even
+    /// steps of 1 / 65,535 from 0 to 1. WebGL2 calls it `DEPTH_COMPONENT16`.
+    pub const DEPTH16_UNORM: u32 = 22;
 
     /// Every format.
-    pub const ALL: [u32; 22] = [
+    pub const ALL: [u32; 23] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -371,6 +374,7 @@ pub mod format {
         RGB9E5_UFLOAT,
         R32_FLOAT,
         BC6H_RGB_UFLOAT,
+        DEPTH16_UNORM,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -401,7 +405,7 @@ pub mod format {
 
     /// True for the depth formats.
     pub const fn is_depth(format: u32) -> bool {
-        matches!(format, DEPTH24_PLUS | DEPTH32_FLOAT)
+        matches!(format, DEPTH16_UNORM | DEPTH24_PLUS | DEPTH32_FLOAT)
     }
 
     /// True for the formats stored in compressed blocks of texels.
@@ -435,6 +439,7 @@ pub mod format {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
             | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
+            DEPTH16_UNORM => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
             | ASTC_4X4_UNORM
@@ -1208,8 +1213,8 @@ pub mod sizes {
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
     /// Bytes of the uniform block of the directional light's shadow cascades: four matrices, then
-    /// six vectors.
-    pub const SHADOW_UNIFORM_BYTES: u32 = 352;
+    /// seven vectors.
+    pub const SHADOW_UNIFORM_BYTES: u32 = 368;
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
@@ -1483,6 +1488,7 @@ pub fn typescript_constants() -> String {
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
                 ("R32_FLOAT", format::R32_FLOAT),
                 ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
+                ("DEPTH16_UNORM", format::DEPTH16_UNORM),
             ],
         ),
         (
@@ -2097,6 +2103,8 @@ mod tests {
         assert_eq!(format::texel_bytes(format::DEPTH24_PLUS), 0);
         assert_eq!(format::texel_bytes(99), 0);
         assert!(format::is_depth(format::DEPTH32_FLOAT));
+        assert!(format::is_depth(format::DEPTH16_UNORM));
+        assert_eq!(format::texel_bytes(format::DEPTH16_UNORM), 2);
         assert!(!format::is_depth(format::RGBA8_UNORM_SRGB));
     }
 

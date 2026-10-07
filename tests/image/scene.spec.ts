@@ -1,6 +1,7 @@
 // A live engine drawing the small static scene of the image test manifest's scene test: its frames,
 // and the scene drawn again after a loss of the GPU, which must match that test's references.
 import { expect, type Page, test } from '@playwright/test';
+import { ALONE } from '../lib/alone.ts';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { borrowedRun, environmentNamed, imageProblems } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -73,16 +74,18 @@ const FLIPPING_LAYERS = encodeURIComponent('./sketches/layers-sketch.ts?flip');
 const LAYER_FRAMES = 11;
 
 for (const tier of ['webgpu', 'webgl2'] as const)
-	test(`objects, batches and cameras change layers every frame with no rebuild on ${tier}`, async ({
-		page,
-	}) => {
-		const switches = `gpu=${tier}&sketch=${FLIPPING_LAYERS}&frames=${LAYER_FRAMES}`;
-		const { stats } = await openScene(page, switches);
-		if (!stats) throw new Error('the live page measured no frames');
-		expect(stats.frames).toBeGreaterThanOrEqual(LAYER_FRAMES);
-		// The measurement can start before the first frame, which builds the draw tables.
-		expect(stats.rebuilds).toBeLessThanOrEqual(1);
-	});
+	test(
+		`objects, batches and cameras change layers every frame with no rebuild on ${tier}`,
+		ALONE,
+		async ({ page }) => {
+			const switches = `gpu=${tier}&sketch=${FLIPPING_LAYERS}&frames=${LAYER_FRAMES}`;
+			const { stats } = await openScene(page, switches);
+			if (!stats) throw new Error('the live page measured no frames');
+			expect(stats.frames).toBeGreaterThanOrEqual(LAYER_FRAMES);
+			// The measurement can start before the first frame, which builds the draw tables.
+			expect(stats.rebuilds).toBeLessThanOrEqual(1);
+		},
+	);
 
 for (const tier of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES) {

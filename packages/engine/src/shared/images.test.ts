@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from './control';
 import {
 	type CustomShader,
+	GENERATORS_PRELOAD,
 	ImageTable,
 	imagesArrived,
 	RECEIVING,
@@ -63,7 +64,7 @@ function deliver(port: MessagePort, data: unknown): void {
 }
 
 describe('images on their way to the thread that draws', () => {
-	test('reach a table on this thread at once, each counted as it arrives', async () => {
+	test('reach a table on this thread at once, each noted as it arrives', async () => {
 		const { slots } = controlViews(createControlBuffer(true));
 		const table = new ImageTable();
 		const send = sendToTable(table, slots);
@@ -73,6 +74,25 @@ describe('images on their way to the thread that draws', () => {
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(2);
 		expect(table.get(2)).toBe(second);
 		await imagesArrived(slots, 2);
+	});
+
+	test('count on past the last 32-bit id, where ids go round', async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const send = sendToTable(table, slots);
+		// The core hands out ids as unsigned numbers: the last before the wrap, then the first.
+		const [last, first] = [2 ** 32 - 2, 1];
+		send(last, image());
+		let done = false;
+		const waiting = imagesArrived(slots, first).then(() => {
+			done = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(done).toBe(false);
+		send(first, image());
+		await waiting;
+		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(first);
+		await imagesArrived(slots, last);
 	});
 
 	test('wait until the thread that draws receives, then cross the port in order', async () => {
@@ -181,8 +201,26 @@ describe('texture generators on their way to the thread that draws', () => {
 		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
 		await imagesArrived(slots, 1);
 		expect(() => table.generator(1)).toThrow(
-			'the code of the room generator did not download: offline',
+			'the code of the environment generator did not download: offline',
 		);
+	});
+
+	test("move a panorama's texels across a port, and keep them until the texture goes", async () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const panorama = { width: 2, height: 1, texels: Uint32Array.of(1, 2), gain: 4 };
+		sendThrough(sketchEnd).sendImage(3, panorama);
+		deliver(sketchEnd, RECEIVING);
+		expect(sketchEnd.posted).toEqual([[{ id: 3, generator: panorama }, [panorama.texels.buffer]]]);
+		receiveImages(drawingEnd, table, slots);
+		const code = { run: () => {} };
+		table.loadGeneratorsWith(() => Promise.resolve(code));
+		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
+		await imagesArrived(slots, 1);
+		expect(table.generator(3)).toEqual([panorama, code]);
+		table.release(3);
+		expect(() => table.generator(3)).toThrow('draw list names generator 3, which does not exist');
 	});
 });
 
@@ -223,5 +261,26 @@ describe('features whose shader files the sketch asks for early', () => {
 		// a listener that stayed would keep the stopped renderer and the engine's memory.
 		table.clear();
 		expect(table.onPreload).toBeUndefined();
+	});
+
+	test("start the generators' code and pipelines under their reserved name, before any generator", async () => {
+		const table = new ImageTable();
+		const heard: string[] = [];
+		table.onPreload = (feature) => heard.push(feature);
+		let loads = 0;
+		const warmed: unknown[] = [];
+		const code = { run: () => {} };
+		table.loadGeneratorsWith(async () => {
+			loads++;
+			return code;
+		});
+		table.warmGeneratorsWith(async (loaded) => warmed.push(loaded));
+		table.preload([GENERATORS_PRELOAD]);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect([loads, warmed]).toEqual([1, [code]]);
+		expect([heard, [...table.preloads]]).toEqual([[], []]);
+		await table.addGenerator(1, 'room');
+		expect(loads).toBe(1);
+		expect(table.generator(1)).toEqual(['room', code]);
 	});
 });

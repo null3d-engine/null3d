@@ -157,3 +157,18 @@ export function threePmremRoughness(roughness: number): number {
 	const blend = at - low;
 	return (table[low] as number) * (1 - blend) + (table[low + 1] as number) * blend;
 }
+
+/**
+ * Reinhard's operator at an exposure that puts the average light of the nine coefficients at a
+ * third of white, in steps of 1/255: tone mapping first makes a sun count as much as it shows.
+ */
+export function reinhardSteps(sh: readonly number[]): (light: number) => number {
+	const exposure = 0.5 / averageLight(sh);
+	return (x) => (255 * x * exposure) / (1 + x * exposure);
+}
+
+/** The shared-exponent texels of a level that a page sent as base64. */
+export function words(base64: string): Uint32Array {
+	const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
+	return new Uint32Array(bytes.buffer);
+}

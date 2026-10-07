@@ -138,11 +138,12 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
-- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
+- `captureFrame()` returns the pixels of the next frame that the engine draws, as RGBA8 rows, top row first. The thread that draws waits for its frame loop to take a new frame, then draws that frame again offscreen and reads it back. So captures back to back give newer frames, even on a slow GPU whose readback holds that thread up. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `labels.bind(id, element)` moves an HTML element over the label that the sketch tracks under `id`: [UI overlays and labels](ui.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. The sketch's `onDestroy` runs first, and every later call from the sketch's code fails with [E1420](../errors/E1420.md). Wait for its promise before you start another engine on the same page. The browser frees the engine's memory only then.
-- A new engine can start on the canvas of an engine that you destroyed. Its start waits until the old engine has stopped, so it can begin before `destroy()` resolves. React's StrictMode needs this, because it starts an effect twice on one `<canvas>`. A canvas that a worker drew on stays with that worker. So the new engine needs the same thread options as the old one. A canvas whose engine still runs fails with [E1419](../errors/E1419.md).
+- A new engine can start on the canvas of an engine that you destroyed. Its start waits until the old engine has stopped, so it can begin before `destroy()` resolves. React's StrictMode needs this, because it starts an effect twice on one `<canvas>`. A canvas that a worker drew on stays with that worker. So the new engine needs the same thread options as the old one. The worker ends when the canvas leaves the page or the page goes away. It also ends when the browser refuses memory for a new engine while no engine runs on the canvas. A new engine on its canvas then fails with [E1419](../errors/E1419.md), as on a canvas whose engine still runs.
+- In Safari, a stopped engine's canvas that stays in the page keeps the engine's memory, 1 GiB by default, until that worker ends. A new engine that needs the room gets it. Other code does not: a page that also loads a large WebAssembly module can run out of room. So remove the canvas from the page once you are done with it.
 - A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
 
 Each `on...` call returns a function that removes its handler. `engine.requestPointerLock` comes in null3D 0.2.
@@ -164,9 +165,11 @@ shotButton.onclick = async () => {
 
 The thread that draws reads the frame back from the GPU and encodes the image. When a worker draws, the page's thread does no work for it. The image has the size that the engine draws at, in pixels. It is opaque, as the canvas is, unless the engine draws on a [transparent canvas](#a-transparent-canvas): then the image keeps the frame's alpha.
 
-- While the engine is paused, and in hold mode, the image shows the frame on the canvas.
+- While the engine is paused, the image shows the frame on the canvas.
+- In hold mode, the image shows the held frame. The page keeps that frame's pixels, so the GPU draws nothing more for the image.
 - A page in a hidden tab draws no frames, so its image comes when the tab shows again.
-- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode.
+- When no new frame comes within a second or two, such as after an error stopped the sketch, the image shows the frame drawn last.
+- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode. On WebGPU, the message names the cause when the GPU gives one: a lost device with its reason, or too little GPU memory.
 
 ## Related pages
 
@@ -235,8 +238,8 @@ A running engine, as `createEngine` returns it.
 | `detach(): void` | Takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU resources and the scene, and stops reading input. Use it when a single-page app leaves the view that shows the canvas, and `attach` when the view comes back. |
 | `attach(container: Element): void` | Puts the canvas at the end of `container` and resumes the engine where it stopped, unless `setPaused(true)` paused it. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
-| `capture(): Promise<Blob>` | Resolves with an image of the next frame that the engine draws, as a PNG file. The thread that draws reads the frame back and encodes it, so the page's thread does no work for it when a worker draws. In hold mode, and while the engine is paused, the image shows the frame on the canvas. A hidden page draws no frames, so its image comes once the page shows again. Fails with E1414 once the engine has stopped. |
-| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first, for tests. In hold mode, it returns the held frame. |
+| `capture(): Promise<Blob>` | Resolves with an image of the next frame that the engine draws, as a PNG file. The thread that draws reads the frame back and encodes it, so the page's thread does no work for it when a worker draws. In hold mode it is an image of the held frame, whose pixels the page keeps, so the GPU draws nothing for it. While the engine is paused, the image shows the frame on the canvas. A hidden page draws no frames, so its image comes once the page shows again. When no new frame comes within a second or two, as after a sketch error, the image shows the frame drawn last. Fails with E1414 once the engine has stopped, or when the thread that draws could not read the frame back, with the cause that the GPU gave, such as a lost device or too little memory. |
+| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Resolves with the pixels of the next frame that the engine draws, as RGBA8 rows, top row first, for tests. The thread that draws waits until its frame loop has taken a new frame, then draws that frame again offscreen and reads it back, so captures back to back give newer frames even where each readback holds that thread up. In hold mode, and while the engine is paused, it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the page shows again. When no new frame comes within a second or two, as after a sketch error, it returns the frame drawn last. |
 | `simulateGpuLoss(): void` | Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and draws the whole scene again, as it does after a real loss. Use it to test how your page handles one. |
 | `destroy(): Promise<void>` | Stops the engine and its workers. The engine cannot start again. The sketch's `onDestroy` runs first, and later calls from the sketch's code fail with E1420. The thread that draws destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes back at once. It also leaves the canvas blank, at its size, because Safari keeps the GPU memory of a canvas's last frame until the canvas shows another. The promise resolves once every worker has stopped, when the browser can free the engine's memory. Wait for it before you start another engine on the same page: an iPad has room for only a few engines' memory. A new engine can start on the same canvas, with the same thread options; `createEngine` waits for this stop. |
 
@@ -377,6 +380,8 @@ type ErrorCode =
 	| 'E1419'
 	| 'E1420'
 	| 'E1421'
+	| 'E1422'
+	| 'E1423'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'

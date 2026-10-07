@@ -1,11 +1,13 @@
 // The glTF worker: parses glTF files off the sketch's frames, for the glTF loader (scene/gltf.ts),
 // which starts it with the first file. Each file arrives as bytes. The worker reads its container
 // and JSON, and asks for the buffers that the file names by address, which the loader downloads.
-// Then it parses the file, decoding its meshopt data with meshoptimizer's decoder, which it imports
-// with the first file that needs it. It decodes the PNG, JPEG, WebP and AVIF images that the file
-// holds with createImageBitmap, once for each way a material uses them, and hands everything back
-// in one message that moves the arrays and images rather than copying them. A file it refuses comes back
-// as an error with the engine's code, so no load ever waits for an answer that does not come.
+// It also asks for the decoders that the file needs and that it has not had yet, such as
+// meshoptimizer's, whose modules the on-demand loader compiles once per page (shared/tasks.ts).
+// Then it parses the file, decoding its meshopt data. It decodes the PNG, JPEG, WebP and AVIF
+// images that the file holds with createImageBitmap, once for each way a material uses them, and
+// hands everything back in one message that moves the arrays and images rather than copying them.
+// A file it refuses comes back as an error with the engine's code, so no load ever waits for an
+// answer that does not come.
 
 import {
 	type GltfContainer,
@@ -17,14 +19,21 @@ import {
 	usesMeshopt,
 } from '../scene/gltf-parse';
 
-/** A request of the loader: a new file, or the buffers that a file asked for. */
+/** The decoders that a file can need, by the name of their compiled module. */
+export type GltfDecoder = 'meshopt';
+
+/** A request of the loader: a new file, or the buffers and decoders that a file asked for. */
 export type GltfRequest =
 	| { id: number; file: ArrayBuffer; url: string }
-	| { id: number; buffers: [number, ArrayBuffer][] };
+	| {
+			id: number;
+			buffers: [number, ArrayBuffer][];
+			decoders?: [GltfDecoder, WebAssembly.Module][];
+	  };
 
-/** An answer: the buffers a file needs, the parsed file, or why it failed. */
+/** An answer: the buffers and decoders a file needs, the parsed file, or why it failed. */
 export type GltfAnswer =
-	| { id: number; needs: [number, string][] }
+	| { id: number; needs: [number, string][]; decoders: GltfDecoder[] }
 	| { id: number; data: GltfData; bitmaps: (ImageBitmap | undefined)[] }
 	| { id: number; error: { code: string; message: string } };
 
@@ -34,21 +43,20 @@ const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0
 /** Files that wait for their buffers, by request. */
 const waiting = new Map<number, { container: GltfContainer; url: string }>();
 
-/** The meshopt decoder, once a file has needed it. A failed download lets the next file try again. */
+/** The meshopt decoder, once a file has needed it. A failed start lets the next file try again. */
 let meshopt: Promise<MeshoptDecode> | undefined;
 
-function loadMeshopt(): Promise<MeshoptDecode> {
-	meshopt ??= import('../scene/gltf-meshopt').then(
-		(module) => module.meshoptDecoder(),
-		(error) => {
+/** Starts the meshopt decoder from its compiled module, once. */
+function startMeshopt(compiled: WebAssembly.Module): void {
+	meshopt ??= import('../scene/gltf-meshopt')
+		.then((module) => module.meshoptDecoder(compiled))
+		.catch((error: unknown) => {
 			meshopt = undefined;
 			throw new GltfError(
 				'E1406',
 				`the meshopt decoder did not load: ${error instanceof Error ? error.message : String(error)}`,
 			);
-		},
-	);
-	return meshopt;
+		});
 }
 
 self.onmessage = (event: MessageEvent<GltfRequest>) => {
@@ -57,14 +65,16 @@ self.onmessage = (event: MessageEvent<GltfRequest>) => {
 	try {
 		if ('file' in request) {
 			const container = readContainer(new Uint8Array(request.file), request.url);
-			if (container.external.size > 0) {
+			const decoders: GltfDecoder[] = usesMeshopt(container) && !meshopt ? ['meshopt'] : [];
+			if (container.external.size > 0 || decoders.length > 0) {
 				waiting.set(id, { container, url: request.url });
-				answer({ id, needs: [...container.external] });
+				answer({ id, needs: [...container.external], decoders });
 				return;
 			}
 			void finish(id, container, new Map(), request.url);
 			return;
 		}
+		for (const [, compiled] of request.decoders ?? []) startMeshopt(compiled);
 		const file = waiting.get(id);
 		waiting.delete(id);
 		if (!file) return;
@@ -86,7 +96,10 @@ async function finish(
 	url: string,
 ): Promise<void> {
 	try {
-		const meshoptDecode = usesMeshopt(container) ? await loadMeshopt() : undefined;
+		const meshoptDecode = usesMeshopt(container)
+			? await (meshopt ??
+					Promise.reject(new GltfError('E1406', 'the meshopt decoder did not load')))
+			: undefined;
 		const data = parseGltf(container, buffers, url, meshoptDecode);
 		const bitmaps = await Promise.all(
 			data.textures.map((use) => decode(data, use.image, use.colorSpace)),

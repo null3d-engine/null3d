@@ -176,7 +176,7 @@ pub mod texture_stat {
     pub const LARGEST_FRAME_BYTES: u32 = 3;
     /// Textures with an image that is not on the GPU yet.
     pub const WAITING: u32 = 4;
-    /// Images sent so far, which is the last image id handed out.
+    /// The last image id handed out, or 0 before the first.
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
@@ -684,13 +684,14 @@ pub fn typescript() -> String {
                 ("SHADOWS", debug_view::code::SHADOWS),
             ],
         ),
-        // The kinds of fog that `setFog` takes.
+        // The fog curves that `setFog` takes, and its code for no fog.
         (
-            "FOG_KIND",
+            "FOG_CURVE",
             &[
-                ("NONE", fog::kind::NONE),
-                ("LINEAR", fog::kind::LINEAR),
-                ("EXP2", fog::kind::EXP2),
+                ("NONE", fog::curve::NONE),
+                ("LINEAR", fog::curve::LINEAR),
+                ("EXP2", fog::curve::EXP2),
+                ("EXPONENTIAL", fog::curve::EXPONENTIAL),
             ],
         ),
         (
