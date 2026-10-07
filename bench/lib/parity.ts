@@ -300,6 +300,15 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			sketchSwitches: NO_TONE,
 		}),
 	),
+	// The sunset again, from its Radiance file, which the engine filters at load, against three.js's
+	// HDRLoader with PMREMGenerator. The studio's OpenEXR file is left out. Its map matches the
+	// tool's, but in compatibility mode its bright sphere edges differ from three.js in more pixels
+	// than three.js's rule allows, as D-19 records.
+	{
+		test: 'environment-venice-hdr',
+		twin: `${TWINS}/environment.html?env=venice`,
+		sketchSwitches: NO_TONE,
+	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
