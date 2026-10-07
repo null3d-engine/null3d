@@ -5,14 +5,19 @@
 // With ?mid-frame, which needs WebGL2 on the page's thread, the context goes away in the middle of
 // a frame that makes new render targets, and comes back after a moment. The engine must carry on
 // drawing without a failure then too.
-import { createEngine, type EngineError } from '@null3d/engine';
+import { createEngine, type Engine, type EngineError } from '@null3d/engine';
+import { measureUntil } from './lib/measure';
 import { run } from './lib/result';
 
 /** How long the engine draws before the loss, and how long the page waits for a report. */
 const DRAW_MS = 300;
 const REPORT_MS = 10_000;
-/** How long a simulated loss has to recover before the page measures the frames drawn after it. */
-const RECOVERY_MS = 1000;
+/**
+ * The first measurement after a loss, in seconds, and the most times the page doubles it while no
+ * frame comes. The measurements then take 15.5 seconds in all, within the test's wait.
+ */
+const RECOVERY_SECONDS = 0.5;
+const MAX_RECOVERY_DOUBLINGS = 4;
 /** How long a context lost in the middle of a frame stays away, as a driver reset takes. */
 const RESTORE_MS = 50;
 
@@ -45,6 +50,25 @@ function loseInNextFramebufferCheck(): { arm(): void; fired(): boolean } {
 	};
 }
 
+/**
+ * Counts the frames drawn after a loss. The engine starts a new device first, and a busy machine can
+ * take seconds over that and over each frame on a software GPU. So the page measures until a frame
+ * comes, not for a fixed time.
+ */
+async function framesAfterLoss(engine: Engine): Promise<number> {
+	let frames = 0;
+	await measureUntil(
+		engine,
+		RECOVERY_SECONDS,
+		MAX_RECOVERY_DOUBLINGS,
+		(stats) => {
+			frames += stats.frames;
+		},
+		() => frames > 0,
+	);
+	return frames;
+}
+
 run('gpu-loss', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
@@ -62,28 +86,21 @@ run('gpu-loss', async () => {
 		midFrame.arm();
 		// A new size makes the frame's render targets again, with new framebuffers.
 		canvas.style.width = '400px';
-		await new Promise((resolve) => setTimeout(resolve, RECOVERY_MS));
-		const after = await engine.measure(0.5);
+		const framesAfter = await framesAfterLoss(engine);
 		await engine.destroy();
 		return {
 			mode: engine.mode,
 			tier: engine.capabilities.tier,
 			code: (failure as EngineError | null)?.code ?? null,
 			lostMidFrame: midFrame.fired(),
-			framesAfter: after.frames,
+			framesAfter,
 		};
 	}
 	if (params.has('simulate')) {
 		engine.simulateGpuLoss();
-		await new Promise((resolve) => setTimeout(resolve, RECOVERY_MS));
-		const after = await engine.measure(0.5);
+		const framesAfter = await framesAfterLoss(engine);
 		await engine.destroy();
-		return {
-			mode: engine.mode,
-			tier: engine.capabilities.tier,
-			code: failure,
-			framesAfter: after.frames,
-		};
+		return { mode: engine.mode, tier: engine.capabilities.tier, code: failure, framesAfter };
 	}
 	canvas.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
 	const deadline = performance.now() + REPORT_MS;
