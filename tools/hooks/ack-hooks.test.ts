@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	checkCommitMessage as checkDocs,
 	DOCS_ACK_RULE,
@@ -11,6 +15,7 @@ import { unstagedPaths } from './check-generated';
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
+import { keptCommits } from './check-trailers';
 import { checkAck, findAckValue, findAckValues } from './commit-ack';
 
 describe('docBearingFiles', () => {
@@ -286,5 +291,50 @@ describe('the docs style hook', () => {
 		);
 		expect(subjectOf('Merge branch main')).toBeNull();
 		expect(subjectOf('# only a comment\n')).toBeNull();
+	});
+});
+
+describe('keptCommits', () => {
+	it("reads the trailers of a pull request's commits as main's squash keeps them, without merge commits", () => {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-kept-commits-'));
+		// The user's own git settings, such as commit signing and hooks, stay out of the test.
+		const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+		const git = (...args: string[]) =>
+			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+				cwd: dir,
+				env,
+				encoding: 'utf8',
+			}).trim();
+		try {
+			git('init', '--quiet', '--initial-branch=main');
+			git('commit', '--quiet', '--allow-empty', '-m', 'chore: base');
+			git('switch', '--quiet', '-c', 'feature');
+			git(
+				'commit',
+				'--quiet',
+				'--allow-empty',
+				'-m',
+				'feat(engine): grow a file\n\nSize-Growth: js/page.js +3.1%, the key table',
+			);
+			const plain = git('rev-parse', 'HEAD');
+			git('switch', '--quiet', 'main');
+			git('commit', '--quiet', '--allow-empty', '-m', 'fix(engine): a change on main');
+			git('switch', '--quiet', 'feature');
+			git(
+				'merge',
+				'--quiet',
+				'--no-ff',
+				'main',
+				'-m',
+				'Merge main into feature\n\nSize-Growth: js/render-worker.js +4%, lost in the squash',
+			);
+			const kept = keptCommits('main..HEAD', dir);
+			expect(kept.map(({ sha }) => sha)).toEqual([plain]);
+			const files = ['js/page.js', 'js/render-worker.js'];
+			expect([...explainedFiles(kept, files).keys()]).toEqual(['js/page.js']);
+			expect(kept[0]?.authoredAt).toMatch(/^\d{4}-\d\d-\d\dT/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

@@ -13,9 +13,11 @@ import {
 	METAL_FAULT,
 	MIN_STAGE_TEXTURE_UNITS,
 	MIN_UNIFORM_BLOCK_SLOTS,
+	metalFault,
 	type Program,
 	prepareProgram,
 	RELINK_TAIL,
+	relink,
 	slotOf,
 	UPLOAD_UNIT,
 } from './programs';
@@ -233,6 +235,19 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 			/failed to link twice, the second time after a fault in its Metal: .*no matching function/s,
 		);
 		expect(context.links()).toBe(2);
+	});
+
+	it('links a program that is not in use again without waiting, as a hot shader swap does', () => {
+		const context = fakeContext([FAULT_LOG, '']);
+		const program = createProgram(context.gl, TEMPLATE, 0);
+		const first = program.program;
+		expect(metalFault(context.gl, program)).toBe(true);
+		relink(context.gl, program);
+		expect(program.ready).toBe(false);
+		expect(program.program).not.toBe(first);
+		expect(context.deleted).toContain(first);
+		expect(metalFault(context.gl, program)).toBe(false);
+		expect(context.sources).toEqual([STAGE, STAGE, STAGE + RELINK_TAIL, STAGE + RELINK_TAIL]);
 	});
 
 	it('reports any other link failure at once', () => {

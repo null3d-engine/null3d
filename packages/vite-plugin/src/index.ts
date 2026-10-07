@@ -2,7 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
-import type { Connect, HtmlTagDescriptor, Plugin, Rollup } from 'vite';
+import type {
+	Connect,
+	DevEnvironment,
+	EnvironmentModuleNode,
+	HtmlTagDescriptor,
+	Plugin,
+	Rollup,
+} from 'vite';
 import {
 	ASSET_FOLDER,
 	type AssetOptions,
@@ -12,8 +19,27 @@ import {
 	OPTIMIZED_MODEL,
 	optimizedModel,
 } from './assets.ts';
+import { CompilerPool } from './compile-pool.ts';
 import { writeWgslDeclaration } from './declarations.ts';
-import { compileTaggedWgsl, compileWgslFile, WGSL_TAG } from './wgsl.ts';
+import {
+	changedLiterals,
+	HOT_CLIENT,
+	HOT_CLIENT_ADDRESS,
+	HOT_CLIENT_CODE,
+	HOT_CLIENT_ID,
+	HotState,
+	hotKey,
+	WGSL_UPDATE_EVENT,
+	type WgslUpdate,
+} from './hot.ts';
+import type { CompiledWgsl } from './shader-types.ts';
+import {
+	compileLiteral,
+	compileTaggedWgsl,
+	compileWgslFile,
+	WGSL_TAG,
+	type WgslError,
+} from './wgsl.ts';
 
 export type { AssetOptions } from './assets.ts';
 export type * from './shader-types.ts';
@@ -268,9 +294,26 @@ function projectPath(root: string, file: string): string {
 	return relative(root, file).split(sep).join('/');
 }
 
-/** A compiled shader as the JavaScript value that takes its source's place. */
-function shaderValue(shader: unknown): string {
-	return `(${JSON.stringify(shader)})`;
+/**
+ * A compiled shader as the JavaScript value that takes its source's place, with the key of its hot
+ * updates on the dev server.
+ */
+function shaderValue(shader: CompiledWgsl, key?: string): string {
+	return `(${JSON.stringify(key === undefined ? shader : { ...shader, hot: key })})`;
+}
+
+/** Shows WGSL that did not compile in Vite's overlay on the dev server's pages, and in the terminal. */
+function showError(environment: DevEnvironment, error: WgslError): void {
+	environment.logger.error(`${error.message}\n${error.frame}`, { timestamp: true });
+	environment.hot.send({
+		type: 'error',
+		err: { ...error, stack: '', plugin: 'null3d' },
+	});
+}
+
+/** The modules of a changed file that Vite still updates: all but the one the plugin compiled. */
+function otherModules(modules: readonly EnvironmentModuleNode[], file: string) {
+	return modules.filter((module) => module.id !== file);
 }
 
 /**
@@ -296,8 +339,9 @@ export function missingCoreFiles(root: string): string[] | null {
 
 /**
  * The null3D Vite plugin: isolation headers on the dev and preview servers, optional HTTPS, WGSL
- * compiled for WebGPU and WebGL2 in dev and in builds, and a production build that compiles each
- * sketch module, ships the engine core and starts its download from each page that loads it.
+ * compiled for WebGPU and WebGL2 in dev and in builds, hot updates of WGSL on the dev server, and a
+ * production build that compiles each sketch module, ships the engine core and starts its download
+ * from each page that loads it.
  */
 export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let building = false;
@@ -314,6 +358,20 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let notices: string | null = null;
 	/** The optimized files that this build has written, so each texture goes in once. */
 	const emitted = new Map<string, string>();
+	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
+	const compiler = new CompilerPool();
+	/** What the dev server's pages run, to judge each change of WGSL. */
+	const hot = new HotState();
+	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
+	const keyOf = (id: string, path: string, literal?: number) =>
+		building || PACKAGE_MODULE.test(id) ? undefined : hotKey(path, literal);
+	/** Sends hot updates to the dev server's pages. */
+	const sendUpdates = (environment: DevEnvironment, updates: WgslUpdate[]) => {
+		environment.logger.info(`null3D hot update ${updates.map((u) => u.key).join(', ')}`, {
+			timestamp: true,
+		});
+		environment.hot.send({ type: 'custom', event: WGSL_UPDATE_EVENT, data: { updates } });
+	};
 	return {
 		name: 'null3d',
 		// Runs before Vite's own asset handling, which would copy a sketch file as raw text, and
@@ -368,13 +426,18 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				);
 			}
 		},
-		// A build of pages that imports the engine ships the early script, found from the module that
-		// imports the engine, as the engine itself is. The page's own scripts run only once all of
-		// them have arrived. The early script imports nothing, so it runs as soon as it arrives, and
-		// the core's download starts sooner by the time the others take to arrive and run.
+		buildEnd() {
+			return compiler.close();
+		},
+		// The dev server's pages import the client module of hot updates. A build of pages that
+		// imports the engine ships the early script, found from the module that imports the engine,
+		// as the engine itself is. The page's own scripts run only once all of them have arrived. The
+		// early script imports nothing, so it runs as soon as it arrives, and the core's download
+		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: /^@null3d\/engine$/ },
-			async handler(_source, importer) {
+			filter: { id: [HOT_CLIENT_ADDRESS, /^@null3d\/engine$/] },
+			async handler(source, importer) {
+				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
 				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
@@ -388,6 +451,14 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		transformIndexHtml: {
 			order: 'post',
 			handler(html, { bundle, chunk, path }) {
+				if (!building)
+					return [
+						{
+							tag: 'script',
+							attrs: { type: 'module', src: `${base}@id/__x00__${HOT_CLIENT}` },
+							injectTo: 'head',
+						},
+					];
 				if (!earlyCoreId || !bundle || !chunk) return;
 				const early = Object.values(bundle).find(
 					(file): file is Rollup.OutputChunk =>
@@ -398,8 +469,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		load: {
-			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL], exclude: /^\0/ } },
+			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS] } },
 			async handler(id) {
+				if (id === HOT_CLIENT_ID) return HOT_CLIENT_CODE;
+				// Another plugin's virtual module whose name ends like a WGSL file.
+				if (id.startsWith('\0')) return;
 				if (OPTIMIZED_MODEL.test(id)) {
 					const file = id.slice(0, id.indexOf('?'));
 					let model: Awaited<ReturnType<typeof optimizedModel>>;
@@ -429,8 +503,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					}
 					return `export default new URL(import.meta.ROLLUP_FILE_URL_${ref}, import.meta.url).href;\n`;
 				}
-				const compiled = compileWgslFile(projectPath(root, id), id, readFileSync(id, 'utf8'));
+				const path = projectPath(root, id);
+				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), compiler);
 				if ('error' in compiled) return this.error(compiled.error);
+				const key = keyOf(id, path);
+				if (key !== undefined) hot.remember(key, compiled.shader);
 				if (options.wgslDeclarations !== false && !PACKAGE_MODULE.test(id)) {
 					try {
 						writeWgslDeclaration(id, compiled.shader);
@@ -441,7 +518,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					}
 				}
 				return {
-					code: `export default ${shaderValue(compiled.shader)};\n`,
+					code: `export default ${shaderValue(compiled.shader, key)};\n`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -456,12 +533,17 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				const file = id.split('?')[0] ?? id;
 				let out: MagicString | undefined;
 				if (SCRIPT_FILE.test(file) && WGSL_TAG.test(code)) {
-					const tagged = compileTaggedWgsl(code, file, projectPath(root, file));
+					const path = projectPath(root, file);
+					const tagged = await compileTaggedWgsl(code, file, path, compiler);
 					if ('error' in tagged) return this.error(tagged.error);
-					for (const { start, end, shader } of tagged.shaders) {
+					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
+						const key = keyOf(file, path, literal);
+						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, shaderValue(shader));
+						out.overwrite(start, end, shaderValue(shader, key));
 					}
+					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
+						hot.scripts.set(file, code);
 				}
 				if (building && code.includes('import.meta.url')) {
 					for (const match of code.matchAll(SCRIPT_URL)) {
@@ -487,6 +569,49 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					? { code: out.toString(), map: out.generateMap({ hires: 'boundary' }) }
 					: undefined;
 			},
+		},
+		async hotUpdate({ type, file, modules, read }) {
+			const environment = this.environment;
+			if (environment.name !== 'client' || type !== 'update' || PACKAGE_MODULE.test(file)) return;
+			if (!modules.some((module) => module.id === file)) return;
+			const path = projectPath(root, file);
+			if (WGSL_FILE.test(file)) {
+				const compiled = await compileWgslFile(path, file, await read(), compiler);
+				if ('error' in compiled) {
+					showError(environment, compiled.error);
+					return otherModules(modules, file);
+				}
+				const key = hotKey(path);
+				// Without a hot update, Vite reloads the page as it does for any module.
+				if (!hot.swaps(key, compiled.shader)) return;
+				hot.remember(key, compiled.shader);
+				sendUpdates(environment, [{ key, shader: compiled.shader }]);
+				return otherModules(modules, file);
+			}
+			const before = hot.scripts.get(file);
+			if (before === undefined) return;
+			const code = await read();
+			const changed = changedLiterals(before, code, file);
+			if (!changed) return;
+			const results = await Promise.all(
+				changed.map(({ literal }) => compileLiteral(literal, code, file, path, compiler)),
+			);
+			const updates: WgslUpdate[] = [];
+			for (const [k, result] of results.entries()) {
+				if ('error' in result) {
+					showError(environment, result.error);
+					return otherModules(modules, file);
+				}
+				const key = hotKey(path, changed[k]?.index);
+				if (!hot.swaps(key, result.shader)) return;
+				updates.push({ key, shader: result.shader });
+			}
+			// The script's code that pages run changes only once its updates go out, so an edit
+			// after an error sends every literal that changed since.
+			hot.scripts.set(file, code);
+			for (const { key, shader } of updates) hot.remember(key, shader);
+			if (updates.length > 0) sendUpdates(environment, updates);
+			return otherModules(modules, file);
 		},
 		generateBundle() {
 			if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });

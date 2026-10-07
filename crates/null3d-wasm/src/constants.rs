@@ -132,9 +132,9 @@ pub mod post_value {
     /// The colors of the table's first texels, red first, then of its last texels.
     pub const LUT_DOMAIN_MIN: u32 = 5;
     pub const LUT_DOMAIN_MAX: u32 = 8;
-    /// The vignette's offset and darkness.
-    pub const VIGNETTE_OFFSET: u32 = 11;
-    pub const VIGNETTE_DARKNESS: u32 = 12;
+    /// The vignette's intensity and size. Its falloff and roundness come after bloom's values.
+    pub const VIGNETTE_INTENSITY: u32 = 11;
+    pub const VIGNETTE_SIZE: u32 = 12;
     /// Ambient occlusion's radius, thickness, distance exponent, distance falloff, scale, samples
     /// and intensity.
     pub const AO_RADIUS: u32 = 13;
@@ -153,8 +153,11 @@ pub mod post_value {
     /// Bloom's blend (0 mixes, 1 adds, 2 screens), then the share of each of its 10 levels.
     pub const BLOOM_BLEND: u32 = 28;
     pub const BLOOM_WEIGHTS: u32 = 29;
+    /// The vignette's falloff and roundness.
+    pub const VIGNETTE_FALLOFF: u32 = 39;
+    pub const VIGNETTE_ROUNDNESS: u32 = 40;
     /// The values in the block.
-    pub const COUNT: u32 = 39;
+    pub const COUNT: u32 = 41;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
@@ -852,8 +855,10 @@ pub fn typescript() -> String {
                 ("LUT_INTENSITY", post_value::LUT_INTENSITY),
                 ("LUT_DOMAIN_MIN", post_value::LUT_DOMAIN_MIN),
                 ("LUT_DOMAIN_MAX", post_value::LUT_DOMAIN_MAX),
-                ("VIGNETTE_OFFSET", post_value::VIGNETTE_OFFSET),
-                ("VIGNETTE_DARKNESS", post_value::VIGNETTE_DARKNESS),
+                ("VIGNETTE_INTENSITY", post_value::VIGNETTE_INTENSITY),
+                ("VIGNETTE_SIZE", post_value::VIGNETTE_SIZE),
+                ("VIGNETTE_FALLOFF", post_value::VIGNETTE_FALLOFF),
+                ("VIGNETTE_ROUNDNESS", post_value::VIGNETTE_ROUNDNESS),
                 ("AO_RADIUS", post_value::AO_RADIUS),
                 ("AO_THICKNESS", post_value::AO_THICKNESS),
                 ("AO_DISTANCE_EXPONENT", post_value::AO_DISTANCE_EXPONENT),

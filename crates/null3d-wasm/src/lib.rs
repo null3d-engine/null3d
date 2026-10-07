@@ -189,15 +189,15 @@ struct Engine {
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
-/// threshold and soft edge, a table at its full intensity over colors from 0 to 1,
-/// `VignetteShader`'s offset and darkness, `GTAOPass`'s radius, thickness, distance exponent,
-/// distance falloff, scale, samples and blend intensity, a white outline of 2 CSS pixels with no
-/// line around hidden parts, then bloom's mixing blend and its levels' default shares.
+/// threshold and soft edge, a table at its full intensity over colors from 0 to 1, the vignette's
+/// intensity and size, `GTAOPass`'s radius, thickness, distance exponent, distance falloff, scale,
+/// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
+/// bloom's mixing blend and its levels' default shares, then the vignette's falloff and roundness.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -2455,14 +2455,16 @@ pub fn set_environment(texture: u32) -> u32 {
     })
 }
 
-/// Turns the vignette on with three.js's offset and darkness from the post-processing values, or
-/// off, from the next frame on. The TypeScript API checks the values.
+/// Turns the vignette on with its intensity, size, falloff and roundness from the post-processing
+/// values, or off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setVignette)]
 pub fn set_vignette(on: bool) -> u32 {
     with_engine(|e| {
         let vignette = on.then_some(Vignette {
-            offset: e.post_value(constants::post_value::VIGNETTE_OFFSET),
-            darkness: e.post_value(constants::post_value::VIGNETTE_DARKNESS),
+            intensity: e.post_value(constants::post_value::VIGNETTE_INTENSITY),
+            size: e.post_value(constants::post_value::VIGNETTE_SIZE),
+            falloff: e.post_value(constants::post_value::VIGNETTE_FALLOFF),
+            roundness: e.post_value(constants::post_value::VIGNETTE_ROUNDNESS),
         });
         e.renderer.settings_mut().set_vignette(vignette);
         0

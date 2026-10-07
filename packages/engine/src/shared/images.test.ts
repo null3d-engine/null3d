@@ -247,6 +247,19 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 		table.clear();
 		expect(table.shaders.size).toBe(0);
 	});
+
+	test('list a template whose shader a later one replaces, for the backend to build again', () => {
+		const table = new ImageTable();
+		const send = shadersToTable(table);
+		send(66, shader);
+		expect(table.replaced).toEqual([]);
+		const newer = { ...shader, locations: [0, 1, 2] };
+		send(66, newer);
+		expect(table.shaders.get(66)).toBe(newer);
+		expect(table.replaced).toEqual([66]);
+		table.clear();
+		expect(table.replaced).toEqual([]);
+	});
 });
 
 describe('features whose shader files the sketch asks for early', () => {

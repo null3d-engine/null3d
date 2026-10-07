@@ -139,13 +139,13 @@ export function releaseVersion(output: string): string | null {
 export const GATE_VERSION = '0.1.0';
 
 /**
- * The workflows that must pass on the gate commit, each with the events whose runs count. Only a
- * full CI run holds every job: the merge queue's, or a run started by hand for a commit that
- * reached main without the queue. Main's own CI run keeps caches (D-86). Any run of the
+ * The workflows that must pass on the gate commit, each with the events whose runs count. Main's
+ * own CI run after the merge runs every job, and so does a run started by hand (D-99). A run of a
+ * pull request tested other code: GitHub's merge of it into an older main. Any run of the
  * benchmarks counts.
  */
 export const GATE_WORKFLOWS: readonly { name: string; events?: readonly string[] }[] = [
-	{ name: 'CI', events: ['merge_group', 'workflow_dispatch'] },
+	{ name: 'CI', events: ['push', 'workflow_dispatch'] },
 	{ name: 'Benchmarks' },
 ];
 

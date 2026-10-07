@@ -13,7 +13,11 @@ interface CapabilitiesResult {
 		webgl2: {
 			available: boolean;
 			extensions: Record<string, boolean>;
-			floatRenderTargets: { rgba16f: FloatTargetTest; rgba32f: FloatTargetTest } | null;
+			floatRenderTargets: {
+				rgba16f: FloatTargetTest;
+				rgba32f: FloatTargetTest;
+				r11fG11fB10f: FloatTargetTest;
+			} | null;
 		};
 	};
 }
@@ -24,8 +28,8 @@ test('the capability report says which float textures WebGL2 renders into', asyn
 	expect(result.error).toBeUndefined();
 	const { webgl2 } = result.report;
 	expect(webgl2.available).toBe(true);
-	// WebGL2 renders into both formats with the full extension, into 16-bit floats with the half
-	// one, and into neither without them. The sample count of a format it renders into depends on
+	// WebGL2 renders into the three formats with the full extension, into 16-bit floats with the
+	// half one, and into none without them. The sample count of a format it renders into depends on
 	// the device.
 	const works = { complete: true, readsBack: true, samples: expect.any(Number) };
 	const refused = { complete: false, readsBack: false, samples: 0 };
@@ -34,5 +38,6 @@ test('the capability report says which float textures WebGL2 renders into', asyn
 	expect(webgl2.floatRenderTargets).toEqual({
 		rgba16f: half ? works : refused,
 		rgba32f: full ? works : refused,
+		r11fG11fB10f: full ? works : refused,
 	});
 });
