@@ -45,6 +45,8 @@ import { encodeTextures, TEXTURE_FOLDER } from './textures.js';
  *   mesh's longest side.
  * @property {number} maxTextureSize The largest side of a texture, a power of two up to 2048.
  * @property {TextureQuality} textureQuality
+ * @property {boolean} roughnessBake Add the detail of each material's normal map to the roughness
+ *   levels of its metal-rough map, which then takes UASTC. The default is true.
  * @property {boolean} meshopt Compress the model's buffers with meshopt, which the engine decodes
  *   losslessly on load. The default is true.
  * @property {boolean} blockers Give each mesh that encloses space a blocker mesh for software
@@ -61,6 +63,7 @@ export const DEFAULT_OPTIONS = /** @type {const} */ ({
 	simplifyError: SIMPLIFY_MAX_ERROR,
 	maxTextureSize: MAX_TEXTURE_SIDE,
 	textureQuality: 'size',
+	roughnessBake: true,
 	meshopt: true,
 	blockers: true,
 	bvh: BVH_MIN_TRIANGLES,
@@ -253,11 +256,12 @@ export async function optimizeModel(path, options, encode) {
 		blockers: options.blockers,
 		bvhMinTriangles: options.bvh > 0 ? options.bvh : Number.POSITIVE_INFINITY,
 	});
-	const { files, records, uris } = await encodeTextures(doc, {
+	const { files, records, uris, skipped } = await encodeTextures(doc, {
 		encode,
 		maxSide: options.maxTextureSize,
 		quality: options.textureQuality,
 		folder: options.textureFolder,
+		roughnessBake: options.roughnessBake,
 	});
 	// glTF names a KTX2 image only through KHR_texture_basisu. Readers that follow the rules, such
 	// as three.js's GLTFLoader, refuse a KTX2 image that a texture names directly.
@@ -274,6 +278,7 @@ export async function optimizeModel(path, options, encode) {
 		inputBytes,
 		modelBytes: glb.byteLength,
 		textures: records,
+		unbaked: skipped,
 		files,
 		levels: [...levels.values()],
 		merged,

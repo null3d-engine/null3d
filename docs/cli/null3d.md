@@ -268,6 +268,7 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC instead of ETC1S | `size` |
+| `--no-roughness-bake` | Leaves the roughness levels of metal-rough maps as plain averages, with no detail from the normal maps | The roughness levels of each metal-rough map whose material has a normal map take the normal map's detail, in UASTC |
 | `--compression <none\|meshopt>` | `none` leaves the buffers uncompressed, without `EXT_meshopt_compression` | `meshopt` |
 | `--no-blockers` | Gives no mesh a blocker for software occlusion culling | Blockers for meshes that enclose space |
 | `--bvh <triangles>` | Stores the tree that raycasts walk for each mesh part of at least this many triangles, or for none with 0 | 20000 |
