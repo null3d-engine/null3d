@@ -43,12 +43,19 @@ export interface CoreGlue extends CoreErrors {
 		vertexSkinning: boolean,
 		largeWorld: boolean,
 	): number;
-	jobWorkerLoop(index: number): void;
 	/**
 	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
 	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
 	 */
 	jobWorkerFailed(index: number): void;
+	/** Serves the job system on a job worker: true when a task call made it return, false at stop. */
+	jobWorkerLoop(index: number): boolean;
+	/** Asks a job worker to leave the job loop for one more task. */
+	callJobWorker(index: number): void;
+	/** Ends one task call of a job worker. */
+	jobWorkerCallDone(index: number): void;
+	/** The task calls of a job worker that it has not finished. */
+	jobWorkerCalls(index: number): number;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
@@ -596,6 +603,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initEngine',
 	'jobWorkerLoop',
 	'jobWorkerFailed',
+	'callJobWorker',
+	'jobWorkerCallDone',
+	'jobWorkerCalls',
 	'takeJobBusyMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',
@@ -731,20 +741,21 @@ export interface CoreFiles {
 }
 
 /**
- * Each build's files. Every path is written out in full, so a bundler finds the files, ships them
- * with the app and rewrites the addresses to the shipped copies. `no-inline` keeps Vite from
- * turning a file into a data: address when a project raises its inline limit: a Content-Security-
- * Policy that allows only the page's origin blocks the import or the download of one.
+ * Each build's files. Every path is written out in full in the standard form, `new URL('<file>',
+ * import.meta.url)`, so a bundler finds the files, ships them with the app and rewrites the
+ * addresses to the shipped copies. The null3D Vite plugin keeps Vite from turning an engine file
+ * into a data: address: a Content-Security-Policy that allows only the page's origin blocks the
+ * import or the download of one.
  */
 export function coreUrls(build: Build): CoreFiles {
 	return build === 'threaded'
 		? {
-				glue: new URL('../../dist/wasm/threaded/null3d.js?no-inline', import.meta.url),
-				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm?no-inline', import.meta.url),
+				glue: new URL('../../dist/wasm/threaded/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url),
 			}
 		: {
-				glue: new URL('../../dist/wasm/single/null3d.js?no-inline', import.meta.url),
-				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm?no-inline', import.meta.url),
+				glue: new URL('../../dist/wasm/single/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url),
 			};
 }
 
