@@ -207,6 +207,7 @@ Measurement:
 - The `?join=off` switch keeps every effect in a pass of its own. The `effects` plan uses it, so its quarter of the difference stays one pass's cost.
 - The `effects-joined` plan runs the effect cost page with 4 effects joined and with `join=off`, at render scales of 1 and 0.5 on each GPU path. At 1 they fold into the final pass; at 0.5 they draw as one group.
 - GPU time comes from WebGPU's timestamps and, new here, from `EXT_disjoint_timer_query_webgl2` on WebGL2, which most desktop browsers offer and phones mostly do not. Without a timer, the plan's heavy pair on WebGL2 draws 8 effects at the display's whole pixel ratio, so the GPU limits the frame rate, and compares frame intervals.
+- WebGL2's timer covers the frame as a whole, so `gpuPassMs` there is an empty list where `gpuMs` has a time, and null where it has none. SwiftShader offers the timer too. The scene test expected null on WebGL2 from before the timer, and CI's first full run on 8 October 2026 failed it in all 5 thread modes. The code was right and the test was out of date, so the test now expects the empty list wherever WebGL2 reports a GPU time.
 - Each joined page reports how long each joined shader took to build (`joinBuilds`), which development builds keep, with the templates whose builds failed and those that a device without background compiles kept apart. On WebGL2 the time ends at the frame that finds the compile done, so it counts up to a frame more.
 
 ### Why the curve does not reach the 8-bit scene shaders
