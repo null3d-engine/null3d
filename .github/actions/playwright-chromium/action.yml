@@ -32,7 +32,12 @@ runs:
         mkdir -p "$debs"
         # apt installs a package from its archive folder when the right version is already there.
         if compgen -G "$debs/*.deb" > /dev/null; then sudo cp "$debs"/*.deb /var/cache/apt/archives/; fi
-        bunx playwright install --with-deps chromium
+        # A stalled mirror connection gives up after a short wait and apt tries again, instead of
+        # holding the job until its time limit.
+        printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "3";\n' \
+          | sudo tee /etc/apt/apt.conf.d/99-null3d-timeouts > /dev/null
+        # One more attempt if the whole install still stalls.
+        timeout 300 bunx playwright install --with-deps chromium || timeout 300 bunx playwright install --with-deps chromium
         if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then cp /var/cache/apt/archives/*.deb "$debs"/; fi
     - uses: actions/cache/save@v4
       if: env.SAVE_CACHES == 'true' && steps.restore.outputs.cache-hit != 'true'
