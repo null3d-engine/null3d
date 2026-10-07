@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/** The KTX2 test files: ETC1S and UASTC data, written by basisu 2.50. */
+/** The KTX2 test files: ETC1S, UASTC and UASTC HDR data, written by basisu 2.50. */
 export const KTX2_TEST_FILES = join(import.meta.dirname, '../../tests/pages/assets/textures');
 
 /** Every format that the engine's KTX2 loader asks the transcoder for (scene/ktx2.ts). */
@@ -19,6 +19,9 @@ export const ENGINE_TARGETS = [
 	'cTFRGBA32',
 ] as const;
 
+/** Every format that the engine's KTX2 loader asks the transcoder for from UASTC HDR data. */
+export const ENGINE_HDR_TARGETS = ['cTFBC6H', 'cTFRGB_9E5'] as const;
+
 /** The parts of the transcoder's module that the comparison calls. */
 interface Basis {
 	initializeBasis(): void;
@@ -26,6 +29,7 @@ interface Basis {
 	KTX2File: new (
 		bytes: Uint8Array,
 	) => {
+		isHDR(): boolean;
 		startTranscoding(): boolean;
 		getLevels(): number;
 		getImageTranscodedSizeInBytes(
@@ -75,7 +79,11 @@ export async function transcodeTestFiles(
 		.filter((file) => file.endsWith('.ktx2'))
 		.sort()) {
 		const bytes = new Uint8Array(readFileSync(join(KTX2_TEST_FILES, name)));
-		for (const target of ENGINE_TARGETS) {
+		const probe = new basis.KTX2File(bytes);
+		const targets = probe.isHDR() ? ENGINE_HDR_TARGETS : ENGINE_TARGETS;
+		probe.close();
+		probe.delete();
+		for (const target of targets) {
 			const format = (basis.transcoder_texture_format[target] as { value: number }).value;
 			const ktx2 = new basis.KTX2File(bytes);
 			const hash = createHash('sha256');

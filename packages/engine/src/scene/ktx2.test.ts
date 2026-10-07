@@ -26,7 +26,7 @@ const ENGINE = join(import.meta.dir, '../..');
 const VENDOR = join(ENGINE, 'vendor/basis');
 const TEXTURES = join(ENGINE, '../../tests/pages/assets/textures');
 
-/** The test page's KTX2 files, which basisu 2.50 wrote. */
+/** The test page's KTX2 files, which Basis Universal 2.50 wrote. */
 const file = (name: string) => new Uint8Array(readFileSync(join(TEXTURES, `${name}.ktx2`)));
 
 /**
@@ -53,6 +53,9 @@ const OFFICIAL_OUTPUT: Record<string, string> = {
 		'ed4e3b4e3a55ab31413f94e239dbc9b28e54d8f04b3d74840f5d38901e9b3aa2',
 	'quarters-etc1s.ktx2/cTFRGBA32':
 		'dd3b6698b71e639ed2fa1659c710f24624813f92dc129c2b9d1dec3ae62ff66f',
+	'quarters-hdr.ktx2/cTFBC6H': '70abc5f2b1be18d4b7fcc72fc3fcbfea5c592d797465ebcb87565ec3e12e0f5a',
+	'quarters-hdr.ktx2/cTFRGB_9E5':
+		'c9facdadcbe39d60511fc2e67c41a86e919988a7721945c83fe5149181c49c2a',
 	'quarters-uastc.ktx2/cTFASTC_4x4_RGBA':
 		'c6198fe79470251443477568f60d7b7d930462a50772a2a4ec6c633a9055b772',
 	'quarters-uastc.ktx2/cTFBC7_RGBA':
@@ -111,11 +114,18 @@ describe('readKtx2Header', () => {
 			alpha: false,
 			colorSpace: 'linear',
 		});
+		// UASTC HDR data names ASTC 4x4 HDR as its Vulkan format, and its values are linear.
+		expect(readKtx2Header(file('quarters-hdr'))).toEqual({
+			...base,
+			codec: 'uastc-hdr',
+			alpha: false,
+			colorSpace: 'linear',
+		});
 	});
 
 	test('agrees with the transcoder on every file', async () => {
 		const basis = await loadBasis();
-		for (const name of ['quarters-etc1s', 'quarters-uastc', 'ramp-uastc']) {
+		for (const name of ['quarters-etc1s', 'quarters-uastc', 'ramp-uastc', 'quarters-hdr']) {
 			const bytes = file(name);
 			const header = readKtx2Header(bytes);
 			const ktx2 = new basis.KTX2File(bytes);
@@ -124,7 +134,7 @@ describe('readKtx2Header', () => {
 				ktx2.getHeight(),
 				Math.max(1, ktx2.getLayers()),
 				ktx2.getLevels(),
-				ktx2.isETC1S() ? 'etc1s' : 'uastc',
+				ktx2.isETC1S() ? 'etc1s' : ktx2.isHDR() ? 'uastc-hdr' : 'uastc',
 				ktx2.getHasAlpha(),
 				ktx2.isSRGB() ? 'srgb' : 'linear',
 			]).toEqual([
@@ -152,9 +162,13 @@ describe('readKtx2Header', () => {
 		refuses(withWord(etc1s, 36, 6), 'a cube map');
 		refuses(withWord(etc1s, 44, 2), 'not in BasisLZ');
 		const dfd = new DataView(etc1s.buffer).getUint32(48, true);
-		const hdr = etc1s.slice();
-		hdr[dfd + 12] = 167;
-		refuses(hdr, 'UASTC HDR data');
+		const model = etc1s.slice();
+		model[dfd + 12] = 168;
+		refuses(model, 'color model 168');
+		// Only UASTC HDR data may name the ASTC HDR format, and only with no supercompression or
+		// Zstandard's.
+		refuses(withWord(etc1s, 12, 1000066000), 'Vulkan format 1000066000');
+		refuses(withWord(file('quarters-hdr'), 44, 1), 'supercompression scheme 1');
 	});
 });
 
@@ -162,6 +176,7 @@ describe('ktx2Target', () => {
 	const opaque = { width: 64, height: 64, alpha: false };
 	const ETC1S = { ...opaque, codec: 'etc1s' } as const;
 	const UASTC = { ...opaque, codec: 'uastc' } as const;
+	const HDR = { ...opaque, codec: 'uastc-hdr' } as const;
 	const ALL = CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_BC | CAPABILITY_TEXTURE_ETC2;
 	const format = (capabilities: number, header: Parameters<typeof ktx2Target>[1]) =>
 		ktx2Target(capabilities, header).format;
@@ -212,6 +227,28 @@ describe('ktx2Target', () => {
 		expect(ktx2Target(ALL, ETC1S, false).format).toBe('etc2-rgb8unorm');
 		expect(ktx2Target(ALL, { ...ETC1S, width: 30 }, true).format).toBe('rgba8unorm');
 	});
+
+	test('turns UASTC HDR into BC6H where the device has BC, and into shared-exponent floats elsewhere', () => {
+		const bc6h: Ktx2Target = { transcoder: 'cTFBC6H', format: 'bc6h-rgb-ufloat' };
+		const rgb9e5: Ktx2Target = { transcoder: 'cTFRGB_9E5', format: 'rgb9e5ufloat' };
+		for (const webgl2 of [false, true]) {
+			expect(ktx2Target(ALL, HDR, webgl2)).toEqual(bc6h);
+			expect(ktx2Target(CAPABILITY_TEXTURE_BC, HDR, webgl2)).toEqual(bc6h);
+			// A phone has ASTC and ETC2, and neither path has their HDR formats.
+			expect(ktx2Target(CAPABILITY_TEXTURE_ASTC | CAPABILITY_TEXTURE_ETC2, HDR, webgl2)).toEqual(
+				rgb9e5,
+			);
+			expect(ktx2Target(0, HDR, webgl2)).toEqual(rgb9e5);
+			expect(ktx2Target(ALL, { ...HDR, width: 30 }, webgl2)).toEqual(rgb9e5);
+		}
+	});
+
+	test("a Mesa desktop's WebGL2, which offers ETC2 and ASTC it decodes in software, gets neither", () => {
+		// Mesa on Linux reports BC, ETC2 and ASTC alike. The choice reads only these formats, never
+		// the GPU's name, which some browsers hide.
+		for (const header of [UASTC, ETC1S, { ...ETC1S, alpha: true }, HDR])
+			expect(ktx2Target(ALL, header, true).format).not.toMatch(/^(etc2|astc)-/);
+	});
 });
 
 describe('ktx2TooLarge', () => {
@@ -235,6 +272,9 @@ describe('ktx2TooLarge', () => {
 		expect(ktx2TooLarge({ ...header, layers: 48 }, 'rgba8unorm', 4096)).toBe(
 			'its texels take 513 MiB as rgba8unorm, more than the 256 MiB that one texture may hold',
 		);
+		// Shared-exponent floats take 4 bytes a texel, and BC6H a byte.
+		expect(ktx2TooLarge({ ...header, layers: 48 }, 'rgb9e5ufloat', 4096)).toContain('513 MiB');
+		expect(ktx2TooLarge({ ...header, layers: 48 }, 'bc6h-rgb-ufloat', 4096)).toBeUndefined();
 	});
 
 	test('a file larger than the device takes is refused before the transcoder starts', async () => {
@@ -280,12 +320,16 @@ describe('the transcoder', () => {
 			['cTFETC2_RGBA', 'etc2-rgba8unorm'],
 			['cTFRGBA32', 'rgba8unorm'],
 		] as const;
-		for (const name of ['quarters-etc1s', 'quarters-uastc', 'ramp-uastc']) {
+		const hdrTargets = [
+			['cTFBC6H', 'bc6h-rgb-ufloat'],
+			['cTFRGB_9E5', 'rgb9e5ufloat'],
+		] as const;
+		for (const name of ['quarters-etc1s', 'quarters-uastc', 'ramp-uastc', 'quarters-hdr']) {
 			const bytes = file(name);
-			const { width, height, levels } = readKtx2Header(bytes);
+			const { width, height, levels, codec } = readKtx2Header(bytes);
 			const ktx2 = new basis.KTX2File(bytes);
 			expect(ktx2.startTranscoding()).toBeTruthy();
-			for (const [transcoder, format] of targets) {
+			for (const [transcoder, format] of codec === 'uastc-hdr' ? hdrTargets : targets) {
 				const code = basis.transcoder_texture_format[transcoder].value;
 				let written = 0;
 				for (let level = 0; level < levels; level++)

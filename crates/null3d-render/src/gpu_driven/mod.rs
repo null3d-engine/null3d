@@ -135,6 +135,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
@@ -202,6 +203,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 mod ids {
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::effects::MAX_EFFECTS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
@@ -283,8 +285,10 @@ mod ids {
     /// The placeholder that views without a depth pyramid bind in its place.
     pub const NO_PYRAMID: u32 = OCCLUSION + 2 * MAX_VIEWS as u32;
 
+    /// The uniform buffer of the custom effects' blocks.
+    pub const EFFECTS: u32 = NO_PYRAMID + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = NO_PYRAMID + 1;
+    pub const PAGES: u32 = EFFECTS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -304,9 +308,11 @@ mod ids {
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
+    /// The texture that custom effects bind in place of the scene's depth when they read none.
+    pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
-    pub const CELL_OFFSETS: u32 = BLANK_OUTLINE + 1;
+    pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = CELL_OFFSETS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
@@ -321,8 +327,10 @@ mod ids {
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The sampler that reads four texels of the shadow map at once.
     pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
+    /// The linear sampler of the custom effects.
+    pub const EFFECT_SAMPLER: u32 = 6;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 6;
+    pub const SAMPLERS: u32 = 7;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -367,8 +375,10 @@ mod ids {
     pub const fn pyramid_group(view: ViewId) -> u32 {
         AO_GROUPS + AO_STEPS as u32 + view.index() as u32
     }
-    /// The bind groups of materials' maps, after the depth pyramids'.
-    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32 + MAX_VIEWS as u32;
+    /// The bind group of each custom effect, after the depth pyramids'.
+    pub const EFFECT_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32 + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after the effects'.
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -549,6 +559,12 @@ impl GpuDrivenRenderer {
                         ao: AoIds {
                             buffer: ids::AO,
                             first_group: ids::AO_GROUPS,
+                        },
+                        effects: EffectIds {
+                            buffer: ids::EFFECTS,
+                            sampler: ids::EFFECT_SAMPLER,
+                            first_group: ids::EFFECT_GROUPS,
+                            blank_depth: ids::BLANK_EFFECT_DEPTH,
                         },
                     },
                 );
@@ -798,6 +814,12 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
+        self.graph.set_effects(
+            self.settings.effects(),
+            self.settings.clock_seconds(),
+            self.settings.camera_projection(input.canvas),
+        );
+        self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());

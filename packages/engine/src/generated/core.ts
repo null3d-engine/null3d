@@ -195,6 +195,10 @@ export const MATERIAL_PARAM_REFLECTANCE = 23;
 export const MATERIAL_PARAM_SPECULAR_COLOR = 32;
 export const MATERIAL_PARAM_SPECULAR_INTENSITY = 35;
 
+export const EFFECT_MAX = 8;
+export const EFFECT_FLOATS = 32;
+export const EFFECT_DEPTH = 1;
+
 export const POST_VALUE_EXPOSURE = 0;
 export const POST_VALUE_BLOOM_INTENSITY = 1;
 export const POST_VALUE_BLOOM_THRESHOLD = 2;
@@ -249,6 +253,7 @@ export const TEXTURE_FORMAT_ASTC = 11;
 export const TEXTURE_FORMAT_ASTC_SRGB = 12;
 export const TEXTURE_FORMAT_BC7 = 13;
 export const TEXTURE_FORMAT_BC7_SRGB = 14;
+export const TEXTURE_FORMAT_BC6H = 21;
 export const TEXTURE_FORMAT_ETC2_RGB = 15;
 export const TEXTURE_FORMAT_ETC2_RGB_SRGB = 16;
 export const TEXTURE_FORMAT_ETC2_RGBA = 17;

@@ -200,7 +200,7 @@ rocks.destroy();
 
 The arrays are views of engine memory, which can grow when you create meshes or batches. Read them from the batch each time you use them, such as at the start of `onUpdate`, and do not keep them from the setup. A read allocates nothing.
 
-`scene.createInstances(prefab, count, { dynamic, colors, layers })` (0.2) draws a loaded model with one batch per mesh, which share their rows: write the returned batch's arrays, and one row moves every part of that copy. The model's lights are left out, and a model with instancing of its own throws E1417.
+`scene.createInstances(prefab, count, { dynamic, colors, layers })` (0.2) draws a loaded model with one batch per mesh, which share their rows: write the returned batch's arrays, and one row moves every part of that copy. The model's lights are left out, and a model with instancing of its own throws E1417. Batches do not skin. A skinned mesh whose rest pose is not its bind pose draws in its bind pose, and development builds warn.
 
 ## 6. Cameras (`api/cameras`)
 
@@ -325,7 +325,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 ## 10. Textures (`api/textures`)
 
 ```ts
-const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, AVIF where decoded
+const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP or AVIF
   colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
   flipY: true,               // default, as three.js's TextureLoader; glTF textures use false
   wrap: 'repeat',            // 'clamp' (default) | 'repeat' | 'mirror', or [u, v]
@@ -338,6 +338,8 @@ const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, A
 // KTX2 of ETC1S or UASTC data (basisu, toktx): the device's compressed format, with the file's mip levels
 const floor = await assets.loadTexture('/tex/floor.ktx2', { wrap: 'repeat' }); // color space from the file
 floor.format;              // 'astc-4x4-unorm' | 'bc7-rgba-unorm' | 'etc2-rgb8unorm' | 'etc2-rgba8unorm' | 'rgba8unorm'
+// KTX2 of UASTC HDR data (0.2): 'bc6h-rgb-ufloat' with BC formats, else 'rgb9e5ufloat'; always linear
+const lamp = await assets.loadTexture('/tex/lamp-hdr.ktx2');
 // KTX2 rows stay as the file holds them (first row at v = 0): encode with basisu -y_flip for planes; no flipY
 textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
 textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
@@ -470,9 +472,10 @@ post.set({
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
-post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
-post.setEffectUniform('pixelate', 'size', 8);  // (0.2)
-post.removeEffect('pixelate');                 // (0.2)
+post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
+const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; one pass each, at most 8
+post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
+post.removeEffect(fx);                  // (0.2)
 ```
 
 ## 16. Render graph (0.2) (`api/render`)

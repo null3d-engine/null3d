@@ -342,12 +342,16 @@ pub mod format {
     /// ambient occlusion's copy of the depth. WebGL2 calls it `R32F`, and draws into it with
     /// `EXT_color_buffer_float`.
     pub const R32_FLOAT: u32 = 20;
+    /// BC6H in blocks of 4 x 4 texels, 16 bytes each, with three unsigned half floats per texel
+    /// and no alpha: high dynamic range color in an eighth of the bytes of `RGBA16_FLOAT`
+    /// (`Capabilities::TEXTURE_BC`).
+    pub const BC6H_RGB_UFLOAT: u32 = 21;
     /// Depth as a 16-bit unsigned normalized number: half the bytes of `DEPTH32_FLOAT`, with even
     /// steps of 1 / 65,535 from 0 to 1. WebGL2 calls it `DEPTH_COMPONENT16`.
     pub const DEPTH16_UNORM: u32 = 22;
 
     /// Every format.
-    pub const ALL: [u32; 22] = [
+    pub const ALL: [u32; 23] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -369,6 +373,7 @@ pub mod format {
         ETC2_RGBA8_UNORM_SRGB,
         RGB9E5_UFLOAT,
         R32_FLOAT,
+        BC6H_RGB_UFLOAT,
         DEPTH16_UNORM,
     ];
 
@@ -412,7 +417,7 @@ pub mod format {
     pub const fn capability(format: u32) -> Capabilities {
         match format {
             ASTC_4X4_UNORM | ASTC_4X4_UNORM_SRGB => Capabilities::TEXTURE_ASTC,
-            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB => Capabilities::TEXTURE_BC,
+            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB | BC6H_RGB_UFLOAT => Capabilities::TEXTURE_BC,
             ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB | ETC2_RGBA8_UNORM | ETC2_RGBA8_UNORM_SRGB => {
                 Capabilities::TEXTURE_ETC2
             }
@@ -423,7 +428,7 @@ pub mod format {
     /// Texels on each side of a block: 4 for the compressed formats, and 1 for the rest.
     pub const fn block_size(format: u32) -> u32 {
         match format {
-            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB => 4,
+            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB | BC6H_RGB_UFLOAT => 4,
             _ => 1,
         }
     }
@@ -441,6 +446,7 @@ pub mod format {
             | ASTC_4X4_UNORM_SRGB
             | BC7_RGBA_UNORM
             | BC7_RGBA_UNORM_SRGB
+            | BC6H_RGB_UFLOAT
             | ETC2_RGBA8_UNORM
             | ETC2_RGBA8_UNORM_SRGB => 16,
             _ => 0,
@@ -464,6 +470,12 @@ pub mod format {
     /// Bytes of one row of blocks of a mip level: a row of texels for an uncompressed format.
     pub const fn row_bytes(format: u32, width: u32, level: u32) -> u64 {
         blocks(format, width, level) as u64 * block_bytes(format) as u64
+    }
+
+    /// True for the formats whose textures get their texels from writes alone: the compressed
+    /// formats and `RGB9E5_UFLOAT`, which no path draws into or copies.
+    pub const fn writes_only(format: u32) -> bool {
+        is_compressed(format) || format == RGB9E5_UFLOAT
     }
 
     /// True for the formats whose mip levels `GenerateMipmaps` makes: 8-bit color, which every
@@ -656,6 +668,13 @@ pub mod layout {
     /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
     /// textures that the step reads with `textureLoad`.
     pub const AO: u32 = 18;
+    /// Group 0 of a custom effect's pass: the effect's uniform block, the color it reads, a linear
+    /// sampler, and the scene's depth as unfilterable floats, or a blank texture for an effect that
+    /// reads no depth.
+    pub const EFFECT: u32 = 21;
+    /// [`EFFECT`] with a multisampled scene depth, whose sample 0 the effect reads. Only WebGPU has
+    /// it: WebGL2 reads a copy of one sample that the backend keeps.
+    pub const EFFECT_DEPTH_MS: u32 = 22;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -713,9 +732,11 @@ pub mod permutation {
     /// The outline mask template marks the parts of outlined objects that nothing hides. Without
     /// it, the template marks every part, hidden or not.
     pub const OUTLINE_VISIBLE: u32 = 65536;
+    /// A custom effect reads the scene's depth from a multisampled target, at sample 0.
+    pub const DEPTH_MULTISAMPLED: u32 = 262144;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 17] = [
+    pub const NAMES: [(&str, u32); 18] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -733,6 +754,7 @@ pub mod permutation {
         ("CASTER_OFFSET", CASTER_OFFSET),
         ("BLOOM", BLOOM),
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
+        ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -1494,6 +1516,7 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
                 ("R32_FLOAT", format::R32_FLOAT),
+                ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
                 ("DEPTH16_UNORM", format::DEPTH16_UNORM),
             ],
         ),
@@ -1584,6 +1607,8 @@ pub fn typescript_constants() -> String {
                 ("AO_DEPTH", layout::AO_DEPTH),
                 ("AO_DEPTH_MS", layout::AO_DEPTH_MS),
                 ("AO", layout::AO),
+                ("EFFECT", layout::EFFECT),
+                ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -2163,6 +2188,14 @@ mod tests {
             format::capability(format::BC7_RGBA_UNORM_SRGB),
             Capabilities::TEXTURE_BC
         );
+        // BC6H holds high dynamic range color in the same blocks of 16 bytes as BC7.
+        let bc6h = format::BC6H_RGB_UFLOAT;
+        assert!(format::is_compressed(bc6h));
+        assert_eq!(format::level_bytes(bc6h, 64, 32, 0), 16 * 8 * 16);
+        assert_eq!(format::capability(bc6h), Capabilities::TEXTURE_BC);
+        assert!(format::writes_only(bc6h));
+        assert!(format::writes_only(format::RGB9E5_UFLOAT));
+        assert!(!format::writes_only(format::RGBA16_FLOAT));
         assert_eq!(
             format::capability(format::RGBA8_UNORM),
             Capabilities::empty()

@@ -13,6 +13,7 @@ import {
 	TEXTURE_FILTER_NEAREST,
 	TEXTURE_FORMAT_ASTC,
 	TEXTURE_FORMAT_ASTC_SRGB,
+	TEXTURE_FORMAT_BC6H,
 	TEXTURE_FORMAT_BC7,
 	TEXTURE_FORMAT_BC7_SRGB,
 	TEXTURE_FORMAT_ETC2_RGB,
@@ -82,12 +83,15 @@ export type TextureFormat = 'rgba8unorm' | 'rgba16float';
  * A compressed format, which stores blocks of 4 x 4 texels in a quarter or an eighth of the GPU
  * memory of `rgba8unorm`. A texture from a KTX2 file takes the one that the device supports:
  * `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` without alpha or `etc2-rgba8unorm` with
- * it. The names are WebGPU's, and a texture's `colorSpace` says whether sampling decodes sRGB.
+ * it. A KTX2 file of high dynamic range data becomes `bc6h-rgb-ufloat`, which holds three half
+ * floats per texel and no alpha, where the device has BC formats. The names are WebGPU's, and a
+ * texture's `colorSpace` says whether sampling decodes sRGB.
  *
  * @category api/textures
  */
 export type CompressedTextureFormat =
 	| 'astc-4x4-unorm'
+	| 'bc6h-rgb-ufloat'
 	| 'bc7-rgba-unorm'
 	| 'etc2-rgb8unorm'
 	| 'etc2-rgba8unorm';
@@ -182,11 +186,23 @@ const COLOR_SPACES: Record<TextureColorSpace, true> = { srgb: true, linear: true
 
 const FORMATS: Record<TextureFormat, true> = { rgba8unorm: true, rgba16float: true };
 
+/** Every format that a texture stores its texels in. */
+type AnyTextureFormat = TextureFormat | CompressedTextureFormat | EnvironmentFormat;
+
+/** The formats of high dynamic range texels, which hold linear values alone. */
+const HDR_FORMATS: ReadonlySet<AnyTextureFormat> = new Set([
+	'rgba16float',
+	'rgb9e5ufloat',
+	'bc6h-rgb-ufloat',
+]);
+
 /** The core's code of each format, in linear values and in sRGB. */
-const FORMAT_CODES: Record<TextureFormat | CompressedTextureFormat, readonly [number, number]> = {
+const FORMAT_CODES: Record<AnyTextureFormat, readonly [number, number]> = {
 	rgba8unorm: [TEXTURE_FORMAT_LINEAR, TEXTURE_FORMAT_SRGB],
 	rgba16float: [TEXTURE_FORMAT_HALF_FLOAT, TEXTURE_FORMAT_HALF_FLOAT],
+	rgb9e5ufloat: [TEXTURE_FORMAT_SHARED_EXPONENT, TEXTURE_FORMAT_SHARED_EXPONENT],
 	'astc-4x4-unorm': [TEXTURE_FORMAT_ASTC, TEXTURE_FORMAT_ASTC_SRGB],
+	'bc6h-rgb-ufloat': [TEXTURE_FORMAT_BC6H, TEXTURE_FORMAT_BC6H],
 	'bc7-rgba-unorm': [TEXTURE_FORMAT_BC7, TEXTURE_FORMAT_BC7_SRGB],
 	'etc2-rgb8unorm': [TEXTURE_FORMAT_ETC2_RGB, TEXTURE_FORMAT_ETC2_RGB_SRGB],
 	'etc2-rgba8unorm': [TEXTURE_FORMAT_ETC2_RGBA, TEXTURE_FORMAT_ETC2_RGBA_SRGB],
@@ -200,7 +216,7 @@ export interface FileTexels {
 	depth: number;
 	/** Mip levels, from level 0: all that the file holds, or 1. */
 	levels: number;
-	format: TextureFormat | CompressedTextureFormat;
+	format: AnyTextureFormat;
 	/** The color space that the file names, which the options can change. */
 	colorSpace: TextureColorSpace;
 	/** Tightly packed rows, of blocks in a compressed format: each level's layers in turn. */
@@ -497,7 +513,7 @@ export class Textures {
 		width: number,
 		height: number,
 		depth: number,
-		format: TextureFormat | CompressedTextureFormat,
+		format: AnyTextureFormat,
 		options: TextureOptions,
 		source: 'image' | 'data' | 'file',
 		call: string,
@@ -512,14 +528,13 @@ export class Textures {
 			anisotropy = 1,
 			uvSet = 0,
 		} = options;
-		const half = format === 'rgba16float';
 		const [wrapU, wrapV] = typeof wrap === 'string' ? [wrap, wrap] : wrap;
 		if (DEV) {
 			if (!COLOR_SPACES[colorSpace as TextureColorSpace])
 				throw invalid(call, `got the colorSpace ${quote(colorSpace)}. Use 'srgb' or 'linear'.`);
-			if (half && colorSpace === 'srgb')
-				throw invalid(call, "got colorSpace 'srgb' for rgba16float data, which is linear.");
-			if (half && mipmaps)
+			if (HDR_FORMATS.has(format) && colorSpace === 'srgb')
+				throw invalid(call, `got colorSpace 'srgb' for ${format} texels, which are linear.`);
+			if (format === 'rgba16float' && mipmaps)
 				throw invalid(call, 'got mipmaps: true for rgba16float data, which has no mip levels.');
 			if (!(Number.isInteger(anisotropy) && anisotropy >= 1 && anisotropy <= 16))
 				throw invalid(call, `got the anisotropy ${anisotropy}: give a whole number from 1 to 16.`);

@@ -80,12 +80,12 @@
     {
       "id": 6,
       "prompt": "Use null3d to add depth of field to my cinematic camera.",
-      "expected_output": "The answer says depth of field is not in null3d 1.0, offers a workaround (a custom hdr-stage effect that reads scene depth, which needs engine 0.2, or skipping it), and does not invent a post.set option for it.",
+      "expected_output": "The answer says depth of field is not in null3d 1.0, offers a workaround (a custom effect with post.addEffect that reads the scene depth through effectDepth or effectDistance, which needs engine 0.2, or skipping it), and does not invent a post.set option for it.",
       "files": [],
       "expectations": [
         "States that depth of field is not part of null3d 1.0 or that its docs status must be checked",
         "Does not use a nonexistent option such as post.set({ dof })",
-        "Offers a workaround using post.addEffect with stage 'hdr' and sampleDepth, marked as engine 0.2, or explains the trade-off of skipping it",
+        "Offers a workaround using post.addEffect with effectDepth or effectDistance, marked as engine 0.2, or explains the trade-off of skipping it",
         "Mentions the cost of wide blurs on phones"
       ]
     }
