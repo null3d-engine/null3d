@@ -247,8 +247,8 @@ export function webgl2DrawsHdr(report: DeviceReport['webgl2'], antialias: Antial
 
 /**
  * Whether WebGL2 takes the packed small float format for HDR scene color where the device draws
- * it, without the ?scene-format= switch. Phone measurements of its cost and of banding in dark
- * gradients decide it, as decision record D-77 says. Until then WebGL2 keeps RGBA16F.
+ * it, without the ?scene-format= switch. It is off: on phones the small format drew no faster than
+ * RGBA16F, and a little slower on one Mali GPU, as decision record D-77 says.
  */
 export const WEBGL2_SMALL_SCENE_COLOR = false;
 
