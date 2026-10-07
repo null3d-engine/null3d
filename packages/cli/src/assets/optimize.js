@@ -20,6 +20,7 @@ const OPTIONS = /** @type {const} */ ({
 	'simplify-error': { type: 'string', default: String(DEFAULT_OPTIONS.simplifyError) },
 	'max-texture-size': { type: 'string', default: String(MAX_TEXTURE_SIDE) },
 	'texture-quality': { type: 'string', default: DEFAULT_OPTIONS.textureQuality },
+	'no-roughness-bake': { type: 'boolean', default: false },
 	compression: { type: 'string', default: DEFAULT_OPTIONS.meshopt ? 'meshopt' : 'none' },
 	'no-blockers': { type: 'boolean', default: false },
 	bvh: { type: 'string', default: String(DEFAULT_OPTIONS.bvh) },
@@ -42,8 +43,10 @@ Clips: keys at the rate the engine keeps them, 16-bit rotations, one key for a t
 changes, so the engine copies them at load. No key or track is dropped.
 Textures: PNG and JPEG images encoded to KTX2 with every mip level, each side at its nearest
 power of two. Normal maps take UASTC; color and data maps take ETC1S, or UASTC with
---texture-quality high. Every texture encodes on its own worker thread, and the same input gives
-the same bytes on every machine.
+--texture-quality high. A metal-rough map whose material has a normal map takes the normal
+map's detail in its roughness levels, so distant bumpy surfaces do not flicker, and takes UASTC.
+Every texture encodes on its own worker thread, and the same input gives the same bytes on
+every machine.
 
 Options:
   --lod                        Add levels of detail to meshes of 64 triangles or more, each
@@ -56,6 +59,7 @@ Options:
   --max-texture-size <pixels>  The largest side of a texture: a power of two up to 2048 (2048)
   --texture-quality <size|high> ETC1S for color and data maps, or UASTC, several times
                                larger with less loss (size)
+  --no-roughness-bake          Leave roughness levels as plain averages of the metal-rough map
   --compression <none|meshopt> Compress the file's buffers with meshopt
                                (EXT_meshopt_compression), or leave them as they are (meshopt)
   --no-blockers                Give no mesh a blocker for software occlusion culling
@@ -129,6 +133,7 @@ export function parseOptimizeArgs(args) {
 			simplifyError,
 			maxTextureSize: side,
 			textureQuality: quality,
+			roughnessBake: !values['no-roughness-bake'],
 			meshopt: compression === 'meshopt',
 			blockers: !values['no-blockers'],
 			bvh,

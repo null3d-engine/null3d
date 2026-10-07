@@ -145,6 +145,27 @@ The page starts every download that the start needs while the core downloads. On
 
 Warm loads and loads at full speed stayed within the spread between runs. The first row of the single-threaded mode already downloaded the sketch module with the core. Before that, the first frame came at 3,580 ms. In single-threaded mode, starting only the renderer early gave 3,194 ms, because the core's loader was then last. Starting both gave 2,624 ms.
 
+## A sketch module that does not load
+
+- `loadSketch` imports a sketch module that did not load once more, after 500 ms. The console and the thread's start trail note the second import. So it shows in test results and in user reports. The load fails with E1410 only when the second import fails too. Its message names the first failure, in the same words as before. A block by the page's policy (E1422) fails at once, since a second import cannot pass it.
+- The cause: on 7 October 2026, a Safari CI job failed the custom-surface image page with E1410 ("Importing a module script failed"). The page's four custom materials make a sketch module of 16.2 MB on the dev server. The sketch worker waited 6.3 s for it, and then the import failed. The next thread mode of the same page passed seconds later, and so did the rerun of the job. The dev server answered 24 of 24 cold double requests for the file in full, with no errors. It was the only E1410 in 132 Safari CI jobs, 58 of which ran the page. So the fault was a one-off failure of the import in Safari, not a fault of the server or the sketch.
+- Users can meet the same fault. A production sketch with custom materials is as large. The build puts the same compiled shader builds into the sketch file, about 4 MB per material. And the page's download of the module into the cache runs while the worker imports it. A dropped link, or Safari under memory pressure, then failed the start with nothing to retry it.
+- Browsers differ when a page imports a module again after a failed import. Measured with Playwright on 8 October 2026, on the page and in a module worker:
+
+| Failure of the first import | Chromium 153 | Firefox 155 | WebKit 26.6 |
+| --- | --- | --- | --- |
+| HTTP 500 | fails again at once, with no request and a new error | downloads it again | downloads it again |
+| Connection reset | fails again at once, with no request and a new error | the browser retried the request itself, so the first import loaded | the browser retried the request itself, so the first import loaded |
+| The module's code threw, or did not parse | rethrows the same error object, with no request | the same | the same |
+| Any of these, imported again with a query | downloads and runs it | downloads and runs it | downloads and runs it |
+
+- The HTML standard now says not to keep a failed download in the module map (whatwg/html#10327). WebKit and Chromium have implemented it, and Firefox has a bug open for it. The Chromium build that Playwright ships still keeps the failure.
+- So the second import goes to the same address first. Firefox and Safari download the module again there. A rethrow of the same error object means that the module's own code failed. Every browser keeps such a module, so the load fails with E1410 and asks for nothing more. Any other second failure is Chrome's kept download. The loader then imports the module at its address plus the query `null3d-retry=1`. A module that fails both real downloads in Firefox or Safari is therefore asked for a third time.
+- The loader itself was checked the same way, on the page and in a module worker, in all three browsers. A sketch whose first answer was an HTTP 500 loaded in each, Chromium through the query. A reset connection loaded in each too. A sketch whose code threw gave E1410 after one request. A missing sketch gave E1410 after 2 requests in Chromium and 3 in Firefox and WebKit. Each failure added about 600 ms: the 500 ms wait and the 100 ms wait for a policy report.
+- The query is safe for bundlers: the loader adds it at run time, after the build. A static server and Vite's dev server ignore a query they do not know. The query loads a new copy of the module, but the first copy never ran. The modules that it imports keep their own addresses. Only http and https addresses take the query: a `blob:` address with a query names no file.
+- What the retry cannot fix: Chrome keeps a failed import of a module that the sketch imports. The query changes only the sketch's own address.
+- Rejected: rerunning a page that failed with E1410 in the test runner. It hides the same fault from users. It also hides real E1410 failures, such as a wrong address. Asking the dev server for every custom sketch before the browsers start was rejected too. It removes only the test server's compile wait, and the server's answer was already good. Making custom materials smaller, which would make the module small, is a design change of its own.
+
 ## Textures on both GPU paths
 
 - WebGL2 keeps GL's row order in everything a render pass draws: row 0 is the bottom row, and on WebGPU it is the top row. Uploaded and written texels keep their order on both paths.

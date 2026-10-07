@@ -306,7 +306,7 @@ const DOCS = {
 	E1410: {
 		title: 'Sketch module not loaded',
 		cause:
-			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded.',
+			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded. The engine imports a module that does not load once more after a short wait, and the console notes that second import. The error comes only when the second import fails too, and it gives the reason of the first. A module whose code threw is not downloaded again, since it would throw again.',
 		example:
 			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
 		since: '0.1',

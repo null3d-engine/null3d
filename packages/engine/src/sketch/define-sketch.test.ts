@@ -1,11 +1,11 @@
-import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
-import { loadSketch } from './define-sketch';
+import { defineSketch, loadSketch, type SketchLoadOptions } from './define-sketch';
 
 /**
  * The folder of the sketch modules that the tests write, by its real path: on macOS the temp folder
@@ -24,10 +24,10 @@ function writeModule(name: string, code: string): string {
 	return pathToFileURL(file).href;
 }
 
-/** The error that loading the module at `url` throws. */
-async function failure(url: string): Promise<EngineError> {
+/** The error that loading the module at `url` throws, with no wait before the second import. */
+async function failure(url: string, options: SketchLoadOptions = {}): Promise<EngineError> {
 	try {
-		await loadSketch(url);
+		await loadSketch(url, { retryWaitMs: 0, ...options });
 	} catch (e) {
 		return e as EngineError;
 	}
@@ -35,7 +35,13 @@ async function failure(url: string): Promise<EngineError> {
 }
 
 // The page sets the table of fixes that ends each error's message before it can raise an error.
-beforeEach(() => setErrorFixes(ERROR_FIXES));
+// The loader notes each second import in the console, which the tests keep quiet.
+let warn: ReturnType<typeof spyOn>;
+beforeEach(() => {
+	setErrorFixes(ERROR_FIXES);
+	warn = spyOn(console, 'warn').mockImplementation(() => {});
+});
+afterEach(() => warn.mockRestore());
 
 describe('loadSketch', () => {
 	it('returns the sketch that a module exports as its default export', async () => {
@@ -108,5 +114,104 @@ describe('loadSketch', () => {
 		expect(error).toBeInstanceOf(EngineError);
 		expect(error.code).toBe('E1204');
 		expect(error.message).toStartWith('E1204: setBackground() got the color "blue-ish".');
+	});
+});
+
+describe('loadSketch, when an import fails', () => {
+	const url = 'https://example.com/assets/sketch.js';
+	const sketch = { default: defineSketch(() => ({})) };
+
+	/**
+	 * A stub import that answers each call with the next outcome, an error to throw or a module to
+	 * return, and records the addresses it was asked for.
+	 */
+	function stubImport(...outcomes: unknown[]) {
+		const asked: string[] = [];
+		const importModule = async (address: string) => {
+			asked.push(address);
+			const outcome = outcomes[asked.length - 1];
+			if (outcome instanceof Error) throw outcome;
+			return outcome as { default?: unknown };
+		};
+		return { asked, importModule };
+	}
+
+	it('imports the module once more, and notes the second import in the trail and the console', async () => {
+		const { asked, importModule } = stubImport(
+			new TypeError('Importing a module script failed.'),
+			sketch,
+		);
+		const steps: string[] = [];
+		const loaded = await loadSketch(url, {
+			importModule,
+			retryWaitMs: 0,
+			step: (text) => steps.push(text),
+		});
+		expect(loaded).toBe(sketch.default);
+		expect(asked).toEqual([url, url]);
+		expect(steps).toEqual([
+			`the sketch module ${url} did not load (Importing a module script failed), so the engine imports it once more`,
+		]);
+		expect(warn).toHaveBeenCalledWith(`null3D: ${steps[0]}`);
+	});
+
+	it('imports the module at an address with a query when the browser keeps the failed import', async () => {
+		const { asked, importModule } = stubImport(
+			new TypeError(`Failed to fetch dynamically imported module: ${url}`),
+			new TypeError(`Failed to fetch dynamically imported module: ${url}`),
+			sketch,
+		);
+		const steps: string[] = [];
+		const loaded = await loadSketch(url, {
+			importModule,
+			retryWaitMs: 0,
+			step: (text) => steps.push(text),
+		});
+		expect(loaded).toBe(sketch.default);
+		expect(asked).toEqual([url, url, `${url}?null3d-retry=1`]);
+		expect(steps[1]).toBe(
+			`the second import failed too, so the engine imports ${url}?null3d-retry=1`,
+		);
+	});
+
+	it('fails with E1410 and the first reason, in the same words, when the second import fails too', async () => {
+		const { asked, importModule } = stubImport(
+			new TypeError('Importing a module script failed.'),
+			new TypeError('Importing a module script failed.'),
+			new TypeError('Load failed.'),
+		);
+		const error = await failure(url, { importModule });
+		expect(error).toBeInstanceOf(EngineError);
+		expect(error.code).toBe('E1410');
+		expect(error.message).toStartWith(
+			`E1410: the sketch module ${url} did not load: Importing a module script failed. ${ERROR_FIXES.E1410}`,
+		);
+		expect(asked).toHaveLength(3);
+	});
+
+	it('does not ask again for a module whose code threw, which the browser rethrows', async () => {
+		const threw = new TypeError('the module threw on purpose.');
+		const { asked, importModule } = stubImport(threw, threw);
+		const error = await failure(url, { importModule });
+		expect(error.code).toBe('E1410');
+		expect(error.message).toStartWith(
+			`E1410: the sketch module ${url} did not load: the module threw on purpose. Pass the sketch`,
+		);
+		expect(asked).toEqual([url, url]);
+	});
+
+	it('gives no query to an address other than http or https', async () => {
+		const blob = 'blob:https://example.com/0b6c2f4e';
+		const { asked, importModule } = stubImport(new TypeError('a'), new TypeError('b'));
+		expect((await failure(blob, { importModule })).code).toBe('E1410');
+		expect(asked).toEqual([blob, blob]);
+	});
+
+	it('keeps the code of an engine error that the second import throws', async () => {
+		const { importModule } = stubImport(
+			new TypeError('Importing a module script failed.'),
+			new EngineError('E1204', 'setBackground() got the color "blue-ish".'),
+		);
+		expect((await failure(url, { importModule })).code).toBe('E1204');
 	});
 });
