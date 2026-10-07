@@ -13,6 +13,8 @@
 //!   double-sided material, as three.js's `Raycaster` tests a material's `side`.
 //! - Positions of the scene's last world output: the frame's transform update and any late
 //!   update, and each batch's last update.
+//! - The rows of sprite, point and line batches as they draw, through the query's camera and
+//!   three.js's thresholds ([`RowQuery`]); see [`super::rows`]. Overlap queries do not find them.
 //!
 //! An overlap query finds the items with a triangle inside the volume or crossing its
 //! surface. A volume inside a closed mesh, which touches none of its triangles, does not find
@@ -28,11 +30,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::mesh::{MeshBvh, Side, Triangles};
+use super::rows::{RowQuery, RowShape, row_raycast};
 use super::scene::{NO_MESH, SceneBvh, Source};
-use super::top::WorldRay;
-use super::{Aabb, Ray};
+use super::top::{WorldRay, cell_centre};
+use super::{Aabb, Ray, Reach};
 use crate::CoreError;
-use crate::instances::BatchTable;
+use crate::instances::{BatchTable, InstanceBatch};
 use crate::jobs::JobSystem;
 use crate::math::{Affine, invert64};
 use crate::scene::SceneStorage;
@@ -40,6 +43,9 @@ use crate::shared::SharedMut;
 
 /// Rays per chunk of [`SceneQueries::raycast_batch`] on the job workers.
 pub const RAY_CHUNK: u32 = 64;
+
+/// The triangle of a hit on a row of a sprite, point or line batch, which has none.
+pub const NO_TRIANGLE: u32 = u32::MAX;
 
 /// The meshes and materials that queries test: each mesh's triangles, in the mesh's own space,
 /// and the faces each material draws. Mesh ids run from 1 to [`QueryMeshes::count`].
@@ -59,7 +65,8 @@ pub trait QueryMeshes: Sync {
     fn side(&self, material: u32) -> Side;
 }
 
-/// Everything a query reads: the scene, its instance batches and its meshes.
+/// Everything a query reads: the scene, its instance batches and its meshes, and what rows of
+/// sprite, point and line batches need of it.
 pub struct QueryScene<'a, M: QueryMeshes> {
     /// The scene's objects.
     pub scene: &'a SceneStorage,
@@ -67,6 +74,8 @@ pub struct QueryScene<'a, M: QueryMeshes> {
     pub batches: &'a BatchTable,
     /// The meshes and materials.
     pub meshes: &'a M,
+    /// The camera and the thresholds of sprite, point and line rows.
+    pub rows: RowQuery,
 }
 
 /// A hit of a query.
@@ -76,7 +85,8 @@ pub struct QueryHit {
     pub source: Source,
     /// The distance along the ray, in multiples of its direction; 0 for overlap queries.
     pub distance: f32,
-    /// The triangle's index in its mesh; 0 for overlap queries.
+    /// The triangle's index in its mesh; 0 for overlap queries, and [`NO_TRIANGLE`] for a row of
+    /// a sprite, point or line batch.
     pub triangle: u32,
     /// Where the ray hit, from the origin of the world.
     pub point: [f64; 3],
@@ -97,12 +107,25 @@ impl QueryHit {
     }
 }
 
-/// What a query needs of one item: its world matrix relative to its cell, its mesh and the
-/// faces its material draws.
+/// What a query needs of one item that places a mesh: its world matrix relative to its cell,
+/// its mesh and the faces its material draws.
 struct Item<'a> {
     matrix: &'a Affine,
     mesh: u32,
     side: Side,
+}
+
+/// What a query tests of one item.
+enum Target<'a> {
+    /// An object, or a row of a batch of meshes.
+    Mesh(Item<'a>),
+    /// A row of a sprite, point or line batch: its packed matrix, what a ray tests of it, and the
+    /// centre of its cell.
+    Row {
+        matrix: &'a Affine,
+        shape: RowShape,
+        centre: [f64; 3],
+    },
 }
 
 /// A ray's hit on one item, before its point and normal are known.
@@ -407,16 +430,18 @@ impl SceneQueries {
         view: &QueryScene<'a, M>,
         id: u32,
         layers: u32,
-    ) -> Option<Item<'a>> {
+    ) -> Option<Target<'a>> {
         match self.bvh.source(id) {
             Source::Object(slot) => {
                 let (scene, s) = (view.scene, slot as usize);
                 let world = scene.world(scene.parity());
                 let shown = world.radii()[s] >= 0.0 && scene.layers()[s] & layers != 0;
-                shown.then(|| Item {
-                    matrix: world.matrix(s),
-                    mesh: scene.meshes()[s],
-                    side: view.meshes.side(scene.materials()[s]),
+                shown.then(|| {
+                    Target::Mesh(Item {
+                        matrix: world.matrix(s),
+                        mesh: scene.meshes()[s],
+                        side: view.meshes.side(scene.materials()[s]),
+                    })
                 })
             }
             Source::Row { batch, row } => {
@@ -424,13 +449,62 @@ impl SceneQueries {
                 let world = batch.current_world();
                 let r = row as usize;
                 let shown = world.radii()[r] >= 0.0 && batch.layers() & layers != 0;
-                shown.then(|| Item {
-                    matrix: world.matrix(r),
-                    mesh: batch.mesh(),
-                    side: view.meshes.side(batch.material()),
+                if !shown {
+                    return None;
+                }
+                let matrix = world.matrix(r);
+                if !batch.packed() {
+                    return Some(Target::Mesh(Item {
+                        matrix,
+                        mesh: batch.mesh(),
+                        side: view.meshes.side(batch.material()),
+                    }));
+                }
+                let coords = view.scene.cell_table().coords(batch.cells()[r]);
+                Some(Target::Row {
+                    matrix,
+                    shape: self.row_shape(&view.rows, batch)?,
+                    centre: cell_centre(coords),
                 })
             }
         }
+    }
+
+    /// What a ray tests of the rows of a sprite, point or line batch, or `None` for rows that it
+    /// never hits, such as segments of no width.
+    fn row_shape(&self, rows: &RowQuery, batch: &InstanceBatch) -> Option<RowShape> {
+        if let Some(look) = batch.sprite_look() {
+            if look.points
+                && let Some(threshold) = rows.point_threshold
+            {
+                return Some(RowShape::Near(threshold));
+            }
+            let quad = self.mesh_bvh(batch.mesh())?.bounds();
+            return Some(RowShape::Quad {
+                quad,
+                screen: look.screen_size,
+            });
+        }
+        let look = batch.line_look()?;
+        if look.width == 0.0 {
+            return None;
+        }
+        Some(match rows.line_threshold {
+            Some(threshold) => RowShape::Segment {
+                half_width: threshold,
+                world: true,
+            },
+            None => RowShape::Segment {
+                half_width: 0.5 * look.width,
+                world: look.world_units,
+            },
+        })
+    }
+
+    /// The camera's position relative to a cell's centre.
+    fn eye_in(rows: &RowQuery, centre: [f64; 3]) -> [f64; 3] {
+        rows.camera
+            .map_or([0.0; 3], |c| std::array::from_fn(|k| c.eye[k] - centre[k]))
     }
 
     /// The mesh tree and triangles of an item's mesh.
@@ -453,11 +527,22 @@ impl SceneQueries {
         ray: &Ray,
         layers: u32,
     ) -> Option<(f32, u32)> {
-        let item = self.item(view, id, layers)?;
-        let (tree, mesh) = self.mesh_of(view.meshes, item.mesh)?;
-        let local = ray.to_local(item.matrix)?;
-        tree.raycast(&mesh, &local, item.side)
-            .map(|hit| (hit.t, hit.triangle))
+        match self.item(view, id, layers)? {
+            Target::Mesh(item) => {
+                let (tree, mesh) = self.mesh_of(view.meshes, item.mesh)?;
+                let local = ray.to_local(item.matrix)?;
+                tree.raycast(&mesh, &local, item.side)
+                    .map(|hit| (hit.t, hit.triangle))
+            }
+            Target::Row {
+                matrix,
+                shape,
+                centre,
+            } => {
+                let eye = Self::eye_in(&view.rows, centre);
+                row_raycast(&shape, matrix, ray, &view.rows, eye).map(|t| (t, NO_TRIANGLE))
+            }
+        }
     }
 
     /// A hit with its point and normal in the world.
@@ -467,12 +552,15 @@ impl SceneQueries {
         ray: &WorldRay,
         hit: RawHit,
     ) -> QueryHit {
-        let mut normal = [0.0; 3];
-        if let Some(item) = self.item(view, hit.id, u32::MAX)
-            && let Some(mesh) = view.meshes.mesh(item.mesh)
-        {
-            normal = world_normal(item.matrix, &mesh.triangle(hit.triangle), ray.direction);
-        }
+        let normal = match self.item(view, hit.id, u32::MAX) {
+            Some(Target::Mesh(item)) => view.meshes.mesh(item.mesh).map_or([0.0; 3], |mesh| {
+                world_normal(item.matrix, &mesh.triangle(hit.triangle), ray.direction)
+            }),
+            Some(Target::Row { shape, .. }) => {
+                shape.normal(ray.direction, view.rows.camera.as_ref())
+            }
+            None => [0.0; 3],
+        };
         let t = f64::from(hit.t);
         QueryHit {
             source: self.bvh.source(hit.id),
@@ -491,8 +579,21 @@ impl SceneQueries {
         ray: &WorldRay,
         layers: u32,
     ) -> Option<QueryHit> {
+        let reach = self.bvh.reach(view.batches, &view.rows, layers);
+        self.raycast_reaching(view, ray, layers, &reach)
+    }
+
+    /// The closest hit as [`SceneQueries::raycast`] finds it, with the trees' boxes grown by
+    /// `reach`, which [`SceneBvh::reach`] gives for the query.
+    fn raycast_reaching<M: QueryMeshes>(
+        &self,
+        view: &QueryScene<'_, M>,
+        ray: &WorldRay,
+        layers: u32,
+        reach: &Reach,
+    ) -> Option<QueryHit> {
         let mut triangle = 0;
-        let (id, t) = self.bvh.raycast(ray, |id, ray| {
+        let (id, t) = self.bvh.raycast(ray, reach, |id, ray| {
             let (t, tri) = self.item_raycast(view, id, ray, layers)?;
             triangle = tri;
             Some(t)
@@ -507,16 +608,26 @@ impl SceneQueries {
         ray: &WorldRay,
         layers: u32,
     ) -> bool {
-        self.bvh.raycast_any(ray, |id, ray| {
-            let Some(item) = self.item(view, id, layers) else {
-                return false;
-            };
-            let Some((tree, mesh)) = self.mesh_of(view.meshes, item.mesh) else {
-                return false;
-            };
-            ray.to_local(item.matrix)
-                .is_some_and(|local| tree.raycast_any(&mesh, &local, item.side))
-        })
+        let reach = self.bvh.reach(view.batches, &view.rows, layers);
+        self.bvh
+            .raycast_any(ray, &reach, |id, ray| match self.item(view, id, layers) {
+                Some(Target::Mesh(item)) => {
+                    let Some((tree, mesh)) = self.mesh_of(view.meshes, item.mesh) else {
+                        return false;
+                    };
+                    ray.to_local(item.matrix)
+                        .is_some_and(|local| tree.raycast_any(&mesh, &local, item.side))
+                }
+                Some(Target::Row {
+                    matrix,
+                    shape,
+                    centre,
+                }) => {
+                    let eye = Self::eye_in(&view.rows, centre);
+                    row_raycast(&shape, matrix, ray, &view.rows, eye).is_some()
+                }
+                None => false,
+            })
     }
 
     /// Every hit of the ray on the items on `layers`, one per triangle it crosses, nearest
@@ -530,21 +641,38 @@ impl SceneQueries {
     ) -> &[QueryHit] {
         let mut raw = std::mem::take(&mut self.raw);
         raw.clear();
-        self.bvh.raycast_all(ray, |id, cell_ray| {
-            let Some(item) = self.item(view, id, layers) else {
-                return;
-            };
-            let Some((tree, mesh)) = self.mesh_of(view.meshes, item.mesh) else {
-                return;
-            };
-            if let Some(local) = cell_ray.to_local(item.matrix) {
-                tree.raycast_all(&mesh, &local, item.side, |hit| {
-                    raw.push(RawHit {
-                        id,
-                        t: hit.t,
-                        triangle: hit.triangle,
-                    });
-                });
+        let reach = self.bvh.reach(view.batches, &view.rows, layers);
+        self.bvh.raycast_all(ray, &reach, |id, cell_ray| {
+            match self.item(view, id, layers) {
+                Some(Target::Mesh(item)) => {
+                    let Some((tree, mesh)) = self.mesh_of(view.meshes, item.mesh) else {
+                        return;
+                    };
+                    if let Some(local) = cell_ray.to_local(item.matrix) {
+                        tree.raycast_all(&mesh, &local, item.side, |hit| {
+                            raw.push(RawHit {
+                                id,
+                                t: hit.t,
+                                triangle: hit.triangle,
+                            });
+                        });
+                    }
+                }
+                Some(Target::Row {
+                    matrix,
+                    shape,
+                    centre,
+                }) => {
+                    let eye = Self::eye_in(&view.rows, centre);
+                    if let Some(t) = row_raycast(&shape, matrix, cell_ray, &view.rows, eye) {
+                        raw.push(RawHit {
+                            id,
+                            t,
+                            triangle: NO_TRIANGLE,
+                        });
+                    }
+                }
+                None => {}
             }
         });
         super::heap_sort_by(&mut raw, |a, b| {
@@ -584,9 +712,11 @@ impl SceneQueries {
         {
             let shared = SharedMut::new(&mut out);
             let queries = &*self;
+            let reach = self.bvh.reach(view.batches, &view.rows, layers);
             jobs.parallel_for(count, RAY_CHUNK, &|range, _| {
                 for i in range {
-                    let hit = ray(i).and_then(|ray| queries.raycast(view, &ray, layers));
+                    let hit =
+                        ray(i).and_then(|ray| queries.raycast_reaching(view, &ray, layers, &reach));
                     // SAFETY: each chunk writes only the results of its own rays.
                     unsafe { shared.write(i as usize, hit) };
                 }
@@ -650,7 +780,7 @@ impl SceneQueries {
         around: &Aabb,
         touches: impl Fn(&[[f64; 3]; 3]) -> bool,
     ) -> bool {
-        let Some(item) = self.item(view, id, layers) else {
+        let Some(Target::Mesh(item)) = self.item(view, id, layers) else {
             return false;
         };
         let Some((tree, mesh)) = self.mesh_of(view.meshes, item.mesh) else {

@@ -15,7 +15,7 @@ use null3d_core::bvh::mesh::{
 };
 use null3d_core::bvh::scene::SceneBvh;
 use null3d_core::bvh::top::{TopTree, WorldRay, in_cell};
-use null3d_core::bvh::{Aabb, NODE_BYTES, Ray, child, sphere_touches_box};
+use null3d_core::bvh::{Aabb, NODE_BYTES, Ray, Reach, child, sphere_touches_box};
 use null3d_core::cells::{CELL_SIZE, CellCoords, CellTable, split};
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -1067,7 +1067,7 @@ fn scene_trees_follow_the_scene() {
                     want = Some((slot, t));
                 }
             }
-            let got = bvh.raycast(&ray, hit);
+            let got = bvh.raycast(&ray, &Reach::NONE, hit);
             assert_eq!(
                 got.map(|g| g.1.to_bits()),
                 want.map(|w| w.1.to_bits()),
@@ -1075,7 +1075,7 @@ fn scene_trees_follow_the_scene() {
             );
             hits += u32::from(want.is_some());
             assert_eq!(
-                bvh.raycast_any(&ray, |s, l| hit(s, l).is_some()),
+                bvh.raycast_any(&ray, &Reach::NONE, |s, l| hit(s, l).is_some()),
                 want.is_some()
             );
         }

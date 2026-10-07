@@ -1309,7 +1309,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit)",
-      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. A skinned mesh is tested in its bind pose, not its animated pose. camera.screenToRay uses the camera of the frame on screen at the pointer's event. For clicks and hover on objects, obj.on('click', fn) casts the ray itself. Acceleration structures are built in.",
+      "notes": "scene.raycast writes the closest hit into a hit object that you create once, and scene.raycastAll writes every hit, nearest first, into an array. A hit has object, instance (instanceId), point, normal, distance and triangle (faceIndex). The layer mask defaults to layer 0 alone, as Raycaster's does, and the whole scene is tested. Hidden objects are never hit. A skinned mesh is tested in its bind pose, not its animated pose. camera.screenToRay uses the camera of the frame on screen at the pointer's event. For clicks and hover on objects, obj.on('click', fn) casts the ray itself. Acceleration structures are built in. Rays hit sprites, points and lines as they draw. params.Points.threshold and params.Line.threshold become the pointThreshold and lineThreshold options. Sprites, points and lines sized in pixels use the active camera, or the camera of the event's frame, in place of raycaster.camera.",
       "docs": "api/raycast",
       "detect": "\\bRaycaster\\b|\\.setFromCamera\\s*\\(|\\.intersectObjects?\\s*\\("
     },
@@ -1584,7 +1584,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "await scene.createSprites({ count, map, atlas, sizeAttenuation, center })",
-      "notes": "Camera-facing quads drawn in one batch, with typed arrays of positions, sizes, rotations, colors and atlas frames per sprite. The call is async, because the first one downloads the sprite code. Sprites blend by default, as three.js's do. Without size attenuation, sizes are in CSS pixels, not a fraction of the view's height. Raycasts do not find sprites yet.",
+      "notes": "Camera-facing quads drawn in one batch, with typed arrays of positions, sizes, rotations, colors and atlas frames per sprite. The call is async, because the first one downloads the sprite code. Sprites blend by default, as three.js's do. Without size attenuation, sizes are in CSS pixels, not a fraction of the view's height. Raycasts hit each sprite's quad, as Raycaster does, with the active camera in place of raycaster.camera. sprites.on('click', fn) takes pointer events, and the event's instance is the sprite.",
       "docs": "api/sprites",
       "detect": "\\bSprite(Material)?\\b"
     },
@@ -1595,7 +1595,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "await scene.createPoints({ positions, colors, size, sizeAttenuation, map })",
-      "notes": "Points of one size drawn in one batch as squares that face the camera, at any size on every backend. The call is async, because the first one downloads the sprite code. Points are opaque by default, as three.js's are; transparent becomes alphaMode 'blend', and alphaTest becomes alphaMode 'mask' with alphaCutoff. With size attenuation, size is in world units: three.js's size times tan(fov / 2). Without it, size is in CSS pixels, as in three.js. A point does not vanish when its center leaves the screen, as a WebGL point does. Blended points sort back to front. Raycasts do not find points yet.",
+      "notes": "Points of one size drawn in one batch as squares that face the camera, at any size on every backend. The call is async, because the first one downloads the sprite code. Points are opaque by default, as three.js's are; transparent becomes alphaMode 'blend', and alphaTest becomes alphaMode 'mask' with alphaCutoff. With size attenuation, size is in world units: three.js's size times tan(fov / 2). Without it, size is in CSS pixels, as in three.js. A point does not vanish when its center leaves the screen, as a WebGL point does. Blended points sort back to front. Raycasts hit each point's square by default. The pointThreshold option gives Raycaster.params.Points.threshold's test instead: a hit within that distance of the point, whatever its size. points.on('click', fn) takes pointer events, and the event's instance is the point.",
       "docs": "api/points",
       "detect": "new\\s+(THREE\\.)?Points\\s*\\(|\\bPointsMaterial\\b"
     },
@@ -1606,7 +1606,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "await scene.createLines({ positions, colors, mode, width, worldUnits, dashed })",
-      "notes": "Segments between points drawn in one batch as quads with round ends, as Line2 draws them, at any width on every backend. mode 'strip', 'loop' or 'segments' replaces Line, LineLoop and LineSegments, and width replaces linewidth, in CSS pixels or with worldUnits. A one-pixel Line ports as width 1. Point colors are linear RGB, stored at 8 bits per channel. dashed and the dash values replace LineDashedMaterial and computeLineDistances. The call is async, because the first one downloads the line code. lit: true shades lines with the scene's lights. Raycasts do not find lines yet.",
+      "notes": "Segments between points drawn in one batch as quads with round ends, as Line2 draws them, at any width on every backend. mode 'strip', 'loop' or 'segments' replaces Line, LineLoop and LineSegments, and width replaces linewidth, in CSS pixels or with worldUnits. A one-pixel Line ports as width 1. Point colors are linear RGB, stored at 8 bits per channel. dashed and the dash values replace LineDashedMaterial and computeLineDistances. The call is async, because the first one downloads the line code. lit: true shades lines with the scene's lights. Raycasts hit a segment within half its width, as Line2 does, in pixels through the active camera or in world units. The lineThreshold option gives Raycaster.params.Line.threshold's test instead, as for Line. lines.on('click', fn) takes pointer events, and the event's instance is the segment.",
       "docs": "api/lines",
       "detect": "new\\s+(THREE\\.)?(Line|LineSegments|LineLoop|Line2|LineSegments2)\\s*\\(|\\bLine(Basic|Dashed)?Material\\b|\\bLineGeometry\\b"
     },

@@ -8,7 +8,7 @@
 //! take a run of ids, in the order of the batches' ids. [`SceneBvh::source`] turns an id back
 //! into a slot or a batch row. Rows of a static batch join the static tree, and rows of a
 //! dynamic batch the dynamic tree. A batch's rows are the ones its last update wrote: its active
-//! rows then. Sprite and line batches stay out of the trees.
+//! rows then.
 //!
 //! An item's box is its mesh's own box (see [`super::mesh::MeshBvh::bounds`]) moved by the
 //! item's world matrix, widened a little (see [`Aabb::transformed`]). That box holds every
@@ -16,6 +16,13 @@
 //! also tighter than the box around the bounding sphere, and it holds the mesh even when a
 //! sketch gives the object smaller bounds of its own. A hidden object has an empty box, which
 //! no query meets.
+//!
+//! The rows of sprite, point and line batches pack their own values into their matrices (see
+//! [`super::rows`]), so their boxes come from those values: a sprite's sphere, as culling takes
+//! it, or a segment's box grown by half a width in world units. A sprite or a line sized in
+//! pixels of the screen has no size in the world, so its box holds only its anchor or its center
+//! line, and a query grows every box by its [`Reach`] instead (see [`SceneBvh::reach`]). The
+//! trees keep the largest size in pixels of each such batch for it.
 //!
 //! # Syncs
 //!
@@ -38,8 +45,9 @@
 
 use std::collections::TryReserveError;
 
+use super::rows::RowQuery;
 use super::top::{TopTree, WorldRay};
-use super::{Aabb, Ray};
+use super::{Aabb, Ray, Reach};
 use crate::CoreError;
 use crate::handle::Handle;
 use crate::instances::{BatchTable, InstanceBatch};
@@ -64,7 +72,7 @@ pub enum Source {
 }
 
 /// The rows of one instance batch that the trees hold.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct BatchRows {
     batch: Handle,
     /// The item id of row 0.
@@ -77,25 +85,109 @@ struct BatchRows {
     /// The batch's last update frame, and its version then.
     frame: u32,
     version: u32,
+    /// The largest reach of a row around its anchor or center line in CSS pixels, for a batch
+    /// sized in pixels of the screen; 0 for any other.
+    screen_reach: f32,
 }
 
-/// The rows of `batch` that its last update wrote, or `None` before its first update and for a
-/// sprite or line batch: a sprite turns to face each camera, a line's width may be in pixels of the
-/// screen, and their packed matrices place no mesh.
+/// The rows of `batch` that its last update wrote, or `None` before its first update.
 fn rows_of(batch: &InstanceBatch) -> Option<u32> {
     let frame = batch.frame();
-    (frame != 0 && !batch.packed()).then(|| batch.frame_active_count((frame & 1) as usize))
+    (frame != 0).then(|| batch.frame_active_count((frame & 1) as usize))
 }
 
-/// The box of an item: its mesh's box moved by its world matrix, or an empty box for a hidden
-/// item, whose world radius is negative.
+/// How the trees bound the rows of one batch.
+#[derive(Clone, Copy, Debug)]
+enum RowBounds {
+    /// Rows that place a mesh, whose box in its own space this is.
+    Mesh(Aabb),
+    /// Sprites sized in world units: the sphere around each, as culling takes it.
+    Sphere,
+    /// Sprites sized in pixels: their anchors. A query's reach holds the rest.
+    Anchor,
+    /// Line segments: the box around each, grown by half a width in world units, or by 0 for a
+    /// width in pixels.
+    Segment(f32),
+    /// Rows that draw nothing: segments of no width.
+    Nothing,
+}
+
+impl RowBounds {
+    /// How the trees bound the rows of `batch`, whose mesh's box `mesh_bounds` gives.
+    fn of(batch: &InstanceBatch, mesh_bounds: &dyn Fn(u32) -> Aabb) -> RowBounds {
+        if let Some(look) = batch.sprite_look() {
+            return if look.screen_size {
+                RowBounds::Anchor
+            } else {
+                RowBounds::Sphere
+            };
+        }
+        match batch.line_look() {
+            Some(look) if look.width == 0.0 => RowBounds::Nothing,
+            Some(look) => RowBounds::Segment(if look.world_units {
+                0.5 * look.width
+            } else {
+                0.0
+            }),
+            None => RowBounds::Mesh(mesh_bounds(batch.mesh())),
+        }
+    }
+
+    /// The box of a row with world radius `radius` and world matrix `m`, or the empty box for a
+    /// hidden row, whose radius is negative.
+    #[inline(always)]
+    fn of_row(&self, radius: f32, m: &crate::math::Affine) -> Aabb {
+        if radius.is_nan() || radius < 0.0 {
+            return Aabb::EMPTY;
+        }
+        let at = [m[3], m[7], m[11]];
+        match *self {
+            RowBounds::Mesh(mesh) => mesh.transformed(m),
+            RowBounds::Sphere => Aabb::of_sphere(at, radius).widened(),
+            RowBounds::Anchor => Aabb { min: at, max: at }.widened(),
+            RowBounds::Segment(grow) => {
+                let reach: [f32; 3] = std::array::from_fn(|k| m[k * 4].abs() + grow);
+                Aabb {
+                    min: std::array::from_fn(|k| at[k] - reach[k]),
+                    max: std::array::from_fn(|k| at[k] + reach[k]),
+                }
+                .widened()
+            }
+            RowBounds::Nothing => Aabb::EMPTY,
+        }
+    }
+}
+
+/// The largest reach of the first `rows` rows of `batch` around their anchors or center lines in
+/// CSS pixels, for a batch sized in pixels of the screen, or 0 for any other: half a line's width,
+/// or the largest side of a sprite times its quad's radius around its anchor.
+fn screen_reach(batch: &InstanceBatch, rows: u32) -> f32 {
+    if let Some(look) = batch.line_look() {
+        return if look.world_units {
+            0.0
+        } else {
+            0.5 * look.width
+        };
+    }
+    if !batch.sprite_look().is_some_and(|look| look.screen_size) {
+        return 0.0;
+    }
+    let world = batch.current_world();
+    let mut side = 0.0f32;
+    for r in 0..rows as usize {
+        if world.radii()[r] >= 0.0 {
+            let m = world.matrix(r);
+            side = side.max(m[0].abs()).max(m[5].abs());
+        }
+    }
+    side * batch.local_radius()
+}
+
+/// The box of an object: its mesh's box moved by its world matrix, or an empty box for a hidden
+/// object, whose world radius is negative.
 #[inline(always)]
 fn item_box(radius: f32, matrix: &crate::math::Affine, mesh: &Aabb) -> Aabb {
-    if radius >= 0.0 {
-        mesh.transformed(matrix)
-    } else {
-        Aabb::EMPTY
-    }
+    RowBounds::Mesh(*mesh).of_row(radius, matrix)
 }
 
 /// The two top-level trees of a scene. See the module documentation.
@@ -269,7 +361,7 @@ impl SceneBvh {
                     }
                 }
             }
-            for rows in &self.batches {
+            for rows in &mut self.batches {
                 if rows.dynamic {
                     continue;
                 }
@@ -279,16 +371,17 @@ impl SceneBvh {
                 if batch.version() == rows.version {
                     continue;
                 }
-                let bounds = mesh_bounds(batch.mesh());
+                let bounds = RowBounds::of(batch, mesh_bounds);
                 let world = batch.current_world();
                 for row in 0..rows.rows {
                     let r = row as usize;
                     let i = rows.item + row;
                     let cell = batch.cells()[r];
                     rebuild |= cell != self.statics.cells()[i as usize];
-                    let b = item_box(world.radii()[r], world.matrix(r), &bounds);
+                    let b = bounds.of_row(world.radii()[r], world.matrix(r));
                     self.statics.set(i, cell, b);
                 }
+                rows.screen_reach = screen_reach(batch, rows.rows);
                 moved = true;
             }
             if moved && !rebuild {
@@ -307,25 +400,23 @@ impl SceneBvh {
             .update_parallel(jobs, 0..self.dynamic_objects, &|_, slot| {
                 (cells[slot as usize], object_box(slot))
             });
-        for rows in &self.batches {
+        for rows in &mut self.batches {
             if !rows.dynamic {
                 continue;
             }
             let Ok(batch) = batches.get(rows.batch) else {
                 continue;
             };
-            let bounds = mesh_bounds(batch.mesh());
+            let bounds = RowBounds::of(batch, mesh_bounds);
             let world = batch.current_world();
             let (row_cells, row_radii) = (batch.cells(), world.radii());
             let item = rows.item;
             self.dynamics
                 .update_parallel(jobs, item..item + rows.rows, &|i, _| {
                     let r = (i - item) as usize;
-                    (
-                        row_cells[r],
-                        item_box(row_radii[r], world.matrix(r), &bounds),
-                    )
+                    (row_cells[r], bounds.of_row(row_radii[r], world.matrix(r)))
                 });
+            rows.screen_reach = screen_reach(batch, rows.rows);
         }
         self.dynamics
             .build_morton(table, jobs)
@@ -380,6 +471,7 @@ impl SceneBvh {
                 item: *tree,
                 frame: batch.frame(),
                 version: batch.version(),
+                screen_reach: screen_reach(batch, rows),
             });
             *tree += rows;
             next = next.checked_add(rows).ok_or(CoreError::OutOfRange {
@@ -399,7 +491,7 @@ impl SceneBvh {
         }
         for rows in &self.batches {
             let batch = batches.get(rows.batch)?;
-            let bounds = mesh_bounds(batch.mesh());
+            let bounds = RowBounds::of(batch, mesh_bounds);
             let world = batch.current_world();
             for row in 0..rows.rows {
                 let (id, r) = (rows.first + row, row as usize);
@@ -407,7 +499,7 @@ impl SceneBvh {
                 if rows.dynamic {
                     self.dynamics.push(id, cell, Aabb::EMPTY);
                 } else {
-                    let b = item_box(world.radii()[r], world.matrix(r), &bounds);
+                    let b = bounds.of_row(world.radii()[r], world.matrix(r));
                     self.statics.push(id, cell, b);
                 }
             }
@@ -422,22 +514,75 @@ impl SceneBvh {
     pub fn raycast(
         &self,
         ray: &WorldRay,
+        reach: &Reach,
         mut hit: impl FnMut(u32, &Ray) -> Option<f32>,
     ) -> Option<(u32, f32)> {
-        let still = self.statics.raycast(ray, &mut hit);
+        let still = self.statics.raycast_reaching(ray, reach, &mut hit);
         let ray = still.map_or(*ray, |(_, t)| ray.with_max(t));
-        self.dynamics.raycast(&ray, &mut hit).or(still)
+        self.dynamics
+            .raycast_reaching(&ray, reach, &mut hit)
+            .or(still)
     }
 
     /// True when `hit` reports a hit on any item whose box the ray meets. It stops at the first.
-    pub fn raycast_any(&self, ray: &WorldRay, mut hit: impl FnMut(u32, &Ray) -> bool) -> bool {
-        self.statics.raycast_any(ray, &mut hit) || self.dynamics.raycast_any(ray, &mut hit)
+    pub fn raycast_any(
+        &self,
+        ray: &WorldRay,
+        reach: &Reach,
+        mut hit: impl FnMut(u32, &Ray) -> bool,
+    ) -> bool {
+        self.statics.raycast_any_reaching(ray, reach, &mut hit)
+            || self.dynamics.raycast_any_reaching(ray, reach, &mut hit)
     }
 
     /// Calls `visit` with every item whose box the ray meets, in no set order.
-    pub fn raycast_all(&self, ray: &WorldRay, mut visit: impl FnMut(u32, &Ray)) {
-        self.statics.raycast_all(ray, &mut visit);
-        self.dynamics.raycast_all(ray, &mut visit);
+    pub fn raycast_all(&self, ray: &WorldRay, reach: &Reach, mut visit: impl FnMut(u32, &Ray)) {
+        self.statics.raycast_all_reaching(ray, reach, &mut visit);
+        self.dynamics.raycast_all_reaching(ray, reach, &mut visit);
+    }
+
+    /// How far a raycast on `layers` must grow every box to reach the rows of sprite, point and
+    /// line batches whose boxes do not hold all that it can hit: rows sized in pixels of the
+    /// screen, and the points and lines that a threshold reaches. [`Reach::NONE`] when the
+    /// trees hold no such rows on those layers, so raycasts against meshes alone cost no more.
+    pub fn reach(&self, batches: &BatchTable, rows: &RowQuery, layers: u32) -> Reach {
+        let mut reach = Reach::NONE;
+        if let Some(camera) = &rows.camera {
+            reach.eye = camera.eye;
+            reach.forward = camera.forward;
+        }
+        let grow_by_pixels = |pixels: f32, reach: &mut Reach| {
+            let Some(camera) = &rows.camera else {
+                return;
+            };
+            let size = pixels * camera.pixel_reach();
+            if camera.perspective {
+                reach.slope = reach.slope.max(size);
+            } else {
+                reach.base = reach.base.max(size);
+            }
+        };
+        for b in &self.batches {
+            let Ok(batch) = batches.get(b.batch) else {
+                continue;
+            };
+            if batch.layers() & layers == 0 {
+                continue;
+            }
+            let threshold = if batch.sprite_look().is_some_and(|look| look.points) {
+                rows.point_threshold
+            } else if batch.line_look().is_some() {
+                rows.line_threshold
+            } else {
+                None
+            };
+            match threshold {
+                Some(t) => reach.base = reach.base.max(t),
+                None if b.screen_reach > 0.0 => grow_by_pixels(b.screen_reach, &mut reach),
+                None => {}
+            }
+        }
+        reach
     }
 
     /// Calls `visit` with every item whose box touches the box from `min` to `max`, with the
