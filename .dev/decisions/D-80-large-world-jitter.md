@@ -1,6 +1,6 @@
 # D-80: How the large-world jitter check measures a flight, and its tolerance
 
-Status: decided; the iPad's and the S24+'s runs are pending. Date: 2026-10-05. Task: M2-H2.
+Status: decided; the iPad's run is pending. Date: 2026-10-05. Task: M2-H2.
 
 Summary: A camera flies sideways past six squares that face it, 16 frames, at the origin, 1,000 km and 6,378 km. Each object's motion from frame to frame must match the origin flight's within 0.05 px; large-world mode measures under 0.0001 px on every GPU path. The same flights with every cell taken, which is the engine without cells, jump 3.2 to 7.8 px. The engine warns once when the cells run out.
 
@@ -15,7 +15,7 @@ Summary: A camera flies sideways past six squares that face it, 16 frames, at th
 ## Rule
 
 - The figure compares each frame with the next: an object's image must move by the camera's motion only.
-- A flight 1,000 km out and one at the Earth's radius pass in large-world mode. They pass on WebGPU, its compatibility mode and WebGL2. They pass on the Mac's GPU and on SwiftShader, and in the device runner on the Mac, the iPad and the S24+.
+- A flight 1,000 km out and one at the Earth's radius pass in large-world mode. They pass on WebGPU, its compatibility mode and WebGL2. They pass on the Mac's GPU and on SwiftShader, and in the device runner on the Mac, the S24+ and four cloud phones. The iPad's run is pending.
 - The same flights without cells fail the figure by a wide margin, on the same devices.
 - The check runs in CI in under a minute per GPU path.
 
