@@ -105,9 +105,9 @@ fn a_split_mesh_draws_each_part_on_both_webgl2_draw_paths() {
         assert_eq!(made.len(), 4, "multi-draw {multi_draw}");
         // The world's four draws, the small grid's one, and one for each part of the large grid.
         assert_eq!(mock.draws, 4 + 1 + 2, "multi-draw {multi_draw}");
-        // Pages: the base format's, the small grid's, and one for each part of the large grid,
-        // as each part fills most of a page.
-        assert_eq!(world.renderer.settings().meshes().pages().len(), 4);
+        // Pages: the base format's, the small grid's, and one more for the large grid. Each part
+        // goes to the first page with room, so the second part fits beside the small grid.
+        assert_eq!(world.renderer.settings().meshes().pages().len(), 3);
         // The index list holds the grids' objects once each, beside the world's entries: both
         // parts of the large grid draw the same entry.
         let culled = world.renderer.culled(world.frame, ViewId::CAMERA);

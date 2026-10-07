@@ -112,6 +112,10 @@ export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>>
 	s3: ["WebGLRenderer's shader for 256 point lights, which most GPUs cannot build"],
 	s4: [
 		"on WebGL2, more pixels that differ from WebGLRenderer's frame than three.js's two renderers differ by",
+		// The fog measures the straight-line distance from the camera, and three.js the depth along
+		// the view, so the town's far corners take more fog: 2.9% to 3.3% of the pixels differ on the
+		// Mac's GPU. The fog scenes compare the same curves by three.js's own rule.
+		"on every tier, fog by distance from the camera where three.js's fog follows the depth along the view",
 	],
 	s5: [],
 };
@@ -130,8 +134,11 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -prepass, the depth prepass, for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
- * wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * end in -prepass, the depth prepass, for those that end in -depth32, shadow cascades in 32-bit
+ * float depth, for those that end in -blend-off, S4's shadow cascades with no band between them,
+ * for those that end in -timed, the time of each WebGL call, and for those that end in -synced,
+ * that time with a wait for the browser's GPU process after each call, and the GPU interface it
+ * draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -147,6 +154,26 @@ const PAGES = {
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
 	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
 	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
+	'null3d-webgpu-depth32': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowdepth=32',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-depth32': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowdepth=32',
+		api: 'webgl2',
+	},
+	'null3d-webgpu-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowCascadeBlend=0',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowCascadeBlend=0',
+		api: 'webgl2',
+	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
@@ -262,9 +289,14 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 /**
  * The glTF model scenes that three.js's WebGPURenderer draws wrong, so its WebGLRenderer's frame is
  * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
- * attributes black, and its WebGLRenderer draws them as null3D does.
+ * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
+ * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
+ * and the normals' deltas.
  */
-const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['meshopt-khr']);
+const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
+	'meshopt-khr',
+	'morph-colors',
+]);
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
@@ -288,6 +320,15 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 			sketchSwitches: NO_TONE,
 		}),
 	),
+	// The sunset again, from its Radiance file, which the engine filters at load, against three.js's
+	// HDRLoader with PMREMGenerator. The studio's OpenEXR file is left out. Its map matches the
+	// tool's, but in compatibility mode its bright sphere edges differ from three.js in more pixels
+	// than three.js's rule allows, as D-19 records.
+	{
+		test: 'environment-venice-hdr',
+		twin: `${TWINS}/environment.html?env=venice`,
+		sketchSwitches: NO_TONE,
+	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
@@ -481,13 +522,29 @@ export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): 
 }
 
 /**
+ * One page switch: a name of letters in words joined by hyphens, such as `display-check`, with a
+ * value or none. A value holds letters, digits, `.`, `-`, `_` and `,`, such as `reversed-gl` or
+ * `bc,etc2`.
+ */
+const PAGE_SWITCH = /^[a-z]+(-[a-z]+)*(=[\w.,-]+)?$/i;
+
+/** The form of page switches, for error messages. */
+const SWITCHES_FORM =
+	'names of letters and hyphens, each with =value or none, joined by &, such as shadows=3 or display-check=off&hold';
+
+/**
  * The page switches of a command's `option`, such as `--switches shadows=3`: names, each with a
- * value or none, joined by `&`. A name may hold hyphens, as `scene-format` does. It throws unless
- * the text has that form.
+ * value or none, joined by `&`. It throws unless the text has that form.
  */
 export function readSwitches(text: string | undefined, option: string): string {
-	if (!text || !/^[a-z][a-z-]*(=[\w.]+)?(&[a-z][a-z-]*(=[\w.]+)?)*$/i.test(text))
+	if (!text) throw new Error(`${option}: give page switches: ${SWITCHES_FORM}`);
+	if (text.startsWith('?'))
 		throw new Error(`${option}: give page switches without the ?, such as shadows=3 or a=1&b`);
+	const bad = text.split('&').find((entry) => !PAGE_SWITCH.test(entry));
+	if (bad !== undefined)
+		throw new Error(
+			`${option}: ${bad ? `"${bad}" is not a page switch` : 'a switch is empty'}. Give ${SWITCHES_FORM}`,
+		);
 	return text;
 }
 

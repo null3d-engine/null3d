@@ -1,7 +1,7 @@
 enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
-#import null3d::fog::{apply_fog, fog_factor}
+#import null3d::fog::{fog_color, fog_factor}
 #import null3d::globals::{Frame, Material}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
@@ -45,7 +45,7 @@ enable draw_index;
 // texture of indices beside it gives each source row its first joint, laid out as the index list is.
 //
 // The MORPH builds, which only WebGL2 has, add each vertex's morph target deltas times their
-// weights before skinning (`morph_vertex`). The vertex's morph attribute names its entries in the
+// weights before skinning (`morph_vertex`), its color's too. The vertex's morph attribute names its entries in the
 // texture of deltas, which follows the joint texture in the data textures' group, beside the
 // texture of weights. The second half of the rows of the texture of indices gives each source row
 // the first texel of its morph weights. WebGPU morphs in its skinning pass instead.
@@ -184,10 +184,17 @@ fn custom_value(id: u32, k: u32) -> vec4f {
 const NO_FOG: u32 = 4u;
 
 /// Exposed linear color `c` of a fragment at `relative`, its position relative to the camera, seen
-/// through the scene's fog, whose color the core exposes. A material with fog off keeps its color.
+/// through the scene's fog, whose color the core exposes and the sun may light. A material with fog
+/// off keeps its color.
 fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
-    let fog_on = (u32(m.strengths.z) & NO_FOG) == 0u;
-    return apply_fog(c, frame.fog.color.xyz, select(0.0, fog_factor(frame.fog, relative), fog_on));
+    if ((u32(m.strengths.z) & NO_FOG) != 0u) {
+        return c;
+    }
+    let factor = fog_factor(frame.fog, relative);
+    if (factor == 0.0) {
+        return c;
+    }
+    return mix(c, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.
@@ -414,11 +421,12 @@ fn skinned_direction(s: Skin, d: vec3f) -> vec3f {
 /// Texels per row of the morph texture.
 const MORPH_TEXELS_PER_ROW: u32 = 2048u;
 
-/// A vertex of the mesh before skinning: its position, normal and tangent direction.
+/// A vertex of the mesh before skinning: its position, normal, tangent direction and color.
 struct Morphed {
     position: vec3f,
     normal: vec3f,
     tangent: vec3f,
+    color: vec4f,
 }
 
 /// Texel `k` of the texture of deltas.
@@ -433,15 +441,16 @@ fn morph_weight_texel(k: u32) -> vec4f {
 
 /// A vertex moved by its morph targets, as three.js moves it: each entry that the vertex's morph
 /// attribute `range` names adds its deltas times its target's weight, from the instance's weights.
-/// The attribute holds the first entry's texel, then the entry count times four plus 1 when the
-/// entries hold a normal's delta and 2 when they hold a tangent's. The skinning pass on WebGPU
-/// morphs the same way.
+/// The attribute holds the first entry's texel, then the entry count times eight plus 1 when the
+/// entries hold a normal's delta, 2 when they hold a tangent's and 4 when they hold a color's. A
+/// morphed color is clamped to the range 0 to 1, as the glTF specification asks. The skinning pass
+/// on WebGPU morphs the same way.
 fn morph_vertex(found: Instance, range: vec2f, rest: Morphed) -> Morphed {
     var out = rest;
     let first = u32(range.x);
     let word = u32(range.y);
-    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u);
-    let count = word >> 2u;
+    let stride = 1u + (word & 1u) + ((word >> 1u) & 1u) + ((word >> 2u) & 1u);
+    let count = word >> 3u;
     for (var k = 0u; k < count; k++) {
         let at = first + k * stride;
         let entry = morph_texel(at);
@@ -458,7 +467,14 @@ fn morph_vertex(found: Instance, range: vec2f, rest: Morphed) -> Morphed {
         }
         if (word & 2u) != 0u {
             out.tangent += w * morph_texel(next).xyz;
+            next += 1u;
         }
+        if (word & 4u) != 0u {
+            out.color += w * morph_texel(next);
+        }
+    }
+    if (word & 4u) != 0u {
+        out.color = saturate(out.color);
     }
     return out;
 }

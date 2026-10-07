@@ -17,7 +17,9 @@
 //! the world's origin fixes, along the light's axes. As the camera moves, a box then moves in
 //! whole texels, every caster covers the same texels, and shadow edges stay still instead of
 //! shimmering. The snap works in 64-bit floats from the camera's cell, so it holds far from the
-//! origin.
+//! origin. Along the light, the center snaps to whole steps of the depth that the map stores, so
+//! the steps of 16-bit depth stay fixed in the world too, and each caster's stored depth rounds
+//! the same way in every frame.
 //!
 //! Every matrix takes positions relative to the camera, as every shader works, so cascades keep
 //! their precision far from the origin.
@@ -35,7 +37,9 @@
 //! The nearest cascade draws in every frame. The far cascades draw once every few frames, in turn,
 //! and keep their layers of the map in between ([`CascadeSchedule`]). A cascade that skips a
 //! frame keeps the box it last drew with, fixed in the world, and its matrix follows the camera
-//! from that box. Receivers therefore read each layer with the matrix it was drawn with.
+//! from that box. Receivers therefore read each layer with the matrix it was drawn with. A kept box
+//! that no longer holds its fresh slice, as after a camera cut, draws out of turn, so no part of
+//! the view is left without a cascade.
 //!
 //! A kept layer holds its casters where they stood when it drew, so a caster that moves in every
 //! frame would leave its shadow behind. A far cascade therefore draws in every frame while a
@@ -54,8 +58,19 @@
 //! scaled by its angle to the light. Offsets in meters keep their size from one cascade to the next.
 //! It then compares its depth with the shadow map's over a square of [`ShadowSettings::filter`]
 //! texels on each side.
-//! Past the shadow distance nothing is shadowed, and shadows fade out over the last tenth of the
-//! distance.
+//! Past the shadow distance, in meters whatever the camera's scale, nothing is shadowed, and
+//! shadows fade out over the last tenth of the distance.
+//!
+//! A point near a perspective view's side lies further from the camera than along its view. So a
+//! slice's sphere holds every point of the view whose distance from the camera falls in the slice:
+//! it starts along the view where the view's corners reach the slice's start.
+//!
+//! # Blending between cascades
+//!
+//! Over a band at the far end of each cascade but the last, a receiver blends its cascade's shadow
+//! with the next one's, so no line shows where one cascade hands over to the next. The band is a
+//! share of the cascade's length ([`ShadowSettings::blend`]). Each cascade's slice starts at the
+//! band of the cascade before it, so its box holds the band's receivers too.
 
 use null3d_core::cells::{CELL_SIZE, CellPosition};
 use null3d_core::culling::Frustum;
@@ -66,7 +81,7 @@ use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter,
 use crate::camera::{Affine, Lens, Mat4, ViewDepth};
 use crate::frame::{RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
-use crate::pipelines::PassTargets;
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 use crate::view::ViewFrame;
 
 /// The most cascades a directional light's shadow map has.
@@ -83,6 +98,12 @@ pub const MAX_INTERVAL: u32 = 8;
 /// this value gives the middle distance most of halfway's texels. The shadows docs page gives the
 /// texel sizes behind the choice.
 const SPLIT_LAMBDA: f32 = 0.65;
+
+/// The share of each cascade's length over which it blends into the next cascade, by default.
+pub const DEFAULT_BLEND: f32 = 0.1;
+
+/// The largest share of a cascade's length that blends into the next cascade.
+pub const MAX_BLEND: f32 = 0.5;
 
 /// The steps that a box's radius rounds up to, as a share of the radius: fine enough to waste no
 /// texels, and coarse enough that rounding in the camera's scale never changes the radius.
@@ -101,17 +122,21 @@ pub struct ShadowSettings {
     /// How far each receiver's point moves along its normal before the lookup, in meters, up to one
     /// texel of its cascade.
     pub normal_bias: f32,
-    /// The distance along the camera's view, in meters, out to which shadows fall. The camera's far
-    /// plane ends them sooner.
+    /// The distance along the camera's view, in meters, out to which shadows fall, whatever the
+    /// camera's scale. The camera's far plane ends them sooner.
     pub distance: f32,
     /// The texels on each side of the square of comparisons that blend into each receiver's
     /// shadow: 3 or 5. A smaller value gives the hardware's blend of the four nearest texels.
     pub filter: u32,
+    /// The share of each cascade's length, at its far end, over which receivers blend its shadow
+    /// with the next cascade's, from 0 to [`MAX_BLEND`]. 0 hands over at once.
+    pub blend: f32,
 }
 
 /// The shadow settings that the quality settings give every light: the filter's size, how often
-/// far cascades draw, and whether moving casters make them draw in every frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// far cascades draw, whether moving casters make them draw in every frame, and the band over which
+/// one cascade blends into the next.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShadowQuality {
     /// The texels on each side of the square of comparisons that blend into each receiver's
     /// shadow: 3 or 5.
@@ -122,6 +147,9 @@ pub struct ShadowQuality {
     /// shadows follow their casters. False keeps every far cascade to its turns, and a moving
     /// caster's shadow there stays where the layer last drew it until the next turn.
     pub follow_movers: bool,
+    /// The share of each cascade's length over which it blends into the next cascade
+    /// ([`ShadowSettings::blend`]).
+    pub blend: f32,
 }
 
 impl Default for ShadowQuality {
@@ -130,6 +158,7 @@ impl Default for ShadowQuality {
             filter: 3,
             far_interval: 1,
             follow_movers: true,
+            blend: DEFAULT_BLEND,
         }
     }
 }
@@ -148,7 +177,7 @@ pub struct CascadeBox {
     /// The light's axes: x and y across its view, and z toward the light.
     pub axes: [[f32; 3]; 3],
     /// The sphere's center along each of the light's axes, from the world's origin, with x and y
-    /// on whole texels.
+    /// on whole texels and z on whole steps of 16-bit depth.
     pub center: [f64; 3],
     /// The sphere's radius: half the box's side.
     pub radius: f32,
@@ -178,6 +207,13 @@ pub struct Cascade {
     pub frustum: Frustum,
     /// The distance along the camera's view where the cascade's slice ends.
     pub end: f32,
+    /// Where the cascade's band starts, as receivers measure their distance to pick a cascade:
+    /// past it, a receiver blends this cascade's shadow with the next one's. The last cascade's
+    /// band starts at its end, as it has none.
+    pub band: f32,
+    /// The corners of the part of the camera's view that the cascade's box must hold, relative to
+    /// the camera that draws: four where the slice starts along the view, then four where it ends.
+    pub corners: [[f32; 3]; 8],
     /// The size in meters of one texel of the cascade's layer.
     pub texel: f32,
     /// The change in depth over one meter along the light's direction.
@@ -192,6 +228,8 @@ impl Default for Cascade {
             view_proj: [0.0; 16],
             frustum: Frustum::from_planes([[0.0; 4]; 6]),
             end: 0.0,
+            band: 0.0,
+            corners: [[0.0; 3]; 8],
             texel: 0.0,
             depth_per_meter: 0.0,
             bounds: CascadeBox::default(),
@@ -232,10 +270,14 @@ impl Cascades {
     /// API's shadow camera draws them this way, so a still camera can watch how they move.
     pub fn seen_from(&mut self, fitted: [f64; 3], position: [f64; 3], map_size: u32) {
         let map_size = map_size.max(1) as f32;
-        for cascade in &mut self.cascades[..self.count] {
-            *cascade = cascade_in(&cascade.bounds, position, cascade.end, map_size);
-        }
         self.origin = std::array::from_fn(|k| (position[k] - fitted[k]) as f32);
+        for cascade in &mut self.cascades[..self.count] {
+            let bounds = cascade.bounds;
+            cascade.place(&bounds, position, map_size);
+            for corner in &mut cascade.corners {
+                *corner = std::array::from_fn(|k| corner[k] - self.origin[k]);
+            }
+        }
     }
 }
 
@@ -373,19 +415,32 @@ pub fn fit_cascades(
         .into_iter()
         .fold(0.0, f32::max)
         .sqrt();
+    // The shadow distance is in meters; the lens and the slices are in the view's units, which the
+    // camera's scale stretches. The forward axis's length gives the view's units per meter.
+    let distance = settings.distance * dot(forward, forward).sqrt();
 
     let (near, ends) = match lens {
         Lens::Perspective(lens) => {
             let near = lens.near.max(f32::MIN_POSITIVE);
-            let end = settings.distance.min(lens.far).max(near * 1.001);
+            let end = distance.min(lens.far).max(near * 1.001);
             (near, split_distances(near, end, count, SPLIT_LAMBDA))
         }
         Lens::Orthographic(lens) => {
-            let end = settings.distance.min(lens.far);
+            let end = distance.min(lens.far);
             let end = end.max(lens.near + (lens.far - lens.near).abs() * 1e-3);
             (lens.near, split_distances(lens.near, end, count, 0.0))
         }
     };
+    // Behind a perspective camera, a receiver picks its cascade by its distance from the camera,
+    // which is up to this many times its distance along the view, at the view's corners.
+    let reach = match lens {
+        Lens::Perspective(_) => {
+            let (x, y) = view_corner(lens, aspect, 1.0, 1.0, 1.0);
+            (1.0 + x * x + y * y).sqrt()
+        }
+        Lens::Orthographic(_) => 1.0,
+    };
+    let blend = settings.blend.clamp(0.0, MAX_BLEND);
     let axes = light_axes(direction);
     let map_size = settings.map_size.max(1) as f32;
 
@@ -395,36 +450,84 @@ pub fn fit_cascades(
         by_distance: matches!(lens, Lens::Perspective(_)),
         ..Cascades::default()
     };
-    let mut start = near;
-    for (cascade, &end) in out.cascades.iter_mut().zip(&ends).take(count) {
-        let ([x, y, along], radius) = slice_sphere(lens, aspect, start, end);
+    // Where the slice starts as receivers pick, and where its fitted part of the view starts along
+    // the view: the band of the cascade before it, at the view's corners.
+    let (mut start, mut from) = (near, near);
+    for (k, (cascade, &end)) in out.cascades.iter_mut().zip(&ends).take(count).enumerate() {
+        let band = if k + 1 < count {
+            end - blend * (end - start)
+        } else {
+            end
+        };
+        let ([x, y, along], radius) = slice_sphere(lens, aspect, from, end);
         let radius = round_radius(radius * scale);
+        let margin = (2.0 * radius).max(settings.distance);
         let texel = f64::from(2.0 * radius / map_size);
+        let depth_step = f64::from((2.0 * radius + margin) / DEPTH_STEPS);
         let relative: [f32; 3] =
             std::array::from_fn(|k| x * right[k] + y * up[k] - along * back[k]);
         let center = std::array::from_fn(|k| {
             let center = dot_far(position, axes[k]) + f64::from(dot(relative, axes[k]));
-            if k < 2 {
-                (center / texel).round() * texel
-            } else {
-                center
-            }
+            let step = if k < 2 { texel } else { depth_step };
+            (center / step).round() * step
         });
         let bounds = CascadeBox {
             axes,
             center,
             radius,
-            margin: (2.0 * radius).max(settings.distance),
+            margin,
         };
-        *cascade = cascade_in(&bounds, position, end, map_size);
+        let corner = |at: f32, k: usize| -> [f32; 3] {
+            let (sx, sy) = ([-1.0, 1.0][k & 1], [-1.0, 1.0][k >> 1]);
+            let (x, y) = view_corner(lens, aspect, at, sx, sy);
+            std::array::from_fn(|i| x * right[i] + y * up[i] - at * back[i])
+        };
+        *cascade = Cascade {
+            end,
+            band,
+            corners: std::array::from_fn(|k| corner(if k < 4 { from } else { end }, k & 3)),
+            ..Cascade::default()
+        };
+        cascade.place(&bounds, position, map_size);
         start = end;
+        from = band / reach;
     }
     out
 }
 
-/// The cascade of `bounds` for a camera at `position` from the world's origin, whose slice ends
-/// at `end` along the camera's view, with `map_size` texels on each side of its layer.
-fn cascade_in(bounds: &CascadeBox, position: [f64; 3], end: f32, map_size: f32) -> Cascade {
+impl Cascade {
+    /// Gives the cascade the box `bounds`, for a camera at `position` from the world's origin, with
+    /// `map_size` texels on each side of its layer: its matrix, its culling frustum and its texel.
+    /// Its slice keeps its ends, its band and its corners.
+    fn place(&mut self, bounds: &CascadeBox, position: [f64; 3], map_size: f32) {
+        let (view_proj, frustum, depth_per_meter) = box_view(bounds, position);
+        self.view_proj = view_proj;
+        self.frustum = frustum;
+        self.texel = 2.0 * bounds.radius / map_size;
+        self.depth_per_meter = depth_per_meter;
+        self.bounds = *bounds;
+    }
+
+    /// True when the box `bounds` holds every corner of the cascade's part of the view, for a camera
+    /// at `position` from the world's origin. The view's far corners lie on the slice's sphere, so
+    /// a corner counts as held up to the box's edge, past the filter's reach that receivers keep
+    /// inside it. A camera that moves a little then keeps its far cascades to their turns.
+    fn held_by(&self, bounds: &CascadeBox, position: [f64; 3]) -> bool {
+        let radius = f64::from(bounds.radius);
+        self.corners.iter().all(|corner| {
+            let along = |k: usize| {
+                let axis = bounds.axes[k];
+                dot_far(position, axis) + f64::from(dot(*corner, axis)) - bounds.center[k]
+            };
+            along(0).abs() <= radius && along(1).abs() <= radius && along(2) >= -radius
+        })
+    }
+}
+
+/// The view of the box `bounds` for a camera at `position` from the world's origin: its matrix
+/// from positions relative to the camera into its clip space, its culling frustum, and the change
+/// in depth over one meter along the light's direction.
+fn box_view(bounds: &CascadeBox, position: [f64; 3]) -> (Mat4, Frustum, f32) {
     let [x, y, z] = bounds.axes;
     // The box's center relative to the camera, along the light's axes.
     let [cx, cy, cz]: [f32; 3] =
@@ -457,14 +560,7 @@ fn cascade_in(bounds: &CascadeBox, position: [f64; 3], end: f32, map_size: f32) 
     // still draw, flattened onto it.
     let mut planes = *Frustum::from_view_projection(&view_proj).planes();
     planes[5] = [0.0; 4];
-    Cascade {
-        view_proj,
-        frustum: Frustum::from_planes(planes),
-        end,
-        texel: 2.0 * radius / map_size,
-        depth_per_meter: sz,
-        bounds: *bounds,
-    }
+    (view_proj, Frustum::from_planes(planes), sz)
 }
 
 /// The frames in the schedule's cycle: a multiple of every interval from 1 to [`MAX_INTERVAL`].
@@ -479,7 +575,9 @@ const _: () = assert!(MAX_INTERVAL == 8 && CYCLE.is_multiple_of(3 * 5 * 7 * 8));
 /// cascade draws at once when its layer holds nothing yet: when the shadows start, when the
 /// cascade count or the map size changes, and when the GPU objects are made again. A far cascade
 /// also draws in every frame where a moving caster touches the box its layer holds, or touched it
-/// when the layer drew, so moving shadows follow their casters.
+/// when the layer drew, so moving shadows follow their casters. It draws out of turn too when the
+/// box its layer holds no longer holds the cascade's part of the view, as after a camera cut, so
+/// no receiver is left without a cascade.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CascadeSchedule {
     /// The box that each cascade's layer holds, or `None` before it draws.
@@ -528,9 +626,12 @@ impl CascadeSchedule {
         for (k, cascade) in cascades.cascades[..cascades.count].iter_mut().enumerate() {
             match self.drawn[k] {
                 Some(bounds)
-                    if !Self::due(frame, k, interval) && !self.moving[k] && !moving(&bounds) =>
+                    if !Self::due(frame, k, interval)
+                        && !self.moving[k]
+                        && cascade.held_by(&bounds, position)
+                        && !moving(&bounds) =>
                 {
-                    *cascade = cascade_in(&bounds, position, cascade.end, map_size);
+                    cascade.place(&bounds, position, map_size);
                 }
                 _ => {
                     self.drawn[k] = Some(cascade.bounds);
@@ -635,6 +736,8 @@ pub struct ShadowFrame {
     /// The cascades that draw in this frame, one bit each, the nearest in bit 0. The others keep
     /// what their layers hold.
     pub drawn: u32,
+    /// How the shadow map stores depth.
+    pub depth: CascadeDepth,
 }
 
 impl ShadowFrame {
@@ -677,17 +780,95 @@ impl ShadowFrame {
 
     /// The uniform block that receivers read.
     pub fn uniform(&self) -> ShadowUniform {
-        ShadowUniform::new(&self.cascades, &self.settings)
+        ShadowUniform::new(&self.cascades, &self.settings, self.depth)
     }
 }
 
-/// What the shadow passes draw into: a depth texture of one sample, with no color.
-pub const TARGETS: PassTargets = PassTargets {
-    color_format: format::NONE,
-    depth_format: format::DEPTH32_FLOAT,
-    samples: 1,
-    permutation: 0,
-};
+/// How the cascades' shadow map stores depth. Each cascade's depth runs from 0 to 1 over its box,
+/// whose length toward the light is fixed by its sphere and its margin, not by the map's size.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CascadeDepth {
+    /// 16-bit unsigned normalized depth: half the memory and half the bandwidth of 32-bit floats,
+    /// as Filament, Unity's URP and Godot store their cascades. One step of depth is the box's
+    /// length over 65,535: 14 mm in a far cascade 200 m out, so receivers floor their bias toward
+    /// the light and their plane's margin at [`DEPTH_STEPS_FLOOR`] steps.
+    #[default]
+    Unorm16,
+    /// 32-bit float depth, kept to compare the two formats on a device.
+    Float32,
+}
+
+/// The steps of 16-bit depth from a cascade's far face to its face toward the light.
+const DEPTH_STEPS: f32 = 65_535.0;
+
+/// The fewest steps of the cascade's stored depth that a receiver's bias toward the light and its
+/// plane's margin cover, so that the rounding of a caster's stored depth never shadows the
+/// receiver that it lies under.
+pub const DEPTH_STEPS_FLOOR: f32 = 1.5;
+
+impl CascadeDepth {
+    /// The format of `bits` bits per texel: 32-bit floats for 32, and 16-bit depth otherwise.
+    pub const fn from_bits(bits: u32) -> Self {
+        if bits == 32 {
+            CascadeDepth::Float32
+        } else {
+            CascadeDepth::Unorm16
+        }
+    }
+
+    /// The draw list's depth format.
+    pub const fn format(self) -> u32 {
+        match self {
+            CascadeDepth::Unorm16 => format::DEPTH16_UNORM,
+            CascadeDepth::Float32 => format::DEPTH32_FLOAT,
+        }
+    }
+
+    /// The step between two stored depths, in the cascade's depth from 0 to 1, or 0 for floats.
+    /// A float stores the depths near receivers finer than the plane's margin needs.
+    pub const fn step(self) -> f32 {
+        match self {
+            CascadeDepth::Unorm16 => 1.0 / DEPTH_STEPS,
+            CascadeDepth::Float32 => 0.0,
+        }
+    }
+
+    /// What the cascades' shadow passes draw into: a depth texture of this format with one
+    /// sample, and no color.
+    pub const fn targets(self) -> PassTargets {
+        PassTargets {
+            color_format: format::NONE,
+            depth_format: self.format(),
+            samples: 1,
+            permutation: 0,
+        }
+    }
+}
+
+/// The shadow passes that shadow casters draw into in a frame, each while its kind of shadow is
+/// on: the cascades' and the shadow atlas's tiles. The two can store depth in different formats,
+/// and a pipeline draws into one format only, so a caster has a pipeline for each.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CasterPasses {
+    /// The cascades' targets while the main directional light casts shadows.
+    pub cascades: Option<PassTargets>,
+    /// The tiles' targets while a point or spot light casts shadows.
+    pub tiles: Option<PassTargets>,
+}
+
+impl CasterPasses {
+    /// True while any light casts shadows, so receivers read the shadow maps.
+    pub const fn any(&self) -> bool {
+        self.cascades.is_some() || self.tiles.is_some()
+    }
+
+    /// The ids of the pipelines that draw a caster with `key` into the cascades and into the
+    /// tiles, or 0 for a pass that is off. Where both store the same format, the two are one.
+    pub fn pipelines(&self, cache: &mut PipelineCache, key: DrawKey) -> (u32, u32) {
+        let mut id = |targets: Option<PassTargets>| targets.map_or(0, |t| cache.id(key.in_pass(t)));
+        (id(self.cascades), id(self.tiles))
+    }
+}
 
 /// Records the creation of the cascades' uniform block under `uniform`, of the comparison sampler
 /// of the shadow atlas under `sampler`, and of the sampler that reads four texels of the shadow
@@ -783,18 +964,23 @@ pub struct ShadowUniform {
     /// 0.
     pub biases: [f32; 4],
     /// The texels on each side of each layer and the size of one texel in texture coordinates,
-    /// then the texels on each side of the filter's square, and 0.
+    /// then the texels on each side of the filter's square, and the step between two stored
+    /// depths ([`CascadeDepth::step`]).
     pub kernel: [f32; 4],
     /// The camera that draws, relative to the camera that fitted the cascades
     /// ([`Cascades::origin`]), then 0.
     pub origin: [f32; 4],
+    /// Where each cascade's band starts ([`Cascade::band`]). Past it, a receiver blends the
+    /// cascade's shadow with the next one's.
+    pub bands: [f32; MAX_CASCADES],
 }
 
 const _: () = assert!(std::mem::size_of::<ShadowUniform>() == SHADOW_UNIFORM_BYTES as usize);
 
 impl ShadowUniform {
-    /// The uniform of a frame's cascades, with the biases and the filter of `settings`.
-    pub fn new(cascades: &Cascades, settings: &ShadowSettings) -> Self {
+    /// The uniform of a frame's cascades, with the biases and the filter of `settings`, read from
+    /// a shadow map that stores `depth`.
+    pub fn new(cascades: &Cascades, settings: &ShadowSettings, depth: CascadeDepth) -> Self {
         let map_size = settings.map_size.max(1) as f32;
         let mut uniform = ShadowUniform {
             forward: [
@@ -809,7 +995,12 @@ impl ShadowUniform {
                 f32::from(u8::from(cascades.by_distance)),
                 0.0,
             ],
-            kernel: [map_size, 1.0 / map_size, settings.filter as f32, 0.0],
+            kernel: [
+                map_size,
+                1.0 / map_size,
+                settings.filter as f32,
+                depth.step(),
+            ],
             origin: [
                 cascades.origin[0],
                 cascades.origin[1],
@@ -820,9 +1011,11 @@ impl ShadowUniform {
         };
         let last = cascades.used().last().map_or(0.0, |c| c.end);
         uniform.ends = [last; MAX_CASCADES];
+        uniform.bands = [last; MAX_CASCADES];
         for (k, cascade) in cascades.used().iter().enumerate() {
             uniform.view_proj[k] = cascade.view_proj;
             uniform.ends[k] = cascade.end;
+            uniform.bands[k] = cascade.band;
             uniform.texels[k] = cascade.texel;
         }
         uniform
@@ -860,6 +1053,7 @@ mod tests {
         normal_bias: 1.0,
         distance: 200.0,
         filter: 3,
+        blend: DEFAULT_BLEND,
     };
 
     /// The cascades of a camera at the world's origin.
@@ -961,7 +1155,7 @@ mod tests {
             assert!((a[k] - b[k]).abs() < 1e-4, "{a:?} {b:?}");
         }
         assert_eq!(own.origin, [0.0; 3]);
-        let uniform = ShadowUniform::new(&cascades, &SETTINGS);
+        let uniform = ShadowUniform::new(&cascades, &SETTINGS, CascadeDepth::default());
         assert_eq!(uniform.origin[..3], cascades.origin);
     }
 
@@ -1114,7 +1308,7 @@ mod tests {
             normal_bias: 0.5,
             ..SETTINGS
         };
-        let uniform = ShadowUniform::new(&cascades, &settings);
+        let uniform = ShadowUniform::new(&cascades, &settings, CascadeDepth::Unorm16);
         assert_eq!(uniform.forward[3], 3.0);
         assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
         assert_eq!(uniform.biases, [2.0, 0.5, 1.0, 0.0]);
@@ -1131,8 +1325,34 @@ mod tests {
         );
         // The unused cascade ends where the last one does.
         assert_eq!(uniform.ends[3], 200.0);
-        // The filter's values follow the map size and the kernel.
-        assert_eq!(uniform.kernel, [2048.0, 1.0 / 2048.0, 3.0, 0.0]);
+        // The filter's values follow the map size and the kernel, then the depth's step.
+        assert_eq!(uniform.kernel, [2048.0, 1.0 / 2048.0, 3.0, 1.0 / 65_535.0]);
+        let floats = ShadowUniform::new(&cascades, &settings, CascadeDepth::Float32);
+        assert_eq!(floats.kernel[3], 0.0);
+    }
+
+    #[test]
+    fn cascades_store_16_bit_depth_unless_32_bits_are_asked_for() {
+        assert_eq!(CascadeDepth::default(), CascadeDepth::Unorm16);
+        for (bits, depth, format) in [
+            (16, CascadeDepth::Unorm16, format::DEPTH16_UNORM),
+            (0, CascadeDepth::Unorm16, format::DEPTH16_UNORM),
+            (32, CascadeDepth::Float32, format::DEPTH32_FLOAT),
+        ] {
+            assert_eq!(CascadeDepth::from_bits(bits), depth);
+            assert_eq!(depth.targets().depth_format, format);
+            assert_eq!(depth.targets().color_format, format::NONE);
+        }
+        // In the far cascade of 3 over 200 m, one 16-bit step is longer than the 1 cm that a
+        // receiver's plane margin covers, so the floor of steps is what keeps acne away there.
+        let cascades = fit(&camera(), &LENS, 16.0 / 9.0, DOWN_AND_ACROSS, &SETTINGS);
+        let steps: Vec<f32> = cascades
+            .used()
+            .iter()
+            .map(|c| CascadeDepth::Unorm16.step() / c.depth_per_meter)
+            .collect();
+        assert!(steps.windows(2).all(|pair| pair[0] < pair[1]), "{steps:?}");
+        assert!(steps[0] < 0.01 && steps[2] > 0.01, "{steps:?}");
     }
 
     #[test]
@@ -1143,6 +1363,7 @@ mod tests {
             camera: CellPosition::default(),
             layers: 1,
             drawn: 0b111,
+            depth: CascadeDepth::default(),
         };
         let size = SETTINGS.map_size as f32;
         for (k, cascade) in frame.cascades.used().iter().enumerate() {
@@ -1254,6 +1475,59 @@ mod tests {
         }
     }
 
+    /// The depth of `point` in each cascade that holds it, in steps of 16-bit depth, for a camera
+    /// at `position` turned by `yaw` degrees.
+    fn depth_steps_of(point: [f64; 3], position: [f64; 3], yaw: f32) -> Vec<Option<f64>> {
+        let cascades = fit_cascades(
+            &turned(yaw),
+            position,
+            &LENS,
+            16.0 / 9.0,
+            DOWN_AND_ACROSS,
+            &SETTINGS,
+        );
+        let relative: [f32; 3] = std::array::from_fn(|k| (point[k] - position[k]) as f32);
+        cascades
+            .used()
+            .iter()
+            .map(|cascade| {
+                let [x, y, depth] = project(&cascade.view_proj, relative);
+                (x.abs() < 0.99 && y.abs() < 0.99).then(|| f64::from(depth * DEPTH_STEPS))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_moving_camera_keeps_each_point_s_depth_on_the_same_part_of_a_16_bit_step() {
+        for start in [[0.0; 3], FAR_OUT] {
+            // A point on the ground 30 m ahead, in the second and third cascades.
+            let point = [start[0] + 2.1, start[1] - 5.0, start[2] - 30.0];
+            let frames: Vec<Vec<Option<f64>>> = (0..24)
+                .map(|step| {
+                    let step = f64::from(step);
+                    let position = [start[0] + step * 0.071, start[1], start[2] - step * 0.113];
+                    depth_steps_of(point, position, 10.0 + step as f32 * 0.37)
+                })
+                .collect();
+            let mut compared = 0;
+            for cascade in 0..SETTINGS.cascades as usize {
+                let seen: Vec<f64> = frames.iter().filter_map(|f| f[cascade]).collect();
+                for depth in seen.iter().skip(1) {
+                    // The box moves in whole steps, so the point keeps its place within a step,
+                    // up to the rounding of 32-bit floats near 1.
+                    let shift = (depth - seen[0]).rem_euclid(1.0);
+                    assert!(
+                        shift.min(1.0 - shift) < 0.02,
+                        "cascade {cascade}: {} then {depth}",
+                        seen[0]
+                    );
+                    compared += 1;
+                }
+            }
+            assert!(compared > 0);
+        }
+    }
+
     #[test]
     fn a_moving_camera_moves_each_box_in_whole_texels() {
         for start in [[0.0; 3], FAR_OUT] {
@@ -1318,9 +1592,9 @@ mod tests {
         let fresh = first;
         assert_eq!(schedule.plan(&mut first, FAR_OUT, 2048, 4, still), 0b1111);
         assert_eq!(first, fresh);
-        // The camera moves and turns: only the near cascade and the next in turn draw.
-        let moved = [FAR_OUT[0] + 3.7, FAR_OUT[1], FAR_OUT[2] - 2.9];
-        let mut second = fit_at(moved, 25.0);
+        // The camera moves and turns a little: only the near cascade and the next in turn draw.
+        let moved = [FAR_OUT[0] + 0.37, FAR_OUT[1], FAR_OUT[2] - 0.29];
+        let mut second = fit_at(moved, 0.5);
         let fresh = second;
         assert_eq!(schedule.plan(&mut second, moved, 2048, 4, still), 0b0101);
         assert_eq!(second.cascades[0], fresh.cascades[0]);
@@ -1409,5 +1683,247 @@ mod tests {
         // Past a side, or beyond the far face, nothing draws into the box.
         assert!(!box_test([2048.0 + 21.5, 10.0, 0.0], 1.0));
         assert!(!box_test([2048.0, -11.5, 0.0], 1.0));
+    }
+
+    /// The texels inside each edge of a cascade's layer that the shader's filter reads past a
+    /// receiver, which its box must hold: the reach of the widest filter's square.
+    const FILTER_REACH: f32 = 3.0;
+
+    /// A camera at `eye` that looks at `target`, its axes scaled by `scale`.
+    fn looking(eye: [f32; 3], target: [f32; 3], scale: f32) -> Affine {
+        let back = normalize(std::array::from_fn(|k| eye[k] - target[k]));
+        let right = normalize(cross([0.0, 1.0, 0.0], back));
+        let up = cross(back, right);
+        let [r, u, b] = [right, up, back].map(|axis| axis.map(|v| v * scale));
+        [
+            r[0], u[0], b[0], eye[0], r[1], u[1], b[1], eye[1], r[2], u[2], b[2], eye[2],
+        ]
+    }
+
+    /// The cascade that a receiver at `p`, relative to the camera, reads, as the shader's
+    /// `sun_shadow` picks it with no bias: the cascade whose slice holds its distance, or the next
+    /// one whose box holds it with the filter's reach inside its edges. `None` past the shadow
+    /// distance, and where no box holds it, so the receiver would be lit.
+    fn pick(cascades: &Cascades, size: f32, p: [f32; 3]) -> Option<usize> {
+        let used = cascades.used();
+        if dot(p, cascades.forward) >= used.last()?.end {
+            return None;
+        }
+        let distance = pick_distance(cascades, p);
+        let first = (0..used.len() - 1)
+            .filter(|&k| distance >= used[k].end)
+            .count();
+        (first..used.len()).find(|&k| holds(&used[k], size, p))
+    }
+
+    /// True when a cascade's box holds `p`, relative to the camera, with the filter's reach inside
+    /// its edges, as the shader's `sun_holds` tests it.
+    fn holds(cascade: &Cascade, size: f32, p: [f32; 3]) -> bool {
+        let [x, y, _] = project(&cascade.view_proj, p);
+        let inside = 1.0 - 2.0 * FILTER_REACH / size;
+        x.abs() <= inside && y.abs() <= inside
+    }
+
+    /// The distance from the camera that picks a cascade for `p`, as the shader measures it.
+    fn pick_distance(cascades: &Cascades, p: [f32; 3]) -> f32 {
+        if cascades.by_distance {
+            dot(p, p).sqrt() * dot(cascades.forward, cascades.forward).sqrt()
+        } else {
+            dot(p, cascades.forward)
+        }
+    }
+
+    #[test]
+    fn every_receiver_in_view_finds_a_box_and_band_receivers_find_the_next_box_too() {
+        // Narrow views lost receivers near the screen's sides, where the point lies past its
+        // slice's end by its distance from the camera, but the next box held only its own slice.
+        let suns = [
+            DOWN_AND_ACROSS,
+            normalize([-1.0, -2.0, -1.0]),
+            normalize([0.3, -0.6, -1.0]),
+            normalize([1.0, -0.4, 0.2]),
+        ];
+        let mut checked = 0;
+        for fov in [20.0, 30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 75.0, 90.0] {
+            let lens = Lens::Perspective(Perspective {
+                fov_degrees: fov,
+                ..PERSPECTIVE
+            });
+            for cascades in 2..=4 {
+                for (aspect, sun, height) in [(16.0 / 9.0, 0, 1.7), (1.5, 1, 42.0), (0.6, 2, 6.0)]
+                    .into_iter()
+                    .chain([(16.0 / 9.0, 3, 20.0)])
+                {
+                    let settings = ShadowSettings {
+                        cascades,
+                        ..SETTINGS
+                    };
+                    let camera = looking([0.0, height, 0.0], [10.0, 0.0, -40.0], 1.0);
+                    let fitted = fit(&camera, &lens, aspect, suns[sun], &settings);
+                    let size = settings.map_size as f32;
+                    let end = fitted.used().last().unwrap().end;
+                    for step in 1..60 {
+                        let along = end * step as f32 / 60.0;
+                        for sx in -10..=10 {
+                            for sy in -10..=10 {
+                                let (sx, sy) = (sx as f32 / 10.0, sy as f32 / 10.0);
+                                let p = view_point_of(&lens, &camera, aspect, along, sx, sy);
+                                let Some(k) = pick(&fitted, size, p) else {
+                                    panic!("fov {fov}, {cascades} cascades: {p:?} is lit");
+                                };
+                                let cascade = &fitted.cascades[k];
+                                let distance = pick_distance(&fitted, p);
+                                if k + 1 < fitted.count && distance > cascade.band {
+                                    let next = &fitted.cascades[k + 1];
+                                    assert!(
+                                        holds(next, size, p),
+                                        "fov {fov}, {cascades} cascades: the band's {p:?} \
+                                         falls outside cascade {}",
+                                        k + 1
+                                    );
+                                }
+                                checked += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 1_000_000, "{checked}");
+    }
+
+    #[test]
+    fn each_band_is_a_share_of_its_cascade_and_the_last_cascade_has_none() {
+        for blend in [0.0, DEFAULT_BLEND, 0.3, 2.0] {
+            let settings = ShadowSettings { blend, ..SETTINGS };
+            let cascades = fit(&camera(), &LENS, 1.5, DOWN_AND_ACROSS, &settings);
+            let share = blend.min(MAX_BLEND);
+            let mut start = PERSPECTIVE.near;
+            for (k, cascade) in cascades.used().iter().enumerate() {
+                let expected = if k + 1 < cascades.count {
+                    cascade.end - share * (cascade.end - start)
+                } else {
+                    cascade.end
+                };
+                assert!(
+                    (cascade.band - expected).abs() < 1e-4,
+                    "{blend}: {cascade:?}"
+                );
+                start = cascade.end;
+            }
+            let uniform = ShadowUniform::new(&cascades, &settings, CascadeDepth::default());
+            let bands: Vec<f32> = cascades.used().iter().map(|c| c.band).collect();
+            assert_eq!(uniform.bands[..3], bands[..]);
+            assert_eq!(uniform.bands[3], 200.0);
+        }
+    }
+
+    #[test]
+    fn the_shadow_distance_stays_in_meters_under_a_scaled_camera() {
+        // The camera's far plane, 1,000 units out, stays past the distance at each scale.
+        for scale in [0.25, 1.0, 2.0] {
+            let camera = looking([0.0, 5.0, 0.0], [0.0, 0.0, -30.0], scale);
+            let cascades = fit(&camera, &LENS, 1.5, DOWN_AND_ACROSS, &SETTINGS);
+            // The last cascade ends 200 m along the view, in the view's units.
+            let end = cascades.used().last().unwrap().end;
+            assert!((end * scale - 200.0).abs() < 1e-2, "{scale}: {end}");
+            let p = view_point_of(&LENS, &camera, 1.5, end * 0.5, 0.0, 0.0);
+            let meters = dot(p, p).sqrt();
+            assert!((meters - 100.0).abs() < 1e-2, "{scale}: {meters}");
+        }
+    }
+
+    #[test]
+    fn a_kept_far_cascade_draws_out_of_turn_after_a_camera_cut() {
+        let settings = ShadowSettings {
+            cascades: 4,
+            ..SETTINGS
+        };
+        let fit_at = |position: [f64; 3], yaw: f32| {
+            fit_cascades(
+                &turned(yaw),
+                position,
+                &LENS,
+                1.5,
+                DOWN_AND_ACROSS,
+                &settings,
+            )
+        };
+        let mut schedule = CascadeSchedule::default();
+        assert_eq!(
+            schedule.plan(&mut fit_at(FAR_OUT, 0.0), FAR_OUT, 2048, 4, still),
+            0b1111
+        );
+        // A small step keeps the far cascades to their turns.
+        let step = [FAR_OUT[0] + 0.2, FAR_OUT[1], FAR_OUT[2] - 0.2];
+        assert_eq!(
+            schedule.plan(&mut fit_at(step, 0.1), step, 2048, 4, still),
+            0b0101
+        );
+        // A cut 500 m away draws every cascade at once, as no kept box holds the new view.
+        let cut = [FAR_OUT[0] + 500.0, FAR_OUT[1], FAR_OUT[2]];
+        let mut cascades = fit_at(cut, 0.1);
+        assert_eq!(schedule.plan(&mut cascades, cut, 2048, 4, still), 0b1111);
+        // Every receiver of the new view finds a box.
+        let size = settings.map_size as f32;
+        for along in [5.0, 30.0, 90.0, 180.0] {
+            for sx in [-1.0, 0.0, 1.0] {
+                let p = view_point(&turned(0.1), 1.5, along, sx, -0.5);
+                assert!(pick(&cascades, size, p).is_some(), "{p:?}");
+            }
+        }
+        // A camera that turns about as far as the far cascades' boxes reach draws them too.
+        let mut turned_away = fit_at(cut, 120.0);
+        assert_eq!(
+            schedule.plan(&mut turned_away, cut, 2048, 4, still) & 0b1110,
+            0b1110
+        );
+    }
+
+    /// The frames, as a share of all, in which a far cascade draws out of its turn while a camera
+    /// follows S4's path at `rate` frames per second with the cascades of a preset.
+    fn s4_out_of_turn_share(cascades: u32, map_size: u32, interval: u32, rate: f32) -> f32 {
+        let settings = ShadowSettings {
+            cascades,
+            map_size,
+            ..SETTINGS
+        };
+        let sun = normalize([-1.0, -2.0, -1.0]);
+        let mut schedule = CascadeSchedule::default();
+        let frames = (60.0 * rate) as u32;
+        let mut out_of_turn = 0;
+        for frame in 0..frames {
+            let angle = std::f32::consts::TAU * frame as f32 / frames as f32;
+            let eye = [95.0 * angle.cos(), 42.0, -95.0 * angle.sin()];
+            let target = [50.0 * (angle + 0.9).cos(), 0.0, -50.0 * (angle + 0.9).sin()];
+            let camera = looking(eye, target, 1.0);
+            let position = eye.map(f64::from);
+            let mut fitted = fit_cascades(&camera, position, &LENS, 1.5, sun, &settings);
+            let drawn = schedule.plan(&mut fitted, position, map_size, interval, still);
+            let due = (0..fitted.count)
+                .filter(|&k| CascadeSchedule::due(frame % CYCLE, k, interval))
+                .fold(0, |mask, k| mask | 1 << k);
+            if frame > 0 && drawn & !due != 0 {
+                out_of_turn += 1;
+            }
+        }
+        out_of_turn as f32 / frames as f32
+    }
+
+    #[test]
+    fn s4_s_camera_path_keeps_far_cascades_to_their_turns() {
+        // Low draws 2 cascades every 4 frames on phones at 30 to 60 frames a second; Medium 3
+        // every 3 frames; High 3 and Ultra 4 every 2 frames.
+        for rate in [30.0, 60.0] {
+            for (preset, cascades, map_size, interval) in [
+                ("Low", 2, 1024, 4),
+                ("Medium", 3, 2048, 3),
+                ("High", 3, 2048, 2),
+                ("Ultra", 4, 4096, 2),
+            ] {
+                let share = s4_out_of_turn_share(cascades, map_size, interval, rate);
+                assert_eq!(share, 0.0, "{preset} at {rate}");
+            }
+        }
     }
 }

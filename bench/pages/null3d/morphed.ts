@@ -1,7 +1,7 @@
 // Morphed objects for the allocation check: spheres of the morph target scene (bench/scenes/morph.ts)
-// in a row in front of S1's boxes. Each frame, the sketch sets all three weights of every sphere,
-// as a face's expressions change, so both GPU paths upload new weights and grow new bounds in every
-// frame, and WebGL2 caps them.
+// in a row in front of S1's boxes, with vertex colors that the targets change too. Each frame, the
+// sketch sets all three weights of every sphere, as a face's expressions change, so both GPU paths
+// upload new weights and grow new bounds in every frame, and WebGL2 caps them.
 import type { Mesh, SketchContext } from '@null3d/engine';
 import { morphMesh, TARGET_NAMES } from '../../scenes/morph';
 
@@ -20,11 +20,15 @@ export function createMorphedRow(
 ): (t: number) => void {
 	if (count === 0) return () => {};
 	const { positions, normals, indices, positionDeltas, normalDeltas } = morphMesh();
+	// Each target tints a vertex by how far it moves the vertex along each axis.
+	const colors = new Float32Array(positions.length).fill(0.5);
+	const colorDeltas = positionDeltas.map((deltas) => deltas.map((d) => Math.min(Math.abs(d), 0.5)));
 	const mesh = geometry.fromArrays({
 		positions,
 		normals,
+		colors,
 		indices,
-		morphTargets: { positions: positionDeltas, normals: normalDeltas },
+		morphTargets: { positions: positionDeltas, normals: normalDeltas, colors: colorDeltas },
 	});
 	const material = materials.standard({ color: '#4a8cff' });
 	const spheres: Mesh[] = [];

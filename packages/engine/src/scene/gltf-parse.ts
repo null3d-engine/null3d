@@ -47,6 +47,8 @@ export { type AccessorArray, GltfError, type GltfErrorCode } from './gltf-json';
 export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_mesh_quantization',
 	'KHR_texture_basisu',
+	'EXT_texture_webp',
+	'EXT_texture_avif',
 	'KHR_texture_transform',
 	'KHR_materials_unlit',
 	'KHR_materials_emissive_strength',
@@ -57,6 +59,14 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_meshopt_compression',
 	'EXT_meshopt_compression',
 ];
+
+/**
+ * The extensions that give a texture an image in another format, in the order the loader takes
+ * them, as three.js's GLTFLoader does: KTX2 first, which stays compressed on the GPU, then WebP,
+ * which decodes faster than AVIF. Every browser that runs the engine decodes both, so the
+ * texture's own `source`, a fallback for loaders without them, is used only when none is given.
+ */
+const IMAGE_EXTENSIONS = ['KHR_texture_basisu', 'EXT_texture_webp', 'EXT_texture_avif'] as const;
 
 /**
  * The two names of meshopt compression. The Khronos extension reads the vendor one's data, and
@@ -205,9 +215,14 @@ export interface PrimitiveData {
 	indices?: Uint16Array | Uint32Array;
 	/** The material's index in the file, or -1 for glTF's default material. */
 	material: number;
-	/** The lowest and highest position on each axis, from the position accessor. */
+	/**
+	 * The lowest and highest position on each axis, from the position accessor. A copy that a skin
+	 * moves holds the box of its vertices at rest instead, in the space of the copy's group.
+	 */
 	min: [number, number, number];
 	max: [number, number, number];
+	/** The place of a copy that joints move, where its vertices lie at rest without skinning. */
+	rest?: RestPlace;
 	/** The deltas of the primitive's morph targets, when it has any. */
 	morph?: MorphTargetsData;
 	/**
@@ -220,6 +235,16 @@ export interface PrimitiveData {
 	 * with the blocker to draw in its place when the file holds one.
 	 */
 	occluder?: true | BlockerData;
+}
+
+/**
+ * Where a mesh that joints move lies at rest when nothing skins it, as instance batches draw it: a
+ * 3 × 4 matrix by rows in the space of the copy's group. `exact` is false for a skinned mesh whose
+ * rest pose is not its bind pose, which no one matrix places.
+ */
+export interface RestPlace {
+	matrix: number[];
+	exact: boolean;
 }
 
 /** A blocker mesh: three floats per corner, and three indices per triangle. */
@@ -675,10 +700,15 @@ export function parseGltf(
 		const slot = entry(info, what);
 		const t = index(slot.index, textureDefs.length, `${what}'s texture`);
 		const texture = textureDefs[t] as Entry;
-		const basisu = (texture.extensions as Entry | undefined)?.KHR_texture_basisu as
-			| Entry
-			| undefined;
-		const source = basisu?.source ?? texture.source;
+		const extensions = texture.extensions as Entry | undefined;
+		let source = texture.source;
+		for (const name of IMAGE_EXTENSIONS) {
+			const given = (extensions?.[name] as Entry | undefined)?.source;
+			if (given !== undefined) {
+				source = given;
+				break;
+			}
+		}
 		if (source === undefined) broken(`texture ${t} has no image`);
 		const image = index(source, imageCount, `texture ${t}'s image`);
 		const transform = (slot.extensions as Entry | undefined)?.KHR_texture_transform as
@@ -858,7 +888,7 @@ export function parseGltf(
 }
 
 /**
- * Checks the size that each PNG and JPEG image of the file gives in its header, before the worker
+ * Checks the size that each PNG, JPEG, WebP and AVIF image of the file gives in its header, before the worker
  * decodes it: each side within the engine's largest texture, and the pixels of every decode, one
  * for each way a material uses the image, within the cap on what one file may decode to. Images
  * take a budget of their own: a photo compresses far more than a mesh, so a ratio to the file's
@@ -945,7 +975,10 @@ function compressedView(
  */
 const ATTRIBUTES: readonly [
 	name: string,
-	field: Exclude<keyof PrimitiveData, 'indices' | 'material' | 'min' | 'max' | 'bvh' | 'occluder'>,
+	field: Exclude<
+		keyof PrimitiveData,
+		'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder'
+	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
 ][] = [
@@ -1059,7 +1092,8 @@ function parsePrimitive(
 	const corners = indices ? indices.length : vertices;
 	if (corners % 3 !== 0) broken(`${what} has ${corners} corners, which make no whole triangles`);
 	if (vertices === 0) return undefined;
-	const morph = parseMorphTargets(primitive, vertices, what, read, budget, notes);
+	const colors = out.colors ? out.colors.array.length / vertices : 0;
+	const morph = parseMorphTargets(primitive, vertices, colors, what, read, budget, notes);
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);

@@ -19,7 +19,11 @@
 // allocation sample of the tiles' marks and their cap.
 // The `environment` switch lights the swarm with the built-in room, and turns it and changes its
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
-// light.
+// light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
+// changes a color uniform of each every frame through an array changed in place, for the
+// allocation sample of post.setEffectUniform and the effects' passes.
+// The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
+// the decoders' work in the engine's workers.
 import { defineSketch, type Environment, type SketchContext } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { s1Camera } from '../../scenes/spec';
@@ -52,11 +56,22 @@ export default defineSketch(async (context) => {
 	const outlineSettings = { outline: line };
 	if (grading)
 		void context.assets.loadLut(GRADING_LUTS.warm).then((lut) => context.post.set({ lut }));
+	if (switches.has('decode')) void decodeWithoutEnd(context);
 	const ao = switches.has('ao');
 	const occlusion = { ao: { intensity: 1 } };
 	if (ao) context.quality.set({ aoScale: 0.5 });
 	const bloom = switches.has('bloom');
 	const glow = { bloom: { intensity: 0.15 } };
+	const effects = switches.has('effects');
+	const tint = effects
+		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
+		: undefined;
+	const haze = effects
+		? context.post.addEffect({ wgsl: HAZE, uniforms: { color: '#b0c4d8', density: 0.002 } })
+		: undefined;
+	// The effects' colors, changed in place, so a frame's calls allocate no array.
+	const warm: [number, number, number] = [1, 0.95, 0.9];
+	const mist: [number, number, number] = [0.43, 0.55, 0.69];
 	// The environment's options, changed in place, as the grading's settings are.
 	const turn: [number, number, number] = [0, 0, 0];
 	const lighting = { intensity: 1, rotation: turn };
@@ -88,6 +103,12 @@ export default defineSketch(async (context) => {
 			glow.bloom.intensity = 0.15 + 0.05 * Math.sin(t);
 			context.post.set(glow);
 		}
+		if (tint && haze) {
+			warm[2] = 0.9 + 0.1 * Math.sin(t);
+			context.post.setEffectUniform(tint, 'color', warm);
+			mist[0] = 0.43 + 0.05 * Math.cos(t);
+			context.post.setEffectUniform(haze, 'color', mist);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.size = 1 + 0.25 * Math.cos(t);
@@ -100,6 +121,48 @@ export default defineSketch(async (context) => {
 		},
 	};
 });
+
+/** A custom effect that tints each pixel toward a color. */
+const TINT = /* wgsl */ `
+struct Uniforms { color: vec3f, amount: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    return vec4f(mix(input.color.rgb, input.color.rgb * uniforms.color, uniforms.amount), input.color.a);
+}
+`;
+
+/** A custom effect that fades each pixel toward a color by its distance from the camera. */
+const HAZE = /* wgsl */ `
+struct Uniforms { color: vec3f, density: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    let fade = 1.0 - exp(-effectDistance(input.uv) * uniforms.density);
+    return vec4f(mix(input.color.rgb, uniforms.color * input.color.a, fade), input.color.a);
+}
+`;
+
+/** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
+const LAMP = '/samples/sources/khronos/StainedGlassLamp/glTF-KTX-BasisU';
+/** The meshopt sample model, which the `decode` switch loads after each round of textures. */
+const MESHOPT_CUBE = '/samples/sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf';
+
+/**
+ * Loads the KTX2 sample model's textures, all at once, and the meshopt sample model, round after
+ * round until the page closes. The textures go as soon as they arrive. The frames meanwhile show
+ * what the decoders' work in the engine's workers costs the frame loop.
+ */
+async function decodeWithoutEnd({ assets }: SketchContext): Promise<void> {
+	const gltf = (await (await fetch(`${LAMP}/StainedGlassLamp.gltf`)).json()) as {
+		images: { uri: string }[];
+	};
+	for (;;) {
+		const textures = await Promise.all(
+			gltf.images.map(({ uri }) => assets.loadTexture(`${LAMP}/${uri}`)),
+		);
+		for (const texture of textures) texture.destroy();
+		await assets.loadGltf(MESHOPT_CUBE);
+	}
+}
 
 /** The number of outlined boxes that the `outline` switch adds. */
 const OUTLINED_BOXES = 16;

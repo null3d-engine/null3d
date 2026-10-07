@@ -68,10 +68,13 @@ export interface EnginePart {
  * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
  * page and in the sketch worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
- * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
- * The glTF loader loads there too with the sketch's first glTF file, and starts the glTF worker,
- * which parses files. The glTF worker loads the meshopt decoder with the first file that holds
- * meshopt data. The readers of color grading tables load in the thread that runs the sketch with
+ * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file,
+ * with the on-demand loader that it shares with the glTF loader. The KTX2 task, with the Basis
+ * Universal transcoder's script, loads in a job worker, or in the task worker that the on-demand
+ * loader starts where the engine has no job workers. The glTF loader loads in the thread that runs
+ * the sketch with the sketch's first glTF file, and starts the glTF worker, which parses files.
+ * The glTF worker loads the meshopt decoder's code with the first file that holds meshopt data.
+ * The readers of color grading tables load in the thread that runs the sketch with
  * the first table, the sprite code with the first sprite batch, and the line code with the first
  * line batch.
  * The preset check loads after the first frame, in the thread that runs the sketch, so no download
@@ -100,6 +103,9 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-tasks.js', module: 'shared/tasks.ts', loadedBy: 'page-ktx2.js' },
+	{ name: 'task-worker.js', module: 'workers/task-worker.ts', loadedBy: 'page-tasks.js' },
+	{ name: 'task-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'task-worker.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-environment.js',
@@ -111,6 +117,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'scene/builtin-environments.ts',
 		loadedBy: 'page-sketch-runner.js',
 	},
+	{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
 	{
@@ -136,6 +143,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
@@ -148,6 +156,16 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		name: 'sketch-worker-builtin-environments.js',
 		module: 'scene/builtin-environments.ts',
 		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-panorama.js',
+		module: 'scene/panorama.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'panorama-worker.js',
+		module: 'workers/panorama-worker.ts',
+		loadedBy: 'sketch-worker-panorama.js',
 	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-lines.js', module: 'scene/lines.ts', loadedBy: 'sketch-worker.js' },
@@ -170,6 +188,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		loadedBy: 'render-worker.js',
 	},
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
+	{ name: 'job-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'job-worker.js' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },
 ];
 
@@ -210,32 +229,28 @@ export function isFirstUseShaderPart(name: string): boolean {
 }
 
 /**
- * The KTX2 transcoder's files, which a page downloads when it loads its first KTX2 file: the
- * engine's worker that runs the transcoder, and the official Basis Universal build's script and
- * WebAssembly module. A build copies each as it is, under its name with a hash.
+ * The WebAssembly modules that the on-demand loader compiles on first use: the KTX2 transcoder,
+ * with a page's first KTX2 file, and the meshopt decoder, with its first glTF file that holds
+ * meshopt data. A build copies each as it is, under its name with a hash.
  */
-export const TRANSCODER_FILES = [
-	'transcoder-worker.js',
-	'basis_transcoder.js',
-	'basis_transcoder.wasm',
-] as const;
+export const FIRST_USE_WASM = ['basis_transcoder.wasm', 'meshopt_decoder.wasm'] as const;
 
 /** Every file that the size report measures, by the name that the report prints. */
 export const REPORTED_FILES: readonly string[] = [
 	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
 	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
 	...SHADER_PARTS.map((name) => `js/${name}`),
-	...TRANSCODER_FILES.map((file) => `ktx2/${file}`),
+	...FIRST_USE_WASM.map((file) => `first-use/${file}`),
 ];
 
 /**
- * The built name of each of the transcoder's files, by its own name, from the names of a build's
- * files. A build adds a hash of 8 characters to each name. Throws when a file is missing or there
- * twice, since the loader would then fetch no file or the wrong one.
+ * The built name of each first-use WebAssembly module, by its own name, from the names of a
+ * build's files. A build adds a hash of 8 characters to each name. Throws when a file is missing or
+ * there twice, since the loader would then fetch no file or the wrong one.
  */
-export function findTranscoderFiles(builtNames: readonly string[]): Map<string, string> {
+export function findFirstUseWasm(builtNames: readonly string[]): Map<string, string> {
 	const found = new Map<string, string>();
-	for (const file of TRANSCODER_FILES) {
+	for (const file of FIRST_USE_WASM) {
 		const dot = file.lastIndexOf('.');
 		const [stem, extension] = [file.slice(0, dot), file.slice(dot)];
 		const matches = builtNames.filter(
@@ -243,9 +258,7 @@ export function findTranscoderFiles(builtNames: readonly string[]): Map<string, 
 				name.startsWith(`${stem}-`) && name.endsWith(extension) && name.length === file.length + 9,
 		);
 		if (matches.length !== 1)
-			throw new Error(
-				`${file}: expected one built copy of the KTX2 transcoder's file, found ${matches.length}`,
-			);
+			throw new Error(`${file}: expected one built copy of the module, found ${matches.length}`);
 		found.set(file, matches[0] as string);
 	}
 	return found;

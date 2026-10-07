@@ -27,6 +27,10 @@
 // apart from the dither. The 8-bit path draws it the same way, because both paths hold display
 // color there.
 //
+// A custom tone curve takes the place of the built-in ones: the shader compiler adds its WGSL,
+// `fn toneCurve(color: vec3f) -> vec3f`, after this file's last line, and builds every variant with
+// the shader def CUSTOM_TONE_CURVE. The pass clamps what the curve returns to 0 to 1.
+//
 // The vignette multiplies HDR color before the tone mapping, as Filament, URP, Bevy and Babylon.js
 // do, so bright corners darken as dark ones do instead of turning gray. The 8-bit path has no HDR
 // color, so there the pass multiplies the linear value of the display color, before the outline.
@@ -331,7 +335,11 @@ fn display(texel: vec4f) -> vec4f {
     if coverage <= 0.0 {
         return vec4f(0.0);
     }
+#ifdef CUSTOM_TONE_CURVE
+    let mapped = saturate(toneCurve(texel.rgb / coverage));
+#else
     let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings.output);
+#endif
     let encoded = saturate(linear_to_srgb(mapped));
     return vec4f(encoded * coverage, coverage);
 }

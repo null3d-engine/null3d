@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-G3.
 
+Summary: A line batch is an instance batch with one row per segment between its points, which packs the segment's middle, half, end colors in 8-bit sRGB, dash distance and width into the row's world matrix. The `LINE` template follows three.js's `LineMaterial`, and matches `Line2` exactly on WebGL2; lit lines add the `LINE_LIT` template. Both add 2.0 to 2.9 KB to each shader file, and the line code loads on first use.
+
 ## Question
 
 1. How does a batch of lines reach the GPU? It can use the rows, culling and sorting of instance batches, as sprites do ([D-37](D-37-sprites.md)). Or it can have a draw path of its own, as the debug lines have.

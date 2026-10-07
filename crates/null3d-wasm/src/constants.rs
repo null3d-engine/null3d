@@ -109,6 +109,12 @@ pub mod map_slot {
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
+/// The flags of an effect that `setEffect` takes.
+pub mod effect_flag {
+    /// The effect reads the scene's depth.
+    pub const DEPTH: u32 = 1;
+}
+
 /// The numbers that `textureStat` reads from the texture store.
 /// The places of the post-processing values in the block that `postValues` gives: 32-bit floats
 /// that TypeScript writes before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`. The
@@ -179,7 +185,7 @@ pub mod texture_stat {
     pub const LARGEST_FRAME_BYTES: u32 = 3;
     /// Textures with an image that is not on the GPU yet.
     pub const WAITING: u32 = 4;
-    /// Images sent so far, which is the last image id handed out.
+    /// The last image id handed out, or 0 before the first.
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
@@ -236,11 +242,13 @@ pub mod mesh_arrays {
 
 /// The morph target arrays that `createMeshFromArrays` finds in the staging words after the
 /// indices: the deltas of the positions, the normals and the tangents, each three 32-bit floats
-/// per vertex of each target, target after target, in this order.
+/// per vertex of each target, then of the colors, four 32-bit floats per vertex of each target,
+/// target after target, in this order.
 pub mod morph_arrays {
     pub const POSITIONS: u32 = 1;
     pub const NORMALS: u32 = 2;
     pub const TANGENTS: u32 = 4;
+    pub const COLORS: u32 = 8;
 }
 
 /// The first detail of an E1206 failure: what is wrong with the arrays. The second detail is the
@@ -258,8 +266,8 @@ pub mod arrays_problem {
     /// The morph targets move one vertex more than 255 times, or every mesh's morph targets
     /// together pass what the engine holds. The second detail is that limit in texels.
     pub const MORPH_TOO_LARGE: u32 = 8;
-    /// A morph target array does not hold three values per vertex of each target. The second
-    /// detail is the array: 0 for positions, 1 for normals and 2 for tangents.
+    /// A morph target array does not hold its values per vertex of each target. The second
+    /// detail is the array: 0 for positions, 1 for normals, 2 for tangents and 3 for colors.
     pub const MORPH_LENGTH: u32 = 9;
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
@@ -685,13 +693,14 @@ pub fn typescript() -> String {
                 ("SHADOWS", debug_view::code::SHADOWS),
             ],
         ),
-        // The kinds of fog that `setFog` takes.
+        // The fog curves that `setFog` takes, and its code for no fog.
         (
-            "FOG_KIND",
+            "FOG_CURVE",
             &[
-                ("NONE", fog::kind::NONE),
-                ("LINEAR", fog::kind::LINEAR),
-                ("EXP2", fog::kind::EXP2),
+                ("NONE", fog::curve::NONE),
+                ("LINEAR", fog::curve::LINEAR),
+                ("EXP2", fog::curve::EXP2),
+                ("EXPONENTIAL", fog::curve::EXPONENTIAL),
             ],
         ),
         (
@@ -727,6 +736,16 @@ pub fn typescript() -> String {
                 ("REFLECTANCE", param::REFLECTANCE as u32),
                 ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
+            ],
+        ),
+        // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
+        // TypeScript writes at `effectValues` first.
+        (
+            "EFFECT",
+            &[
+                ("MAX", null3d_render::effects::MAX_EFFECTS as u32),
+                ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
+                ("DEPTH", effect_flag::DEPTH),
             ],
         ),
         (
@@ -810,6 +829,7 @@ pub fn typescript() -> String {
                 ("FORMAT_ASTC_SRGB", format::ASTC_4X4_UNORM_SRGB),
                 ("FORMAT_BC7", format::BC7_RGBA_UNORM),
                 ("FORMAT_BC7_SRGB", format::BC7_RGBA_UNORM_SRGB),
+                ("FORMAT_BC6H", format::BC6H_RGB_UFLOAT),
                 ("FORMAT_ETC2_RGB", format::ETC2_RGB8_UNORM),
                 ("FORMAT_ETC2_RGB_SRGB", format::ETC2_RGB8_UNORM_SRGB),
                 ("FORMAT_ETC2_RGBA", format::ETC2_RGBA8_UNORM),
@@ -870,6 +890,7 @@ pub fn typescript() -> String {
                 ("POSITIONS", morph_arrays::POSITIONS),
                 ("NORMALS", morph_arrays::NORMALS),
                 ("TANGENTS", morph_arrays::TANGENTS),
+                ("COLORS", morph_arrays::COLORS),
                 ("MAX_WEIGHTS", null3d_core::morph::MAX_WEIGHTS),
                 ("MAX_TARGETS", null3d_core::morph::MAX_TARGETS),
                 ("WEIGHTS_PER_JOINT", null3d_core::morph::WEIGHTS_PER_JOINT),

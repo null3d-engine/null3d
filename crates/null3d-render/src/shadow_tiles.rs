@@ -73,15 +73,26 @@ use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{HIDDEN_RADIUS, MATRIX_FLOATS};
 use null3d_gpu::drawlist::sizes::SHADOW_TILES_UNIFORM_BYTES;
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, format};
 
 use crate::camera::{Affine, Mat4, ViewDepth, multiply, view_matrix};
 use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
+use crate::pipelines::PassTargets;
 use crate::view::ViewFrame;
 
 /// The most tiles of the shadow atlas.
 pub const MAX_TILES: usize = 24;
+
+/// What the tiles' shadow passes draw into: the atlas's 32-bit float depth, with one sample and no
+/// color. A tile's perspective view stores most of its depth's range near its light, so 16-bit
+/// depth would leave steps of about 1.5% of the distance near the far end: 15 cm at 10 m.
+pub const TARGETS: PassTargets = PassTargets {
+    color_format: format::NONE,
+    depth_format: format::DEPTH32_FLOAT,
+    samples: 1,
+    permutation: 0,
+};
 
 /// The tiles of a point light's shadows: one per face of a cube.
 pub const POINT_FACES: usize = 6;
@@ -544,7 +555,7 @@ impl ShadowTiles {
         if created_pipelines {
             self.last_new_pipeline = frame;
         }
-        if null3d_core::frames::frame_after(self.last_new_pipeline, pipelines_built) {
+        if !crate::pipelines::built_by(self.last_new_pipeline, pipelines_built) {
             return;
         }
         for (slot, drawn) in self.slots.iter_mut().zip(&self.frames) {

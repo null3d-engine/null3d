@@ -63,9 +63,10 @@ export interface ShaderVariant<Pipeline extends string = string> {
 /**
  * WGSL from a project's modules, compiled by the null3D Vite plugin: a `.wgsl` file that a module
  * imports, or a template literal that a `wgsl` block comment tags. WGSL with entry points is a
- * whole shader. WGSL without entry points holds the functions of a custom material.
+ * whole shader. WGSL without entry points holds the functions of a custom material, the function
+ * of a custom effect, or a custom tone curve.
  */
-export type CompiledWgsl = CompiledShader | CompiledMaterial;
+export type CompiledWgsl = CompiledShader | CompiledMaterial | CompiledEffect | CompiledToneCurve;
 
 /**
  * A whole shader from a project's modules. It has one render pipeline for each `@fragment` entry
@@ -137,4 +138,38 @@ export interface CompiledMaterial<
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
+}
+
+/**
+ * A custom effect from a project's modules, which `post.addEffect` draws with: WGSL that declares
+ * `fn effect(input: EffectInput) -> vec4f`, built into every variant of the engine's effect
+ * template. `Uniforms` gives each uniform's type by name, as the declaration that the plugin writes
+ * beside a `.wgsl` file does, so that `post.addEffect` and `post.setEffectUniform` check the names
+ * and values of the uniforms.
+ */
+export interface CompiledEffect<
+	Uniforms extends Readonly<Record<string, UniformType>> = Readonly<Record<string, UniformType>>,
+> {
+	/** Marks the WGSL of a custom effect. */
+	readonly kind: 'effect';
+	/** The fields of the WGSL's `struct Uniforms`, in order. */
+	readonly uniforms: readonly {
+		readonly [Name in keyof Uniforms & string]: CompiledUniform<Name, Uniforms[Name]>;
+	}[keyof Uniforms & string][];
+	/** True when the effect reads the scene's depth. */
+	readonly depth: boolean;
+	/** The effect template's variants with the WGSL, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
+}
+
+/**
+ * A custom tone curve from a project's modules, which `post.set({ toneMapping })` takes: WGSL that
+ * declares `fn toneCurve(color: vec3f) -> vec3f`, built into every variant of the engine's final
+ * pass.
+ */
+export interface CompiledToneCurve {
+	/** Marks the WGSL of a custom tone curve. */
+	readonly kind: 'toneCurve';
+	/** The final pass's variants with the WGSL, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
 }

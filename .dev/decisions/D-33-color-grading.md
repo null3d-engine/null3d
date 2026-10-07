@@ -1,6 +1,8 @@
 # D-33: Color grading and the vignette
 
-Status: decided, 2026-10-03. Date: 2026-10-03. Task: M2-F3.
+Status: decided, 2026-10-03; by the owner on 2026-10-04, the vignette moves into HDR and the dither runs last. Date: 2026-10-03. Task: M2-F3.
+
+Summary: Values of the final pass's settings, not shader builds, so turning them on builds no pipeline. Tables are 3D textures of the texture store in 8-bit color; `post.set` takes `LUTPass`'s and `VignetteShader`'s numbers, and draws on every path, the 8-bit path included.
 
 ## Question
 

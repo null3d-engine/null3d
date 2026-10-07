@@ -3,3 +3,4 @@ bun run typecheck
 bun tools/hooks/check-generated.ts
 bun tools/hooks/check-rust.ts
 bun tools/hooks/check-commands.ts
+bun tools/decisions.ts --check

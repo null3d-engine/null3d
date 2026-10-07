@@ -2,6 +2,8 @@
 
 Status: decided for the vignette and the dither, 2026-10-05. The WebGL2 scene format waits on prototype P3's phone runs. Date: 2026-10-05. Task: M2-F9.
 
+Summary: The vignette multiplies HDR color before the tone curve, with intensity, size, falloff and roundness. A falloff power of 2 by default darkens about as `VignetteShader` does, so a port maps `offset` to size and `darkness` to intensity. The final pass dithers last with static triangle noise of one step. WebGL2 probes `R11F_G11F_B10F` and takes it with `?scene-format=rg11b10`; it keeps `RGBA16F` by default until P3 measures the phones.
+
 ## Question
 
 1. [D-53](D-53-technique-defaults.md) ruling 3 moves the vignette into HDR, before the tone curve. What are its settings, and how does a port of three.js's `VignetteShader` keep its look?

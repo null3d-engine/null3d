@@ -2,6 +2,8 @@
 
 Status: decided for the method, 2026-10-04; the preset rows wait for T-36 on the S24+ and the iPad (M2-I3, D-22). Task: M2-I2.
 
+Summary: Masked software occlusion culling on the job workers for the camera's view, in the same frame. Each blocker clears the pixels its outline touches, so the buffer never hides what a finer depth buffer shows: of 4,800 random spheres, it hid 66% of those that a buffer four times finer hides, and no other. 64 buildings draw in 45 µs on one thread natively; a sphere tests in 7.6 ns. In Chrome on the Mac, a street of the test city hides 627 of 971 entries for 0.35 ms more CPU time per frame.
+
 ## Question
 
 WebGL2 has no compute shaders, so the GPU cannot test objects against a depth pyramid as WebGPU's two-phase culling does. The job workers already cull every object against the frustum. How should they also skip the objects that other objects hide, and at what cost?

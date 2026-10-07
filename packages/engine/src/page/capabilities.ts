@@ -2,9 +2,11 @@
 // engine never decides anything from browser or GPU names. The report is plain JSON, so test
 // runners can store it and compare it across devices.
 
+import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DeviceHints } from '../quality/chooser';
+import { spawnWorker } from '../shared/worker-start';
 import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -400,9 +402,14 @@ function probeWorker(): Promise<WorkerProbe | { error: string }> {
 	return new Promise((resolve) => {
 		let worker: Worker;
 		try {
-			worker = new Worker(new URL('../workers/probe-worker.ts', import.meta.url), {
-				type: 'module',
-			});
+			worker = spawnWorker(
+				() =>
+					new Worker(new URL('../workers/probe-worker.ts', import.meta.url), {
+						type: 'module',
+						name: 'null3d-probe',
+					}),
+				(code, message) => new EngineError(code, message),
+			);
 		} catch (e) {
 			resolve({ error: messageOf(e) });
 			return;

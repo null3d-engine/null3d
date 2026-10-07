@@ -2,6 +2,8 @@
 
 Status: decided for correctness, 2026-10-04; the device timings pending. Task: M2-R2.
 
+Summary: With each shading pipeline's own vertex shader and a fragment shader that writes nothing. A depth-only program of its own gave other depths in Chrome on the Mac, though both mark the position invariant, and the shadows test lost 57.8% of its image. The shared vertex shader gives the seven prepass tests' images bit for bit on the Mac.
+
 ## Question
 
 The depth prepass draws the opaque objects' depth first. The opaque pass then shades only where its depth equals the prepass's depth. On WebGL2 the prepass drew with the shadow depth template's build, a program of its own, as WebGPU does. In Chrome on the Mac, the shadows image test then lost most of its ground, so WebGL2 drew without the prepass (M1-A7). Why do the two programs give different depths, and how should WebGL2 draw the prepass?
