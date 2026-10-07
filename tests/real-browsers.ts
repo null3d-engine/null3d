@@ -73,7 +73,7 @@
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
-//   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2, s3, s4, s5; or the
+//   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2, s3, s4, s5, s6; or the
 //                       scale plan's: s1, s5. The default is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run

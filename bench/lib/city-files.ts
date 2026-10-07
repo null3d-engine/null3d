@@ -116,7 +116,6 @@ export interface GltfJson {
 
 const FLOAT = 5126;
 const UNSIGNED_SHORT = 5123;
-const UNSIGNED_INT = 5125;
 const ARRAY_BUFFER = 34962;
 const ELEMENT_ARRAY_BUFFER = 34963;
 const LINEAR_MIPMAP_LINEAR = 9987;
