@@ -3,7 +3,8 @@
 // any uniform name. A declaration beside the file, `glow.wgsl.d.ts` beside `glow.wgsl`, takes its
 // place: it names the kind of shader, the type of each uniform of `struct Uniforms` and the name
 // of each texture, so that `materials.shader` checks the names and values that its `uniforms` and
-// `textures` options and `set()` get.
+// `textures` options and `set()` get, and `post.addEffect` and `post.setEffectUniform` check an
+// effect's.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { CompiledWgsl } from './shader-types.ts';
@@ -13,6 +14,14 @@ const LINE_WIDTH = 100;
 
 /** A name that TypeScript takes as a property name without quotes. */
 const PLAIN_NAME = /^[A-Za-z_$][\w$]*$/;
+
+/** The type that each kind of compiled WGSL has. */
+const KIND_TYPES: Readonly<Record<CompiledWgsl['kind'], string>> = {
+	shader: 'CompiledShader',
+	material: 'CompiledMaterial',
+	effect: 'CompiledEffect',
+	toneCurve: 'CompiledToneCurve',
+};
 
 /** The path of the declaration of a `.wgsl` file. */
 export function declarationPath(file: string): string {
@@ -25,10 +34,15 @@ export function declarationPath(file: string): string {
  */
 function shaderType(shader: CompiledWgsl): string {
 	if (shader.kind === 'shader') return 'CompiledShader';
+	if (shader.kind === 'toneCurve') return 'CompiledToneCurve';
 	const fields = shader.uniforms.map(({ name, type }) => {
 		const key = PLAIN_NAME.test(name) ? name : JSON.stringify(name);
 		return `\t\treadonly ${key}: '${type}';\n`;
 	});
+	if (shader.kind === 'effect') {
+		if (fields.length === 0) return 'CompiledEffect<Record<never, never>>';
+		return `CompiledEffect<{\n${fields.map((field) => field.slice(1)).join('')}}>`;
+	}
 	// WGSL names hold no quotes, and the layout is the one that Biome and Prettier give, so a
 	// project's formatter leaves the file alone.
 	const names = shader.textures.map(({ name }) => `'${name}'`).join(' | ') || 'never';
@@ -40,7 +54,7 @@ function shaderType(shader: CompiledWgsl): string {
 
 /** The declaration of a compiled `.wgsl` file, which TypeScript reads for imports of the file. */
 export function wgslDeclaration(file: string, shader: CompiledWgsl): string {
-	const kind = shader.kind === 'shader' ? 'CompiledShader' : 'CompiledMaterial';
+	const kind = KIND_TYPES[shader.kind];
 	return [
 		`// The types of ${basename(file)}, which the null3D Vite plugin writes when it compiles the file.`,
 		'// Edit the WGSL, not this file.',

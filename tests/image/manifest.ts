@@ -164,6 +164,44 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the custom effects' tests. */
+const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
+
+/**
+ * Two custom effects, one that reads the pixels beside each pixel and one that reads the scene's
+ * depth, and a custom tone curve, on every tier. Effects added in the other order with orders that
+ * restore it, and effects added during play, draw the same image. Compatibility mode starts on the
+ * 8-bit path for MSAA, and the effects move it to HDR color with FXAA, as bloom does. A device with
+ * no HDR target runs no effects: the page's switch that turns HDR off stands in for one, and must
+ * draw the scene without them. At half the render scale the effects draw into the corners of the
+ * same targets.
+ */
+function effectsTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${EFFECTS_SKETCH}${query}`,
+		hold: 1,
+	});
+	return [
+		test('effects-off', ''),
+		test('effects', '?effects'),
+		{ ...test('effects-reversed', '?effects&reversed'), reference: 'effects' },
+		{ ...test('effects-later', '?effects&later'), reference: 'effects' },
+		test('effects-curve', '?curve'),
+		test('effects-bloom-curve', '?effects&bloom&curve'),
+		test('effects-scale-50', '?scale=0.5&effects'),
+		{
+			...test('effects-8-bit', '?effects&curve'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'effects-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the HDR limit tests: light past the largest 16-bit float. */
 export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
 
@@ -531,6 +569,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: [`compression=${family}`],
 		reference: 'ktx2',
 	})),
+	// A KTX2 file of UASTC HDR data beside the same values as half floats made in code: BC6H where
+	// the device has BC formats, and shared-exponent floats without them, as ?compression=none
+	// makes it. Both draw the half floats' image, so the second borrows the first's references.
+	{
+		name: 'ktx2-hdr',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'ktx2-hdr-rgb9e5',
+		sketch: 'tests/pages/sketches/ktx2-hdr-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['compression=none'],
+		reference: 'ktx2-hdr',
+	},
+	// glTF files whose texture is the same picture as PNG, as WebP and as AVIF through their
+	// extensions, as AVIF with a PNG fallback, and as AVIF named by address. Every square draws the
+	// PNG's picture.
+	{
+		name: 'gltf-image-formats',
+		sketch: 'tests/pages/sketches/gltf-image-formats-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
 	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates,
@@ -680,6 +744,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),

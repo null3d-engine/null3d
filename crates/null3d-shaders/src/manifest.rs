@@ -78,6 +78,14 @@ pub struct Shader {
     /// True for the template that custom materials build with their own WGSL added.
     #[serde(default)]
     pub custom_materials: bool,
+    /// True for the template that custom effects build with their own WGSL added. It is a template
+    /// only: the build checks it and writes no module of it.
+    #[serde(default)]
+    pub custom_effects: bool,
+    /// True for the shader that custom tone curves build with their own WGSL added: the final
+    /// pass.
+    #[serde(default)]
+    pub custom_tone_curves: bool,
 }
 
 /// The entry points of one render pipeline.
