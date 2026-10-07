@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-D4.
 
+Summary: Each event casts one ray from its frame on screen, on the camera's layers; the closest object gets it, then its parents. A click needs the same object at the press and the release, and at most 2 pixels of movement, or 10 for a finger. Enter and leave follow each pointer, and a resting mouse casts again each frame. No handler, no ray; no allocation.
+
 ## Question
 
 `object.on(type, handler)` gives objects the pointer events `click`, `pointerdown`, `pointerup`, `pointermove`, `pointerenter` and `pointerleave`. Each event needs a ray at the frame that was on screen when it came ([D-31](D-31-frame-cameras.md)), and a raycast against the scene's trees ([D-30](D-30-scene-queries.md)). The record settles six parts:

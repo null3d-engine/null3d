@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-F4.
 
+Summary: Outlined objects form a layout of their own, which an outline view culls with the camera's view, on both paths. The mask pass tests the scene's own depth to find hidden parts, and the final pass draws a crisp line from the mask with 8 reads on a circle of the width, through a flag and one binding. One style for every outlined object: a color, a hidden color and a width in CSS pixels. `OutlinePass`'s glow and pulse go to the `three-compat` add-on (owner, 4 October).
+
 ## Question
 
 1. How does the engine find the outlined objects and draw their mask, on both GPU paths?

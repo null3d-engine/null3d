@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-05. Task: M2-R9. The cap's frame times on the iPad and the Automate phones are pending.
 
+Summary: A moved caster marks only the tiles whose views its sphere touches: 1.3 to 2.3 of a point light's 6 faces for casters of 0.25 to 1 m. Tiles whose views miss the camera's wait. At most 12 tiles draw again per frame, whole lights, longest waiting first; tiles that hold no depth of their light yet draw at once. A burst on Ultra's 24 tiles takes two frames.
+
 ## Question
 
 A moved caster marked all six faces of every point light within its reach, and every marked tile drew in the same frame. Which tiles must a change mark, and how many may draw again in one frame?
