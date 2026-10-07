@@ -387,7 +387,7 @@ The gate moves to a newer main commit, by the owner's ruling of 6 October 2026 (
 
 All 17 items are closed. Every item that ran again, and each browser fix that joined the gate, is in [Reruns on the gate commit fdf14a28](#reruns-on-the-gate-commit-fdf14a28). The last fix, the cheaper receiver plane (#371), merged on 7 October 2026 as 74d5f4956.
 
-After each run, a row goes in [the record of tested devices](tested-devices.md).
+After each run, a run file goes in [the record of tested devices](tested-devices.md).
 
 The final pass starts with a full CI run of the final main commit, started by hand with `gh workflow run ci.yml --ref main` before anything else merges. The CI change of #355 (7630ddb5d) changed what the gate's `workflows` step counts. It counts only a full CI run of the gate commit: the merge queue's run, or one started by hand. Main's own run after a merge keeps only the caches warm, so it does not count ([D-86](decisions/D-86-ci-runs-per-event.md)). The fixes merge by hand today, so they get no queue run.
 

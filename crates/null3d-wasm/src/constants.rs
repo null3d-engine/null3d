@@ -5,7 +5,7 @@ use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
     MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
-use null3d_core::cells::CELL_SIZE;
+use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
@@ -540,7 +540,7 @@ pub fn typescript() -> String {
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
-        ("CELL", &[("SIZE", CELL_SIZE as u32)]),
+        ("CELL", &[("SIZE", CELL_SIZE as u32), ("MAX", MAX_CELLS)]),
         (
             "LIGHT_KIND",
             &[

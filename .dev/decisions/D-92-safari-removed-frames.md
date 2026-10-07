@@ -54,14 +54,14 @@ A review of this record against WebKit's source and bug list found three things 
 
 When a new WebAssembly memory does not fit, Safari's JavaScript engine runs one full garbage collection and tries again (`tryAllocate` in WebKit's `WasmMemory.cpp`). Every collection then frees the dead WebAssembly memories it found at once. So a memory that nothing reaches comes back at the first refusal.
 
-The collection runs only on the heap of the thread that asked. The page and its same-origin frames share the main thread's heap, and each worker has a heap of its own. When the last reference to a memory was in another thread, the memory stays held. A local experiment on 7 October 2026 showed this. A worker's request was refused while memories that the page had dropped waited. The page's own request then got them back. This is the likely reason a worker's request can fail while the page holds dead memories. [D-94](D-94-memory-retry-window.md#open) gives what it means for the engine.
+The collection runs only on the heap of the thread that asked. The page and its same-origin frames share the main thread's heap, and each worker has a heap of its own. When the last reference to a memory was in another thread, the memory stays held. A clean repro on the owner's Mac proved it on 7 October 2026, in 20 of 20 rounds each way. Memories that one thread dropped kept the other thread's request refused, through 3 s of asks every 250 ms. One request from the thread that dropped them then freed them at once. Memories of a worker that the page ended came back at once, 20 of 20. This is the likely reason a worker's request can fail while the page holds dead memories. [D-94](D-94-memory-retry-window.md#open) gives what it means for the engine.
 
 ### What the probe can and cannot show
 
 - The probe's kept frames survived at least 4 refusals, each with a full collection of the main thread's heap. So something still reached them. Safari scans the stack conservatively: a value on the stack that looks like a pointer keeps its object alive. WebKit's own leak tests make 10 to 20 frames and pass when any one is freed, for this reason. A Web Inspector heap snapshot tells a conservative root from a strong reference that outlived the frame. Only the second would be a WebKit fault.
 - The probe's frames loaded Vite's live-reload client, and the parent page read each frame's window. Both put references to the frame on the page's side.
 - The probe and the whole-room counts keep every memory they count in one array and drop them together. One stale pointer to that array holds all of them. This most likely explains a WebDriver run that found no room at all: two frames of 256 MiB each cannot take about 120 places.
-- A clean repro without these confounders is still to come. The figures above give the room that the tests saw held. They do not show what held it.
+- A clean repro left these out. It used static pages and a held block of memories, and its parent never touched a frame's window. In plain Safari 26.6.2 on the owner's Mac, 20 of 20 removed frames gave their memory back at the first request. Frames that gave their memory to a worker did so within 1 s. That held for 20 of 20 with the worker ended, and 20 of 20 with it running. So Safari did not keep clean removed frames there. The figures above give the room that the tests saw held. They do not show what held it.
 
 ### Frame restarts: a fall that the second round held
 
@@ -80,4 +80,16 @@ Where the runner tool opens runner pages, a runner page now also hands the run t
 Some failures in Safari fit memory that it kept. They are E1109, a browser "Out of memory", E1302 (a lost GPU or context), and room for shared memory that did not come back. A page that fails in one of these ways now runs once more after the run. It runs in a new runner page, which inherits none of what Safari kept. It fails only if it fails again there. The owner asked for this on 7 October 2026, so that Safari's kept memory stops failing the merge queue while real faults still show.
 
 The runner tool prints each rerun as RERUN, with the first failure, and how many pages passed the second time. It writes the same into the first run's results as `reruns`. A fault in the engine fails both times, so it still fails the run. A rerun that passes leaves its first failure in the record, so a fault that comes now and then stays visible. Other browsers get no rerun.
+
+### The Safari test harness, in short
+
+Three guards keep memory that Safari holds from failing the Safari runs, while a real fault still fails:
+
+| Guard | What it does | Why |
+| --- | --- | --- |
+| A new runner page every 6 pages | A runner page hands the run to a new one after 6 pages that it ran, and around each page that runs in a runner page of its own | A Safari process has 8 fast slots, and each engine start can take one. A new runner page inherits nothing that the pages before it kept |
+| A fall that the second round held is a note | In `frame-restarts-*`, as in `frame-destroyed-restarts-*`, room held once is a note; a loss in the second round fails | A leak in the engine loses room in every round |
+| One more run in a new runner page | In Safari, a page that fails with E1109, "Out of memory", E1302 or room that did not come back runs once more, and fails only if it fails again | The page's failure then comes from what earlier pages left, and the rerun proves it. Each rerun prints as RERUN and goes into the results |
+
+The proof, on 7 October 2026: CI run 37603199761 ran 4 copies of each Safari shard with all three guards. All 8 jobs passed, with no rerun, and each opened 30 to 33 runner pages. The merge queue's Safari jobs then passed 2 of 2 (run 37604797713). On the owner's Mac, the whole Safari plan passed 965 of 966 pages with the first two guards. The one failure was `image-vertex-formats-compat-compat-single-threaded`: 6 pixels differed from the first thread mode's image. It passed 10 of 10 in 5 more runs, and no earlier run shows it. CI's Safari has no WebGPU, so it skips that page.
 

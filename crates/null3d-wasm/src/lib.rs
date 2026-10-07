@@ -795,6 +795,13 @@ pub fn update_late_transforms() -> u32 {
     })
 }
 
+/// The times that an object or an instance row entered a new grid cell while every cell was in
+/// use, so that it went into the origin's cell instead.
+#[wasm_bindgen(js_name = cellsRefused)]
+pub fn cells_refused() -> u32 {
+    value_with_engine(|e| Ok(e.scene.cell_table().refused()))
+}
+
 /// Updates the rows of every instance batch that need it.
 #[wasm_bindgen(js_name = updateBatches)]
 pub fn update_batches(frame: u32) -> u32 {
