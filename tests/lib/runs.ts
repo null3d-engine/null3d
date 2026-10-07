@@ -90,6 +90,23 @@ export type PlanFlags = Pick<Plan, 'reportOnTop' | 'measureRefresh' | 'skipMissi
  */
 export const PAGES_PER_TAB = 6;
 
+/**
+ * The failures that memory Safari kept from earlier pages explains: a refused memory (E1109, or the
+ * browser's own "Out of memory"), a lost GPU or context (E1302), and room for shared memory that
+ * did not come back.
+ */
+const HELD_MEMORY_FAILURE =
+	/\bE1109\b|\bE1302\b|Out of memory|lost (its|the) (GPU|context)|context lost|did not get back the memory/i;
+
+/**
+ * Whether a page's failure in Safari earns one more run in a new runner page. Safari keeps memory
+ * that pages before it dropped, in a way that a new runner page does not inherit (D-92). A page
+ * whose failure that explains runs once more there, and fails only if it fails again.
+ */
+export function rerunsInNewTab(browser: string, verdict: readonly string[]): boolean {
+	return browser === 'Safari' && verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem));
+}
+
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {
 	run: string;

@@ -58,6 +58,7 @@ import {
 	readResult,
 	readShard,
 	repeatItems,
+	rerunsInNewTab,
 	runName,
 	shardItems,
 	turnBatches,
@@ -216,6 +217,21 @@ describe('waitForRunners', () => {
 		expect(handsOver({}, ran(PAGES_PER_TAB), PAGES_PER_TAB)).toBe(true);
 		// Fewer pages than Safari's 8 fast slots, so one runner page never uses them all up.
 		expect(PAGES_PER_TAB).toBeLessThan(8);
+	});
+
+	it('runs a page once more in a new runner page when memory that Safari kept explains its failure', () => {
+		for (const problem of [
+			"E1109: the browser refused the engine's shared memory of 1024 MiB 13 times over 45 seconds: Out of memory.",
+			'E1302: the render worker lost its GPU: the WebGL2 context was lost, in hold mode',
+			'the browser did not get back the memory of engines in removed frames: it had room for 10 shared memories before 43 starts in frames, and for 7 after',
+			'RangeError: Out of memory',
+		])
+			expect(rerunsInNewTab('Safari', ['another problem', problem])).toBe(true);
+		expect(rerunsInNewTab('Safari', ['the image differs from its reference in 812 pixels'])).toBe(
+			false,
+		);
+		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
+		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
 	});
 
 	it('ends the turn of a runner whose handover found no new runner page', () =>
