@@ -120,7 +120,7 @@ impl Culling {
             &[
                 ids::cull_params(view),
                 CULL_PARAMS_BYTES,
-                usage::UNIFORM | usage::COPY_DST,
+                usage::STORAGE | usage::COPY_DST,
             ],
         )?;
         if self.views.len() <= view.index() {

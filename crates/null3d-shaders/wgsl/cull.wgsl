@@ -14,6 +14,11 @@
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
 //
+// The parameters sit in a read-only storage buffer, not a uniform buffer. Each thread indexes the
+// table of cell offsets by its own instance's cell. The Adreno 830's Vulkan driver (Galaxy S25)
+// reads one thread's entry of a uniform array for every thread that indexes it, so most instances
+// took another cell's offset there. Storage reads keep each thread's own index.
+//
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
 // runs. Each workgroup finds its run, and each thread reads its instance from the cell order.
@@ -59,7 +64,7 @@ struct Bucket {
     first_joint: u32,
 }
 
-@group(0) @binding(0) var<uniform> params: CullParams;
+@group(0) @binding(0) var<storage, read> params: CullParams;
 @group(0) @binding(1) var<storage, read> matrices: array<vec4f>;
 @group(0) @binding(2) var<storage, read> instance_buckets: array<u32>;
 @group(0) @binding(3) var<storage, read> buckets: array<Bucket>;

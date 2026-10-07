@@ -11,7 +11,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_core::scene::{Command, NO_PARENT, flags};
 use null3d_core::world::SphereArrays;
-use null3d_gpu::drawlist::{NO_TARGET, Op, layout};
+use null3d_gpu::drawlist::{NO_TARGET, Op, buffer_usage, layout};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::frame::FrameBuilder;
@@ -588,6 +588,24 @@ fn cull_params_writes(commands: &[(Op, Vec<u32>)], params: u32) -> Vec<(u32, u32
         .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == params)
         .map(|(_, o)| (o[1], o[3]))
         .collect()
+}
+
+#[test]
+fn culling_parameters_are_a_storage_buffer() {
+    // Each culling thread reads its own cell's offset from the parameters. The Galaxy S25's
+    // driver reads one thread's entry of a uniform array for all of them, so the parameters
+    // must stay out of uniform buffers.
+    let mut world = World::new();
+    world.move_far_out();
+    world.record(true);
+    let commands = world.commands();
+    let buffer = views_of(&commands)[0].culling[0];
+    let usage = commands
+        .iter()
+        .find(|(op, o)| *op == Op::CreateBuffer && o[0] == buffer)
+        .map(|(_, o)| o[2])
+        .expect("the frame creates the view's culling parameters");
+    assert_eq!(usage, buffer_usage::STORAGE | buffer_usage::COPY_DST);
 }
 
 #[test]
