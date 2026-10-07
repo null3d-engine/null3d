@@ -37,6 +37,7 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 TEXTURE_FORMATS[G.FORMAT_R32_FLOAT] = 'r32float';
+TEXTURE_FORMATS[G.FORMAT_RGBA32_UINT] = 'rgba32uint';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
@@ -231,6 +232,44 @@ export class WebGPUBackend {
 	/** The texture the canvas shows this frame, or an offscreen target standing in for it. */
 	canvasTarget: GPUTexture | undefined;
 
+	/**
+	 * The color targets that resolved into the canvas, by id, and while a capture draws into a
+	 * stand-in for the canvas, a texture of the same kind for each of them, which every pass of the
+	 * capture draws into in its place. On the Galaxy S25 (Adreno 830), a multisampled color texture
+	 * whose first resolve went into the canvas resolves nothing into any other texture, so the
+	 * stand-in for the canvas stayed empty.
+	 */
+	private readonly canvasResolved = new Set<number>();
+	private readonly resolveStandIns = new Map<number, GPUTexture>();
+
+	/** Ends a capture: the frames draw into the canvas again, and the capture's own targets go. */
+	endCapture(): void {
+		this.canvasTarget = undefined;
+		for (const texture of this.resolveStandIns.values()) texture.destroy();
+		this.resolveStandIns.clear();
+	}
+
+	/** The view that a render pass draws its color into, before it resolves into `resolveId`. */
+	private colorView(id: number, resolveId: number): GPUTextureView | undefined {
+		if (!this.canvasTarget) {
+			if (resolveId === 0) this.canvasResolved.add(id);
+			return this.targetView(id);
+		}
+		if (!this.canvasResolved.has(id)) return this.targetView(id);
+		let standIn = this.resolveStandIns.get(id);
+		if (!standIn) {
+			const texture = this.need(this.textures, id, 'render target');
+			standIn = this.device.createTexture({
+				size: [texture.width, texture.height],
+				format: texture.format,
+				sampleCount: texture.sampleCount,
+				usage: texture.usage,
+			});
+			this.resolveStandIns.set(id, standIn);
+		}
+		return standIn.createView();
+	}
+
 	private targetView(id: number): GPUTextureView | undefined {
 		if (id === G.NO_TARGET) return undefined;
 		if (id === 0) {
@@ -294,6 +333,7 @@ export class WebGPUBackend {
 
 	/** Destroys a texture, or releases a view. */
 	private releaseTexture(id: number): void {
+		this.canvasResolved.delete(id);
 		this.textures[id]?.destroy();
 		this.textures[id] = undefined;
 		this.bindingViews[id] = undefined;
@@ -830,7 +870,7 @@ export class WebGPUBackend {
 					const flags = words[a + 8] as number;
 					const setup = this.renderPass;
 					setup.setColor(
-						this.targetView(words[a] as number),
+						this.colorView(words[a] as number, words[a + 1] as number),
 						this.targetView(words[a + 1] as number),
 						(flags & G.PASS_CLEAR_COLOR) !== 0,
 						(flags & G.PASS_STORE_COLOR) !== 0,
