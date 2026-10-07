@@ -159,11 +159,11 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
         .collect();
     assert_eq!(writes.len(), 1, "{name}");
     assert_eq!(writes[0][3], 4 * LINE_VERTEX_BYTES, "{name}");
-    assert_eq!(
-        count(&commands, Op::Draw),
-        1,
-        "{name}: only the camera's view draws lines"
-    );
+    let line_draws = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::Draw && o[0] == 4)
+        .count();
+    assert_eq!(line_draws, 1, "{name}: only the camera's view draws lines");
 
     // The lines bind the camera's frame group as its opaque pass does: in the pass itself on
     // WebGL2, and in the bundle that the first frame recorded on WebGPU.
@@ -196,7 +196,11 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
 
     // A frame without lines after them records no trace of them.
     let after = next_frame(&mut world, &mut mock, &[], name);
-    assert_eq!(count(&after, Op::Draw), 0, "{name}");
+    let line_draws = after
+        .iter()
+        .filter(|(op, o)| *op == Op::Draw && o[0] == 4)
+        .count();
+    assert_eq!(line_draws, 0, "{name}");
     assert_eq!(touches(&after, buffer), (false, false), "{name}");
 
     // A new GPU device has none of the lines' objects: the next frame with lines makes them

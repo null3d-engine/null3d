@@ -130,6 +130,7 @@ export const LAYOUT_EFFECT = 21;
 export const LAYOUT_EFFECT_DEPTH_MS = 22;
 export const LAYOUT_FINAL_EFFECTS = 23;
 export const LAYOUT_FINAL_EFFECTS_DEPTH_MS = 24;
+export const LAYOUT_VIEW_COPY = 25;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -215,6 +216,7 @@ export const TEMPLATE_AO = 33;
 export const TEMPLATE_AO_DENOISE = 34;
 export const TEMPLATE_BACKGROUND_CUBE = 35;
 export const TEMPLATE_BACKGROUND_SKY = 36;
+export const TEMPLATE_VIEW_COPY = 39;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

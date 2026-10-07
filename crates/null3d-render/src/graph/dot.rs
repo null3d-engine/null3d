@@ -14,8 +14,8 @@ impl RenderGraph {
     /// The graph as Graphviz DOT text, compiled first. Each render or compute pass that the GPU
     /// runs is a box around the passes it runs, which are numbered in the order they run. Each
     /// target shows its format, size and texture, and each attachment its load and store
-    /// operations. Passes that are switched off show dashed. A graph that fails to compile shows
-    /// the error as its label.
+    /// operations. Passes that are switched off or culled show dashed. A graph that fails to
+    /// compile shows the error as its label.
     pub fn dot(&mut self) -> String {
         let error = self.compile().err();
         let mut out = String::new();
@@ -56,7 +56,13 @@ impl RenderGraph {
         let runs = |pass: PassId| plan.is_some_and(|plan| plan.order().contains(&pass));
         for pass in (0..self.passes.len()).map(|index| PassId(index as u16)) {
             if !runs(pass) {
-                let state = if self.is_enabled(pass) { "" } else { ", off" };
+                let state = if !self.is_enabled(pass) {
+                    ", off"
+                } else if self.is_culled(pass) {
+                    ", culled: nothing uses its output"
+                } else {
+                    ""
+                };
                 writeln!(
                     out,
                     "  {} [shape=box, style=dashed, label={}];",

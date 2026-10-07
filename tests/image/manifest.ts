@@ -432,6 +432,27 @@ function outlineTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the scene pass tests: a minimap that a screen in the scene shows. */
+export const MINIMAP_SKETCH = 'tests/pages/sketches/minimap-sketch.ts';
+
+/**
+ * A scene pass draws the scene from an orthographic camera high above it into a texture, and a
+ * screen in the scene shows it, on every tier. Four boxes at the map's corners show that the map
+ * stands upright and unmirrored on both GPU paths: WebGPU turns the image over in a copy, and
+ * WebGL2 draws it in that order. The map camera sees the screen, which the pass leaves out. With
+ * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes. Compatibility
+ * mode draws the 8-bit path with MSAA, where the pass's texture holds display color. The scene pass
+ * spec checks the boxes' colors in the screen's corners.
+ */
+function minimapTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${MINIMAP_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [test('minimap', ''), test('minimap-clear', '?clear'), test('minimap-layers', '?layers')];
+}
+
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
 
@@ -842,6 +863,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...realUnitsTests(),
 	...aoTests(),
 	...outlineTests(),
+	...minimapTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),

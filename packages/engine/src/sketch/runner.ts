@@ -39,6 +39,7 @@ import { Assets } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
+import { Render } from '../scene/render';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { ShaderPreloads } from '../scene/shader-preloads';
@@ -222,6 +223,7 @@ export class SketchRunner {
 	private stepChanges = 0;
 	/** The sketch's post-processing settings, which say whether bloom is on. */
 	private readonly post: Post;
+	private readonly render: Render;
 	/** True while the sketch has bloom on, as the governor knows it. */
 	private bloomOn = false;
 	/** The base of bloom's chain that the `bloomSize` setting gives. */
@@ -396,6 +398,9 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 		);
+		this.render = new Render(this.core, scene, materials.shaders, textures.maxSize);
+		// A pass's target has the scene color's format: 8-bit color only on the 8-bit path.
+		textures.passFormat = device.sceneColor === FORMAT_CANVAS ? 'rgba8unorm' : 'rgba16float';
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
 			scene,
@@ -415,6 +420,7 @@ export class SketchRunner {
 			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
 			input: this.input,
 			post: this.post,
+			render: this.render,
 			ui: this.ui,
 			quality: this.quality,
 			preferences: {
@@ -699,7 +705,8 @@ export class SketchRunner {
 		const ao = this.followAo();
 		const bloom = this.followBloom();
 		const custom = this.post.takeNewPipelines();
-		return ao || bloom || custom;
+		const passes = this.render.takeNewPipelines();
+		return ao || bloom || custom || passes;
 	}
 
 	/**

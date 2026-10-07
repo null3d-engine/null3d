@@ -32,7 +32,7 @@ flowchart LR
 
 null3D draws each frame as a series of passes. A pass is one job for the GPU, such as culling the objects that a camera cannot see, or drawing the scene from the camera. Each pass declares what it reads and what it writes. The render graph reads these declarations before a frame draws. It puts the passes in order and plans the textures they draw into.
 
-In 0.1 the render graph is internal: the engine declares every pass itself. The calls that add passes and print the graph come in null3D 0.2.
+The engine declares its own passes. From null3D 0.2, a sketch adds scene passes of its own with `render.addPass`, and `render.dumpGraph()` prints the graph ([Render graph API](../api/render.md)).
 
 In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The scene color reaches the canvas through the final pass on devices that draw HDR color. So it does in the FXAA and no anti-aliasing modes. On the other devices with MSAA, the resolve pass takes its place, along the dotted arrows. It shares the opaque and transparent passes' render pass.
 
@@ -50,6 +50,8 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Late culling | Compute, one pass per camera view, on WebGPU with the `gpuOcclusion` setting | The world matrix and bounds of every object, and the depth pyramid | The view's visible instances and draw counts |
 | Debug lines | Scene, in development builds, in frames with debug drawing | The frame's lines | The scene color and depth |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
+| A sketch's scene pass | Scene, one per `render.addPass({ kind: 'scene' })`, with its culling and transparent passes | The view's visible instances, and the textures it names in `reads` | Its texture, which the graph keeps between frames |
+| Copy | Fullscreen, one per scene pass, on WebGPU only | The scene pass's image | Its texture, with the rows turned around |
 | Resolve | Resolve, on the 8-bit path with MSAA, while the render scale cannot drop below 1 | The scene color | The canvas |
 | Final pass | Fullscreen, on the HDR path, with FXAA or no anti-aliasing, and while the render scale can drop below 1 | The scene color | The canvas |
 
@@ -59,7 +61,7 @@ With the depth prepass on, each view draws the depth of its opaque objects first
 
 With GPU occlusion culling on, each camera view's culling pass keeps the objects that showed in its last frame. The occluders' pass draws their depth into a target of its own, and the depth pyramid pass reads it. The late culling pass tests every object in view against the pyramid, and writes the visible instances again. The occluders' pass must read them before that write. The graph runs a pass that reads a resource "so far" after the writers declared before it, and before the writers declared after it. The opaque pass then draws what the late culling pass kept. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the method.
 
-A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The engine draws one view: the camera's. Its opaque pass draws the scene color and depth, and the scene color reaches the canvas.
+A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first. WebGPU draws an image's top row first, and materials sample the bottom row at v = 0, as three.js's render targets hold it. So on WebGPU a copy pass turns each pass's image over into its texture. WebGL2 draws the rows in that order already.
 
 Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges. Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass. It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
 
@@ -73,6 +75,7 @@ Because passes are declarations, the engine can:
 - order the passes from what they read and write
 - let neighboring passes share one render pass, and let temporary targets share memory
 - switch passes on and off with no new code
+- skip passes whose output nothing uses
 - print the whole graph as text for people and agents to read (0.2)
 
 ## How the graph orders passes
@@ -104,7 +107,11 @@ Phone GPUs draw in tiles, and copying tiles between the chip and memory takes mu
 
 ## Switching passes on and off
 
-The graph can switch a pass on or off with no new declarations. A pass that is off counts as absent. The engine switches its final pass and its resolve pass this way, from the format of the scene color and the anti-aliasing mode.
+The graph can switch a pass on or off with no new declarations. A pass that is off counts as absent. The engine switches its final pass and its resolve pass this way, from the format of the scene color and the anti-aliasing mode. `render.setPassEnabled` switches a sketch's pass, whose texture then keeps its last image.
+
+## Passes that nothing uses
+
+Some passes are optional: a sketch's scene passes and the passes that serve them. An optional pass runs only while a running pass uses what it writes. The graph culls the others when it compiles, and the passes that only fed them, and their kept textures take no memory. A culled pass counts as switched off. A scene pass whose texture no material shows costs nothing.
 
 After a batch of changes, the graph compiles once, before the next frame draws. While nothing changes, it keeps its plan. Compiling reuses the graph's memory, so switching passes allocates no memory in the frame loop.
 
@@ -117,19 +124,19 @@ The graph checks the passes each time it compiles, and reports each problem as a
 | [E1502](../errors/E1502.md) | A pass uses a target or buffer that no pass creates, or reads one that no running pass writes. |
 | [E1503](../errors/E1503.md) | Two passes create the same target, or a pass creates a target that the graph keeps. |
 | [E1504](../errors/E1504.md) | The passes form a cycle, so no order works. |
-| [E1505](../errors/E1505.md) | A pass draws into targets that cannot share one render pass, or a resolve pass cannot resolve its target into the canvas. |
+| [E1505](../errors/E1505.md) | A pass draws into targets that cannot share one render pass, or a resolve pass cannot resolve its target into the canvas. Or its color targets pass the budget of every device: 4 targets, of 32 bytes per sample in all. |
 
-In 0.1 the engine declares every pass, so these errors mean an engine bug. From 0.2, passes that you add get the same checks.
+The passes that a sketch adds get the same checks. The core checks them when `render.addPass`, `render.removePass` or `textures.fromPass` changes the graph, so the call that breaks the graph throws the error, with the passes and targets by name. An error among the engine's own passes alone is an engine bug.
 
-## The text dump (0.2)
+## The text dump
 
-From null3D 0.2, `render.dumpGraph()` returns the compiled graph as Graphviz DOT text. Paste the text into any Graphviz viewer to see it as a picture.
+`render.dumpGraph()` returns the compiled graph as Graphviz DOT text (0.2). Paste the text into any Graphviz viewer to see it as a picture.
 
 - Each render or compute pass that the GPU runs is a box around the passes it runs.
 - The number before each pass is its place in the order.
 - Each render pass lists its targets, with how it loads and stores each one.
 - Each target shows its format, its size and the texture it uses.
-- Passes that are off show as dashed boxes.
+- Passes that are off show as dashed boxes, and so do culled passes, marked "culled: nothing uses its output".
 
 Part of the dump of the engine's passes on WebGPU, on a device that draws HDR color:
 
@@ -162,4 +169,4 @@ digraph "render graph" {
 - [Render layers](render-layers.md): the layer masks that decide what a pass draws.
 - [Quality presets, dynamic resolution and frame budgets](quality-presets.md): the settings that switch passes and scale the render size.
 - [Shadows](shadows.md): the shadow cascades.
-- [Render graph API](../api/render.md): adding passes and printing the graph, from 0.2.
+- [Render graph API](../api/render.md): adding passes and printing the graph (0.2).

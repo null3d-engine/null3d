@@ -68,6 +68,17 @@
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
 //!
+//! # Textures of passes
+//!
+//! A texture of a pass shows the target that a view other than the camera's draws (see
+//! [`crate::view`]). The render graph makes and owns that target, a texture array of one layer, so
+//! the store makes no GPU texture for it: it takes the target's GPU id from the frame builder in
+//! each frame ([`TextureStore::set_pass_target`]), and binds it as it binds an array of its own.
+//! The texture draws once the graph made the target, and the bind groups that bind it are made
+//! again whenever the graph makes the target again. A bind group knows the views whose targets it
+//! binds ([`TextureStore::group_pass_views`]), so a view can leave out the objects that would
+//! sample the texture it draws into.
+//!
 //! # A new GPU device
 //!
 //! The thread that draws closes an image once the frame whose list releases it has run. When the
@@ -284,6 +295,8 @@ enum Kind {
     Volume,
     /// A cube texture, whose six layers are its faces.
     Cube,
+    /// The target of a view, which the render graph makes: a 2D array of one layer.
+    Pass,
 }
 
 /// What makes textures share an array.
@@ -327,7 +340,7 @@ impl ArrayKey {
     /// The view dimension that bind groups see the GPU texture as.
     fn view(&self) -> u32 {
         match self.kind {
-            Kind::Layers => view::D2_ARRAY,
+            Kind::Layers | Kind::Pass => view::D2_ARRAY,
             Kind::Volume => view::D3,
             Kind::Cube => view::CUBE,
         }
@@ -376,6 +389,9 @@ struct TextureArray {
     capacity: u32,
     /// Which of its two texture ids the GPU texture has.
     generation: u32,
+    /// For the target of a view: the view's place, and the target's GPU id once the render graph
+    /// made it.
+    pass: Option<(u32, Option<u32>)>,
 }
 
 impl TextureArray {
@@ -555,9 +571,18 @@ impl TextureStore {
         Ok(&mut self.textures[slot as usize])
     }
 
-    /// The GPU texture id of an array.
-    fn array_id(&self, array: u32) -> u32 {
-        self.ids.first_texture + 2 * array + self.arrays[array as usize].generation
+    /// The GPU texture id of an array: the render graph's target for the target of a view.
+    fn array_id(&self, index: u32) -> u32 {
+        let array = &self.arrays[index as usize];
+        match array.pass {
+            Some((_, Some(target))) => target,
+            // Until the graph makes the target, its groups bind the white texel in its place.
+            Some((_, None)) => match self.slot(self.placeholder) {
+                Ok(white) => self.array_id(white.array),
+                Err(_) => 0,
+            },
+            None => self.ids.first_texture + 2 * index + array.generation,
+        }
     }
 
     /// Checks a size of a format against the store's limit. A compressed texture holds whole
@@ -643,6 +668,91 @@ impl TextureStore {
         self.create_in(desc, Kind::Cube)
     }
 
+    /// Creates a texture that shows the target of view `view`: `width` x `height` texels of a
+    /// color `format` that the render graph draws into, read with a linear filter and clamped at
+    /// its edges, without mip levels. It draws once [`Self::set_pass_target`] gives the target.
+    pub fn create_pass(
+        &mut self,
+        view: u32,
+        width: u32,
+        height: u32,
+        format: u32,
+    ) -> Result<Handle, TextureError> {
+        let desc = TextureDesc {
+            width,
+            height,
+            depth: 1,
+            format,
+            mipmaps: false,
+            levels: 1,
+            sampling: Sampling {
+                wrap: [address::CLAMP_TO_EDGE; 2],
+                mag_filter: filter::LINEAR,
+                min_filter: filter::LINEAR,
+                mip_filter: filter::NEAREST,
+                anisotropy: 1,
+            },
+        };
+        // The groups that bind the target bind the white texel until the graph makes it.
+        self.placeholder()?;
+        let texture = self.create_in(desc, Kind::Pass)?;
+        let array = self.slot(texture)?.array;
+        self.arrays[array as usize].pass = Some((view, None));
+        self.arrays[array as usize].capacity = 1;
+        self.forget_groups_of(array);
+        Ok(texture)
+    }
+
+    /// Gives the targets of view `view` the GPU id that the render graph made the view's target
+    /// under, or none while it has no target, from this frame on. With `remade`, the graph made
+    /// its targets again, so the bind groups that bind the target are made again too. A texture of
+    /// the target draws only while it has one.
+    pub fn set_pass_target(&mut self, view: u32, target: Option<u32>, remade: bool) {
+        for index in 0..self.arrays.len() {
+            let array = &mut self.arrays[index];
+            let Some((of, held)) = array.pass else {
+                continue;
+            };
+            if of != view || array.live == 0 || (held == target && !remade) {
+                continue;
+            }
+            array.pass = Some((view, target));
+            self.layers_changed |= held.is_some() != target.is_some();
+            self.forget_groups_of(index as u32);
+        }
+    }
+
+    /// The views whose targets a live texture shows, as a mask of their places.
+    pub fn shown_views(&self) -> u32 {
+        self.arrays
+            .iter()
+            .filter(|array| array.live > 0)
+            .filter_map(|array| array.pass)
+            .fold(0, |mask, (view, _)| mask | (1 << view))
+    }
+
+    /// The views whose targets a bind group of the store binds, as a mask of their places, by the
+    /// group's GPU id. A view must not draw with a group that binds its own target.
+    pub fn group_pass_views(&self, group: u32) -> u32 {
+        let Some(slot) = group
+            .checked_sub(self.ids.first_group)
+            .and_then(|index| self.groups.get(index as usize))
+        else {
+            return 0;
+        };
+        let view_of = |array: u32| {
+            self.arrays[array as usize]
+                .pass
+                .map_or(0, |(view, _)| 1 << view)
+        };
+        match slot.key {
+            GroupKey::Single { array, .. } => view_of(array),
+            GroupKey::Maps(slots) => slots
+                .iter()
+                .fold(0, |mask, &(array, _)| mask | view_of(array)),
+        }
+    }
+
     /// Creates a texture of `desc` that shaders see as `kind`.
     fn create_in(&mut self, desc: TextureDesc, kind: Kind) -> Result<Handle, TextureError> {
         self.check_size(desc.format, desc.width, desc.height)?;
@@ -653,6 +763,8 @@ impl TextureStore {
         let supported = (1..=MAX_LAYERS).contains(&desc.depth)
             && levels
             && match desc.format {
+                // The render graph makes a pass's target in the scene color's format.
+                _ if kind == Kind::Pass => true,
                 format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB => true,
                 format::RGBA16_FLOAT => !desc.mipmaps,
                 format::RGB9E5_UFLOAT => !desc.mipmaps && matches!(kind, Kind::Cube | Kind::Layers),
@@ -708,7 +820,7 @@ impl TextureStore {
         self.arrays[array as usize].mark(layer, true);
         slot.array = array;
         slot.layer = layer;
-        slot.group = if key.kind != Kind::Layers {
+        slot.group = if !matches!(key.kind, Kind::Layers | Kind::Pass) {
             NO_GROUP
         } else {
             self.group_for(array, slot.sampler)
@@ -731,6 +843,7 @@ impl TextureStore {
             live: 0,
             capacity: 0,
             generation: 0,
+            pass: None,
         });
         (self.arrays.len() as u32 - 1, 0)
     }
@@ -1037,7 +1150,12 @@ impl TextureStore {
     /// The layer that a material samples a texture from, once its texels are on the GPU.
     pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;
-        matches!(slot.state, State::Uploaded { .. }).then_some(slot.layer)
+        let array = &self.arrays[slot.array as usize];
+        let ready = match array.pass {
+            Some((_, target)) => target.is_some(),
+            None => matches!(slot.state, State::Uploaded { .. }),
+        };
+        ready.then_some(slot.layer)
     }
 
     /// Whether a texture's texels on the GPU come from an image that holds colors multiplied by
@@ -1095,10 +1213,12 @@ impl TextureStore {
         Ok(key.layer_bytes() * u64::from(key.depth))
     }
 
-    /// The GPU bytes that every array holds, its free layers included.
+    /// The GPU bytes that every array holds, its free layers included. The targets of views are
+    /// the render graph's, so they do not count.
     pub fn memory_bytes(&self) -> u64 {
         self.arrays
             .iter()
+            .filter(|array| array.key.kind != Kind::Pass)
             .map(|array| u64::from(array.capacity) * array.key.layer_bytes())
             .sum()
     }
@@ -1197,6 +1317,15 @@ impl TextureStore {
         for index in 0..self.arrays.len() as u32 {
             let array = &self.arrays[index as usize];
             let (key, old_capacity) = (array.key, array.capacity);
+            if key.kind == Kind::Pass {
+                // The render graph owns the target, so the store only stops binding it.
+                if array.live == 0 && old_capacity > 0 {
+                    self.arrays[index as usize].capacity = 0;
+                    self.arrays[index as usize].pass = None;
+                    self.forget_groups_of(index);
+                }
+                continue;
+            }
             if array.live == 0 {
                 if old_capacity > 0 {
                     list.push(Op::DestroyTexture, &[self.array_id(index)])?;
@@ -1322,6 +1451,18 @@ impl TextureStore {
     fn forget_groups_of(&mut self, array: u32) {
         for group in self.groups.iter_mut().filter(|g| g.key.binds_array(array)) {
             group.created = false;
+        }
+        // Targets of views that the graph has not made yet bind the white texel's array.
+        let white = self.slot(self.placeholder).map(|white| white.array);
+        if white == Ok(array) {
+            for index in 0..self.arrays.len() {
+                if matches!(self.arrays[index].pass, Some((_, None))) {
+                    let pass = index as u32;
+                    for group in self.groups.iter_mut().filter(|g| g.key.binds_array(pass)) {
+                        group.created = false;
+                    }
+                }
+            }
         }
     }
 
@@ -1566,6 +1707,10 @@ impl TextureStore {
         for array in &mut self.arrays {
             array.capacity = 0;
             array.generation = 0;
+            if let Some((view, _)) = array.pass {
+                array.pass = Some((view, None));
+                array.capacity = u32::from(array.live > 0);
+            }
         }
         for sampler in &mut self.samplers {
             sampler.created = false;
@@ -1707,6 +1852,75 @@ mod tests {
                 .collect();
             (commands, groups)
         }
+    }
+
+    /// The texture that a group binds in its first slot, by the group's GPU id.
+    fn bound_texture(commands: &[(Op, Vec<u32>)], group: u32) -> Option<u32> {
+        ops(commands, Op::CreateBindGroup)
+            .into_iter()
+            .find(|o| o[0] == group)
+            .map(|o| o[5])
+    }
+
+    #[test]
+    fn a_pass_texture_binds_the_white_texel_until_the_graph_gives_its_target() {
+        let mut h = Harness::new();
+        let texture = h.store.create_pass(3, 8, 8, format::RGBA16_FLOAT).unwrap();
+        let group = h.store.group_id(texture).unwrap();
+        assert_eq!(h.store.group_pass_views(group), 1 << 3);
+        assert_eq!(h.store.shown_views(), 1 << 3);
+        let (commands, _) = h.frame();
+        let white = bound_texture(&commands, group).expect("the group is made at once");
+        assert_eq!(
+            h.store.ready_layer(texture),
+            None,
+            "it samples as no texture"
+        );
+        assert_eq!(
+            ops(&commands, Op::CreateTexture).len(),
+            1,
+            "the store makes only the white texel's array, never the target"
+        );
+
+        // The graph makes the target: the group binds it, and the texture draws.
+        let target = 900;
+        let mut graph = DrawList::with_capacity(64);
+        let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
+        let shape = [8, 8, 1, format::RGBA16_FLOAT, usage, 1, 1, view::D2_ARRAY];
+        graph
+            .push(Op::CreateTexture, &[&[target][..], &shape].concat())
+            .unwrap();
+        h.gpu.replay(graph.words()).unwrap();
+        h.store.set_pass_target(3, Some(target), false);
+        assert!(h.store.take_layers_changed());
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        let (commands, made) = h.frame();
+        assert!(made);
+        assert_eq!(bound_texture(&commands, group), Some(target));
+        // The same target makes nothing again, but a target that the graph made again does.
+        h.store.set_pass_target(3, Some(target), false);
+        let (commands, made) = h.frame();
+        assert!(!made && bound_texture(&commands, group).is_none());
+        h.store.set_pass_target(3, Some(target), true);
+        let (commands, _) = h.frame();
+        assert_eq!(bound_texture(&commands, group), Some(target));
+        // Other views' targets leave it alone.
+        h.store.set_pass_target(4, None, true);
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+
+        // Without its target, it binds the white texel again.
+        h.store.set_pass_target(3, None, false);
+        assert_eq!(h.store.ready_layer(texture), None);
+        let (commands, _) = h.frame();
+        assert_eq!(bound_texture(&commands, group), Some(white));
+
+        // Destroyed, it shows no view, and the store destroys no texture of the graph's.
+        h.store.destroy(texture, h.frame).unwrap();
+        assert_eq!(h.store.shown_views(), 0);
+        let (commands, _) = h.frame();
+        assert!(ops(&commands, Op::DestroyTexture).is_empty());
+        // The white texel's array alone counts: its first four layers of one texel.
+        assert_eq!(h.store.memory_bytes(), 4 * 4);
     }
 
     #[test]

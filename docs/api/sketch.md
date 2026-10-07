@@ -203,6 +203,7 @@ What the engine passes to a sketch's setup function.
 | `assets: Assets` | Loading of textures and files, with a count of downloads for loading screens. |
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
 | `post: Post` | Post-processing: the tone mapping and the exposure of the scene's color. |
+| `render: Render` | The sketch's own render passes, such as a camera that draws into a texture. |
 | `ui: Ui` | HTML labels that follow scene objects, which the page binds with `engine.labels.bind`. |
 | `quality: Quality` | The quality preset that the engine runs, its settings, and a notice when they change. |
 | `time: SketchTime` | Sketch time, the frame's step and the frame number. |

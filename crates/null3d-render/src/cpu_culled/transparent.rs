@@ -212,7 +212,9 @@ impl Transparent {
 
     /// Records a view's transparent pass inside the render pass that the render graph began.
     /// `groups` sets the frame's and the instances' bind groups; `records_at` is the dynamic
-    /// offset of the transparent part of the view's ring slot of draw records.
+    /// offset of the transparent part of the view's ring slot of draw records. It leaves out each
+    /// call whose maps' group `hidden` names: a group that binds a target that the view draws
+    /// into, or one that it does not read.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
@@ -223,6 +225,7 @@ impl Transparent {
         records_at: u32,
         meshes: &MeshBuffers,
         groups: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
+        hidden: &dyn Fn(u32) -> bool,
     ) -> Result<(), RecordError> {
         let state = &self.views[view];
         if state.calls.is_empty() {
@@ -231,6 +234,9 @@ impl Transparent {
         groups(list)?;
         let (mut pipeline, mut textures, mut page) = (None, 0, None);
         for call in &state.calls {
+            if call.textures != 0 && hidden(call.textures) {
+                continue;
+            }
             if pipeline != Some(call.pipeline) {
                 list.push(Op::SetPipeline, &[call.pipeline])?;
                 pipeline = Some(call.pipeline);

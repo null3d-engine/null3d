@@ -1539,3 +1539,165 @@ fn the_text_dump_shows_a_resolve_into_the_canvas() {
         assert!(dot.contains(line), "{line}\n{dot}");
     }
 }
+
+/// A scene, a view drawn into a kept target, and a final pass. The view's passes are optional,
+/// and the scene's pass reads the view's target when `read` says so.
+fn scene_with_a_view(read: bool) -> RenderGraph {
+    let mut graph = RenderGraph::new();
+    let fixed = Size::Fixed {
+        width: 256,
+        height: 256,
+    };
+    graph.keep("map", HDR.samples(SAMPLES).array(), fixed);
+    graph.add_pass(
+        Pass::new("MapCulling", PassKind::Compute)
+            .optional()
+            .creates_buffer("mapVisible"),
+    );
+    graph.add_pass(
+        Pass::new("MapOpaque", PassKind::Scene)
+            .optional()
+            .size(fixed)
+            .reads("mapVisible")
+            .writes("map")
+            .creates("mapDepth", DEPTH.samples(SAMPLES)),
+    );
+    let mut opaque = Pass::new("Opaque", PassKind::Scene)
+        .creates("color", HDR.samples(SAMPLES))
+        .creates("depth", DEPTH.samples(SAMPLES));
+    if read {
+        opaque = opaque.reads("map");
+    }
+    graph.add_pass(opaque);
+    graph.add_pass(
+        Pass::new("Final", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .reads("color")
+            .writes(CANVAS),
+    );
+    graph
+}
+
+#[test]
+fn optional_passes_run_only_while_a_running_pass_uses_what_they_write() {
+    let graph = compiled(scene_with_a_view(true));
+    assert_eq!(
+        steps(&graph),
+        [
+            vec!["MapCulling"],
+            vec!["MapOpaque"],
+            vec!["Opaque"],
+            vec!["Final"]
+        ]
+    );
+
+    // Without the reader, the view's pass feeds nothing, and neither does its culling pass, which
+    // fed only the view's pass.
+    let mut graph = compiled(scene_with_a_view(false));
+    assert_eq!(steps(&graph), [vec!["Opaque"], vec!["Final"]]);
+    for name in ["MapCulling", "MapOpaque"] {
+        let pass = graph.find_pass(name).unwrap();
+        assert!(graph.is_culled(pass), "{name} is culled");
+        assert!(graph.is_enabled(pass), "culling leaves {name} switched on");
+    }
+    assert_eq!(
+        texture_index(&graph, "map"),
+        None,
+        "a kept target that only culled passes use takes no texture"
+    );
+    let dot = graph.dot();
+    assert!(
+        dot.contains(
+            r#"label="MapOpaque\nscene pass, 256 x 256, all layers, culled: nothing uses its output"];"#
+        ),
+        "{dot}"
+    );
+
+    // An optional pass that draws into the canvas always runs.
+    let mut graph = RenderGraph::new();
+    graph.add_pass(
+        Pass::new("Overlay", PassKind::Fullscreen)
+            .optional()
+            .size(Size::Canvas)
+            .writes(CANVAS),
+    );
+    let graph = compiled(graph);
+    assert_eq!(steps(&graph), [vec!["Overlay"]]);
+}
+
+#[test]
+fn a_kept_multisampled_target_resolves_for_its_readers_and_drops_its_samples() {
+    let graph = compiled(scene_with_a_view(true));
+    let attachments = attachments_of(&graph, "MapOpaque");
+    let map = attachments
+        .iter()
+        .find(|a| !a.depth)
+        .expect("the view draws its color");
+    assert_eq!(map.load, LoadOp::Clear);
+    assert_eq!(
+        map.store,
+        StoreOp::Discard,
+        "the resolved texture keeps the image"
+    );
+    let plan = graph.plan().unwrap();
+    let resource = graph.find_resource("map").unwrap();
+    let sampled = plan.sampled_texture_of(resource);
+    assert_eq!(map.resolve, sampled);
+    let resolved = texture_of_surface(&graph, sampled);
+    assert_eq!(
+        resolved.target,
+        HDR.array(),
+        "materials sample one layer of an array"
+    );
+    assert_eq!(
+        resolved.size,
+        Size::Fixed {
+            width: 256,
+            height: 256
+        }
+    );
+
+    // Switched off, the view keeps its last image for the reader, in the same texture.
+    let mut graph = scene_with_a_view(true);
+    let view = graph.find_pass("MapOpaque").unwrap();
+    graph.set_enabled(view, false);
+    let graph = compiled(graph);
+    assert_eq!(steps(&graph), [vec!["Opaque"], vec!["Final"]]);
+    assert_eq!(graph.plan().unwrap().sampled_texture_of(resource), sampled);
+}
+
+#[test]
+fn color_targets_past_the_portable_budget_fail_with_code_1505() {
+    let check = |pass: Pass| {
+        let mut graph = RenderGraph::new();
+        graph.add_pass(pass);
+        let error = graph.compile().expect_err("the targets do not fit");
+        assert_eq!(error.code(), GraphError::TARGET_MISMATCH);
+        graph.explain(error)
+    };
+    let mut five = Pass::new("Gbuffer", PassKind::Scene);
+    for index in 0..5 {
+        five = five.creates(format!("target{index}"), Target::color(format::RGBA8_UNORM));
+    }
+    assert_eq!(
+        check(five),
+        r#"E1505: the pass "Gbuffer" draws into "target4" as its color target number 5, and one render pass holds at most 4 on every device. Split the pass in two."#
+    );
+    // Two 16-byte targets and an 8-byte one take 40 bytes per sample.
+    let wide = Pass::new("Wide", PassKind::Scene)
+        .creates("a", Target::color(format::RGBA32_FLOAT))
+        .creates("b", Target::color(format::RGBA32_FLOAT))
+        .creates("c", HDR);
+    assert_eq!(
+        check(wide),
+        r#"E1505: the pass "Wide" draws into "c", which takes its color targets past 32 bytes per sample, the most every device allows in one render pass. Split the pass in two, or use smaller formats."#
+    );
+    // Four targets of 8 bytes fit, with depth beside them.
+    let mut four = Pass::new("Four", PassKind::Scene).creates("depth", DEPTH);
+    for index in 0..4 {
+        four = four.creates(format!("target{index}"), HDR);
+    }
+    let mut graph = RenderGraph::new();
+    graph.add_pass(four);
+    compiled(graph);
+}

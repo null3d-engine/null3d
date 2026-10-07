@@ -158,7 +158,7 @@ Effects:
 | Outlines around chosen meshes | `post.set({ outline: { color, width } })` and `mesh.setOutlined(true)` (0.2) | `api/post`, `api/objects` |
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
 | A custom full-screen effect, or a tone curve of your own | `post.addEffect({ wgsl, uniforms, order })`, or `post.set({ toneMapping: wgsl })` (0.2) | `guides/custom-passes` |
-| Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
+| Render to a texture: a minimap, a camera's screen | `render.addPass({ kind: 'scene', camera, writes, size })` and `textures.fromPass(pass)` (0.2) | `api/render`, `guides/custom-passes` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |
 
 ## 6. Custom shaders in brief

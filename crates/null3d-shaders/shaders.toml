@@ -318,6 +318,20 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.ao]
 shaders = ["ao", "ao_ms"]
 
+# The copy of a view's image into the target that materials sample, with its rows turned around,
+# so the target holds the image's bottom row first, as on WebGL2. Only WebGPU copies: WebGL2 draws
+# the view into its target directly.
+[shaders.view_copy]
+file = "view_copy.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+
+# A page downloads the copy when the sketch first adds a scene pass. The pass's texture samples as
+# no texture until the copy's pipeline is built.
+[first_use.views]
+shaders = ["view_copy"]
+
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays
 # in shaders.ts, where only development builds import it, so release builds hold none of it.

@@ -697,6 +697,9 @@ pub mod layout {
     /// [`FINAL_EFFECTS`] with a multisampled scene depth, whose sample 0 the effects read. Only
     /// WebGPU has it.
     pub const FINAL_EFFECTS_DEPTH_MS: u32 = 24;
+    /// Group 0 of the copy of a view's image into its target: the image, which it reads with
+    /// `textureLoad`, as plain floats. Only WebGPU has it.
+    pub const VIEW_COPY: u32 = 25;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1405,6 +1408,10 @@ pub mod template {
     /// three.js's analytic sky behind every object, drawn as [`BACKGROUND_CUBE`] is, from the
     /// values of the background's uniform block alone.
     pub const BACKGROUND_SKY: u32 = 36;
+    /// The copy of a view's image into the target that materials sample: one triangle over the
+    /// target, which reads the texel of the same column in the mirrored row of the image, so the
+    /// target holds the image's bottom row first. Only WebGPU has it.
+    pub const VIEW_COPY: u32 = 39;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1690,6 +1697,7 @@ pub fn typescript_constants() -> String {
                 ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
+                ("VIEW_COPY", layout::VIEW_COPY),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1772,6 +1780,7 @@ pub fn typescript_constants() -> String {
                 ("AO_DENOISE", template::AO_DENOISE),
                 ("BACKGROUND_CUBE", template::BACKGROUND_CUBE),
                 ("BACKGROUND_SKY", template::BACKGROUND_SKY),
+                ("VIEW_COPY", template::VIEW_COPY),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

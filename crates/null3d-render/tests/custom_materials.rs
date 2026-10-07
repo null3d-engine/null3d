@@ -194,3 +194,67 @@ fn destroyed_materials_free_their_ids_and_pipelines_on_webgl2() {
         })));
     }
 }
+
+#[test]
+fn destroying_a_custom_material_keeps_the_pipelines_of_custom_effects() {
+    use null3d_render::effects::{EFFECT_FLOATS, Effect};
+    use null3d_render::frame::CanvasOutput;
+    use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+    use null3d_render::output::{Antialias, SceneColor};
+    let canvas = CanvasOutput {
+        scene_color: SceneColor::from_format(null3d_gpu::drawlist::format::RGBA16_FLOAT),
+        antialias: Antialias::Fxaa,
+        transparent: false,
+    };
+    let mut world = World::build(GpuDrivenRenderer::new(RendererConfig {
+        canvas,
+        ..RendererConfig::default()
+    }));
+    let mut mock = MockBackend::default();
+    // An effect takes the template after the material's, as the sketch's templates count up.
+    let effect = Effect {
+        template: template::CUSTOM_FIRST + 1,
+        depth: false,
+        values: [0.0; EFFECT_FLOATS],
+    };
+    world.renderer.settings_mut().set_effect(0, Some(effect));
+    let material = world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .create(custom(0), 0, [1.0; 4])
+        .unwrap();
+    let object = add_object(&mut world, material + 1);
+    let made = world.step(&mut mock, true);
+    let effect_pipeline = made
+        .iter()
+        .find(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::CUSTOM_FIRST + 1)
+        .map(|(_, o)| o[0])
+        .expect("the frame makes the effect's pipeline");
+    // The material goes: its pipelines go, and the effect's stay.
+    world
+        .scene
+        .apply_commands(&[Command::destroy(object)], world.frame)
+        .unwrap();
+    world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .destroy(material)
+        .unwrap();
+    let mut destroyed = Vec::new();
+    for _ in 0..3 {
+        let commands = world.step(&mut mock, true);
+        destroyed.extend(
+            commands
+                .iter()
+                .filter(|(op, _)| *op == Op::DestroyPipeline)
+                .map(|(_, o)| o[0]),
+        );
+    }
+    assert!(!destroyed.is_empty(), "the material's pipelines go");
+    assert!(
+        !destroyed.contains(&effect_pipeline),
+        "the effect's pipeline {effect_pipeline} stays: {destroyed:?}"
+    );
+}

@@ -251,6 +251,8 @@ pub mod camera_target {
     pub const VIEW: u32 = 0;
     /// The camera that fits the main directional light's cascades, for the debug API.
     pub const SHADOWS: u32 = 1;
+    /// The camera of a scene pass's view: this number plus the view's place, from 1.
+    pub const PASS_VIEWS: u32 = 2;
 }
 
 /// The settings that `setTextureOption` changes.
@@ -829,6 +831,11 @@ pub fn typescript() -> String {
                 ("DEPTH", effect_flag::DEPTH),
             ],
         ),
+        // The most scene passes that draw at once: every view but the camera's.
+        (
+            "SCENE_PASS",
+            &[("MAX", null3d_render::view::MAX_VIEWS as u32 - 1)],
+        ),
         (
             "POST_VALUE",
             &[
@@ -918,6 +925,7 @@ pub fn typescript() -> String {
             &[
                 ("VIEW", camera_target::VIEW),
                 ("SHADOWS", camera_target::SHADOWS),
+                ("PASS_VIEWS", camera_target::PASS_VIEWS),
             ],
         ),
         (

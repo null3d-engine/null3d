@@ -213,6 +213,8 @@ export const EFFECT_MAX = 8;
 export const EFFECT_FLOATS = 32;
 export const EFFECT_DEPTH = 1;
 
+export const SCENE_PASS_MAX = 31;
+
 export const POST_VALUE_EXPOSURE = 0;
 export const POST_VALUE_BLOOM_INTENSITY = 1;
 export const POST_VALUE_BLOOM_THRESHOLD = 2;
@@ -279,6 +281,7 @@ export const TEXTURE_STAT_MAX_ANISOTROPY = 8;
 
 export const CAMERA_TARGET_VIEW = 0;
 export const CAMERA_TARGET_SHADOWS = 1;
+export const CAMERA_TARGET_PASS_VIEWS = 2;
 
 export const SHADOW_CASTERS_CASCADE_MASK = 255;
 export const SHADOW_CASTERS_TILES = 256;

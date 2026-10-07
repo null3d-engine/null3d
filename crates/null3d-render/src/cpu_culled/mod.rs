@@ -110,7 +110,7 @@ use crate::frame::{
     SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
-use crate::graph::RenderGraph;
+use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
@@ -441,6 +441,7 @@ impl CpuCulledRenderer {
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
                         },
+                        view_copy: None,
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -1055,11 +1056,16 @@ impl CpuCulledRenderer {
             tiles: s.layers,
             size: s.size,
         }));
-        self.graph.sync_views(self.settings.views());
+        self.settings.mark_shown_views();
+        self.graph
+            .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
         self.graph.set_scaling(self.settings.render_scaling());
         self.graph.prepare(list, input.canvas, input.render_scale)?;
+        let graph = &self.graph;
+        self.settings
+            .set_view_targets(|view| graph.view_target(view), graph.textures_made());
         let (shadow_map, atlas) = self
             .graph
             .shadow_map()
@@ -1242,6 +1248,16 @@ impl CpuCulledRenderer {
         let outlined = &self.outlined;
         let (transparent, background) = (&self.transparent, &self.background);
         let light_slot = self.light_textures.slot();
+        // A view leaves out the objects whose maps show a target that it does not read.
+        let settings = &self.settings;
+        let hidden_in = |view: ViewId| {
+            let hidden_targets = settings.hidden_targets(view);
+            move |group| {
+                hidden_targets != 0
+                    && settings.textures().group_pass_views(group) & hidden_targets != 0
+            }
+        };
+        let never = |_| false;
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
@@ -1250,7 +1266,7 @@ impl CpuCulledRenderer {
         };
         self.graph.record(
             list,
-            self.settings.clear_color(),
+            |view| settings.clear_color_of(view),
             skips,
             |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
@@ -1262,7 +1278,8 @@ impl CpuCulledRenderer {
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Lit { light_slot };
-                    opaque.record(list, arena, view, starts, layout, meshes, shading)?;
+                    let hidden = hidden_in(view);
+                    opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)?;
                     if camera {
                         background.record(list, group, &[slot, slot], Place::Last)?;
                     }
@@ -1271,16 +1288,19 @@ impl CpuCulledRenderer {
                 Role::Prepass(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Prepass { light_slot };
-                    opaque.record(list, arena, view, starts, layout, meshes, shading)
+                    let hidden = hidden_in(view);
+                    opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)
                 }
                 Role::Shadow(view) if cascade_culling.frame(view).is_some() => {
                     let starts = cascade_culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Depth;
-                    cascade_draws.record(list, arena, view, starts, casters, meshes, shading)
+                    cascade_draws
+                        .record(list, arena, view, starts, casters, meshes, shading, &never)
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
-                    tile_draws.record(list, arena, view, starts, casters, meshes, Shading::Tile)
+                    let shading = Shading::Tile;
+                    tile_draws.record(list, arena, view, starts, casters, meshes, shading, &never)
                 }
                 Role::OutlineMask if outline_culling.frame(ViewId::OUTLINE).is_some() => {
                     let view = ViewId::OUTLINE;
@@ -1293,13 +1313,16 @@ impl CpuCulledRenderer {
                         outlined,
                         meshes,
                         Shading::Depth,
+                        &never,
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
-                    transparent.record(list, arena, view.index(), draws, at, meshes, bind)
+                    let hidden = hidden_in(view);
+                    let index = view.index();
+                    transparent.record(list, arena, index, draws, at, meshes, bind, &hidden)
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
@@ -1444,7 +1467,12 @@ impl FrameBuilder for CpuCulledRenderer {
                 &self.layout,
                 &mut self.clusters,
                 cells,
-                &|view| settings.view_frame(view, scene, parity, canvas, scale),
+                &|view| {
+                    settings
+                        .view_draws(view)
+                        .then(|| settings.view_frame(view, scene, parity, canvas, scale))
+                        .flatten()
+                },
                 Some(sorted),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
@@ -1579,6 +1607,23 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn list(&self, frame: u32) -> &DrawList {
         self.lists.list(frame)
+    }
+
+    fn check_graph(&mut self) -> Result<(), GraphError> {
+        self.settings.mark_shown_views();
+        self.graph
+            .check(self.settings.views(), self.settings.view_names())
+    }
+
+    fn graph_dot(&mut self) -> String {
+        self.settings.mark_shown_views();
+        self.graph
+            .sync_views(self.settings.views(), self.settings.view_names());
+        self.graph.dot()
+    }
+
+    fn graph_message(&self, error: GraphError) -> String {
+        self.graph.graph().explain(error)
     }
 
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias) {

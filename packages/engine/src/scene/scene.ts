@@ -1405,9 +1405,10 @@ export abstract class Camera extends Object3D {
 	/**
 	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
 	 * with, or with `target` set to `CAMERA_TARGET_SHADOWS`, the lens that fits the shadow
-	 * cascades.
+	 * cascades, or past `CAMERA_TARGET_PASS_VIEWS`, the lens of a scene pass's view, with the
+	 * pass's `layers`.
 	 */
-	abstract sendLens(glue: CoreGlue, target?: number): void;
+	abstract sendLens(glue: CoreGlue, target?: number, layers?: number): void;
 }
 
 /**
@@ -1471,15 +1472,8 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
-	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW): void {
-		glue.setPerspectiveCamera(
-			this.handle,
-			this.verticalFov,
-			this.near,
-			this.far,
-			this.layers,
-			target,
-		);
+	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW, layers = this.layers): void {
+		glue.setPerspectiveCamera(this.handle, this.verticalFov, this.near, this.far, layers, target);
 	}
 }
 
@@ -1558,7 +1552,7 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
-	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW): void {
+	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW, layers = this.layers): void {
 		const view = this.view;
 		glue.setOrthographicCamera(
 			this.handle,
@@ -1568,7 +1562,7 @@ export class OrthographicCamera extends Camera {
 			view.centerY,
 			this.near,
 			this.far,
-			this.layers,
+			layers,
 			target,
 		);
 	}
@@ -2174,6 +2168,15 @@ export class Scene {
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
+	/** @internal True once development builds saw a point or spot light. */
+	rangedLights = false;
+	/** @internal Called in development builds when the scene gets its first point or spot light. */
+	onRangedLight: (() => void) | undefined;
+	/**
+	 * The camera of each scene pass's view, by the view's place, with the pass's own layers, or
+	 * undefined to follow the camera's.
+	 */
+	private readonly passCameras: ({ camera: Camera; layers: number | undefined } | undefined)[] = [];
 	/** @internal Scratch arrays, so rotations and reads allocate nothing. */
 	readonly scratch = new Float32Array(4);
 	/** @internal */
@@ -2586,6 +2589,25 @@ export class Scene {
 		camera.updateLens();
 		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
 		if (camera === this.shadowCamera) camera.sendLens(this.core.glue, C.CAMERA_TARGET_SHADOWS);
+		const passes = this.passCameras;
+		for (let place = 1; place < passes.length; place++) {
+			const pass = passes[place];
+			if (pass?.camera === camera)
+				camera.sendLens(this.core.glue, C.CAMERA_TARGET_PASS_VIEWS + place, pass.layers);
+		}
+	}
+
+	/**
+	 * @internal Draws the view of the scene pass at `place` from `camera`, with `layers`, or the
+	 * camera's layers without them; or forgets the view's camera with `undefined`.
+	 */
+	setPassCamera(place: number, camera: Camera | undefined, layers: number | undefined): void {
+		if (camera === undefined) {
+			this.passCameras[place] = undefined;
+			return;
+		}
+		this.passCameras[place] = { camera, layers };
+		camera.sendLens(this.core.glue, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
 	}
 
 	/**
@@ -3280,6 +3302,10 @@ export class Scene {
 		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
+		if (DEV && ranged && !this.rangedLights) {
+			this.rangedLights = true;
+			this.onRangedLight?.();
+		}
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
 			if (which === C.LIGHT_VALUE_INTENSITY) {

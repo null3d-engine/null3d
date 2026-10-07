@@ -418,6 +418,35 @@ export interface CoreGlue extends CoreErrors {
 	/** Fits the main directional light's shadow cascades to the drawing camera's view again. */
 	clearShadowCamera(): number;
 	/**
+	 * Adds a scene pass: a view that draws into a `width` x `height` target named `target`,
+	 * through a pass named `pass`, which reads the targets named in `reads`, one per line. With
+	 * `clears`, the target clears to the exposed linear color `r`, `g`, `b`, `a`. Returns the
+	 * view's place from 1, or 0 on failure: the render graph's errors (1502 to 1505), whose message
+	 * `renderGraphMessage` gives.
+	 */
+	addScenePass(
+		pass: string,
+		target: string,
+		reads: string,
+		width: number,
+		height: number,
+		clears: boolean,
+		r: number,
+		g: number,
+		b: number,
+		a: number,
+	): number;
+	/** Removes the scene pass of a view place, or fails with the render graph's error. */
+	removeScenePass(place: number): number;
+	/** Switches the scene pass of a view place on or off. */
+	setScenePassEnabled(place: number, enabled: boolean): number;
+	/** Creates a texture that shows the target of a scene pass's view place; 0 on failure. */
+	createPassTexture(place: number, width: number, height: number): number;
+	/** The message of the last render graph error, with the passes and resources by name. */
+	renderGraphMessage(): string;
+	/** The render graph of the passes as they are now, as Graphviz DOT text. */
+	renderGraphDot(): string;
+	/**
 	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
 	 * codes. Returns the light's id.
 	 */
@@ -739,6 +768,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setPerspectiveCamera',
 	'setOrthographicCamera',
 	'clearShadowCamera',
+	'addScenePass',
+	'removeScenePass',
+	'setScenePassEnabled',
+	'createPassTexture',
+	'renderGraphMessage',
+	'renderGraphDot',
 	'createLight',
 	'copyLight',
 	'destroyLight',

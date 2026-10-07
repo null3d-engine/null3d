@@ -8,7 +8,7 @@ summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; 
 
 # Textures
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` ships in 0.2. Cube maps are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -127,6 +127,21 @@ The image moves to the thread that draws, without a copy, so the sketch can use 
 A texture with `depth` above 1 holds that many layers, up to 256, one after another in `data`. Its layers are a texture array of their own. Materials read its first layer.
 
 Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true, as in three.js's `DataTexture`.
+
+## Textures of render passes
+
+`textures.fromPass(pass)` returns the texture that a scene pass of `render.addPass` draws into (0.2). Materials and sprites take it as a map, as three.js's render target textures are.
+
+```ts
+const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const screen = materials.unlit({ map: textures.fromPass(map) });
+```
+
+- The texture has the pass's size. It holds linear color after the exposure, so its `colorSpace` is `'linear'`. Its `format` is `'rgba16float'` where the device draws high dynamic range color, and `'rgba8unorm'` elsewhere.
+- The image stands upright on a plane, with v = 0 at its bottom row.
+- It samples as no texture until the pass first draws, and keeps the last image while the pass is switched off.
+- `texture.update` throws E1208: the pass alone gives its texels. `render.removePass` destroys the textures of the pass.
+- A pass runs only while a texture shows it. [Render graph API](render.md) covers passes.
 
 ## Updating and destroying
 
@@ -293,6 +308,7 @@ Makes textures from decoded images and from data, and reads what the GPU holds. 
 
 | Member | Description |
 | --- | --- |
+| `fromPass(pass: RenderPass): Texture` | The texture that a render pass draws into, which materials and sprites take as a map, as three.js's render target textures are. It holds linear color, after the exposure and before the tone curve: high dynamic range color where the device draws it. The image stands upright on a plane, with v = 0 at its bottom row. It samples as no texture until the pass first draws, and keeps the last image while the pass is switched off. `render.removePass` destroys it. Throws E1101 for a pass that was removed. |
 | `fromImageBitmap(image: ImageBitmap, options: TextureOptions = {}): Texture` | A texture from a decoded image. The image's first row goes to v = 0, the bottom of a plane. Decode images with `imageOrientation: 'flipY'`, as `assets.loadImageBitmap` does by default, so that they stand upright as three.js shows them. The image moves to the thread that draws, so this thread can use it no more. Throws E1208 for an image without pixels, one larger than `maxSize`, and options the engine does not know. |
 | `fromData(texture: TextureData): Texture` | A texture from data: four numbers per texel, in rows from the bottom up, layer after layer. A texture of several layers is a texture array of its own. Throws E1208 when the data does not fit the size and format, and for options the engine does not know. |
 | `readonly memoryBytes: number` | The GPU bytes that every texture holds, with the free layers of their texture arrays. It counts what the GPU holds already, so it grows as uploads finish. |

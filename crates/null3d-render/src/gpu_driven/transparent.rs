@@ -175,6 +175,7 @@ impl Transparent {
     /// run of sorted rows that share a bucket, with one instanced draw per part of the bucket's
     /// mesh, from its slice of the view's sorted instances. A skinned object's bucket draws its
     /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
+    /// It leaves out the objects whose maps show a target that the view does not read.
     pub(super) fn record(
         &self,
         list: &mut DrawList,
@@ -194,8 +195,17 @@ impl Transparent {
         let (mut vertices, mut indices) = (None, None);
         let mut groups = DrawGroups::default();
         let storage = settings.meshes();
+        // A view leaves out the objects whose maps show a target that it does not read.
+        let hidden_targets = settings.hidden_targets(view);
+        let textures = settings.textures();
         for draw in draws {
             let bucket = layout.buckets[draw.bucket as usize];
+            if hidden_targets != 0
+                && bucket.textures != 0
+                && textures.group_pass_views(bucket.textures) & hidden_targets != 0
+            {
+                continue;
+            }
             if pipeline != Some(bucket.pipeline) {
                 list.push(Op::SetPipeline, &[bucket.pipeline])?;
                 pipeline = Some(bucket.pipeline);

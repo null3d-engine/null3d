@@ -358,6 +358,7 @@ type ErrorCode =
 	| 'E1217'
 	| 'E1218'
 	| 'E1219'
+	| 'E1220'
 	| 'E1301'
 	| 'E1302'
 	| 'E1303'
@@ -464,7 +465,8 @@ type ShaderFeature =
 	| 'skinning'
 	| 'sky'
 	| 'sprites'
-	| 'texcoords';
+	| 'texcoords'
+	| 'views';
 ```
 
 A feature whose shader builds load on first use, which `createEngine`'s `preload` lists.

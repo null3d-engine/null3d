@@ -46,6 +46,7 @@ import type { GeneratorSource, ImageSender } from '../shared/images';
 import type { EnvironmentFormat } from './environment';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
+import { checkPass, type RenderPass } from './render';
 
 /**
  * What texture coordinates outside 0 to 1 read. `clamp` reads the texel at the edge, `repeat`
@@ -254,6 +255,8 @@ export class Texture {
 		private readonly textures: Textures,
 		/** @internal True for a texture from a file, whose texels come from the file alone. */
 		readonly fromFile = false,
+		/** @internal The render pass whose texture this is, whose texels come from the pass alone. */
+		readonly pass?: RenderPass,
 	) {
 		this.size = [width, height];
 	}
@@ -282,6 +285,11 @@ export class Texture {
 	 */
 	update(source: ImageBitmap | TextureDataArray): void {
 		const call = 'texture.update';
+		if (this.pass)
+			throw invalid(
+				call,
+				`got the texture of the pass "${this.pass.name}", whose texels come from the pass alone.`,
+			);
 		// Release builds refuse too: the texture's memory holds its file's blocks, not RGBA texels.
 		if (this.fromFile)
 			throw invalid(
@@ -332,6 +340,40 @@ export class Textures {
 		/** @internal True when the engine draws with WebGL2. */
 		readonly webgl2 = false,
 	) {}
+
+	/**
+	 * The texture that a render pass draws into, which materials and sprites take as a map, as
+	 * three.js's render target textures are. It holds linear color, after the exposure and before
+	 * the tone curve: high dynamic range color where the device draws it. The image stands upright
+	 * on a plane, with v = 0 at its bottom row. It samples as no texture until the pass first draws,
+	 * and keeps the last image while the pass is switched off. `render.removePass` destroys it.
+	 * Throws E1101 for a pass that was removed.
+	 */
+	fromPass(pass: RenderPass): Texture {
+		const call = 'textures.fromPass';
+		checkPass(pass, call);
+		const handle = this.core.check(
+			this.core.glue.createPassTexture(pass.place, pass.width, pass.height),
+			call,
+		);
+		const texture = new Texture(
+			handle,
+			pass.width,
+			pass.height,
+			1,
+			this.passFormat,
+			'linear',
+			0,
+			this,
+			false,
+			pass,
+		);
+		pass.textures.push(texture);
+		return texture;
+	}
+
+	/** @internal How the targets of render passes store their texels: the scene color's format. */
+	passFormat: TextureFormat = 'rgba16float';
 
 	/**
 	 * A texture from a decoded image. The image's first row goes to v = 0, the bottom of a plane.

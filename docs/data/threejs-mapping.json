@@ -153,8 +153,8 @@
       "three": "WebGLRenderTarget / RenderTarget / renderer.setRenderTarget (render to texture)",
       "status": "changed",
       "since": "0.2",
-      "target": "render.addPass({ kind: 'scene', camera, writes: 'myTexture', size }) and sample 'myTexture' in a material",
-      "notes": "Passes are declared, not called: the render graph orders them and manages their memory.",
+      "target": "const pass = render.addPass({ kind: 'scene', camera, writes: 'myTexture', size: [width, height] }); materials.unlit({ map: textures.fromPass(pass) })",
+      "notes": "Passes are declared, not called: the render graph orders them, runs them only while a texture shows them, and plans their memory. The texture holds linear color after the exposure, upright with v = 0 at the bottom as three.js's render target texture. A pass never draws objects that show its own texture. Scene passes draw no point or spot lights, no ambient occlusion and no sky in this version.",
       "docs": "guides/custom-passes",
       "detect": "\\b(WebGL)?RenderTarget\\b|\\.setRenderTarget\\s*\\("
     },
