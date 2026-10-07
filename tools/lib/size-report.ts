@@ -1,23 +1,37 @@
-// The size report's measuring: raw and Brotli sizes, and the parts of the engine's JavaScript in a
-// production build. Vite names each built file after a module and adds a content hash, so the report
-// names each part by the engine module that its file holds, a file loaded on demand by the part
-// that loads it, and a shader file by the device module of the shader build that it holds.
+// The size report's measuring: raw, gzip and Brotli sizes, and the parts of the engine's JavaScript
+// in a production build. Vite names each built file after a module and adds a content hash, so the
+// report names each part by the engine module that its file holds, a file loaded on demand by the
+// part that loads it, and a shader file by the module of the shader build that it holds: a device
+// module of the start, the module of a feature that loads on first use, or the module of a shader
+// that loads on a feature's first use as a whole, such as the texture generators'.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
-import { brotliCompressSync, constants } from 'node:zlib';
+import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
-/** A size in bytes, as the file is and after Brotli compression. */
-export interface SizeEntry {
-	raw: number;
-	brotli: number;
-}
+/**
+ * The ways a host can send a file, as the report's columns: as it is, with gzip, or with Brotli.
+ * Most hosts send Brotli to browsers that accept it. Some send only gzip, such as GitHub Pages and
+ * nginx with its gzip module alone, and a plain static server sends files as they are.
+ */
+export const COLUMNS = ['raw', 'gzip', 'brotli'] as const;
+export type Column = (typeof COLUMNS)[number];
 
-/** The raw size and the size after Brotli at its highest quality, as a server would send it. */
+/** A size in bytes in each column. */
+export type SizeEntry = Record<Column, number>;
+
+/** A budget in bytes for each column. */
+export type Budget = Readonly<Record<Column, number>>;
+
+/**
+ * A file's size as it is, after gzip at level 9 and after Brotli at quality 11: the highest levels,
+ * as a host that compresses its files once, when it deploys them, sends them.
+ */
 export function measure(bytes: Buffer): SizeEntry {
+	const gzip = gzipSync(bytes, { level: 9 }).length;
 	const brotli = brotliCompressSync(bytes, {
 		params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
 	}).length;
-	return { raw: bytes.length, brotli };
+	return { raw: bytes.length, gzip, brotli };
 }
 
 /** The core's two builds: with threads and shared memory, and without. */
@@ -50,8 +64,9 @@ export interface EnginePart {
 }
 
 /**
- * The parts of the engine's JavaScript. The renderer loads on demand on the page and in the sketch
- * worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
+ * The parts of the engine's JavaScript. The early script that the Vite plugin adds to each page
+ * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
+ * page and in the sketch worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
  * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
  * The glTF loader loads there too with the sketch's first glTF file, and starts the glTF worker,
@@ -65,8 +80,11 @@ export interface EnginePart {
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
+ * The built-in environments' numbers load in the thread that runs the sketch with the first one,
+ * and the texture generators that make their maps on the GPU load in the thread that draws.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
+	{ name: 'early-core.js', module: 'page/early-core.ts' },
 	{ name: 'page.js', module: 'page/engine.ts' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	{
@@ -74,10 +92,25 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'gpu/webgl2/call-timing.ts',
 		loadedBy: 'page-renderer.js',
 	},
+	{
+		name: 'page-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
+		loadedBy: 'page-renderer.js',
+	},
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lut.js', module: 'scene/lut-files.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-environment.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
+		name: 'page-builtin-environments.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
 	{
@@ -96,11 +129,26 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'gpu/webgl2/call-timing.ts',
 		loadedBy: 'sketch-worker-renderer.js',
 	},
+	{
+		name: 'sketch-worker-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
+		loadedBy: 'sketch-worker-renderer.js',
+	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-environment.js',
+		module: 'scene/environment-file.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-builtin-environments.js',
+		module: 'scene/builtin-environments.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-lines.js', module: 'scene/lines.ts', loadedBy: 'sketch-worker.js' },
 	{
@@ -114,6 +162,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'render-worker-call-timing.js',
 		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'render-worker.js',
+	},
+	{
+		name: 'render-worker-environment-generator.js',
+		module: 'gpu/environment-steps.ts',
 		loadedBy: 'render-worker.js',
 	},
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
@@ -140,6 +193,21 @@ export const SHADER_PARTS: readonly string[] = [
 	'shaders-glsl-draw-index-half.js',
 	'shaders-glsl-draw-index-tone-map-half.js',
 ];
+
+/**
+ * True for the part of a shader module that loads on a feature's first use: a device module of a
+ * feature, which the shader build names after the feature, then the target and the bits, as
+ * `shaders-sprites-glsl-draw-index.js`, or the module of a shader that loads on first use as a
+ * whole, named after the shader and the target, as `shaders-environment-wgsl.js`. A page downloads
+ * one the first time it uses the feature, so no start counts it. The manifest's
+ * `[first_use.<feature>]` tables and `first_use` shaders name them, and the parts follow from them.
+ */
+export function isFirstUseShaderPart(name: string): boolean {
+	return (
+		!SHADER_PARTS.includes(name) &&
+		/^shaders-[a-z][a-z0-9-]*?-(wgsl|glsl)(-[a-z-]+)?\.js$/.test(name)
+	);
+}
 
 /**
  * The KTX2 transcoder's files, which a page downloads when it loads its first KTX2 file: the
@@ -200,12 +268,20 @@ export const DOWNLOADS: readonly Download[] = [
 	{
 		mode: 'pipelined',
 		shaders: 'shaders-',
-		parts: ['page.js', 'probe-worker.js', 'sketch-worker.js', 'render-worker.js', 'job-worker.js'],
+		parts: [
+			'early-core.js',
+			'page.js',
+			'probe-worker.js',
+			'sketch-worker.js',
+			'render-worker.js',
+			'job-worker.js',
+		],
 	},
 	{
 		mode: 'low latency',
 		shaders: 'shaders-',
 		parts: [
+			'early-core.js',
 			'page.js',
 			'probe-worker.js',
 			'sketch-worker.js',
@@ -216,17 +292,31 @@ export const DOWNLOADS: readonly Download[] = [
 	{
 		mode: 'drawing on the main thread',
 		shaders: 'shaders-',
-		parts: ['page.js', 'page-renderer.js', 'probe-worker.js', 'sketch-worker.js', 'job-worker.js'],
+		parts: [
+			'early-core.js',
+			'page.js',
+			'page-renderer.js',
+			'probe-worker.js',
+			'sketch-worker.js',
+			'job-worker.js',
+		],
 	},
 	{
 		mode: 'single-threaded',
 		shaders: 'shaders-',
-		parts: ['page.js', 'page-sketch-runner.js', 'page-renderer.js', 'probe-worker.js'],
+		parts: [
+			'early-core.js',
+			'page.js',
+			'page-sketch-runner.js',
+			'page-renderer.js',
+			'probe-worker.js',
+		],
 	},
 	{
 		mode: 'sketch on the main thread',
 		shaders: 'shaders-',
 		parts: [
+			'early-core.js',
 			'page.js',
 			'page-sketch-runner.js',
 			'probe-worker.js',
@@ -251,7 +341,7 @@ const isPageSource = (source: string) => /^(tests|bench|examples|templates)\//.t
 function shaderPartOf(file: BuiltFile): string | undefined {
 	const engine = file.sources.filter((source) => source.startsWith(ENGINE_SOURCE));
 	const module = engine.length === 1 ? engine[0]!.slice(ENGINE_SOURCE.length) : '';
-	const match = /^generated\/(shaders-[a-z-]+)\.ts$/.exec(module);
+	const match = /^generated\/(shaders-[a-z-]+)\.[jt]s$/.exec(module);
 	return match ? `${match[1]}.js` : undefined;
 }
 
@@ -292,9 +382,9 @@ export function findEngineParts(
 	for (const file of files) {
 		const part = claimed.has(file) ? undefined : shaderPartOf(file);
 		if (!part) continue;
-		if (!shaderParts.includes(part))
+		if (!shaderParts.includes(part) && !isFirstUseShaderPart(part))
 			throw new Error(
-				`${file.file} holds the shader build's device module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
+				`${file.file} holds the shader build's module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
 			);
 		claimed.add(file);
 		const copy = shaders.get(part);
@@ -317,74 +407,111 @@ export function findEngineParts(
 				`${name} (${file.file}) also holds a page's own code (${pageCode.join(', ')}), so its size is not the engine's`,
 			);
 	}
-	const names = [...parts.map(({ name }) => name), ...shaderParts];
+	const firstUse = [...shaders.keys()].filter((part) => !shaderParts.includes(part)).sort();
+	for (const part of firstUse) found.set(part, shaders.get(part)!);
+	const names = [...parts.map(({ name }) => name), ...shaderParts, ...firstUse];
 	return new Map(names.flatMap((name) => (found.has(name) ? [[name, found.get(name)!]] : [])));
 }
 
 /** The sum of the sizes of files that a server sends one by one, each compressed on its own. */
 export function totalSize(sizes: Iterable<SizeEntry>): SizeEntry {
-	const total = { raw: 0, brotli: 0 };
-	for (const size of sizes) {
-		total.raw += size.raw;
-		total.brotli += size.brotli;
-	}
+	const total = { raw: 0, gzip: 0, brotli: 0 };
+	for (const size of sizes) for (const column of COLUMNS) total[column] += size[column];
 	return total;
 }
 
 /**
  * What a page downloads in each thread mode: the total size of the parts it loads, and of the
- * largest shader part that it may load. A part that the build lacks adds nothing.
+ * largest shader part of the start that it may load, the largest in each column. A part that the
+ * build lacks adds nothing.
  */
 export function downloadSizes(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 ): { mode: string; size: SizeEntry }[] {
 	return downloads.map(({ mode, parts, shaders }) => {
-		const largest = [...sizes]
-			.filter(([part]) => part.startsWith(shaders))
-			.map(([, size]) => size)
-			.sort((a, b) => b.brotli - a.brotli)
-			.slice(0, 1);
-		return {
-			mode,
-			size: totalSize([...parts.flatMap((part) => sizes.get(part) ?? []), ...largest]),
-		};
+		const size = totalSize(parts.flatMap((part) => sizes.get(part) ?? []));
+		const shaderSizes = [...sizes].filter(
+			([part]) => part.startsWith(shaders) && !isFirstUseShaderPart(part),
+		);
+		for (const column of COLUMNS)
+			size[column] += Math.max(0, ...shaderSizes.map(([, shader]) => shader[column]));
+		return { mode, size };
 	});
 }
 
 /**
- * Brotli budget for the engine's JavaScript that a page downloads at its start, in whichever thread
+ * The budget for the engine's JavaScript that a page downloads at its start, in whichever thread
  * mode downloads the most. The core's generated glue counts with the WebAssembly files instead.
+ * Brotli's budget is the owner's. The gzip and raw budgets hold today's start with about a tenth to
+ * spare. The shader file fills most of it, so per-feature shader files bring both down. Until then
+ * they stop a start that grows on a gzip host, or on a host that sends files as they are.
  */
-export const START_BUDGET_BYTES = 140 * 1024;
+export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 140 * 1024 };
 
-/** Brotli budget for each part that loads after the start. */
-export const LATER_BUDGET_BYTES = 16 * 1024;
+/** The budget for each part that loads after the start. */
+export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };
+
+/** A column's name as a problem names it. */
+const COLUMN_NAMES: Readonly<Record<Column, string>> = {
+	raw: 'uncompressed',
+	gzip: 'after gzip',
+	brotli: 'after Brotli',
+};
+
+/** A problem for each column of `size` over its budget, each starting with `what`. */
+function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
+	return COLUMNS.filter((column) => size[column] > budget[column]).map(
+		(column) =>
+			`${what} is ${size[column].toLocaleString('en-US')} bytes ${COLUMN_NAMES[column]}, over its ${budget[column] / 1024} KB budget`,
+	);
+}
 
 /**
- * A problem for each thread mode whose start passes the start budget, and for each part that loads
- * after the start and passes its own budget.
+ * The budget for each device module of a feature that loads on first use. Such a module is shader
+ * data, as the modules of the start are, so its limits started at the size of a start shader
+ * file. Shader text shrinks far more under compression than code does, so these limits do not keep
+ * the start budget's proportions. The owner set them on 4 October 2026, and on 5 October raised
+ * the Brotli limit for the shadow filter's growth and the gzip limit, which only hosts without
+ * Brotli meet, for the skinning and morph files of environment lighting (decision records D-14
+ * and D-56).
+ */
+export const FIRST_USE_SHADER_BUDGET: Budget = {
+	raw: 1_536 * 1024,
+	gzip: 320 * 1024,
+	brotli: 32 * 1024,
+};
+
+/**
+ * A problem for each thread mode whose start passes the start budget in a column, for each part
+ * that loads after the start and passes its own budget in a column, and for each device module of a
+ * feature that loads on first use and passes its budget in a column.
  */
 export function budgetProblems(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 	later: readonly EnginePart[] = LATER_PARTS,
 ): string[] {
-	const kb = (bytes: number) => `${bytes / 1024} KB`;
 	return [
-		...downloadSizes(sizes, downloads)
-			.filter(({ size }) => size.brotli > START_BUDGET_BYTES)
-			.map(
-				({ mode, size }) =>
-					`the engine JavaScript that a page downloads at its start in ${mode} mode is ${size.brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(START_BUDGET_BYTES)} budget`,
+		...downloadSizes(sizes, downloads).flatMap(({ mode, size }) =>
+			overBudget(
+				`the engine JavaScript that a page downloads at its start in ${mode} mode`,
+				size,
+				START_BUDGET,
 			),
+		),
 		...later.flatMap(({ name }) => {
-			const brotli = sizes.get(name)?.brotli ?? 0;
-			return brotli > LATER_BUDGET_BYTES
-				? [
-						`js/${name}, which loads after the start, is ${brotli.toLocaleString('en-US')} bytes after Brotli, over its ${kb(LATER_BUDGET_BYTES)} budget`,
-					]
-				: [];
+			const size = sizes.get(name);
+			return size ? overBudget(`js/${name}, which loads after the start,`, size, LATER_BUDGET) : [];
 		}),
+		...[...sizes].flatMap(([name, size]) =>
+			isFirstUseShaderPart(name)
+				? overBudget(
+						`js/${name}, the shader builds of a feature that loads on first use,`,
+						size,
+						FIRST_USE_SHADER_BUDGET,
+					)
+				: [],
+		),
 	];
 }

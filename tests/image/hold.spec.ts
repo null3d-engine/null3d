@@ -243,3 +243,36 @@ test('hold mode refuses a time that is not a number of seconds', async ({ page }
 	expect(result.code).toBe('E1407');
 	expect(result.error).toContain('E1407: ?hold=1500ms is not a number of seconds from 0 to 600.');
 });
+
+test.describe('a browser that sends the user agent of Safari 17', () => {
+	test.use({
+		userAgent:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+	});
+
+	test('the engine refuses to start before it asks for memory or workers', async ({ page }) => {
+		// Counts each worker and each WebAssembly memory that the page makes.
+		await page.addInitScript(() => {
+			const page = globalThis as unknown as { asked: string[]; Worker: object };
+			page.asked = [];
+			const counted = <T extends object>(target: T, name: string): T =>
+				new Proxy(target, {
+					construct(real, args, newTarget) {
+						page.asked.push(name);
+						return Reflect.construct(real as never, args, newTarget);
+					},
+				});
+			page.Worker = counted(page.Worker, 'worker');
+			WebAssembly.Memory = counted(WebAssembly.Memory, 'memory');
+		});
+		const started = Date.now();
+		const result = await hold(page, 'hold=1');
+		expect(Date.now() - started).toBeLessThan(FAST_FAILURE_MS);
+		if (result.ok) throw new Error('the engine started in Safari 17');
+		expect(result.code).toBe('E1306');
+		expect(result.error).toContain(
+			'E1306: this browser runs the WebKit engine of Safari 17, and the engine needs Safari 18 or later.',
+		);
+		expect(await windowValue(page, 'asked', 1_000)).toEqual([]);
+	});
+});

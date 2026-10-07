@@ -14,12 +14,17 @@
 // - The other nodes stay objects. One under a joint goes under the copy's group, with the place
 //   that its joints give it at rest, which never changes, because nothing moves them.
 //
-// Clips keep their keys as the file holds them. The core resamples them on its job workers.
-// Morph targets and the clips' weights tracks are read and kept for the loader, which keeps them
-// on the prefab. The module also defines the rig data that animation.ts stores in the core. It
-// imports only its sibling modules of the glTF worker, so code that type checks the parser alone
-// needs no browser types.
+// - Each node whose morph weights a clip animates gets joints that move no vertex: roots at rest at
+//   the origin with scale 0, three weights to a joint. A clip's weights track becomes translation
+//   tracks of those joints, one weight along each axis, and a constant scale of 1 marks the weights
+//   as the clip's, as the core's `posed_weight` reads them.
+//
+// Clips keep their keys as the file holds them. The core resamples them on its job workers. The
+// module also defines the rig data that animation.ts stores in the core. It imports only its
+// sibling modules of the glTF worker, so code that type checks the parser alone needs no browser
+// types.
 
+import type { FileBudget } from './file-limits';
 import { broken, type Entry, entry, index, list, type Reader, text, toFloats } from './gltf-json';
 import { affineOf, decomposeAffine, multiplyAffine } from './gltf-math';
 import type { MeshData, NodeData, PrimitiveData, VertexData } from './gltf-parse';
@@ -35,7 +40,7 @@ const SCALAR = 1;
 export type KeyInterpolation = 'linear' | 'step' | 'cubic';
 
 /** A clip's track of a mesh's morph target weights, with one weight per target in each key. */
-export interface WeightTrackData {
+interface WeightTrack {
 	/** The node whose mesh the weights shape, by its index in the node list. */
 	node: number;
 	interpolation: KeyInterpolation;
@@ -49,6 +54,8 @@ export interface MorphTargetsData {
 	positions?: Float32Array[];
 	normals?: Float32Array[];
 	tangents?: Float32Array[];
+	/** As many numbers per vertex as the primitive's colors. */
+	colors?: Float32Array[];
 }
 
 /** One joint of a rig's skeleton. Joints come parents first. */
@@ -97,10 +104,14 @@ export interface RigData {
 	rate?: number;
 }
 
-/** A clip of the file: its tracks of joints and its tracks of morph target weights. */
+/** A clip of the file. */
 export interface ClipData extends RigClip {
 	tracks: RigTrack[];
-	weights: WeightTrackData[];
+}
+
+/** A clip as the reader first reads it: its tracks of nodes, and its tracks of morph weights. */
+interface ParsedClip extends ClipData {
+	weights: WeightTrack[];
 }
 
 /** What the reader adds to a parsed file. */
@@ -116,53 +127,94 @@ export interface AnimationData {
 /** The identity as a row-major 3 × 4 matrix. */
 const IDENTITY_BIND = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
 
-/** The paths of glTF's animation channels that move a node, by the channel of a rig track. */
-const PATHS = { translation: 'translation', rotation: 'rotation', scale: 'scale' } as const;
-
-const INTERPOLATIONS: Readonly<Record<string, KeyInterpolation>> = {
-	LINEAR: 'linear',
-	STEP: 'step',
-	CUBICSPLINE: 'cubic',
-};
+/** The morph weights that one joint holds, one along each axis of its translation (the core's `WEIGHTS_PER_JOINT`). */
+const WEIGHTS_PER_JOINT = 3;
 
 /**
- * Reads a primitive's morph targets: the deltas of its positions, normals and tangents, as floats.
- * Returns undefined when it has none.
+ * The paths of glTF's animation channels that move a node, which are the channels of rig tracks.
+ * Tables that the file's text names a key of are sets and maps, so a name such as "constructor"
+ * finds nothing.
+ */
+const PATHS: ReadonlySet<string> = new Set(['translation', 'rotation', 'scale']);
+
+/** The attributes that the engine morphs, with the morph target lists that hold their deltas. */
+const MORPHED_ATTRIBUTES = [
+	['POSITION', 'positions'],
+	['NORMAL', 'normals'],
+	['TANGENT', 'tangents'],
+	['COLOR_0', 'colors'],
+] as const;
+
+const INTERPOLATIONS: ReadonlyMap<string, KeyInterpolation> = new Map([
+	['LINEAR', 'linear'],
+	['STEP', 'step'],
+	['CUBICSPLINE', 'cubic'],
+]);
+
+/**
+ * Reads a primitive's morph targets: the deltas of its positions, normals, tangents and colors, as
+ * floats. `colors` is the numbers per vertex of the primitive's colors, or 0 when it has none.
+ * Returns undefined when it has none. A target that leaves out an attribute that another target
+ * moves moves it by nothing, as the glTF specification says. Targets of other attributes, such as
+ * texture coordinates, are left out with a note, as are colors of a primitive without colors.
  */
 export function parseMorphTargets(
 	primitive: Entry,
 	vertices: number,
+	colors: number,
 	what: string,
 	read: Reader,
+	budget: FileBudget,
+	notes: string[],
 ): MorphTargetsData | undefined {
 	const targets = list(primitive.targets, `${what}'s targets`);
 	if (targets.length === 0) return undefined;
-	const out: MorphTargetsData = {};
-	const fields = [
-		['POSITION', 'positions'],
-		['NORMAL', 'normals'],
-		['TANGENT', 'tangents'],
-	] as const;
 	const entries = targets.map((value, t) => entry(value, `${what}'s target ${t}`));
-	// The first target names the attributes that the targets move. A later target that leaves one
-	// out moves it by nothing.
-	for (const [name, field] of fields) if (entries[0]?.[name] !== undefined) out[field] = [];
-	entries.forEach((target, t) => {
-		for (const [name, field] of fields) {
-			const deltas = out[field];
+	const named = new Set(entries.flatMap((target) => Object.keys(target)));
+	const fields = MORPHED_ATTRIBUTES.filter(
+		([name]) => named.has(name) && (name !== 'COLOR_0' || colors > 0),
+	);
+	const others = [...named].filter((name) => !fields.some(([morphed]) => morphed === name));
+	if (others.length > 0)
+		notes.push(
+			`${what}'s morph targets move ${others.join(', ')}, which the engine does not morph${named.has('COLOR_0') && colors === 0 ? " (COLOR_0 needs the primitive's own COLOR_0)" : ''}`,
+		);
+	const out: MorphTargetsData = {};
+	for (const [name, field] of fields) {
+		const values = name === 'COLOR_0' ? colors : 3;
+		out[field] = entries.map((target, t) => {
+			const where = `${what}'s target ${t} ${name}`;
 			if (target[name] === undefined) {
-				deltas?.push(new Float32Array(vertices * 3));
-				continue;
+				budget.take(vertices * values * 4, where);
+				return new Float32Array(vertices * values);
 			}
-			if (!deltas) broken(`${what}'s target ${t} moves ${name}, and its first target does not`);
-			const data = read(Number(target[name]), `${what}'s target ${t} ${name}`);
-			if (data.components !== 3 || data.count !== vertices)
+			const data = read(Number(target[name]), where);
+			const allowed = name === 'COLOR_0' ? [3, 4] : [3];
+			if (!allowed.includes(data.components) || data.count !== vertices)
 				broken(
 					`${what}'s target ${t} has ${data.count} ${name} deltas of ${data.components} values, and the primitive has ${vertices} vertices`,
 				);
-			deltas.push(toFloats(data.array, data.normalized));
-		}
-	});
+			if (name === 'COLOR_0' && data.componentType !== FLOAT && !data.normalized)
+				broken(`${what}'s target ${t} COLOR_0 deltas are integers that are not normalized`);
+			const deltas = toFloats(data.array, data.normalized, budget, where);
+			if (data.components === values) return deltas;
+			budget.take(vertices * values * 4, where);
+			return resized(deltas, data.components, values);
+		});
+	}
+	return fields.length > 0 ? out : undefined;
+}
+
+/**
+ * Color deltas of `from` numbers per vertex as `to` numbers per vertex: an alpha delta of 0 where
+ * the target has none, and none where the primitive's colors have no alpha.
+ */
+function resized(deltas: Float32Array, from: number, to: number): Float32Array {
+	const vertices = deltas.length / from;
+	const out = new Float32Array(vertices * to);
+	const kept = Math.min(from, to);
+	for (let v = 0; v < vertices; v++)
+		for (let c = 0; c < kept; c++) out[v * to + c] = deltas[v * from + c] as number;
 	return out;
 }
 
@@ -192,7 +244,7 @@ export function morphWeights(
 
 function targetCount(p: PrimitiveData): number {
 	const m = p.morph;
-	return m ? (m.positions ?? m.normals ?? m.tangents ?? []).length : 0;
+	return m ? (m.positions ?? m.normals ?? m.tangents ?? m.colors ?? []).length : 0;
 }
 
 /** A skin of the file: its joints by node index in the node list, and their inverse bind matrices. */
@@ -214,6 +266,7 @@ export function parseAnimation(
 	meshes: MeshData[],
 	place: Int32Array,
 	read: Reader,
+	budget: FileBudget,
 	notes: string[],
 ): AnimationData | undefined {
 	const skinDefs = list(json.skins, 'skins');
@@ -222,7 +275,7 @@ export function parseAnimation(
 	const n = nodes.length;
 	const skins = skinDefs.map((value, s) => parseSkin(entry(value, `skin ${s}`), s, place, read));
 	const clips = animationDefs.map((value, k) =>
-		parseClip(entry(value, `animation ${k}`), k, nodes, meshes, place, read, notes),
+		parseClip(entry(value, `animation ${k}`), k, nodes, meshes, place, read, budget, notes),
 	);
 	uniqueNames(clips);
 
@@ -305,12 +358,14 @@ export function parseAnimation(
 			const map = skinJoints[node.skin] as number[];
 			const name = (meshes[node.mesh] as MeshData).name;
 			node.mesh = copy(node.mesh, `skin ${node.skin} ${node.mesh}`, (p) =>
-				skinned(p, map, wide, `mesh "${name}" with skin ${node.skin}`, notes),
+				skinned(p, map, wide, `mesh "${name}" with skin ${node.skin}`, budget, notes),
 			);
 			node.skinned = true;
 		} else if ((rigid[k] as number) >= 0) {
 			const joint = rigid[k] as number;
-			node.mesh = copy(node.mesh, `joint ${joint} ${node.mesh}`, (p) => onJoint(p, joint, wide));
+			node.mesh = copy(node.mesh, `joint ${joint} ${node.mesh}`, (p) =>
+				onJoint(p, joint, wide, budget, `mesh "${(meshes[node.mesh] as MeshData).name}"`),
+			);
 			node.skinned = true;
 		}
 	});
@@ -325,6 +380,7 @@ export function parseAnimation(
 	nodes.forEach((node, k) => {
 		node.moving = moving[k] === 1;
 		node.joint = jointOf[k] as number;
+		node.morphJoint = -1;
 		if (inRig[k] || (node.parent >= 0 && inRig[node.parent])) {
 			node.transform = decomposeAffine(worlds[k] as Float64Array);
 			node.parent = -1;
@@ -337,7 +393,78 @@ export function parseAnimation(
 			notes.push(`the instancing of node "${node.name}" moves with clips, and draws at rest`);
 		}
 	});
-	return { joints, clips, skins: skinJoints };
+	addWeightJoints(clips, nodes, meshes, joints);
+	if (joints.length > MAX_RIG_JOINTS)
+		broken(
+			`its skins and clips need ${joints.length} joints, three morph weights to a joint, and the engine's skeletons hold up to ${MAX_RIG_JOINTS}`,
+		);
+	return { joints, clips: clips.map(({ weights: _, ...clip }) => clip), skins: skinJoints };
+}
+
+/**
+ * Gives each node whose morph weights a clip animates the joints that hold them, and adds each
+ * clip's weights tracks to its tracks as tracks of those joints.
+ */
+function addWeightJoints(
+	clips: readonly ParsedClip[],
+	nodes: NodeData[],
+	meshes: readonly MeshData[],
+	joints: RigJoint[],
+): void {
+	for (const clip of clips)
+		for (const track of clip.weights) {
+			const node = nodes[track.node] as NodeData;
+			const targets = (meshes[node.mesh] as MeshData).weights?.length ?? 0;
+			const count = Math.ceil(targets / WEIGHTS_PER_JOINT);
+			if ((node.morphJoint ?? -1) < 0) {
+				node.morphJoint = joints.length;
+				for (let j = 0; j < count; j++)
+					joints.push({
+						name: node.name,
+						parent: -1,
+						translation: [0, 0, 0],
+						rotation: [0, 0, 0, 1],
+						scale: [0, 0, 0],
+						inverseBind: IDENTITY_BIND,
+					});
+			}
+			const first = node.morphJoint as number;
+			for (let j = 0; j < count; j++) {
+				clip.tracks.push({
+					joint: first + j,
+					channel: 'translation',
+					interpolation: track.interpolation,
+					times: track.times,
+					values: jointWeights(track, targets, j),
+				});
+				// One key of scale 1 marks the weights as the clip's. Each track has arrays of its own,
+				// because the worker hands every track's arrays over to the page.
+				clip.tracks.push({
+					joint: first + j,
+					channel: 'scale',
+					times: new Float32Array(1),
+					values: new Float32Array([1, 1, 1]),
+				});
+			}
+		}
+}
+
+/**
+ * The keys of joint `j`'s translation from a weights track of `targets` weights per key: weights
+ * `3j` to `3j + 2`, with 0 past the last target. A cubic key keeps its in-tangent, value and
+ * out-tangent in that order.
+ */
+function jointWeights(track: WeightTrack, targets: number, j: number): Float32Array {
+	const parts = track.interpolation === 'cubic' ? 3 : 1;
+	const keys = track.times.length * parts;
+	const out = new Float32Array(keys * WEIGHTS_PER_JOINT);
+	for (let key = 0; key < keys; key++)
+		for (let axis = 0; axis < WEIGHTS_PER_JOINT; axis++) {
+			const target = j * WEIGHTS_PER_JOINT + axis;
+			if (target < targets)
+				out[key * WEIGHTS_PER_JOINT + axis] = track.values[key * targets + target] as number;
+		}
+	return out;
 }
 
 /**
@@ -419,8 +546,9 @@ function parseClip(
 	meshes: readonly MeshData[],
 	place: Int32Array,
 	read: Reader,
+	budget: FileBudget,
 	notes: string[],
-): ClipData {
+): ParsedClip {
 	const what = `animation ${k}`;
 	// three.js's GLTFLoader names an unnamed clip so.
 	const name = text(animation.name) || `animation_${k}`;
@@ -428,7 +556,7 @@ function parseClip(
 		entry(s, `${what}'s sampler ${j}`),
 	);
 	const tracks: RigTrack[] = [];
-	const weights: WeightTrackData[] = [];
+	const weights: WeightTrack[] = [];
 	const seen = new Set<string>();
 	list(animation.channels, `${what}'s channels`).forEach((value, c) => {
 		const channel = entry(value, `${what}'s channel ${c}`);
@@ -439,7 +567,7 @@ function parseClip(
 			return;
 		}
 		const node = place[index(target.node, place.length, `${what}'s channel ${c}'s node`)] as number;
-		if (path !== 'weights' && !(path in PATHS))
+		if (path !== 'weights' && !PATHS.has(path))
 			broken(`${what}'s channel ${c} has the path ${path}`);
 		const key = `${String(target.node)} ${path}`;
 		if (seen.has(key)) broken(`${what} moves node ${String(target.node)}'s ${path} twice`);
@@ -449,7 +577,7 @@ function parseClip(
 		const sampler =
 			samplers[index(channel.sampler, samplers.length, `${what}'s channel ${c}'s sampler`)];
 		const where = `${what}'s sampler ${String(channel.sampler)}`;
-		const interpolation = INTERPOLATIONS[text(sampler?.interpolation ?? 'LINEAR')];
+		const interpolation = INTERPOLATIONS.get(text(sampler?.interpolation ?? 'LINEAR'));
 		if (!interpolation) broken(`${where} has the interpolation ${String(sampler?.interpolation)}`);
 		const input = read(Number(sampler?.input), `${where}'s input`, true);
 		if (input.components !== SCALAR || input.componentType !== FLOAT)
@@ -462,7 +590,7 @@ function parseClip(
 			last = t;
 		}
 		const output = read(Number(sampler?.output), `${where}'s output`, true);
-		const values = toFloats(output.array, output.normalized);
+		const values = toFloats(output.array, output.normalized, budget, `${where}'s output`);
 		let perKey = path === 'rotation' ? 4 : 3;
 		if (path === 'weights') {
 			const mesh = (nodes[node] as NodeData).mesh;
@@ -495,7 +623,7 @@ function parseClip(
 }
 
 /** Gives clips with the same name the suffixes " 2", " 3" and on, so each name finds one clip. */
-function uniqueNames(clips: ClipData[]): void {
+function uniqueNames(clips: ParsedClip[]): void {
 	const taken = new Set<string>();
 	for (const clip of clips) {
 		let name = clip.name;
@@ -505,8 +633,17 @@ function uniqueNames(clips: ClipData[]): void {
 	}
 }
 
-/** The joint indices of a skeleton's size: bytes up to 256 joints, else 16-bit numbers. */
-function jointArray(wide: boolean, length: number): Uint8Array | Uint16Array {
+/**
+ * The joint indices of a skeleton's size: bytes up to 256 joints, else 16-bit numbers. Each copy
+ * takes its bytes from the file's budget.
+ */
+function jointArray(
+	wide: boolean,
+	length: number,
+	budget: FileBudget,
+	what: string,
+): Uint8Array | Uint16Array {
+	budget.take(length * (wide ? 2 : 1), `the joints of ${what}`);
 	return wide ? new Uint16Array(length) : new Uint8Array(length);
 }
 
@@ -516,6 +653,7 @@ function skinned(
 	map: readonly number[],
 	wide: boolean,
 	what: string,
+	budget: FileBudget,
 	notes: string[],
 ): PrimitiveData {
 	if (!p.joints || !p.weights) {
@@ -524,7 +662,7 @@ function skinned(
 	}
 	const source = p.joints.array;
 	const weights = p.weights.array;
-	const joints = jointArray(wide, source.length);
+	const joints = jointArray(wide, source.length, budget, what);
 	for (let i = 0; i < source.length; i++) {
 		const j = source[i] as number;
 		const joint = map[j];
@@ -539,9 +677,16 @@ function skinned(
 }
 
 /** A primitive whose every vertex moves with `joint` alone. */
-function onJoint(p: PrimitiveData, joint: number, wide: boolean): PrimitiveData {
+function onJoint(
+	p: PrimitiveData,
+	joint: number,
+	wide: boolean,
+	budget: FileBudget,
+	what: string,
+): PrimitiveData {
 	const vertices = p.positions.array.length / 3;
-	const joints = jointArray(wide, vertices * 4);
+	const joints = jointArray(wide, vertices * 4, budget, what);
+	budget.take(vertices * 4, `the weights of ${what}`);
 	const weights = new Uint8Array(vertices * 4);
 	for (let v = 0; v < vertices; v++) {
 		joints[v * 4] = joint;

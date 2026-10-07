@@ -22,6 +22,7 @@
 //! The test for equal depth needs both passes to give each pixel the same depth, to the last bit.
 //! Each GPU path draws the prepass in the way that does so on it ([`Prepass`]).
 
+use null3d_core::frames::frame_after;
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, state_flags, template};
 
 use crate::frame::RecordError;
@@ -246,12 +247,21 @@ impl DrawKey {
     }
 }
 
+/// True when a pipeline that the list of frame `created` made is built, for a builder whose thread
+/// that draws last drew every pipeline built in frame `pipelines_built`: `created` is that frame or
+/// one before it. Frames compare by their order around the count, which goes round.
+pub fn built_by(created: u32, pipelines_built: u32) -> bool {
+    !frame_after(created, pipelines_built)
+}
+
 /// The render pipelines that a frame builder draws with, by key. Ids count from 1 in the order in
 /// which keys first come, and the GPU has the pipelines of the first `created` keys.
 #[derive(Debug, Default)]
 pub struct PipelineCache {
     keys: Vec<PipelineKey>,
     created: usize,
+    /// The frame whose list created each pipeline that the GPU has, by id - 1.
+    created_in: Vec<u32>,
     /// The ids of created pipelines that the cache released, which the next list destroys.
     released: Vec<u32>,
 }
@@ -273,9 +283,9 @@ impl PipelineCache {
         index as u32 + 1
     }
 
-    /// Records the creation of every pipeline that the GPU does not have yet, in id order, and
-    /// returns how many it recorded.
-    pub fn create_new(&mut self, list: &mut DrawList) -> Result<usize, RecordError> {
+    /// Records the creation of every pipeline that the GPU does not have yet, in id order, in the
+    /// list of `frame`, and returns how many it recorded.
+    pub fn create_new(&mut self, list: &mut DrawList, frame: u32) -> Result<usize, RecordError> {
         let mut count = 0;
         while let Some(key) = self.keys.get(self.created) {
             if key.template != RELEASED {
@@ -284,6 +294,10 @@ impl PipelineCache {
                     &key.operands(self.created as u32 + 1),
                 )?;
                 count += 1;
+            }
+            match self.created_in.get_mut(self.created) {
+                Some(created_in) => *created_in = frame,
+                None => self.created_in.push(frame),
             }
             self.created += 1;
         }
@@ -341,6 +355,28 @@ impl PipelineCache {
     /// Every key, in id order: the key at index `k` has id `k + 1`.
     pub fn keys(&self) -> &[PipelineKey] {
         &self.keys
+    }
+
+    /// True when the pipeline `id` draws once the GPU replays a list that uses it, for a builder
+    /// whose thread that draws last drew every pipeline built in frame `pipelines_built`: its list
+    /// created the pipeline in that frame or before. Until the thread that draws has drawn a frame,
+    /// each frame waits for its pipelines, so every pipeline draws then. After that, a draw whose
+    /// pipeline is still building, or waits for its shader file, draws nothing. A pass that must
+    /// not draw nothing, such as one that writes the whole canvas, keeps to the pipelines it had
+    /// until its new ones are built.
+    pub fn built(&self, id: u32, pipelines_built: u32) -> bool {
+        let index = id as usize - 1;
+        pipelines_built == 0
+            || (index < self.created
+                && self
+                    .created_in
+                    .get(index)
+                    .is_some_and(|&frame| built_by(frame, pipelines_built)))
+    }
+
+    /// True when every pipeline of `ids` draws, by [`Self::built`].
+    pub fn all_built(&self, mut ids: impl Iterator<Item = u32>, pipelines_built: u32) -> bool {
+        ids.all(|id| self.built(id, pipelines_built))
     }
 
     /// Forgets which pipelines the GPU has, after the thread that draws replaced it, so the next
@@ -479,7 +515,7 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let first = cache.id(lit(0).in_pass(TARGETS));
         let second = cache.id(lit(vertex::UV0).in_pass(TARGETS));
-        assert_eq!(cache.create_new(&mut list), Ok(2));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(2));
         let created = commands(&list);
         assert_eq!(created.len(), 2);
         assert!(
@@ -496,17 +532,69 @@ mod tests {
         // Known keys create nothing; a new key creates only its own pipeline.
         list.clear();
         cache.id(lit(0).in_pass(TARGETS));
-        assert_eq!(cache.create_new(&mut list), Ok(0));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(0));
         let third = cache.id(lit(vertex::COLOR).in_pass(TARGETS));
-        assert_eq!(cache.create_new(&mut list), Ok(1));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(1));
         assert_eq!(commands(&list)[0].1[0], third);
 
         // A new device has none of them: the next list creates all three under the same ids.
         list.clear();
         cache.forget();
-        assert_eq!(cache.create_new(&mut list), Ok(3));
+        assert_eq!(cache.create_new(&mut list, 1), Ok(3));
         let ids: Vec<u32> = commands(&list).iter().map(|(_, o)| o[0]).collect();
         assert_eq!(ids, [first, second, third]);
+    }
+
+    #[test]
+    fn a_pipeline_draws_once_a_frame_drew_with_every_pipeline_built_since_its_creation() {
+        let mut cache = PipelineCache::default();
+        let mut list = DrawList::with_capacity(256);
+        let first = cache.id(lit(0).in_pass(TARGETS));
+        assert!(cache.built(first, 0), "before the first frame, frames wait");
+        assert!(
+            !cache.built(first, 4),
+            "a pipeline the GPU lacks does not draw"
+        );
+        cache.create_new(&mut list, 5).unwrap();
+        let second = cache.id(lit(vertex::UV0).in_pass(TARGETS));
+        cache.create_new(&mut list, 7).unwrap();
+        assert!(!cache.built(first, 4));
+        assert!(cache.built(first, 5));
+        assert!(!cache.built(second, 6));
+        assert!(cache.built(second, 7));
+        cache.forget();
+        cache.create_new(&mut list, 9).unwrap();
+        assert!(
+            !cache.built(first, 8),
+            "a new device builds each pipeline again"
+        );
+        assert!(cache.built(first, 9));
+    }
+
+    #[test]
+    fn a_pipeline_created_in_the_last_frame_of_the_count_draws_once_the_first_frame_is_built() {
+        use null3d_core::frames::{FIRST_FRAME, previous_frame};
+        let last = previous_frame(FIRST_FRAME);
+        assert!(built_by(last, FIRST_FRAME));
+        assert!(!built_by(FIRST_FRAME, last));
+        assert!(built_by(FIRST_FRAME, 2));
+        let mut cache = PipelineCache::default();
+        let mut list = DrawList::with_capacity(256);
+        let id = cache.id(lit(0).in_pass(TARGETS));
+        cache.create_new(&mut list, last).unwrap();
+        assert!(!cache.built(id, previous_frame(last)));
+        assert!(cache.built(id, last));
+        assert!(
+            cache.built(id, FIRST_FRAME),
+            "frame 1 follows the last frame"
+        );
+        let late = cache.id(lit(vertex::UV0).in_pass(TARGETS));
+        cache.create_new(&mut list, FIRST_FRAME).unwrap();
+        assert!(
+            !cache.built(late, last),
+            "the last frame comes before frame 1"
+        );
+        assert!(cache.built(late, FIRST_FRAME));
     }
 
     #[test]
@@ -519,15 +607,19 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         let kept = cache.id(lit(0).in_pass(TARGETS));
         let gone = cache.id(custom(0).in_pass(TARGETS));
-        cache.create_new(&mut list).unwrap();
+        cache.create_new(&mut list, 1).unwrap();
         // A key asked for after the last list, which the GPU never had.
         cache.id(custom(vertex::UV0).in_pass(TARGETS));
         cache.release(|t| t == template::CUSTOM_FIRST);
         list.clear();
-        assert_eq!(cache.create_new(&mut list), Ok(0), "nothing new is created");
+        assert_eq!(
+            cache.create_new(&mut list, 1),
+            Ok(0),
+            "nothing new is created"
+        );
         assert_eq!(commands(&list), [(Op::DestroyPipeline, vec![gone])]);
         list.clear();
-        cache.create_new(&mut list).unwrap();
+        cache.create_new(&mut list, 1).unwrap();
         assert!(
             commands(&list).is_empty(),
             "each pipeline is destroyed once"
@@ -538,7 +630,7 @@ mod tests {
         cache.forget();
         list.clear();
         assert_eq!(
-            cache.create_new(&mut list),
+            cache.create_new(&mut list, 1),
             Ok(2),
             "a new device skips released keys"
         );

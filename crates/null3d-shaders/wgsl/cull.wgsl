@@ -39,6 +39,9 @@
 // lenses alike and can only make the bounds larger. The level is the first whose texels are at
 // least as wide as the bounds, so at most two texels each way cover them. Depth is reversed: 1 at
 // the near plane and 0 at the far plane, so the pyramid keeps the smallest value.
+//
+// The OCCLUSION build holds the two phases, `early` and `late`, and the build without it holds
+// `main` alone, so a page that never culls against a pyramid downloads none of the phases.
 
 /// An entry holds its bucket in the bits below OCCLUDER, the occluder mark at OCCLUDER, and the
 /// instance's cell index from CELL_SHIFT up.
@@ -210,6 +213,7 @@ fn append(s: Survivor, draws_before: u32) {
     visible[dst + 3u] = bitcast<vec4f>(vec4u(bucket.material, bucket.first_joint, 0u, 0u));
 }
 
+#ifndef OCCLUSION
 /// Culls once, against the frustum alone, into the first set of indirect draws, or for a camera
 /// view that culls in two phases, in a frame without marked occluders, into its second set.
 @compute @workgroup_size(128)
@@ -227,6 +231,7 @@ fn main(
     }
 }
 
+#else
 /// The first occlusion phase: the occluders, the instances in view that the sketch marks as
 /// occluders, that drew in the view's last frame, and that look large enough on the screen.
 @compute @workgroup_size(128)
@@ -360,3 +365,4 @@ fn occluded(center: vec3f, radius: f32) -> bool {
     let t1 = min(min(vec2u(bounds.high / texel), last), t0 + vec2u(1u));
     return bounds.nearest < farthest(level, t0, t1);
 }
+#endif

@@ -1,5 +1,6 @@
 // Creates instance batches of the size the page asks for and reports what happened. Every row sits
-// out of view except the last, so a box on screen shows that the last row draws.
+// out of view except the last, so a box on screen shows that the last row draws. Also makes a mesh
+// of as many vertices as the page asks for, with normals to compute, and reports what happened.
 import { defineSketch, type EngineError, type InstanceBatch } from '@null3d/engine';
 
 /** Where rows go to stay out of view. */
@@ -19,6 +20,19 @@ export default defineSketch(({ scene, materials, geometry, page }) => {
 			batch?.destroy();
 			batch = undefined;
 			page.post('destroyed');
+		}
+		if (name === 'mesh') {
+			try {
+				geometry.fromArrays({
+					positions: new Float32Array((data as number) * 3),
+					computeNormals: true,
+				});
+				page.post('mesh', { ok: true });
+			} catch (e) {
+				const error = e as EngineError;
+				page.post('mesh', { ok: false, code: error.code, message: error.message });
+			}
+			return;
 		}
 		if (name !== 'batch') return;
 		const count = data as number;

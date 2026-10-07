@@ -46,7 +46,7 @@ const kept = new Map<string, Kept>();
 function keptEngine(sketch: URL): Kept {
   let entry = kept.get(sketch.href);
   if (!entry) {
-    // A canvas can be handed to a worker only once, so the kept engine owns its canvas.
+    // The kept engine owns its canvas, which moves between hosts with the engine.
     const canvas = document.createElement('canvas');
     canvas.style.cssText = 'width:100%;height:100%;display:block';
     entry = { canvas, engine: createEngine({ canvas, sketch }) };
@@ -94,6 +94,7 @@ export function FourView({ sketch, onMessage, onReady }: Props) {
 
 - Create `sketch` once at module level (`const sketchUrl = new URL('./sketch.ts', import.meta.url)`), so re-renders do not restart the engine.
 - React's StrictMode mounts effects twice in development. The second mount finds the kept engine and attaches it, so development starts one engine, as production does.
+- (0.2) A plain component that renders `<canvas ref>`, creates the engine in its effect and calls `destroy()` in the cleanup also works under StrictMode: the second start waits for the first engine to stop, and draws on the same canvas. It starts the engine twice in development. Docs: `api/engine`.
 - Each mount adds its own message handler and removes it on unmount, so an old component never hears the sketch.
 - A kept engine holds its memory and GPU buffers. For a view the app shows once, destroy the engine on unmount instead of keeping it.
 
@@ -141,7 +142,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | `<Suspense fallback>`, drei `<Loader>`, `useProgress` | `assets.onProgress` plus a `'loading'` message; the page shows the loader |
 | drei `useAnimations(animations, ref)` | `obj.animator()` (0.2) |
 | drei `<OrbitControls makeDefault />` | `createOrbitControls(ctx, camera, options)` |
-| drei `<Environment preset="studio" />` | `scene.setEnvironment(assets.builtinEnvironment('studio'))` (0.2); other presets: `bunx @null3d/cli assets env` from an HDR file (0.2) |
+| drei `<Environment preset="studio" />` | Download the preset's HDR file, make it a map with `bunx @null3d/cli assets env studio.hdr studio.ktx2`, then `scene.setEnvironment(await assets.loadEnvironment('/studio.ktx2'))` (0.2). For neutral light with no file of your own: `scene.setEnvironment(await assets.builtinEnvironment('room'))` (0.2), three.js's `RoomEnvironment` |
 | drei `<Environment files="x.hdr" background />` | `bunx @null3d/cli assets env x.hdr x.ktx2`, then `setEnvironment` and `setBackground` (0.2) |
 | drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane (0.2); softer, blurred contact shadows are not built in |
 | drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React (0.2) |
@@ -154,7 +155,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
 | drei `<Stats>` | `debug.stats(true)` in the sketch; `engine.measure()` on the page for GPU time |
 | Mesh events: `onClick`, `onPointerDown`, `onPointerUp`, `onPointerMove`, `onPointerOver` or `onPointerEnter`, `onPointerOut` or `onPointerLeave` | `obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know. Only the closest object and its parents get an event, where r3f also passes it to the objects behind |
-| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and bloom, `ao`, `lut` and `vignette` (0.2), the other effects later in 0.2 (`references/post-processing.md`) |
+| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and bloom, `ao`, `outline`, `lut` and `vignette` (0.2), the other effects later in 0.2 (`references/post-processing.md`). `<Outline selection={...}>` becomes `setOutlined(true)` on each selected mesh, and its props map as `OutlineEffect`'s do |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 

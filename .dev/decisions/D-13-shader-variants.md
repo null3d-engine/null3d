@@ -77,6 +77,35 @@ Cold loads of the engine test page's production build, pipelined, in Chrome 154 
 
 In the same run, the separate file's first frame came 30 ms later on WebGPU and 59 ms later on WebGL2, at the median. Loads of one build vary by about 400 ms, so these runs cannot tell the extra request from no cost. The file arrived within about 0.1 s of the end of the sketch's setup.
 
+### The download after the core (T-28, 5 October 2026)
+
+The decision says that the thread that draws starts the file's download as soon as it knows its GPU path and its fixed bits. Until 5 October 2026 it learned them only from its start message, which the page sends after the core has arrived. So the file's request waited for the core. Every cold start then waited one more round trip after the core, plus the file's own download. On Slow 4G a round trip takes at least 562 ms. In the M1 gate's run on the Galaxy S24+, Chrome on Slow 4G finished a cold start's first frame after 4.90 s. The target of [D-06](D-06-success-targets.md) is 4.5 s.
+
+The page knows both facts as soon as its GPU probe ends. The GPU path comes from the probe. The fixed bits come from the probe's report, the chosen preset and the page's options, never from the core. So the page now works out the core device right after the probe, and starts the file's download at once:
+
+- Where the render worker or the sketch worker draws, the page sends it `load-shaders` with the GPU path and the bits. The worker starts the import.
+- Where the page draws, it starts the import itself once the renderer's module has loaded.
+- Where the probe finds that a worker cannot draw, the page loads the renderer and the file right after the probe too.
+
+The renderer imports the same module again once the core has started. The browser keeps one module for each address, so the file downloads once, and the page downloads the same files as before. A failed early download stays quiet: the renderer's own import then reports the failure. A browser test holds the core's download back until a thread asks for the shader file, in every thread mode and on both GPU paths. The old start order fails it: the request came only after the core.
+
+These are cold and warm loads of the engine test page's production build, WebGL2, Slow 4G. They ran in Chrome 154 on the MacBook Pro (M5 Max) on 5 October 2026, with other work on the Mac. The old and the new start code ran in turns, two runs of five loads each. So each value is the median of 10 loads. The core was 249.4 KB after Brotli, and the WebGL2 shader file about 28.6 KB. The first frame was done at:
+
+| Thread mode | Cold, old | Cold, new | Change | Warm, old | Warm, new |
+| --- | --- | --- | --- | --- | --- |
+| Pipelined | 4,832 ms | 4,258 ms | -574 ms | 696 ms | 706 ms |
+| Low latency | 4,826 ms | 4,248 ms | -578 ms | 716 ms | 704 ms |
+| Single-threaded | 4,764 ms | 4,196 ms | -568 ms | 682 ms | 678 ms |
+| Drawing on the main thread | 4,804 ms | 4,244 ms | -560 ms | 697 ms | 690 ms |
+| Sketch on the main thread | 4,809 ms | 4,228 ms | -580 ms | 766 ms | 700 ms |
+
+- Every cold load got faster, by 0.56 to 0.58 s at the median. The slowest new cold load (4,413 ms) was faster than the fastest old one (4,749 ms).
+- The shader file now shares the link with the core. So the core was ready about 0.19 s later: about 4.21 s against 4.02 s, pipelined. The first frame then followed the core by about 50 ms, against about 0.8 s before.
+- Each mode made the same requests and downloaded the same bytes as before. Single-threaded loads made 11 requests for 363 KB, and the other modes 12 requests for 367 to 371 KB.
+- Warm loads make one request, and the files come from the cache, so the order cannot change them. Their medians stayed within the spread between loads.
+
+`bun run bench:startup --runs 5 --gpu webgl2 --modes all --loads cold,warm --network slow-4g`, twice for each version. The S24+'s own figures come from `bun run bench:startup --android`.
+
 ### Warm-up (T-12, T-26)
 
 `KHR_parallel_shader_compile`, which lets WebGL2 compile programs in the background, in the device runs recorded before this task:
@@ -122,7 +151,7 @@ How the data was produced: on 2026-10-02, `bun tests/real-browsers.ts --plan war
 
 ## Decision
 
-(b3): the shaders of each GPU path load as files of their own. There is one file for each value of the bits that a device fixes when the engine starts, and a page loads exactly one. The device fixes the draw index (WebGL2 with multi-draw or without) and TONE_MAP (the 8-bit output path or HDR). Each file holds every template's variants for every combination of the material bits. The thread that draws starts the download as soon as it knows its GPU path and its fixed bits. The first frame waits for its pipelines anyway.
+(b3): the shaders of each GPU path load as files of their own. There is one file for each value of the bits that a device fixes when the engine starts, and a page loads exactly one. The device fixes the draw index (WebGL2 with multi-draw or without) and TONE_MAP (the 8-bit output path or HDR). Each file holds every template's variants for every combination of the material bits. The thread that draws starts the download as soon as the page knows its GPU path and its fixed bits. That is right after the GPU probe, while the core downloads. The first frame waits for its pipelines anyway.
 
 (b3) gives the smallest page on both paths at every bit count, and the least JavaScript to parse. At five bits, a WebGL2 page is 52.0 KB and parses 414 KB of shader text. With every variant in the file that draws, it is 57.6 KB and parses 1,644 KB. (b3) keeps 8 KB of the budget with M1's five bits, and each more material bit costs about 1 KB. (c) saves 0.6 KB more on a WebGPU page and nothing on WebGL2, but each template needs a second way to write it. So (c) waits until WebGPU warm-up time asks for fewer shader modules. T-26 gives no such reason: on the iPad, no scene's WebGPU pipelines took more than 32 ms.
 
@@ -139,7 +168,7 @@ null3D does the same work at build time. A page downloads one file with only the
 ## Consequences
 
 - The shader manifest marks the engine's shaders (`lit`, `unlit`, `unlit_map`, `texcoords`, `final`, `mipmap` and `cull`) with `by_device = true`. The shader build writes their builds into `generated/shaders-<target>[-<bit>...].ts`. These are `shaders-wgsl.ts`, `shaders-glsl.ts` and `shaders-glsl-draw-index.ts` for HDR devices, and the same three with `-tone-map` for the 8-bit path. Half precision ([D-09](D-09-half-precision.md)) is a third bit that a device fixes, so each of the six has a `-half` twin: twelve modules in all. A module holds the builds of each shader that a device with its bits asks for. So a shader without device bits, such as `cull`, `mipmap` or the final pass's `final`, is in every module of its target. The main module, `generated/shaders.ts`, keeps the types, the test shaders and the GPU timer's mark shader. It also keeps the debug lines shader, which only development builds import. It also has the loaders `loadWgslShaders(bits)` and `loadGlslShaders(bits)`. Each loader imports only its own target's modules.
-- The core device carries the bits that the device fixes (`shaderBits`). The thread that draws starts the download while it waits for its WebGPU device or its WebGL2 context. It then gives the loaded shaders to the backend.
+- The core device carries the bits that the device fixes (`shaderBits`). The page works the core device out right after the GPU probe, and tells the thread that draws to start the file's download then (`load-shaders`). The renderer loads the same module again once the core has started, and the browser gives it the module that is already on its way. The renderer then gives the loaded shaders to the backend.
 - The size report names each shader file (`SHADER_PARTS` in `tools/lib/size-report.ts`) and counts the largest in each thread mode's download. A new value of the device's bits adds a module, which the report must name.
 - A new material bit doubles each file: check the size report when one is added.
 - The warm-up time plan watches the target: S4's pipeline wait with fresh shaders stays under 250 ms on the S24+. A new material bit, or a pass that adds pipelines to S4, reruns it on the S24+.
@@ -158,6 +187,93 @@ The library code review of 4 October 2026 measured the shader files again (R6-03
 
 The owner's decisions of 4 October 2026 change the layout:
 
-- A feature's shaders may load on first use, in a file of their own, of up to about 24 KB after Brotli ([D-14](D-14-js-budget.md#first-use-shader-files)). The morph builds and the room's generator do so first.
+- A feature's shaders may load on first use, in a file of their own, of up to 32 KB after Brotli ([D-14](D-14-js-budget.md#first-use-shader-files)). The morph builds and the room's generator do so first.
 - The size is fixed at its cause ([D-53](D-53-technique-defaults.md) ruling 23). M2-R11, whose own record is D-56, comes before any new feature that adds shader code; branches already built move their shaders in a follow-up. It stores each unique stage source once per file, with variants as indexes into it, and moves each feature's templates into a first-use file. It then measures `bench:startup` on BrowserStack's Galaxy S25 and Pixel 9, and decides whether the `standard_maps` builds (1.72 MB, 32 builds) split by a second fixed bit. Its figures replace this record's.
 - Add-on modules need first-use shader files too ([D-54](D-54-addon-modules.md)).
+
+## Addendum, 2026-10-04: measured again, after the duplicate sources went
+
+Task: M2-R14, from review R8 (R8-02) and R6 (R6-03).
+
+The decision chose (b3) for the smallest start and the least shader text to parse. Both reasons rested on a 414 KB GLSL file. Through M2 every feature added its variants to every file. This addendum gives the figures after M2-R14 removed the duplicate stage sources, the first step of the addendum above.
+
+### Sizes
+
+On 2026-10-04, main at dc178379 with this task's branch. Sizes are KB (1,024 bytes), measured on the production build that `bun run build` makes. The device modules without half precision:
+
+| File | Raw | Brotli 11 | Brotli 5 | Brotli 4 | gzip 9 | gzip 6 | gzip 1 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `shaders-glsl-draw-index-tone-map` | 2,659.8 | 25.0 | 29.5 | 33.4 | 299.7 | 394.3 | 635.2 |
+| `shaders-glsl` | 2,336.9 | 24.6 | 28.9 | 32.9 | 231.9 | 319.2 | 527.0 |
+| `shaders-wgsl-tone-map` | 1,911.7 | 25.3 | 28.6 | 32.8 | 264.8 | 316.0 | 509.8 |
+| `shaders-wgsl` | 1,703.1 | 25.8 | 28.3 | 32.4 | 202.9 | 257.9 | 420.0 |
+
+The half-precision twins are 1,711 to 2,776 KB raw. Brotli finds the repeated text across its window of several MB. gzip's window is 32 KB, so it finds only repeats that sit close together. At the decision, a WebGL2 page was 64.0 KB with gzip 9. Today the shader file alone is 231.9 to 299.7 KB with gzip 9. Hosts that compress on the fly often use gzip 6, which gives up to 394.3 KB. A pipelined page's start, the largest, is 106.9 KB with Brotli 11, 402.7 KB with gzip 9 and 3,040.6 KB uncompressed. Before the duplicate sources went, review R8 measured that start at 589 KB with gzip 6.
+
+### Duplicate stage sources
+
+35 of the 164 GLSL stage sources in a device module were exact copies of another: a vertex stage that several variants share, for example. The shader build now writes each source once per module and points each program at it. A GLSL device module went from 2.96 to 2.42 MB raw, and the main module from 1.77 to 1.28 MB. The WGSL modules had no copies. Brotli 11 sizes hardly changed, since Brotli already found the copies.
+
+### Parse time
+
+V8 compiles and runs a shader module when a page imports it. Measured in Node 24 on the M5 Max, each module minified and imported 7 times, each time in a fresh process. The table gives the median, less the 1.6 ms that an empty module takes.
+
+| Module | Before the copies went | After |
+| --- | --- | --- |
+| `shaders-glsl` | 10.6 ms | 9.0 ms |
+| `shaders-glsl-draw-index-tone-map`, the largest GLSL | 12.1 ms | 9.9 ms |
+| `shaders-wgsl` | about 6 ms | about 6 ms |
+
+At the decision the 414 KB file took 2.2 ms. A phone takes several times as long as the Mac, and the time falls on the thread that draws, before its first frame.
+
+### What changes
+
+- (b3)'s split stays: one shader file for each value of the bits that a device fixes, and a page downloads exactly one at its start.
+- That file no longer holds every feature. Each feature's templates move into files that load on the feature's first use, as M2-R11 builds them (record D-56). The start's file keeps only what every page draws with.
+- The size report measures each file raw, with gzip 9 and with Brotli 11. It budgets all three for the start and for the files that load later ([D-14](D-14-js-budget.md#m2-gzip-and-uncompressed-budgets)). A start that grows on a gzip host, or on a host that sends files as they are, now fails the build.
+- The hosting guide tells developers to serve the engine's files with Brotli, and gives the gzip and uncompressed sizes.
+
+## Addendum, 2026-10-04: features that load on first use
+
+[D-56](D-56-first-use-shader-files.md) takes out of this record's files the builds of features that most pages do not use. Those are sprites, lines, skinning with every SKIN build, bloom's steps and the final pass's BLOOM builds, the texture background and the engine's test template. Each feature has files of its own, by the same fixed bits. A page downloads one the first time it uses the feature. A start shader file now holds 17.7 to 19.4 KB after Brotli and 0.85 to 1.37 MB uncompressed. On main it held 27.6 to 30.0 KB and 1.8 to 3.6 MB. So a page parses about half the shader text of before at its start. A permutation bit that a feature's table names adds nothing to the start files. Another material bit still doubles each one.
+
+Device modules are now plain JavaScript files, `generated/shaders-<target>-<bits>.js`, which the main module imports by address. So one copy of each serves the page's bundle and every worker's.
+
+## Addendum, 2026-10-05: paragraphs that sources share
+
+### Question
+
+M2-J5 (specular and ior) merged main. After that, two WebGL2 skinning files passed the 1,536 KB uncompressed limit of a first-use file ([D-56](D-56-first-use-shader-files.md)). `shaders-skinning-glsl-draw-index-tone-map-half.js` was 1,557.8 KB and `shaders-skinning-glsl-tone-map-half.js` 1,554.8 KB. After gzip and Brotli they used 86% and 65% of their limits. Can the files shrink without a higher limit?
+
+### Data
+
+Stage sources that differ still share most of their text: the same structs, uniforms and functions, with a few that change with the build's bits. In `shaders-skinning-glsl-tone-map-half.js`, the 60 distinct sources held 1,346 KB, but only 108 KB of distinct lines. Split at blank lines, they held 3,049 paragraphs, 335 of them distinct, in 295 KB.
+
+So each device module now writes once each paragraph that several of its sources hold. Each is a constant (`PART_0`, `PART_1` and so on) before the shared sources. Each source's template literal names those constants in place of their text, and the page joins them when it evaluates the module. Every one of the 60 device modules gives the same builds as before, string for string.
+
+Sizes from `bun run build:check-size` at the J5 merge commit, before and after. Each start file is one of four rows, and each page downloads one:
+
+| File | Uncompressed | gzip 9 | Brotli 11 |
+| --- | --- | --- | --- |
+| `shaders-skinning-glsl-draw-index-tone-map-half.js`, the largest | 1,557.8 to 538.9 KB | 275.3 to 46.1 KB | 20.8 to 21.4 KB (+2.9%) |
+| `shaders-skinning-wgsl-tone-map-half.js` | 1,256.2 to 242.7 KB | 286.6 to 39.0 KB | 18.9 to 19.9 KB (+5.3%) |
+| `shaders-glsl-draw-index-tone-map-half.js`, a WebGL2 start file | 1,305.4 to 375.7 KB | 268.1 to 44.6 KB | 20.9 to 21.6 KB (+3.3%) |
+| `shaders-wgsl-tone-map-half.js`, a WebGPU start file | 1,222.8 to 265.2 KB | 273.7 to 42.7 KB | 22.6 to 23.6 KB (+4.4%) |
+| A pipelined page's start | 1,622.3 to 692.6 KB | 381.7 to 152.6 KB | 117.1 to 118.2 KB |
+
+The largest file that loads on first use now takes 35% of the uncompressed limit and 14% of the gzip limit. Brotli already found the repeats, so it gains nothing. Each reference costs it a little. The 62 shader files grew 0 to 7.7%, 22 KB in all. A page's start grew 1.1 KB, to 84.4% of its 140 KB budget.
+
+### Options
+
+| Option | Uncompressed | gzip | Brotli | Cost |
+| --- | --- | --- | --- | --- |
+| A: raise the limit | unchanged | unchanged | unchanged | The files keep growing with each material bit |
+| B: split the skinning files by one more bit | about half for skinning only, estimated | about half, estimated | about the same per build | Twice the skinning files, and a page with both values downloads two |
+| C: write each shared paragraph once (chosen) | 65 to 81% less in the large files | 83 to 86% less | +2 to 5% in the large files | A template literal per source with its references |
+| D: also drop each line's indentation | a further 26 to 34 KB less | a further 4 to 8 KB less | 0.4 to 0.6 KB less, which takes back most of C's growth | Sources are harder to read in a browser's tools; line numbers stay the same |
+
+D is not done here: it changes how the shader text reads, which is the owner's choice.
+
+### Main module
+
+The main module shares whole sources only. A bundle keeps only the exports of `shaders.ts` that it imports. But the minifier keeps a template literal that names a constant, even where nothing reads it. In a trial build with paragraphs there, `page-renderer.js` grew from 27.9 to 39.1 KB after Brotli, with the paragraphs of the test shaders it never imports.

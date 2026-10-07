@@ -363,6 +363,65 @@ fn damaged_files_are_refused() {
     }
 }
 
+/// A tree whose empty slot holds a box that some test enters, or whose box is not finite, would
+/// make the first query follow an empty word. The reader refuses each such tree.
+#[test]
+fn empty_slots_and_boxes_that_are_not_finite_are_refused() {
+    let p = [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    let mesh = TriangleSoup { positions: &p };
+    let bvh = MeshBvh::build(&mesh).unwrap();
+    let good = bvh.to_bytes();
+    assert!(MeshBvh::from_bytes(&good, &mesh).is_ok());
+    let root = &bvh.nodes()[0];
+    let empty = (0..4).find(|&c| root.children[c] == child::EMPTY).unwrap();
+    let used = (0..4).find(|&c| root.children[c] != child::EMPTY).unwrap();
+    // Lane `slot` of field `field` of the root: min x, y, z, then max x, y, z.
+    let lane = |field: usize, slot: usize| HEADER_BYTES + field * 16 + slot * 4;
+    let with = |changes: &[(usize, f32)]| {
+        let mut b = good.clone();
+        for &(at, v) in changes {
+            b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        MeshBvh::from_bytes(&b, &mesh)
+    };
+    let everywhere: Vec<(usize, f32)> = (0..6)
+        .map(|field| {
+            let v = if field < 3 {
+                f32::NEG_INFINITY
+            } else {
+                f32::INFINITY
+            };
+            (lane(field, empty), v)
+        })
+        .collect();
+    assert_eq!(
+        with(&everywhere),
+        Err(FormatError::EmptySlot(0, empty as u32))
+    );
+    assert_eq!(
+        with(&[(lane(0, empty), f32::NAN)]),
+        Err(FormatError::EmptySlot(0, empty as u32))
+    );
+    assert_eq!(
+        with(&[(lane(0, empty), 0.0)]),
+        Err(FormatError::EmptySlot(0, empty as u32))
+    );
+    // A used slot or the whole tree's box that reaches infinity, or holds NaN.
+    assert_eq!(
+        with(&[(lane(0, used), f32::NEG_INFINITY)]),
+        Err(FormatError::Bounds(0, used as u32))
+    );
+    assert_eq!(
+        with(&[(lane(4, used), f32::NAN)]),
+        Err(FormatError::Bounds(0, used as u32))
+    );
+    let header_max_x = 36;
+    assert_eq!(
+        with(&[(header_max_x, f32::INFINITY)]),
+        Err(FormatError::Bounds(0, 4))
+    );
+}
+
 /// Stored bytes of a chain of `depth` nodes, each with one triangle and one child node.
 fn deep_tree(depth: u32) -> Vec<u8> {
     let mut b = Vec::new();
@@ -662,6 +721,172 @@ fn refits_follow_moved_items() {
     }
     tree.refit();
     check_tree(&objects, &tree, &mut rng, [0.0; 3], 300.0);
+}
+
+/// Rays and boxes that are not finite in 32 bits never make a walk follow an empty child. A ray
+/// with NaN in every part passes every box test, empty boxes too, and so does a ray whose origin
+/// is infinite, or a box that reaches infinity. A walk that followed an empty child would read
+/// past the nodes and abort the engine. Such rays find nothing; such boxes find what they reach.
+#[test]
+fn queries_that_are_not_finite_never_follow_an_empty_child() {
+    let (nan, inf) = (f32::NAN, f32::INFINITY);
+    let p = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    let mesh = TriangleSoup { positions: &p };
+    let bvh = MeshBvh::build(&mesh).unwrap();
+    assert!(bvh.nodes()[0].children.contains(&child::EMPTY));
+    let rays = [
+        Ray::new([0.2, 0.2, 1.0], [nan; 3]),
+        Ray::new([nan; 3], [0.0, 0.0, -1.0]),
+        Ray::new([inf; 3], [0.0, 0.0, -1.0]),
+        Ray::new([-inf, 0.2, 1.0], [1.0, 0.0, -1.0]),
+        Ray::new([0.2, 0.2, 1.0], [0.0; 3]),
+    ];
+    for ray in &rays {
+        for side in SIDES {
+            assert_eq!(bvh.raycast(&mesh, ray, side), None, "{ray:?}");
+            assert!(!bvh.raycast_any(&mesh, ray, side), "{ray:?}");
+            bvh.raycast_all(&mesh, ray, side, |hit| panic!("{ray:?} hit {hit:?}"));
+        }
+    }
+    let count = |b: Aabb| {
+        let mut n = 0;
+        bvh.overlap(&b, |_| {
+            n += 1;
+            false
+        });
+        n
+    };
+    let everything = Aabb {
+        min: [-inf; 3],
+        max: [inf; 3],
+    };
+    assert_eq!(count(everything), 1);
+    assert_eq!(
+        count(Aabb {
+            min: [nan; 3],
+            max: [nan; 3]
+        }),
+        0
+    );
+
+    // Two items, so the root holds two empty children.
+    let mut rng = Rng::new(10);
+    let objects = Objects::random(&mut rng, 2, [0.0; 3], 10.0);
+    for build in 0..2 {
+        let mut tree = objects.tree();
+        if build == 0 {
+            tree.build_morton(&objects.table, &JobSystem::new(0))
+                .unwrap();
+        } else {
+            tree.build_sah(&objects.table, &JobSystem::new(0)).unwrap();
+        }
+        for ray in [
+            WorldRay::new([0.0; 3], [nan; 3]),
+            WorldRay::new([f64::NAN; 3], [0.0, 0.0, -1.0]),
+            WorldRay::new([1e39; 3], [0.0, 0.0, -1.0]),
+        ] {
+            let hit = |id: u32, local: &Ray| objects.hit(id as usize, local);
+            assert_eq!(tree.raycast(&ray, hit), None, "{ray:?}");
+            assert!(!tree.raycast_any(&ray, |id, local| hit(id, local).is_some()));
+        }
+        let mut found = BTreeSet::new();
+        tree.overlap_box([-1e39; 3], [1e39; 3], |id, _| {
+            found.insert(id);
+        });
+        assert_eq!(found, BTreeSet::from([0, 1]));
+        found.clear();
+        tree.overlap_sphere([0.0; 3], inf, |id, _| {
+            found.insert(id);
+        });
+        assert_eq!(found, BTreeSet::from([0, 1]));
+    }
+}
+
+/// A stored tree whose empty child holds a box that reaches infinity, as a damaged file can, still
+/// answers rays as brute force does: its walks never follow the empty child that the box admits.
+#[test]
+fn a_stored_tree_with_a_damaged_empty_box_answers_rays() {
+    let mut rng = Rng::new(11);
+    let p = soup(&mut rng, 3, 2.0, 1.0);
+    let mesh = TriangleSoup { positions: &p };
+    let built = MeshBvh::build(&mesh).unwrap();
+    let slot = built.nodes()[0]
+        .children
+        .iter()
+        .position(|&w| w == child::EMPTY)
+        .unwrap();
+    let mut bytes = built.to_bytes();
+    for k in 0..3 {
+        let at = HEADER_BYTES + (k * 4 + slot) * 4;
+        bytes[at..at + 4].copy_from_slice(&f32::NEG_INFINITY.to_le_bytes());
+        bytes[at + 48..at + 52].copy_from_slice(&f32::INFINITY.to_le_bytes());
+    }
+    // The reader may refuse such a file. When it reads it, queries stay safe and exact.
+    let Ok(bvh) = MeshBvh::from_bytes(&bytes, &mesh) else {
+        return;
+    };
+    let mut bounds = Aabb::EMPTY;
+    for t in 0..mesh.count() {
+        bounds.grow(&Aabb::of_triangle(&mesh.triangle(t)));
+    }
+    for _ in 0..200 {
+        let ray = random_ray(&mut rng, &bounds);
+        for side in SIDES {
+            same_closest(
+                bvh.raycast(&mesh, &ray, side),
+                built.raycast(&mesh, &ray, side),
+                "a damaged empty box",
+            );
+            assert_eq!(
+                hits_of(&mesh, &ray, side).is_empty(),
+                !bvh.raycast_any(&mesh, &ray, side)
+            );
+        }
+    }
+    let mut n = 0;
+    let everything = Aabb {
+        min: [-1e30; 3],
+        max: [1e30; 3],
+    };
+    bvh.overlap(&everything, |_| {
+        n += 1;
+        false
+    });
+    assert_eq!(n, 3);
+}
+
+/// A ray toward any finite direction but zero becomes a unit ray, whatever the direction's size.
+/// A direction of the usual sizes gives the same bits as dividing it by its length.
+#[test]
+fn rays_toward_any_finite_direction_get_unit_directions() {
+    let unit = |d: [f64; 3]| WorldRay::toward([1.0, -2.0, 3.0], d).unwrap().direction;
+    assert_eq!(unit([0.0, -2.0, 0.0]), [0.0, -1.0, 0.0]);
+    assert_eq!(unit([1e-200, 0.0, 0.0]), [1.0, 0.0, 0.0]);
+    assert_eq!(unit([0.0, 0.0, -1e300]), [0.0, 0.0, -1.0]);
+    assert_eq!(unit([f64::MAX, 0.0, 0.0]), [1.0, 0.0, 0.0]);
+    assert_eq!(unit([0.0, 5e-324, 0.0]), [0.0, 1.0, 0.0]);
+    assert_eq!(unit([3e-170, 4e-170, 0.0]), [0.6, 0.8, 0.0]);
+    assert_eq!(unit([3e170, 0.0, -4e170]), [0.6, 0.0, -0.8]);
+    let mut rng = Rng::new(12);
+    for _ in 0..1000 {
+        let d = [(); 3].map(|_| f64::from(rng.range(-100.0, 100.0)));
+        let length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        assert_eq!(unit(d), d.map(|v| (v / length) as f32));
+    }
+    let ray = WorldRay::toward([1.0, -2.0, 3.0], [0.0, 0.0, 2.0]).unwrap();
+    assert_eq!(
+        (ray.origin, ray.t_min, ray.t_max),
+        ([1.0, -2.0, 3.0], 0.0, f32::INFINITY)
+    );
+    for (origin, direction) in [
+        ([0.0; 3], [0.0; 3]),
+        ([0.0; 3], [f64::NAN, 1.0, 0.0]),
+        ([0.0; 3], [f64::INFINITY, 0.0, 0.0]),
+        ([f64::NAN, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        ([0.0, f64::NEG_INFINITY, 0.0], [1.0, 0.0, 0.0]),
+    ] {
+        assert_eq!(WorldRay::toward(origin, direction), None);
+    }
 }
 
 #[test]

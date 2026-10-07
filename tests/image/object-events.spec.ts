@@ -8,6 +8,7 @@
 // away after it. Each runs in every thread mode, and the moves and clicks on every GPU path.
 import { expect, type Page, test } from '@playwright/test';
 import { allocatingPlaces } from '../lib/allocations.ts';
+import { ALONE } from '../lib/alone.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -32,6 +33,20 @@ const PANEL = { x: 160, y: 62 };
 /** A place on the page below the canvas. */
 const OUTSIDE = { x: 400, y: 300 };
 
+/**
+ * How long a test waits for the sketch to read the input and its handlers to run. CI's software
+ * GPU on a busy runner can take more than a second for a frame, and a step can take several frames
+ * and messages.
+ */
+const WAIT_MS = 30_000;
+/** A test's time limit, which holds many waits on a slow runner. */
+const TEST_MS = 120_000;
+
+test.describe.configure({ timeout: TEST_MS });
+
+/** Asks `read` again until its answer passes the expectation, for up to `WAIT_MS`. */
+const poll = <T>(read: () => Promise<T>) => expect.poll(read, { timeout: WAIT_MS });
+
 const CLICKS = 8;
 /** The frames whose cameras the engine keeps. */
 const KEPT_FRAMES = 4;
@@ -49,7 +64,7 @@ async function open(page: Page, switches: string) {
 
 /** Waits for the page's result, and returns the function that `open` returns. */
 async function started(page: Page) {
-	const result = await pageResult<{ ok: boolean; error?: string }>(page, 30_000);
+	const result = await pageResult<{ ok: boolean; error?: string }>(page, WAIT_MS);
 	expect(result.error).toBeUndefined();
 	return (message = 'ask') =>
 		page.evaluate(
@@ -61,12 +76,12 @@ async function started(page: Page) {
 		);
 }
 
-/** Waits until the handlers have written `expected`, then checks that they wrote nothing else. */
+/**
+ * Waits until the handlers have written exactly `expected`, and fails with the lines they wrote
+ * when they never do. A line that comes later fails the next wait, or the test's last check.
+ */
 async function expectLines(send: (message?: string) => Promise<Reply>, expected: string[]) {
-	await expect
-		.poll(async () => (await send()).lines.length)
-		.toBeGreaterThanOrEqual(expected.length);
-	expect((await send()).lines).toEqual(expected);
+	await poll(async () => (await send()).lines).toEqual(expected);
 }
 
 /** Moves and clicks the mouse over the boxes, and checks each step's events. */
@@ -132,13 +147,17 @@ async function moveAndClick(page: Page, send: (message?: string) => Promise<Repl
 for (const mode of ENGINE_MODES)
 	test(`pointer events reach the objects under the mouse, ${mode.name}`, async ({ page }) => {
 		const send = await open(page, switchesOf(mode));
-		// No object listens yet: moves and clicks cast no ray.
+		// No object listens yet: moves and clicks cast no ray. The test waits until the sketch has
+		// read the press, then the release, as it dispatches each event in the frame that reads it.
+		// The move alone already shows the pointer there with no button down, and a press and
+		// release that the sketch reads only after the handlers come would reach them.
+		const pointer = async () => (await send()).pointer;
 		await page.mouse.move(MIDDLE.x, MIDDLE.y);
-		await page.mouse.click(RIGHT.x, RIGHT.y);
-		// Once the sketch has read the click, it has dispatched it, with no handler to cast for.
-		await expect
-			.poll(async () => (await send()).pointer)
-			.toEqual({ x: RIGHT.x, y: RIGHT.y, buttons: 0 });
+		await page.mouse.move(RIGHT.x, RIGHT.y);
+		await page.mouse.down();
+		await poll(pointer).toEqual({ x: RIGHT.x, y: RIGHT.y, buttons: 1 });
+		await page.mouse.up();
+		await poll(pointer).toEqual({ x: RIGHT.x, y: RIGHT.y, buttons: 0 });
 		expect((await send()).rays).toBe(0);
 		await page.mouse.move(OUTSIDE.x, OUTSIDE.y);
 		await send('listen');
@@ -203,10 +222,10 @@ for (const mode of ENGINE_MODES)
 		const send = await open(page, switchesOf(mode));
 		await send('pan');
 		// Until the frames on screen show the dome, a click picks what they show: the boxes.
-		await expect.poll(async () => (await send()).panFrames).toBeGreaterThan(KEPT_FRAMES * 2);
+		await poll(async () => (await send()).panFrames).toBeGreaterThan(KEPT_FRAMES * 2);
 		for (let k = 1; k <= CLICKS; k++) {
 			await page.mouse.click(MIDDLE.x, MIDDLE.y);
-			await expect.poll(async () => (await send()).panClicks.length).toBe(k);
+			await poll(async () => (await send()).panClicks.length).toBe(k);
 		}
 		const { step, panClicks } = await send();
 		for (const click of panClicks) {
@@ -240,23 +259,19 @@ for (const mode of ENGINE_MODES)
 		await expectLines(send, ['click right', 'ray right']);
 	});
 
-test('pointer events allocate nothing', async ({ page }) => {
+test('pointer events allocate nothing', ALONE, async ({ page }) => {
 	const send = await open(page, 'threads=off');
 	await send('loop');
 	// Each frame of the loop with events enters the left box, presses, clicks, then moves to the
 	// right box: its handlers count four events, and the group's two.
-	const handled = await page.evaluate(() =>
-		(globalThis as { __null3dPointerLoop?: (iterations: number) => number }).__null3dPointerLoop?.(
-			2,
-		),
-	);
-	expect(handled).toBeGreaterThan(0);
-	const runLoop = (iterations: number, runs: number) =>
+	const loop = (iterations: number, runs: number) =>
 		page.evaluate(
 			({ iterations, runs }) => {
-				const loop = (globalThis as { __null3dPointerLoop?: (iterations: number) => number })
+				const run = (globalThis as { __null3dPointerLoop?: (iterations: number) => number })
 					.__null3dPointerLoop;
-				for (let run = 0; run < runs; run++) loop?.(iterations);
+				let handled = 0;
+				for (let k = 0; k < runs; k++) handled += run?.(iterations) ?? 0;
+				return handled;
 			},
 			{ iterations, runs },
 		);
@@ -267,6 +282,9 @@ test('pointer events allocate nothing', async ({ page }) => {
 		// The dispatch, the rays from the frame cameras, the raycasts and the core's glue.
 		counted:
 			/\/packages\/engine\/(src\/scene\/(pointer-events|frame-cameras|queries|scene|memory)\.ts|dist\/wasm\/)/,
+		pauseEngine: true,
 	};
-	expect(await allocatingPlaces(page, plan, runLoop)).toEqual([]);
+	expect(await allocatingPlaces(page, plan, loop)).toEqual([]);
+	// The paused engine's handlers still ran the loop's events.
+	expect(await loop(2, 1)).toBeGreaterThan(0);
 });

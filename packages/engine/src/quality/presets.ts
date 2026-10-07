@@ -104,14 +104,34 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 1, max: 8, whole: true, heavierBelow: true },
 	},
-	// The share of three.js's taps that each of bloom's blurs reads: 1 reads them all, and 0.5 or
-	// 0.25 spread the same kernel over half or a quarter as many filtered reads, which costs less
-	// and keeps the glow's size. The shaders read it from a uniform, so it changes during play with
-	// no new pipeline. Every preset keeps three.js's taps until device runs measure bloom's cost.
-	bloomSamples: {
-		presets: [1, 1, 1, 1],
+	// Whether a far cascade draws in every frame while a moving caster touches it. Every preset
+	// turns it on: a far cascade that keeps its turns leaves each moving shadow behind its caster
+	// until the next turn, and a camera high above a town sees nothing nearer than the far
+	// cascades. D-16 gives the figures.
+	followMovingCasters: {
+		presets: [true, true, true, true],
 		changes: 'live',
-		values: [0.25, 0.5, 1],
+		values: 'flag',
+	},
+	// The share of each shadow cascade's length, at its far end, over which its shadow blends into
+	// the next cascade's, so no line shows where they meet. Only the band's pixels read a second
+	// layer of the shadow map. D-73 gives the figures.
+	shadowCascadeBlend: {
+		presets: [0.1, 0.1, 0.1, 0.1],
+		changes: 'live',
+		values: { min: 0, max: 0.5 },
+	},
+	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
+	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
+	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
+	// more than the scene's pixels need: 128 costs less than the method before it on the Galaxy S25
+	// and the Pixel 9, and has four fewer passes than 512, which matters on the Pixel 11's PowerVR GPU
+	// (D-21). A change makes the chain's targets again; the governor's step halves the base with no
+	// new GPU object.
+	bloomSize: {
+		presets: [128, 512, 512, 512],
+		changes: 'live',
+		values: [64, 128, 256, 512],
 	},
 	// The size of ambient occlusion's targets, as a share of the render size each way: half on High
 	// and Ultra, and 0 on Low and Medium, where ambient occlusion draws nothing even when the sketch
@@ -160,7 +180,8 @@ export const QUALITY_SETTINGS = {
 	},
 	// The tiles of the shadow atlas that spot and point lights cast their shadows into: a spot light
 	// takes one, and a point light six. The lights that look largest from the camera get them
-	// first. 0 turns their shadows off. The atlas holds no more layers than the lights can fill.
+	// first. 0 turns their shadows off. The atlas grows to the layers that the lights fill, and
+	// keeps them while some light casts.
 	shadowTiles: {
 		presets: [4, 8, 16, 24],
 		changes: 'start',
@@ -194,6 +215,15 @@ export const QUALITY_SETTINGS = {
 		presets: [false, false, false, false],
 		changes: 'start',
 		values: 'flag',
+	},
+	// The most morph weights of each object that WebGL2 draws. Its vertex shaders morph in every
+	// pass that draws a mesh, shadow passes too, and skip a target whose weight is 0, so the cap
+	// bounds the reads of each pass. WebGPU morphs once per frame in its skinning pass and draws
+	// every weight. Low keeps three.js's old limit of 8 active targets.
+	morphTargets: {
+		presets: [8, 16, 32, 64],
+		changes: 'start',
+		values: { min: 1, max: 256, whole: true },
 	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default (D-04). A phone filled the whole 4 GiB in one tab; the
@@ -265,11 +295,28 @@ export interface QualitySettings {
 	 */
 	farCascadeInterval: number;
 	/**
-	 * The share of three.js's `UnrealBloomPass` taps that each of bloom's blurs reads: 1, 0.5 or
-	 * 0.25. A lower share spreads the same blur over fewer reads, which costs less and keeps the
-	 * glow's size, with coarser steps in it. It changes during play.
+	 * True when a far shadow cascade draws in every frame while a dynamic object that casts shadows
+	 * touches it, so moving shadows stay under their casters. False keeps each far cascade to its
+	 * turns of `farCascadeInterval` frames: a moving shadow in a far cascade then trails its
+	 * caster by up to that many frames less one, and the frames draw fewer shadow passes. The
+	 * governor then leaves `farCascadeInterval` as set, so the trail never grows. Every preset turns
+	 * it on. It changes during play.
 	 */
-	bloomSamples: 0.25 | 0.5 | 1;
+	followMovingCasters: boolean;
+	/**
+	 * The share of each shadow cascade's length, at its far end, over which its shadow blends into
+	 * the next cascade's, from 0 to 0.5. The blend hides the line where a near cascade's sharper
+	 * shadows hand over to a far cascade's softer ones. Pixels in the band read both cascades, so a
+	 * wider band costs a little more. 0 hands over at once. It changes during play.
+	 */
+	shadowCascadeBlend: number;
+	/**
+	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
+	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes
+	 * more than half the canvas's short side. It changes during play, which makes bloom's targets
+	 * again.
+	 */
+	bloomSize: 64 | 128 | 256 | 512;
 	/**
 	 * The size of ambient occlusion's targets, as a share of the render size each way: 0.5, 0.25,
 	 * or 0, which draws no ambient occlusion even when `post.set` turns it on. A smaller share costs
@@ -280,7 +327,7 @@ export interface QualitySettings {
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then
-	 * bloom's samples while bloom is on, then ambient occlusion's scale while it draws. It raises them again, in the reverse order, once frames
+	 * bloom's size while bloom is on, then ambient occlusion's scale while it draws. It raises them again, in the reverse order, once frames
 	 * have time to spare. `quality.governor` reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.
@@ -341,6 +388,13 @@ export interface QualitySettings {
 	 * always false on WebGL2, and when the depth prepass is on.
 	 */
 	gpuOcclusion: boolean;
+	/**
+	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
+	 * 1 to 256. Each object keeps the weights farthest from 0, and draws the others as 0. WebGPU
+	 * draws every weight. The `morphTargets` option of `createEngine` sets it, and `set` does not
+	 * take it.
+	 */
+	morphTargets: number;
 	/**
 	 * True when software occlusion culling runs on WebGL2: each frame, the job workers draw the
 	 * objects that `setOccluder(true)` marks into a small depth buffer, and the engine skips every

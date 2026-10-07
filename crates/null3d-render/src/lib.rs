@@ -14,6 +14,8 @@
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `debug_view`: the debug views, which draw every mesh with one debug shading in place of its
 //!   material's
+//! - `environment`: the scene's environment map, which standard materials reflect and take
+//!   diffuse light from, and its part of each frame's uniform block
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas, and grades it
 //! - `fog`: the scene's fog, with three.js's formulas, and its part of each frame's uniform block
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
@@ -29,6 +31,8 @@
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
 //! - `occlusion`: the camera's blockers for software occlusion culling on the WebGL2 path
+//! - `outline`: a crisp line around the objects that the sketch outlines: a mask of the outlined
+//!   objects, from which the final pass draws the line
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
@@ -50,6 +54,7 @@ pub mod cpu_culled;
 pub mod debug_lines;
 pub mod debug_view;
 pub mod dfg;
+pub mod environment;
 mod final_pass;
 pub mod fog;
 pub mod frame;
@@ -62,7 +67,9 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod morph;
 pub mod occlusion;
+pub mod outline;
 pub mod output;
 pub mod parallel_record;
 pub mod pipelines;

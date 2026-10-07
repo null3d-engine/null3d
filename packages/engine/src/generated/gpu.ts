@@ -39,6 +39,7 @@ export const OP_COPY_BUFFER_TO_BUFFER = 48;
 export const OP_COPY_TEXTURE_TO_TEXTURE = 49;
 export const OP_RELEASE_IMAGE = 51;
 export const OP_DESTROY_PIPELINE = 52;
+export const OP_GENERATE_TEXTURE = 54;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;
@@ -137,6 +138,7 @@ export const PERMUTATION_PREPASS = 4096;
 export const PERMUTATION_HALF = 8192;
 export const PERMUTATION_CASTER_OFFSET = 16384;
 export const PERMUTATION_BLOOM = 32768;
+export const PERMUTATION_OUTLINE_VISIBLE = 65536;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -144,8 +146,9 @@ export const VERTEX_TANGENT = 4;
 export const VERTEX_COLOR = 8;
 export const VERTEX_JOINTS = 16;
 export const VERTEX_WEIGHTS = 32;
-export const VERTEX_ALL = 63;
-export const VERTEX_INSTANCE_LOCATION = 8;
+export const VERTEX_MORPH = 134217728;
+export const VERTEX_ALL = 134217791;
+export const VERTEX_INSTANCE_LOCATION = 9;
 
 export const VERTEX_TYPE_F32 = 0;
 export const VERTEX_TYPE_UNORM8 = 1;
@@ -186,6 +189,7 @@ export const TEMPLATE_LIGHT_COUNT = 17;
 export const TEMPLATE_LIGHT_PLACE = 18;
 export const TEMPLATE_LIGHT_WRITE = 19;
 export const TEMPLATE_SKIN = 20;
+export const TEMPLATE_OUTLINE_MASK = 21;
 export const TEMPLATE_SPRITE = 22;
 export const TEMPLATE_SPRITE_MAP = 23;
 export const TEMPLATE_OCCLUSION_EARLY = 24;
@@ -216,7 +220,7 @@ export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
-export const SIZE_FRAME_UNIFORM_BYTES = 304;
+export const SIZE_FRAME_UNIFORM_BYTES = 512;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
@@ -229,13 +233,14 @@ export const SIZE_LIGHTS_PER_TEXTURE_ROW = 512;
 export const SIZE_DRAW_RECORD_BYTES = 16;
 export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
-export const SIZE_MATERIAL_BYTES = 128;
+export const SIZE_MATERIAL_BYTES = 144;
+export const SIZE_MAP_SLOTS = 8;
 export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_CULL_OCCLUSION_BYTES = 352;
 export const SIZE_LINE_VERTEX_BYTES = 16;
-export const SIZE_SHADOW_UNIFORM_BYTES = 352;
+export const SIZE_SHADOW_UNIFORM_BYTES = 368;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
@@ -245,4 +250,4 @@ export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 
 /** Each vertex attribute type by code: its bytes per value, its largest value (1 for floats), and whether it reads as fractions. */
 export const VERTEX_TYPES: readonly (readonly [bytes: number, max: number, normalized: boolean])[] = [[4, 1, false], [1, 255, true], [1, 127, true], [2, 65535, true], [2, 32767, true], [1, 255, false], [1, 127, false], [2, 65535, false], [2, 32767, false]];
 /** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */
-export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [[0, 3, 6, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [0, 3, 10, [0, 2, 4], false], [1, 2, 12, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [2, 2, 16, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [4, 4, 20, [0, 2, 4], false], [8, 4, 22, [0, 1, 3], false], [16, 4, 24, [5, 7], true], [32, 4, 25, [0, 1, 3], false]];
+export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, components: number, shift: number, types: readonly number[], integer: boolean])[] = [[0, 3, 6, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [0, 3, 10, [0, 2, 4], false], [1, 2, 12, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [2, 2, 16, [0, 1, 2, 3, 4, 5, 6, 7, 8], false], [4, 4, 20, [0, 2, 4], false], [8, 4, 22, [0, 1, 3], false], [16, 4, 24, [5, 7], true], [32, 4, 25, [0, 1, 3], false], [134217728, 2, 27, [0], false]];

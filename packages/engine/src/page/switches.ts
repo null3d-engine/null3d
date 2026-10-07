@@ -8,7 +8,7 @@
 // starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
 // running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
 
-import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
+import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -97,6 +97,12 @@ export interface Switches {
 	 */
 	wakeByMessage: boolean;
 	/**
+	 * False when ?display-check=off stops the checks of the display where the page's thread draws.
+	 * The checks draw nothing at two callbacks now and then while the frames run slower than the
+	 * display, and the switch lets a run measure what they cost.
+	 */
+	displayChecks: boolean;
+	/**
 	 * False when ?hdr=off makes the engine take the 8-bit path, where the scene shaders tone map
 	 * themselves, on a device that draws HDR color.
 	 */
@@ -134,7 +140,10 @@ export interface Switches {
 	 * undefined to draw at the display's rate.
 	 */
 	fps: number | undefined;
-	/** The job workers that ?jobs= asks for, or undefined for the count from the device's cores. */
+	/**
+	 * The job workers that ?jobs= asks for, or undefined for the count from the device's cores. The
+	 * engine starts no more than the device has logical cores (`jobWorkerCount`).
+	 */
 	jobs: number | undefined;
 	/**
 	 * The most frames that ?queue= lets wait unfinished on the GPU: a whole number, or infinity
@@ -143,7 +152,8 @@ export interface Switches {
 	queue: number | undefined;
 	/**
 	 * The shared memory's declared maximum in MiB from ?memory=, which wins over the page's option,
-	 * or undefined to use the option or the default.
+	 * or undefined to use the option or the default. A value outside the range that the option
+	 * takes counts as no switch.
 	 */
 	memoryMiB: number | undefined;
 	/**
@@ -168,6 +178,21 @@ export interface Switches {
 
 /** The most job workers the engine core runs. */
 const MAX_JOB_WORKERS = 255;
+/** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
+const RESERVED_CORES = 2;
+/** The range of the shared memory's maximum in MiB that a page can ask for. */
+const MEMORY_MIB = QUALITY_SETTINGS.memoryMaximumMiB.values;
+
+/**
+ * The job workers of a threaded engine on a device with `cores` logical cores: the count that
+ * ?jobs= asks for, up to `cores`, or else the cores that the sketch and render workers leave free,
+ * and at least one.
+ */
+export function jobWorkerCount(fromSwitch: number | undefined, cores: number): number {
+	return fromSwitch !== undefined
+		? Math.min(fromSwitch, Math.max(1, cores))
+		: Math.max(1, cores - RESERVED_CORES);
+}
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
 	return value !== null && (allowed as readonly string[]).includes(value)
@@ -192,6 +217,11 @@ function whole(value: string | null, max = Number.MAX_SAFE_INTEGER): number | un
 	return n !== undefined && Number.isInteger(n) && n <= max ? n : undefined;
 }
 
+/** `value` when it lies from `min` to `max`, else undefined. */
+function within(value: number | undefined, min: number, max: number): number | undefined {
+	return value !== undefined && value >= min && value <= max ? value : undefined;
+}
+
 export function parseSwitches(search: string): Switches {
 	const params = new URLSearchParams(search);
 	return {
@@ -210,6 +240,7 @@ export function parseSwitches(search: string): Switches {
 		freshShaders: params.get('shaders') === 'fresh',
 		freshCheck: params.get('check') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
+		displayChecks: params.get('display-check') !== 'off',
 		hdr: params.get('hdr') !== 'off',
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
@@ -219,7 +250,7 @@ export function parseSwitches(search: string): Switches {
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
-		memoryMiB: whole(params.get('memory')),
+		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),

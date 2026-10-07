@@ -130,6 +130,33 @@ fn compute_pipelines(commands: &[(Op, Vec<u32>)]) -> HashMap<u32, (u32, u32)> {
         .collect()
 }
 
+/// The templates of occlusion culling's compute pipelines, whose shaders load on first use.
+const OCCLUSION_TEMPLATES: [u32; 3] = [
+    template::OCCLUSION_EARLY,
+    template::OCCLUSION_LATE,
+    template::DEPTH_PYRAMID,
+];
+
+/// The template of each compute pipeline that the commands create, by id.
+fn pipeline_templates(commands: &[(Op, Vec<u32>)]) -> HashMap<u32, u32> {
+    compute_pipelines(commands)
+        .into_iter()
+        .map(|(id, (t, _))| (id, t))
+        .collect()
+}
+
+/// The template of each dispatch of the commands, in order, with the templates of the compute
+/// pipelines that `created` made, by id.
+fn dispatched(commands: &[(Op, Vec<u32>)], created: &HashMap<u32, u32>) -> Vec<u32> {
+    passes(commands, created)
+        .into_iter()
+        .flat_map(|p| match p {
+            Pass::Compute(d) => d,
+            Pass::Render { .. } => Vec::new(),
+        })
+        .collect()
+}
+
 /// The offsets of the indirect draws that each bundle draws, by bundle id.
 fn bundle_draws(commands: &[(Op, Vec<u32>)]) -> HashMap<u32, Vec<u32>> {
     let mut bundles: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -435,33 +462,91 @@ fn without_a_marked_occluder_the_camera_culls_once_as_without_occlusion_culling(
 }
 
 #[test]
-fn marking_an_object_turns_the_two_phases_on_from_the_next_frame_and_unmarking_turns_them_off() {
+fn marking_an_object_turns_the_two_phases_on_and_unmarking_turns_them_off() {
     let mut world = unmarked(Antialias::Msaa, occluding());
     let mut mock = device();
     let (first, _) = frames(&mut world, &mut mock);
-    let created = compute_pipelines(&first);
-    let templates: HashMap<u32, u32> = created.iter().map(|(&id, &(t, _))| (id, t)).collect();
-    let dispatched = |commands: &Commands| -> Vec<u32> {
-        passes(commands, &templates)
-            .into_iter()
-            .flat_map(|p| match p {
-                Pass::Compute(d) => d,
-                Pass::Render { .. } => Vec::new(),
-            })
-            .collect()
-    };
+    let mut templates = pipeline_templates(&first);
     let object = world.objects[0];
-    for (mark, early) in [(OCCLUDER, true), (0, false)] {
+    // The frame that sees the first mark asks for the pipelines, and the next one runs them, as
+    // the mock builds every pipeline at once. Unmarking turns them off in the frame that sees it.
+    for (mark, frames, early) in [(OCCLUDER, 2, true), (0, 1, false)] {
         let commands = [Command::set_flags(object, OCCLUDER, mark)];
         world.scene.apply_commands(&commands, world.frame).unwrap();
-        let next = world.step(&mut mock, false);
+        let mut last = Vec::new();
+        for _ in 0..frames {
+            last = world.step(&mut mock, false);
+            templates.extend(pipeline_templates(&last));
+        }
         assert_eq!(
-            dispatched(&next).contains(&template::OCCLUSION_EARLY),
+            dispatched(&last, &templates).contains(&template::OCCLUSION_EARLY),
             early,
             "marked {}",
             mark != 0
         );
     }
+}
+
+#[test]
+fn occlusion_culling_makes_its_pipelines_only_once_the_scene_marks_an_occluder() {
+    let mut world = unmarked(Antialias::Msaa, occluding());
+    let mut mock = device();
+    let (first, steady) = frames(&mut world, &mut mock);
+    let made = |commands: &Commands| -> Vec<u32> {
+        let mut made: Vec<u32> = pipeline_templates(commands)
+            .into_values()
+            .filter(|t| OCCLUSION_TEMPLATES.contains(t))
+            .collect();
+        made.sort_unstable();
+        made
+    };
+    // Their shaders load on first use, so an unmarked scene asks for none of them.
+    assert_eq!(made(&first), []);
+    assert_eq!(made(&steady), []);
+
+    let commands = [Command::set_flags(world.objects[0], OCCLUDER, OCCLUDER)];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    let marked: Vec<u32> = (0..3)
+        .flat_map(|_| made(&world.step(&mut mock, false)))
+        .collect();
+    let mut expected = OCCLUSION_TEMPLATES.to_vec();
+    expected.sort_unstable();
+    assert_eq!(marked, expected, "each made once");
+}
+
+#[test]
+fn the_camera_culls_once_until_occlusion_cullings_pipelines_are_built() {
+    let mut world = unmarked(Antialias::Msaa, occluding());
+    let mut mock = device();
+    let (first, _) = frames(&mut world, &mut mock);
+    let mut templates = pipeline_templates(&first);
+    // The thread that draws reports the frames whose pipelines it has built: from here on, none.
+    world.pipelines_built = world.frame;
+    let commands = [Command::set_flags(world.objects[0], OCCLUDER, OCCLUDER)];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    for _ in 0..3 {
+        let waiting = world.step(&mut mock, false);
+        templates.extend(pipeline_templates(&waiting));
+        assert_eq!(dispatched(&waiting, &templates), [template::CULL]);
+        let renders = passes(&waiting, &templates)
+            .iter()
+            .filter(|p| matches!(p, Pass::Render { bundles, .. } if !bundles.is_empty()))
+            .count();
+        assert_eq!(renders, 1, "no occluders' pass while the pipelines build");
+    }
+    world.pipelines_built = u32::MAX;
+    let built = world.step(&mut mock, false);
+    let mut phases = dispatched(&built, &templates);
+    // The pyramid takes a dispatch for each batch of its levels.
+    phases.dedup();
+    assert_eq!(
+        phases,
+        [
+            template::OCCLUSION_EARLY,
+            template::DEPTH_PYRAMID,
+            template::OCCLUSION_LATE
+        ]
+    );
 }
 
 #[test]
@@ -474,11 +559,7 @@ fn culling_starts_in_two_phases_once_ambient_occlusion_turns_the_prepass_off() {
         .iter()
         .map(|(&id, &(t, _))| (id, t))
         .collect();
-    // Ambient occlusion holds the depth prepass, so the camera culls once. The two phases'
-    // pipelines are made at the start all the same, for when it turns off.
-    for phase in [template::OCCLUSION_EARLY, template::OCCLUSION_LATE] {
-        assert!(templates.values().any(|&t| t == phase), "{templates:?}");
-    }
+    // Ambient occlusion holds the depth prepass, so the camera culls once.
     let runs = |commands: &Commands, templates: &HashMap<u32, u32>, wanted: u32| {
         passes(commands, templates)
             .iter()

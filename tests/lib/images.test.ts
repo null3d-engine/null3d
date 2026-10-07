@@ -23,6 +23,7 @@ import {
 	readPng,
 	referenceFileProblems,
 	referenceOf,
+	runIn,
 	TOLERANCE,
 	writePng,
 } from './images.ts';
@@ -56,6 +57,7 @@ const TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		devices: ['ipad'],
 		expect: { visible: [1, 2] },
+		swiftShaderSwitches: ['n=2', 'far=on'],
 	},
 ];
 const RUNS = imageRuns(TESTS);
@@ -196,6 +198,18 @@ describe('the runs of a test', () => {
 		expect(run('grid-compat').mode).toBeUndefined();
 	});
 
+	it("adds a test's SwiftShader switches only where SwiftShader draws", () => {
+		expect(runIn(run('grid-compat'), 'chromium-swiftshader').path).toBe(
+			'/pages/grid.html?gpu=compat&preset=low&n=2&far=on',
+		);
+		expect(runIn(run('grid-compat'), 'chrome-real-gpu').path).toBe(
+			'/pages/grid.html?gpu=compat&preset=low',
+		);
+		expect(runIn(run('boxes-webgpu-pipelined'), 'chromium-swiftshader')).toBe(
+			run('boxes-webgpu-pipelined'),
+		);
+	});
+
 	it('names the first mode, which every later mode on the tier must match', () => {
 		expect(run('boxes-compat-pipelined').sameAs).toBeUndefined();
 		expect(run('boxes-compat-low-latency').sameAs).toBe('boxes-compat-pipelined');
@@ -244,6 +258,18 @@ describe('the reference of a run', () => {
 	it("is a device's own where the test records the device", () => {
 		expect(referenceOf(run('grid-webgpu'), IPAD)).toEqual({
 			file: 'ipad/webgpu/grid.png',
+			tolerance: TOLERANCE,
+		});
+	});
+
+	it('is the references of another device with the same GPU, for a device that shares them', () => {
+		const [shared] = imageRuns([
+			{ ...(TESTS[0] as ImageTest), tiers: ['webgl2'], devices: ['sm-s926b', 'sm-s921b'] },
+		]);
+		expect(
+			referenceOf(shared as ImageRun, { runner: 'sm-s921b-chrome', device: 'sm-s921b' }),
+		).toEqual({
+			file: 'sm-s926b/webgl2/boxes.png',
 			tolerance: TOLERANCE,
 		});
 	});
@@ -311,6 +337,14 @@ describe('the files in the folder of references', () => {
 		expect(referenceFileProblems(phoneRuns, boxes)).toEqual([
 			'sm-s926b/webgl2/boxes.png is missing. Make it: run the checks plan on sm-s926b (.dev/devices.md), then bun run images:review --accept boxes',
 		]);
+		expect(referenceFileProblems(phoneRuns, [...boxes, 'sm-s926b/webgl2/boxes.png'])).toEqual([]);
+	});
+
+	it("need no references of its own for a device that shares another device's", () => {
+		const phoneRuns = imageRuns([
+			{ ...(TESTS[0] as ImageTest), devices: ['sm-s926b', 'sm-s921b'] },
+		]);
+		const boxes = NEEDED.filter((file) => file.endsWith('/boxes.png'));
 		expect(referenceFileProblems(phoneRuns, [...boxes, 'sm-s926b/webgl2/boxes.png'])).toEqual([]);
 	});
 

@@ -21,6 +21,7 @@ import {
 	TEXTURE_FORMAT_ETC2_RGBA_SRGB,
 	TEXTURE_FORMAT_HALF_FLOAT,
 	TEXTURE_FORMAT_LINEAR,
+	TEXTURE_FORMAT_SHARED_EXPONENT,
 	TEXTURE_FORMAT_SRGB,
 	TEXTURE_MAX_DEPTH,
 	TEXTURE_OPTION_MAX_ANISOTROPY,
@@ -40,7 +41,8 @@ import {
 	TEXTURE_WRAP_REPEAT,
 } from '../generated/core';
 import type { QualitySettingName, QualitySettings } from '../quality/presets';
-import type { ImageSender } from '../shared/images';
+import type { GeneratorName, ImageSender } from '../shared/images';
+import type { EnvironmentFormat } from './environment';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
 
@@ -92,7 +94,8 @@ export type CompressedTextureFormat =
 
 /**
  * Texel data: bytes for `rgba8unorm`, and for `rgba16float` either half floats as 16-bit words or
- * 32-bit floats, which the engine turns into half floats.
+ * 32-bit floats, which the engine turns into half floats. A 32-bit float outside the half float range
+ * of -65,504 to 65,504 takes the nearer end of it, because an infinite texel would draw black.
  *
  * @category api/textures
  */
@@ -226,7 +229,7 @@ export class Texture {
 		 * How the texture stores its texels on the GPU. A texture from a KTX2 file has the
 		 * compressed format that the device supports, or `rgba8unorm` where it supports none.
 		 */
-		readonly format: TextureFormat | CompressedTextureFormat,
+		readonly format: TextureFormat | CompressedTextureFormat | EnvironmentFormat,
 		/** Whether sampling turns the texels from sRGB into linear values, or reads them as they are. */
 		readonly colorSpace: TextureColorSpace,
 		/** The set of texture coordinates that materials read the texture at. */
@@ -301,6 +304,10 @@ export class Textures {
 		/** @internal The device's capability flags, which say what compressed formats it has. */
 		readonly capabilities: number,
 		private readonly ownBudget: () => void = () => {},
+		/** Resolves once the thread that draws holds every image and generator up to an id. */
+		private readonly arrived: (id: number) => Promise<void> = async () => {},
+		/** @internal True when the engine draws with WebGL2. */
+		readonly webgl2 = false,
 	) {}
 
 	/**
@@ -411,6 +418,65 @@ export class Textures {
 			texture.destroy();
 			throw error;
 		}
+		return texture;
+	}
+
+	/**
+	 * @internal A cube texture with faces of `size` texels a side and `levels` mip levels, read
+	 * with linear filters within and between levels, filled with `texels`: each level's six faces,
+	 * from the largest level, as an environment map's file holds them.
+	 */
+	fromCube(
+		size: number,
+		levels: number,
+		format: EnvironmentFormat,
+		texels: readonly Uint8Array[],
+		call: string,
+	): Texture {
+		const { core } = this;
+		const code =
+			format === 'rgb9e5ufloat' ? TEXTURE_FORMAT_SHARED_EXPONENT : TEXTURE_FORMAT_HALF_FLOAT;
+		const handle = core.checkGrowth(core.glue.createCubeTexture(size, levels, code), call);
+		const texture = new Texture(handle, size, size, 6, format, 'linear', 0, this, true);
+		try {
+			let address = this.texelAddress(texture, size, size, call);
+			for (const level of texels) {
+				new Uint8Array(core.memory.buffer, address, level.length).set(level);
+				address += level.length;
+			}
+		} catch (error) {
+			texture.destroy();
+			throw error;
+		}
+		return texture;
+	}
+
+	/**
+	 * @internal A cube texture of shared-exponent floats with faces of `size` texels a side and
+	 * `levels` mip levels, read with linear filters within and between levels, whose texels a
+	 * generator makes on the GPU. It resolves once the thread that draws has loaded the generator's
+	 * code and built its pipelines. The next frame then makes every texel in one submit, before it
+	 * draws, so no frame draws with the texture before its texels are made.
+	 */
+	async fromGenerator(
+		name: GeneratorName,
+		size: number,
+		levels: number,
+		call: string,
+	): Promise<Texture> {
+		const { core } = this;
+		const format = TEXTURE_FORMAT_SHARED_EXPONENT;
+		const handle = core.checkGrowth(core.glue.createCubeTexture(size, levels, format), call);
+		const texture = new Texture(handle, size, size, 6, 'rgb9e5ufloat', 'linear', 0, this, true);
+		let id: number;
+		try {
+			id = core.checkGrowth(core.glue.generateTexture(handle), call, 'a texture');
+			this.send(id, name);
+		} catch (error) {
+			texture.destroy();
+			throw error;
+		}
+		await this.arrived(id);
 		return texture;
 	}
 
@@ -582,7 +648,7 @@ export class Textures {
 		return this.stat(TEXTURE_STAT_MAX_SIZE);
 	}
 
-	/** @internal The images sent to the thread that draws so far. */
+	/** @internal The last image id sent to the thread that draws, or 0 before the first. */
 	get imagesSent(): number {
 		return this.stat(TEXTURE_STAT_IMAGES_SENT);
 	}

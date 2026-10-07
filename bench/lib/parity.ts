@@ -38,6 +38,22 @@ export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
  */
 export const AO_MAX_DIFFERENT_PERCENT = 1;
 
+/**
+ * The limit for the strong bloom, a sanity comparison: null3D draws bloom through its own mip chain,
+ * with `UnrealBloomPass`'s settings mapped onto it (D-21). The strong glow's widest haze reaches the
+ * frame's edges, where three.js's fades, so the pixels near the edges differ by three.js's rule.
+ * Near the lights the two match. The soft bloom keeps three.js's own limit.
+ */
+export const BLOOM_STRONG_MAX_DIFFERENT_PERCENT = 20;
+
+/**
+ * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
+ * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
+ * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
+ * line around the wrong parts gives.
+ */
+export const OUTLINE_MAX_DIFFERENT_PERCENT = 0.15;
+
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
 /** A diff image shows each matching pixel at this share of the reference pixel's value. */
@@ -105,8 +121,10 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
- * end in -prepass, the depth prepass, for those that end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
- * wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * end in -prepass, the depth prepass, for those that end in -blend-off, S4's shadow cascades with
+ * no band between them, for those that end in -timed, the time of each WebGL call, and for those
+ * that end in -synced, that time with a wait for the browser's GPU process after each call, and the
+ * GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -122,6 +140,16 @@ const PAGES = {
 	'null3d-webgl2-half': { folder: 'null3d', switches: 'gpu=webgl2&half=on', api: 'webgl2' },
 	'null3d-webgpu-prepass': { folder: 'null3d', switches: 'gpu=webgpu&prepass=on', api: 'webgpu' },
 	'null3d-webgl2-prepass': { folder: 'null3d', switches: 'gpu=webgl2&prepass=on', api: 'webgl2' },
+	'null3d-webgpu-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&shadowCascadeBlend=0',
+		api: 'webgpu',
+	},
+	'null3d-webgl2-blend-off': {
+		folder: 'null3d',
+		switches: 'gpu=webgl2&shadowCascadeBlend=0',
+		api: 'webgl2',
+	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },
 	'null3d-webgl2-synced': {
 		folder: 'null3d',
@@ -237,9 +265,14 @@ const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 /**
  * The glTF model scenes that three.js's WebGPURenderer draws wrong, so its WebGLRenderer's frame is
  * the reference on every tier. In the Khronos meshopt test, it draws the column of cubes with 16-bit
- * attributes black, and its WebGLRenderer draws them as null3D does.
+ * attributes black, and its WebGLRenderer draws them as null3D does. It also leaves out color morph
+ * targets: r186 packs them into its morph texture, but its vertex stage adds only the positions'
+ * and the normals' deltas.
  */
-const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['meshopt-khr']);
+const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
+	'meshopt-khr',
+	'morph-colors',
+]);
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
@@ -254,10 +287,27 @@ const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set(['m
  */
 export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{ test: 'standard-grid', twin: `${TWINS}/standard-grid.html`, sketchSwitches: NO_TONE },
+	// The grid lit by an environment alone, against three.js's scene.environment from
+	// PMREMGenerator: its RoomEnvironment, and an HDR file with a low sun, as it is and turned.
+	...(['room', 'venice', 'venice-rotated'] as const).map(
+		(env): FeatureScene => ({
+			test: `environment-${env}`,
+			twin: `${TWINS}/environment.html?env=${env.replace('-rotated', '&rotate')}`,
+			sketchSwitches: NO_TONE,
+		}),
+	),
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
+	// Points against three.js's Points and PointsMaterial, whose WebGPURenderer draws them one pixel
+	// wide, so WebGLRenderer's frame is the reference on every tier. WebGPU's samples within a pixel
+	// lie mirrored top to bottom against WebGL's. So where a point's top or bottom edge crosses a row
+	// of pixels, WebGPU covers other samples: 0.079% of the pixels differ on SwiftShader, and 0.056%
+	// on the Mac's GPU. Compatibility mode's 8-bit path also averages edge samples after it encodes
+	// them, at the edges of bright points on the wall: 0.119% differ on SwiftShader, and 0.110% on
+	// the Mac's GPU. D-37 gives the detail.
+	{ test: 'points', twin: `${TWINS}/points.html`, webglOnly: true, limit: 0.2 },
 	{ test: 'lines', twin: `${TWINS}/lines.html` },
 	{ test: 'lines-basic', twin: `${TWINS}/lines.html?basic` },
 	{ test: 'texture-background', twin: `${TWINS}/texture-background.html` },
@@ -296,14 +346,32 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/skinning.html`,
 		sketchSwitches: NO_TONE,
 	},
-	// Bloom at two settings against three.js's UnrealBloomPass. The composer's targets have no MSAA,
-	// so null3D's page draws without anti-aliasing too.
+	// Morph targets against three.js's morphTargetInfluences. Compatibility mode's 8-bit path
+	// averages the three spheres' edge samples after it encodes them, so 0.102% of the wide scene's
+	// pixels differ there, all on outlines: 53 of the 234 on the red sphere, whose weights are all
+	// 0. That scene takes a limit of its own. The close-up checks the deltas' half floats by three.js's
+	// own rule on every tier.
+	{
+		test: 'morph',
+		twin: `${TWINS}/morph.html`,
+		sketchSwitches: NO_TONE,
+		limit: 0.2,
+	},
+	{
+		test: 'morph-closeup',
+		twin: `${TWINS}/morph.html?closeup`,
+		sketchSwitches: NO_TONE,
+	},
+	// Bloom at two settings against three.js's UnrealBloomPass, which the porting skill's mapping
+	// turns into null3D's settings. The composer's targets have no MSAA, so null3D's page draws
+	// without anti-aliasing too.
 	...(['soft', 'strong'] as const).map(
 		(bloom): FeatureScene => ({
 			test: `bloom-${bloom}`,
 			twin: `${TWINS}/bloom.html?bloom=${bloom}`,
 			switches: 'antialias=none',
 			webglOnly: true,
+			...(bloom === 'strong' && { limit: BLOOM_STRONG_MAX_DIFFERENT_PERCENT }),
 		}),
 	),
 	// Ambient occlusion with GTAOPass's defaults and with a wider search, against three.js's
@@ -335,6 +403,19 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		switches: 'antialias=none',
 		webglOnly: true,
 	},
+	// Outlines with the engine's defaults and with a line around hidden parts, against the same line
+	// drawn from the mask of three.js's OutlinePass. The composer's targets have no MSAA, so null3D's
+	// page draws without anti-aliasing too. SwiftShader's WebGPU draws the ground's far edge and the
+	// plain box's top edge a row apart from WebGL, so the scenes have a limit of their own.
+	...(['plain', 'hidden'] as const).map(
+		(outline): FeatureScene => ({
+			test: `outline-${outline}`,
+			twin: `${TWINS}/outline.html?outline=${outline}`,
+			switches: 'antialias=none',
+			webglOnly: true,
+			limit: OUTLINE_MAX_DIFFERENT_PERCENT,
+		}),
+	),
 ];
 
 /** The feature scene of an image test, or undefined when no twin draws that test's scene. */
@@ -407,12 +488,29 @@ export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): 
 }
 
 /**
+ * One page switch: a name of letters in words joined by hyphens, such as `display-check`, with a
+ * value or none. A value holds letters, digits, `.`, `-`, `_` and `,`, such as `reversed-gl` or
+ * `bc,etc2`.
+ */
+const PAGE_SWITCH = /^[a-z]+(-[a-z]+)*(=[\w.,-]+)?$/i;
+
+/** The form of page switches, for error messages. */
+const SWITCHES_FORM =
+	'names of letters and hyphens, each with =value or none, joined by &, such as shadows=3 or display-check=off&hold';
+
+/**
  * The page switches of a command's `option`, such as `--switches shadows=3`: names, each with a
  * value or none, joined by `&`. It throws unless the text has that form.
  */
 export function readSwitches(text: string | undefined, option: string): string {
-	if (!text || !/^[a-z]+(=[\w.]+)?(&[a-z]+(=[\w.]+)?)*$/i.test(text))
+	if (!text) throw new Error(`${option}: give page switches: ${SWITCHES_FORM}`);
+	if (text.startsWith('?'))
 		throw new Error(`${option}: give page switches without the ?, such as shadows=3 or a=1&b`);
+	const bad = text.split('&').find((entry) => !PAGE_SWITCH.test(entry));
+	if (bad !== undefined)
+		throw new Error(
+			`${option}: ${bad ? `"${bad}" is not a page switch` : 'a switch is empty'}. Give ${SWITCHES_FORM}`,
+		);
 	return text;
 }
 

@@ -4,11 +4,14 @@
 // compute the next frame. A callback that finds no new frame, a frame that waits for its pipelines,
 // too many frames unfinished on the GPU, or that comes before the frame's turn under ?fps= or the
 // display's rate, draws nothing. In a worker, each callback also sets a timer that wakes the thread
-// shortly before the next callback is due.
+// shortly before the next callback is due. On the page's thread, two callbacks in a row now and then
+// draw nothing while the frames run slower than the display, so the interval between them measures
+// the display.
 
-import { controlLabels, controlViews, Slot } from '../shared/control';
+import { controlLabels, controlViews, frameAfter, Slot } from '../shared/control';
 import { type LabelRegion, presentLabels } from '../shared/labels';
 import { FrameRecorder, Role } from '../shared/metrics';
+import { TARGET_CAP_HZ } from '../shared/stats';
 import { notifySlot, type WakeTarget } from '../shared/wake';
 import { FramePacer } from './pacer';
 import { RefreshMeter, snapMeanInterval } from './refresh';
@@ -22,6 +25,19 @@ export interface RenderLoop {
 
 /** Hears the error that ended a frame loop. */
 export type LoopFault = (error: unknown) => void;
+
+/** How the thread that draws paces its frames, as the page's switches set it. */
+export interface FramePacing {
+	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	fps?: number;
+	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
+	queue?: number;
+	/**
+	 * False when ?display-check=off stops the checks of the display on the page's thread, so a run
+	 * can compare the frame rate with and without them.
+	 */
+	displayChecks?: boolean;
+}
 
 /**
  * An animation frame callback that runs `step`, which asks for the next callback itself. When
@@ -59,6 +75,40 @@ const MICROSECONDS_PER_MS = 1000;
  * waits for work.
  */
 const MAX_FRAMES_IN_FLIGHT = 2;
+/**
+ * The intervals of each measurement of the display on the page's thread. Under load, one comes
+ * with each check, so few keep the measurement quick.
+ */
+const DISPLAY_SAMPLES = 8;
+/**
+ * Callbacks in a row that drew a frame, on the page's thread, after which a check of the display
+ * starts, while the frames run slower than the display. Each measurement that finds the display's
+ * rate unchanged doubles the stretch, up to `LONGEST_CHECK_AFTER`. A first measurement, a changed
+ * rate or a quiet interval that suggests a slower display starts it again from here.
+ */
+const CHECK_AFTER = 30;
+/**
+ * The longest stretch of callbacks that drew between two checks: a page that stays slower than the
+ * display delays one frame every few seconds, and a display that turned slower shows within them.
+ */
+const LONGEST_CHECK_AFTER = 240;
+/**
+ * A quiet interval this percentage of the display's period or longer suggests that the display
+ * turned slower, and the checks come quickly again until it is measured.
+ */
+const LONG_PERCENT = 125;
+/**
+ * Callbacks in a row that draw nothing in a check of the display. In Safari, the callback after a
+ * frame that the GPU held up comes at no refresh, and the next comes at the display's next refresh,
+ * so only the interval after that one measures a whole refresh. Each check delays a frame by about
+ * two refreshes.
+ */
+const QUIET_RUN = 2;
+/**
+ * Callbacks at a rate under this percentage of the display's measured rate run slower than the
+ * display. Measurements of callbacks at the display's rate jitter by a few percent.
+ */
+const SLOW_PERCENT = 90;
 
 /**
  * The delay, in whole milliseconds, from the start of a frame callback to the wake-up before the
@@ -70,6 +120,40 @@ export function wakeDelayMs(hz: number): number {
 
 /** The wake-up's timer callback: waking the thread is all it is for. */
 function wakeUp(): void {}
+
+/**
+ * The most animation frame callbacks through which a capture waits for the frame loop to take a
+ * frame. A sketch that stopped after an error publishes no more frames, and a capture then gives
+ * the frame that the loop took last.
+ */
+export const CAPTURE_WAIT_CALLBACKS = 120;
+
+/**
+ * Resolves once the frame loop on this thread has taken a frame after this call. It checks in this
+ * thread's animation frame callbacks, which run after the loop's own, so the loop takes and draws
+ * any frame that is ready before a capture replays the frame taken last. A thread that a blocking
+ * readback holds up, as on a software GPU, would otherwise replay the same frame for each capture
+ * of a series. It resolves at once while the engine is paused or stopped, when no new frame comes,
+ * and after `CAPTURE_WAIT_CALLBACKS` callbacks without one. A hidden page runs no callbacks, so the
+ * wait goes on once the page shows again.
+ */
+export function nextFrameTaken(slots: Int32Array): Promise<void> {
+	const taken = Atomics.load(slots, Slot.FramesTaken);
+	let callbacks = 0;
+	return new Promise((resolve) => {
+		const check = () => {
+			if (
+				Atomics.load(slots, Slot.Paused) !== 0 ||
+				Atomics.load(slots, Slot.Running) === 0 ||
+				Atomics.load(slots, Slot.FramesTaken) !== taken ||
+				callbacks++ === CAPTURE_WAIT_CALLBACKS
+			)
+				resolve();
+			else requestAnimationFrame(check);
+		};
+		check();
+	});
+}
 
 /** A frame input that `emptySceneInput` can fill again each frame. */
 type ReusableInput = { frame: number; background: [number, number, number] };
@@ -114,27 +198,58 @@ export class Presenter {
 	private timerDriven = false;
 	/** The page's display period in microseconds that the metrics hold as the refresh rate, or -1. */
 	private recordedInterval = -1;
+	/**
+	 * On the page's thread, measures the display from the intervals that follow `QUIET_RUN`
+	 * callbacks in a row that drew nothing. Safari's page callbacks slow while the GPU falls behind,
+	 * and their intervals then follow the frames, not the display.
+	 */
+	private readonly display = new RefreshMeter(DISPLAY_SAMPLES);
+	/**
+	 * The page's display rate, which the metrics hold: the rate that the quiet intervals measured
+	 * last, or any faster rate of all the callbacks measured since, since callbacks never come
+	 * faster than the display. 0 before either.
+	 */
+	private displayHz = 0;
+	/** True once the quiet intervals have measured the display. */
+	private displayMeasured = false;
+	/** The rate of all the page's callbacks that the refresh meter measured last, or 0 before the first. */
+	private callbackHz = 0;
+	/** True when this thread drew a frame since the last callback started. */
+	private drew = false;
+	/** The page's callbacks in a row, up to the last one, that drew a frame. */
+	private busyCallbacks = 0;
+	/** The page's callbacks in a row, up to the last one, that drew nothing. */
+	private quietCallbacks = 0;
+	/** True while a check of the display holds back the frames on the page's thread. */
+	private checking = false;
+	/** False when the page's thread makes no checks of the display. */
+	private readonly displayChecks: boolean;
+	/** The most frames that may wait unfinished on the GPU. */
+	private readonly queue: number;
+	/** The callbacks in a row that drew, after which the next check starts. */
+	private checkAfter = CHECK_AFTER;
+	/** The last callback's timestamp, or -1 before the first, in a typed array as `lastPresented`. */
+	private readonly lastCallback = Float64Array.of(-1);
 	/** The label tables, whose presented table follows each frame this thread presents. */
 	private readonly labels: LabelRegion | undefined;
 	readonly record: FrameRecorder;
 
 	/**
-	 * `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. `queue`
-	 * is the most frames that may wait unfinished on the GPU. `wake` carries wake messages to the
-	 * sketch thread, where another thread runs the sketch. `presented` runs after each frame this
-	 * thread presents, once the frame's labels are in place.
+	 * `wake` carries wake messages to the sketch thread, where another thread runs the sketch.
+	 * `presented` runs after each frame this thread presents, once the frame's labels are in place.
 	 */
 	constructor(
 		private readonly slots: Int32Array,
 		private readonly renderer: Renderer,
 		metrics: ArrayBufferLike,
-		fps: number | undefined,
-		private readonly queue = MAX_FRAMES_IN_FLIGHT,
+		pacing: FramePacing,
 		private readonly wake?: WakeTarget,
 		private readonly presented?: () => void,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
-		this.pacer = new FramePacer(fps);
+		this.pacer = new FramePacer(pacing.fps);
+		this.queue = pacing.queue ?? MAX_FRAMES_IN_FLIGHT;
+		this.displayChecks = !this.inWorker && pacing.displayChecks !== false;
 		this.labels = controlLabels(slots.buffer);
 	}
 
@@ -144,15 +259,22 @@ export class Presenter {
 	 * display runs at, a timer runs them, and the frames hold to the display's rate that the page
 	 * measured. From then on, the metrics hold the page's rate as the refresh rate too: the timer's
 	 * callbacks slow down while the worker waits for the GPU, and the quality governor's budget
-	 * would grow with them.
+	 * would grow with them. On the page's thread, the metrics hold the display rate that the
+	 * intervals after callbacks that drew nothing measure, or a faster rate of all the callbacks.
 	 */
 	tick(timestamp: number): void {
 		const hz = this.refresh.tick(timestamp);
 		const onDisplayRate = this.refresh.onDisplayRate;
+		if (!this.inWorker) this.measureDisplay(timestamp);
 		if (hz !== undefined) {
-			this.timerDriven ||= this.inWorker && !onDisplayRate;
-			if (!this.timerDriven) this.record.setRefreshHz(hz);
 			this.wakeDelay = wakeDelayMs(hz);
+			if (!this.inWorker) {
+				this.callbackHz = hz;
+				if (hz > this.displayHz) this.setDisplayHz(hz);
+			} else {
+				this.timerDriven ||= !onDisplayRate;
+				if (!this.timerDriven) this.record.setRefreshHz(hz);
+			}
 		}
 		const display = this.inWorker ? Atomics.load(this.slots, Slot.DisplayInterval) : 0;
 		if (this.timerDriven && display > 0 && display !== this.recordedInterval) {
@@ -166,6 +288,59 @@ export class Presenter {
 	}
 
 	/**
+	 * Counts the last callback as busy or quiet, and adds the interval since it to the display's
+	 * measurement when it ended a quiet run.
+	 */
+	private measureDisplay(timestamp: number): void {
+		const last = this.lastCallback[0] as number;
+		this.lastCallback[0] = timestamp;
+		if (last < 0) return;
+		if (this.drew) {
+			this.drew = false;
+			this.busyCallbacks++;
+			this.quietCallbacks = 0;
+			return;
+		}
+		this.busyCallbacks = 0;
+		if (++this.quietCallbacks < QUIET_RUN || timestamp <= last) return;
+		this.checking = false;
+		const ms = timestamp - last;
+		if (this.displayMeasured && ms * this.displayHz * 100 >= MS_PER_SECOND * LONG_PERCENT)
+			this.checkAfter = CHECK_AFTER;
+		const hz = this.display.add(ms);
+		if (hz === undefined) return;
+		this.checkAfter =
+			this.displayMeasured && hz === this.displayHz
+				? Math.min(this.checkAfter * 2, LONGEST_CHECK_AFTER)
+				: CHECK_AFTER;
+		this.displayMeasured = true;
+		this.setDisplayHz(hz);
+	}
+
+	/** Holds `hz` as the page's display rate, and records it as the refresh rate. */
+	private setDisplayHz(hz: number): void {
+		this.displayHz = hz;
+		this.record.setRefreshHz(hz);
+	}
+
+	/**
+	 * True when a callback on the page's thread should draw nothing, as a check of the display. A
+	 * check starts after `checkAfter` callbacks in a row that drew, while all the callbacks come
+	 * slower than the display, and lasts `QUIET_RUN` callbacks. Until the quiet intervals have
+	 * measured the display, the display counts as at least the highest rate the engine aims for:
+	 * callbacks slowed from the first frame on would otherwise pass for the display. A display that slowed,
+	 * such as a window moved to a slower screen, comes out the same way.
+	 */
+	private checksDisplay(): boolean {
+		if (!this.displayChecks) return false;
+		if (this.checking) return true;
+		if (this.busyCallbacks < this.checkAfter || this.callbackHz === 0) return false;
+		const display = this.displayMeasured ? this.displayHz : Math.max(this.displayHz, TARGET_CAP_HZ);
+		this.checking = this.callbackHz * 100 < display * SLOW_PERCENT;
+		return this.checking;
+	}
+
+	/**
 	 * In a worker, sets a timer that wakes the thread shortly before the next frame callback is due.
 	 * Call it as a callback starts. Where a worker's frame callbacks follow the display, the timer
 	 * runs and does nothing else.
@@ -176,10 +351,12 @@ export class Presenter {
 
 	/**
 	 * True when the callback at `timestamp` may draw a frame: the GPU has room for one more, and the
-	 * frame rate that ?fps= or the display holds gives the frame its turn. A true answer uses up the
-	 * turn, so ask only when a frame is ready to draw.
+	 * frame rate that ?fps= or the display holds gives the frame its turn, and on the page's thread,
+	 * the callback is not one that measures the display. A true answer uses up the turn, so ask only
+	 * when a frame is ready to draw.
 	 */
 	due(timestamp: number): boolean {
+		if (this.checksDisplay()) return false;
 		const unfinished = this.renderer.completions?.unfinished() ?? 0;
 		return unfinished < this.queue && this.pacer.take(timestamp);
 	}
@@ -211,7 +388,7 @@ export class Presenter {
 		if (this.stale(frame)) return true;
 		const ready = this.renderer.prepare(frame);
 		if ((this.lastPresented[0] as number) < 0) this.record.markWarmUp(this.renderer.building);
-		if (!this.renderer.building && frame > this.builtFrame) {
+		if (!this.renderer.building && frameAfter(frame, this.builtFrame)) {
 			this.builtFrame = frame;
 			Atomics.store(this.slots, Slot.PipelinesBuilt, frame);
 			notifySlot(this.slots, Slot.PipelinesBuilt, this.wake);
@@ -227,6 +404,7 @@ export class Presenter {
 	draw(frame: number, timestamp: number): void {
 		if (this.stale(frame)) return;
 		const start = performance.now();
+		this.drew = true;
 		this.record.begin(frame);
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
 		Atomics.store(this.slots, Slot.FramePresented, frame);
@@ -266,15 +444,7 @@ export class HoldLoop implements RenderLoop {
 		metrics: ArrayBufferLike,
 		presented?: () => void,
 	) {
-		this.presenter = new Presenter(
-			slots,
-			renderer,
-			metrics,
-			undefined,
-			undefined,
-			undefined,
-			presented,
-		);
+		this.presenter = new Presenter(slots, renderer, metrics, {}, undefined, presented);
 	}
 
 	drawHeld(): Promise<void> {
@@ -311,14 +481,13 @@ export function runRenderLoop(
 	renderer: Renderer,
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,
-	fps: number | undefined,
-	queue?: number,
+	pacing: FramePacing,
 	wake?: WakeTarget,
 	fault?: LoopFault,
 	presented?: () => void,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue, wake, presented);
+	const presenter = new Presenter(slots, renderer, metrics, pacing, wake, presented);
 	let taken = 0;
 	let stopped = false;
 
@@ -328,7 +497,7 @@ export function runRenderLoop(
 		presenter.wakeBeforeNextFrame();
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (published > taken && presenter.ready(published) && presenter.due(timestamp)) {
+		if (frameAfter(published, taken) && presenter.ready(published) && presenter.due(timestamp)) {
 			taken = published;
 			Atomics.store(slots, Slot.FramesTaken, taken);
 			notifySlot(slots, Slot.FramesTaken, wake);

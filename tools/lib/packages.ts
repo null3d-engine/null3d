@@ -6,7 +6,9 @@
 // `lib/` file for file, so each worker entry point and each file that the engine loads by address
 // keeps its place beside the others. The source imports its own modules without an extension or
 // with `.ts`, and passes worker scripts as `.ts` addresses; the build rewrites each to the `.js`
-// file it wrote, so the package works with any bundler and under Node's own module rules.
+// file it wrote, so each address resolves under Node's own module rules. null3D supports one
+// bundler, Vite with the null3D plugin (D-54). The plugin builds the workers as ES modules, so that
+// they share the shader files instead of each taking in all of them.
 import { spawnSync } from 'node:child_process';
 import {
 	copyFileSync,
@@ -49,6 +51,12 @@ export interface PackageBuild {
 	 * files that the code loads by address, which no entry point names.
 	 */
 	readonly required: readonly string[];
+	/**
+	 * Entry points in `src/` that only the repository imports, through the source condition, such
+	 * as the test pages' internal API. The build leaves their built files out of `lib/`, and the
+	 * tarball check fails if it holds one.
+	 */
+	readonly repositoryOnly?: readonly string[];
 }
 
 /** Each package in `packages/` by folder name. */
@@ -67,9 +75,10 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'lib/workers/transcoder-worker.js',
 			'vendor/basis/basis_transcoder.js',
 			'vendor/basis/basis_transcoder.wasm',
-			'environments/room.ktx2',
+			'THIRD-PARTY-NOTICES.txt',
 			'docs/index.md',
 		],
+		repositoryOnly: ['internal.ts'],
 	},
 	'vite-plugin': {
 		compile: true,
@@ -111,6 +120,14 @@ const RELATIVE = /^\.{1,2}\//;
 
 /** A built file whose imports the build rewrites: JavaScript or a type declaration. */
 const BUILT_FILE = /\.(?:js|d\.ts)$/;
+
+/** The built files in `lib/` of each repository-only entry point of a package. */
+export function repositoryOnlyFiles(build: PackageBuild): string[] {
+	return (build.repositoryOnly ?? []).flatMap((entry) => {
+		const base = `${LIB_DIR}/${entry.replace(/\.ts$/, '')}`;
+		return [`${base}.js`, `${base}.d.ts`];
+	});
+}
 
 /** A text edit: the range of a module address and the address that replaces it. */
 interface Edit {
@@ -203,11 +220,59 @@ export function rewriteAddresses(
 		ts.forEachChild(node, visit);
 	};
 	visit(source);
+	return { text: applyEdits(text, edits), unresolved };
+}
+
+/** `text` with each edit made, from the last to the first so that each range still holds. */
+function applyEdits(text: string, edits: Edit[]): string {
 	edits.sort((a, b) => b.start - a.start);
 	let out = text;
 	for (const { start, end, text: replacement } of edits)
 		out = out.slice(0, start) + replacement + out.slice(end);
-	return { text: out, unresolved };
+	return out;
+}
+
+/** The classes of TypeScript `source` whose constructor is marked `@internal`. */
+export function internalConstructorClasses(source: string): string[] {
+	const file = ts.createSourceFile('source.ts', source, ts.ScriptTarget.Latest, true);
+	const names: string[] = [];
+	const isInternal = (member: ts.ClassElement) =>
+		ts.isConstructorDeclaration(member) &&
+		ts.getJSDocTags(member).some((tag) => tag.tagName.text === 'internal');
+	const visit = (node: ts.Node): void => {
+		if (ts.isClassDeclaration(node) && node.name && node.members.some(isInternal))
+			names.push(node.name.text);
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return names;
+}
+
+/**
+ * Type declarations with a protected constructor in each class of `classes` that declares none.
+ * TypeScript's `--stripInternal` drops an `@internal` constructor, and a class without one reads
+ * as one that anyone may construct with no arguments. A protected one still lets the engine's
+ * own classes extend it.
+ */
+export function protectedConstructors(declarations: string, classes: ReadonlySet<string>): string {
+	const file = ts.createSourceFile('lib.d.ts', declarations, ts.ScriptTarget.Latest, true);
+	const edits: Edit[] = [];
+	const visit = (node: ts.Node): void => {
+		if (
+			ts.isClassDeclaration(node) &&
+			node.name &&
+			classes.has(node.name.text) &&
+			!node.members.some(ts.isConstructorDeclaration)
+		)
+			edits.push({
+				start: node.members.pos,
+				end: node.members.pos,
+				text: '\n    protected constructor();',
+			});
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return applyEdits(declarations, edits);
 }
 
 /** Runs a command in `cwd`, and fails with its output when it fails. */
@@ -225,7 +290,7 @@ function run(command: string, args: readonly string[], cwd: string): string {
  * the build copies the JavaScript and declaration files that `src/` holds as they are, and then
  * rewrites every relative address to the built file. Fails when an import answers no built file.
  */
-function compile(root: string, dir: string): void {
+function compile(root: string, dir: string, build: PackageBuild): void {
 	const lib = join(dir, LIB_DIR);
 	rmSync(lib, { recursive: true, force: true });
 	const tsc = join(root, 'node_modules/typescript/bin/tsc');
@@ -242,6 +307,8 @@ function compile(root: string, dir: string): void {
 			'--noEmit',
 			'false',
 			'--declaration',
+			// Members marked @internal serve the engine's own modules. Users must not see or call them.
+			'--stripInternal',
 			'--rewriteRelativeImportExtensions',
 			'--rootDir',
 			join(dir, 'src'),
@@ -255,19 +322,32 @@ function compile(root: string, dir: string): void {
 		mkdirSync(dirname(to), { recursive: true });
 		copyFileSync(join(dir, path), to);
 	}
+	for (const path of walkFiles(dir, 'src', (path) => /(?<!\.test|\.d)\.ts$/.test(path))) {
+		const classes = internalConstructorClasses(readFileSync(join(dir, path), 'utf8'));
+		if (classes.length === 0) continue;
+		const declarations = join(lib, path.slice('src/'.length).replace(/\.ts$/, '.d.ts'));
+		writeFileSync(
+			declarations,
+			protectedConstructors(readFileSync(declarations, 'utf8'), new Set(classes)),
+		);
+	}
+	// A packaged module that imports a repository-only entry point then answers no built file, and
+	// the rewrite below fails on it.
+	for (const file of repositoryOnlyFiles(build)) rmSync(join(dir, file), { force: true });
 	const exists = (path: string) => existsSync(join(lib, path));
 	const problems: string[] = [];
 	for (const path of walkFiles(lib, '.', (path) => BUILT_FILE.test(path))) {
 		const file = join(lib, path);
 		const before = readFileSync(file, 'utf8');
 		const { text, unresolved } = rewriteAddresses(posix.normalize(path), before, exists);
-		for (const address of unresolved) problems.push(`${path} imports ${address}`);
+		for (const address of unresolved)
+			problems.push(`${path} imports ${address}, which no built file answers`);
+		if (path.endsWith('.d.ts') && text.includes('@internal'))
+			problems.push(`${path} declares a member marked @internal, which users must not see`);
 		if (text !== before) writeFileSync(file, text);
 	}
 	if (problems.length > 0)
-		throw new Error(
-			`${relative(root, lib)} has imports that no built file answers:\n  ${problems.join('\n  ')}`,
-		);
+		throw new Error(`${relative(root, lib)} has problems:\n  ${problems.join('\n  ')}`);
 }
 
 /**
@@ -282,7 +362,8 @@ export function buildPackage(root: string, name: string): void {
 	for (const file of LICENSES) copyFileSync(join(root, file), join(dir, file));
 	for (const needed of [...build.needs, name]) {
 		if (packageBuild(needed).shaders) ensureShaderModules(root);
-		if (packageBuild(needed).compile) compile(root, join(root, 'packages', needed));
+		if (packageBuild(needed).compile)
+			compile(root, join(root, 'packages', needed), packageBuild(needed));
 	}
 	if (build.docs) {
 		rmSync(join(dir, 'docs'), { recursive: true, force: true });
@@ -318,12 +399,14 @@ export function exportTargets(exports: unknown): string[] {
 /**
  * What is wrong with a packed package, from its manifest and the paths of the files it holds
  * (without the tarball's `package/` folder). The rules: public with provenance, no `workspace:`
- * versions, every export and command present, and every file in `required` present.
+ * versions, every export and command present, every file in `required` present, and no file in
+ * `forbidden`.
  */
 export function packageProblems(
 	manifest: Manifest,
 	files: ReadonlySet<string>,
 	required: readonly string[],
+	forbidden: readonly string[] = [],
 ): string[] {
 	const problems: string[] = [];
 	const { publishConfig } = manifest;
@@ -344,6 +427,8 @@ export function packageProblems(
 	for (const target of [...exportTargets(manifest.exports), ...bins])
 		if (!holds(target)) problems.push(`it lacks ${target}, which its manifest names`);
 	for (const file of required) if (!files.has(file)) problems.push(`it lacks ${file}`);
+	for (const file of forbidden)
+		if (files.has(file)) problems.push(`it holds ${file}, which only the repository uses`);
 	return problems;
 }
 
@@ -417,7 +502,8 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 		);
 		const required = [...(PACKAGES[folder]?.required ?? [])];
 		if (PACKAGES[folder]?.shaders) required.push(...shaderModuleFiles(root));
-		for (const problem of packageProblems(manifest, files, required))
+		const build = packageBuild(folder);
+		for (const problem of packageProblems(manifest, files, required, repositoryOnlyFiles(build)))
 			problems.push(`${manifest.name}: ${problem}`);
 		packed.push({ folder, name: manifest.name, version: manifest.version, tarball });
 	}

@@ -92,7 +92,7 @@ Materials from the same WGSL share one shader and its pipelines. Make one WGSL p
 
 `s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, and `'blend'` blends the surface over what lies behind it, in the transparent pass. `uv1`, `fragCoord` and `instance` in `SurfaceInput` come in 0.2.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
 ## 3. Built-in values
 
@@ -278,7 +278,7 @@ const heat = textures.fromPass('heat');   // use it in a material or effect
 
 ## 8. Portable WGSL rules
 
-These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2 or 4, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
+These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2, 4 or 9, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
 
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
@@ -288,6 +288,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 6. Keep `textureSample` in uniform control flow, or use `textureSampleLevel` inside branches that differ between pixels. Chrome rejects the shader otherwise.
 7. WGSL's `%` on floats keeps the sign of the left operand, like C, so `-1.5 % 1.0` is `-0.5`, on both backends. For GLSL-style `mod`, write `x - y * floor(x / y)`. On integers, keep both values zero or more, or use `u32`: WebGL2 leaves `%` undefined for negative values.
 8. No storage buffers or storage textures in vertex shaders: per-instance data arrives as vertex attributes.
+9. Do not copy an array out of a uniform buffer: no `let` or by-value argument of an array, or of a struct that holds one. Some phone GPUs leave the copy's arrays empty on WebGL2. Read one element at a time, such as `params.weights[i]`.
 
 ## 9. Imports from the shader library
 

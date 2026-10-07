@@ -16,8 +16,8 @@ use std::cell::{Cell, UnsafeCell};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
-    AnimationError, Animations, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_JOINTS, Play,
-    REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
+    AnimationError, Animations, Blend, Clip, MATRIX_FLOATS, MAX_BLEND, MAX_JOINTS, Play,
+    REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
 };
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
@@ -29,6 +29,7 @@ use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
+use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
@@ -38,11 +39,12 @@ use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
-use null3d_render::bloom::Bloom;
+use null3d_render::bloom::{self, Blend as BloomBlend, Bloom};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
@@ -52,6 +54,9 @@ use null3d_render::gpu_driven::{
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::meshes::MeshError;
+use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
+use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
@@ -64,9 +69,9 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
-    camera_target, debug_line_field, mesh_arrays, play_flag, query, ring_field, scene_field,
-    shading, texture_option, texture_stat,
+    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
+    debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
+    scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -107,6 +112,7 @@ mod codes {
 
 /// Details of `codes::RENDER` failures.
 mod render_detail {
+    /// The second detail is the most the draw list holds, in mebibytes.
     pub const DRAW_LIST_FULL: u32 = 1;
     pub const TOO_MANY_SOURCES: u32 = 3;
     pub const MATERIALS_FULL: u32 = 4;
@@ -119,6 +125,11 @@ mod render_detail {
     /// The second detail is the most textures that live at once.
     pub const TEXTURES_FULL: u32 = 10;
     pub const BAD_TEXTURE: u32 = 11;
+    /// The second detail is the most bytes of skinned vertices that WebGPU skinning holds, in
+    /// mebibytes.
+    pub const SKINNED_VERTICES_FULL: u32 = 12;
+    /// The second detail is the most mesh pages of skinned meshes that WebGPU skinning reads.
+    pub const SKINNED_PAGES_FULL: u32 = 13;
 }
 
 struct Engine {
@@ -133,10 +144,15 @@ struct Engine {
     rebuilt: bool,
     /// The words that TypeScript writes a mesh's arrays into, for `createMeshFromArrays`.
     staging: Vec<u32>,
+    /// The numbers of the next play of a clip or a blend (`constants::play_arg`), which
+    /// TypeScript writes.
+    play_args: [f32; play_arg::COUNT],
     /// The debug lines of the next frame, which only development builds of the engine write.
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// The morph weights of morphed objects, which TypeScript writes.
+    morphs: MorphWeights,
     /// The clips that job workers resample in the background, by `createClipLater` ticket, each
     /// with its skeleton's id.
     clip_jobs: Vec<Option<(u32, Arc<ClipJob>)>>,
@@ -154,16 +170,29 @@ struct Engine {
     /// The post-processing values that TypeScript writes (`constants::post_value`), with three.js's
     /// defaults until it writes others.
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
+    /// The environment's values that TypeScript writes (`constants::environment_value`).
+    environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
 }
 
-/// The post-processing values before TypeScript writes any: an exposure of 1, `UnrealBloomPass`'s
-/// strength, radius and threshold, a table at its full intensity over colors from 0 to 1,
-/// `VignetteShader`'s offset and darkness, and `GTAOPass`'s radius, thickness, distance exponent,
-/// distance falloff, scale, samples and blend intensity.
-const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = [
-    1.0, 1.0, 0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
-    16.0, 1.0,
-];
+/// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
+/// threshold and soft edge, a table at its full intensity over colors from 0 to 1,
+/// `VignetteShader`'s offset and darkness, `GTAOPass`'s radius, thickness, distance exponent,
+/// distance falloff, scale, samples and blend intensity, a white outline of 2 CSS pixels with no
+/// line around hidden parts, then bloom's mixing blend and its levels' default shares.
+const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
+    let mut values = [
+        1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
+        16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+    ];
+    let mut level = 0;
+    while level < bloom::LEVELS {
+        values[constants::post_value::BLOOM_WEIGHTS as usize + level] =
+            bloom::DEFAULT_WEIGHTS[level];
+        level += 1;
+    }
+    values
+};
 
 impl Engine {
     /// The post-processing value at `place` (`constants::post_value`).
@@ -212,6 +241,7 @@ impl Engine {
             shadow_lights: self.lights.shadows(),
             pipelines_built,
             animations: self.animations.as_ref(),
+            morphs: &self.morphs,
         };
         (self.renderer.as_mut(), input)
     }
@@ -246,8 +276,12 @@ fn render_failure(detail: u32, value: u32) -> u32 {
 
 fn record_failure(error: RecordError) -> u32 {
     let (detail, value) = match error {
-        RecordError::DrawListFull => (render_detail::DRAW_LIST_FULL, 0),
+        RecordError::DrawListFull { megabytes } => (render_detail::DRAW_LIST_FULL, megabytes),
         RecordError::TooManySources { limit } => (render_detail::TOO_MANY_SOURCES, limit),
+        RecordError::SkinnedVerticesFull { megabytes } => {
+            (render_detail::SKINNED_VERTICES_FULL, megabytes)
+        }
+        RecordError::SkinnedPagesFull { limit } => (render_detail::SKINNED_PAGES_FULL, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
@@ -257,8 +291,16 @@ fn record_failure(error: RecordError) -> u32 {
     render_failure(detail, value)
 }
 
+/// The failure of an allocation of `bytes` that the engine's memory could not hold: E1109.
+fn out_of_memory(bytes: u64) -> u32 {
+    core_failure(CoreError::OutOfMemory {
+        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+    })
+}
+
 fn arrays_failure(error: ArraysError) -> u32 {
     let (problem, value) = match error {
+        ArraysError::OutOfMemory { bytes } => return out_of_memory(bytes),
         ArraysError::NoVertices => (arrays_problem::NO_VERTICES, 0),
         ArraysError::Length(array) => (arrays_problem::LENGTH, array as u32),
         ArraysError::Type(array) => (arrays_problem::TYPE, array as u32),
@@ -440,20 +482,30 @@ pub fn init_engine(
         rebuilt: false,
         world_matrix: [0.0; 12],
         staging: Vec::new(),
+        play_args: [0.0; play_arg::COUNT],
         lines: LineStore::default(),
         animations: None,
+        morphs: MorphWeights::new(),
         clip_jobs: Vec::new(),
         queries: SceneQueries::new(),
         query_input: [0.0; query::INPUT_FLOATS as usize],
         query_hits: vec![0.0; query::HIT_FLOATS as usize],
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
+        environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
     });
     0
 }
 
+/// The address of the environment's values (`constants::environment_value`), which TypeScript
+/// writes before it calls `setEnvironment`.
+#[wasm_bindgen(js_name = environmentValues)]
+pub fn environment_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes
-/// before it calls `setOutput`, `setBloom`, `setLut` or `setVignette`.
+/// before it calls `setOutput`, `setBloom`, `setLut`, `setVignette` or `setOutline`.
 #[wasm_bindgen(js_name = postValues)]
 pub fn post_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.post_values[..])))
@@ -474,6 +526,16 @@ pub fn destroy_engine() {
 #[wasm_bindgen(js_name = jobWorkerLoop)]
 pub fn job_worker_loop(index: u32) {
     JOBS.wait().worker_loop(index);
+}
+
+/// Counts the frame chunk that job worker `index` held when its loop failed as done and as
+/// failed, so the sketch thread's wait for it ends. The worker's own thread calls it after the
+/// failure.
+#[wasm_bindgen(js_name = jobWorkerFailed)]
+pub fn job_worker_failed(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.worker_failed(index);
+    }
 }
 
 /// The milliseconds job worker `index` spent on work since the last call for it, which starts
@@ -650,14 +712,15 @@ pub fn update_batches(frame: u32) -> u32 {
 }
 
 /// Finds the frame's visible objects on the job workers, where the frame builder culls on the CPU,
-/// for a canvas of this size in device pixels. Call it before `recordFrame`.
+/// for a canvas of this size in device pixels. Call it before `recordFrame`, with the same `built`:
+/// the newest frame that the thread that draws drew with every pipeline built.
 #[wasm_bindgen(js_name = cullFrame)]
-pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
+pub fn cull_frame(frame: u32, width: u32, height: u32, built: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, 0);
+        let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, built);
         match renderer.cull(&input) {
             Ok(()) => 0,
             Err(error) => record_failure(error),
@@ -1073,7 +1136,10 @@ fn add_mesh(e: &mut Engine, geometry: &Geometry) -> Result<u32, u32> {
         .settings_mut()
         .meshes_mut()
         .add(geometry)
-        .map_err(|_| render_failure(render_detail::BAD_MESH, 0))?;
+        .map_err(|error| match error {
+            MeshError::OutOfMemory { bytes } => out_of_memory(bytes),
+            _ => render_failure(render_detail::BAD_MESH, 0),
+        })?;
     Ok(id + 1)
 }
 
@@ -1130,20 +1196,146 @@ pub fn mesh_arrays(words: u32) -> u32 {
 /// A mesh from the arrays in the staging words, as `layout` (`constants::mesh_arrays` bits)
 /// describes them, for `vertices` vertices and `indices` indices. `types` gives each array's type
 /// in its attribute's type field of a vertex format. Normals and tangents that `layout` asks for
-/// are computed on the job workers. Returns the mesh id.
+/// are computed on the job workers. With `targets` morph targets, the arrays that `morph`
+/// (`constants::morph_arrays` bits) names follow the indices. Returns the mesh id.
 #[wasm_bindgen(js_name = createMeshFromArrays)]
-pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32, types: u32) -> u32 {
+pub fn create_mesh_from_arrays(
+    vertices: u32,
+    indices: u32,
+    layout: u32,
+    types: u32,
+    targets: u32,
+    morph: u32,
+) -> u32 {
     value_with_engine(|e| {
         let jobs = JOBS.get().ok_or_else(|| fail(codes::NOT_READY, [0, 0]))?;
         let staging = std::mem::take(&mut e.staging);
+        let bits = [
+            morph_arrays::POSITIONS,
+            morph_arrays::NORMALS,
+            morph_arrays::TANGENTS,
+            morph_arrays::COLORS,
+        ];
+        let per_vertex = (targets as usize).saturating_mul(vertices as usize);
+        let words_of = |k: usize| per_vertex.saturating_mul(ARRAY_VALUES[k]);
+        let morph_words = (0..bits.len())
+            .filter(|&k| morph & bits[k] != 0)
+            .fold(0usize, |sum, k| sum.saturating_add(words_of(k)));
+        let base = staging.len().checked_sub(morph_words);
+        let short = || arrays_failure(ArraysError::Length(ArrayName::Positions));
         let geometry = {
-            let arrays =
-                staged_arrays(&staging, vertices as usize, indices as usize, layout, types)
-                    .ok_or_else(|| arrays_failure(ArraysError::Length(ArrayName::Positions)))?;
+            let words = &staging[..base.ok_or_else(short)?];
+            let arrays = staged_arrays(words, vertices as usize, indices as usize, layout, types)
+                .ok_or_else(short)?;
             from_arrays(&arrays, jobs).map_err(arrays_failure)?
         };
+        let mut at = base.unwrap_or(0);
+        let mut array = |k: usize| {
+            (morph & bits[k] != 0).then(|| {
+                let words = &staging[at..at + words_of(k)];
+                at += words.len();
+                // SAFETY: the words are initialized and aligned, and every bit pattern is a float.
+                unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<f32>(), words.len()) }
+            })
+        };
+        let targets = MorphTargets {
+            targets,
+            positions: array(0),
+            normals: array(1),
+            tangents: array(2),
+            colors: array(3),
+        };
+        let added = if morph == 0 {
+            add_mesh(e, &geometry)
+        } else {
+            let meshes = e.renderer.settings_mut().meshes_mut();
+            meshes
+                .add_morphed(&geometry, &targets)
+                .map(|id| id + 1)
+                .map_err(mesh_failure)
+        };
         drop(staging);
-        add_mesh(e, &geometry)
+        added
+    })
+}
+
+/// The failure of a mesh that the storage refused.
+fn mesh_failure(error: MeshError) -> u32 {
+    let morph = |problem: u32, value: u32| fail(codes::BAD_ARRAYS, [problem, value]);
+    match error {
+        MeshError::Morph(MorphError::TooLarge) => {
+            morph(arrays_problem::MORPH_TOO_LARGE, MAX_DELTA_TEXELS)
+        }
+        MeshError::Morph(MorphError::Length) => morph(arrays_problem::MORPH_LENGTH, 0),
+        MeshError::Morph(MorphError::NotFinite { array, at }) => {
+            morph(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
+        }
+        _ => render_failure(render_detail::BAD_MESH, 0),
+    }
+}
+
+// --- Morph weights ---
+//
+// Each morphed object owns a block of the morph weight table, which TypeScript writes in place at
+// the address that `morphWeightsAddress` gives. The table never moves once it exists.
+
+/// Makes a block of `count` morph weights, all 0, and returns its id plus one.
+#[wasm_bindgen(js_name = createMorphWeights)]
+pub fn create_morph_weights(count: u32) -> u32 {
+    value_with_engine(|e| {
+        e.morphs
+            .create(count)
+            .map(|id| id + 1)
+            .map_err(core_failure)
+    })
+}
+
+/// Frees block `id` of the morph weight table.
+#[wasm_bindgen(js_name = destroyMorphWeights)]
+pub fn destroy_morph_weights(id: u32) -> u32 {
+    with_engine(|e| e.morphs.destroy(id).map_or_else(core_failure, |()| 0))
+}
+
+/// Links block `id` of the morph weight table to the animated instance with id `instance` minus
+/// one, whose skeleton's joints from `joint` on animate its weights, or with 0, unlinks it.
+#[wasm_bindgen(js_name = linkMorphWeights)]
+pub fn link_morph_weights(id: u32, instance: u32, joint: u32) -> u32 {
+    with_engine(|e| {
+        let link = instance.checked_sub(1).map(|instance| (instance, joint));
+        e.morphs.link(id, link).map_or_else(core_failure, |()| 0)
+    })
+}
+
+/// The address of the morph weight table, or 0 before its first block.
+#[wasm_bindgen(js_name = morphWeightsAddress)]
+pub fn morph_weights_address() -> u32 {
+    value_with_engine(|e| {
+        Ok(match e.morphs.values() {
+            [] => 0,
+            values => address(values),
+        })
+    })
+}
+
+/// The first weight of block `id` in the morph weight table.
+#[wasm_bindgen(js_name = morphWeightsFirst)]
+pub fn morph_weights_first(id: u32) -> u32 {
+    value_with_engine(|e| match e.morphs.block(id) {
+        Some(block) => Ok(block.first),
+        None => Err(core_failure(CoreError::OutOfRange {
+            value: id,
+            limit: 0,
+        })),
+    })
+}
+
+/// The most morph weights of each object that vertex shaders that morph keep, the largest, from
+/// the next frame on.
+#[wasm_bindgen(js_name = setMorphTargets)]
+pub fn set_morph_targets(cap: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_morph_cap(cap);
+        0
     })
 }
 
@@ -1519,6 +1711,22 @@ pub fn create_volume_texture(width: u32, height: u32, depth: u32, format: u32) -
     })
 }
 
+// Creates a cube texture with faces of `size` x `size` texels in `format`, shared-exponent floats
+// or half floats, with `levels` mip levels and no texels yet, and returns its handle. It is read
+// with linear filters within and between levels. Its texels come from `setTextureData`: each level
+// in turn from the largest, each level's six faces in turn.
+/// Creates a cube texture and returns its handle.
+#[wasm_bindgen(js_name = createCubeTexture)]
+pub fn create_cube_texture(size: u32, levels: u32, format: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .create_cube(size, levels, format)
+            .map(Handle::raw)
+            .map_err(texture_failure)
+    })
+}
+
 // Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
 // `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
 // that id, in id order, and the image uploads once the thread has it. An image of another size
@@ -1533,6 +1741,21 @@ pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u
             .map_err(texture_failure)?;
         e.structure_changed |= moved;
         Ok(image)
+    })
+}
+
+// Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU in one
+// go, and returns the generator's id, which it takes from the images' ids. TypeScript sends the
+// generator's name to the thread that draws under that id, in id order, and the cube fills in the
+// first frame after the thread has loaded the generator's code and built its pipelines.
+/// Gives a cube texture texels from a generator and returns the generator's id.
+#[wasm_bindgen(js_name = generateTexture)]
+pub fn generate_texture(texture: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .set_generated(Handle::from_raw(texture))
+            .map_err(texture_failure)
     })
 }
 
@@ -1573,8 +1796,8 @@ pub fn destroy_texture(texture: u32, frame: u32) -> u32 {
     })
 }
 
-// Tells the texture store what the thread that draws has: the images it received, in id order,
-// and the newest frame it took. The sketch thread calls it before it records each frame.
+// Tells the texture store what the thread that draws has: the newest image id it received, which
+// says that every earlier id arrived too, and the newest frame it took. The sketch thread calls it before it records each frame.
 /// Tells the texture store what the thread that draws has.
 #[wasm_bindgen(js_name = syncTextures)]
 pub fn sync_textures(images_arrived: u32, frames_taken: u32) {
@@ -1834,14 +2057,17 @@ pub fn shadow_casters() -> u32 {
 }
 
 /// The shadow settings that the quality settings give every light: the texels on each side of the
-/// shadow filter, and how many frames pass between two draws of a far cascade. The TypeScript API
-/// checks both.
+/// shadow filter, how many frames pass between two draws of a far cascade, whether a far cascade
+/// draws in every frame while a moving caster touches it, and the share of each cascade's length
+/// over which it blends into the next. The TypeScript API checks them.
 #[wasm_bindgen(js_name = setShadowQuality)]
-pub fn set_shadow_quality(filter: u32, far_interval: u32) -> u32 {
+pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool, blend: f32) -> u32 {
     with_engine(|e| {
         let quality = ShadowQuality {
             filter,
             far_interval,
+            follow_movers,
+            blend,
         };
         e.renderer.settings_mut().set_shadow_quality(quality);
         0
@@ -1865,16 +2091,20 @@ pub fn set_output(tone_mapping: u32) -> u32 {
     })
 }
 
-/// Turns bloom on with its strength, radius and threshold from the post-processing values, or off,
-/// from the next frame on. The TypeScript API checks the values.
+/// Turns bloom on with its intensity, threshold, soft edge, blend and level weights from the
+/// post-processing values, or off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setBloom)]
 pub fn set_bloom(on: bool) -> u32 {
     with_engine(|e| {
-        let [strength, radius, threshold] = e.post_values3(constants::post_value::BLOOM_STRENGTH);
-        let bloom = on.then_some(Bloom {
-            strength,
-            radius,
+        use constants::post_value as place;
+        let [intensity, threshold, knee] = e.post_values3(place::BLOOM_INTENSITY);
+        let bloom = on.then(|| Bloom {
+            intensity,
             threshold,
+            knee,
+            blend: BloomBlend::from_code(e.post_value(place::BLOOM_BLEND) as u32)
+                .unwrap_or_default(),
+            weights: std::array::from_fn(|level| e.post_value(place::BLOOM_WEIGHTS + level as u32)),
         });
         e.renderer.settings_mut().set_bloom(bloom);
         0
@@ -1941,6 +2171,36 @@ pub fn set_lut(texture: u32) -> u32 {
     })
 }
 
+/// Lights the scene with the environment whose prefiltered light is cube texture `texture`, or
+/// with none when `texture` is 0, from the next frame on. The environment's values give its
+/// intensity, its rotation and the coefficients of its diffuse light. The TypeScript API checks the
+/// values. Fails for a texture that is not live.
+#[wasm_bindgen(js_name = setEnvironment)]
+pub fn set_environment(texture: u32) -> u32 {
+    with_engine(|e| {
+        use constants::environment_value as at;
+        let values = &e.environment_values;
+        let value = |place: u32| values[place as usize];
+        let rotation = std::array::from_fn(|k| value(at::ROTATION + k as u32));
+        let sh = std::array::from_fn(|i| {
+            std::array::from_fn(|c| value(at::SH + 3 * i as u32 + c as u32))
+        });
+        let intensity = value(at::INTENSITY);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        settings.set_environment((!texture.is_none()).then_some(Environment {
+            texture,
+            intensity,
+            rotation,
+            sh,
+        }));
+        0
+    })
+}
+
 /// Turns the vignette on with three.js's offset and darkness from the post-processing values, or
 /// off, from the next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setVignette)]
@@ -1951,6 +2211,23 @@ pub fn set_vignette(on: bool) -> u32 {
             darkness: e.post_value(constants::post_value::VIGNETTE_DARKNESS),
         });
         e.renderer.settings_mut().set_vignette(vignette);
+        0
+    })
+}
+
+/// Turns outlines on with the line's colors and width from the post-processing values, or off, from
+/// the next frame on. They draw around the objects whose outlined flag is set. The TypeScript API
+/// checks the values.
+#[wasm_bindgen(js_name = setOutline)]
+pub fn set_outline(on: bool) -> u32 {
+    with_engine(|e| {
+        let outline = on.then(|| Outline {
+            color: e.post_values3(constants::post_value::OUTLINE_COLOR),
+            hidden_color: (e.post_value(constants::post_value::OUTLINE_HIDDEN) > 0.0)
+                .then(|| e.post_values3(constants::post_value::OUTLINE_HIDDEN_COLOR)),
+            width: e.post_value(constants::post_value::OUTLINE_WIDTH),
+        });
+        e.renderer.settings_mut().set_outline(outline);
         0
     })
 }
@@ -1970,11 +2247,12 @@ pub fn set_canvas_output(scene_color: u32, antialias: u32) -> u32 {
     })
 }
 
-/// How many times fewer taps than three.js's bloom's blurs read, from the next frame on.
-#[wasm_bindgen(js_name = setBloomSamples)]
-pub fn set_bloom_samples(divisor: u32) -> u32 {
+/// The texels on the short side of bloom's base, and the governor's halvings of it, from the
+/// next frame on.
+#[wasm_bindgen(js_name = setBloomChain)]
+pub fn set_bloom_chain(size: u32, halvings: u32) -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_bloom_divisor(divisor);
+        e.renderer.settings_mut().set_bloom_chain(size, halvings);
         0
     })
 }
@@ -2047,7 +2325,7 @@ fn animation_failure(error: AnimationError) -> u32 {
         AnimationError::Parent { joint, .. } => (animation_problem::PARENT, joint),
         AnimationError::Length { array, .. } => (animation_problem::LENGTH, array),
         AnimationError::NotFinite { at } => (animation_problem::NOT_FINITE, at),
-        AnimationError::Frames { frames } => (animation_problem::FRAMES, frames),
+        AnimationError::Keys { keys } => (animation_problem::KEYS, keys),
         AnimationError::UnknownSkeleton { skeleton } => {
             (animation_problem::UNKNOWN_SKELETON, skeleton)
         }
@@ -2078,7 +2356,19 @@ fn with_animations(f: impl FnOnce(&mut Animations, &mut Vec<u32>) -> Result<u32,
     })
 }
 
-/// Creates the animation table for `instances` animated objects with `joints` joints in all.
+/// Runs `f` as `with_animations` does, with the engine's numbers for the next play
+/// (`PLAY_ARGS`).
+fn with_play_args(
+    f: impl FnOnce(&mut Animations, &mut Vec<u32>, &[f32; play_arg::COUNT]) -> Result<u32, u32>,
+) -> u32 {
+    value_with_engine(|e| match e.animations.as_mut() {
+        Some(animations) => f(animations, &mut e.staging, &e.play_args),
+        None => Err(fail(codes::NOT_READY, [2, 0])),
+    })
+}
+
+/// Creates the animation table for `instances` animated objects with `joints` joints in all, at
+/// most as many as the joint texture's rows hold on every WebGL2 device.
 #[wasm_bindgen(js_name = initAnimations)]
 pub fn init_animations(instances: u32, joints: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -2087,6 +2377,9 @@ pub fn init_animations(instances: u32, joints: u32) -> u32 {
     with_engine(|e| {
         if e.animations.is_some() {
             return fail(codes::NOT_READY, [2, 1]);
+        }
+        if let Err(error) = skinning::check_table_joints(joints) {
+            return core_failure(error);
         }
         match Animations::new(jobs, instances, joints) {
             Ok(animations) => {
@@ -2127,56 +2420,6 @@ pub fn create_skeleton(joints: u32) -> u32 {
             .map_err(animation_failure)?;
         Ok(id + 1)
     })
-}
-
-/// The tracks that the staging words hold for `createClip`.
-fn staged_tracks(words: &[u32], tracks: usize) -> Result<Vec<SourceTrack<'_>>, AnimationError> {
-    let header = TRACK_WORDS as usize;
-    if tracks.saturating_mul(header) > words.len() {
-        return Err(AnimationError::Track {
-            track: (words.len() / header) as u32,
-            problem: TrackProblem::Keys,
-        });
-    }
-    let floats = as_floats(words);
-    let mut at = tracks * header;
-    let mut out = Vec::with_capacity(tracks);
-    for track in 0..tracks {
-        let problem = |problem| AnimationError::Track {
-            track: track as u32,
-            problem,
-        };
-        let head = &words[track * header..track * header + header];
-        let channel = Channel::from_u32(head[1]).ok_or(problem(TrackProblem::Kind))?;
-        let interpolation = Interpolation::from_u32(head[2]).ok_or(problem(TrackProblem::Kind))?;
-        let keys = head[3] as usize;
-        let per_key = match interpolation {
-            Interpolation::CubicSpline => 3 * channel.components(),
-            Interpolation::Linear | Interpolation::Step => channel.components(),
-        };
-        let end = keys
-            .checked_mul(1 + per_key)
-            .and_then(|n| n.checked_add(at))
-            .filter(|&end| end <= floats.len());
-        let Some(end) = end else {
-            return Err(problem(TrackProblem::Keys));
-        };
-        out.push(SourceTrack {
-            joint: head[0],
-            channel,
-            interpolation,
-            times: &floats[at..at + keys],
-            values: &floats[at + keys..end],
-        });
-        at = end;
-    }
-    Ok(out)
-}
-
-/// The staging words as 32-bit floats, which have the same size and alignment.
-fn as_floats(words: &[u32]) -> &[f32] {
-    // SAFETY: `u32` and `f32` have the same size and alignment, and every bit pattern is a float.
-    unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len()) }
 }
 
 // The staging words hold `tracks` headers of `TRACK_WORDS` words (joint, channel, interpolation,
@@ -2335,6 +2578,13 @@ pub fn remove_animated_instance(instance: u32) -> u32 {
     })
 }
 
+/// The clips that loading resampled at each frame, plus one: the others held keys on their frames
+/// already, as the asset tool writes them, and were copied.
+#[wasm_bindgen(js_name = resampledClips)]
+pub fn resampled_clips() -> u32 {
+    with_animations(|animations, _| Ok(animations.resampled_clips() + 1))
+}
+
 /// The first joint of animated instance `instance` in the skinning matrices, plus one, or 0 when
 /// no live instance has that id.
 #[wasm_bindgen(js_name = animatedInstanceJoints)]
@@ -2353,8 +2603,9 @@ pub fn animated_instance_joints(instance: u32) -> u32 {
 /// The address of an animation table array (`constants::animation_field`).
 #[wasm_bindgen(js_name = animationArrays)]
 pub fn animation_arrays(field: u32) -> u32 {
-    with_animations(|animations, _| {
+    with_play_args(|animations, _, args| {
         Ok(match field {
+            animation_field::PLAY_ARGS => address(&args[..]),
             animation_field::SLOT_CLIPS => address(&animations.slots().clip),
             animation_field::SLOT_TIMES => address(&animations.slots().time),
             animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
@@ -2362,32 +2613,66 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::LAYER_WEIGHTS => address(animations.layer_weights()),
             animation_field::EVENTS => address(animations.event_buffer()),
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
+            animation_field::SLOT_SOURCES => address(&animations.slots().source),
+            animation_field::BLEND_VALUES => address(animations.blend_values()),
             _ => address(animations.matrices()),
         })
     })
 }
 
-/// Plays clip `clip` on instance `instance`, on layer `layer`, fading over `fade` seconds at
-/// `speed`, with `flags` (`constants::play_flag`): `Animations::play`.
+/// Plays clip `clip` on instance `instance`, on layer `layer`, with `flags`
+/// (`constants::play_flag`) and the numbers in `PLAY_ARGS`: `Animations::play`.
 #[wasm_bindgen(js_name = animatorPlay)]
-pub fn animator_play(
-    instance: u32,
-    clip: u32,
-    layer: u32,
-    fade: f32,
-    speed: f32,
-    flags: u32,
-) -> u32 {
-    with_animations(|animations, _| {
+pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
+    with_play_args(|animations, _, args| {
         let play = Play {
             layer,
-            fade,
-            speed,
+            fade: args[play_arg::FADE],
+            speed: args[play_arg::SPEED],
             looping: flags & play_flag::LOOP != 0,
             additive: flags & play_flag::ADDITIVE != 0,
+            time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
+            weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
+            join: flags & play_flag::JOIN != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)
+            .map_err(animation_failure)?;
+        Ok(0)
+    })
+}
+
+// The staging words hold `count` clip ids plus one, then `count` blend points as floats.
+/// Plays a 1D blend of the staged clips on instance `instance`, on layer `layer`, with `flags`
+/// and the numbers in `PLAY_ARGS`: `Animations::play_blend`.
+#[wasm_bindgen(js_name = animatorPlayBlend)]
+pub fn animator_play_blend(instance: u32, count: u32, layer: u32, flags: u32) -> u32 {
+    // The staging words stay with the engine, so switching blends reuses them.
+    with_play_args(|animations, staging, args| {
+        let staged = staging.as_slice();
+        let n = (count as usize).min(staged.len() / 2);
+        let mut clips = [0u32; MAX_BLEND];
+        let named = n.min(MAX_BLEND);
+        for (to, from) in clips.iter_mut().zip(&staged[..named]) {
+            *to = from.wrapping_sub(1);
+        }
+        let points = &as_floats(&staged[n..])[..n];
+        let blend = Blend {
+            layer,
+            fade: args[play_arg::FADE],
+            speed: args[play_arg::SPEED],
+            looping: flags & play_flag::LOOP != 0,
+            phase: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
+            value: (flags & play_flag::VALUE != 0).then_some(args[play_arg::VALUE]),
+        };
+        // More clips than slots reach the core's check through the point count.
+        let clips = if n > MAX_BLEND {
+            &clips[..]
+        } else {
+            &clips[..n]
+        };
+        animations
+            .play_blend(instance.wrapping_sub(1), clips, points, blend)
             .map_err(animation_failure)?;
         Ok(0)
     })
@@ -2446,8 +2731,9 @@ pub fn set_clip_events(clip: u32, count: u32) -> u32 {
 }
 
 /// Advances every played clip by `step_us` microseconds, then writes every animated instance's
-/// skinning matrices, on the job workers. The microseconds cross from TypeScript as a whole
-/// number, so no number object is made for them.
+/// skinning matrices, on the job workers. Then the bounds of skinned and morphed objects follow
+/// their poses and weights, which marks the objects before the transform update. The microseconds
+/// cross from TypeScript as a whole number, so no number object is made for them.
 #[wasm_bindgen(js_name = updateAnimations)]
 pub fn update_animations(step_us: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
@@ -2456,9 +2742,9 @@ pub fn update_animations(step_us: u32) -> u32 {
     with_engine(|e| {
         if let Some(animations) = e.animations.as_mut() {
             animations.update(jobs, step_us as f32 * 1e-6);
-            let meshes = e.renderer.settings().meshes();
-            skinning::update_bounds(&mut e.scene, animations, meshes);
         }
+        let meshes = e.renderer.settings().meshes();
+        skinning::update_bounds(&mut e.scene, e.animations.as_ref(), &e.morphs, meshes);
         0
     })
 }
@@ -2521,16 +2807,12 @@ fn write_hits(out: &mut Vec<f64>, hits: &[QueryHit]) -> Result<u32, u32> {
     Ok(hits.len() as u32)
 }
 
-/// A ray from an origin and a direction, which becomes a unit vector, with its far limit.
-fn ray_from(numbers: &[f64], t_max: f64) -> WorldRay {
-    let d = [numbers[3], numbers[4], numbers[5]];
-    let length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    WorldRay {
-        origin: [numbers[0], numbers[1], numbers[2]],
-        direction: d.map(|v| (v / length) as f32),
-        t_min: 0.0,
-        t_max: t_max as f32,
-    }
+/// A ray from an origin and a direction, which becomes a unit vector, with its far limit; `None`
+/// for a ray that is not one, which then hits nothing (see `WorldRay::toward`).
+fn ray_from(numbers: &[f64], t_max: f64) -> Option<WorldRay> {
+    let origin = [numbers[0], numbers[1], numbers[2]];
+    let direction = [numbers[3], numbers[4], numbers[5]];
+    WorldRay::toward(origin, direction).map(|ray| ray.with_max(t_max as f32))
 }
 
 /// The parts of the engine that a query uses, with the scene's trees brought up to date.
@@ -2597,8 +2879,17 @@ pub fn query_arrays(field: u32) -> u32 {
 pub fn reserve_rays(count: u32) -> u32 {
     with_engine(|e| {
         let n = count as usize;
-        let grown = grow_query_array(&mut e.query_rays, n * query::RAY_FLOATS as usize)
-            .and_then(|()| grow_query_array(&mut e.query_hits, n * query::HIT_FLOATS as usize));
+        let floats = |per: u32| {
+            n.checked_mul(per as usize).ok_or_else(|| {
+                core_failure(CoreError::OutOfMemory {
+                    bytes: count.saturating_mul(per.saturating_mul(8)),
+                })
+            })
+        };
+        let grown = floats(query::RAY_FLOATS)
+            .and_then(|len| grow_query_array(&mut e.query_rays, len))
+            .and_then(|()| floats(query::HIT_FLOATS))
+            .and_then(|len| grow_query_array(&mut e.query_hits, len));
         match grown {
             Ok(()) => 0,
             Err(code) => code,
@@ -2611,7 +2902,9 @@ pub fn reserve_rays(count: u32) -> u32 {
 pub fn raycast(kind: u32, layers: u32) -> u32 {
     run_query(|q| {
         let input = q.input;
-        let ray = ray_from(input, input[query::INPUT_LIMIT as usize]);
+        let Some(ray) = ray_from(input, input[query::INPUT_LIMIT as usize]) else {
+            return Ok(0);
+        };
         match kind {
             query::ANY => Ok(u32::from(q.queries.raycast_any(&q.view, &ray, layers))),
             query::ALL => write_hits(q.hits, q.queries.raycast_all(&q.view, &ray, layers)),

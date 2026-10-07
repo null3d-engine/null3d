@@ -136,20 +136,9 @@ pub(super) enum Phase {
     Late,
 }
 
-/// Records the creation of the culling pipeline, and with `occlusion` the pipelines of the two
-/// phases of occlusion culling.
-pub(super) fn create_pipelines(list: &mut DrawList, occlusion: bool) -> Result<(), RecordError> {
+/// Records the creation of the culling pipeline.
+pub(super) fn create_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
     list.push(Op::CreateComputePipeline, &[ids::CULL, template::CULL, 0])?;
-    if occlusion {
-        list.push(
-            Op::CreateComputePipeline,
-            &[ids::OCCLUSION_EARLY, template::OCCLUSION_EARLY, 0],
-        )?;
-        list.push(
-            Op::CreateComputePipeline,
-            &[ids::OCCLUSION_LATE, template::OCCLUSION_LATE, 0],
-        )?;
-    }
     Ok(())
 }
 

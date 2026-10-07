@@ -1,6 +1,6 @@
-# D-37: Sprites
+# D-37: Sprites and points
 
-Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-G1.
+Status: decided, 2026-10-04; points decided 2026-10-05. Date: 2026-10-04. Tasks: M2-G1, M2-G2 ([Points](#points)).
 
 ## Question
 
@@ -45,7 +45,7 @@ Sizes after Brotli from `bun run build:check-size`, against main at 9ef7c7a (#26
 | All sprite code in the start, `createSprites` returns the batch | +623 bytes | +569 bytes | +692 bytes | 101.2 KB |
 | Sprite code on first use, `createSprites` returns a promise | +299 bytes | +340 bytes | +692 bytes | 100.9 KB |
 
-The sprite templates add their WGSL and GLSL to every shader file, as each feature's shaders do (D-13). That growth alone takes the start past 100 KB, so sprites fit only with M2-R5's budget of 140 KB. The sprite code that loads on first use is one file of 641 bytes. The page and the sketch worker build the same file, so both threads load it from one address.
+The sprite templates added their WGSL and GLSL to every shader file, as each feature's shaders did (D-13). That growth alone took the start past 100 KB, so sprites fit only with M2-R5's budget of 140 KB. Since [D-56](D-56-first-use-shader-files.md), the templates load on first use, in files of 2.9 to 4.7 KB after Brotli. The sprite code that loads on first use is one file of 641 bytes. The page and the sketch worker build the same file, so both threads load it from one address.
 
 ## Decision
 
@@ -73,5 +73,72 @@ The sprite templates add their WGSL and GLSL to every shader file, as each featu
 - Code: `crates/null3d-core/src/sprites.rs`, the sprite rows of `instances.rs`, `Shading::Sprite` and `SpriteMap` in the renderer, the templates `SPRITE` and `SPRITE_MAP`, `wgsl/sprite.wgsl`, the core calls `createSpriteBatch` and `setPixelRatio`, `scene/sprites.ts`, which loads on first use, and `scene.createSprites`.
 - Tests: the core's packing and update tests, the render crate's `sprites.rs`, `scene/sprites.test.ts`, the image tests `sprites` and `sprites-100k`, and the parity scene `sprites`.
 - Docs: `api/sprites`, the mapping's `sprite` entry, and both skills.
-- M2-G2's points can draw on this path: a point is a sprite with one size, and its shader can read the same packed rows.
+- M2-G2's points draw on this path: a point is a sprite with one size, and the sprite shaders read its rows. [Points](#points) gives the choices.
 - M2-H1's batch origins apply to sprite batches as to any batch.
+
+## Points
+
+### Question
+
+1. How do points of three.js's `Points` and `PointsMaterial` reach the GPU? WebGPU draws point primitives one pixel wide only, and WebGL caps their size at a limit that each GPU sets.
+2. What does a point's size mean with size attenuation, where three.js's rule depends on the camera's field of view?
+3. What do points add to a page's download?
+
+### Rule
+
+- Points draw the same on all three tiers, at any size.
+- The parity scene passes three.js's rule against `Points`, or a limit whose reason is a GPU path's sampling, not the points.
+- A page without points or sprites downloads none of their code. A frame that draws no points does no new work.
+
+### Data
+
+Pixels that differ from three.js's WebGLRenderer by its rule, 5 October 2026. three.js's WebGPURenderer draws `Points` one pixel wide, so it cannot be the reference:
+
+| Scene | Core WebGPU | Compatibility mode | WebGL2 |
+| --- | --- | --- | --- |
+| `points`, Chrome on the Mac's GPU | 0.056% | 0.110% | 0.020% |
+| `points`, SwiftShader on the Mac | 0.079% | 0.119% | 0.001% |
+
+`bun run parity -- --scene points --tier webgpu,compat,webgl2` compares the `points` image test with the twin `bench/pages/threejs/points.html`. `CI=1` runs it on SwiftShader. Both draw the scene of `bench/scenes/points.ts`. It holds opaque squares sized in world units at seven depths, cut-out discs of a map, see-through discs, and squares sized in pixels. The twin draws each cloud as one `Points` with vertex colors, and converts each world size with `threePointSize`. three.js takes its `size` and `scale` uniforms from the renderer's size and pixel ratio. So the twin sets the renderer to the image's size at a ratio of 1.
+
+On WebGL2, SwiftShader matches three.js in all but 3 pixels. The edges of the floor and the wall differ in every scene. Every other differing pixel lies on a point's edge that crosses a pixel:
+
+- On WebGPU, SwiftShader differs only at the top and bottom edges of 7 squares, by one row each. WebGPU's samples within a pixel lie mirrored top to bottom against WebGL's, so such an edge covers other samples. The sprites scene shows none of this, because three.js's WebGPURenderer is its reference there.
+- On the Mac's GPU, the same two edge rows differ on all three tiers, WebGL2 included. One covered 50% of a pixel in null3D and 62% in three.js, and the other 100% against about 85%. So that GPU puts the edges of a WebGL point a little apart from the edges of two triangles. The other 31 squares match, and the cut-out discs differ in 15 edge pixels.
+- In compatibility mode, the 8-bit path averages the samples of an edge after it encodes them, as in the glTF instancing and morph scenes. The edges of bright squares on the blue wall and of the dark marks on the see-through discs differ.
+
+So the parity scene takes a limit of 0.2%, as the morph scene does.
+
+Sizes after Brotli from `bun run build:check-size`, against main at 91c7d279d (#303), 5 October 2026:
+
+| File | main | With points | Growth |
+| --- | --- | --- | --- |
+| `js/page-sprites.js`, the sprite code that loads on first use | 641 bytes | 851 bytes | +210 bytes |
+| `js/sketch-worker.js` | 37,547 bytes | 37,705 bytes | +158 bytes |
+| `js/page-sketch-runner.js` | 33,146 bytes | 33,273 bytes | +127 bytes |
+| A pipelined page's start | 121.5 KB | 121.6 KB | Within the 140 KB budget |
+
+The WebAssembly files and the shader files do not change. The start grows by `scene.createPoints` and its checks.
+
+### Decision
+
+1. A point batch is a sprite batch: one sprite row per point, with one frame, no rotation and the middle as its anchor. The class `PointBatch` wraps a `SpriteBatch` and shows only `positions` and `colors`. So points take the sprite path's culling, sorting, cells, origins, depth prepass and both GPU paths. They need no new core, shader or GPU code.
+2. All points share one size, as `PointsMaterial.size` is one value. The size stays in every row's matrix, because culling reads a row's radius from it. `setSize` writes every row's size and marks every row. A sketch that needs a size per point uses sprites.
+3. With size attenuation, the size is in world units, as a sprite's is. three.js scales a point by half the canvas's height over its depth, with no projection. So its size in the world is its `size` times `tan(fov / 2)`. That size changes with the field of view. The author's size reads as a size in the world only at a field of view of 90 degrees. World units keep the author's intent at every field of view and match sprites. The port skill and the mapping give the conversion, as [D-52](D-52-intent-parity.md) asks.
+4. Without size attenuation, the size is in CSS pixels, as three.js's is (`size` times the pixel ratio in device pixels). Such points get the sprites' unbounded sphere, so they are never culled.
+5. Points are opaque by default, as `PointsMaterial` is: `transparent` is false by default. `transparent` maps to `alphaMode: 'blend'`, and `alphaTest` to `'mask'` with `alphaCutoff`.
+6. `colors` takes 3 numbers per point, as three.js's color attribute and line batches do, or 4 with alpha. The row array always holds 4.
+7. The points code lives in the sprite module, `scene/sprites.ts`, which loads on first use. Points need no module of their own: their code is a small wrapper, and a page with points needs the sprite code anyway. The scene checks the arrays and the size, which throw E1206, E1108 and E1203, before the download.
+
+### Options rejected
+
+- Point primitives where the GPU path allows them: WebGL2 for sizes under its limit, WebGPU for one-pixel points. It needs a second draw path with its own culling and sort. Its look depends on each GPU's size limit, and its points vanish when their centers leave the screen.
+- three.js's size rule with size attenuation. Ported sizes would keep their look with no conversion. But a size would then depend on the field of view, unlike every other size in null3D. A zoom by field of view would keep points the same size on screen while everything else grows.
+- The size in the material, as a uniform, with rows that hold only positions and colors. The culling shader and the WebGL2 culling read each row's radius from its matrix. A uniform size would need a culling path of its own. It would save `setSize` its pass over the rows, which sketches rarely call.
+- A point module of its own. It would add a file to download beside the sprite module, for a wrapper of a few hundred bytes.
+
+### Consequences of points
+
+- Code: `PointBatch`, `PointOptions` and `pointBatch` in `scene/sprites.ts`, and `scene.createPoints`, which shares `spriteBatch` with `scene.createSprites`.
+- Tests: the points tests of `scene/sprites.test.ts`, the image test `points`, and the parity scene `points`.
+- Docs: `api/points`, the mapping's `points` entry, E1206 and E1406, and both skills.

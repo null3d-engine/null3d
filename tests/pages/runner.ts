@@ -6,9 +6,11 @@
 // tool replaces a runner page that stopped answering. Each runner page claims its runner's results
 // when it starts a run, and a page whose claim a newer page took stops: a replaced page can still be
 // running, hidden, where the runner tool cannot close it. A page whose turn the runner tool ended, as
-// when its browser keeps refusing memory, stops too. A request to the dev server that gets no
-// answer in time goes out again, because Safari can lose one that it sends as a removed frame
-// closes its connections.
+// when its browser keeps refusing memory, stops too. So does a page that gets no animation frames
+// for its measure of the refresh rate within a time limit, as when the browser reports the page
+// hidden: it posts a record of it, since every test page would wait for frames too. A request to
+// the dev server that gets no answer in time goes out again, because Safari can lose one that it
+// sends as a removed frame closes its connections.
 // A runner page that opens without &from= starts at the first page of the plan that has no result,
 // so a browser that reloads it in the middle of a run, as Safari does after a page crashed its tab,
 // goes on where it stopped. A page that may end its tab on purpose, such as the tab memory page,
@@ -17,12 +19,20 @@
 // as its result, rests so the device can free the tab's memory, and goes on with the next page.
 // The page reports the run: a grid with one cell per page, the failures with their errors, and a
 // line per result, newest first. The report lies under each page's frame, or over it when the plan
-// asks, as plans that only check results do, so the screen does not flash between pages. Each
+// asks, as plans that check results do, so the screen does not flash between pages. A page that
+// times its frames stays on top in every plan. Each
 // result changes one cell and adds one line, so the page does no work while a test page runs.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
-import { detectBrowser, type GpuFacts, type UserAgentData } from '../lib/device-record';
+import {
+	detectBrowser,
+	type GpuFacts,
+	NO_FRAMES,
+	type NoFramesRecord,
+	noFramesText,
+	type UserAgentData,
+} from '../lib/device-record';
 import {
 	type GpuPath,
 	type MissingAllowed,
@@ -40,6 +50,8 @@ interface PlanItem {
 	timeoutSeconds: number;
 	/** The page may end its tab on purpose, and posts its progress as it goes. */
 	endsTab?: boolean;
+	/** The page times its frames, so its frame stays on top of a report that the plan draws over pages. */
+	timesFrames?: boolean;
 	/** The GPU path that the page needs. */
 	gpu?: GpuPath;
 }
@@ -52,6 +64,22 @@ const LISTEN_POLL_MS = 2000;
 const RESULT_POLL_MS = 200;
 const PAUSE_BETWEEN_PAGES_MS = 1000;
 const REFRESH_SAMPLES = 61;
+/**
+ * How long the page changes the screen before it times frames for the refresh rate. A phone lowers
+ * its display's rate while the screen barely changes, and the Galaxy S24+ took about 330 ms to
+ * raise it again once every frame changed the screen.
+ */
+const REFRESH_WARM_UP_MS = 500;
+/**
+ * A shade of the report's background one step lighter, which the report takes on every other frame
+ * while the page measures the refresh rate, so each frame changes the whole screen unseen.
+ */
+const REFRESH_SHADE = '#101419';
+/**
+ * How long the page waits for the animation frames that measure the refresh rate. A visible page
+ * gets them within about a second; a page that the browser hides gets none until it shows it.
+ */
+const REFRESH_LIMIT_MS = 20_000;
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
 const statusLine = byId('status');
@@ -64,6 +92,16 @@ const pageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)
 class TakenOver extends Error {
 	constructor() {
 		super('a newer runner page took over this run');
+	}
+}
+
+/**
+ * The browser gave this page no animation frames in time, as when it reports the page hidden. Every
+ * test page would wait for frames too, so the page stops, and the runner tool ends its turn.
+ */
+class NoFrames extends Error {
+	constructor(visibility: string) {
+		super(noFramesText(visibility));
 	}
 }
 
@@ -202,17 +240,40 @@ async function claim(run: string): Promise<void> {
 	if (!response.ok) throw new Error(`the dev server refused the claim: ${response.status}`);
 }
 
-/** The display's refresh rate, from the median interval between animation frames. */
-async function refreshRate(): Promise<number> {
+/**
+ * The display's refresh rate, from the median interval between animation frames, or null when the
+ * browser gives the page too few frames within the time limit. Frame callbacks follow the display's
+ * rate, and a phone lowers that rate while the screen barely changes, as when only the report's
+ * lines change between pages: the Galaxy S24+ then runs at 24 Hz. So each frame of the measurement
+ * changes the report's background by one shade, and the timing starts once the display has had
+ * time to rise to its full rate.
+ */
+async function refreshRate(): Promise<number | null> {
+	const panel = byId('report');
 	const times: number[] = [];
-	await new Promise<void>((resolve) => {
+	let frames = 0;
+	let warmUpEnd = Number.POSITIVE_INFINITY;
+	let late = false;
+	const measured = await new Promise<boolean>((resolve) => {
+		const limit = setTimeout(() => {
+			late = true;
+			resolve(false);
+		}, REFRESH_LIMIT_MS);
 		const tick = (time: number) => {
-			times.push(time);
+			if (late) return;
+			panel.style.backgroundColor = frames++ % 2 === 0 ? REFRESH_SHADE : '';
+			if (frames === 1) warmUpEnd = time + REFRESH_WARM_UP_MS;
+			if (time >= warmUpEnd) times.push(time);
 			if (times.length < REFRESH_SAMPLES) requestAnimationFrame(tick);
-			else resolve();
+			else {
+				clearTimeout(limit);
+				resolve(true);
+			}
 		};
 		requestAnimationFrame(tick);
 	});
+	panel.style.backgroundColor = '';
+	if (!measured) return null;
 	const intervals = times
 		.slice(1)
 		.map((time, i) => time - (times[i] as number))
@@ -282,6 +343,7 @@ async function deviceInfo(): Promise<Record<string, unknown>> {
 		screen: { width: screen.width, height: screen.height },
 		devicePixelRatio,
 		refreshRateHz: await refreshRate(),
+		visibility: document.visibilityState,
 		crossOriginIsolated,
 		origin: location.origin,
 		startedAt: new Date().toISOString(),
@@ -374,11 +436,23 @@ async function resumeAt(run: string, items: readonly PlanItem[]): Promise<number
 }
 
 /**
+ * Posts that the browser gave the page no animation frames before `step`, the device reading or a
+ * plan item, and stops the run: every page would wait for frames too.
+ */
+async function stopWithoutFrames(run: string, step: string): Promise<never> {
+	const record: NoFramesRecord = { visibility: document.visibilityState, step };
+	await post(run, NO_FRAMES, record);
+	throw new NoFrames(record.visibility);
+}
+
+/**
  * Runs a run's items from the item at `from`, or where the run stopped without it. Only a run from
  * its first item reads the device. Before an item that may end its tab, the page notes that the
  * item started, under the item's progress. In a plan that asks for it, the page measures the
  * display's refresh rate before each item, with no test page loaded, and adds it to the item's
- * result. In a plan that lets the device lack GPU paths, once the capabilities page has reported
+ * result. In a plan that draws its report over the pages, a page that times its frames keeps its
+ * frame on top: a canvas hidden under the report barely changes the screen, and a phone may then
+ * lower its refresh rate. In a plan that lets the device lack GPU paths, once the capabilities page has reported
  * the device's paths, the page skips each item that needs a path the device lacks: it posts a skip
  * as the item's result, and does not open the item's page.
  */
@@ -390,12 +464,13 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		skipMissing?: { report: string; allowed: MissingAllowed };
 	};
 	await claim(run);
-	stage.classList.toggle('report-on-top', plan.reportOnTop === true);
 	const start = from ?? (await resumeAt(run, plan.items));
 	report.start(run, plan.items, start);
 	if (start === 0) {
 		show(`run ${run}: reading the device`);
-		await post(run, 'device', await deviceInfo());
+		const device = await deviceInfo();
+		await post(run, 'device', device);
+		if (device.refreshRateHz === null) await stopWithoutFrames(run, 'device');
 	}
 	const { skipMissing } = plan;
 	const reportAt = plan.items.findIndex((item) => item.id === skipMissing?.report);
@@ -416,7 +491,9 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		}
 		if (item.endsTab)
 			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
+		stage.classList.toggle('report-on-top', plan.reportOnTop === true && !item.timesFrames);
 		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
+		if (runnerRefreshHz === null) await stopWithoutFrames(run, item.id);
 		const result = await runItem(item, run);
 		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);
 		report.finish(index, result);
@@ -451,7 +528,7 @@ async function listen(): Promise<void> {
 				await runPlan(current.run as string);
 			} else show(`waiting for a run${ended}`);
 		} catch (e) {
-			if (e instanceof TakenOver) return show(`stopped: ${e.message}`);
+			if (e instanceof TakenOver || e instanceof NoFrames) return show(`stopped: ${e.message}`);
 			// A page whose turn the tool ended waits for the next run, which reloads it first.
 			if (e instanceof TurnEnded) {
 				ended = ` (${e.message})`;

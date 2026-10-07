@@ -322,11 +322,13 @@ impl Compiler {
                 // Custom materials draw at full precision, so their builds stay half as many. On
                 // WebGPU they draw skinned meshes from the skinning pass's vertices, so they need no
                 // SKIN builds there. WebGL2 skins in the vertex shader, so its builds keep the bit.
+                // They have no MORPH builds, which would double their WebGL2 builds again: on
+                // WebGL2 they draw morphed meshes at rest (decision record D-51).
                 let skins = !variant.targets.contains(&Target::Wgsl);
                 let permutations = variant
                     .permutations
                     .iter()
-                    .filter(|bit| *bit != "HALF" && (skins || *bit != "SKIN"))
+                    .filter(|bit| *bit != "HALF" && *bit != "MORPH" && (skins || *bit != "SKIN"))
                     .cloned()
                     .collect();
                 let variant = Variant {
@@ -359,11 +361,14 @@ impl Compiler {
             if problem.file.as_deref() != Some(path) {
                 continue;
             }
+            // A problem without a line, such as a GLSL writer's refusal of a WGSL form, can come
+            // from the material's own code as well as from the template, so it gets no note.
             match problem.line {
+                None => {}
                 Some(line) if line > before && line - before <= own => {
                     problem.line = Some(line - before);
                 }
-                _ => {
+                Some(_) => {
                     problem.line = None;
                     problem.column = None;
                     problem.message = format!("{}\n{TEMPLATE_NOTE}", problem.message);

@@ -64,28 +64,28 @@ export const RECHECK_MS = 50;
 /**
  * A promise that settles as `slotChange`'s does, or after `RECHECK_MS` at the latest, or undefined
  * when the slot holds another value already. It makes a timer for each wait, so it suits the waits
- * of a start, not those of the frame loop.
+ * of a start, not those of the frame loop. On memory that no other thread shares, it waits for the
+ * timer alone.
  */
 export function slotChangeOrRecheck(
 	slots: Int32Array,
 	slot: number,
 	value: number,
 ): Promise<unknown> | undefined {
+	const recheck = () => new Promise((resolve) => setTimeout(resolve, RECHECK_MS));
+	// No browser watches memory that no other thread shares, as in the single-threaded build. Only
+	// this thread can change such a slot, on a later turn of its event loop, which a recheck sees.
+	const shared =
+		typeof SharedArrayBuffer === 'function' && slots.buffer instanceof SharedArrayBuffer;
+	if (!shared) return Atomics.load(slots, slot) === value ? recheck() : undefined;
 	const change = slotChange(slots, slot, value);
-	return (
-		change && Promise.race([change, new Promise((resolve) => setTimeout(resolve, RECHECK_MS))])
-	);
+	return change && Promise.race([change, recheck()]);
 }
 
 /** Ends each of this thread's waits for a wake message. */
 export function wakeWaiters(): void {
 	const { waiters } = state;
 	for (let resolve = waiters.pop(); resolve; resolve = waiters.pop()) resolve();
-}
-
-/** Ends this thread's waits at each message that comes through `port`. */
-export function wakeFrom(port: MessagePort): void {
-	port.onmessage = wakeWaiters;
 }
 
 /**

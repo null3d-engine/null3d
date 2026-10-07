@@ -5,8 +5,10 @@
 //! A layout holds one kind of bucket. The scene's layout holds every object and instance row with a
 //! mesh and a material, as the views of cameras draw them, and it owns the matrices, the layer
 //! table and the cell order. The casters' layout holds the objects that cast shadows, grouped by
-//! mesh alone, as the shadow cascades draw their depth. It has a bucket table and bucket records of
-//! its own, and its culling reads the scene layout's matrices, layer table and cell order.
+//! mesh alone, as the shadow cascades draw their depth. The outlined layout holds the objects that
+//! the sketch outlines, grouped by mesh alone, as the outline view draws them into the outline
+//! mask. Each of the two has a bucket table and bucket records of its own, and its culling reads
+//! the scene layout's matrices, layer table and cell order.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -20,12 +22,13 @@ use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
-use super::skin::Skinning;
+use super::skin::{SkinnedObject, SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
+use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 
 /// Words of one bucket record in the culling shader: base, material, radius, first draw, draw
@@ -52,10 +55,13 @@ pub(super) enum Drawn {
     Scene,
     /// The objects that cast shadows, as the shadow cascades draw their depth.
     Casters,
+    /// The objects that the sketch outlines, as the outline view draws them into the outline mask.
+    Outlined,
 }
 
-/// The material of every caster bucket: a caster's depth does not depend on its material, so
-/// casters of one mesh share a bucket.
+/// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
+/// object's place in the outline mask depends on its material, so the objects of one mesh share a
+/// bucket.
 const CASTER_MATERIAL: u32 = 1;
 
 /// The bounds of sources culled with their mesh's sphere, centred on their origin.
@@ -98,7 +104,8 @@ pub(super) struct Bucket {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
     /// The id of the render pipeline that draws its depth in the depth prepass or the occluders'
-    /// pass, or 0 for a bucket that the pass leaves out.
+    /// pass, or 0 for a bucket that the pass leaves out. In the outlined layout, the pipeline that
+    /// marks the parts that nothing hides, after `pipeline` marked every part.
     pub(super) prepass: u32,
     /// True when that pipeline is the bucket's own template's, which reads the frame group and the
     /// maps' group as the shading does, and false for the depth template's.
@@ -129,7 +136,7 @@ pub(super) struct Draw {
     pub(super) first_index: u32,
     pub(super) base_vertex: u32,
     /// The buffer and byte offset of the vertices it draws in place of its page's: a skinned
-    /// part's region of the skinned vertex buffer.
+    /// part's region of a skinned vertex buffer.
     pub(super) vertices: Option<(u32, u32)>,
 }
 
@@ -257,6 +264,8 @@ pub(super) struct Layout {
     /// Each bucket of a skinned object, with the object's slot, in bucket order. Their bounds
     /// change with the pose in every frame.
     skinned: Vec<(u32, u32)>,
+    /// The pipelines of the skinned objects that the layout leaves out until they are built.
+    waiting: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
@@ -287,6 +296,7 @@ impl Layout {
         match self.drawn {
             Drawn::Scene => (ids::INSTANCE_BUCKETS, ids::BUCKETS),
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
+            Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
         }
     }
 
@@ -344,12 +354,19 @@ impl Layout {
         self.order.try_reserve(owned as usize)
     }
 
+    /// The pipelines of the skinned objects that the layout leaves out, which must be built before
+    /// they draw.
+    pub(super) fn waiting(&self) -> &[u32] {
+        &self.waiting
+    }
+
     /// Empties the buckets, for a layout that draws nothing until it is built again.
     pub(super) fn clear(&mut self) {
         self.occluders = 0;
         self.buckets.clear();
         self.draws.clear();
         self.skinned.clear();
+        self.waiting.clear();
         self.indirect_template.clear();
         self.bucket_records.clear();
     }
@@ -447,11 +464,13 @@ impl Layout {
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
     /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
-    /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With a
-    /// `prepass`, the buckets that it draws get its pipelines too. Skinned objects
-    /// draw the skinned vertices that `skinning` lays out. It reuses
-    /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
-    /// `limit` sources fails.
+    /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. With
+    /// a `prepass`, the buckets that the depth prepass or the occluders' pass draws get its
+    /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask.
+    /// Skinned objects draw the skinned vertices that `skinning` lays out; the skinned objects that
+    /// it hides get no bucket, and the layout asks only for their pipelines (see
+    /// [`Self::waiting`]). It reuses the layout's tables and scratch space, which grow only with
+    /// the scene. A scene of more than `limit` sources fails.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
@@ -487,20 +506,22 @@ impl Layout {
 
         let meshes = settings.meshes();
         let drawn = self.drawn;
-        let vertex_skinning = skinning.in_vertex_shader();
-        let skin = |key: DrawKey| skinning.skinned_key(key);
-        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32, skinned: bool| {
-            let mut pipeline = settings.pipeline_of(mesh, material)?;
-            if skinned {
-                pipeline = skin(pipeline);
-            }
+        let skin = |key: DrawKey, skinned: Option<SkinnedObject>| match skinned {
+            Some(object) => skinning.skinned_key(&object, key),
+            None => key,
+        };
+        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32, skinned| {
+            let pipeline = skin(settings.pipeline_of(mesh, material)?, skinned);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
-            if drawn == Drawn::Casters {
-                let mut caster = settings.caster_of(pipeline);
-                if skinned {
-                    caster = skin(caster);
-                }
-                return Some((caster, 0, page, mesh, CASTER_MATERIAL, bounds));
+            // Casters and outlined objects draw with no material, through the depth template's
+            // bindings.
+            let depth_key = match drawn {
+                Drawn::Casters => Some(settings.caster_of(pipeline)),
+                Drawn::Outlined => Some(mask_keys(pipeline).0),
+                Drawn::Scene => None,
+            };
+            if let Some(key) = depth_key {
+                return Some((skin(key, skinned), 0, page, mesh, CASTER_MATERIAL, bounds));
             }
             // Blended pairs draw in the transparent pass, which sorts them on the job workers.
             if pipeline.blends() {
@@ -515,9 +536,14 @@ impl Layout {
             Some((pipeline, group, page, mesh, material, bounds))
         };
         let world = scene.world(parity);
-        let scene_key = |slot: usize| {
+        let any_key = |slot: usize| {
             let object = scene.flags()[slot];
-            if drawn == Drawn::Casters && (!shadows || object & flags::CAST_SHADOWS == 0) {
+            let left_out = match drawn {
+                Drawn::Scene => false,
+                Drawn::Casters => !shadows || object & flags::CAST_SHADOWS == 0,
+                Drawn::Outlined => object & flags::OUTLINED == 0,
+            };
+            if left_out {
                 return None;
             }
             let bounds = bounds_of(scene, slot);
@@ -526,11 +552,18 @@ impl Layout {
                 scene.materials()[slot],
                 bounds,
                 object,
-                skinning.object(slot as u32).is_some(),
+                skinning.object(slot as u32),
             )
         };
-        // Instance batches cast no shadows yet. Sprites sized in pixels of the screen have no
-        // bounds in the world, so culling keeps them.
+        let scene_key = |slot: usize| {
+            if skinning.hides(slot as u32) {
+                None
+            } else {
+                any_key(slot)
+            }
+        };
+        // Instance batches cast no shadows yet, and take no outlines. Sprites sized in pixels of the
+        // screen have no bounds in the world, so culling keeps them.
         let batch_key = |batch: &InstanceBatch| match drawn {
             Drawn::Scene => {
                 let bounds = if batch.unculled() {
@@ -538,9 +571,9 @@ impl Layout {
                 } else {
                     MESH_BOUNDS
                 };
-                key_of(batch.mesh(), batch.material(), bounds, 0, false)
+                key_of(batch.mesh(), batch.material(), bounds, 0, None)
             }
-            Drawn::Casters => None,
+            Drawn::Casters | Drawn::Outlined => None,
         };
 
         collect_bucket_keys(
@@ -554,6 +587,27 @@ impl Layout {
         if self.key_counts.len() as u32 >= MAX_BUCKETS {
             return Err(RecordError::TooManySources { limit: MAX_BUCKETS });
         }
+        self.waiting.clear();
+        for slot in 0..scene_rows {
+            if !skinning.hides(slot) {
+                continue;
+            }
+            if let Some((pipeline, ..)) = any_key(slot as usize) {
+                // The outlined layout's buckets draw with both pipelines of the outline mask.
+                let (pipeline, second) = if drawn == Drawn::Outlined {
+                    let (every, visible) = mask_keys(pipeline);
+                    (
+                        pipelines.id(every.in_pass(targets)),
+                        pipelines.id(visible.in_pass(targets)),
+                    )
+                } else {
+                    pipelines.opaque(pipeline, targets, prepass)
+                };
+                self.waiting
+                    .extend([pipeline, second].into_iter().filter(|&id| id != 0));
+            }
+        }
+
         self.buckets.clear();
         self.draws.clear();
         self.skinned.clear();
@@ -568,8 +622,19 @@ impl Layout {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
-            let prepass_own = pipeline.places_own_vertices();
-            let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+            // The mask's second pipeline binds as the depth template does.
+            let (pipeline, prepass, prepass_own) = if drawn == Drawn::Outlined {
+                let (every, visible) = mask_keys(pipeline);
+                (
+                    pipelines.id(every.in_pass(targets)),
+                    pipelines.id(visible.in_pass(targets)),
+                    false,
+                )
+            } else {
+                let own = pipeline.places_own_vertices();
+                let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                (pipeline, prepass, own)
+            };
             self.buckets.push(Bucket {
                 pipeline,
                 prepass,
@@ -582,7 +647,7 @@ impl Layout {
                 draws: parts.len() as u32,
                 center,
                 radius,
-                skins: skin.is_some() && vertex_skinning,
+                skins: object.is_some_and(|object| skinning.skins_in_vertex_shader(object)),
                 first_joint: skin.map_or(0, |skin| skin.joint_base),
             });
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -597,7 +662,7 @@ impl Layout {
                     } else {
                         part.base_vertex
                     },
-                    vertices: region.map(|region| (ids::SKINNED, region.region)),
+                    vertices: region.map(SkinnedPart::vertices),
                 }
             }));
             base += count;
@@ -901,14 +966,16 @@ mod tests {
     use null3d_gpu::drawlist::format;
 
     use super::*;
-    use crate::frame::CanvasOutput;
     use crate::geometry::box_geometry;
-    use crate::gpu_driven::scene_settings;
+    use crate::gpu_driven::{RendererConfig, scene_settings};
     use crate::materials::Shading;
 
     #[test]
     fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {
-        let mut settings = scene_settings(4, CanvasOutput::default());
+        let mut settings = scene_settings(&RendererConfig {
+            max_materials: 4,
+            ..RendererConfig::default()
+        });
         let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
         let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
         let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);

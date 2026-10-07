@@ -8,7 +8,8 @@
 // stability check, the reference for the edge and acne checks, then the normals view for the
 // contact and acne checks.
 // ?edge=x0,y0,x1,y1 names a box of the frame that one long shadow edge crosses from top to bottom,
-// whose stair steps the page measures in the frame and in the reference. With ?images, it also
+// whose stair steps and seam jump the page measures in the frame, and its stair steps in the
+// reference. With ?images, it also
 // captures PNG files of the first and last shadows frames, the reference, the normals view, and
 // consecutive frames of the moving scene as it draws them, 4 unless ?moving= gives another count,
 // and publishes them in base64.
@@ -22,6 +23,7 @@ import {
 	type PixelBox,
 	type ShadowCheck,
 	STABILITY_FRAMES,
+	seamJump,
 	shadowFactors,
 	stabilityFigures,
 	stairSteps,
@@ -113,6 +115,7 @@ run('visual', async () => {
 			...(edge && {
 				steps: stairSteps(first, width, edge),
 				referenceSteps: stairSteps(reference, width, edge),
+				seamPixels: seamJump(first, width, edge),
 			}),
 		},
 		contact: contactFigures(first, normals, width),

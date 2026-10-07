@@ -3,7 +3,8 @@
 //! holds the device to the portable budget, plus the capabilities a test gives it.
 
 use crate::caps::{
-    BUDGET, CUBE_TEXTURE_SIZE, Capabilities, Limit, OFFSET_ALIGNMENT, TEXTURE_3D_SIZE,
+    BUDGET, CUBE_TEXTURE_SIZE, Capabilities, Limit, MAX_WORKGROUPS_PER_DIMENSION, OFFSET_ALIGNMENT,
+    TEXTURE_3D_SIZE,
 };
 use crate::drawlist::{
     Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
@@ -110,6 +111,15 @@ enum Resource {
     Texture(u32),
 }
 
+/// What a bundle's command uses: a resource, or a bind group by id. The backends replay a bundle's
+/// commands and look its bind groups up by id when it runs, so a group made again after the bundle
+/// was recorded binds its new resources there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BundleUse {
+    Resource(Resource),
+    Group(u32),
+}
+
 /// Where a copy or a write starts: a texture, a mip level, and the first texel and layer.
 #[derive(Clone, Copy, Debug)]
 struct Location {
@@ -153,13 +163,15 @@ pub struct MockBackend {
     samplers: HashSet<u32>,
     /// Width and height of each image a test provided.
     images: HashMap<u32, (u32, u32)>,
+    /// The ids of the texture generators a test provided, which share the images' ids.
+    generators: HashSet<u32>,
     /// Each render pipeline, with the formats it draws into.
     render_pipelines: HashMap<u32, Formats>,
     compute_pipelines: HashSet<u32>,
     /// The buffers and textures of each bind group.
     bind_groups: HashMap<u32, Vec<Resource>>,
     /// The buffers and textures that each bundle's commands use, and the formats it draws into.
-    bundles: HashMap<u32, (Vec<Resource>, Formats)>,
+    bundles: HashMap<u32, (Vec<BundleUse>, Formats)>,
     /// The formats of the bundle being recorded.
     bundle_formats: Option<Formats>,
     /// The open render pass, or `None` outside one. A pass into the canvas before any
@@ -167,7 +179,7 @@ pub struct MockBackend {
     pass: Option<Pass>,
     in_compute_pass: bool,
     /// The bundle being recorded, and what its commands use.
-    recording: Option<(u32, Vec<Resource>)>,
+    recording: Option<(u32, Vec<BundleUse>)>,
     canvas: Option<(u32, u32)>,
     pipeline_set: bool,
     vertex_buffer_set: bool,
@@ -216,6 +228,12 @@ impl MockBackend {
         self.images.insert(id, (width, height));
     }
 
+    /// Gives the backend a texture generator under an image id, as the thread that draws holds a
+    /// generator once its code has loaded.
+    pub fn provide_generator(&mut self, id: u32) {
+        self.generators.insert(id);
+    }
+
     pub fn replay(&mut self, words: &[u32]) -> Result<(), MockError> {
         for command in decode(words) {
             let command = command.map_err(|e| MockError::Decode(format!("{e:?}")))?;
@@ -250,7 +268,7 @@ impl MockBackend {
     /// Notes that a command used a resource: at once, or when its bundle runs.
     fn use_resource(&mut self, resource: Resource) {
         match &mut self.recording {
-            Some((_, uses)) => uses.push(resource),
+            Some((_, uses)) => uses.push(BundleUse::Resource(resource)),
             None => {
                 self.used.insert(resource);
             }
@@ -728,6 +746,26 @@ impl MockBackend {
         Ok(())
     }
 
+    fn generate_texture(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        self.outside_passes(op)?;
+        let texture = self.texture(op, o[0])?;
+        check(
+            texture.binding_view == view::CUBE && texture.format == format::RGB9E5_UFLOAT,
+            op,
+            "generators fill cube textures of RGB9E5_UFLOAT",
+        )?;
+        check(
+            texture.usage & texture_usage::COPY_DST != 0,
+            op,
+            "a texture that a generator fills needs COPY_DST usage",
+        )?;
+        if !self.generators.contains(&o[1]) {
+            return Err(missing(op, "generator", o[1]));
+        }
+        self.use_resource(Resource::Texture(o[0]));
+        Ok(())
+    }
+
     fn create_sampler(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         check(
             o[1..4].iter().all(|&mode| mode <= address::MIRROR_REPEAT),
@@ -903,7 +941,9 @@ impl MockBackend {
             Op::GenerateMipmaps => self.generate_mipmaps(op, o)?,
             Op::ReleaseImage => {
                 self.images.remove(&o[0]);
+                self.generators.remove(&o[0]);
             }
+            Op::GenerateTexture => self.generate_texture(op, o)?,
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
                 self.render_pipelines.remove(&o[0]);
@@ -1029,8 +1069,13 @@ impl MockBackend {
                 {
                     return Err(MockError::Unaligned { op, offset });
                 }
-                for resource in resources {
-                    self.read_resource(op, resource)?;
+                match &mut self.recording {
+                    Some((_, uses)) => uses.push(BundleUse::Group(o[1])),
+                    None => {
+                        for resource in resources {
+                            self.read_resource(op, resource)?;
+                        }
+                    }
                 }
             }
             Op::SetVertexBuffer => {
@@ -1109,8 +1154,20 @@ impl MockBackend {
                         op,
                         "a bundle draws into the formats and sample count of its pass",
                     )?;
-                    for resource in uses {
-                        self.read_resource(op, resource)?;
+                    for used in uses {
+                        match used {
+                            BundleUse::Resource(resource) => self.read_resource(op, resource)?,
+                            BundleUse::Group(group) => {
+                                let resources = self
+                                    .bind_groups
+                                    .get(&group)
+                                    .cloned()
+                                    .ok_or(missing(op, "bind group", group))?;
+                                for resource in resources {
+                                    self.read_resource(op, resource)?;
+                                }
+                            }
+                        }
                     }
                 }
                 // WebGPU clears the pass's pipeline and buffers after it replays bundles, so a
@@ -1152,6 +1209,11 @@ impl MockBackend {
                         needs: "a compute pass",
                     });
                 }
+                check(
+                    o[..3].iter().all(|&n| n <= MAX_WORKGROUPS_PER_DIMENSION),
+                    op,
+                    "a dispatch has at most maxComputeWorkgroupsPerDimension workgroups per axis",
+                )?;
                 self.dispatches += 1;
             }
             Op::EndComputePass => {
@@ -1509,6 +1571,18 @@ mod tests {
             run(&|l| l.push(Op::Dispatch, &[1, 1, 1]).unwrap()),
             Err(MockError::Outside { .. })
         ));
+        for workgroups in [[65_536, 1, 1], [1, 65_536, 1], [1, 1, 65_536]] {
+            assert!(matches!(
+                run(&|l| {
+                    l.push(Op::BeginComputePass, &[]).unwrap();
+                    l.push(Op::Dispatch, &workgroups).unwrap();
+                }),
+                Err(MockError::Invalid {
+                    op: Op::Dispatch,
+                    ..
+                })
+            ));
+        }
         assert!(
             matches!(
                 run(&|l| {
@@ -1535,6 +1609,8 @@ mod tests {
     const COLOR_SAMPLER: u32 = 1;
     const COMPARE_SAMPLER: u32 = 2;
     const IMAGE: u32 = 7;
+    /// A texture generator's id, which follows the image's.
+    const GENERATOR: u32 = 8;
 
     fn sampler(list: &mut DrawList, id: u32, filtering: u32, function: u32, anisotropy: u32) {
         let [lod_min, lod_max] = [0f32.to_bits(), 32f32.to_bits()];
@@ -1777,6 +1853,7 @@ mod tests {
         build(&mut list);
         let mut backend = MockBackend::default();
         backend.provide_image(IMAGE, 32, 32);
+        backend.provide_generator(GENERATOR);
         backend.replay(list.words())
     }
 
@@ -2544,5 +2621,23 @@ mod tests {
             }),
             "mip levels are made for 2d-array textures only"
         );
+        let generate = |texture: u32, generator: u32| {
+            run_textures(&move |l: &mut DrawList| {
+                made(l);
+                l.push(Op::GenerateTexture, &[texture, generator]).unwrap();
+            })
+        };
+        assert_eq!(generate(PACKED, GENERATOR), Ok(()));
+        assert!(
+            matches!(generate(CUBE, GENERATOR), Err(MockError::Invalid { .. })),
+            "generators fill rgb9e5ufloat cubes only"
+        );
+        assert!(matches!(
+            generate(PACKED, IMAGE),
+            Err(MockError::Missing {
+                what: "generator",
+                ..
+            })
+        ));
     }
 }

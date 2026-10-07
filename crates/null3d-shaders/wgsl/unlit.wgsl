@@ -4,11 +4,15 @@ enable draw_index;
 // them, times the mesh's vertex colors in the VERTEX_COLOR builds. The ALPHA_MASK builds draw
 // nothing where the alpha falls below the material's cutoff, and a material that blends writes
 // premultiplied color. null3d::mesh finds each instance on both GPU paths.
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
+#import null3d::mesh::{fragment_color}
 #import null3d::mesh::{material_of, relative_position}
 #import null3d::vertex::{mesh_position}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
+#endif
+#ifdef MORPH
+#import null3d::mesh::{Morphed, morph_vertex}
 #endif
 
 /// The vertex attributes that the template reads.
@@ -20,6 +24,9 @@ struct VertexIn {
 #ifdef SKIN
     @location(6) joints: vec4u,
     @location(7) weights: vec4f,
+#endif
+#ifdef MORPH
+    @location(8) morph: vec2f,
 #endif
 }
 
@@ -38,17 +45,31 @@ struct VertexOut {
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
+#ifdef MORPH
+    var source = Morphed(mesh_position(v.position), vec3f(0.0), vec3f(0.0), vec4f(1.0));
+#ifdef VERTEX_COLOR
+    source.color = v.vertex_color;
+#endif
+    let rest = morph_vertex(found, v.morph, source);
+    let rest_position = rest.position;
+#else
+    let rest_position = mesh_position(v.position);
+#endif
 #ifdef SKIN
     let skin = skin_of(found, v.joints, v.weights);
-    let position = skinned_point(skin, mesh_position(v.position));
+    let position = skinned_point(skin, rest_position);
 #else
-    let position = mesh_position(v.position);
+    let position = rest_position;
 #endif
     out.relative = relative_position(found, position);
     out.clip = clip_of(found, out.relative);
     out.material = found.material;
 #ifdef VERTEX_COLOR
+#ifdef MORPH
+    out.vertex_color = rest.color;
+#else
     out.vertex_color = v.vertex_color;
+#endif
 #endif
     return out;
 }
@@ -67,6 +88,6 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         discard;
     }
 #endif
-    let finished = finish(fogged(base, in.relative, m), in.clip.xy);
+    let finished = finish_exposed(fogged(exposed(base), in.relative, m), in.clip.xy);
     return fragment_color(m, finished.rgb, alpha);
 }

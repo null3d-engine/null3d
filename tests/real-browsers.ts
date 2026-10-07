@@ -1,5 +1,5 @@
 // Runs a plan of test pages in real browsers that Playwright cannot drive, through the runner page:
-// browser apps on this Mac, browsers on an Android phone connected by USB, runner pages that wait
+// browser apps on this Mac or Linux machine, browsers on an Android phone connected by USB, runner pages that wait
 // on tablets and phones on the local network, and sessions that it opens on a device cloud's real
 // devices. It starts the dev server, lets one browser per device run at a time, then judges every
 // result and prints a summary. On an Android phone it reads
@@ -10,16 +10,16 @@
 // changes through the run marks the run's timing figures as unreliable.
 // From the repository root:
 //   bun tests/real-browsers.ts Safari Firefox
-//   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard 1/2 Safari
 //   bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan scale --scenes s5 --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 250000
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8
 //   bun tests/real-browsers.ts --plan memory --android chrome --lan ipad-safari
-//   bun tests/real-browsers.ts --plan startup --android brave --lan ipad-safari,ipad-brave
-//   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
-//   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --plan startup --lan ipad-safari
+//   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan skinning --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan skinning-webgpu --lan ipad-safari
 //   bun tests/real-browsers.ts --plan animation --android chrome --lan ipad-safari
@@ -73,13 +73,15 @@
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
-//                       whose results its check compares with
+//                       whose results its check compares with. Each shard loads the capabilities
+//                       page first, to skip the pages of the GPU paths that the device lacks
 //   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
 //                       earlier run, with the items whose results their checks compare with
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
-//                       cannot read: it goes into each Brave result and the run's summary
+//                       cannot read: it goes into each Brave result and the run's summary. No
+//                       plan tests Brave any more; it runs only where a run names it
 //   --switches <q>      page switches that every page of the plan gets, such as half=on or
 //                       half=on&preset=ultra: the checks plan's image tests then compare the
 //                       scene shaders at half precision with the usual references
@@ -93,14 +95,19 @@
 //   --parallel <n>      at most n runners at once, as a device cloud plan's parallel sessions
 //                       allow; 1 by default with --cloud, and no limit without it
 //   --cloud-build <name> the build that groups the run's sessions on the cloud's dashboard
-//   --attended          someone is at the devices of --lan, so a plan whose pages end their tab,
+//   --network-logs      the cloud keeps each session's network log, which the dashboard shows
+//   --attended         someone is at the devices of --lan, so a plan whose pages end their tab,
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
+//   --front             browser apps on a Mac open in front, at the window size they choose. Without
+//                       it, they open in the background, and Safari's and Firefox's runner windows
+//                       move almost wholly past the main display's left edge, at a small size, or at
+//                       their own size in timed plans
 // Before a run on a phone or tablet, the runner prints a checklist of the device settings that
 // results depend on. After a fixed plan, it prints each browser's row for the record of tested
 // devices, from what the runner page found about its browser, device and GPU. A runner whose name
 // names one browser warns when its page ran in another.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
 	copyFileSync,
 	existsSync,
@@ -124,6 +131,14 @@ import {
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
+import {
+	type AppWindow,
+	appWindow,
+	frontApp,
+	giveFocusBack,
+	PARKED_APPS,
+	parkWindow,
+} from './lib/app-window.ts';
 import { browserStackSessions, readCredentials } from './lib/browserstack.ts';
 import { type CloudDevice, cloudDevice } from './lib/browserstack-devices.ts';
 import type { CloudSessions } from './lib/cloud-sessions.ts';
@@ -132,6 +147,9 @@ import {
 	browserText,
 	type DeviceFacts,
 	detectBrowser,
+	NO_FRAMES,
+	type NoFramesRecord,
+	noFramesText,
 	testedDeviceRow,
 } from './lib/device-record.ts';
 import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
@@ -251,8 +269,12 @@ export interface Options {
 	parallel?: number;
 	/** The build that groups a cloud run's sessions on the cloud's dashboard, when given. */
 	cloudBuild?: string;
-	/** macOS app names, such as Safari. */
-	mac: string[];
+	/** The cloud keeps each session's network log, which slows the session's loads a little. */
+	networkLogs?: boolean;
+	/** Browser apps on a Mac open in front, at their own window size. */
+	front?: boolean;
+	/** Browser apps on this machine: macOS app names, such as Safari, or Linux commands' names, such as Firefox. */
+	apps: string[];
 	android: string[];
 	lan: string[];
 	/** Runners of the device cloud list, whose sessions the runner tool opens. */
@@ -260,7 +282,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--attended] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -271,7 +293,7 @@ const PLAN_NAMES = [...Object.keys(PLANS), SCALE_PLAN];
 
 export function parseArgs(args: readonly string[]): Options {
 	const missing = { ...NONE_MISSING };
-	const options: Options = { plan: 'checks', missing, mac: [], android: [], lan: [], cloud: [] };
+	const options: Options = { plan: 'checks', missing, apps: [], android: [], lan: [], cloud: [] };
 	const list = (value: string | undefined) => (value ?? '').split(',').filter(Boolean);
 	const known = <T extends string>(flag: string, values: string[], allowed: readonly T[]): T[] => {
 		const unknown = values.filter((v) => !(allowed as readonly string[]).includes(v));
@@ -321,9 +343,11 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--cloud') options.cloud = list(args[++i]);
 		else if (arg === '--parallel') options.parallel = wholeNumber(arg, args[++i]);
 		else if (arg === '--cloud-build') options.cloudBuild = args[++i];
+		else if (arg === '--network-logs') options.networkLogs = true;
 		else if (arg === '--attended') options.attended = true;
+		else if (arg === '--front') options.front = true;
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
-		else options.mac.push(arg);
+		else options.apps.push(arg);
 	}
 	if (!PLAN_NAMES.includes(options.plan))
 		throw new Error(`no plan named ${options.plan}; plans: ${PLAN_NAMES.join(', ')}`);
@@ -480,11 +504,11 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
 }
 
 /**
- * How a runner starts: an app on this Mac, a browser on the phone, a page that waits on the network,
- * or a session on a device cloud that opens a waiting page.
+ * How a runner starts: an app on this Mac or Linux machine, a browser on the phone, a page that
+ * waits on the network, or a session on a device cloud that opens a waiting page.
  */
 type Launch =
-	| { kind: 'mac'; app: string }
+	| AppLaunch
 	| { kind: 'android'; browser: string }
 	| { kind: 'lan' }
 	| { kind: 'cloud'; device: CloudDevice };
@@ -493,11 +517,31 @@ type LaunchedRunner = Runner & { launch: Launch };
 
 type Launches = ReadonlyMap<string, Launch>;
 
+/** The kind of machine whose browser apps a run opens: a Mac, or a Linux machine such as CI's. */
+type AppMachine = 'mac' | 'linux';
+
+/** A browser app on this machine, and how its window opens on a Mac. */
+type AppLaunch = { kind: AppMachine; app: string; window?: AppWindow };
+
+/** The machine that this tool runs on, which opens its browser apps. */
+function appMachine(): AppMachine {
+	if (process.platform === 'darwin') return 'mac';
+	if (process.platform === 'linux') return 'linux';
+	throw new Error(`browser apps run on macOS or Linux, not on ${process.platform}`);
+}
+
+/** True for a runner that is a browser app on this machine. */
+const isApp = (launch: Launch | undefined): launch is AppLaunch =>
+	launch?.kind === 'mac' || launch?.kind === 'linux';
+
 function runnersOf(options: Options): LaunchedRunner[] {
-	const runners: LaunchedRunner[] = options.mac.map((app) => ({
-		name: `mac-${slug(app)}`,
-		device: 'mac',
-		launch: { kind: 'mac', app },
+	const machine = options.apps.length > 0 ? appMachine() : 'mac';
+	const timed = TIMED_PLANS.has(options.plan) || options.plan === SCALE_PLAN;
+	const window = appWindow(options.front === true, Boolean(process.env.CI), timed);
+	const runners: LaunchedRunner[] = options.apps.map((app) => ({
+		name: `${machine}-${slug(app)}`,
+		device: machine,
+		launch: { kind: machine, app, ...(machine === 'mac' && { window }) },
 	}));
 	if (options.android.length > 0) {
 		const phone = slug(phoneModel());
@@ -517,17 +561,44 @@ function runnersOf(options: Options): LaunchedRunner[] {
 	return runners;
 }
 
+/** The device whose image references a runner compares with: a cloud device's model, when it has one. */
+const imageDevice = (runner: LaunchedRunner) =>
+	(runner.launch.kind === 'cloud' && runner.launch.device.model) || runner.device;
+
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
 
+/** The apps whose runner window did not move in this run, which the tool told once. */
+const unparked = new Set<string>();
+
 /**
- * Opens the runner page in a macOS app and says whether it did. A launch that hangs, as behind a
- * first-launch prompt on a machine that nobody watches, fails after a minute instead of stopping
- * the whole run.
+ * Opens the runner page in a browser app and says whether it did. On a Mac, a launch that hangs,
+ * as behind a first-launch prompt on a machine that nobody watches, fails after a minute instead
+ * of stopping the whole run. There the app opens in the background unless the run asks for the
+ * front, and the runner window of an app that the tool can move goes almost wholly past the main
+ * display's left edge. Should the app take focus all the same, the app in front before gets it back.
+ * On Linux, the app's command by its name in lowercase opens the page: the first call starts the
+ * browser, which keeps running, and a later call hands the page to it.
  */
-function openApp(app: string, url: string): boolean {
+function openApp({ app, window }: AppLaunch, url: string): boolean {
 	try {
-		execFileSync('open', ['-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+		if (process.platform === 'darwin') {
+			const before = window?.background ? frontApp() : undefined;
+			const background = window?.background ? ['-g'] : [];
+			execFileSync('open', [...background, '-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+			const why =
+				window?.park && PARKED_APPS.has(app) ? parkWindow(app, url, window.small) : undefined;
+			if (why && !unparked.has(app)) {
+				unparked.add(app);
+				console.log(`${app}: its runner window stays where the app put it: ${why}`);
+			}
+			giveFocusBack(before);
+		} else {
+			const command = execFileSync('which', [slug(app)], { encoding: 'utf8' }).trim();
+			spawn(command, [url], { detached: true, stdio: 'ignore' })
+				.on('error', (e) => console.log(`${app} stopped: ${e.message}`))
+				.unref();
+		}
 		return true;
 	} catch (e) {
 		console.log(`${app} did not open the runner page: ${(e as Error).message.split('\n')[0]}`);
@@ -564,8 +635,8 @@ async function openRunners(
 	for (const name of names) {
 		const launch = launches.get(name) as Launch;
 		const url = runnerUrl(baseUrl, run, name);
-		if (launch.kind === 'mac') {
-			if (openApp(launch.app, url)) opened.push(name);
+		if (isApp(launch)) {
+			if (openApp(launch, url)) opened.push(name);
 		} else if (launch.kind === 'cloud') {
 			if (await cloud?.open(name, cloudRunnerUrl(name))) opened.push(name);
 		} else {
@@ -649,6 +720,21 @@ function inspectMac(run: string, runner: string, count: number, since: number): 
 			// Reports that the tool cannot read stay where they are.
 		}
 	return `screen ${locked ? 'locked' : 'not locked'}; ${pressure}; web content processes: ${webContent.join(', ') || 'none'}; crash reports: ${crashes.join(', ') || 'none'}; evidence in ${prefix}*`;
+}
+
+/**
+ * Keeps the Mac's display awake while the runner lasts. Once the screen saver locks the screen,
+ * Safari gives pages no animation frames, so every later page waits for a first frame that never
+ * comes. The screen saver starts only while nothing keeps the display awake.
+ */
+function keepDisplayAwake(): void {
+	if (process.platform !== 'darwin') return;
+	const child = spawn('caffeinate', ['-d', '-i', '-w', String(process.pid)], {
+		stdio: 'ignore',
+		detached: true,
+	});
+	child.on('error', () => {});
+	child.unref();
 }
 
 /**
@@ -758,7 +844,7 @@ export class QuietRecovery {
 }
 
 /**
- * Replaces runner pages: in macOS apps, it closes a quiet runner page in Safari, then opens a new
+ * Replaces runner pages: in browser apps, it closes a quiet runner page in Safari, then opens a new
  * one in the app. Where the quiet page stays open, the new page's claim on the runner's results
  * stops it. On the Android phone, it opens a new runner page only after a page that ended its tab,
  * since the browser then shows its crash page in place of the runner page. Runner pages on the
@@ -768,10 +854,13 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 	const startedAt = Date.now();
 	return {
 		canReopen: (runner, tabEnded) => {
-			const kind = launches.get(runner)?.kind;
-			return kind === 'mac' || (kind === 'android' && tabEnded);
+			const launch = launches.get(runner);
+			return isApp(launch) || (launch?.kind === 'android' && tabEnded);
 		},
-		inspect: (runner, count) => inspectMac(run, runner, count, startedAt),
+		inspect: (runner, count) =>
+			launches.get(runner)?.kind === 'mac'
+				? inspectMac(run, runner, count, startedAt)
+				: 'no evidence: the tool looks only at a Mac',
 		reopen: (runner, from) => {
 			const launch = launches.get(runner);
 			const url = runnerUrl(baseUrl, run, runner, from);
@@ -779,9 +868,9 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 				openOnPhone(launch.browser, url);
 				return true;
 			}
-			if (launch?.kind !== 'mac') return false;
+			if (!isApp(launch)) return false;
 			if (launch.app === 'Safari') closeSafariRunner(run, runner);
-			return openApp(launch.app, url);
+			return openApp(launch, url);
 		},
 	};
 }
@@ -807,6 +896,12 @@ interface DeviceWords {
 function deviceWords(runner: string, launch: Launch | undefined): DeviceWords {
 	if (launch?.kind === 'mac')
 		return { app: launch.app, place: 'this Mac', rateSettings: 'Low Power Mode is on' };
+	if (launch?.kind === 'linux')
+		return {
+			app: launch.app,
+			place: 'this Linux machine',
+			rateSettings: 'its display runs at another rate',
+		};
 	if (launch?.kind === 'android')
 		return {
 			app: titled(launch.browser),
@@ -847,6 +942,17 @@ export function memoryResetText(
 	return `Quit and reopen ${app} on ${place}${front} then run again with --only ${only.join(',')}`;
 }
 
+/**
+ * What to do after a runner page got no animation frames. A cloud session tried to bring the page
+ * to the front when it opened, so a new session is the next try there.
+ */
+export function noFramesTodo(runner: string, launch: Launch | undefined): string {
+	if (launch?.kind === 'cloud')
+		return `The session could not bring the page to the front. Run it again with bun run devices:cloud --only ${runner} for a new session, or test this browser in BrowserStack Live, where a person holds the device`;
+	const { app, place } = deviceWords(runner, launch);
+	return `Bring the runner page to the front in ${app} on ${place}, keep the screen on, then run again`;
+}
+
 /** The display refresh rate that the device checklist asks for, in hertz. */
 export const EXPECTED_REFRESH_HZ = 60;
 /** The lowest refresh rate at which a run's timing figures still compare with other runs', in hertz. */
@@ -865,6 +971,8 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'skinning',
 	'skinning-webgpu',
 	'bloom',
+	'bloom-sizes',
+	'environment',
 	'ao',
 	'occlusion',
 	'gpu-occlusion',
@@ -909,7 +1017,7 @@ export function refreshText(runner: string, launch: Launch | undefined, problem:
 /** Why the out-of-memory guard ended a runner's turn, and what to do before the next run. */
 export interface EndedEarly {
 	reason: string;
-	/** The latest pages that failed for lack of memory. */
+	/** The latest pages that failed for lack of memory, or the step that got no frames. */
 	pages: string[];
 	/** What the person at the device does next. */
 	todo: string;
@@ -940,13 +1048,15 @@ interface LatestPage {
 }
 
 /**
- * Ends a runner's turn as soon as its browser keeps refusing memory: enough of its latest pages
- * failed for lack of memory, as Safari does after hours of runs, when every later page would fail
- * too and only a new browser process helps. It reads each runner's results as they come, in the
- * plan's order, and skips the pages that push the memory limit on purpose. `stop` ends the
- * runner page's turn; the guard then records why, in the runner's results, and prints what to do.
+ * Ends a runner's turn early when no later page can pass. That is so when its runner page got no
+ * animation frames and stopped, as when the browser reports the page hidden. It is so too when the
+ * browser keeps refusing memory: enough of its latest pages failed for lack of memory, as Safari
+ * does after hours of runs, and only a new browser process helps. The guard reads each runner's
+ * results as they come, in the plan's order, and skips the pages that push the memory limit on
+ * purpose. `stop` ends the runner page's turn; the guard then records why, in the runner's results,
+ * and prints what to do.
  */
-export class MemoryGuard {
+export class TurnGuard {
 	/** For each runner, the plan index of its next result to read, and its latest pages. */
 	private readonly seen = new Map<string, { next: number; latest: LatestPage[] }>();
 	/** The runners whose turn the guard ended, and why. */
@@ -958,9 +1068,24 @@ export class MemoryGuard {
 		private readonly stop: (runner: string) => void,
 	) {}
 
-	/** Reads a runner's new results, and ends its turn when its browser keeps refusing memory. */
+	/**
+	 * Reads a runner's new results, and ends its turn when its runner page got no frames or its
+	 * browser keeps refusing memory.
+	 */
 	readonly endTurn = (runner: string): boolean => {
 		const { run, items } = this.plan;
+		if (this.ended.has(runner)) return true;
+		const noFrames = storedResult(run, runner, NO_FRAMES) as NoFramesRecord | undefined;
+		if (noFrames) {
+			this.record(runner, {
+				reason: noFramesText(noFrames.visibility),
+				pages: [noFrames.step],
+				todo: noFramesTodo(runner, this.launches.get(runner)),
+				only: [],
+				endedAt: new Date().toISOString(),
+			});
+			return true;
+		}
 		const seen = this.seen.get(runner) ?? { next: 0, latest: [] };
 		this.seen.set(runner, seen);
 		while (seen.next < items.length) {
@@ -983,7 +1108,6 @@ export class MemoryGuard {
 	};
 
 	private end(runner: string, latest: readonly LatestPage[]): void {
-		this.stop(runner);
 		const failed = latest.filter((page) => page.outOfMemory !== undefined);
 		const errors = [
 			...new Set(
@@ -1000,20 +1124,25 @@ export class MemoryGuard {
 				})
 				.map((item) => item.id),
 		);
-		const ended: EndedEarly = {
+		this.record(runner, {
 			reason: `the browser keeps refusing the engine's memory (${errors.join(' and ')} on ${failed.length} of its last ${latest.length} pages)`,
 			pages: failed.map((page) => page.id),
 			todo: memoryResetText(runner, this.launches.get(runner), only),
 			only,
 			endedAt: new Date().toISOString(),
-		};
+		});
+	}
+
+	/** Ends a runner's turn, and records and prints why. */
+	private record(runner: string, ended: EndedEarly): void {
+		this.stop(runner);
 		this.ended.set(runner, ended);
 		writeRunnerFile(this.plan.run, runner, 'ended-early', ended);
 		console.log(endedEarlyText(runner, ended));
 	}
 }
 
-/** The message for a runner whose turn the out-of-memory guard ended. */
+/** The message for a runner whose turn the guard ended. */
 export const endedEarlyText = (runner: string, { reason, todo }: EndedEarly) =>
 	`${runner}: ${reason}. ${todo}`;
 
@@ -1093,7 +1222,10 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
 		);
-	return repeatItems(part, rounds);
+	// Every shard loads the capabilities page first, so its runner page can skip the pages of the GPU
+	// paths that the device lacks.
+	const report = items.find((item) => item.check.kind === 'capabilities');
+	return repeatItems(report && !part.includes(report) ? [report, ...part] : part, rounds);
 }
 
 /**
@@ -1122,7 +1254,7 @@ async function runPlan(
 	let turns: string[] = [];
 	// A runner whose turn ends leaves the turn list first, so a reloaded runner page does not start
 	// the run again, and then loses its claim, so its runner page stops at its next result.
-	const guard = new MemoryGuard(plan, launches, (name) => {
+	const guard = new TurnGuard(plan, launches, (name) => {
 		turns = turns.filter((turn) => turn !== name);
 		setTurns(run, turns);
 		endTurnClaim(run, name);
@@ -1220,17 +1352,25 @@ async function runPlan(
 		}
 		const browser = browserOf(device);
 		counts.browser = browserText(browser);
+		// A runner page without frames tested nothing after it stopped, which fails the run.
+		if (readResult(run, name, NO_FRAMES)) {
+			counts.fail++;
+			console.log(
+				`FAIL  ${name}: ${endedEarly?.reason ?? 'its runner page got no animation frames'}`,
+			);
+		}
 		const mismatch = browserMismatch(name, browser);
 		if (mismatch) console.log(`WARN  ${mismatch}`);
+		const imagesOf = imageDevice(runner);
 		const context = {
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
 			storedBaselines,
-			runner: { name, device: runner.device },
+			runner: { name, device: imagesOf },
 			braveShields,
 		};
 		// The images this runner saved for review in an earlier run are stale once this run is judged.
-		clearCandidates({ runner: name, device: runner.device });
+		clearCandidates({ runner: name, device: imagesOf });
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
 			// The pages after a turn that the guard ended are listed once, in its message.
@@ -1477,7 +1617,11 @@ function cloudSessions(options: Options): CloudSessions | undefined {
 	return browserStackSessions(
 		options.cloud.map((name) => cloudDevice(name)!),
 		readCredentials(),
-		{ build, ...(localIdentifier && { localIdentifier }) },
+		{
+			build,
+			...(localIdentifier && { localIdentifier }),
+			...(options.networkLogs && { networkLogs: true }),
+		},
 	);
 }
 
@@ -1485,6 +1629,7 @@ async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
+	if (options.apps.length > 0) keepDisplayAwake();
 	const launches = new Map(runners.map((runner) => [runner.name, runner.launch]));
 	const cloud = cloudSessions(options);
 	if (options.android.length > 0 || options.lan.length > 0) {

@@ -19,6 +19,7 @@ use null3d_gpu::drawlist::{
 
 use super::ids;
 use crate::frame::{RecordError, UploadArena, words_as_bytes};
+use crate::pipelines::built_by;
 use crate::view::{MAX_VIEWS, ViewId};
 
 /// The most levels of a pyramid: enough for a render size of 65,536 pixels each way.
@@ -92,35 +93,52 @@ struct ViewPyramid {
     uploaded: Option<(u32, u32)>,
 }
 
-/// The pyramids' pipeline and each camera view's pyramid.
+/// Occlusion culling's pipelines and each camera view's pyramid.
 #[derive(Debug)]
 pub(super) struct Pyramids {
     views: [Option<ViewPyramid>; MAX_VIEWS],
-    /// True once the pipeline exists.
-    pipeline: bool,
+    /// The frame whose list created the pipelines, once it did.
+    pipelines_frame: Option<u32>,
 }
 
 impl Default for Pyramids {
     fn default() -> Self {
         Self {
             views: [None; MAX_VIEWS],
-            pipeline: false,
+            pipelines_frame: None,
         }
     }
 }
 
 impl Pyramids {
-    /// Records the creation of the pipeline, unless it exists. Returns true when it recorded it.
-    pub(super) fn create_pipeline(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
-        if self.pipeline {
+    /// Records the creation of occlusion culling's pipelines, the depth pyramid's and the two
+    /// culling phases', in the list of `frame`, unless they exist. Returns true when it recorded
+    /// them.
+    pub(super) fn create_pipelines(
+        &mut self,
+        list: &mut DrawList,
+        frame: u32,
+    ) -> Result<bool, RecordError> {
+        if self.pipelines_frame.is_some() {
             return Ok(false);
         }
-        list.push(
-            Op::CreateComputePipeline,
-            &[ids::PYRAMID, template::DEPTH_PYRAMID, 0],
-        )?;
-        self.pipeline = true;
+        for (id, template) in [
+            (ids::PYRAMID, template::DEPTH_PYRAMID),
+            (ids::OCCLUSION_EARLY, template::OCCLUSION_EARLY),
+            (ids::OCCLUSION_LATE, template::OCCLUSION_LATE),
+        ] {
+            list.push(Op::CreateComputePipeline, &[id, template, 0])?;
+        }
+        self.pipelines_frame = Some(frame);
         Ok(true)
+    }
+
+    /// True once occlusion culling's pipelines are built: the thread that draws last drew every
+    /// pipeline built in frame `pipelines_built`, or no frame was drawn yet, which waits for every
+    /// pipeline.
+    pub(super) fn built(&self, pipelines_built: u32) -> bool {
+        self.pipelines_frame
+            .is_some_and(|frame| pipelines_built == 0 || built_by(frame, pipelines_built))
     }
 
     /// Makes a view's pyramid for a canvas of `canvas` pixels, unless its buffers hold it, and
@@ -236,7 +254,7 @@ impl Pyramids {
     /// occluders.
     pub(super) const UPLOAD_BYTES: usize = MAX_BATCHES * BATCH_BYTES as usize + 4;
 
-    /// Forgets every pyramid and the pipeline, so the next frames make them again, after the
+    /// Forgets every pyramid and the pipelines, so the next frames make them again, after the
     /// thread that draws replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {
         *self = Self::default();

@@ -3,12 +3,12 @@ id: api/geometry
 title: Geometry
 status: experimental
 since: "0.1"
-summary: "Generators with three.js parameters; meshes from arrays; vertex formats; large meshes."
+summary: "Generators with three.js parameters; meshes from arrays; morph targets; vertex formats; large meshes."
 ---
 
 # Geometry
 
-> Ships in null3D 0.1. Integer attributes, joints and weights ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: the call `destroy` on a mesh, and a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use them.
+> Ships in null3D 0.1. Integer attributes, joints and weights, and morph targets ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: the call `destroy` on a mesh, and a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -118,6 +118,27 @@ Integer positions keep their own units. Give the object the scale and the positi
 
 `computeTangents: true` computes tangents as three.js's `computeTangents` does, from the positions, the normals and `uvs`. It needs `uvs`, and it works with or without indices. The job workers share the work, so a large mesh takes less time. Both options give the same numbers as three.js, bit for bit. They compute from integer positions, normals and texture coordinates too, as shaders read them, and give 32-bit floats.
 
+## Morph targets
+
+A morph target is another shape of a mesh, such as a smile on a face. The `morphTargets` option gives a mesh its targets, as three.js's `morphAttributes` with `morphTargetsRelative` does. Each target is an array of three numbers per vertex: how far the target moves the vertex at weight 1. The list `positions` moves the vertices, `normals` turns their normals, and `tangents` turns their tangents. The list `colors` changes the mesh's vertex colors, with as many numbers per vertex as `colors` has, three or four. Every list holds the same number of targets, from 1 to 256. The list `names` names the targets.
+
+```ts
+const count = positions.length / 3;
+const smile = new Float32Array(count * 3);
+const blink = new Float32Array(count * 3);
+// ... fill in how far each target moves each vertex ...
+const face = geometry.fromArrays({
+  positions,
+  normals,
+  indices,
+  morphTargets: { positions: [smile, blink], names: ['Smile', 'Blink'] },
+});
+const head = scene.createMesh({ mesh: face, material });
+head.setMorphWeight('Smile', 0.8);
+```
+
+Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than three.js's copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,194,304 deltas, 32 MiB of GPU memory. Each of a vertex's positions, normals, tangents and colors counts once. Past those limits, `fromArrays` throws E1206. The GPU keeps each delta in a 16-bit float, which is exact to 1/2048 of the delta's size, and each weight in a 32-bit float. A morphed color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it, so a color that the weights push past 1 or below 0 draws brighter or darker there.
+
 ## Vertex formats
 
 A mesh keeps the attributes that you give it, each in the type that it came in. Its vertex format is that set of attributes and their types. Every vertex holds its position and its normal, and each other attribute adds to its size. Each attribute takes whole groups of 4 bytes, as glTF lays them out. So three 8-bit values take 4 bytes, and three 16-bit values take 8:
@@ -146,6 +167,9 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 | `geometry.computeVertexNormals()` | `computeNormals: true` |
 | `geometry.computeTangents()` | `computeTangents: true` |
 | `geometry.computeBoundingSphere()` | Nothing: the engine computes bounds itself |
+| `geometry.morphAttributes.position = [...]` with `morphTargetsRelative = true` | `morphTargets: { positions: [...] }` |
+| `geometry.morphAttributes.color = [...]` | `morphTargets: { colors: [...] }`, with `colors` on the mesh |
+| `mesh.morphTargetDictionary` | `mesh.mesh.morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
 
 [three.js to null3D](../porting/threejs-mapping.md) lists every mapping.
 
@@ -245,7 +269,7 @@ Mesh generators with the parameters and defaults of three.js's geometry classes,
 | `capsule(options: CapsuleOptions = {}): MeshGeometry` | A capsule, like three.js's `CapsuleGeometry`. |
 | `circle(options: CircleOptions = {}): MeshGeometry` | A flat circle, like three.js's `CircleGeometry`. |
 | `ring(options: RingOptions = {}): MeshGeometry` | A flat ring, like three.js's `RingGeometry`. |
-| `fromArrays(arrays: MeshArrays): MeshGeometry` | A mesh from arrays of vertex attributes and triangle indices, like three.js's `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets, each in the type of number it came in, and meshes whose attributes have the same types share GPU buffers. A mesh can have any number of vertices. Throws E1206 when an array's length does not fit the vertex count, when its attribute does not take its type of number, when an index names no vertex, and for a value that is not a finite number. |
+| `fromArrays(arrays: MeshArrays): MeshGeometry` | A mesh from arrays of vertex attributes and triangle indices, like three.js's `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets, each in the type of number it came in, and meshes whose attributes have the same types share GPU buffers. A mesh can have any number of vertices. Throws E1206 when an array's length does not fit the vertex count, when its attribute does not take its type of number, when an index names no vertex, for a value that is not a finite number, and for morph targets whose arrays do not fit the vertices or whose lists hold different numbers of targets. |
 
 ### `IntegerArray`
 
@@ -274,16 +298,33 @@ The arrays of a mesh for `geometry.fromArrays`. Each array holds its values for 
 | `indices?: Uint16Array \| Uint32Array \| readonly number[]` | Three vertex indices per triangle, counter-clockwise when you look at its front. 16-bit and 32-bit indices both work. Without indices, each three vertices in a row make a triangle. Like three.js's `setIndex`. |
 | `computeNormals?: boolean` | Computes the normals from the triangles, as three.js's `computeVertexNormals` does: each vertex gets the average of its triangles' normals, weighted by their areas. |
 | `computeTangents?: boolean` | Computes the tangents from the positions, the normals and `uvs`, as three.js's `computeTangents` does, on the job workers. |
+| `morphTargets?: MorphTargets` | The mesh's morph targets: shapes that each object of the mesh blends in by its own weights. The engine keeps, for each vertex, only the targets that move it. |
 
 ### `MeshGeometry`
 
 Class `MeshGeometry`.
 
-A mesh the engine can draw: its id in the engine core, and its bounding radius.
+A mesh the engine can draw: its id in the engine core, its bounding radius, and its morph targets.
 
 | Member | Description |
 | --- | --- |
-| `readonly radius: number` | The distance from the mesh's origin to its farthest vertex. |
+| `readonly radius: number` | The distance from the mesh's origin to its farthest vertex, at rest. |
+| `readonly morphTargets: number` | How many morph targets the mesh has. 0 for a mesh without any. |
+| `readonly morphTargetNames: readonly string[]` | The morph targets' names, by target, or none when the mesh's arrays named none. Like three.js's `morphTargetDictionary`, turned around. `mesh.setMorphWeight` takes a name too. |
+
+### `MorphTargets`
+
+Interface `MorphTargets`.
+
+A mesh's morph targets, like three.js's `morphAttributes` with `morphTargetsRelative` set, as glTF stores them. Each list holds one array per target, of three numbers per vertex, or for colors as many as the mesh's `colors` hold. They say how far the target moves the vertex's position, normal, tangent or color at weight 1. Every list has the same number of targets, from 1 to 256. A mesh's targets move its vertices by their weights, which each object sets with `setMorphWeight`, and clips animate.
+
+| Member | Description |
+| --- | --- |
+| `positions?: readonly (Float32Array \| readonly number[])[]` | For each target, how far it moves each position. Like `morphAttributes.position`. |
+| `normals?: readonly (Float32Array \| readonly number[])[]` | For each target, how far it turns each normal. Like `morphAttributes.normal`. |
+| `tangents?: readonly (Float32Array \| readonly number[])[]` | For each target, how far it turns each tangent's direction: three numbers per vertex, as glTF gives them. three.js does not morph tangents. |
+| `colors?: readonly (Float32Array \| readonly number[])[]` | For each target, how far it changes each vertex color: three or four numbers per vertex, as many as the mesh's `colors` hold, in linear color. Like `morphAttributes.color`. A morphed color is clamped to the range 0 to 1, as the glTF specification asks. Needs `colors`. |
+| `names?: readonly string[]` | The targets' names, one per target, which `setMorphWeight` takes in place of numbers. |
 
 ### `PlaneOptions`
 

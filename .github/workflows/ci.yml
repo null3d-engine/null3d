@@ -1,11 +1,17 @@
 name: CI
 
+# Each event runs its own share of the jobs, as D-86 (.dev/decisions) decides until the 1.0 release,
+# and .dev/pull-requests.md lists them. A pull request runs the quick checks. The merge queue runs
+# every job on each pull request on top of main and the pull requests ahead of it, and main then gets
+# the exact commit that the queue tested. So a push to main runs only what later runs restore from
+# main: its caches, and its sizes for the size check. A run started by hand runs every job on its
+# branch, for a commit that reached main without the queue: gh workflow run ci.yml --ref main
 on:
   push:
     branches: [main]
   pull_request:
-  # The merge queue tests each pull request on top of main and the pull requests ahead of it.
   merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,11 +26,19 @@ env:
   BUN_VERSION: "1.3.14"
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
+  # Only main's runs save caches, and every run restores main's. A pull request's or a merge queue
+  # run's cache serves only that pull request or queue branch, and their saves filled GitHub's cache
+  # limit for the repository, so that GitHub dropped main's caches.
+  SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
+  # On main, the Rust jobs only keep their caches. After an exact match of the cache's key there is
+  # nothing to save, so they skip their checks. A miss runs them, and the job then saves the cache.
+  MAIN_PUSH: ${{ github.event_name == 'push' }}
 
 jobs:
   docs-and-tools:
     # The type check and the unit tests read the shader modules, which the build job makes.
     needs: build
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -37,12 +51,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/bun-install
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
@@ -76,7 +85,9 @@ jobs:
           bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
           bun tools/hooks/check-trailers.ts ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
 
-  rust:
+  rust-lint:
+    # Formatting and Clippy. Clippy only checks the code and the tests compile it in full, so the
+    # two share almost no build output and run as jobs of their own.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -84,20 +95,50 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       # The cache's own key leaves out the build profiles in the workspace's Cargo.toml, so a
-      # profile change would keep restoring a cache built with the old profile.
+      # profile change would keep restoring a cache built with the old profile. The cache also
+      # names the job, so each job restores what it built itself.
       - uses: Swatinem/rust-cache@v2
+        id: rust
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
       - run: cargo fmt --all --check
+        if: env.MAIN_PUSH != 'true'
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
       - name: Clippy rejects a call to the system clock
+        if: env.MAIN_PUSH != 'true'
         run: |
           if cargo clippy --manifest-path tools/fixtures/disallowed-clock/Cargo.toml --target-dir target/lint-fixture 2> clippy.log; then
             echo "Clippy accepted a call to SystemTime::now"
             exit 1
           fi
           grep -q 'disallowed method `std::time::SystemTime::now`' clippy.log
+
+  rust-tests:
+    # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
+    # cargo test runs the files one after another, and a few slow files then set the job's time.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        id: rust
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
+      - uses: taiki-e/install-action@v2
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
+        with:
+          tool: cargo-nextest@0.9.146
+      # On main the tests only build, so that a slow or flaky test cannot stop the cache's save.
+      - run: cargo nextest run --workspace ${{ env.MAIN_PUSH == 'true' && '--no-run' || '' }}
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
+      # nextest runs no documentation tests.
+      - run: cargo test --workspace --doc
+        if: env.MAIN_PUSH != 'true'
 
   build:
     # The files that the other jobs need, built once on Linux: the engine's two WebAssembly files,
@@ -118,6 +159,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}-shader-build
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -133,36 +175,173 @@ jobs:
             packages/vite-plugin/dist/
             packages/cli/dist/
             packages/engine/src/generated/shaders*.ts
+            packages/engine/src/generated/shaders-*.js
+            packages/engine/src/generated/shader-features.ts
             target/shader-modules.json
           if-no-files-found: error
           retention-days: 1
 
-  wasm-checks:
-    # The size check builds the WebAssembly files and the engine test page itself, and then the
-    # base's build, so it runs beside the build job instead of after it.
+  size-base:
+    # The sizes of the size check's base commit, built at that commit with its own toolchain,
+    # packages and build script, as the check builds a base in a worktree. Many runs share a base:
+    # pull requests build on main's newest commit, whose own run keeps its sizes (main-keep below).
+    # So the sizes stay in the Actions cache by commit, and a run that finds them builds nothing. A
+    # merge queue run builds on the pull request ahead of it, which has no kept sizes, so this job
+    # builds the base beside the build job, and the size check waits for both. On main the job
+    # keeps only its Rust cache, built at main's own commit.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       HUSKY: "0"
     steps:
-      # The size check finds its base in the history and reads the commits since it. A pull request
-      # compares with main, and a merge queue run with the commit that its group builds on, which
-      # holds the pull requests ahead of it, so their growth never counts against it.
+      # The size check finds its base in the history. A pull request compares with main, and a merge
+      # queue run with the commit that its group builds on, which holds the pull requests ahead of
+      # it, so their growth never counts against it.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ hashFiles('Cargo.toml') }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Build both WebAssembly files and the shader compiler, and check their sizes against the base's build
-        run: bun run build:check-size
+      - name: Find the size check's base
+        id: base
+        run: echo "sha=$(bun tools/build-wasm.ts --print-base ${{ env.MAIN_PUSH == 'true' && '--base HEAD' || '' }})" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: kept
+        if: env.MAIN_PUSH != 'true'
+        with:
+          path: target/.size-base/${{ steps.base.outputs.sha }}.json
+          key: size-base-${{ steps.base.outputs.sha }}
+      - name: Check out the base
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: git checkout --force --detach ${{ steps.base.outputs.sha }}
+      - name: Install the base's Rust toolchain
+        if: steps.kept.outputs.cache-hit != 'true'
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        id: rust
+        if: steps.kept.outputs.cache-hit != 'true'
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
+      - name: Build the base and keep its sizes
+        if: steps.kept.outputs.cache-hit != 'true' && (env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true')
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          bun install --frozen-lockfile
+          bun tools/build-wasm.ts --sizes-only
+          mkdir -p target/.size-base
+          cp target/size-report.json "target/.size-base/$BASE.json"
+      - uses: actions/upload-artifact@v4
+        if: env.MAIN_PUSH != 'true'
+        with:
+          name: size-base
+          path: target/.size-base/${{ steps.base.outputs.sha }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+  wasm-checks:
+    # The size check: the files of the build job, and the engine test page built here, against the
+    # base's sizes from the size-base job. The build job builds the same files with the same flags,
+    # so the check builds no WebAssembly.
+    needs: [build, size-base]
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      # The check reads the trailers of the commits since the base.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: actions/download-artifact@v4
+        with:
+          name: size-base
+          path: target/.size-base
+      - name: Check the sizes of the build job's files against the base's build
+        run: bun tools/build-wasm.ts --check-size --prebuilt
+
+  main-keep:
+    # What later runs restore from main and that no other job on main saves: this commit's sizes,
+    # the base of the size check of the pull requests that build on it, and the caches of the
+    # packages, Playwright's Chromium and the sample content. Main's Rust jobs keep their own caches.
+    # The merge queue checked this commit's sizes against the commit before, so this job only
+    # measures them.
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - name: Measure the build job's files
+        run: bun tools/build-wasm.ts --prebuilt
+      - name: Keep the sizes of this commit of main
+        if: "!cancelled() && hashFiles('target/size-report.json') != ''"
+        run: |
+          mkdir -p target/.size-base
+          cp target/size-report.json "target/.size-base/$GITHUB_SHA.json"
+      - uses: actions/cache/save@v4
+        if: "!cancelled() && hashFiles('target/size-report.json') != ''"
+        with:
+          path: target/.size-base/${{ github.sha }}.json
+          key: size-base-${{ github.sha }}
+      - uses: ./.github/actions/playwright-chromium
+        if: "!cancelled()"
+        with:
+          cache-only: "true"
+      - uses: ./.github/actions/samples
+        if: "!cancelled()"
+        with:
+          cache-only: "true"
+
+  shader-compiler:
+    # The shader crate's build tests again through the build job's shader compiler, which must give
+    # the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        id: rust
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
+          save-if: ${{ env.SAVE_CACHES == 'true' }}
+      - uses: oven-sh/setup-bun@v2
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
+      - uses: actions/download-artifact@v4
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
+        with:
+          name: page-wasm
       - name: The shader compiler gives the native shader build's results
+        if: env.MAIN_PUSH != 'true' || steps.rust.outputs.cache-hit != 'true'
         run: bun run test:shader-compiler
 
   packages:
@@ -171,6 +350,7 @@ jobs:
     # the command-line tool's test command type checks the project and draws its sketch on every
     # GPU tier, and Vite builds it for production.
     needs: build
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -180,12 +360,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/bun-install
       - uses: actions/download-artifact@v4
         with:
           name: page-wasm
@@ -194,16 +369,32 @@ jobs:
         run: bun run test:packages
 
   browser:
-    # The browser tests, the image test manifest among them, split into shards that run at once.
-    # Add a shard to the list when one takes more than about 5 minutes.
-    name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+    # The browser tests, the image test manifest among them. Most run in shards at once. Playwright
+    # splits them by count, in its order of the tests, and the weights below give each shard its
+    # share, so that the shards take about the same time. The tests that run alone check frame
+    # rates, times and allocations, which a heavy test beside them can upset, so they run one at a
+    # time in a job of their own (tests/lib/alone.ts). `bun run test:browser-weights` works out the
+    # weights, and .dev/image-tests.md says when to retune them and when to add a shard.
+    name: browser (${{ matrix.part }})
     needs: build
+    # Until 1.0, only in the merge queue and in a run started by hand, as the bench and real-browsers
+    # jobs (D-86). Before a pull request joins the queue, its author runs the browser tests of the
+    # areas that it changes (.dev/pull-requests.md). After 1.0, pull requests run them again.
+    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        include:
+          - { part: shard 1 of 7, id: 1, tests: --grep-invert @alone --shard=1/7 }
+          - { part: shard 2 of 7, id: 2, tests: --grep-invert @alone --shard=2/7 }
+          - { part: shard 3 of 7, id: 3, tests: --grep-invert @alone --shard=3/7 }
+          - { part: shard 4 of 7, id: 4, tests: --grep-invert @alone --shard=4/7 }
+          - { part: shard 5 of 7, id: 5, tests: --grep-invert @alone --shard=5/7 }
+          - { part: shard 6 of 7, id: 6, tests: --grep-invert @alone --shard=6/7 }
+          - { part: shard 7 of 7, id: 7, tests: --grep-invert @alone --shard=7/7 }
+          - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
     steps:
@@ -219,28 +410,45 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
-        run: bun run test:browser --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        env:
+          # One weight for each shard of the matrix, in its order.
+          PWTEST_SHARD_WEIGHTS: "255:366:168:131:136:132:170"
+        run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results-${{ matrix.shard }}
+          name: browser-test-results-${{ matrix.id }}
           path: test-results/
           if-no-files-found: ignore
 
   bench:
-    # The benchmark pages' tests on SwiftShader, in shards like the browser tests.
+    # The benchmark pages' tests on SwiftShader, in two shards of about equal measured time.
+    # Playwright's own --shard splits the test list into equal counts in file order, and these
+    # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
+    # and the other 4 tests and 3 minutes. Shard 1 runs the page tests of the scenes that
+    # BENCH_SHARD_1 names, and shard 2 every other test, so each test runs in exactly one shard.
+    # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
+    # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
+    # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: build
+    # Until 1.0, only in the merge queue and in a run started by hand (D-86).
+    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        include:
+          - shard: 1
+            select: --grep
+          - shard: 2
+            select: --grep-invert
     env:
       HUSKY: "0"
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -253,7 +461,7 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
       - name: The benchmark pages on SwiftShader
-        run: bun run test:bench --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        run: bun run test:bench ${{ matrix.select }} "$BENCH_SHARD_1"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -264,21 +472,24 @@ jobs:
           if-no-files-found: ignore
 
   real-browsers:
-    # Safari and Firefox on GitHub's macOS machines, through the same test pages, each browser in
-    # shards of its own. A missing WebGPU adapter or WebGL2 context is reported as a skip, because
-    # these virtual machines may not give a browser one: Safari gets no WebGPU there, and Firefox no
-    # WebGL2. GitHub gives few macOS machines at once, so .dev/devices.md says when to add a shard:
+    # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
+    # pages, each browser in shards of its own. GitHub gives few macOS machines at once, so only
+    # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
+    # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
+    # a missing adapter is reported as a skip. .dev/devices.md says when to add a shard:
     # add it to the list, and raise the count in the name and the command.
     # Until 1.0, the browsers run only in the merge queue, once for each pull request before it
-    # merges. Elsewhere the jobs are skipped, and ci-passed accepts that.
+    # merges, and in a run started by hand (D-86). Elsewhere the jobs are skipped, and ci-passed
+    # accepts that.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
     needs: build
-    if: github.event_name == 'merge_group'
-    runs-on: macos-15
-    # A full run in one job takes about 14 minutes, and a runner page that goes quiet costs about a
-    # minute more each time the runner replaces it. The limit stays at a full run's, with that
-    # margin, until the shards' own times are known.
-    timeout-minutes: 20
+    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
+    # each time the runner replaces it. The restart pages wait for Safari to give back the memory
+    # of stopped engines, and at their slowest each one takes 7 minutes; a shard holds 4 of them.
+    # The limit leaves room for all of that at once, and for a plan that grows.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -296,12 +507,8 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/samples
-      # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
-      - name: Let Firefox open without the first-launch prompt
-        if: matrix.browser == 'Firefox'
-        run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 2
-        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
@@ -314,19 +521,31 @@ jobs:
   ci-passed:
     # The one check of this workflow that main's merge queue requires, so that the jobs above can
     # split into shards and change their names with no change to the queue's rules. It runs after
-    # every other job, also after a failure or a cancel, and fails unless each job passed. Outside
-    # the merge queue a job may be skipped by its own condition; in the queue every job must pass.
+    # every other job, also after a failure or a cancel, and fails unless each job passed. On a pull
+    # request or main a job may be skipped by its own condition. In the queue and in a run started
+    # by hand, every job must pass. main-keep runs only on main, so it stays out of the list.
     if: always()
-    needs: [docs-and-tools, rust, build, wasm-checks, packages, browser, bench, real-browsers]
+    needs:
+      - docs-and-tools
+      - rust-lint
+      - rust-tests
+      - build
+      - size-base
+      - wasm-checks
+      - shader-compiler
+      - packages
+      - browser
+      - bench
+      - real-browsers
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every job passed
         env:
           NEEDS: ${{ toJSON(needs) }}
-          IN_QUEUE: ${{ github.event_name == 'merge_group' }}
+          FULL_RUN: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
         run: |
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
-          jq -e --argjson queue "$IN_QUEUE" \
-            'length > 0 and all(.[]; .result == "success" or (.result == "skipped" and ($queue | not)))' \
+          jq -e --argjson full "$FULL_RUN" \
+            'length > 0 and all(.[]; .result == "success" or (.result == "skipped" and ($full | not)))' \
             <<< "$NEEDS" > /dev/null

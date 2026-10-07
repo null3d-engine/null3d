@@ -91,7 +91,7 @@ The plugin takes WGSL as a full shader when its `@vertex` entry point takes an `
 - Pass the position through `mesh_position`, and texture coordinates through `mesh_uv` and `mesh_second_uv`, from `null3d::vertex`. They give the values that the mesh holds on every GPU path. WebGPU reads plain integer attributes as fractions, and these functions scale them back. Floats and normalized integers pass through unchanged.
 - It finds its instance with `InstanceIn` and `find_instance` from `null3d::mesh`. On each GPU path, the engine gives each instance's transform in its own way, and these hide the difference.
 - `null3d::mesh` also gives `clip_position(found, position)`, `relative_position(found, position)` and `world_normal(found, normal)`. Positions are relative to the camera, as in the engine's own shaders.
-- The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output.
+- The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output. `finish` multiplies the color by the exposure, as the engine does with an unlit material's color. The engine exposes the frame's lights already. So a shader that adds their light writes that sum through `finish_exposed` instead.
 - `fill_builtins(origin)` from `null3d::builtins` fills `frame`, `camera` and `object` in a stage. Pass the object's origin relative to the camera, or zero when the shader does not read `object`.
 - The fixed options for faces and depth apply, such as `doubleSided` and `depthBias`. The standard values, uniforms and textures do not reach a full shader. `vertexColors` and the `mask` alpha mode change nothing. The shader reads the colors and discards pixels itself. The build stops at a texture that a full shader declares.
 
@@ -155,6 +155,8 @@ Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one G
 ```
 
 Both builds follow the [WGSL rules for portable shaders](../shaders/wgsl-rules.md). The rules page says what the build rejects, and what you must test on each path yourself.
+
+You can use arrays in every form that WGSL allows. A function can return an array, and an array can take values that are not constants, such as `array<vec3f, 2>(a, b)`. Some Android GPUs reject these forms in GLSL, so the WebGL2 build rewrites them. A function that returns an array gives it through an extra `out` parameter, and an array built from values fills one element at a time. Your WGSL does not change, and the WebGPU build keeps it as you wrote it.
 
 ## Shader errors
 

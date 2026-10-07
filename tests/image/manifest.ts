@@ -27,7 +27,10 @@ import { GRADING_IMAGE } from '../../bench/scenes/grading.ts';
 import { LIGHTS_IMAGE } from '../../bench/scenes/lights.ts';
 import { LINE_IMAGE } from '../../bench/scenes/lines.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
+import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
+import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
+import { POINT_IMAGE } from '../../bench/scenes/points.ts';
 import { ROOM_IMAGE } from '../../bench/scenes/room.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
@@ -58,6 +61,12 @@ import { PRECISION } from '../pages/lib/depth-precision.ts';
  * to its cell, changes many times more.
  */
 const FAR_OUT_TOLERANCE = { threshold: 0, maxDiffRatio: 0.00005 };
+
+/**
+ * The tolerance of other devices against the real-GPU references of the debug lines. A frame of
+ * thin lines puts a larger share of its pixels on slanted edges, which GPUs rasterize a pixel apart.
+ */
+const LINE_EDGE_TOLERANCE = { maxDiffRatio: 0.0075 };
 
 /**
  * The switch of tests that compare exact colors with another test's references, such as a scene far
@@ -155,6 +164,52 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the HDR limit tests: light past the largest 16-bit float. */
+export const HDR_LIMIT_SKETCH = 'tests/pages/sketches/hdr-limit-sketch.ts';
+
+/**
+ * Light far past the largest 16-bit float, without bloom and with it, on every tier: an emissive
+ * sphere and the sun's highlight on a smooth metal floor. Both must draw white, and the sphere must
+ * glow with bloom. The HDR limit spec checks those pixels too, so CI's software GPU, which stores
+ * such light as infinity without the limit, fails even where a reference would match.
+ */
+function hdrLimitTests(): ImageTest[] {
+	return [
+		{ name: 'hdr-limit', sketch: HDR_LIMIT_SKETCH, hold: 0 },
+		{ name: 'hdr-limit-bloom', sketch: `${HDR_LIMIT_SKETCH}?bloom`, hold: 0 },
+	];
+}
+
+/** The sketch of the real-units tests: a sun of 100,000 lux at EV100 15, with bloom. */
+export const REAL_UNITS_SKETCH = 'tests/pages/sketches/real-units-sketch.ts';
+
+/**
+ * How far the real-units scene in three.js's units may stray from its image in real units. The
+ * lights take the same exposed values either way, and only the rounding of a 32-bit float apart.
+ */
+const REAL_UNITS_TOLERANCE = { maxDiffRatio: 0.001 };
+
+/**
+ * A scene in real units at EV100 15 with bloom, and the same scene in three.js's units with the
+ * exposure set as a number, which must draw the same image. The engine multiplies the exposure into
+ * the lights, so the sun's highlight stays white and glows on every tier. The real-units spec
+ * checks those pixels too, so the fault of an exposure at the end fails even where a reference
+ * would match.
+ */
+function realUnitsTests(): ImageTest[] {
+	return [
+		{ name: 'real-units', sketch: REAL_UNITS_SKETCH, hold: 0 },
+		{
+			name: 'real-units-exposure',
+			sketch: `${REAL_UNITS_SKETCH}?exposure`,
+			hold: 0,
+			reference: 'real-units',
+			tolerance: REAL_UNITS_TOLERANCE,
+			deviceTolerance: REAL_UNITS_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the ambient occlusion tests: a floor, a wall and shapes on them (bench/scenes/ao.ts). */
 const AO_SKETCH = 'tests/pages/sketches/ao-sketch.ts';
 
@@ -246,6 +301,37 @@ function gradingTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the outline tests: a sphere half behind a wall and a box (bench/scenes/outline.ts). */
+const OUTLINE_SKETCH = 'tests/pages/sketches/outline-sketch.ts';
+
+/**
+ * Outlines on every tier: the default white line around the parts that nothing hides, and a wider
+ * orange line with a blue line around hidden parts, around a sphere half behind a wall and a box
+ * in the open. At half the render scale, the mask draws into the corner of its target, and the
+ * line keeps its width on the canvas. Compatibility mode keeps the 8-bit path with MSAA. The
+ * page's switch that turns HDR off puts the other tiers on that path too. The parity test compares
+ * both outlines with the same line drawn from the mask of three.js's OutlinePass.
+ */
+function outlineTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${OUTLINE_SKETCH}${query}`,
+		hold: 0,
+		size: [OUTLINE_IMAGE.width, OUTLINE_IMAGE.height],
+	});
+	return [
+		test('outline-plain', '?outline=plain'),
+		test('outline-hidden', '?outline=hidden'),
+		test('outline-scale-50', '?outline=hidden&scale=0.5'),
+		{
+			...test('outline-8-bit', '?outline=hidden'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			expect: { hdr: false },
+		},
+	];
+}
+
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
 
@@ -331,6 +417,14 @@ const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.s
  */
 const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 
+/**
+ * S5's characters on SwiftShader. Its time grows with the crowd, and the software GPU on CI's
+ * slowest machines took nearly all of the run's limit for the full crowd. A smaller crowd still
+ * skins, blends and shadows every character in rings that fill the frame. The real GPU, Safari and
+ * Firefox draw the full crowd. .dev/decisions/D-88-software-gpu-loads.md gives the figures.
+ */
+const S5_SWIFTSHADER_COUNT = 100;
+
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
@@ -388,12 +482,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 	},
 	// Mip levels that the GPU makes: a checkerboard that shrinks and a floor that recedes, with and
-	// without mip levels, and with anisotropic filtering.
+	// without mip levels, and with anisotropic filtering. Each GPU picks its own samples for
+	// anisotropic filtering, and a software renderer's differ most from a GPU's: Firefox on Linux
+	// draws the far squares of the anisotropic floor in another pattern. So other devices get a
+	// wider tolerance here.
 	{
 		name: 'texture-mipmaps',
 		sketch: 'tests/pages/sketches/texture-mipmaps-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+		deviceTolerance: { maxDiffRatio: 0.01 },
 	},
 	// The texture calls of a sketch: loadTexture with and without the flip, loadImageBitmap with
 	// fromImageBitmap, data in bytes, half floats and layers, updates that bring new texels and a new
@@ -435,16 +533,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	})),
 	// glTF sample models that assets.loadGltf loads and scene.instantiate copies, one for each feature
 	// of the loader: materials with their maps, texture transforms, unlit and emissive strength,
-	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates
-	// and meshopt compression. The parity test compares each with three.js's GLTFLoader. A model
-	// compressed with meshopt must draw as its uncompressed scene does.
+	// lights, instancing, KTX2 textures, alpha modes, vertex colors, the second texture coordinates,
+	// meshopt compression and morph targets. The parity test compares each with three.js's
+	// GLTFLoader. A model compressed with meshopt must draw as its uncompressed scene does. A model
+	// with a clip holds the clip's time.
 	...MODEL_NAMES.map((model): ImageTest => {
-		const { uncompressed } = MODEL_SCENES[model] as ModelScene;
+		const { uncompressed, clip } = MODEL_SCENES[model] as ModelScene;
 		return {
 			name: `gltf-${model}`,
 			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
-			hold: 0,
+			hold: clip?.time ?? 0,
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
 		};
 	}),
@@ -581,7 +680,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...hdrLimitTests(),
+	...realUnitsTests(),
 	...aoTests(),
+	...outlineTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
@@ -653,7 +755,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
 	// the same lines. The S24+'s GPU puts some lines one pixel off, in 1.6% of the pixels, so it
-	// keeps its own references, which the test 1,000 km out compares with too.
+	// keeps its own references, which the S24 shares and the test 1,000 km out compares with too.
+	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
+	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
+	// a scene has, so other devices get a wider tolerance here.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -662,7 +767,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
-		devices: ['sm-s926b'],
+		deviceTolerance: LINE_EDGE_TOLERANCE,
+		devices: ['sm-s926b', 'sm-s921b'],
 	},
 	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
 	// which the engine draws relative to the camera, so the frame must match. In 32-bit floats from
@@ -675,6 +781,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'debug',
 		switches: [FULL_PRECISION],
 		tolerance: FAR_OUT_TOLERANCE,
+		deviceTolerance: LINE_EDGE_TOLERANCE,
 	},
 	// Each debug view of a scene with lit, unlit, see-through and instanced objects, on every tier.
 	...(['normals', 'depth', 'overdraw', 'wireframe', 'shadows'] as const).map(
@@ -708,6 +815,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'shadows-filter-5',
 		sketch: 'tests/pages/sketches/shadows-sketch.ts?filter=5',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The still shadow scene, whose wall throws one long shadow edge across the seam between the
+	// first two cascades. Over the band at the first cascade's far end, its shadow blends into the
+	// second cascade's, so the edge shows no line where they meet.
+	{
+		name: 'shadows-seam',
+		sketch: 'tests/pages/sketches/shadow-scene-sketch.ts',
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
@@ -756,6 +874,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'point-shadows',
 		sketch: 'tests/pages/sketches/point-shadows-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024', 'pointLightShadows'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same scene with the 5 x 5 filter, whose reads reach 3 texels past each point. Each tile
+	// keeps that reach inside its edges, so no seam shows where two faces' shadows meet.
+	{
+		name: 'point-shadows-wide',
+		sketch: 'tests/pages/sketches/point-shadows-sketch.ts?wide',
 		hold: 0,
 		size: [480, 270],
 		switches: ['shadowTileSize=1024', 'pointLightShadows'],
@@ -824,6 +953,74 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
+	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
+	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
+	// draws the scene in its own way, so each has its own image.
+	...(['', '-vertex'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-outline${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?outline',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=vertex'],
+						reference: 'skinning-outline',
+					}
+				: {}),
+		}),
+	),
+	// Morph targets: three spheres of one mesh, each at its own weights of three targets, one of
+	// them below 0. The parity test compares the image with three.js's morphTargetInfluences. WebGPU
+	// morphs them in the skinning pass, and WebGL2 in the vertex shader of each pass. ?shadows
+	// stands them on a ground under a sun whose shadows must follow each shape. Every tier draws the
+	// same image, and weights set by the targets' names draw it too. With the ground, WebGL2 draws
+	// the outlines' edge pixels a little differently: 0.113% of the pixels on the Mac's GPU.
+	...(['', 'shadows'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `morph-${variant}` : 'morph',
+			sketch: `tests/pages/sketches/morph-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: 0,
+			size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+			sameOnEveryTier: true,
+			...(variant && { tolerance: { maxDiffRatio: 0.002 } }),
+		}),
+	),
+	// The third sphere from close by, where a step of the half floats that hold the deltas would
+	// show. The parity test compares it with three.js's deltas in 32-bit floats.
+	{
+		name: 'morph-closeup',
+		sketch: 'tests/pages/sketches/morph-sketch.ts?closeup',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		sameOnEveryTier: true,
+	},
+	{
+		name: 'morph-names',
+		sketch: 'tests/pages/sketches/morph-sketch.ts?names',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		reference: 'morph',
+	},
+	// WebGL2 keeps a preset's count of each object's weights, the largest. With two kept, the third
+	// sphere draws without its smallest weight, as the scene with that weight set to 0 draws it.
+	{
+		name: 'morph-capped',
+		sketch: 'tests/pages/sketches/morph-sketch.ts?capped',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		tiers: ['webgl2'],
+	},
+	{
+		name: 'morph-cap',
+		sketch: 'tests/pages/sketches/morph-sketch.ts',
+		hold: 0,
+		size: [MORPH_IMAGE.width, MORPH_IMAGE.height],
+		tiers: ['webgl2'],
+		switches: ['morphTargets=2'],
+		reference: 'morph-capped',
+	},
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
 	// the image with three.js's OrthographicCamera.
@@ -930,6 +1127,22 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The same spheres lit by an environment alone: the built-in room, which three.js's
+	// RoomEnvironment builds, and Poly Haven's Venice Sunset through the asset tool, whose low sun
+	// shows in the smooth spheres. The last turns the sunset a quarter turn about +Y, which moves the
+	// sun's reflection. The GPU makes the room, and its generator reaches the thread that draws in
+	// each thread mode's own way, so the room draws in every mode. A held frame makes the whole room
+	// at once, which a software GPU on a busy machine does slowly, so the room's runs take a longer
+	// limit (D-19).
+	...(['room', 'venice', 'venice&rotate'] as const).map(
+		(env): ImageTest => ({
+			name: `environment-${env.replace('&rotate', '-rotated')}`,
+			sketch: `tests/pages/sketches/standard-sketch.ts?scene=grid&env=${env}`,
+			hold: 0,
+			size: [GRID_IMAGE.width, GRID_IMAGE.height],
+			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
@@ -1062,6 +1275,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
+	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
+	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
+	// PointsMaterial.
+	{
+		name: 'points',
+		sketch: 'tests/pages/sketches/points-sketch.ts',
+		hold: 0,
+		size: [POINT_IMAGE.width, POINT_IMAGE.height],
+	},
 	// 100,000 sprites of a dynamic batch in one draw: a field of them seen from above, and a row of
 	// sprites sized in pixels whose centers lie outside the view. It holds its first frame, and takes
 	// S1's limit: SwiftShader draws 100,000 rows on WebGPU in tens of seconds.
@@ -1155,7 +1377,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
-	// their frame, so other devices may differ in fewer of their pixels.
+	// their frame, so other devices may differ in fewer of their pixels. S5 draws a smaller crowd on
+	// SwiftShader.
 	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
@@ -1164,6 +1387,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: ['pipelined', 'low latency'],
 			timeoutSeconds: 90,
+			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),

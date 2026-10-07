@@ -96,10 +96,20 @@ describe('the gate steps', () => {
 		expect(out('version: 0.1.0', 1).verdict).toBe('fail');
 	});
 
-	test("judge the gate commit's workflows by the newest run of each", () => {
+	test("judge the gate commit's workflows by the newest counted run of each", () => {
 		const runs = (list: object[]) => `[${list.map((r) => JSON.stringify(r)).join(',')}]`;
-		const ci = { workflowName: 'CI', status: 'completed', conclusion: 'success' };
-		const bench = { workflowName: 'Benchmarks', status: 'completed', conclusion: 'success' };
+		const ci = {
+			workflowName: 'CI',
+			event: 'merge_group',
+			status: 'completed',
+			conclusion: 'success',
+		};
+		const bench = {
+			workflowName: 'Benchmarks',
+			event: 'schedule',
+			status: 'completed',
+			conclusion: 'success',
+		};
 		expect(workflowResult(runs([ci, bench]))).toEqual({
 			figure: 'CI: success, Benchmarks: success',
 			verdict: 'pass',
@@ -109,6 +119,19 @@ describe('the gate steps', () => {
 			workflowResult(runs([{ ...bench, status: 'in_progress', conclusion: '' }, ci, bench])),
 		).toEqual({ figure: 'CI: success, Benchmarks: in_progress', verdict: 'fail' });
 		expect(workflowResult(runs([ci])).figure).toBe('CI: success, Benchmarks: no run');
+		// Main's own CI run, newer than the queue's, runs only the jobs that keep caches.
+		const mainRun = { ...ci, event: 'push', conclusion: 'failure' };
+		expect(workflowResult(runs([mainRun, ci, bench])).verdict).toBe('pass');
+		expect(workflowResult(runs([{ ...mainRun, conclusion: 'success' }, bench]))).toEqual({
+			figure: 'CI: no run, Benchmarks: success',
+			verdict: 'fail',
+		});
+		// A full run started by hand counts for a commit that reached main without the queue.
+		const byHand = { ...ci, event: 'workflow_dispatch' };
+		expect(workflowResult(runs([mainRun, byHand, bench])).verdict).toBe('pass');
+		expect(workflowResult(runs([{ ...byHand, conclusion: 'failure' }, ci, bench])).verdict).toBe(
+			'fail',
+		);
 		expect(workflowResult('not json').verdict).toBe('fail');
 	});
 

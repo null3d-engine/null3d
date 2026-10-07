@@ -119,7 +119,7 @@ async function finish(
 			}
 		// Key times and values can be views of the file's own bytes, which then go along once.
 		for (const clip of data.animation?.clips ?? [])
-			for (const track of [...clip.tracks, ...clip.weights]) {
+			for (const track of clip.tracks) {
 				transfer.add((track.times as Float32Array).buffer as ArrayBuffer);
 				transfer.add((track.values as Float32Array).buffer as ArrayBuffer);
 			}
@@ -164,7 +164,7 @@ async function decode(
 		});
 	} catch (error) {
 		throw new GltfError(
-			'E1416',
+			'E1412',
 			`image ${k} (${image.mimeType ?? 'no media type'}) does not decode: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}

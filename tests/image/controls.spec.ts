@@ -5,6 +5,7 @@
 // own calls in hold mode. And the controls' update allocates nothing, through every gesture.
 import { type CDPSession, expect, type Page, test } from '@playwright/test';
 import { allocatingPlaces } from '../lib/allocations.ts';
+import { ALONE } from '../lib/alone.ts';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { borrowedRun, environmentNamed, imageProblems } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -196,7 +197,7 @@ test.describe('touch', () => {
 	});
 });
 
-test("the controls' update allocates nothing, through every gesture", async ({ page }) => {
+test("the controls' update allocates nothing, through every gesture", ALONE, async ({ page }) => {
 	await page.goto('controls-loop.html');
 	await pageResult(page, 30_000);
 	const runLoop = (iterations: number, runs: number) =>

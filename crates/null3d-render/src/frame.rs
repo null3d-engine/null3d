@@ -18,6 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -25,10 +26,11 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
-use crate::bloom::{self, Bloom};
+use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
@@ -37,6 +39,7 @@ use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
@@ -150,11 +153,25 @@ pub(crate) fn push_runs(
 /// Why a frame could not be recorded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordError {
-    /// The frame's commands do not fit the draw list.
-    DrawListFull,
+    /// The frame's commands would take the draw list past its limit.
+    DrawListFull {
+        /// The most bytes the list holds, in whole mebibytes.
+        megabytes: u32,
+    },
     /// More sources than the builder can draw on this device.
     TooManySources {
         /// The most sources the builder can draw on this device.
+        limit: u32,
+    },
+    /// The skinned vertices of the scene's skinned objects do not fit the skinned vertex buffers
+    /// of the WebGPU skinning pass.
+    SkinnedVerticesFull {
+        /// The bytes those buffers hold on this device, in whole mebibytes.
+        megabytes: u32,
+    },
+    /// Skinned meshes fill more mesh pages than the WebGPU skinning pass reads.
+    SkinnedPagesFull {
+        /// The most mesh pages of skinned meshes.
         limit: u32,
     },
     /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
@@ -169,8 +186,16 @@ pub enum RecordError {
 }
 
 impl From<DrawListError> for RecordError {
-    fn from(_: DrawListError) -> Self {
-        RecordError::DrawListFull
+    fn from(error: DrawListError) -> Self {
+        let bytes = |words: usize| words as u64 * 4;
+        match error {
+            DrawListError::Full { limit } => RecordError::DrawListFull {
+                megabytes: (bytes(limit) >> 20) as u32,
+            },
+            DrawListError::OutOfMemory { words } => RecordError::OutOfMemory {
+                bytes: bytes(words).min(u64::from(u32::MAX)) as u32,
+            },
+        }
     }
 }
 
@@ -205,6 +230,8 @@ pub struct FrameInput<'a> {
     /// Skeletons, clips and animated instances, with the skinning matrices of the frame's
     /// animation step, once the scene has any.
     pub animations: Option<&'a Animations>,
+    /// The morph weights of morphed objects, which the sketch writes.
+    pub morphs: &'a MorphWeights,
 }
 
 impl FrameInput<'_> {
@@ -403,6 +430,12 @@ impl UploadArena {
         Ok((address(&self.bytes[start..]), padded as u32))
     }
 
+    /// The bytes that the frame copied so far.
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// Adds `len` zero bytes, padded to four bytes, for the caller to fill in place, and returns
     /// their address and the bytes. Like [`UploadArena::push`], it never grows the arena.
     pub(crate) fn push_zeroed(&mut self, len: usize) -> Result<(u32, &mut [u8]), RecordError> {
@@ -438,20 +471,30 @@ pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
     bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
-/// The draw list and the upload arena of each frame parity.
+/// The draw list and the upload arena of each frame parity, and the frames' all-or-nothing rule.
+///
+/// A frame that fails publishes an empty list, so the thread that draws replays nothing and the
+/// canvas keeps the last frame that recorded whole. A failure before the frame recorded any
+/// command changed nothing on the GPU, and the next frame tries again. A failure after it recorded
+/// commands leaves the builder believing that the GPU holds what the dropped commands would have
+/// made, so every later frame fails with the same error until a new GPU device starts afresh.
 pub(crate) struct ParityLists {
     lists: [DrawList; 2],
     arenas: [UploadArena; 2],
+    /// The error of a frame that failed after it recorded commands.
+    halted: Option<RecordError>,
 }
 
 impl ParityLists {
-    pub(crate) fn new(words: usize) -> Self {
+    /// Lists with room for `words` words, which grow up to `limit` words.
+    pub(crate) fn new(words: usize, limit: usize) -> Self {
         Self {
             lists: [
-                DrawList::with_capacity(words),
-                DrawList::with_capacity(words),
+                DrawList::with_limit(words, limit),
+                DrawList::with_limit(words, limit),
             ],
             arenas: [UploadArena::default(), UploadArena::default()],
+            halted: None,
         }
     }
 
@@ -463,19 +506,43 @@ impl ParityLists {
         &mut self.arenas
     }
 
-    /// Takes the frame parity's list, emptied, and its arena out, so the builder can record with
-    /// its own state borrowed. [`ParityLists::restore`] puts them back.
-    pub(crate) fn take(&mut self, frame: u32) -> (DrawList, UploadArena) {
+    /// Empties the frame parity's list and takes it and its arena out, so the builder can record
+    /// with its own state borrowed. [`ParityLists::restore`] puts them back. Fails with the error
+    /// that halted the builder, which then records nothing.
+    pub(crate) fn take(&mut self, frame: u32) -> Result<(DrawList, UploadArena), RecordError> {
         let parity = (frame & 1) as usize;
-        let mut list = std::mem::replace(&mut self.lists[parity], DrawList::with_capacity(0));
-        list.clear();
-        (list, std::mem::take(&mut self.arenas[parity]))
+        self.lists[parity].clear();
+        if let Some(error) = self.halted {
+            return Err(error);
+        }
+        let list = std::mem::replace(&mut self.lists[parity], DrawList::with_capacity(0));
+        Ok((list, std::mem::take(&mut self.arenas[parity])))
     }
 
-    pub(crate) fn restore(&mut self, frame: u32, list: DrawList, arena: UploadArena) {
+    /// Puts back the list and the arena that [`ParityLists::take`] took, with the frame's
+    /// `result`, which it returns. A failed frame's list goes back empty.
+    pub(crate) fn restore(
+        &mut self,
+        frame: u32,
+        mut list: DrawList,
+        arena: UploadArena,
+        result: Result<bool, RecordError>,
+    ) -> Result<bool, RecordError> {
+        if let Err(error) = result {
+            if !list.is_empty() {
+                self.halted = Some(error);
+            }
+            list.clear();
+        }
         let parity = (frame & 1) as usize;
         self.lists[parity] = list;
         self.arenas[parity] = arena;
+        result
+    }
+
+    /// Lets frames record again on a new GPU device, which the builder fills from the start.
+    pub(crate) fn reset_gpu(&mut self) {
+        self.halted = None;
     }
 }
 
@@ -541,9 +608,10 @@ pub struct SceneSettings {
     output: Output,
     /// Bloom's settings while the sketch turns it on.
     bloom: Option<Bloom>,
-    /// How many times fewer taps than three.js's each of bloom's blurs reads, which the quality
-    /// settings raise.
-    bloom_divisor: u32,
+    /// The size of bloom's base, which the quality settings set, and the governor's halvings of it.
+    bloom_chain: ChainFrame,
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    morph_cap: u32,
     /// Ambient occlusion's settings while the sketch turns it on.
     ao: Option<Ao>,
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
@@ -553,6 +621,10 @@ pub struct SceneSettings {
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
+    /// The scene's environment while the sketch sets one.
+    environment: Option<Environment>,
+    /// The outline's settings while the sketch turns it on.
+    outline: Option<Outline>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
     /// the bits of a `u32`, as the frame uniform holds them.
     clock: [f32; 4],
@@ -598,11 +670,14 @@ impl SceneSettings {
             canvas,
             output: Output::default(),
             bloom: None,
-            bloom_divisor: 1,
+            bloom_chain: ChainFrame::default(),
+            morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
             lut: None,
             vignette: None,
+            environment: None,
+            outline: None,
             clock: [0.0; 4],
             render_scaling: false,
             pixel_ratio: 1.0,
@@ -690,16 +765,32 @@ impl SceneSettings {
         self.bloom = bloom;
     }
 
-    /// How many times fewer taps than three.js's each of bloom's blurs reads.
-    pub fn bloom_divisor(&self) -> u32 {
-        self.bloom_divisor
+    /// The size of bloom's base and the governor's halvings of it.
+    pub(crate) fn bloom_chain(&self) -> ChainFrame {
+        self.bloom_chain
     }
 
-    /// Makes each of bloom's blurs read `divisor` times fewer taps than three.js's, rounded up,
-    /// from 1 to [`bloom::MAX_SAMPLE_DIVISOR`], from the next recorded frame on. Fewer taps read
-    /// the same kernel more coarsely, so the glow keeps its size.
-    pub fn set_bloom_divisor(&mut self, divisor: u32) {
-        self.bloom_divisor = divisor.clamp(1, bloom::MAX_SAMPLE_DIVISOR);
+    /// Gives bloom's chain a base of `size` texels on the canvas's short side, a power of two from
+    /// [`crate::bloom::MIN_SIZE`] to [`crate::bloom::MAX_SIZE`], halved `halvings` times during
+    /// play, from the next recorded frame on. A new size makes the chain's targets again; the
+    /// halvings make no GPU object. Either way the glow keeps its size.
+    pub fn set_bloom_chain(&mut self, size: u32, halvings: u32) {
+        let size = size.clamp(crate::bloom::MIN_SIZE, crate::bloom::MAX_SIZE);
+        self.bloom_chain = ChainFrame {
+            size: 1 << size.ilog2(),
+            halvings: halvings.min(crate::bloom::LEVELS as u32 - 1),
+        };
+    }
+
+    /// The most morph weights of each object that a builder whose vertex shaders morph keeps.
+    pub fn morph_cap(&self) -> u32 {
+        self.morph_cap
+    }
+
+    /// Keeps the `cap` largest morph weights of each object where vertex shaders morph, from the
+    /// next recorded frame on, and drops the others' targets (see [`crate::morph::cap_weights`]).
+    pub fn set_morph_cap(&mut self, cap: u32) {
+        self.morph_cap = cap;
     }
 
     /// Ambient occlusion's settings while it draws: while the sketch turns it on, its scale is
@@ -747,6 +838,43 @@ impl SceneSettings {
     /// on.
     pub fn set_vignette(&mut self, vignette: Option<Vignette>) {
         self.vignette = vignette;
+    }
+
+    /// Lights the scene with an environment, or with none, from the next recorded frame on.
+    pub fn set_environment(&mut self, environment: Option<Environment>) {
+        self.environment = environment;
+    }
+
+    /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
+    /// while the scene has no environment to draw, with the environment's part of the frame
+    /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
+    /// uploads, so a held frame, which uploads everything, draws with the environment.
+    pub(crate) fn environment_map(&self, blank: u32) -> (u32, EnvironmentUniform) {
+        let ready = self.environment.and_then(|environment| {
+            Some((environment, self.textures.ready_cube(environment.texture)?))
+        });
+        match ready {
+            Some((environment, (map, levels))) => (
+                map,
+                environment.uniform(levels, self.drawn_output().exposure),
+            ),
+            None => (blank, EnvironmentUniform::default()),
+        }
+    }
+
+    /// The outline's settings while it is on, with its width in pixels of the canvas, and `None`
+    /// while it is off or a debug view draws, whose colors reach the canvas as its shader writes
+    /// them.
+    pub fn outline(&self) -> Option<Outline> {
+        self.outline
+            .filter(|_| !self.debug_view.is_debug())
+            .map(|outline| outline.on_canvas(self.pixel_ratio))
+    }
+
+    /// Turns outlines on with their settings, or off with `None`, from the next recorded frame on.
+    /// They draw around the objects whose outlined flag is set.
+    pub fn set_outline(&mut self, outline: Option<Outline>) {
+        self.outline = outline;
     }
 
     /// True while the sketch sets a color grading table or the vignette, outside a debug view,
@@ -1006,14 +1134,14 @@ impl SceneSettings {
         &self.views
     }
 
-    /// The directional light: the direction its light travels, and its linear color times its
-    /// intensity.
+    /// The directional light: the direction its light travels, and its exposed color: its linear
+    /// color times its intensity and the exposure.
     pub fn set_sun(&mut self, direction: [f32; 3], color: [f32; 3]) {
         self.lighting.sun_direction = normalized_direction(direction);
         self.lighting.sun_color = [color[0], color[1], color[2], 0.0];
     }
 
-    /// The ambient light's linear color times its intensity.
+    /// The ambient light's exposed color: its linear color times its intensity and the exposure.
     pub fn set_ambient(&mut self, color: [f32; 3]) {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
     }
@@ -1021,7 +1149,8 @@ impl SceneSettings {
     /// Gathers the lights of the frame whose world output is `parity`'s for the camera's view
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
     /// main directional light and the ambient lights become the light the shaders read, and the
-    /// light table's visible list holds the point and spot lights the camera sees.
+    /// light table's visible list holds the point and spot lights the camera sees. Every light's
+    /// color takes the exposure that frames draw with.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
@@ -1036,7 +1165,7 @@ impl SceneSettings {
                 frustum: frame.frustum,
                 layers: frame.layers,
             });
-        let lit = lights.gather(scene, parity, view.as_ref());
+        let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
         self.set_sun_shadow(lit.sun_shadow);
@@ -1053,12 +1182,12 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
-    /// The shadow filter and the far cascades' update interval.
+    /// The shadow filter and how the far cascades update.
     pub fn shadow_quality(&self) -> ShadowQuality {
         self.lighting.shadow_quality
     }
 
-    /// The shadow filter and the far cascades' update interval, from the next frame on.
+    /// The shadow filter and how the far cascades update, from the next frame on.
     pub fn set_shadow_quality(&mut self, quality: ShadowQuality) {
         self.lighting.shadow_quality = quality;
     }
@@ -1101,6 +1230,7 @@ impl SceneSettings {
             normal_bias: shadow.normal_bias,
             distance: shadow.distance,
             filter: quality.filter,
+            blend: quality.blend,
         };
         let [x, y, z, _] = self.lighting.sun_direction;
         let position = scene.cell_position(slot, parity);
@@ -1117,7 +1247,7 @@ impl SceneSettings {
             absolute,
             shadow.map_size,
             quality.far_interval,
-            |bounds| moving.touch(scene, parity, shadow.layers, bounds),
+            |bounds| quality.follow_movers && moving.touch(scene, parity, shadow.layers, bounds),
         );
         Some(ShadowFrame {
             cascades,
@@ -1126,14 +1256,6 @@ impl SceneSettings {
             layers: shadow.layers,
             drawn,
         })
-    }
-
-    /// Where the camera's view stands in the frame whose world output is `parity`'s: its cell, and
-    /// its position in the cell. `None` when the view has no camera.
-    pub fn camera_position(&self, scene: &SceneStorage, parity: usize) -> Option<CellPosition> {
-        let (camera, _) = self.views[ViewId::CAMERA.index()].camera()?;
-        let slot = scene.resolve(camera).ok()?;
-        Some(scene.cell_position(slot, parity))
     }
 
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
@@ -1174,7 +1296,7 @@ impl SceneSettings {
     }
 
     /// The linear color behind every object. Exposure and tone mapping change it as they change
-    /// the objects.
+    /// the objects: the clear color takes the exposure of each frame.
     pub fn set_background(&mut self, color: [f32; 3]) {
         self.lighting.background = Some(color);
     }
@@ -1274,14 +1396,15 @@ impl SceneSettings {
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
         let (width, height) = Size::Full.viewport(canvas, scale);
         let (width, height) = (width as f32, height as f32);
+        let output = self.drawn_output();
         let uniform = FrameUniform {
             view_proj: camera.view_proj,
             camera_position: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
-            output: self.drawn_output().uniform(),
-            fog: self.lighting.fog.uniform(camera.forward),
+            output: output.uniform(),
+            fog: self.lighting.fog.uniform(camera.forward, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
@@ -1448,12 +1571,10 @@ impl MeshBuffers {
                     ..PageBuffers::default()
                 };
                 let copied = buffer_usage::COPY_DST;
-                // The skinning pass reads skinned meshes' vertices as storage.
-                let read = if crate::skinning::has_joints(page.format) {
-                    buffer_usage::STORAGE
-                } else {
-                    0
-                };
+                // The skinning pass reads skinned and morphed meshes' vertices as storage.
+                let posed = crate::skinning::has_joints(page.format)
+                    || crate::morph::has_targets(page.format);
+                let read = if posed { buffer_usage::STORAGE } else { 0 };
                 list.push(
                     Op::CreateBuffer,
                     &[

@@ -31,12 +31,29 @@ describe('failures of calls', () => {
 		]);
 	});
 
+	test('name the keys of a clip that passes the limit, against the limit', () => {
+		expect(
+			detail(coreFailure(failedCore(1218, 5, 32_640_032), 'assets.loadGltf', 'the clip "Wave"')),
+		).toBe(
+			'E1218: assets.loadGltf() on the clip "Wave" failed: the clip would hold 32,640,032 keys (its frames times its tracks), more than the 4,194,304 that one clip may hold.',
+		);
+	});
+
 	test("give a call's name parentheses, and a name in words none", () => {
 		expect(detail(coreFailure(failedCore(1501, 4), 'materials.standard'))).toBe(
 			'E1501: materials.standard() failed: the material table is full.',
 		);
-		expect(detail(coreFailure(failedCore(1501, 1), 'the frame'))).toBe(
-			'E1501: the frame failed: the draw list is full.',
+		expect(detail(coreFailure(failedCore(1501, 1, 4096), 'the frame'))).toBe(
+			"E1501: the frame failed: the frame's commands pass the 4,096 MB that its draw list can hold.",
+		);
+	});
+
+	test('state the cap of GPU skinning that a frame passed', () => {
+		expect(detail(coreFailure(failedCore(1501, 12, 1024), 'the frame'))).toBe(
+			'E1501: the frame failed: the skinned vertices of the characters in the scene pass the 1,024 MB that GPU skinning holds on this device.',
+		);
+		expect(detail(coreFailure(failedCore(1501, 13, 32), 'the frame'))).toBe(
+			'E1501: the frame failed: the skinned meshes fill more than 32 mesh pages, the most that GPU skinning reads.',
 		);
 	});
 });

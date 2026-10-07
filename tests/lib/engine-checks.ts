@@ -1,5 +1,8 @@
 // Checks of the engine test page's result, shared by the Playwright tests and the real-browser runner.
 
+import { SAMPLED_EVERY } from '../../packages/engine/src/shared/metrics.ts';
+import { SOFTWARE_RENDERER } from './gpu-paths.ts';
+
 export interface EngineMode {
 	name: string;
 	/** URL switches that select the mode. */
@@ -82,6 +85,46 @@ export function modeProblems(reported: ReportedMode, mode: EngineMode): string[]
 	return problems;
 }
 
+/** The failures page's report of engines that follow one another on one canvas. */
+export interface SameCanvasResult {
+	/** The workers that run while one engine runs. */
+	workersOfOne: number;
+	/** The workers that run while the engine that started after two stopped ones runs. */
+	workersOfSecond: number;
+	/** The workers that run once that engine stopped too. */
+	workersAfter: number;
+	/** The workers that run once the canvas left the page. */
+	workersAfterRemoval: number;
+	/** How a start on the canvas ends after it came back to the page: 'started' or the error code. */
+	reuse: string;
+	/** The frames that the later engine drew in half a second. */
+	frames: number;
+}
+
+/**
+ * What is wrong with a run of engines that follow one another on one canvas, in a thread mode.
+ * Every worker of the engines that stopped has stopped, but the worker that drew, which keeps the
+ * canvas while the canvas stays on the page. Once the canvas left, a later engine on it fails with
+ * E1419 where a worker drew, and starts where the page drew.
+ */
+export function sameCanvasProblems(result: SameCanvasResult, mode: EngineMode): string[] {
+	const problems: string[] = [];
+	if (!(result.frames > 0)) problems.push('the later engine drew no frames');
+	if (result.workersOfSecond !== result.workersOfOne)
+		problems.push(
+			`${result.workersOfSecond} workers ran beside the later engine, where one engine runs ${result.workersOfOne}`,
+		);
+	const workerDraws = mode.renderThread !== 'main';
+	if (result.workersAfter !== (workerDraws ? 1 : 0))
+		problems.push(`${result.workersAfter} workers stayed after the last stop`);
+	if (result.workersAfterRemoval !== 0)
+		problems.push(`${result.workersAfterRemoval} workers stayed after the canvas left the page`);
+	const reuse = workerDraws ? 'E1419' : 'started';
+	if (result.reuse !== reuse)
+		problems.push(`a start on the canvas after it came back gave ${result.reuse}, not ${reuse}`);
+	return problems;
+}
+
 interface Spread {
 	count: number;
 	median: number;
@@ -96,7 +139,13 @@ export interface FrameCounts {
 export interface EngineResult {
 	mode: ReportedMode & { jobWorkers: number };
 	capabilities: { tier: string; threaded: boolean; features: string[] };
-	report: { crossOriginIsolated: boolean; atomicsWaitAsync: boolean };
+	report: {
+		crossOriginIsolated: boolean;
+		atomicsWaitAsync: boolean;
+		/** The GPU's names, from the engine's probe: absent in results of older runs. */
+		webgl2?: { renderer: string | null };
+		webgpu?: { adapterInfo: { vendor: string; architecture: string; device: string } | null };
+	};
 	stats: {
 		frames: number;
 		cpuMs: Spread;
@@ -172,10 +221,39 @@ export function jobWorkersProblem(
 	return `started ${started ?? 'no'} job workers, not the ${asked} that ?jobs= asked for`;
 }
 
+/** Which of the engine page's checks a test runs. */
+export interface EngineChecks {
+	/**
+	 * False leaves out the frame-rate checks: the median frame interval, the floors on the frames
+	 * and the sketch's updates, and the need for a measured refresh rate, which takes the thread that
+	 * draws a few dozen frames. The engine must still draw frames and update the sketch, at any rate,
+	 * and a refresh rate it measured must still be a display's. A test whose job is not the loop's
+	 * pace sets it, such as a test of the start's downloads or of a start option: a busy runner can
+	 * slow every frame of its short measurement, which says nothing about what that test checks.
+	 * A software GPU leaves them out too, whatever this says: there the GPU sets the pace.
+	 */
+	pacing?: boolean;
+}
+
+/** True when the engine's probe names a software GPU, which draws on the CPU. */
+export function drewOnSoftwareGpu({ webgl2, webgpu }: EngineResult['report']): boolean {
+	const adapter = webgpu?.adapterInfo;
+	const names = [webgl2?.renderer, adapter?.vendor, adapter?.architecture, adapter?.device];
+	return SOFTWARE_RENDERER.test(names.filter(Boolean).join(' '));
+}
+
 /** What is wrong with a result of the engine page, run in a mode on a GPU tier; empty when nothing is. */
-export function engineProblems(result: EngineResult, mode: EngineMode, tier: string): string[] {
+export function engineProblems(
+	result: EngineResult,
+	mode: EngineMode,
+	tier: string,
+	{ pacing = true }: EngineChecks = {},
+): string[] {
 	const { stats } = result;
-	const minFrames = ((result.seconds * 1000) / MAX_MEDIAN_INTERVAL_MS) * MIN_FRAME_SHARE;
+	const paced = pacing && !drewOnSoftwareGpu(result.report);
+	const minFrames = paced
+		? ((result.seconds * 1000) / MAX_MEDIAN_INTERVAL_MS) * MIN_FRAME_SHARE
+		: 1;
 	const problems = modeProblems(result.mode, mode);
 	if (result.mode.jobWorkers >= 1 !== (mode.build === 'threaded'))
 		problems.push(`started ${result.mode.jobWorkers} job workers`);
@@ -183,7 +261,7 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	if (jobs) problems.push(jobs);
 	if (!result.capabilities.tier.startsWith(tier)) problems.push(`used ${result.capabilities.tier}`);
 	if (stats.frames < minFrames) problems.push(`measured only ${stats.frames} frames`);
-	if (stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
+	if (paced && stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
 		problems.push(`median frame interval ${stats.intervalMs.median} ms`);
 	// A page without cross-origin isolation gets a coarse timer (0.1 ms steps in Chrome), and an
 	// empty frame can take less than one step.
@@ -193,9 +271,15 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 		if (!((stats.threads[thread]?.busyMs.count ?? 0) > 0))
 			problems.push(`no frame records from the ${thread} thread`);
 	}
+	// The engine times one frame in every few while the page measures. Most of those must come
+	// back: a browser that drops nearly all of them still has a few.
 	const timestamps = tier === 'webgpu' && result.capabilities.features.includes('timestamp-query');
-	if (timestamps && !((stats.gpuMs?.count ?? 0) > 0))
-		problems.push('no GPU times, although the device has timestamp queries');
+	const sampled = Math.floor(stats.frames / SAMPLED_EVERY);
+	const gpuTimes = stats.gpuMs?.count ?? 0;
+	if (timestamps && gpuTimes < Math.max(1, sampled / 2))
+		problems.push(
+			`GPU times for ${gpuTimes} of about ${sampled} sampled frames, although the device has timestamp queries`,
+		);
 	if (!((stats.completedFps ?? 0) > 0) || !((stats.gpuLatencyMs?.count ?? 0) > 0))
 		problems.push('no frame completions were counted');
 	// The job workers cull on WebGL2 and count the visible entries; on WebGPU the GPU culls.
@@ -207,7 +291,8 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	if (stats.completionSignal !== signal)
 		problems.push(`completions came from a ${stats.completionSignal}, expected a ${signal}`);
 	const hz = stats.refreshHz ?? 0;
-	if (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1])
+	const checkRefresh = paced || stats.refreshHz !== null;
+	if (checkRefresh && (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1]))
 		problems.push(`measured a refresh rate of ${stats.refreshHz} Hz`);
 	// With the sketch and the drawing in workers, the page's thread must stay free (design
 	// principle 6).

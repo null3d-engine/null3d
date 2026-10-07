@@ -125,6 +125,7 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 | `setCastShadows` and `setReceiveShadows`, on meshes and on lights | A rebuild |
+| `setOutlined`, and `post.set` with `outline` turned on or off | A rebuild |
 | `texture.update()` with an image of another size, and `texture.destroy()` | A rebuild |
 
 These habits keep play free of rebuilds:
@@ -173,6 +174,19 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 
 Textures upload in bands of rows, spread over frames. Each frame sends no more texel bytes than the preset's upload budget, from 2 MiB on Low to 16 MiB on Ultra. So loading many textures does not make one frame slow, but a large texture takes several frames to arrive. [Textures](../api/textures.md) covers the budget, and [Phones and tablets](phones.md) covers texture memory.
 
+## Crowds and large scenes
+
+Each frame's list of GPU commands grows with the scene, so no count of objects or draws stops a scene from drawing. The list grows in the first frame that needs more room and keeps that room, so later frames allocate nothing. A frame that cannot finish, for example when memory runs out, draws nothing. The canvas then keeps the last whole frame, and the error names the cause.
+
+Animated characters also cost skinning work and memory:
+
+- WebGPU skins each character that some view draws once per frame, in a compute pass. So a crowd costs GPU time in proportion to its vertices, and a character out of every view costs no skinning work.
+- Each skinned copy keeps its own skinned vertices in GPU memory, even when copies share a mesh. The S5 benchmark's 500 knights take about 69 MB. Count this memory against the preset's GPU memory on phones.
+- WebGPU skinning holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
+- WebGL2 skins in the vertex shader of each pass, so shadows skin a character again. Copies that share a mesh and a material draw in one instanced draw.
+
+For a large crowd, use models with fewer vertices, and fewer shadow cascades on phones.
+
 ## Large worlds
 
 The engine divides space into [grid cells](../concepts/culling.md#grid-cells) 1,024 m wide. When a scene spreads over several cells, each view first tests each cell against its frustum. It then skips every still object of the cells out of view, and tests only the rest one by one. A still object is a static object whose parents are all static, or a row of a static instance batch.
@@ -203,7 +217,7 @@ Each shadow cascade that draws in a frame costs a pass over its casters, and its
 
 - Mark only the objects whose shadows matter as casters, with `castShadows`.
 - Use fewer cascades, a shorter shadow distance, or a higher `farCascadeInterval`, so the far cascades draw less often.
-- Give shadows only to the spot and point lights that need them, and keep their ranges short. A point light draws six tiles when a caster in its range moves.
+- Give shadows only to the spot and point lights that need them, and keep their ranges short. A moving caster near a point light draws the tiles of the cube faces that it touches, one to three of six.
 
 The governor lowers the far cascades' rate and the shadow filter when frames run long, after the render scale ([The frame-budget governor](../concepts/quality-presets.md#the-frame-budget-governor)).
 
@@ -262,7 +276,7 @@ Three figures show whether the GPU keeps up:
 
 - `presentedFps` counts the frames that the renderer presented. A frame callback keeps firing at the display rate while the GPU falls behind. So this count alone can look healthy while the screen shows fewer frames.
 - `completedFps` counts the frames that the GPU finished. The engine tracks every frame.
-- `gpuMs` is the GPU's working time within a frame, where the device has timestamp queries. It is not the time from submit to screen. The engine measures it on one frame in eight. Timing every frame would cost the drawing thread about as much as drawing a small scene.
+- `gpuMs` is the GPU's working time within a frame, where the device has timestamp queries. It is not the time from submit to screen. The engine measures it on one frame in eleven. Timing every frame would cost the drawing thread about as much as drawing a small scene. Eleven is a prime above the longest far cascade interval, so the timed frames take in every turn of the far cascades.
 
 The lower of the two rates is the rate that users see. The engine lets at most two frames wait unfinished on the GPU. So when the GPU falls behind, the presented rate falls to the completed rate, and `gpuLatencyMs` stays near two completed frame intervals. A rate below `refreshHz` with `gpuLatencyMs` near two frame intervals means that the GPU limits the frame rate. On WebGL2, and on a device without GPU timers, `completedFps` and `gpuLatencyMs` are the GPU's only signal.
 

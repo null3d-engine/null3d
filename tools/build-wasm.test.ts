@@ -1,19 +1,15 @@
 import { describe, expect, it } from 'bun:test';
-import {
-	addReleaseInstance,
-	lockedVersion,
-	memoryImportLimits,
-	parseOptions,
-	releaseTarget,
-} from './build-wasm';
+import { addReleaseInstance, lockedVersion, parseOptions, releaseTarget } from './build-wasm';
 
 describe('parseOptions', () => {
-	it('reads the size check, its base, the base build, the names build and the pages build', () => {
+	it('reads the size check, its base, the base build, the names build, the pages build, an earlier build and the base alone', () => {
 		expect(parseOptions([])).toEqual({
 			checkSize: false,
 			sizesOnly: false,
 			keepNames: false,
 			pagesOnly: false,
+			prebuilt: false,
+			printBase: false,
 		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
 			checkSize: true,
@@ -21,6 +17,16 @@ describe('parseOptions', () => {
 			sizesOnly: false,
 			keepNames: false,
 			pagesOnly: false,
+			prebuilt: false,
+			printBase: false,
+		});
+		expect(parseOptions(['--check-size', '--prebuilt'])).toMatchObject({
+			checkSize: true,
+			prebuilt: true,
+		});
+		expect(parseOptions(['--print-base', '--base', 'HEAD^'])).toMatchObject({
+			printBase: true,
+			base: 'HEAD^',
 		});
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
 		expect(parseOptions(['--names']).keepNames).toBe(true);
@@ -43,6 +49,12 @@ describe('parseOptions', () => {
 			expect(() => parseOptions(['--pages-only', other])).toThrow(
 				'--pages-only makes no size report',
 			);
+		for (const other of ['--names', '--pages-only', '--sizes-only'])
+			expect(() => parseOptions(['--prebuilt', other])).toThrow(
+				'--prebuilt measures the files of an earlier build',
+			);
+		for (const other of ['--check-size', '--prebuilt', '--sizes-only'])
+			expect(() => parseOptions(['--print-base', other])).toThrow('--print-base builds nothing');
 	});
 });
 
@@ -61,24 +73,6 @@ describe('releaseTarget', () => {
 		expect(releaseTarget('darwin', 'x64')).toBe('x86_64-apple-darwin');
 		expect(releaseTarget('linux', 'x64')).toBe('x86_64-unknown-linux-musl');
 		expect(() => releaseTarget('win32', 'x64')).toThrow('no prebuilt wasm-bindgen');
-	});
-});
-
-describe('memoryImportLimits', () => {
-	const header = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
-	// An import section with one function import, then a shared memory: env.f, env.memory (18, 65536).
-	const importSection = [
-		0x02, 0x1a, 0x02, 0x03, 0x65, 0x6e, 0x76, 0x01, 0x66, 0x00, 0x00, 0x03, 0x65, 0x6e, 0x76, 0x06,
-		0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x02, 0x03, 0x12, 0x80, 0x80, 0x04,
-	];
-
-	it('reads the initial size, the maximum and the shared flag of an imported memory', () => {
-		const bytes = new Uint8Array([...header, ...importSection]);
-		expect(memoryImportLimits(bytes)).toEqual({ initial: 18, maximum: 65536, shared: true });
-	});
-
-	it('returns null for a module without imports', () => {
-		expect(memoryImportLimits(new Uint8Array(header))).toBeNull();
 	});
 });
 

@@ -35,6 +35,10 @@
 		"./stats": {
 			"null3d-source": "./src/shared/stats.ts"
 		},
+		"./early-core": {
+			"null3d-source": "./src/page/early-core.ts",
+			"default": "./lib/page/early-core.js"
+		},
 		"./wasm/*": "./dist/wasm/*",
 		"./package.json": "./package.json"
 	},
@@ -42,12 +46,11 @@
 		"lib",
 		"dist/wasm/*/*.js",
 		"dist/wasm/*/*.wasm",
-		"dist/wasm/*/*.json",
 		"vendor",
-		"environments",
 		"docs",
 		"LICENSE-MIT",
-		"LICENSE-APACHE"
+		"LICENSE-APACHE",
+		"THIRD-PARTY-NOTICES.txt"
 	],
 	"publishConfig": {
 		"access": "public",

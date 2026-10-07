@@ -25,7 +25,7 @@ export const ERROR_FIXES = {
 	E1108:
 		'Pass a value inside the range that the message gives. For an instance batch, keep counts and indices within the capacity you created it with, or create a larger batch.',
 	E1109:
-		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
+		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Split a mesh of millions of vertices into smaller meshes, or simplify it. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
 	E1110:
 		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. If your code writes no engine memory, this is an engine bug: report it with the message.',
 	E1203:
@@ -51,7 +51,7 @@ export const ERROR_FIXES = {
 	E1217:
 		"Give alphaMode 'opaque', 'mask' or 'blend', and blending 'normal', 'additive' or 'multiply'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff.",
 	E1218:
-		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself.",
+		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
 	E1219:
 		"Give each label an id of its own, such as 'hp-12', and pass the same id to engine.labels.bind on the page. Untrack labels that you no longer show with ui.untrackLabel. To track more labels at once, raise createEngine's maxLabels option.",
 	E1301:
@@ -59,7 +59,13 @@ export const ERROR_FIXES = {
 	E1302:
 		'Listen with engine.onFailure. Destroy the engine, put a new canvas element in place of the old one, and start the engine again on it. If losses keep coming, lower the quality preset.',
 	E1303:
-		'Update the browser. Chrome 91, Firefox 89, Safari 16.4 and later versions run the engine.',
+		'Update the browser. Chrome and Edge 91, Firefox 89, Safari 18 and later versions run the engine.',
+	E1304:
+		'Lower the quality preset, use smaller or compressed textures, and share meshes and textures between objects. Destroy objects and textures that the scene no longer shows.',
+	E1305:
+		"Read the message: it quotes the GPU path. A buffer or texture past the device's limits names the limit: make the scene smaller there. Otherwise this is an engine bug: report it with the message and the browser.",
+	E1306:
+		'Update Safari to version 18 or later. On iPhone and iPad, update iOS or iPadOS to 18 or later, which updates the engine of every browser there.',
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:
@@ -69,7 +75,7 @@ export const ERROR_FIXES = {
 	E1404:
 		'This is an engine bug. Report it with the message and the browser, then destroy the engine and start it again.',
 	E1405:
-		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load, then report the error if it repeats.",
+		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load. Serve the worker scripts from the page's own origin, and allow them in the worker-src of a Content-Security-Policy. Report the error if it repeats.",
 	E1406:
 		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files, the KTX2 transcoder's files, the glTF loader's files and the meshopt decoder are among them. If the page loads at other times, the network dropped: reload the page.",
 	E1407:
@@ -83,7 +89,7 @@ export const ERROR_FIXES = {
 	E1411:
 		"Check the file's address: a relative address resolves against the page's address, and new URL('./file.png', import.meta.url) resolves against the sketch module's. Check that the server sends the file, and handle the error where the file is optional.",
 	E1412:
-		'Give loadTexture and loadImageBitmap a PNG, JPEG or WebP file, or an AVIF file in browsers that decode AVIF. Give loadTexture KTX2 files of 2D ETC1S or UASTC data, as basisu writes them. Give loadJson valid JSON. Check that the server sends the file itself, not an error page.',
+		'Give loadTexture and loadImageBitmap a PNG, JPEG or WebP file, or an AVIF file in browsers that decode AVIF. Give loadTexture KTX2 files of 2D ETC1S or UASTC data, as basisu writes them. Give loadJson valid JSON. Check that the server sends the file itself, not an error page. Save KTX2 textures no larger than textures.maxSize on each side.',
 	E1413:
 		"Serve the file from the same origin as the page, or have its server send Access-Control-Allow-Origin with the page's origin or *. On a page with Cross-Origin-Embedder-Policy: require-corp, the file needs that header too.",
 	E1414:
@@ -91,11 +97,19 @@ export const ERROR_FIXES = {
 	E1415:
 		"Stop the other engine with destroy() and wait for its promise before you start this one. To run both at once, leave out sketchThread: 'main' on one of them, so that its sketch runs in a worker.",
 	E1416:
-		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool. For a model whose skeleton is too large, export each character to a file of its own.',
+		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool. For a model whose skeleton is too large, export each character to a file of its own. A file that passes a limit on what it decodes to is broken, or holds more than a scene can use. Split it into several files, or simplify its meshes.',
 	E1417:
 		'Export the model again without the extension that the message names. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
+	E1418:
+		"Add 'wasm-unsafe-eval' to the script-src of the page's Content-Security-Policy, for example script-src 'self' 'wasm-unsafe-eval'. It allows WebAssembly and no JavaScript eval. The hosting page of the docs gives the whole policy that the engine needs.",
+	E1419:
+		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says that no engine can draw on the canvas again, put a new canvas element in its place.",
+	E1420:
+		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
+	E1421:
+		'Name each feature as the message lists it. Leave a feature out to let its shaders download the first time the sketch uses it.',
 	E1501:
-		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
+		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502: RENDER_GRAPH_FIX,
 	E1503: RENDER_GRAPH_FIX,
 	E1504: RENDER_GRAPH_FIX,

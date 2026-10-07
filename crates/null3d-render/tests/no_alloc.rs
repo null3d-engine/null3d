@@ -27,6 +27,7 @@ use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
 use null3d_render::light_grid::{ClusterParams, DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
+use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
 use null3d_render::shadow_tiles::TileSettings;
@@ -70,6 +71,8 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let quality = ShadowQuality {
         filter: 3,
         far_interval: 2,
+        follow_movers: true,
+        ..ShadowQuality::default()
     };
     world.renderer.settings_mut().set_shadow_quality(quality);
     let shadow = SunShadow {
@@ -104,8 +107,10 @@ fn recording_frames_with_shadows_allocates_nothing() {
 
 /// Records warm-up frames of `world` with two spot lights and a point light that cast shadows into
 /// a shadow atlas of seven tiles, which the near spot light takes in turn from the others as it
-/// moves, then frames in which a caster moves within the lights' reach and out of it, still frames, and frames whose structure changes, and returns
-/// what those allocated.
+/// moves, then frames in which a caster moves within the lights' reach and out of it and changes
+/// its layers, a skinned caster below the point light plays its clip, the far spot light's
+/// shadows turn off and on, still frames, and frames whose structure changes, and returns what
+/// those allocated.
 fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
     let commands: Vec<Command> = world
@@ -123,27 +128,41 @@ fn spot_shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             point_shadows: true,
         });
     let near = world.add_spot([-3.0, 4.0, 0.0], 6.0);
-    world.add_spot([3.0, 4.0, 0.0], 6.0);
+    let far = world.add_spot([3.0, 4.0, 0.0], 6.0);
     world.add_point([0.0, 3.0, -2.0], 5.0);
+    world.add_skinned([0.0, 0.0, -2.0]);
     let mover = world.objects[0];
+    // Returns true when the frame's commands change the structure.
     let step = |world: &mut World<B>, frame: u32| {
         // The near light moves toward the camera and back, so the two lights swap the tile.
         let z = if frame % 8 < 4 { 0.0 } else { 15.0 };
         world.scene.set_position(near, [-3.0, 4.0, z]).unwrap();
         let x = if frame.is_multiple_of(3) { -3.0 } else { 30.0 };
         world.scene.set_position(mover, [x, 0.0, 0.0]).unwrap();
+        let layers = if frame % 10 < 5 { 1 } else { 0b10 };
+        let casts = if frame % 14 < 7 {
+            flags::CAST_SHADOWS
+        } else {
+            0
+        };
+        let commands = [
+            Command::set_layers(mover, layers),
+            Command::set_flags(far, flags::CAST_SHADOWS, casts),
+        ];
+        world.scene.apply_commands(&commands, frame).unwrap();
+        world.scene.take_structure_changed()
     };
     world.record(true);
-    for frame in 2..=16 {
-        step(&mut world, frame);
+    for frame in 2..=30 {
+        let structure = step(&mut world, frame);
         world.frame = frame;
-        world.record(frame > 12);
+        world.record(structure || frame > 26);
     }
     CountingAllocator::arm();
-    for frame in 17..=120 {
-        step(&mut world, frame);
+    for frame in 31..=150 {
+        let structure = step(&mut world, frame);
         world.frame = frame;
-        world.record(frame.is_multiple_of(20));
+        world.record(structure || frame.is_multiple_of(20));
     }
     CountingAllocator::disarm()
 }
@@ -201,6 +220,45 @@ fn skinning_frames_allocate_nothing() {
     assert_eq!(skinning_allocations(World::new()), 0, "WebGPU");
     let allocated = skinning_allocations(webgl2_world(true));
     assert_eq!(allocated, 0, "WebGL2");
+}
+
+/// Records warm-up frames of `world` with two morphed boxes whose weights change every frame:
+/// one that the camera sees, and one that moves in and out of its view. Then it records steady
+/// frames and frames whose structure changes, and returns what those allocated.
+fn morph_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.renderer.settings_mut().set_morph_cap(1);
+    let (_, still) = world.add_morphed([0.0, 0.0, 0.0], [0.5, 0.25]);
+    let (mover, moving) = world.add_morphed([3.0, 0.0, 0.0], [0.0, 1.0]);
+    world.record(true);
+    let step = |world: &mut World<B>, frame: u32, rebuild: bool| {
+        let z = if frame % 6 < 3 { 0.0 } else { 40.0 };
+        world.scene.set_position(mover, [3.0, 0.0, z]).unwrap();
+        // Fractions that change every frame, so weights and bounds move.
+        let t = (frame % 10) as f32 * 0.1;
+        world.set_weight(still, 0, t);
+        world.set_weight(moving, 1, 1.0 - t);
+        world.frame = frame;
+        world.record(rebuild);
+    };
+    for frame in 2..=8 {
+        step(&mut world, frame, frame > 6);
+    }
+    CountingAllocator::arm();
+    for frame in 9..=100 {
+        step(&mut world, frame, frame.is_multiple_of(25));
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn morph_frames_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(morph_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let allocated = morph_allocations(webgl2_world(multi_draw));
+        assert_eq!(allocated, 0, "WebGL2, multi-draw {multi_draw}");
+    }
 }
 
 /// Records warm-up frames of a world with a second view, then steady frames and frames whose
@@ -339,6 +397,58 @@ fn render_scale_changes_allocate_nothing() {
             ..CpuCulledConfig::default()
         }));
         assert_eq!(scale_change_allocations(webgl2), 0, "WebGL2, {scene_color}");
+    }
+}
+
+/// Records warm-up frames of a world with two outlined objects, then frames whose outline width
+/// and render scale change every frame, while the camera moves, and returns what those allocated.
+fn outline_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let settings = world.renderer.settings_mut();
+    settings.set_render_scaling(true);
+    settings.set_outline(Some(Outline::default()));
+    let outlined = flags::OUTLINED;
+    let commands: Vec<_> = world.objects[..2]
+        .iter()
+        .map(|&object| Command::set_flags(object, outlined, outlined))
+        .collect();
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.record(true);
+    record_until(&mut world, 6, false);
+    CountingAllocator::arm();
+    for frame in 7..=200 {
+        world.frame = frame;
+        world.renderer.settings_mut().set_outline(Some(Outline {
+            width: 1.0 + (frame % 7) as f32 * 0.5,
+            ..Outline::default()
+        }));
+        world.render_scale = RenderScale::from_thousandths(500 + (frame * 37) % 501);
+        world.aim([0.0, 1.0, 20.0], frame as f32 * 0.002, 0.0);
+        world.record(false);
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn frames_with_outlines_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    for scene_color in [format::RGBA16_FLOAT, format::CANVAS] {
+        let canvas = CanvasOutput {
+            scene_color: SceneColor::from_format(scene_color),
+            antialias: Antialias::Msaa,
+            transparent: false,
+        };
+        let webgpu = World::with_config(RendererConfig {
+            canvas,
+            ..RendererConfig::default()
+        });
+        assert_eq!(outline_allocations(webgpu), 0, "WebGPU, {scene_color}");
+        let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+            canvas,
+            multi_draw: true,
+            ..CpuCulledConfig::default()
+        }));
+        assert_eq!(outline_allocations(webgl2), 0, "WebGL2, {scene_color}");
     }
 }
 
@@ -873,10 +983,7 @@ fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool) -> u64 {
     std::thread::scope(|scope| {
         for i in 0..3 {
             let jobs = &jobs;
-            scope.spawn(move || {
-                CountingAllocator::track_this_thread();
-                jobs.worker_loop(i);
-            });
+            scope.spawn(move || CountingAllocator::track_while(|| jobs.worker_loop(i)));
         }
         let mut frames = |first: u32, last: u32| {
             for frame in first..last {

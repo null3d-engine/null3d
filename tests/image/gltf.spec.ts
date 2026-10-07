@@ -42,6 +42,7 @@ interface GltfResult {
 		batchRows: number;
 		bounds: number[][];
 		materials: number;
+		faceWeights: number[];
 		codes: Record<string, string>;
 	};
 }
@@ -68,6 +69,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(recorded.materials).toBe(3);
 			expect(rounded(recorded.bounds[0])).toEqual([-1, -0.25, -0.5]);
 			expect(rounded(recorded.bounds[1])).toEqual([1, 0.85, 0.5]);
+			// The face's shape keys are sparse accessors of 8-bit and 16-bit indices.
+			expect(recorded.faceWeights).toEqual([0.5, 0, 0]);
 			expect(recorded.codes).toEqual({
 				broken: 'E1416',
 				draco: 'E1417',
@@ -77,6 +80,13 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 				html: 'E1416',
 				absent: 'E1411',
 				empty: 'none',
+				named: 'E1416',
+				zeros: 'E1416',
+				long: 'E1416',
+				rewritten: 'none',
+				refused: 'E1416',
+				undecodable: 'E1412',
+				claimsHuge: 'E1416',
 			});
 			// One thread loads every file, so the loader and its worker download once. No file holds
 			// meshopt data, so the decoder does not download.

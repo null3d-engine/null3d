@@ -41,7 +41,7 @@ describe('.cube tables', () => {
 		expect(range.domainMax).toEqual([4, 4, 4]);
 	});
 
-	it('refuses a 1D table, a wrong count, a bad texel or size, and an empty domain', () => {
+	it('refuses a 1D table, a wrong count, a bad texel or size, and an empty domain or one past 32-bit floats', () => {
 		const bad = [
 			'LUT_1D_SIZE 4\n0 0 0',
 			cube('LUT_3D_SIZE 3', () => '0 0 0'),
@@ -54,6 +54,9 @@ describe('.cube tables', () => {
 			'0 0 0\nLUT_3D_SIZE 2',
 			cube('LUT_3D_SIZE 2\nDOMAIN_MIN 1 0 0\nDOMAIN_MAX 1 1 1', () => '0 0 0'),
 			cube('LUT_3D_SIZE 2\nDOMAIN_MIN 0 0', () => '0 0 0'),
+			cube('LUT_3D_SIZE 2\nDOMAIN_MIN -1e39 0 0', () => '0 0 0'),
+			cube('LUT_3D_SIZE 2\nDOMAIN_MAX 1e-40 1 1', () => '0 0 0'),
+			cube('LUT_3D_SIZE 2\nLUT_3D_INPUT_RANGE -3e38 3e38', () => '0 0 0'),
 		];
 		for (const text of bad) expect(() => parseLut(text)).toThrow(LutFileError);
 		expect(() => parseLut('LUT_3D_SIZE 2\n0 0')).toThrow('line 2');
@@ -101,5 +104,11 @@ describe('.3dl tables', () => {
 			threeDl(3, () => [0, 0, 0]).slice(1),
 		];
 		for (const lines of bad) expect(() => parse3dl(lines.join('\n'))).toThrow(LutFileError);
+	});
+
+	it('stops at the numbers that the largest table holds, before it keeps more', () => {
+		const text = threeDl(3, () => [0, 0, 0]).join('\n');
+		expect(() => parse3dl(text, 80)).toThrow('more numbers than a table of 256 a side holds');
+		expect(parse3dl(text, 81).size).toBe(3);
 	});
 });

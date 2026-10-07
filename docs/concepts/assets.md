@@ -40,7 +40,7 @@ For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draw
 
 Before you publish a model, run it through `bunx @null3d/cli assets optimize`. The command stores its meshes as integers compressed with meshopt, and its textures as KTX2 files. The model then downloads less and takes less GPU memory. [The asset pipeline](../guides/assets-pipeline.md) covers it.
 
-The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
+The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_materials_specular`, `KHR_materials_ior`, `KHR_lights_punctual` and `EXT_mesh_gpu_instancing`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
 
 ### Compressed meshes
 
@@ -83,6 +83,27 @@ scene.createMesh({ mesh: tile, material: materials.standard(), scale: [0.001, 0.
 Integer positions keep their own units. The object's transform turns them into meters, as a glTF node's transform does for a quantized mesh. So the bounds that culling tests are in meters, and the scene draws as the file intends. [Geometry](../api/geometry.md#integer-attributes) lists the types that each attribute takes.
 
 Meshes whose attributes have the same types share GPU buffers, and they draw with few changes of GPU state. Keep the meshes of a scene in few such formats.
+
+## Limits on each file
+
+A model or texture file can come from a user, or be broken. So the loaders check every count in a file before they allocate memory for it. A file that passes a limit fails at once with its error code. It never holds a worker for minutes, and it never fills the tab's memory.
+
+| What | Limit | Error |
+| --- | --- | --- |
+| One array of a model: an accessor, decoded meshopt data, or the triangles of a strip or a fan | 256 MiB, the largest buffer that every WebGPU device takes | E1416 |
+| All the arrays and images that one model file decodes to | 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB | E1416 |
+| One animation clip | 4,194,304 keys, its frames times its tracks, at the clip's key rate | E1416 from `loadGltf`, E1218 elsewhere |
+| A mesh that the engine builds from a file or from arrays | What engine memory holds. The call fails, and the engine runs on | E1109 |
+| The sides of a KTX2 texture | `textures.maxSize`, checked before the transcoder runs | E1412 |
+| The layers of a KTX2 texture, and its texels | 256 layers, and 256 MiB of texels in the format that the device gets | E1412 |
+| The sides of a PNG or JPEG image inside a model, from its header before it decodes | 4,096, the largest texture of the engine | E1416 |
+| The pixels of every image that a model's materials decode | 1 GiB in all, 4 bytes per pixel | E1416 |
+| The sides of an image that `loadTexture` decodes, or that a model names by address | `textures.maxSize`, from the header before it decodes | E1412 |
+| The sides of an image that `loadImageBitmap` decodes | 16,384, the largest canvas of browsers | E1412 |
+
+The model limit grows with the file, because compressed data decodes to several times its size. The sample models decode to at most 3 times their bytes, so a real model stays far below the limit. A model that does pass it is broken, or holds more than a scene can draw. Split it into several files.
+
+A primitive that names an accessor another primitive also names shares that accessor's arrays. So a file pays once for data that it uses many times.
 
 ## Uploads and memory
 

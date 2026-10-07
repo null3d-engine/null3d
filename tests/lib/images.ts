@@ -70,9 +70,18 @@ export const DEVICE_TOLERANCE: Tolerance = { threshold: 0.1, maxDiffRatio: 0.005
  */
 const DEVICE_TIERS: Readonly<Record<string, readonly Tier[]>> = { 'sm-s926b': ['webgl2'] };
 
+/**
+ * Devices whose GPU draws as another device's does, so they compare with that device's references
+ * and keep none of their own. The Galaxy S24 has the S24+'s Xclipse 940.
+ */
+const SHARED_REFERENCES: Readonly<Record<string, string>> = { 'sm-s921b': 'sm-s926b' };
+
+/** The device whose references a device keeps or shares. */
+const referenceDevice = (device: string) => SHARED_REFERENCES[device] ?? device;
+
 /** True when a device draws on a tier: on each tier, unless the table of device tiers lists fewer. */
 export const drawsTier = (device: string, tier: Tier) =>
-	DEVICE_TIERS[device]?.includes(tier) ?? true;
+	DEVICE_TIERS[referenceDevice(device)]?.includes(tier) ?? true;
 
 /** The size of a sketch test's image, unless its entry gives another. */
 export const SKETCH_SIZE = [320, 180] as const;
@@ -108,6 +117,12 @@ interface ImageTestSettings {
 	devices?: readonly string[];
 	/** How long a page may take to publish its image, in seconds; 30 unless the entry gives another. */
 	timeoutSeconds?: number;
+	/**
+	 * Page switches that only the runs on SwiftShader add, after the others: a lighter load for a
+	 * scene that the software GPU draws too slowly in full on CI's machines. The SwiftShader references
+	 * show the scene with these switches, and every other place draws it in full.
+	 */
+	swiftShaderSwitches?: readonly string[];
 }
 
 /** A sketch that the image page draws in the engine's hold mode. */
@@ -161,6 +176,8 @@ export interface ImageRun {
 	deviceTolerance: Tolerance;
 	/** The run of the test's first mode on the same tier, whose pixels every other mode must match. */
 	sameAs?: string;
+	/** The switches that the run adds on SwiftShader alone, as `runIn` adds them. */
+	swiftShaderSwitches?: readonly string[];
 }
 
 /** The tiers a test draws on. */
@@ -232,10 +249,17 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 				tolerance: { ...TOLERANCE, ...test.tolerance },
 				deviceTolerance: { ...DEVICE_TOLERANCE, ...test.deviceTolerance },
 				...(index > 0 && { sameAs: idOf(modes[0]) }),
+				...(test.swiftShaderSwitches && { swiftShaderSwitches: test.swiftShaderSwitches }),
 			}));
 		});
 	});
 }
+
+/** A run as an environment draws it: on SwiftShader, with its SwiftShader switches after the others. */
+export const runIn = (run: ImageRun, environment: Environment): ImageRun =>
+	environment === 'chromium-swiftshader' && run.swiftShaderSwitches
+		? { ...run, path: `${run.path}&${run.swiftShaderSwitches.join('&')}` }
+		: run;
 
 /** Names that become folders and files: lowercase words joined by dashes. */
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -320,7 +344,8 @@ export interface Reference {
  */
 export function referenceOf(run: ImageRun, place: Place): Reference {
 	const own = 'environment' in place || run.reference.devices.includes(place.device);
-	const set = 'environment' in place ? place.environment : own ? place.device : REAL_GPU;
+	const set =
+		'environment' in place ? place.environment : own ? referenceDevice(place.device) : REAL_GPU;
 	const file = `${set}/${run.reference.tier}/${run.reference.test}.png`;
 	const reference = { file, tolerance: own ? run.tolerance : run.deviceTolerance };
 	if (!own && 'device' in place)
@@ -522,6 +547,21 @@ export function differentPixels(a: Uint8Array, b: Uint8Array): number {
 		if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2] || a[i + 3] !== b[i + 3])
 			count++;
 	return count;
+}
+
+/**
+ * The share of pixels of two RGBA images of one size whose red, green or blue differs by more than
+ * `channel`, which allows for rounding between two draws of the same scene.
+ */
+export function differentShare(a: Uint8Array, b: Uint8Array, channel: number): number {
+	let different = 0;
+	for (let i = 0; i < a.length; i += 4)
+		for (let c = 0; c < 3; c++)
+			if (Math.abs((a[i + c] as number) - (b[i + c] as number)) > channel) {
+				different++;
+				break;
+			}
+	return different / (a.length / 4);
 }
 
 /** Whether a GPU adapter's description names a software GPU. */

@@ -390,6 +390,20 @@ describe("the runner page's report", () => {
 		]);
 		for (const plan of REPORT_ON_TOP_PLANS) expect(Object.keys(PLANS)).toContain(plan);
 	});
+
+	// Under the report, a worker's canvas barely changes the screen, and Android can lower the
+	// display to 24 Hz, which fails the engine page's limit on the time between frames.
+	it('stays under the frame of each page whose check limits the time between frames', () => {
+		const timed = [...REPORT_ON_TOP_PLANS].flatMap((name) =>
+			(PLANS[name]?.() ?? []).filter((item) => item.check.kind === 'engine'),
+		);
+		expect(timed.length).toBeGreaterThan(0);
+		for (const item of timed)
+			expect({ id: item.id, timesFrames: item.timesFrames }).toEqual({
+				id: item.id,
+				timesFrames: true,
+			});
+	});
 });
 
 describe('the checks plan', () => {
@@ -434,6 +448,7 @@ describe('the checks plan', () => {
 			path: '/__null3d/load/warm/{run}.{runner}.production/tests/pages/engine.html?gpu=webgl2&latency=low&seconds=2',
 			timeoutSeconds: 45,
 			check: { kind: 'engine', tier: 'webgl2', mode: ENGINE_MODES[1] },
+			timesFrames: true,
 		});
 		// The runner builds the production pages for a plan that loads them, and only then.
 		expect(planItems(parseArgs(['Safari']))?.some((item) => isLoadPath(item.path))).toBe(true);
@@ -617,17 +632,20 @@ describe('the checks plan', () => {
 		]);
 	});
 
-	it('splits into shards that run each item once, each with the items its check compares with', () => {
+	it('splits into shards that run each item once, each with the items its check compares with, and the capabilities page first', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
 		for (const count of [2, 3, 4]) {
 			const shards = Array.from(
 				{ length: count },
 				(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
 			);
-			expect(ids(shards.flat())).toEqual(ids(items));
-			// The largest group is an image test in every thread mode.
+			for (const shard of shards) expect(shard[0]?.id).toBe('capabilities');
+			const once = [shards[0] ?? [], ...shards.slice(1).map((shard) => shard.slice(1))];
+			expect(ids(once.flat())).toEqual(ids(items));
+			// The largest group is an image test in every thread mode; each later shard adds the
+			// capabilities page.
 			const sizes = shards.map((shard) => shard.length);
-			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length);
+			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length + 1);
 			for (const shard of shards) {
 				const inShard = new Set(shard.map(({ id }) => id));
 				for (const { check } of shard)
@@ -881,7 +899,7 @@ describe('the checks plan', () => {
 		).toEqual(['the page is not cross-origin isolated', 'the threaded build did not load']);
 	});
 
-	it('starts and stops the engine again and again in every mode, and in frames', () => {
+	it('starts and stops the engine again and again in every mode, on kept canvases, and in frames', () => {
 		const restarts = items.filter((item) => item.check.kind === 'restarts');
 		expect(restarts.map((item) => item.path)).toEqual([
 			'/tests/pages/shared-memory.html',
@@ -892,6 +910,12 @@ describe('the checks plan', () => {
 			'/tests/pages/shared-memory.html?kinds=frame',
 			'/tests/pages/shared-memory.html?kinds=frame&latency=low',
 			'/tests/pages/shared-memory.html?kinds=frame&render=main',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept&latency=low',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed&latency=low',
+			'/tests/pages/shared-memory.html?kinds=canvas-kept&sketch-thread=main',
+			'/tests/pages/shared-memory.html?kinds=frame-destroyed&sketch-thread=main',
 		]);
 	});
 
@@ -927,14 +951,27 @@ describe('the checks plan', () => {
 		]);
 		const notes: string[] = [];
 		const context = { resultOf: () => undefined, imageDir: '', note: (t: string) => notes.push(t) };
-		const lostOnce = (again: object) =>
-			result({ kinds: { engine: { ...engine, roomLater: 2, again: { ...engine, ...again } } } });
+		const lostOnce = (again: object, roomLater = 2) =>
+			result({ kinds: { engine: { ...engine, roomLater, again: { ...engine, ...again } } } });
 		expect(
-			judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+			judge(restart.check, lostOnce({ room: 4, roomLater: 4 }, 4), NONE_MISSING, context),
 		).toEqual([]);
 		expect(notes).toEqual([
-			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 4 after, and for 4 after 10 more',
 		]);
+		expect(judge(restart.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING)).toEqual([
+			'the browser did not get back the memory of stopped engines: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more, more than the 2 that lost address space explains',
+		]);
+		// Room that the second round gets back was late, not lost.
+		expect(judge(restart.check, lostOnce({ room: 2, roomLater: 5 }), NONE_MISSING)).toEqual([]);
+		const singleThreaded = items.find((item) => item.id === 'restarts-single-threaded');
+		if (!singleThreaded) throw new Error('the plan lacks the single-threaded restart page');
+		expect(
+			judge(singleThreaded.check, lostOnce({ room: 2, roomLater: 2 }), NONE_MISSING, context),
+		).toEqual([]);
+		expect(notes.at(-1)).toBe(
+			'the room fell once and then held, so the browser lost address space, not memory that stopped engines hold: it had room for 6 shared memories before 10 starts and stops, and for 2 after, and for 2 after 10 more',
+		);
 		expect(judge(restart.check, lostOnce({ room: 4, roomLater: 1 }), NONE_MISSING)).toEqual([
 			'the browser did not get back the memory of stopped engines in two rounds: it had room for 6 shared memories before 10 starts and stops, and for 2 after, then for 1 after 10 more within 31 s',
 		]);
@@ -955,6 +992,42 @@ describe('the checks plan', () => {
 			'the browser did not get back the memory of engines in removed frames within 31 s: it had room for 6 shared memories before 10 starts in frames, and for 0 after',
 		]);
 		expect(judge(inFrames.check, result({}), NONE_MISSING)).toEqual(['the page started no engine']);
+		const kept = items.find((item) => item.id === 'canvas-kept-restarts-pipelined');
+		const destroyedInFrames = items.find(
+			(item) => item.id === 'frame-destroyed-restarts-pipelined',
+		);
+		if (!kept || !destroyedInFrames)
+			throw new Error('the plan lacks the restart pages that keep a worker');
+		const keptNotes: string[] = [];
+		expect(
+			judge(
+				kept.check,
+				result({ kinds: { 'canvas-kept': { ...engine, roomLater: 1 } } }),
+				NONE_MISSING,
+				{ ...context, note: (t: string) => keptNotes.push(t) },
+			),
+		).toEqual([]);
+		expect(keptNotes).toEqual([
+			'the workers that stayed with the canvases held memory: it had room for 6 shared memories before 10 starts and stops on kept canvases, and for 1 after',
+		]);
+		expect(
+			judge(
+				kept.check,
+				result({ kinds: { 'canvas-kept': { ...failed, error: 'E1109: refused' } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop on a kept canvas 3 of 10 failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
+		expect(
+			judge(
+				destroyedInFrames.check,
+				result({ kinds: { 'frame-destroyed': { ...failed, error: 'E1109: refused' } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			"start and stop in a frame 3 of 10 failed: E1109: refused; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
 	});
 
 	it('quotes the last steps of a page that gave no result', () => {
@@ -1412,8 +1485,8 @@ describe('the memory plan', () => {
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
 		expect(items[0]).toEqual({
 			id: 'room-256',
-			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&maximum=4096',
-			timeoutSeconds: 90,
+			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&room=full&maximum=4096',
+			timeoutSeconds: 150,
 			check: { kind: 'room', maximumMiB: 256 },
 		});
 		expect(items[1]).toEqual({
@@ -1595,6 +1668,17 @@ describe('the startup plan', () => {
 });
 
 describe('parseArgs', () => {
+	it('runs no Brave in bun run devices, while a run can still name it', async () => {
+		const scripts = (await Bun.file(join(import.meta.dir, '../../package.json')).json()).scripts;
+		const devices = String(scripts.devices).split(' && ').at(-1)!.split(' ').slice(2);
+		expect(devices.join(' ')).not.toContain('brave');
+		expect(parseArgs(devices)).toMatchObject({ android: ['chrome'], lan: ['ipad-safari'] });
+		expect(parseArgs(['--android', 'brave', '--lan', 'ipad-brave'])).toMatchObject({
+			android: ['brave'],
+			lan: ['ipad-brave'],
+		});
+	});
+
 	it('reads the plan, the flags, the device lists and the macOS apps', () => {
 		expect(
 			parseArgs([
@@ -1608,7 +1692,7 @@ describe('parseArgs', () => {
 		).toEqual({
 			plan: 'checks',
 			missing: { webgpu: true, webgl2: false },
-			mac: ['Safari'],
+			apps: ['Safari'],
 			android: ['chrome', 'brave'],
 			lan: ['ipad-safari'],
 			cloud: [],
@@ -1697,7 +1781,11 @@ describe('parseArgs', () => {
 		expect(planItems(bench)?.every((item) => item.path.endsWith('&half=on&preset=ultra'))).toBe(
 			true,
 		);
-		expect(() => parseArgs(['--switches', '?half=on'])).toThrow('--switches: give page switches');
+		const checks = parseArgs(['--plan', 'governor', '--switches', 'render=main&display-check=off']);
+		expect(checks.switches).toBe('render=main&display-check=off');
+		expect(() => parseArgs(['--switches', '?half=on'])).toThrow(
+			'--switches: give page switches without the ?',
+		);
 	});
 });
 

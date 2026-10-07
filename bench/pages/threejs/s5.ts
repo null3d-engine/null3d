@@ -1,14 +1,14 @@
 // The three.js twin of S5, the crowd: copies of the optimized KayKit Knight walk in rings on a lit
-// ground, each blending a walk with a run, under a sun that casts shadows.
+// ground, each blending a walk with a run by clip weights, under a sun that casts shadows.
 //
 // It gives three.js its best way to draw the scene with its core and addons:
 // - GLTFLoader loads the optimized file once, with KTX2Loader for its texture and MeshoptDecoder
 //   for its compressed buffers. SkeletonUtils.clone copies it for each character, so the copies
 //   share their geometries and materials, and each gets a skeleton of its own.
 // - Each character is a set of SkinnedMesh objects with one AnimationMixer, which plays the walk
-//   and the run as two actions whose weights add up to 1, at the character's rate. three.js has no
-//   instanced skinning in its core, so each SkinnedMesh draws on its own, skinned in the vertex
-//   shader of each pass that draws it, the shadow passes included.
+//   and the run as two actions whose weights add up to 1, from the character's start time and at
+//   its rate. three.js has no instanced skinning in its core, so each SkinnedMesh draws on its
+//   own, skinned in the vertex shader of each pass that draws it, the shadow passes included.
 // - The sun's shadows come from three.js's cascaded shadow addon, as in S4's twin. Its cascades end
 //   at the distance where null3D's shadows end.
 // - The cascade count, the shadow map size and the pixel ratio are the settings of the quality
@@ -91,11 +91,12 @@ runThreePage(
 			const character = clone(gltf.scene);
 			const mixer = new three.AnimationMixer(character);
 			const weight = data.weight[i] as number;
-			mixer
-				.clipAction(walk)
-				.setEffectiveWeight(1 - weight)
-				.play();
-			mixer.clipAction(run).setEffectiveWeight(weight).play();
+			const walking = mixer.clipAction(walk).setEffectiveWeight(1 - weight);
+			const running = mixer.clipAction(run).setEffectiveWeight(weight);
+			for (const action of [walking, running]) {
+				action.time = data.start[i] as number;
+				action.play();
+			}
 			mixer.timeScale = data.rate[i] as number;
 			characters.push(character);
 			mixers.push(mixer);

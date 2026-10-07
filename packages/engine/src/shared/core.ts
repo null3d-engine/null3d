@@ -45,6 +45,11 @@ export interface CoreGlue extends CoreErrors {
 		gpuOcclusion: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
+	/**
+	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
+	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
+	 */
+	jobWorkerFailed(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
@@ -92,8 +97,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
-	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
-	cullFrame(frame: number, width: number, height: number): number;
+	/**
+	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
+	 * is the newest frame that the thread that draws drew with every pipeline built, as for
+	 * `recordFrame`.
+	 */
+	cullFrame(frame: number, width: number, height: number, built: number): number;
 	/**
 	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
 	 * with every pipeline built.
@@ -224,9 +233,17 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * A mesh from the arrays at `meshArrays`'s address, as `layout` (the `MESH_ARRAYS_*` bits)
 	 * describes them. `types` gives each array's type in its attribute's field of a vertex format.
-	 * Returns the mesh id.
+	 * With `targets` morph targets, the arrays that `morph` (the `MORPH_*` bits) names follow the
+	 * indices. Returns the mesh id.
 	 */
-	createMeshFromArrays(vertices: number, indices: number, layout: number, types: number): number;
+	createMeshFromArrays(
+		vertices: number,
+		indices: number,
+		layout: number,
+		types: number,
+		targets: number,
+		morph: number,
+	): number;
 	/**
 	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
 	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
@@ -304,10 +321,22 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createVolumeTexture(width: number, height: number, depth: number, format: number): number;
 	/**
+	 * A cube texture with faces of `size` texels a side and `levels` mip levels, in a `FORMAT_*`
+	 * code of shared-exponent floats or half floats, with no texels yet. Its texels bring every
+	 * level, each level's six faces in turn. Returns its handle.
+	 */
+	createCubeTexture(size: number, levels: number, format: number): number;
+	/**
 	 * Gives a texture an image, uploaded with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and
 	 * returns the image's id for the thread that draws. An image of another size resizes it.
 	 */
 	setTextureImage(texture: number, width: number, height: number, flags: number): number;
+	/**
+	 * Gives a cube texture of shared-exponent floats texels that a generator makes on the GPU, all
+	 * in the first frame after the generator arrives, and returns the generator's id among the
+	 * images' ids, for the thread that draws.
+	 */
+	generateTexture(texture: number): number;
 	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
@@ -378,15 +407,16 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
-	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut` or `setVignette`.
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut`, `setVignette` or
+	 * `setOutline`.
 	 */
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
 	setOutput(toneMapping: number): number;
-	/** Turns bloom on with the post-processing values' strength, radius and threshold, or off. */
+	/** Turns bloom on with the post-processing values' intensity, threshold, blend and weights, or off. */
 	setBloom(on: boolean): number;
-	/** How many times fewer taps than three.js's bloom's blurs read, from the next frame on. */
-	setBloomSamples(divisor: number): number;
+	/** The texels on the short side of bloom's base, and the governor's halvings of it, from the next frame on. */
+	setBloomChain(size: number, halvings: number): number;
 	/** Turns ambient occlusion on with the post-processing values' settings, or off. */
 	setAo(on: boolean): number;
 	/**
@@ -403,6 +433,18 @@ export interface CoreGlue extends CoreErrors {
 	setLut(texture: number): number;
 	/** Turns the vignette on with the post-processing values' offset and darkness, or off. */
 	setVignette(on: boolean): number;
+	/** Turns outlines on with the post-processing values' line colors and width, or off. */
+	setOutline(on: boolean): number;
+	/**
+	 * The address of the block of the environment's values (`ENVIRONMENT_VALUE_*`), 32-bit floats
+	 * that TypeScript writes before it calls `setEnvironment`.
+	 */
+	environmentValues(): number;
+	/**
+	 * Lights the scene with the environment whose prefiltered light is a cube texture, or with none
+	 * for 0, from the next frame on, with the environment's values.
+	 */
+	setEnvironment(texture: number): number;
 	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
@@ -413,10 +455,17 @@ export interface CoreGlue extends CoreErrors {
 	/** The device pixels per CSS pixel of the canvas, which size sprites given in screen pixels. */
 	setPixelRatio(ratio: number): number;
 	/**
-	 * The shadow filter's texels on each side, 3 or 5, and the frames between two draws of a far
-	 * shadow cascade, from 1 to 8, from the next frame on.
+	 * The shadow filter's texels on each side, 3 or 5, the frames between two draws of a far
+	 * shadow cascade, from 1 to 8, whether a far cascade draws in every frame while a moving
+	 * caster touches it, and the share of each cascade's length over which it blends into the next,
+	 * from 0 to 0.5, from the next frame on.
 	 */
-	setShadowQuality(filter: number, farInterval: number): number;
+	setShadowQuality(
+		filter: number,
+		farInterval: number,
+		followMovers: boolean,
+		cascadeBlend: number,
+	): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
@@ -471,10 +520,30 @@ export interface CoreGlue extends CoreErrors {
 	 * clip itself.
 	 */
 	clipReady(ticket: number): number;
+	/**
+	 * The clips so far that the core resampled at each frame, plus one. The others held keys on
+	 * their frames already, as the asset tool writes them, and were copied.
+	 */
+	resampledClips(): number;
 	/** Adds an animated instance of a skeleton. */
 	createAnimatedInstance(skeleton: number): number;
 	/** Removes an animated instance; later instances take its id and joints. */
 	removeAnimatedInstance(instance: number): number;
+	/** Makes a block of `count` morph weights, all 0, and returns its id plus one. */
+	createMorphWeights(count: number): number;
+	/** Frees a block of morph weights. */
+	destroyMorphWeights(id: number): number;
+	/**
+	 * Links a block of morph weights to an animated instance (its id plus one, or 0 to unlink),
+	 * whose skeleton's joints from `joint` on animate them.
+	 */
+	linkMorphWeights(id: number, instance: number, joint: number): number;
+	/** The address of the morph weight table, or 0 before its first block. */
+	morphWeightsAddress(): number;
+	/** The first weight of a block of morph weights in the table. */
+	morphWeightsFirst(id: number): number;
+	/** The most morph weights of each object that vertex shaders that morph keep, the largest. */
+	setMorphTargets(cap: number): number;
 	/** The address of an animation table array (`ANIMATION_FIELD_*`). */
 	animationArrays(field: number): number;
 	/**
@@ -483,17 +552,15 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	animatedInstanceJoints(instance: number): number;
 	/**
-	 * Plays a clip on an instance's layer, fading over `fade` seconds at `speed`, with
-	 * `ANIMATION_PLAY_*` flags.
+	 * Plays a clip on an instance's layer with `ANIMATION_PLAY_*` flags, and the fade, speed, time
+	 * and weight written into the play numbers (`ANIMATION_FIELD_PLAY_ARGS`).
 	 */
-	animatorPlay(
-		instance: number,
-		clip: number,
-		layer: number,
-		fade: number,
-		speed: number,
-		flags: number,
-	): number;
+	animatorPlay(instance: number, clip: number, layer: number, flags: number): number;
+	/**
+	 * Plays a 1D blend on an instance's layer, of `count` clips staged as their ids plus one, then
+	 * their points as floats, with the fade, speed and phase written into the play numbers.
+	 */
+	animatorPlayBlend(instance: number, count: number, layer: number, flags: number): number;
 	/** Stops a clip on an instance, or every clip when `clip` is 0, fading over `fade` seconds. */
 	animatorStop(instance: number, clip: number, fade: number): number;
 	/** Creates a joint mask of a skeleton from the staging words: one weight from 0 to 1 per joint. */
@@ -517,6 +584,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'lastErrorDetail',
 	'initEngine',
 	'jobWorkerLoop',
+	'jobWorkerFailed',
 	'takeJobBusyMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',
@@ -573,7 +641,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyMaterial',
 	'createTexture',
 	'createVolumeTexture',
+	'createCubeTexture',
 	'setTextureImage',
+	'generateTexture',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
@@ -593,12 +663,15 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'postValues',
 	'setOutput',
 	'setBloom',
-	'setBloomSamples',
+	'setBloomChain',
 	'setAo',
 	'setAoScale',
 	'setSoftwareOcclusion',
 	'setLut',
 	'setVignette',
+	'environmentValues',
+	'setEnvironment',
+	'setOutline',
 	'setCanvasOutput',
 	'setRenderScaling',
 	'setPixelRatio',
@@ -613,11 +686,19 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createClip',
 	'createClipLater',
 	'clipReady',
+	'resampledClips',
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
+	'createMorphWeights',
+	'destroyMorphWeights',
+	'linkMorphWeights',
+	'morphWeightsAddress',
+	'morphWeightsFirst',
+	'setMorphTargets',
 	'animationArrays',
 	'animatorPlay',
+	'animatorPlayBlend',
 	'animatorStop',
 	'createJointMask',
 	'setLayerMask',
@@ -628,35 +709,28 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 /** Stack size for each engine thread. */
 export const THREAD_STACK_BYTES = 1024 * 1024;
 
-export interface MemoryLimits {
-	initial: number;
-	maximum: number | null;
-	shared: boolean;
-}
-
 export interface CoreFiles {
 	/** The generated JavaScript that binds the core. */
 	glue: URL;
 	/** The compiled core. */
 	wasm: URL;
-	/** The shared memory's page limits; only the threaded build has them. */
-	memory?: URL;
 }
 
 /**
  * Each build's files. Every path is written out in full, so a bundler finds the files, ships them
- * with the app and rewrites the addresses to the shipped copies.
+ * with the app and rewrites the addresses to the shipped copies. `no-inline` keeps Vite from
+ * turning a file into a data: address when a project raises its inline limit: a Content-Security-
+ * Policy that allows only the page's origin blocks the import or the download of one.
  */
 export function coreUrls(build: Build): CoreFiles {
 	return build === 'threaded'
 		? {
-				glue: new URL('../../dist/wasm/threaded/null3d.js', import.meta.url),
-				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url),
-				memory: new URL('../../dist/wasm/threaded/null3d_memory.json', import.meta.url),
+				glue: new URL('../../dist/wasm/threaded/null3d.js?no-inline', import.meta.url),
+				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm?no-inline', import.meta.url),
 			}
 		: {
-				glue: new URL('../../dist/wasm/single/null3d.js', import.meta.url),
-				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url),
+				glue: new URL('../../dist/wasm/single/null3d.js?no-inline', import.meta.url),
+				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm?no-inline', import.meta.url),
 			};
 }
 

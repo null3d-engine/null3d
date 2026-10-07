@@ -74,10 +74,32 @@ export const BLOOM_SHAPES: readonly BloomShape[] = [
 	},
 ];
 
-/** Each bloom that the tests draw, by name, with three.js's `UnrealBloomPass` meanings. */
+/** Each bloom that the tests draw, by name, with three.js's `UnrealBloomPass` meanings, as the twin draws it. */
 export const BLOOM_SETTINGS = {
 	soft: { strength: 0.5, radius: 0.2, threshold: 1 },
 	strong: { strength: 1, radius: 0.8, threshold: 0.8 },
 } as const;
+
+/**
+ * The same blooms as null3D's `post.set({ bloom })` settings: the porting skill's mapping of each
+ * at the image's height, its short side (`skills/null3d-port-threejs/scripts/map-bloom.mjs`). A
+ * unit test keeps them equal to the mapping.
+ */
+export const BLOOM_MAPPED = {
+	soft: {
+		intensity: 4.3945,
+		threshold: 1,
+		knee: 0.01,
+		blend: 'add',
+		weights: [0, 0, 0.1103, 0.2191, 0.1563, 0.1392, 0.1365, 0.1116, 0.1112, 0.0157],
+	},
+	strong: {
+		intensity: 8.7331,
+		threshold: 0.8,
+		knee: 0.01,
+		blend: 'add',
+		weights: [0, 0, 0.05, 0.0928, 0.1142, 0.1244, 0.1417, 0.1984, 0.231, 0.0475],
+	},
+} as const satisfies Record<keyof typeof BLOOM_SETTINGS, object>;
 
 export type BloomName = keyof typeof BLOOM_SETTINGS;

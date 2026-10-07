@@ -1,9 +1,11 @@
 // The glTF model scenes, defined once for null3D's image tests and for their three.js twin, which
 // the parity test compares them with. It is plain data with no engine imports. Each scene loads one
-// Khronos sample model from the sample content (.dev/sample-content.md), and frames it with a
+// Khronos sample model from the sample content (.dev/sample-content.md), or a small file that the
+// tests make in code (tests/pages/lib/gltf-files.ts), and frames it with a
 // camera that both engines place from the model's bounds: on +Z of the bounds' center, at the
 // distance that fits the bounding sphere in the view. Scenes of models with lights of their own
 // add only a dim ambient light; the others take the benchmark scenes' sun and ambient light.
+import { colorMorphBuilder, iorBuilder, specularBuilder } from '../../tests/pages/lib/gltf-files';
 import { PARITY_CANVAS } from './spec';
 
 export { AMBIENT, SUN } from './spec';
@@ -28,8 +30,10 @@ const sampleUrl = (path: string) => `/samples/${path}`;
 
 /** A model scene: the file, and whether its own lights light it. */
 export interface ModelScene {
-	/** The model's address on the dev server. */
-	url: string;
+	/** The model's address on the dev server, for a scene whose file is not made in code. */
+	url?: string;
+	/** Makes the scene's .glb file in code, for a scene with no file on the server. */
+	file?: () => Uint8Array;
 	/** True when the file's lights light the model, with the dim ambient light alone besides. */
 	ownLights?: boolean;
 	/** The camera's direction from the bounds' center, which the distance scales. The default is +Z. */
@@ -39,14 +43,26 @@ export interface ModelScene {
 	 * test must match.
 	 */
 	uncompressed?: string;
+	/** A clip that both engines play from the start, and the time in seconds that they draw. */
+	clip?: { name: string; time: number };
+	/**
+	 * A frame that both engines place the camera from, in place of their bounds. three.js's bounds
+	 * of a mesh with morph targets hold every target's shape, and null3D's the shape at rest.
+	 */
+	frame?: { center: readonly [number, number, number]; radius: number };
 }
 
 /**
  * The model scenes by name. Each names a feature of the loader: metal-rough materials with their
  * texture maps, texture transforms in a .gltf file whose buffers and images are files of their
  * own, unlit materials, emissive strength, lights, a node with instancing of its own, KTX2 textures
- * in a .gltf file, alpha modes, vertex colors, the second texture coordinates, and meshopt
- * compression under each of its two names. The vendor name's file is the instancing model as
+ * in a .gltf file, alpha modes, vertex colors, the second texture coordinates, meshopt
+ * compression under each of its two names, and morph targets: weights that a clip animates, eight
+ * targets on two primitives, a file's default weight on primitives that share targets, and targets
+ * that move vertex colors. Three scenes make their files in code: the color targets, and two small
+ * equivalents of Khronos test models whose originals need an environment map or transmission:
+ * KHR_materials_specular's factors and textures, and KHR_materials_ior's indices with the specular
+ * values. The specular and IOR scenes' own lights light them. The vendor name's file is the instancing model as
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter.
  */
@@ -91,9 +107,44 @@ export const MODEL_SCENES = {
 	'meshopt-khr': {
 		url: sampleUrl('sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf'),
 	},
+	'morph-cube': {
+		url: sampleUrl('sources/khronos/AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb'),
+		clip: { name: 'Square', time: 2.4 },
+		frame: { center: [0, 0, 0], radius: 3 },
+		view: [1, 0.6, 1.4],
+	},
+	'morph-stress': {
+		url: sampleUrl('sources/khronos/MorphStressTest/glTF-Binary/MorphStressTest.glb'),
+		clip: { name: 'TheWave', time: 0.5 },
+		frame: { center: [0, 0.6, 0], radius: 2.3 },
+		view: [0, 0.6, 1],
+	},
+	specular: { file: () => specularBuilder().glb(), ownLights: true },
+	ior: { file: () => iorBuilder().glb(), ownLights: true },
+	'morph-primitives': {
+		url: sampleUrl('sources/khronos/MorphPrimitivesTest/glTF-Binary/MorphPrimitivesTest.glb'),
+		frame: { center: [0, 0.1, 0], radius: 0.8 },
+		view: [0, 1, 1],
+	},
+	'morph-colors': {
+		file: () => colorMorphBuilder().glb(),
+		frame: { center: [0, 0.05, 0.1], radius: 1.05 },
+		view: [0.3, 0.35, 1],
+	},
 } as const satisfies Record<string, ModelScene>;
 
 export type ModelName = keyof typeof MODEL_SCENES;
+
+/**
+ * The address that both engines load a model scene's file from: its address on the dev server, or
+ * an object URL of the file that the scene makes in code.
+ */
+export function modelUrl(model: ModelScene): string {
+	if (model.url) return model.url;
+	if (!model.file) throw new Error('a model scene needs a url or a file');
+	const bytes = model.file() as Uint8Array<ArrayBuffer>;
+	return URL.createObjectURL(new Blob([bytes], { type: 'model/gltf-binary' }));
+}
 
 /** The names of the model scenes. */
 export const MODEL_NAMES = Object.keys(MODEL_SCENES) as ModelName[];

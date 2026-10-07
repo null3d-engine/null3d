@@ -4,7 +4,8 @@
 //! The texture covers the whole view and stretches to its size, with its first row at the bottom,
 //! as it sits on a plane. It draws first in the camera's opaque pass, as one triangle over the
 //! whole target with no depth test and no depth write, so every object draws over it. Its color
-//! goes into the scene color like an object's, so exposure and tone mapping change it too.
+//! goes into the scene color like an object's, so exposure and tone mapping change it too: its
+//! shader multiplies the exposure into each texel.
 //!
 //! The draw binds the bind group of the texture's array and sampler, as materials bind their
 //! maps, and names the texture's layer by its first vertex: the shader reads the layer as its

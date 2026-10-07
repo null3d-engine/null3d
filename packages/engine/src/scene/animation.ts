@@ -1,8 +1,11 @@
-// The animator: each animated object's calls to play, fade and stop its clips, its layers' weights
-// and joint masks, its time scale and its event handlers. The engine core keeps each object's
-// clips, times and fades, and its frame step advances and blends them on the job workers. Calls
-// here change that state in the core; the layer weights and the time scale are numbers in engine
-// memory, which these calls write directly, so a sketch can change them every frame for free.
+// The animator: each animated object's calls to play, fade, blend and stop its clips, its clips'
+// and layers' weights, its layers' joint masks, its time scale and its event handlers. The engine
+// core keeps each object's clips, times and fades, and its frame step advances and blends them on
+// the job workers. Calls here change that state in the core; the clip weights, the layer weights,
+// the blend values and the time scale are numbers in engine memory, which these calls write
+// directly, so a sketch can change them every frame for free. A play reads a frozen options
+// object once and keeps what it read, so a game that switches clips with constant options
+// allocates nothing.
 // After each frame step, the events that the clips passed reach the sketch's handlers. A rig
 // holds a skeleton and its named clips in the core, which every object that animates with it
 // shares. Only engine code creates rigs: the glTF loader, from the models it loads, and test
@@ -11,26 +14,19 @@
 
 import type { Described } from '../errors/checks';
 import * as C from '../generated/core';
+import { DEV } from '../shared/dev';
 import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
 import type { CoreMemory } from './memory';
 import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
 
 export type { RigClip, RigData, RigJoint, RigTrack };
 
-declare const __NULL3D_DEV__: boolean | undefined;
-
-/**
- * True in development builds, which check every call. The module reads the constant itself, as
- * errors/checks.ts does: it imports no engine module but constants and types, and takes the scene
- * API's checks and errors from the first scene that animates (`Scene.checks`).
- */
-const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
-
 /** The scene API's checks and errors, from the first scene that animates. */
 let checks: SceneChecks;
 
 /**
- * How `Animator.play` plays a clip.
+ * How `Animator.play` plays a clip. A play reads a frozen object once, so a game that keeps its
+ * options in frozen constants switches clips without allocating.
  *
  * @category api/animation
  */
@@ -54,9 +50,57 @@ export interface PlayOptions {
 	layer?: number;
 	/**
 	 * True adds the clip's change from its first frame to the pose of the layers, as three.js's
-	 * additive clips do. A breathing or aiming clip then plays on top of a walk.
+	 * additive clips do. A breathing or aiming clip then plays on top of a walk. An additive play
+	 * replaces only the additive clips of its layer, and a plain play only the plain ones.
 	 */
 	additive?: boolean;
+	/**
+	 * Seconds into the clip at which it starts, as three.js's `action.time` sets it. A repeating
+	 * clip wraps the time into its length, and a clip that plays once holds it within its length.
+	 * Without it, a clip starts at its first frame, and a clip that already plays keeps its time.
+	 */
+	time?: number;
+	/**
+	 * The clip's own weight, 0 or more, as three.js's `setEffectiveWeight` sets it. A play with a
+	 * weight joins the other clips of its layer instead of fading them out, so a walk at 0.3 and a
+	 * run at 0.7 blend. A fade multiplies the weight. Without it, a clip that starts takes 1, and a
+	 * clip that already plays keeps its weight.
+	 */
+	weight?: number;
+}
+
+/**
+ * How `Animator.playBlend` plays a 1D blend. Like `PlayOptions`, a frozen object is read once.
+ *
+ * @category api/animation
+ */
+export interface BlendOptions {
+	/**
+	 * The blend value, which picks the mix, as `setBlend` sets it. Without it, the layer keeps its
+	 * value, 0 at first.
+	 */
+	value?: number;
+	/**
+	 * Seconds over which the blend fades in while the layer's other clips fade out. The default,
+	 * 0, switches at once.
+	 */
+	fade?: number;
+	/** True, the default, repeats the clips. False plays them once and holds their last frames. */
+	loop?: boolean;
+	/**
+	 * The rate of the blend. 1, the default, moves it through one cycle in the length of its
+	 * clips, averaged by their weights. A negative rate plays it backward.
+	 */
+	speed?: number;
+	/** The layer, a whole number from 0, the default, to 3. */
+	layer?: number;
+	/**
+	 * The share of their cycle, from 0 to 1, at which the clips start: 0.5 starts each clip
+	 * halfway through. Without it, the blend takes the phase of the layer's blend, or of the first
+	 * of its clips that the layer plays, so the switch keeps the step. Otherwise the clips start at
+	 * their first frames.
+	 */
+	phase?: number;
 }
 
 /**
@@ -118,6 +162,50 @@ const INTERPOLATIONS = {
 	step: C.ANIMATION_STEP,
 	cubic: C.ANIMATION_CUBIC_SPLINE,
 } as const;
+
+/**
+ * What a play reads from its options: its numbers at the `ANIMATION_ARG_*` places, its
+ * `ANIMATION_PLAY_*` flags and its layer. A play copies the numbers into engine memory with one
+ * array copy, which makes no number objects in the browser.
+ */
+class ReadOptions {
+	readonly numbers = new Float32Array(C.ANIMATION_ARGS);
+	flags = C.ANIMATION_PLAY_LOOP;
+	layer = 0;
+
+	constructor() {
+		this.numbers[C.ANIMATION_ARG_SPEED] = 1;
+		this.numbers[C.ANIMATION_ARG_WEIGHT] = 1;
+	}
+}
+
+/** What a blend reads from its points: the clips' names and their points, in order. */
+class ReadPoints {
+	readonly names: string[] = new Array<string>(C.ANIMATION_MAX_BLEND).fill('');
+	readonly points = new Float32Array(C.ANIMATION_MAX_BLEND);
+	/** The clips that the points name, which can be more than the record holds. */
+	count = 0;
+}
+
+/**
+ * What plays read from each frozen options object and points object. A frozen object never
+ * changes, so a play reads it once. Reading a fraction from an object that a play gets makes a
+ * number object in the browser each time, once the object's shape is one of several that the
+ * play has seen, as in any game. The records keep a switch between clips free of such objects.
+ */
+const playRecords = new WeakMap<PlayOptions, ReadOptions>();
+const blendRecords = new WeakMap<BlendOptions, ReadOptions>();
+const pointRecords = new WeakMap<Readonly<Record<string, number>>, ReadPoints>();
+/** The record of a play without options. */
+const NO_OPTIONS = new ReadOptions();
+/** The records that plays fill again from objects that are not frozen. */
+const sharedOptions = new ReadOptions();
+const sharedPoints = new ReadPoints();
+
+/** A new record for a frozen `object`, which its play keeps, or else the shared one. */
+function recordFor<T>(object: object, shared: T, make: new () => T): T {
+	return typeof object === 'object' && Object.isFrozen(object) ? new make() : shared;
+}
 
 /** A skeleton and its named clips in the engine core, which animated objects share. */
 export class AnimationRig {
@@ -187,6 +275,12 @@ export class SceneAnimations {
 	private generation = -1;
 	private scales!: Float32Array;
 	private weights!: Float32Array;
+	private sources!: Uint32Array;
+	private clipWeights!: Float32Array;
+	private blends!: Float32Array;
+	private words!: Uint32Array;
+	private floats!: Float32Array;
+	private args!: Float32Array;
 	private records!: Uint32Array;
 	private totals!: Uint32Array;
 	/** The animator of each object, by its instance id in the core. */
@@ -237,6 +331,16 @@ export class SceneAnimations {
 			at(C.ANIMATION_FIELD_LAYER_WEIGHTS),
 			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
 		);
+		this.blends = core.f32(
+			at(C.ANIMATION_FIELD_BLEND_VALUES),
+			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
+		);
+		const slots = ANIMATED_OBJECTS * C.ANIMATION_MAX_BLEND;
+		this.sources = core.u32(at(C.ANIMATION_FIELD_SLOT_SOURCES), slots);
+		this.clipWeights = core.f32(at(C.ANIMATION_FIELD_SLOT_WEIGHTS), slots);
+		this.words = new Uint32Array(core.memory.buffer);
+		this.floats = new Float32Array(core.memory.buffer);
+		this.args = core.f32(at(C.ANIMATION_FIELD_PLAY_ARGS), C.ANIMATION_ARGS);
 		this.records = core.u32(
 			at(C.ANIMATION_FIELD_EVENTS),
 			C.ANIMATION_EVENT_CAPACITY * C.ANIMATION_EVENT_WORDS,
@@ -270,11 +374,46 @@ export class SceneAnimations {
 	}
 
 	/**
-	 * The frame step: advances every played clip by `stepUs` whole microseconds and poses every
-	 * animated object, on the job workers.
+	 * The numbers of the next play, `ANIMATION_ARGS` of them at the `ANIMATION_ARG_*` places. They
+	 * reach the core through engine memory, as numbers passed to a call the browser does not
+	 * inline would each allocate.
 	 */
-	update(stepUs: number): void {
-		this.core.check(this.core.glue.updateAnimations(stepUs), 'the animation step', undefined, true);
+	playArgs(): Float32Array {
+		this.views();
+		return this.args;
+	}
+
+	/** The whole engine memory as 32-bit words, for staging words without a view of their own. */
+	memoryWords(): Uint32Array {
+		this.views();
+		return this.words;
+	}
+
+	/** The whole engine memory as 32-bit floats. */
+	memoryFloats(): Float32Array {
+		this.views();
+		return this.floats;
+	}
+
+	/** The blend value of each layer of each instance, `ANIMATION_MAX_LAYERS` per instance. */
+	blendValues(): Float32Array {
+		this.views();
+		return this.blends;
+	}
+
+	/**
+	 * The clip that a play put in each sample slot, `ANIMATION_MAX_BLEND` per instance, or
+	 * `ANIMATION_NO_SOURCE`.
+	 */
+	slotSources(): Uint32Array {
+		this.views();
+		return this.sources;
+	}
+
+	/** The weight of each sample slot, `ANIMATION_MAX_BLEND` per instance. */
+	slotWeights(): Float32Array {
+		this.views();
+		return this.clipWeights;
 	}
 
 	/**
@@ -326,6 +465,8 @@ export class Animator implements Described {
 	private readonly handlers = new Map<string, AnimationEventHandler[]>();
 	/** @internal The meshes that the object's joints skin. */
 	readonly skinned: Mesh[] = [];
+	/** @internal The meshes whose morph weights the object's clips animate. */
+	readonly morphed: Mesh[] = [];
 
 	/** @internal */
 	constructor(
@@ -359,19 +500,90 @@ export class Animator implements Described {
 
 	/**
 	 * Plays a clip. It fades in over `fade` seconds while the other clips of its layer fade out,
-	 * or with no fade, takes over at once. A clip that already plays on the layer keeps its time
-	 * and fades back in. A clip that played once and reached its end starts again.
+	 * or with no fade, takes over at once. With a `weight`, it joins the layer's other clips
+	 * instead. A clip that already plays on the layer keeps its time and fades back in. A clip
+	 * that played once and reached its end starts again.
 	 */
 	play(name: string, options?: PlayOptions): void {
-		this.start('play', name, options?.fade ?? 0, options);
+		this.start('play', name, options, true);
 	}
 
 	/**
-	 * Fades to a clip over `duration` seconds: `play(name, { ...options, fade: duration })`, the
-	 * three.js `crossFadeTo` of the layer's other clips.
+	 * Fades to a clip over `duration` seconds while the layer's other clips fade out, as
+	 * three.js's `crossFadeTo` does. It is `play(name, { ...options, fade: duration })`, but a
+	 * clip with a weight still takes over.
 	 */
 	crossFade(name: string, duration: number, options?: PlayOptions): void {
-		this.start('crossFade', name, duration, options);
+		this.start('crossFade', name, options, false, duration);
+	}
+
+	/**
+	 * Sets the weight of a clip that plays, 0 or more, on every layer that plays it, as three.js's
+	 * `setEffectiveWeight` does. A clip at weight 0 leaves the pose but keeps playing, so its time
+	 * moves on. A fade multiplies the weight. It writes engine memory, so calling it every frame
+	 * costs nothing.
+	 */
+	setWeight(name: string, weight: number): void {
+		const call = 'setWeight';
+		const clip = this.clip(call, name) - 1;
+		if (DEV) {
+			checks.checkLive(call, this.object);
+			this.checkWeight(call, weight);
+		}
+		const weights = this.system.slotWeights();
+		const sources = this.system.slotSources();
+		const first = (this.instance - 1) * C.ANIMATION_MAX_BLEND;
+		let set = 0;
+		for (let k = first; k < first + C.ANIMATION_MAX_BLEND; k++) {
+			if (sources[k] !== clip) continue;
+			weights[k] = weight;
+			set++;
+		}
+		if (DEV && set === 0)
+			refuse(
+				`${call}() got "${name}", which does not play on ${this.describe()}. Play it first, for example with play('${name}', { weight }).`,
+			);
+	}
+
+	/**
+	 * Plays a 1D blend of clips. Each clip counts in full at its point, such as
+	 * `{ idle: 0, walk: 1.4, run: 4 }` for a blend by speed. Between two points, the two clips
+	 * around the blend value share it, and `setBlend` moves the value. The clips keep one phase:
+	 * each clip's time moves at its length over the length of the blend's clips, averaged by
+	 * their weights. A walk and a run of different lengths then keep their steps together. The
+	 * layer's other clips fade out over `fade` seconds, as with `play`.
+	 */
+	playBlend(points: Readonly<Record<string, number>>, options?: BlendOptions): void {
+		const call = 'playBlend';
+		if (DEV) checks.checkLive(call, this.object);
+		const read = this.blendOptions(call, options);
+		const blend = this.blendPoints(call, points);
+		const { count } = blend;
+		const { core } = this.system;
+		const at = core.checkGrowth(core.glue.animationStaging(count * 2), call) >>> 2;
+		const words = this.system.memoryWords();
+		const floats = this.system.memoryFloats();
+		// Past the most clips a blend takes, the staged words reach the core's check unwritten.
+		const named = Math.min(count, C.ANIMATION_MAX_BLEND);
+		for (let k = 0; k < named; k++) {
+			words[at + k] = this.clip(call, blend.names[k] as string);
+			floats[at + count + k] = blend.points[k] as number;
+		}
+		this.system.playArgs().set(read.numbers);
+		this.done(core.glue.animatorPlayBlend(this.instance, count, read.layer, read.flags), call);
+	}
+
+	/**
+	 * Sets the blend value of a layer's blend: the clip at that point counts in full, and a value
+	 * between two points mixes the two clips around it. A value past the first or the last point
+	 * gives that point's clip. It writes engine memory, so calling it every frame costs nothing.
+	 */
+	setBlend(value: number, layer = 0): void {
+		if (DEV) {
+			checks.checkLive('setBlend', this.object);
+			checks.checkNumber('setBlend', 'value', value, this);
+		}
+		this.system.blendValues()[this.layerAt('setBlend', layer)] = value;
 	}
 
 	/** Stops a clip on every layer, or with no name, every clip, fading out over `fade` seconds. */
@@ -392,15 +604,14 @@ export class Animator implements Described {
 	 * memory, so calling it every frame costs nothing.
 	 */
 	setLayerWeight(layer: number, weight: number): void {
+		const call = 'setLayerWeight';
 		if (DEV) {
-			const call = 'setLayerWeight';
 			checks.checkLive(call, this.object);
-			this.checkLayer(call, layer);
 			checks.checkNumber(call, 'weight', weight, this);
 			if (weight < 0 || weight > 1)
 				refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 to 1.`);
 		}
-		this.system.layerWeights()[(this.instance - 1) * C.ANIMATION_MAX_LAYERS + layer] = weight;
+		this.system.layerWeights()[this.layerAt(call, layer)] = weight;
 	}
 
 	/**
@@ -467,8 +678,11 @@ export class Animator implements Described {
 	copyTo(object: Object3D, copies: ReadonlyMap<Object3D, Object3D>): Animator {
 		const animator = animateObject(object, this.rig);
 		for (const mesh of this.skinned)
-			if (mesh.destroyedFrame < 0)
+			if (mesh.destroyedFrame === -1)
 				skinObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
+		for (const mesh of this.morphed)
+			if (mesh.destroyedFrame === -1)
+				morphObject((copies.get(mesh) as Mesh | undefined) ?? mesh, animator);
 		return animator;
 	}
 
@@ -481,29 +695,143 @@ export class Animator implements Described {
 		for (const mesh of this.skinned)
 			if (mesh.row !== 0) mesh.scene.command(C.COMMAND_SET_SKIN, mesh.handle, 0, 0, 'destroy');
 		this.skinned.length = 0;
+		const { glue } = this.system.core;
+		for (const mesh of this.morphed)
+			if (mesh.morphBlock !== 0) glue.linkMorphWeights(mesh.morphBlock - 1, 0, 0);
+		this.morphed.length = 0;
 		this.done(this.system.core.glue.removeAnimatedInstance(this.instance), 'destroy');
 		this.system.animators[this.instance - 1] = undefined;
 		this.instance = 0;
 	}
 
-	private start(call: string, name: string, fade: number, options: PlayOptions | undefined): void {
+	/**
+	 * Plays clip `name` with `options`, fading over `duration` seconds or else the options' fade.
+	 * With `join`, a play with a weight joins the layer's other clips.
+	 */
+	private start(
+		call: string,
+		name: string,
+		options: PlayOptions | undefined,
+		join: boolean,
+		duration?: number,
+	): void {
 		const clip = this.clip(call, name);
-		const speed = options?.speed ?? 1;
-		const layer = options?.layer ?? 0;
 		if (DEV) {
 			checks.checkLive(call, this.object);
-			this.checkFade(call, fade);
-			checks.checkNumber(call, 'speed', speed, this);
-			this.checkLayer(call, layer);
+			if (duration !== undefined) this.checkFade(call, duration);
 		}
-		const flags =
-			(options?.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
-			(options?.additive ? C.ANIMATION_PLAY_ADDITIVE : 0);
+		const read = this.playOptions(call, options);
 		const { core } = this.system;
-		const status = core.glue.animatorPlay(this.instance, clip, layer, fade, speed, flags);
+		const args = this.system.playArgs();
+		args.set(read.numbers);
+		if (duration !== undefined) args[C.ANIMATION_ARG_FADE] = duration;
+		const joins = join && (read.flags & C.ANIMATION_PLAY_WEIGHT) !== 0;
+		const flags = read.flags | (joins ? C.ANIMATION_PLAY_JOIN : 0);
+		const status = core.glue.animatorPlay(this.instance, clip, read.layer, flags);
 		// The first additive play of a clip stores its additive form, which can grow the memory.
 		core.refresh();
 		this.done(status, call);
+	}
+
+	/** What a play reads from `options`, which it checks in development builds. */
+	private playOptions(call: string, options: PlayOptions | undefined): ReadOptions {
+		if (options === undefined) return NO_OPTIONS;
+		const known = playRecords.get(options);
+		if (known !== undefined) return known;
+		const fade = options.fade ?? 0;
+		const speed = options.speed ?? 1;
+		const layer = options.layer ?? 0;
+		const { time, weight } = options;
+		if (DEV) {
+			this.checkFade(call, fade);
+			checks.checkNumber(call, 'speed', speed, this);
+			this.checkLayer(call, layer);
+			if (time !== undefined) checks.checkNumber(call, 'time', time, this);
+			if (weight !== undefined) this.checkWeight(call, weight);
+		}
+		const read = recordFor(options, sharedOptions, ReadOptions);
+		const { numbers } = read;
+		numbers[C.ANIMATION_ARG_FADE] = fade;
+		numbers[C.ANIMATION_ARG_SPEED] = speed;
+		numbers[C.ANIMATION_ARG_TIME] = time ?? 0;
+		numbers[C.ANIMATION_ARG_WEIGHT] = weight ?? 1;
+		read.flags =
+			(options.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
+			(options.additive ? C.ANIMATION_PLAY_ADDITIVE : 0) |
+			(time === undefined ? 0 : C.ANIMATION_PLAY_TIME) |
+			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT);
+		read.layer = layer;
+		if (read !== sharedOptions) playRecords.set(options, read);
+		return read;
+	}
+
+	/** What a blend reads from `options`, which it checks in development builds. */
+	private blendOptions(call: string, options: BlendOptions | undefined): ReadOptions {
+		if (options === undefined) return NO_OPTIONS;
+		const known = blendRecords.get(options);
+		if (known !== undefined) return known;
+		const fade = options.fade ?? 0;
+		const speed = options.speed ?? 1;
+		const layer = options.layer ?? 0;
+		const { phase, value } = options;
+		if (DEV) {
+			this.checkFade(call, fade);
+			checks.checkNumber(call, 'speed', speed, this);
+			this.checkLayer(call, layer);
+			if (value !== undefined) checks.checkNumber(call, 'value', value, this);
+			if (phase !== undefined) checks.checkNumber(call, 'phase', phase, this);
+		}
+		const read = recordFor(options, sharedOptions, ReadOptions);
+		const { numbers } = read;
+		numbers[C.ANIMATION_ARG_FADE] = fade;
+		numbers[C.ANIMATION_ARG_SPEED] = speed;
+		numbers[C.ANIMATION_ARG_TIME] = phase ?? 0;
+		numbers[C.ANIMATION_ARG_VALUE] = value ?? 0;
+		read.flags =
+			(options.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
+			(phase === undefined ? 0 : C.ANIMATION_PLAY_TIME) |
+			(value === undefined ? 0 : C.ANIMATION_PLAY_VALUE);
+		read.layer = layer;
+		if (read !== sharedOptions) blendRecords.set(options, read);
+		return read;
+	}
+
+	/**
+	 * What a blend reads from `points`, which it checks in development builds. The names are
+	 * counted and read with `for...in`, which builds no array.
+	 */
+	private blendPoints(call: string, points: Readonly<Record<string, number>>): ReadPoints {
+		const known = pointRecords.get(points);
+		if (known !== undefined) return known;
+		const read = recordFor(points, sharedPoints, ReadPoints);
+		let count = 0;
+		for (const name in points) {
+			if (count < C.ANIMATION_MAX_BLEND) {
+				read.names[count] = name;
+				read.points[count] = points[name] as number;
+			}
+			count++;
+		}
+		read.count = count;
+		if (DEV) {
+			if (count === 0 || count > C.ANIMATION_MAX_BLEND)
+				refuse(
+					`${call}() got ${count} clips on ${this.describe()}; a blend takes 1 to ${C.ANIMATION_MAX_BLEND}.`,
+				);
+			const named = new Map<number, string>();
+			for (const name in points) {
+				const point = points[name] as number;
+				checks.checkNumber(call, `the point of "${name}"`, point, this);
+				const other = named.get(point);
+				if (other !== undefined)
+					refuse(
+						`${call}() got the point ${point} for "${other}" and "${name}" on ${this.describe()}; give each clip a point of its own.`,
+					);
+				named.set(point, name);
+			}
+		}
+		if (read !== sharedPoints) pointRecords.set(points, read);
+		return read;
 	}
 
 	/**
@@ -530,11 +858,26 @@ export class Animator implements Described {
 			refuse(`${call}() got the fade ${fade} on ${this.describe()}; it takes 0 or more.`);
 	}
 
+	private checkWeight(call: string, weight: number): void {
+		checks.checkNumber(call, 'weight', weight, this);
+		if (weight < 0)
+			refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 or more.`);
+	}
+
 	private checkLayer(call: string, layer: number): void {
 		if (Number.isInteger(layer) && layer >= 0 && layer < C.ANIMATION_MAX_LAYERS) return;
 		refuse(
 			`${call}() got the layer ${layer} on ${this.describe()}; it takes a whole number from 0 to ${C.ANIMATION_MAX_LAYERS - 1}.`,
 		);
+	}
+
+	/**
+	 * The place of layer `layer` of the object in the arrays of layers. It checks the layer in
+	 * every build, so a write never reaches another object's layers.
+	 */
+	private layerAt(call: string, layer: number): number {
+		if (layer >>> 0 !== layer || layer >= C.ANIMATION_MAX_LAYERS) this.checkLayer(call, layer);
+		return (this.instance - 1) * C.ANIMATION_MAX_LAYERS + layer;
 	}
 
 	/** The core's id, plus one, of the mask of `joints` and the joints below them. */
@@ -760,6 +1103,25 @@ export function skinObject(mesh: Mesh, animator: Animator): void {
 		refuse(`skinObject() got the animator of ${animator.describe()}, which is destroyed.`);
 	mesh.scene.command(C.COMMAND_SET_SKIN, mesh.handle, animator.instance, 0, 'skinObject');
 	animator.skinned.push(mesh);
+}
+
+/**
+ * Animates the morph weights of `mesh` with the clips of the object that `animator` moves, from
+ * the next frame: the joints of its skeleton from `mesh.morphJoint` on hold the weights that the
+ * clips give, three to a joint, which blend with the mesh's own as `setMorphWeight` says. A mesh
+ * without morph weights stays as it is. Loaders call it.
+ */
+export function morphObject(mesh: Mesh, animator: Animator): void {
+	if (DEV) checks.checkLive('morphObject', mesh);
+	if (mesh.morphBlock === 0 || mesh.morphJoint < 0) return;
+	const { core } = mesh.scene;
+	const linked = core.glue.linkMorphWeights(
+		mesh.morphBlock - 1,
+		animator.instance,
+		mesh.morphJoint,
+	);
+	core.check(linked, 'morphObject', mesh.describe(), true);
+	animator.morphed.push(mesh);
 }
 
 /** Animates `object` with `rig`: gives it an animator, which `object.animator()` returns. */

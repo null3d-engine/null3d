@@ -128,11 +128,11 @@ fn check_hdr_frame<B: FrameBuilder>(world: &mut World<B>, device: &mut MockBacke
         [0, NO_TARGET, NO_TARGET]
     );
 
-    // The final pass binds its settings, the resolved color, and a blank color grading table
-    // with its sampler, and draws one triangle.
+    // The final pass binds its settings, the resolved color, a blank color grading table with
+    // its sampler, and the blank outline texture in place of the mask, and draws one triangle.
     let groups = operands(&commands, Op::CreateBindGroup);
     let group = groups.iter().find(|o| o[1] == layout::FINAL).unwrap();
-    assert_eq!(group[2], 4);
+    assert_eq!(group[2], 5);
     assert_eq!(group[4], resource_kind::BUFFER);
     assert_eq!((group[9], group[10]), (resource_kind::TEXTURE, resolved));
     let draws = operands(&commands, Op::Draw);
@@ -308,8 +308,35 @@ fn the_background_clears_linear_for_hdr_and_after_the_output_on_the_8_bit_path()
 
     let (mut webgpu, _) = worlds(format::CANVAS, false);
     webgpu.renderer.settings_mut().set_background(background);
-    let [r, g, b] = Output::default().tone_map(background).map(linear_to_srgb);
+    let [r, g, b] = ToneMapping::default().apply(background).map(linear_to_srgb);
     assert_eq!(clear_color(&mut webgpu), [r, g, b, 1.0]);
+}
+
+#[test]
+fn the_exposure_scales_the_background_at_its_source_on_both_paths() {
+    let background = [0.5, 0.2, 0.1];
+    let output = Output {
+        tone_mapping: ToneMapping::Agx,
+        exposure: 0.25,
+    };
+    let exposed = background.map(|c| c * 0.25);
+    let (mut webgpu, mut webgl2) = worlds(format::RGBA16_FLOAT, false);
+    for settings in [
+        webgpu.renderer.settings_mut(),
+        webgl2.renderer.settings_mut(),
+    ] {
+        settings.set_background(background);
+        settings.set_output(output);
+    }
+    let [r, g, b] = exposed;
+    assert_eq!(clear_color(&mut webgpu), [r, g, b, 1.0]);
+    assert_eq!(clear_color(&mut webgl2), [r, g, b, 1.0]);
+
+    let (mut eight_bit, _) = worlds(format::CANVAS, false);
+    eight_bit.renderer.settings_mut().set_background(background);
+    eight_bit.renderer.settings_mut().set_output(output);
+    let [r, g, b] = ToneMapping::Agx.apply(exposed).map(linear_to_srgb);
+    assert_eq!(clear_color(&mut eight_bit), [r, g, b, 1.0]);
 }
 
 #[test]

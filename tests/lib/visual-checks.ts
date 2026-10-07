@@ -17,7 +17,13 @@ export interface VisualResult {
 	width: number;
 	height: number;
 	stability: StabilityFigures;
-	edges: { offsetPixels: number; steps?: StairSteps; referenceSteps?: StairSteps };
+	edges: {
+		offsetPixels: number;
+		steps?: StairSteps;
+		referenceSteps?: StairSteps;
+		/** The long edge's seam jump (`seamJump`), where the scene has one. */
+		seamPixels?: number;
+	};
 	/** The contact figures, which runner pages from before the contact check leave out. */
 	contact?: ContactFigures;
 	/** The acne figures, which runner pages from before the acne check leave out. */
@@ -34,6 +40,8 @@ export interface VisualLimits {
 	edgeOffsetPixels: number;
 	/** The stair steps of the scene's long edge, in pixels, where it has one. */
 	stairStepPixels?: number;
+	/** The jump of the long edge's softness from one row to the next, in pixels: a seam line. */
+	seamPixels?: number;
 	/** The mean light between a caster's foot and its shadow, in pixels, where the scene has feet. */
 	contactGapPixels?: number;
 	/** The mean shadow on flat surfaces that the reference lights, in percent. */
@@ -48,12 +56,18 @@ export interface VisualLimits {
  * figures depend on each scene's edges, so each scene has its own: the split that leaned further
  * toward the logarithmic spread fails the shadow scene's stair steps and S4's edge offset. The
  * other edge limits catch only large faults, as that split leaves those figures alone or lowers
- * them. S4's contact limit fails its frame without the casters' offset in CI, and catches only
+ * them. The shadow scene's seam limit fails its frame without the blend between cascades, where the
+ * long edge's softness jumps where the first cascade hands over to the second. S4's contact limit fails its frame without the casters' offset in CI, and catches only
  * larger faults on the Mac's GPU. S4's acne limit fails its frame when the filter's reads compare
  * with the receiver's depth at its point instead of its plane.
  */
 export const VISUAL_LIMITS: Readonly<Record<string, VisualLimits>> = {
-	'shadow-scene': { changedPercent: 0.05, edgeOffsetPixels: 0.15, stairStepPixels: 0.19 },
+	'shadow-scene': {
+		changedPercent: 0.05,
+		edgeOffsetPixels: 0.15,
+		stairStepPixels: 0.19,
+		seamPixels: 1.2,
+	},
 	s2: { changedPercent: 0.05, edgeOffsetPixels: 0.15 },
 	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.114, contactGapPixels: 0.06, acnePercent: 0.2 },
 };
@@ -66,7 +80,8 @@ export type ContactCase =
 	| 'far-ground'
 	| 'far-slabs'
 	| 'far-slabs-sun-35'
-	| 'far-slabs-sun-20';
+	| 'far-slabs-sun-20'
+	| 'far-slabs-low';
 
 /** A view of the contact scene, and the most that each of its figures may reach. */
 export interface ContactLimits {
@@ -88,17 +103,20 @@ export interface ContactLimits {
  * limit sits between the figures with the casters' offset and without it, which fails each of
  * them. The rims' limits and the casting ground's share in shadow sit between the figures with the
  * offset and with a full texel for every back face, uncapped, which shadows the boxes' own tops and
- * the casting ground's top. The slab views' acne limits sit between the figures of filter reads
- * that compare with the receiver's plane and of reads that compare with its depth at its point.
+ * the casting ground's top. The acne limits of the slab views and the casting ground sit between
+ * the figures of a filter that compares each texel with the receiver's plane at the texel and of
+ * one that compares each read of four texels with one depth. The `far-slabs-low` view has the
+ * coarse texels and the 3 x 3 filter of S4's last cascade on the Low preset.
  */
 export const CONTACT_LIMITS: Readonly<Record<ContactCase, ContactLimits>> = {
 	near: { query: 'view=near', gapPixels: 0.06, rimPixels: 0.16 },
 	far: { query: 'view=far', gapPixels: 0.13, rimPixels: 0.4 },
 	turn: { query: 'view=turn', gapPixels: 0.11, rimPixels: 0.3 },
-	'far-ground': { query: 'view=far&groundCasts', shadowedPercent: 9.6 },
-	'far-slabs': { query: 'view=far&slabs&filter=5', acnePercent: 6 },
-	'far-slabs-sun-35': { query: 'view=far&slabs&filter=5&sun=35', acnePercent: 10 },
-	'far-slabs-sun-20': { query: 'view=far&slabs&filter=5&sun=20', acnePercent: 11 },
+	'far-ground': { query: 'view=far&groundCasts', shadowedPercent: 9.6, acnePercent: 1.5 },
+	'far-slabs': { query: 'view=far&slabs&filter=5', acnePercent: 1.5 },
+	'far-slabs-sun-35': { query: 'view=far&slabs&filter=5&sun=35', acnePercent: 1.5 },
+	'far-slabs-sun-20': { query: 'view=far&slabs&filter=5&sun=20', acnePercent: 1.5 },
+	'far-slabs-low': { query: 'view=far&slabs&mapSize=256', acnePercent: 1.5 },
 };
 
 /** A figure over its limit, as a problem, or nothing. */
@@ -171,6 +189,9 @@ export function visualProblems(scene: string, result: VisualResult): string[] {
 			),
 		);
 	if (result.acne) problems.push(...acneProblems(result.acne, limits.acnePercent));
+	problems.push(
+		...overLimit("the long edge's seam line", edges.seamPixels ?? 0, limits.seamPixels, 'px'),
+	);
 	const steps = edges.steps?.rmsPixels;
 	if (limits.stairStepPixels !== undefined && steps !== undefined && steps > limits.stairStepPixels)
 		problems.push(

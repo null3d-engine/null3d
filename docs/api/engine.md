@@ -51,10 +51,12 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass` or `maxLabels`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
+| [E1306](../errors/E1306.md) | The browser runs the WebKit engine of a Safari before 18: Safari 17 or older, or any browser on iOS or iPadOS 17 or older. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
+| [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 10 seconds of tries. |
-| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
+| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
@@ -132,14 +134,16 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 
 - `setPaused(true)` stops the sketch's frames, and `setPaused(false)` resumes them. The first step after a pause is 0 seconds.
 - `detach()` takes the canvas off the page and pauses the engine, and `attach(container)` puts it back. Use them when a single-page app leaves the view with the canvas and comes back. The engine keeps its threads, its GPU resources and the scene.
-- `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). It can also be a job worker that did not start ([E1405](../errors/E1405.md)). Without a handler, the engine logs the failure to the console.
+- `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). After E1404 the engine stops drawing new frames, and the canvas keeps the last one: destroy the engine and start a new one. It can also be a job worker that did not start ([E1405](../errors/E1405.md)). On WebGPU it can be a GPU that ran out of memory ([E1304](../errors/E1304.md)) or rejected the engine's work ([E1305](../errors/E1305.md)). The engine then draws on without the objects that failed. Without a handler, the engine logs the failure to the console. The handler is the only place where these failures show: no promise rejects for them.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
-- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
+- `captureFrame()` returns the pixels of the next frame that the engine draws, as RGBA8 rows, top row first. The thread that draws waits for its frame loop to take a new frame, then draws that frame again offscreen and reads it back. So captures back to back give newer frames, even on a slow GPU whose readback holds that thread up. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `labels.bind(id, element)` moves an HTML element over the label that the sketch tracks under `id`: [UI overlays and labels](ui.md).
-- `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
+- `destroy()` stops the engine and its threads, and the engine cannot start again. The sketch's `onDestroy` runs first, and every later call from the sketch's code fails with [E1420](../errors/E1420.md). Wait for its promise before you start another engine on the same page. The browser frees the engine's memory only then.
+- A new engine can start on the canvas of an engine that you destroyed. Its start waits until the old engine has stopped, so it can begin before `destroy()` resolves. React's StrictMode needs this, because it starts an effect twice on one `<canvas>`. A canvas that a worker drew on stays with that worker. So the new engine needs the same thread options as the old one. The worker ends when the canvas leaves the page or the page goes away. It also ends when the browser refuses memory for a new engine while no engine runs on the canvas. A new engine on its canvas then fails with [E1419](../errors/E1419.md), as on a canvas whose engine still runs.
+- In Safari, a stopped engine's canvas that stays in the page keeps the engine's memory, 1 GiB by default, until that worker ends. A new engine that needs the room gets it. Other code does not: a page that also loads a large WebAssembly module can run out of room. So remove the canvas from the page once you are done with it.
 - A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
 
 Each `on...` call returns a function that removes its handler. `engine.requestPointerLock` comes in null3D 0.2.
@@ -161,9 +165,11 @@ shotButton.onclick = async () => {
 
 The thread that draws reads the frame back from the GPU and encodes the image. When a worker draws, the page's thread does no work for it. The image has the size that the engine draws at, in pixels. It is opaque, as the canvas is, unless the engine draws on a [transparent canvas](#a-transparent-canvas): then the image keeps the frame's alpha.
 
-- While the engine is paused, and in hold mode, the image shows the frame on the canvas.
+- While the engine is paused, the image shows the frame on the canvas.
+- In hold mode, the image shows the held frame. The page keeps that frame's pixels, so the GPU draws nothing more for the image.
 - A page in a hidden tab draws no frames, so its image comes when the tab shows again.
-- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode.
+- When no new frame comes within a second or two, such as after an error stopped the sketch, the image shows the frame drawn last.
+- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode. On WebGPU, the message names the cause when the GPU gives one: a lost device with its reason, or too little GPU memory.
 
 ## Related pages
 
@@ -227,15 +233,15 @@ A running engine, as `createEngine` returns it.
 | `readonly labels: EngineLabels` | The HTML elements that follow the labels the sketch tracks with `ui.trackLabel`. |
 | `postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the sketch, which receives it through `ctx.page.onMessage`. |
 | `onSketchMessage(handler: (name: string, data: unknown) => void): () => void` | Receives the messages the sketch sends with `ctx.page.post`. When no handler listened from the start, the first handler also receives the messages sent before it was registered. Returns a function that removes the handler. |
-| `onFailure(handler: (error: EngineError) => void): () => void` | Receives a failure after the engine started: the browser took the GPU away and the engine could not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs the failure to the console. Returns a function that removes the handler. |
+| `onFailure(handler: (error: EngineError) => void): () => void` | Receives a failure after the engine started: the browser took the GPU away and the engine could not carry on with a new device (E1302), or an engine thread failed (E1404). After E1404 the engine draws no new frames: destroy it and start a new one. On WebGPU, the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine draws on without the objects that failed. The engine reports each failure once. Without a handler, it logs the failure to the console. Returns a function that removes the handler. |
 | `setPaused(paused: boolean): void` | Pauses or resumes the sketch's frames. A pause also stops input: the sketch sees every key and button that was down come up, and input that comes during the pause never reaches it. |
 | `detach(): void` | Takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU resources and the scene, and stops reading input. Use it when a single-page app leaves the view that shows the canvas, and `attach` when the view comes back. |
 | `attach(container: Element): void` | Puts the canvas at the end of `container` and resumes the engine where it stopped, unless `setPaused(true)` paused it. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
-| `capture(): Promise<Blob>` | Resolves with an image of the next frame that the engine draws, as a PNG file. The thread that draws reads the frame back and encodes it, so the page's thread does no work for it when a worker draws. In hold mode, and while the engine is paused, the image shows the frame on the canvas. A hidden page draws no frames, so its image comes once the page shows again. Fails with E1414 once the engine has stopped. |
-| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first, for tests. In hold mode, it returns the held frame. |
+| `capture(): Promise<Blob>` | Resolves with an image of the next frame that the engine draws, as a PNG file. The thread that draws reads the frame back and encodes it, so the page's thread does no work for it when a worker draws. In hold mode it is an image of the held frame, whose pixels the page keeps, so the GPU draws nothing for it. While the engine is paused, the image shows the frame on the canvas. A hidden page draws no frames, so its image comes once the page shows again. When no new frame comes within a second or two, as after a sketch error, the image shows the frame drawn last. Fails with E1414 once the engine has stopped, or when the thread that draws could not read the frame back, with the cause that the GPU gave, such as a lost device or too little memory. |
+| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Resolves with the pixels of the next frame that the engine draws, as RGBA8 rows, top row first, for tests. The thread that draws waits until its frame loop has taken a new frame, then draws that frame again offscreen and reads it back, so captures back to back give newer frames even where each readback holds that thread up. In hold mode, and while the engine is paused, it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the page shows again. When no new frame comes within a second or two, as after a sketch error, it returns the frame drawn last. |
 | `simulateGpuLoss(): void` | Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and draws the whole scene again, as it does after a real loss. Use it to test how your page handles one. |
-| `destroy(): Promise<void>` | Stops the engine and its workers. The engine cannot start again. The thread that draws first destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes back at once. It also leaves the canvas blank, at its size, because Safari keeps the GPU memory of a canvas's last frame until the canvas shows another. The promise resolves once every worker has stopped, when the browser can free the engine's memory. Wait for it before you start another engine on the same page: an iPad has room for only a few engines' memory. |
+| `destroy(): Promise<void>` | Stops the engine and its workers. The engine cannot start again. The sketch's `onDestroy` runs first, and later calls from the sketch's code fail with E1420. The thread that draws destroys the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes back at once. It also leaves the canvas blank, at its size, because Safari keeps the GPU memory of a canvas's last frame until the canvas shows another. The promise resolves once every worker has stopped, when the browser can free the engine's memory. Wait for it before you start another engine on the same page: an iPad has room for only a few engines' memory. A new engine can start on the same canvas, with the same thread options; `createEngine` waits for this stop. |
 
 ### `EngineCapabilities`
 
@@ -293,7 +299,7 @@ Options for `createEngine`.
 
 | Member | Description |
 | --- | --- |
-| `canvas: HTMLCanvasElement` | The canvas to draw into, sized by CSS. On a canvas that no CSS sizes, the engine sets the CSS width and height that it shows when the engine starts. |
+| `canvas: HTMLCanvasElement` | The canvas to draw into, sized by CSS. On a canvas that no CSS sizes, the engine sets the CSS width and height that it shows when the engine starts. One engine draws on a canvas at a time: a start on the canvas of an engine that is stopping, or still starting and then destroyed, waits for that engine to stop. A canvas whose engine runs on fails with E1419. |
 | `sketch: URL \| string` | The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. |
 | `preset?: 'auto' \| QualityPreset` | The quality preset: `auto`, the default, lets the engine choose one for the device, and `low`, `medium`, `high` or `ultra` names one. The GPU path caps it: WebGL2 and WebGPU's compatibility mode run at most `medium`. After a start that crashed the tab, the engine starts a preset lower. Another value fails with E1213. The `?preset=` switch wins over it. |
 | `maxPixelRatio?: number` | Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the cap. `ctx.quality.set` changes it during play. |
@@ -308,6 +314,7 @@ Options for `createEngine`.
 | `pointLightShadows?: boolean` | True makes point lights cast shadows, false keeps them from it. Without it, the quality preset decides: High and Ultra turn them on. Another value fails with E1213. |
 | `depthPrepass?: boolean` | True to draw the depth of the opaque objects before the engine shades them, so each pixel is shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many others and shading costs much, and costs a second pass over the objects' vertices. Without it, the quality preset decides. The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off` switch wins over this option. Another value fails with E1213. |
 | `gpuOcclusion?: boolean` | True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth of the marked objects that it showed in the last frame and tests every object against it. It saves GPU time where walls and large objects hide many detailed ones; a scene that marks no object pays nothing. Every quality preset leaves it off: measure your scene's GPU time with it first, as its passes can cost more than they save. It stays fixed while the engine runs, and the `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth prepass draw without it. Another value fails with E1213. |
+| `morphTargets?: number` | The most morph target weights of each object that a WebGL2 device draws, a whole number from 1 to 256. Each object keeps the weights farthest from 0. Without it, the quality preset sets it. WebGPU draws every weight. Another value fails with E1213. |
 | `softwareOcclusion?: boolean` | True to run software occlusion culling on WebGL2: objects that `setOccluder(true)` marks hide the objects that lie wholly behind them, so the GPU skips those. False turns it off. Without it, the quality preset decides, and a sketch can change it during play with `quality.set`. The `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGPU ignores it. Another value fails with E1213. |
 | `transparent?: boolean` | True for a see-through canvas: the page shows through wherever no object draws, until the sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites it. The default is false, an opaque canvas. |
 | `largeWorld?: boolean` | True for scenes that reach far beyond a city, such as a planet. Object positions then keep the precision of JavaScript's numbers at any distance from the origin: 0.03 mm or better. Without it, positions are 32-bit floats, which move in steps of 6 cm at 1,000 km from the origin and 0.5 m at the Earth's radius. It costs 12 bytes of memory per object and a little work in each position setter. The default is false. Instance batches need no mode: give each one an `origin` near its rows. |
@@ -318,6 +325,7 @@ Options for `createEngine`.
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 | `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
+| `preload?: readonly ShaderFeature[]` | Features whose shaders load before the first frame, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh, `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first batch, `'background'` with a texture background, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features download beside the engine's own shaders, so the start waits only for the largest. Loading a glTF file with skins or morph targets, or making a batch, also starts its feature's download at once, before the objects draw. Throws E1421 for a name it does not know. |
 
 ### `ErrorCode`
 
@@ -349,6 +357,9 @@ type ErrorCode =
 	| 'E1301'
 	| 'E1302'
 	| 'E1303'
+	| 'E1304'
+	| 'E1305'
+	| 'E1306'
 	| 'E1401'
 	| 'E1402'
 	| 'E1403'
@@ -366,6 +377,10 @@ type ErrorCode =
 	| 'E1415'
 	| 'E1416'
 	| 'E1417'
+	| 'E1418'
+	| 'E1419'
+	| 'E1420'
+	| 'E1421'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'
@@ -419,6 +434,23 @@ type LatencyMode = 'pipelined' | 'low';
 ```
 
 How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame while the sketch computes the next one. In `low` mode, the sketch worker draws each frame right after its update.
+
+### `ShaderFeature`
+
+```ts
+type ShaderFeature =
+	| 'ao'
+	| 'background'
+	| 'bloom'
+	| 'lines'
+	| 'morph'
+	| 'occlusion'
+	| 'skinning'
+	| 'sprites'
+	| 'texcoords';
+```
+
+A feature whose shader builds load on first use, which `createEngine`'s `preload` lists.
 
 ### `SketchThread`
 

@@ -51,6 +51,7 @@ const engine = await createEngine({
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
+  preload: ['skinning', 'bloom'],  // (0.2) features whose shaders load before the first frame, for games that fetch nothing in play (E1421 for an unknown name)
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
@@ -64,10 +65,10 @@ engine.setPaused(true);                  // the first step after resuming counts
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
 engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
-const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first
-engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
+const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
+engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
-await engine.destroy();                 // workers stop; wait before this page starts another engine
+await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
@@ -95,6 +96,7 @@ export default defineSketch(async (ctx) => {
     onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz), before onUpdate
     onUpdate(dt) {},         // once per frame, before transforms; dt is 0 after a pause, at most 0.25 s
     onLateUpdate(dt) {},     // after transforms, before culling: camera follow; its moves show this frame
+    onDestroy() {},          // (0.2) once, as the engine stops: remove timers and listeners; later calls throw E1420
   };
 }, { fixedRate: 60, maxFixedSteps: 8 });  // optional; these are the defaults (E1214 out of range)
 ```
@@ -111,7 +113,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createGroup({ name, position, rotation, scale, parent, dynamic, layers })` | Group | Empty node for hierarchy |
 | `scene.createMesh({ mesh, material, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows, name })` | Mesh | Static unless `dynamic: true` |
 | `scene.createInstances(mesh, count, { material, dynamic, colors, layers, origin })` | InstanceBatch; rows are relative to `origin` (0.2) | Section 5 |
-| `scene.instantiate(prefab, { name, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows })` (0.2) | PrefabInstance | A group holding one copy of a loaded glTF model, made with one batch of changes; `instance.find(name)` gives the copy's object of a node |
+| `scene.instantiate(prefab, { name, position, rotation, scale, parent, dynamic, layers, castShadows, receiveShadows })` (0.2) | PrefabInstance | A group holding one copy of a loaded glTF model, made with one batch of changes; `instance.find(name)` gives the copy's object of a node; `layers` reaches every object of the copy; `instance.destroy()` removes the whole copy |
 | `scene.clone(obj)` (0.2) | same type | Copies the object and every object below it, lights and cameras included, under the same parent |
 | `scene.find(name)` | Object3D or undefined | The first live object with the name; use at setup, not per frame |
 | `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | PerspectiveCamera | fov is vertical, in degrees. Cameras are dynamic by default |
@@ -120,12 +122,13 @@ export default defineSketch(async (ctx) => {
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })` (0.2) | | Sky backgrounds |
-| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
+| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` or `assets.builtinEnvironment('room')`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
 | `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | three.js's formulas and defaults. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
 | `scene.createLines({ positions, colors, mode, width, worldUnits, dashed, dashSize, gapSize, dashScale, dashOffset, lit, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<LineBatch> | Segments between points in one batch, drawn as quads with round ends at any width; the first call downloads the line code. `mode`: `'strip'` (default), `'loop'` or `'segments'` (pairs). `width` in CSS pixels, or world units with `worldUnits`. Typed arrays `positions` (3 per point) and `colors` (3 per point, linear, 8 bits per channel); `markDirty` takes points; `setActiveCount` takes points; `setWidth`; `material.set` takes the dash values and, with `lit`, the standard values. Docs `api/lines` |
-| `scene.createPoints`, `createLod` (0.2) | | Docs `api/points`, `concepts/lod` |
+| `scene.createPoints({ positions, colors, size, sizeAttenuation, map, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<PointBatch> | Squares of one size that face the camera, in one batch; each point is a sprite row, and the first call downloads the sprite code. `size` in world units, or CSS pixels with `sizeAttenuation: false`. `colors` takes 3 or 4 numbers per point (linear). Typed arrays `positions` (3) and `colors` (4, RGBA); `setSize`, `markDirty`, `setActiveCount`, `material.set`, as instance batches. Opaque by default; a disc `map` with `alphaMode: 'mask'` makes round points. About 215 bytes of engine memory per point. Docs `api/points` |
+| `scene.createLod` (0.2) | | Docs `concepts/lod` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
 | `scene.raycast(...)` and other queries (0.2) | | Section 13 |
@@ -148,8 +151,7 @@ obj.setVisible(false);               obj.setDynamic(true);
 obj.setLayers(mask);                                                // bit n puts it on layer n; no rebuild
 obj.destroy();                                                      // at the next frame; its children become roots
 obj.name;                                                           // string, read-only after creation
-obj.setMorphWeight(nameOrIndex, w);  // (0.2)
-obj.setOutlined(true);               // (0.2) with post.set({ outline })
+mesh.setOutlined(true);              // (0.2) with post.set({ outline }); a copy from scene.instantiate has it too
 obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
 obj.on('click', fn); obj.off('click', fn);  // (0.2) also 'pointerdown', 'pointerup', 'pointermove', 'pointerenter', 'pointerleave'; on parents too
 obj.animator();                      // (0.2) section 12
@@ -162,6 +164,7 @@ mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh br
 mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
 mesh.setRenderOrder(n);                                             // blended objects, lower first
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
+mesh.setMorphWeight('Smile', 0.8);   mesh.getMorphWeight(0);       // (0.2) by name or number; E1218 for a target it lacks
 mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such as buildings, hide what lies behind them
 ```
 
@@ -242,10 +245,10 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - Directional and spot lights shine along their -Z axis, so `lookAt` aims them; a directional light's position does not matter. A hemisphere light's sky is its +Y axis.
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
-- Units follow three.js r155 and later: point and spot intensity in candela. The same colors and intensities give the same light as in three.js.
+- Units follow three.js r155 and later: point and spot intensity in candela, the others in lux. The same colors and intensities give the same light as in three.js. For real units, give point and spot lights `intensityUnit: 'lumen'` (0.2), and set the camera with `post.set({ ev100: 15 })` (0.2) for a sunny day (`concepts/lighting`).
 - Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Hemisphere lights light surfaces in 0.2.
-- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). A far one that a dynamic object touches draws every frame. `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, 200 m, bias 0.01 m and normal bias 0.02 m. Both are in meters, up to one texel of the surface's cascade, scaled by each surface's angle to the light. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
-- Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light or a caster within the light's range moves, so still scenes cost nothing per frame. The biases are in meters, up to one texel of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
+- Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). A far one that a dynamic object touches draws every frame on every preset. `followMovingCasters: false` keeps its turns, so far moving shadows trail by a few frames. Neighboring cascades blend over a band, a share of each cascade's length (`shadowCascadeBlend`, 0.1). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, 200 m, bias 0.01 m and normal bias 0.02 m. Both are in meters, up to one texel of the surface's cascade, scaled by each surface's angle to the light. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
+- Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light moves, or a caster in its view moves, changes its layers or changes its pose. So still scenes cost nothing per frame, and at most 12 tiles draw again in a frame. The biases are in meters, up to one texel of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
 ## 8. Geometry (`api/geometry`)
 
@@ -259,8 +262,11 @@ const mesh = geometry.fromArrays({
   tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
   joints, weights,          // (0.2) 4 per vertex each, together; skinning itself comes later in 0.2
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
+  morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
+  // morphTargets.colors: color deltas, as many per vertex as colors; morphed colors clamp to 0..1
 });
 mesh.radius;                // the distance from the mesh's origin to its farthest vertex
+mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lists their names
 mesh.destroy();             // (0.2)
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 ```
@@ -274,6 +280,7 @@ const paint = materials.standard({
   color: '#e8554e',                            // base color (sRGB), converted to linear once
   metalness: 0, roughness: 1,                  // glTF metallic-roughness, three.js's defaults
   emissive: '#000000', emissiveIntensity: 1,   // light the surface gives off itself
+  ior: 1.5, specularIntensity: 1, specularColor: '#ffffff',  // (0.2) non-metal reflection, as three.js's physical material
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
   alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'blend' shows through
@@ -291,6 +298,8 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
   normalMap: normals, normalScale: [1, 1],   // linear, tangent space
   emissiveMap: glow, emissive: '#ffffff',    // sRGB; multiplies emissive times emissiveIntensity
   lightMap: baked, lightMapIntensity: 1,     // baked light; load it with uvSet: 1
+  specularIntensityMap: spec, specularColorMap: tint,  // (0.2) linear alpha; sRGB color, as three.js's physical material
+  envIntensity: 1,                   // (0.2) the scene environment's light on this material
   uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
 });
 const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
@@ -309,7 +318,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
-- `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
+- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher` comes in 0.2.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
@@ -355,12 +364,13 @@ const data = await assets.loadJson('/level.json');             // also loadBinar
 const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY, premultipliedAlpha });
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
+const upload = await assets.loadGltf(userFile, { rewriteUrl: (a) => (a.origin === location.origin ? a : null) }); // (0.2) check the addresses a user's model names
 ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
 ship.clips;                // (0.2) clip names, which a copy's animator plays
-const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
-const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
+const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
+const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment, made on the GPU; no file. Ask while loading: the next frame makes it whole (50-110 ms on phones)
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
 ship.destroy();   // (0.2) frees GPU data once no instance uses it
@@ -376,6 +386,12 @@ const anim = hero.animator();           // the copy's group animates; throws E12
 anim.clips;                             // the clip names
 anim.play('run', { fade: 0.2, loop: true, speed: 1 });  // loop: false holds the last frame
 anim.crossFade('walk', 0.3);            // = play('walk', { fade: 0.3 }); the layer's other clips fade out
+anim.play('walk', { time: 0.4 });       // starts 0.4 s in, so a crowd steps out of time
+anim.play('run', { weight: 0.3 });      // a weight joins the layer's clips instead of fading them out
+anim.setWeight('run', 0.6);             // 0 or more, on a clip that plays; free to call every frame
+anim.playBlend({ idle: 0, walk: 1.4, run: 4 }, { fade: 0.2 });  // a 1D blend: clips at points
+anim.setBlend(speed);                   // free every frame; the blend's clips keep one phase
+const RUN = Object.freeze({ fade: 0.3 }); // frozen options and points are read once: switches allocate nothing
 anim.play('wave', { layer: 1, fade: 0.2 });              // layers 0 to 3; each replaces the pose below
 anim.setLayerMask(1, 'Spine');          // upper body only: the joint and every joint below it
 anim.setLayerWeight(1, 0.5);            // 0 to 1; free to call every frame
@@ -387,6 +403,7 @@ anim.stop();                            // every clip; the object holds its rest
 anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
 const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
+// Clips also animate a model's morph weights, blended with the weights that setMorphWeight sets.
 
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
@@ -408,7 +425,7 @@ scene.overlapSphere(center, radius, opts, out);        // objects with a triangl
 scene.overlapBox(min, max, opts, out);                 // returns the count, as overlapSphere
 ```
 
-Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
+Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
 
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
@@ -438,17 +455,18 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `ao`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets.
+`toneMapping`, `exposure`, `bloom`, `ao`, `outline`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets.
 
 ```ts
 post.set({
   toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
   exposure: 1,
-  bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },  // (0.2) UnrealBloomPass's meanings; false turns it off
+  ev100: 15,                // (0.2) camera exposure for lights in real units; false turns it off
+  bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) GTAOPass's meanings; darkens only ambient light; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
-  outline: { color: '#ffcc00', thickness: 2 },  // (0.2) objects opt in with setOutlined(true)
+  outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
 post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
 post.setEffectUniform('pixelate', 'size', 8);  // (0.2)
@@ -486,10 +504,13 @@ quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at th
 quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
 quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects; fixed at the start
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
+quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
+quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set
 quality.settings.shadowCascades;        // cascades of lights that name none; fixed at the start, with shadowMapSize
+quality.settings.morphTargets;          // (0.2) most morph weights per object on WebGL2, the largest; fixed at the start
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
