@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test';
-import { probeFloatTarget } from './capabilities';
+import { afterEach, describe, expect, it } from 'bun:test';
+import type { WorkerProbe } from '../workers/probe-worker';
+import { probeFloatTarget, probeWorker } from './capabilities';
 
 const GL = {
 	TEXTURE_2D: 0x0de1,
@@ -118,5 +119,75 @@ describe('the float render target test', () => {
 			samples: 0,
 		});
 		expect(calls).toEqual(CLEAN_UP);
+	});
+});
+
+/** What each fake probe worker does, in the order the page starts them. */
+type ProbeBehavior = 'stalls' | 'answers' | 'fails';
+
+const ANSWER: WorkerProbe = {
+	requestAnimationFrame: true,
+	offscreenWebGL2: true,
+	offscreenWebGPU: false,
+};
+
+/** What the fake probe workers do, in the order the page starts them, and how many it handled. */
+const probes = { behaviors: [] as ProbeBehavior[], started: 0, terminated: 0 };
+
+/**
+ * A probe worker that acts as the next of `probes.behaviors` says. The engine's worker starter keeps
+ * the first `Worker` class it wraps, so one class serves every test.
+ */
+class FakeProbeWorker {
+	onmessage: ((event: { data: unknown }) => void) | null = null;
+	onerror: ((event: { message: string }) => void) | null = null;
+	constructor() {
+		const behavior = probes.behaviors[probes.started++] ?? 'stalls';
+		setTimeout(() => {
+			if (behavior === 'fails') return this.onerror?.({ message: 'the script did not load' });
+			this.onmessage?.({ data: 'loaded' });
+			if (behavior === 'answers') this.onmessage?.({ data: ANSWER });
+		}, 0);
+	}
+	terminate() {
+		probes.terminated++;
+	}
+}
+
+/** Makes the next probe workers act as `behaviors` say, in turn. */
+function fakeProbeWorkers(behaviors: ProbeBehavior[]): typeof probes {
+	Object.assign(probes, { behaviors, started: 0, terminated: 0 });
+	globalThis.Worker = FakeProbeWorker as unknown as typeof Worker;
+	return probes;
+}
+
+describe('the worker probe', () => {
+	const Native = globalThis.Worker;
+	afterEach(() => {
+		globalThis.Worker = Native;
+	});
+
+	it('starts a second worker, with the next time limit, when the first gives no answer', async () => {
+		const counts = fakeProbeWorkers(['stalls', 'answers']);
+		expect(await probeWorker([10, 50])).toEqual(ANSWER);
+		expect(counts).toMatchObject({ started: 2, terminated: 2 });
+	});
+
+	it('reports no answer, with every time limit, when no worker answers', async () => {
+		const counts = fakeProbeWorkers(['stalls', 'stalls']);
+		expect(await probeWorker([10, 20])).toEqual({
+			failure: 'no-answer',
+			error: 'no probe worker answered within its time limit (0.01 s, then 0.02 s)',
+		});
+		expect(counts).toMatchObject({ started: 2, terminated: 2 });
+	});
+
+	it('tries no second worker when the first fails to start', async () => {
+		const counts = fakeProbeWorkers(['fails', 'answers']);
+		expect(await probeWorker([10, 20])).toEqual({
+			failure: 'failed-to-start',
+			error: 'the script did not load',
+		});
+		expect(counts).toMatchObject({ started: 1, terminated: 1 });
 	});
 });
