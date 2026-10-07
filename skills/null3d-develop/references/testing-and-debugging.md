@@ -196,7 +196,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Tab reloads or crashes on a phone | Memory limit | Fewer and smaller assets, and textures destroyed when unused. The next start runs one preset lower (`engine.mode.crashedStarts`) | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages. A DOM-heavy app can run the sketch on the main thread with `sketchThread: 'main'` | `api/page`, `concepts/architecture` |
 | `assets.loadGltf` rejects with E1416, or `loadTexture` with E1412, on a file that users upload | The file is broken, or passes a limit on what one file may decode to. Loaders check each file's limits before they allocate (0.2) | Catch the error and tell the user; check the file in the Khronos glTF Validator; split a model that is too large | `concepts/assets` |
-| `createEngine` rejects with E1410 | The sketch module did not load: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
+| `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 
 ## 9. Before you ship
