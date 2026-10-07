@@ -19,7 +19,7 @@ The `Docs-Checked:` trailer names the page that holds the reason, or says why th
 
 - Merge main into your branch. Do not rebase a branch that you pushed, because a rebase needs a force push (see [Commit messages and pushes](#commit-messages-and-pushes)).
 - Git keeps no file that the docs generator or the skills sync writes ([D-105](decisions/D-105-generated-files-out-of-git.md)), so a merge never conflicts on them. Git stores each written page with its generated sections empty. After a merge, the post-merge hook writes the generated files and sections again. After a merge that stopped on a conflict, run `bun tools/generate.ts` once you resolve it.
-- Git keeps two generated files: the constants that TypeScript shares with Rust, `packages/engine/src/generated/core.ts` and `gpu.ts`. It also keeps the render graph's text dump in `crates/null3d-render/tests/snapshots/`. Never merge these by hand. Take either side of a conflict, then run `NULL3D_UPDATE_GENERATED=1 cargo test -p null3d-wasm -p null3d-gpu -p null3d-render`, and stage what it writes. Run it after every merge of main, also when git reports no conflict. Git can merge the text of a generated file cleanly and still give a result that no generator makes.
+- Git still keeps the files that the Rust tests write: the constants that TypeScript shares with Rust, `packages/engine/src/generated/core.ts` and `gpu.ts`, and the render graph's text dump in `crates/null3d-render/tests/snapshots/`. Never merge these by hand. Take either side of a conflict, then run `NULL3D_UPDATE_GENERATED=1 cargo test -p null3d-wasm -p null3d-gpu -p null3d-render`, and stage what it writes. Run it after every merge of main, also when git reports no conflict. Git can merge the text of a generated file cleanly and still give a result that no generator makes.
 - Git does not keep the shader modules, `packages/engine/src/generated/shaders*.ts`, so a merge never touches them. The build, the type check, the unit tests, the dev server and the browser tests read them. Each of these builds them first when they are missing or out of date. `bun run shaders` does the same on its own.
 - A branch from before git stopped keeping the shader modules gets a conflict on each module that it changed when it merges main. Resolve them all with `git rm --cached packages/engine/src/generated/shaders*.ts`, which keeps the files for the next build to replace.
 - Check the shared numbers after the merge. Two branches can each take the next free number, and git then merges both lines without a conflict. The shared numbers are the error codes (`packages/engine/src/errors/codes.ts`) and the scene command numbers (`crates/null3d-wasm/src/constants.rs`). They are also the draw list's opcodes and pipeline template numbers (`crates/null3d-gpu/src/drawlist.rs`), and the decision record numbers. The bindings and slots that a shader and its bind group layout share are shared numbers too. A unit test catches a clash in some of these lists, such as the opcodes, but not in all of them. The docs check, `bun run docs:check`, refuses two decision records with one number.
@@ -29,14 +29,15 @@ The `Docs-Checked:` trailer names the page that holds the reason, or says why th
 
 ## A branch from before generated files left git
 
-Git kept the generated files until 8 October 2026 ([D-105](decisions/D-105-generated-files-out-of-git.md)). A branch from before then conflicts with main once, on each generated file that it changed. Resolve the merge in these steps:
+Git kept the generated files until 8 October 2026 ([D-105](decisions/D-105-generated-files-out-of-git.md)). A plain merge of main into a branch from before then conflicts on each generated file and section that the branch changed. First take the generated files out of git on the branch, in a commit of its own. Then both sides make the same change, and the merge has no conflict on them. Git's `-X renormalize` merge option does not help here, because the merge reads the branch's attributes, which lack the filter.
 
-1. Run `bun install` in the copy. It sets up the git filter that empties generated sections, and the hooks.
-2. Merge main with `git merge -X renormalize origin/main`. The option runs the filter on both sides of each page, so the generated sections of written pages do not conflict.
-3. For each whole generated file that conflicts, such as a file in `.claude/skills/` or `docs/errors/`, keep main's choice and take the file out of git: `git rm --cached -r --ignore-unmatch .claude/skills docs/errors`. Do the same for any other path that `git status` lists as deleted by them.
-4. Resolve the conflicts in written prose by hand, as for any merge.
-5. Run `bun tools/generate.ts`, which writes every generated file, then stage the pages you resolved and commit the merge.
-6. Run `bun run docs:check`. It names any generated file that git still keeps.
+1. Fetch main. Copy its ignore rules and attributes: `git checkout origin/main -- .gitignore .gitattributes`. If the branch changed `.gitignore`, add its own lines back.
+2. Empty the generated sections of the written pages: `git add --renormalize docs .dev/tested-devices.md`. This needs the git filter, which `bun install` on main's code sets up in the repository's git config. Every worktree of one repository shares that config.
+3. Take every file that main ignores out of git: `git ls-files -z -ci --exclude-standard | xargs -0 git rm -q --cached`. The files stay on disk.
+4. Commit, for example `chore(docs): take generated files out of git`. The branch's old commit hook still checks the generated files on disk, and they are current.
+5. Merge main. Resolve conflicts in written prose as for any merge. Then run `bun install`, which writes every generated file.
+
+A test on 8 October 2026 used a branch that edited a skill, its copy, an API page's prose and reference, and an error page. It merged main this way with no conflict, and kept only its edits to sources: the skill and the prose.
 
 ## A branch that edited the old table of tested devices
 

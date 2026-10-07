@@ -1,8 +1,8 @@
 # D-105: Generated files out of git
 
-Status: decided by the owner on 2026-10-08, about 00:36. Two parts wait for the coordinator's answer: the shared constants stay in git for now, and the links on GitHub to generated pages.
+Status: decided by the owner on 2026-10-08, about 00:36. Two parts wait for the coordinator's answer. One keeps the shared constants in git for now. The other is about links on GitHub to generated pages.
 
-Summary: Git keeps no file that the docs generator or the skills sync writes. Git ignores whole generated files, and a git filter empties the generated sections of written pages when they are staged. `bun install` and the git hooks write the files, and each release tags a commit that holds them. Of 391 commits on main from 2026-09-28, 172 edited the skills copy and 164 an API page, and 4 of the 5 open pull requests on 2026-10-08 edit generated output.
+Summary: Git keeps no file that the docs generator or the skills sync writes. Git ignores whole generated files, and a git filter empties the generated sections of written pages when they are staged. The install step and the git hooks write the files, and each release tags a commit that holds them. Of 391 commits on main from 2026-09-28, 172 edited the skills copy and 164 an API page. On 2026-10-08, 4 of the 5 open pull requests edited generated output.
 
 ## Question
 
@@ -11,7 +11,7 @@ Main has no merge queue since [D-99](D-99-no-merge-queue.md), so pull requests m
 ## Rule
 
 - No pull request conflicts on a generated file or on a generated section of a page.
-- After `bun install`, a fresh clone has `.claude/skills/`, because Claude Code loads project skills only from there, and every docs page that links point to.
+- After `bun install`, a fresh clone has `.claude/skills/`, because Claude Code loads project skills only from there. It also has every docs page that a link points to.
 - Every reader outside the repository still gets the full files: the npm packages, the Claude Code plugin, `bunx skills add` and the skill zips of each release.
 - `bun install` never builds Rust, so the Mac's heavy-run limits still hold.
 
@@ -20,7 +20,7 @@ Main has no merge queue since [D-99](D-99-no-merge-queue.md), so pull requests m
 | Generated output | Its source | Commits on main that edited it |
 | --- | --- | --- |
 | `.claude/skills/`, the copy of `skills/` for Claude Code | `skills/` | 172 |
-| The API reference on 23 written pages in `docs/api/` | TSDoc comments | 164: 67 changed only the reference, 157 the reference and the prose |
+| The API reference on 23 written pages in `docs/api/` | TSDoc comments | 164. Of the page edits in them, 67 changed only the reference and 157 changed the reference and the prose |
 | The page list in `docs/index.md` | Each page's front matter | 116: 110 changed only the list |
 | The three.js mapping page and the porting skill's 2 copies | `docs/data/threejs-mapping.json` | 86 |
 | The error pages in `docs/errors/` | `packages/engine/src/errors/codes.ts` | 65 |
@@ -30,9 +30,9 @@ Main has no merge queue since [D-99](D-99-no-merge-queue.md), so pull requests m
 | 13 placeholder pages of planned pages | The page inventory in `tools/lib/docs.ts` | few |
 | `packages/engine/src/generated/core.ts` and `gpu.ts` | The constants in the Rust crates | 58 and 53 |
 
-On 2026-10-08, 4 of the 5 open pull requests edited generated output: #408 in 12 files, #399 in 13, #398 in 6 and #346 in 13.
+On 2026-10-08, 4 of the 5 open pull requests edited generated output. #408 edited 12 such files, #399 13, #398 6 and #346 13.
 
-How the data was produced: `git log --name-only --since=2026-09-28 origin/main` at b83f603e9, with a script that compares each written page before and after each commit with its generated sections emptied, and `gh pr list --json files` on 2026-10-08.
+How the data was produced: `git log --name-only --since=2026-09-28 origin/main` at b83f603e9, and `gh pr list --json files` on 2026-10-08. A script compared each written page before and after each commit, with its generated sections emptied.
 
 ## Options
 
@@ -42,7 +42,7 @@ How the data was produced: `git log --name-only --since=2026-09-28 origin/main` 
 | B. Ignore whole files. Move each generated section of a written page to a page of its own | None | Each API page splits in two, the page list leaves the index page, and the preset tables leave their prose | A second read for every API lookup |
 | C. Ignore whole files. A git clean filter empties each generated section when a page is staged | None | Unchanged on disk and in the packages | A filter that `bun install` sets up, and a check that refuses a page staged without it |
 
-Option C is the way Git LFS keeps large files out of git. The filter is a Perl one-liner, because git for every platform ships Perl, and git then starts no JavaScript runtime for each file it compares. In a scratch repository, two branches that each changed the API section and different prose of one page merged with no conflict.
+Git LFS uses the same kind of filter to keep large files out of git. The filter is a Perl one-liner. Git ships Perl on every platform, and Perl starts much faster than a JavaScript runtime for each file that git compares. In a scratch repository, two branches that each changed the API section and different prose of one page merged with no conflict.
 
 ## Decision
 
@@ -50,13 +50,13 @@ Option C. The owner decided that git keeps no generated file, and that CI, the p
 
 - Git ignores the whole generated files: `.claude/skills/`, `docs/errors/`, the mapping page and its copies, the shader library page and each placeholder page by name.
 - `.gitattributes` gives every docs page and `.dev/tested-devices.md` the filter `null3d-generated`. Its clean step empties the text between each `<!-- null3d:<name>:start -->` marker and its end marker. Git stores the empty markers, and the file on disk keeps the full page.
-- `bun install` sets up the filter in the repository's git config, as husky sets up the hooks, and writes every generated file with `bun tools/generate.ts`. The step writes TypeScript output only and never builds Rust. Without the shader modules, the engine page's reference lacks the shader features until the next run after `bun run shaders`.
-- The git hooks after a checkout, a merge and a rebase write the files again. The pre-commit hook writes them too, and fails on a generator's problems, on a generated file that git would keep, and on a page staged with its generated sections.
-- Git takes a file whose size differs from the size in its index as changed, without running the filter. After it writes a page, the generator therefore stages each page whose emptied text matches what git stores. That changes no content, and the page no longer shows as modified.
+- `bun install` sets up the filter in the repository's git config, as husky sets up the hooks, and writes every generated file with `bun tools/generate.ts`. The step runs only TypeScript and never builds Rust. Without the shader modules, the engine page's reference lacks the shader features until the next run after `bun run shaders`.
+- The git hooks after a checkout, a merge and a rebase write the files again. The pre-commit hook writes them too. It fails on a generator's problems, on a generated file that git would keep, and on a page staged with its generated sections.
+- Git takes a file whose size differs from the size in its index as changed, without running the filter. So after it writes the pages, the generator stages each page whose emptied text matches what git stores. That changes no content, and the page no longer shows as modified.
 - `bun run docs:check` writes the files first, then checks. CI's docs job checks that the generators change no file that git keeps.
 - The engine package's pack step writes the docs before it copies them.
 - Release Publish tags a commit that adds every generated file, in full, to the merge commit of the release. Main never holds that commit. Its parent is on main, so the next release's changelog starts after it. The plugin, `bunx skills add` and the zips read the tagged commit.
-- The constants that TypeScript shares with Rust stay in git for now. Building them on demand needs a host build of the engine's core and renderer before every TypeScript command, 10 to 60 seconds after each Rust change. Their Rust source conflicts in the same pull requests anyway.
+- The constants that TypeScript shares with Rust stay in git for now. To build them on demand, every TypeScript command would first build the engine's core and renderer for the Mac. That takes 10 to 60 seconds after each Rust change. Their Rust source conflicts in the same pull requests anyway.
 
 ## Consequences
 
