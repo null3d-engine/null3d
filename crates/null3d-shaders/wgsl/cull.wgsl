@@ -10,8 +10,9 @@
 // adds the workgroup's count to each of the bucket's draws with one atomic add each, and the add on
 // the first draw gives the workgroup its place in the slice. So the threads of a large bucket do
 // not all add to the same words of the indirect draws in turn (decision record D-100). The table
-// has one slot per thread. A bucket takes the slot at its index modulo the table's size, or the
-// next free one after it, so the table holds every bucket that the workgroup's threads can name.
+// has one slot per thread. A bucket takes the slot at its index modulo the table's size, or a free
+// one a few turns later. The rare bucket that finds no free slot adds its instances one by one.
+// The claim uses no atomic compare-exchange, which Safari 27.0 cannot compile (`append`).
 //
 // World matrices are relative to the centers of their grid cells, and the planes to the camera. An
 // instance's entry in the bucket table holds its cell index above its bucket, and the thread moves
@@ -235,43 +236,63 @@ var<workgroup> slot_buckets: array<atomic<u32>, WORKGROUP_SIZE>;
 var<workgroup> slot_counts: array<atomic<u32>, WORKGROUP_SIZE>;
 var<workgroup> slot_starts: array<u32, WORKGROUP_SIZE>;
 
+/// Turns in which a bucket looks for a slot of the table.
+const CLAIM_TURNS: u32 = 3u;
+/// How far a bucket's next slot lies from its last. It is odd, so the turns of a bucket visit
+/// different slots, and far from 1, so a bucket whose slot is taken leaves the run of buckets
+/// numbered next to its own.
+const CLAIM_STEP: u32 = 65u;
+
 /// Appends the workgroup's instances in the view to their buckets' slices, and counts them in
 /// each of their buckets' draws, which start `draws_before` draws into the indirect draws. Every
 /// thread of the workgroup calls it, with a bucket of `HIDDEN` for a thread whose instance does
 /// not draw.
+///
+/// The threads claim slots with atomic loads and stores alone, in turns between barriers. Safari
+/// 27.0 cannot compile an atomic compare-exchange: WebKit writes a Metal helper for it that the
+/// Metal compiler of the 27 releases refuses (decision record D-100). In each turn, a thread whose
+/// bucket has no slot yet stores its bucket in its slot if the slot is free, and after the
+/// barrier, reads which bucket the slot holds. A slot that holds a bucket never changes again, so
+/// the threads of one bucket always agree, and the first of them to count itself in the slot adds
+/// the workgroup's count to the draws.
 fn append(s: Survivor, lane: u32, draws_before: u32) {
     // Workgroup memory starts unset on some GPUs, so each thread clears its own slot.
     atomicStore(&slot_buckets[lane], HIDDEN);
     atomicStore(&slot_counts[lane], 0u);
     workgroupBarrier();
     var slot = s.bucket % WORKGROUP_SIZE;
+    var placed = s.bucket == HIDDEN;
     var rank = 0u;
-    var owner = false;
-    if s.bucket != HIDDEN {
-        // A weak exchange can fail on a free slot, which the next turn tries again.
-        loop {
-            let claim = atomicCompareExchangeWeak(&slot_buckets[slot], HIDDEN, s.bucket);
-            if claim.exchanged {
-                owner = true;
-                break;
-            }
-            if claim.old_value == s.bucket {
-                break;
-            }
-            if claim.old_value != HIDDEN {
-                slot = (slot + 1u) % WORKGROUP_SIZE;
+    for (var turn = 0u; turn < CLAIM_TURNS; turn++) {
+        if !placed && atomicLoad(&slot_buckets[slot]) == HIDDEN {
+            atomicStore(&slot_buckets[slot], s.bucket);
+        }
+        workgroupBarrier();
+        if !placed {
+            if atomicLoad(&slot_buckets[slot]) == s.bucket {
+                placed = true;
+                rank = atomicAdd(&slot_counts[slot], 1u);
+            } else {
+                slot = (slot + CLAIM_STEP) % WORKGROUP_SIZE;
             }
         }
-        rank = atomicAdd(&slot_counts[slot], 1u);
     }
     workgroupBarrier();
-    if owner {
+    // The slot's first thread adds the slot's count, and a thread without a slot adds itself.
+    let owner = placed && s.bucket != HIDDEN && rank == 0u;
+    let alone = !placed;
+    if owner || alone {
         let bucket = buckets[s.bucket];
-        let count = atomicLoad(&slot_counts[slot]);
+        let count = select(1u, atomicLoad(&slot_counts[slot]), owner);
         let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
-        slot_starts[slot] = atomicAdd(&indirect[first], count);
+        let start = atomicAdd(&indirect[first], count);
         for (var d = 1u; d < bucket.draws; d++) {
             atomicAdd(&indirect[first + d * INDIRECT_WORDS], count);
+        }
+        if owner {
+            slot_starts[slot] = start;
+        } else {
+            rank = start;
         }
     }
     workgroupBarrier();
@@ -279,7 +300,7 @@ fn append(s: Survivor, lane: u32, draws_before: u32) {
         return;
     }
     let bucket = buckets[s.bucket];
-    let entry = slot_starts[slot] + rank;
+    let entry = select(rank, slot_starts[slot] + rank, placed);
     if bucket.indices != 0u {
         visible[bucket.base + entry] = vec4u(s.index, 0u, 0u, 0u);
         return;

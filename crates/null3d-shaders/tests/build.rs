@@ -582,6 +582,28 @@ fn flat_interpolation_without_either_is_rejected() {
     }
 }
 
+#[test]
+fn atomic_compare_exchange_is_rejected() {
+    let source = r"var<workgroup> slots: array<atomic<u32>, 64>;
+
+@compute @workgroup_size(64)
+fn cs_main(@builtin(local_invocation_index) lane: u32) {
+    let claim = atomicCompareExchangeWeak(&slots[lane], 0u, 1u);
+}
+";
+    let problem = only_problem(build_wgsl(source));
+    assert_eq!(problem.file.as_deref(), Some(SHADER));
+    assert_eq!(
+        (problem.line, problem.column),
+        (
+            Some(5),
+            Some(column_of(source, 5, "atomicCompareExchangeWeak"))
+        )
+    );
+    assert!(problem.message.contains("Safari 27.0"), "{problem}");
+    assert!(problem.message.ends_with(SEE_RULES), "{problem}");
+}
+
 /// A vertex shader that reads the draw index in its variant for WebGL2 alone.
 const DRAW_INDEX: &str = r"enable draw_index;
 #import null3d::math

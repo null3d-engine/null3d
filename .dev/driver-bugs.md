@@ -2,6 +2,19 @@
 
 Faults of GPU drivers and browsers that the engine works around, written up to report upstream. Each report names the device, the driver and the browser, and gives the smallest known case. It also says where the engine's workaround and evidence are. [Browser faults](implementation-notes.md#browser-faults) holds the full story of each.
 
+## Safari 27.0: `atomicCompareExchangeWeak` does not compile
+
+Status: fixed in WebKit on 13 September 2026 (commit 4f56cc248e8a, 321006@main, inside bug 323873), not yet in a Safari release. No bug names the fault. Not reported by null3D: a draft waits for the owner. Found 8 October 2026.
+
+- Device: iPad in BrowserStack's device cloud, Safari 27.0, WebGPU. Any Apple device whose Metal compiler comes from the 27 releases should fail the same way.
+- Seen in: null3D's culling compute shader, `crates/null3d-shaders/wgsl/cull.wgsl` at commit 2ed8971bc, which called `atomicCompareExchangeWeak` on an `array<atomic<u32>, 128>` in workgroup memory.
+
+What happens: pipeline creation fails. The Metal compiler rejects WebKit's translation: "field may not be qualified with an address space ... in instantiation of template class `__atomic_compare_exchange_result<thread unsigned int>`". WebKit's helper for the call (`MetalFunctionWriter.cpp`, `emitNecessaryHelpers`) returns `__atomic_compare_exchange_result<decltype(compare)>`, and the newer compiler gives the by-value parameter `compare` the type `thread unsigned int`. So storage-buffer atomics fail too. WebKit's fix names the deduced template type instead.
+
+Smallest known case: any compute shader with one `atomicCompareExchangeWeak` call.
+
+Workaround in the engine: no shader calls it, and the shader build rejects it ([D-100](decisions/D-100-workgroup-counters.md), [Browser faults](implementation-notes.md#browser-faults)).
+
 ## Adreno 830: a uniform array read at a per-thread index returns one thread's entry
 
 Status: not reported yet. Found 7 October 2026.

@@ -1,6 +1,7 @@
 //! The portability check: shaders use only the WGSL language features that every target browser
-//! supports (AGENTS.md hard rule 10), no extension that needs an optional WebGPU feature, and
-//! write flat interpolation as `@interpolate(flat, either)`.
+//! supports (AGENTS.md hard rule 10), no extension that needs an optional WebGPU feature, no
+//! built-in function that a target browser fails to compile, and write flat interpolation as
+//! `@interpolate(flat, either)`.
 //!
 //! WGSL does not require a `requires` directive before code uses a language feature, so reading
 //! `requires` lines is not enough. The check works in three layers:
@@ -387,6 +388,15 @@ fn scan_file(
             {
                 found(index, "atomic_vec2u_min_max", &format!("`{name}`"));
             }
+            name @ "atomicCompareExchangeWeak" if next(1) == "(" && !declared.contains(name) => {
+                problems.push(Problem::at(
+                    path,
+                    Some(view.position(index)),
+                    format!(
+                        "`{name}` does not compile on Safari 27.0: WebKit turns it into a Metal helper that the Metal compiler of the 27 releases rejects, for atomics in any address space. Claim a value with `atomicLoad` and `atomicStore` between barriers, or with `atomicExchange`, `atomicMin` or `atomicMax`. See {RULES_PAGE}"
+                    ),
+                ));
+            }
             name if name.starts_with("texture_storage_")
                 && next(1) == "<"
                 && TIER1_TEXEL_FORMATS.contains(&next(2)) =>
@@ -749,6 +759,10 @@ mod tests {
         assert!(
             text.contains("`@interpolate(flat, either)`"),
             "{page} lacks the flat rule"
+        );
+        assert!(
+            text.contains("`atomicCompareExchangeWeak`"),
+            "{page} lacks the compare-exchange rule"
         );
         for (extension, _) in OPTIONAL_EXTENSIONS {
             assert!(
