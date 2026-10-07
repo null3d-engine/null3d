@@ -2,11 +2,11 @@
 
 Status: decided. Date: 7 October 2026. Task: M2-R26.
 
-Summary: When the browser refuses the engine's shared memory, the engine tries again for about 45 seconds, with waits that double from 50 ms up to 8 s, before it fails with E1109. At the first refusal after 10 seconds of waits, `onProgress` reports `memory-wait`. Safari on CI's Mac gave memory back 16 to 40 seconds after it refused it.
+Summary: When the browser refuses the engine's shared memory, the engine tries again for about 45 seconds before it fails with E1109. The waits double from 50 ms up to 8 s. At the first refusal after 10 seconds of waits, `onProgress` reports `memory-wait`. Safari on CI's Mac gave memory back 16 to 40 seconds after it refused it.
 
 ## Question
 
-How long should a new engine wait for memory that the browser refuses, and should the page hear about the wait before the engine gives up?
+How long should a new engine wait for memory that the browser refuses? Should the page hear about the wait before the engine gives up?
 
 ## Rule
 
