@@ -203,12 +203,9 @@ export const QUALITY_SETTINGS = {
 		values: 'flag',
 	},
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
-	// pixel once. WebGL2 draws it on every preset. On Apple GPUs, ANGLE's Metal backend writes the
-	// sample mask in fragment shaders that use derivatives, and in every fragment shader when it
-	// multisamples. The GPU treats such a shader like one that discards, so its hidden surface
-	// removal lets hidden layers shade, and the prepass's early depth rejection skips them. The other
-	// paths leave it off: there the GPU removes hidden surfaces itself, and the second pass only
-	// adds time (D-43).
+	// pixel once. WebGL2 draws it on every preset: on Apple GPUs, WebGL2 shades hidden pixels that
+	// the prepass's early depth rejection skips. The other paths leave it off: there the GPU removes
+	// hidden surfaces itself, and the second pass only adds time (D-43).
 	depthPrepass: {
 		presets: [false, false, false, false],
 		webgl2: [true, true, true, true],
