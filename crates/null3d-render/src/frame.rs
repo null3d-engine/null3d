@@ -841,6 +841,16 @@ impl SceneSettings {
         self.tone_curve = template;
     }
 
+    /// True when a custom effect or the custom tone curve draws with `template`.
+    fn post_uses_template(&self, template: u32) -> bool {
+        self.effects
+            .iter()
+            .any(|effect| effect.template == template)
+            || self
+                .tone_curve
+                .is_some_and(|curve| (curve..curve + 2).contains(&template))
+    }
+
     /// The sketch time and the seconds since the frame before.
     pub(crate) fn clock_seconds(&self) -> [f32; 2] {
         [self.clock[0], self.clock[1]]
@@ -1156,8 +1166,12 @@ impl SceneSettings {
             }
             self.materials
                 .release_unused(|id| used.get(id as usize).copied().unwrap_or(false));
-            let materials = &self.materials;
-            pipelines.release(|template| materials.custom_template_unused(template));
+            let (materials, post) = (&self.materials, &*self);
+            // Effects and the tone curve take templates of the same range as custom materials,
+            // so a template that they use stays.
+            pipelines.release(|template| {
+                materials.custom_template_unused(template) && !post.post_uses_template(template)
+            });
         }
         self.map_groups.resize(count as usize, 0);
         for id in 0..count {
