@@ -1,6 +1,6 @@
 # D-80: How the large-world jitter check measures a flight, and its tolerance
 
-Status: decided; the iPad's run is pending. Date: 2026-10-05. Task: M2-H2.
+Status: decided. Date: 2026-10-05; the iPad's run 2026-10-07. Task: M2-H2.
 
 Summary: A camera flies sideways past six squares that face it, 16 frames, at the origin, 1,000 km and 6,378 km. Each object's motion from frame to frame must match the origin flight's within 0.05 px; large-world mode measures under 0.0001 px on every GPU path. The same flights with every cell taken, which is the engine without cells, jump 3.2 to 7.8 px. The engine warns once when the cells run out.
 
@@ -15,7 +15,7 @@ Summary: A camera flies sideways past six squares that face it, 16 frames, at th
 ## Rule
 
 - The figure compares each frame with the next: an object's image must move by the camera's motion only.
-- A flight 1,000 km out and one at the Earth's radius pass in large-world mode. They pass on WebGPU, its compatibility mode and WebGL2. They pass on the Mac's GPU and on SwiftShader, and in the device runner on the Mac, the S24+ and four cloud phones. The iPad's run is pending.
+- A flight 1,000 km out and one at the Earth's radius pass in large-world mode. They pass on WebGPU, its compatibility mode and WebGL2. They pass on the Mac's GPU and on SwiftShader. In the device runner they pass on the Mac, the owner's iPad, the S24+ and four cloud phones.
 - The same flights without cells fail the figure by a wide margin, on the same devices.
 - The check runs in CI in under a minute per GPU path.
 
@@ -39,14 +39,14 @@ Each range covers WebGPU, compatibility mode and WebGL2. `bun run --cwd tests te
 | --- | --- | --- | --- | --- |
 | Mac, Safari 26.6.2 | WebGPU | under 0.0001 px (own 0.2007) | 3.4993 px at 1,000 km, 7.7509 px at 6,378 km | 2026-10-05 |
 | Mac, Safari 26.6.2 | WebGL2 | under 0.0001 px (own 0.1996) | 3.4998 px at 1,000 km, 7.7503 px at 6,378 km | 2026-10-05 |
-| iPad, Safari | | | | |
+| iPad Pro 11-inch, Safari 26.6.2 (iPadOS 26.7) | WebGPU and WebGL2 | under 0.0001 px (own 0.2007 and 0.1996) | 3.4993 and 3.4998 px at 1,000 km, 7.7509 and 7.7503 px at 6,378 km | 2026-10-07 |
 | Galaxy S25, Chrome 149 (Adreno 830) | WebGPU and WebGL2 | under 0.0001 px (own 0.2007 and 0.1996) | 3.4993 and 3.4998 px at 1,000 km, 7.7509 and 7.7503 px at 6,378 km | 2026-10-06 |
 | Galaxy Tab A9 Plus, Chrome 149 (Adreno 619) | WebGPU and WebGL2 | under 0.0001 px (own 0.2007 and 0.1996) | as the S25 | 2026-10-06 |
 | Pixel 9, Chrome 149 (Mali-G715) | WebGPU and WebGL2 | under 0.0001 px (own 0.2007 and 0.1996) | as the S25 | 2026-10-06 |
 | Galaxy M32, Chrome 149 (Mali-G57 MC3) | WebGL2; its WebGPU adapter offers compatibility mode only | under 0.0001 px (own 0.1996) | 3.4998 px at 1,000 km, 7.7503 px at 6,378 km | 2026-10-06 |
 | Galaxy S24+, Chrome 154 (Xclipse 940, ANGLE on Vulkan) | WebGL2; the phone has no WebGPU adapter | under 0.0001 px (own 0.2001) | 3.5002 px at 1,000 km, 7.7508 px at 6,378 km | 2026-10-05 |
 
-The phones on BrowserStack Automate ran the runner's `jitter` plan, runs 20261006-005305-jitter and 20261006-005648-jitter. Each phone gave the Mac's figures to four decimals on each GPU path. Each GPU path still gave its own frames: the squares' first centers differ between WebGPU and WebGL2 by a thousandth of a pixel. The squares face the camera, and the GPUs draw 4 samples per pixel at the standard sample places. So every GPU covers the same share of each pixel. SwiftShader places its samples elsewhere, and gives its own figures.
+The phones on BrowserStack Automate ran the runner's `jitter` plan, runs 20261006-005305-jitter and 20261006-005648-jitter. The owner's iPad ran it in run 20261007-062320-jitter. Each phone gave the Mac's figures to four decimals on each GPU path. Each GPU path still gave its own frames: the squares' first centers differ between WebGPU and WebGL2 by a thousandth of a pixel. The squares face the camera, and the GPUs draw 4 samples per pixel at the standard sample places. So every GPU covers the same share of each pixel. SwiftShader places its samples elsewhere, and gives its own figures.
 
 ## Decision
 
@@ -78,6 +78,12 @@ The flights without cells must show at least 0.5 px, ten times the tolerance, so
 ### The warning when the cells run out
 
 The table counts each source that enters a new cell while the table is full. The sketch thread reads the count after each frame's batch update, one call into the core, and warns once in the console. The two flights without cells check that the warning comes once in each.
+
+The reason: before this, a full table failed without a word. The object still draws, but in the origin's cell. So it jitters as the flights without cells do: 3.5 px at 1,000 km and 7.75 px at 6,378 km. A developer saw only a scene that shakes far from the origin, with nothing that pointed at the cells. The review of the large-world mode work (M2-H1, 4 October 2026, its issue 14) asked for the warning, and M2-H2 took it on.
+
+- Once per engine, not once per refusal. A scene that runs out of cells can refuse a new one in every frame, and a warning each time would flood the console.
+- A count in the core that the sketch thread reads once per frame. The check costs one call and allocates nothing. The core needs no path of its own to the console.
+- A warning, not an error code: the scene still draws, and the developer decides whether the lost precision matters.
 
 ### Live frames, not hold mode
 
