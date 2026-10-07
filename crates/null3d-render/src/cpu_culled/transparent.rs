@@ -1,8 +1,9 @@
 //! The transparent passes: one per view, which draws the view's blended rows back to front. The
 //! job workers cull and sort the rows while they cull the view (see [`super::cull`]), and the
 //! sorted rows' entries follow the opaque entries in the view's index list. Each run of sorted
-//! rows that share a bucket draws with one instanced draw per part of its bucket's mesh, whose
-//! draw record names the run's slice of the index list.
+//! rows that share a bucket draws with one instanced draw per part of its bucket's mesh, for each
+//! of the bucket's passes, whose draw record names the run's slice of the index list. A run's
+//! back faces and front faces draw from the same records.
 //!
 //! Neighboring draws that share a pipeline, a map group and a vertex page go out in one call:
 //! one multi-draw call of up to a block of records where the device has `WEBGL_multi_draw`, or one
@@ -43,6 +44,10 @@ struct Call {
     first: u32,
     count: u32,
     records: u32,
+    /// The call draws the same parts with the same records as a call before it, with another
+    /// pipeline: a run's front faces after its back faces. It writes no records of its own, and no
+    /// later draw joins it.
+    repeat: bool,
 }
 
 /// A view's draws of the frame.
@@ -140,29 +145,43 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
+            // A run that draws its back faces, then its front faces, starts calls of its own, so
+            // its front faces can draw the same parts with the same records.
+            let first_call = state.calls.len();
+            let mut alone = bucket.back != 0;
+            let pipeline = if bucket.back != 0 {
+                bucket.back
+            } else {
+                bucket.pipeline
+            };
             for part in storage.parts(mesh) {
-                let joins = state.calls.last().is_some_and(|call| {
-                    call.pipeline == bucket.pipeline
-                        && call.textures == bucket.textures
-                        && call.page == part.page
-                        && call.count < per_call
-                });
+                let joins = !alone
+                    && state.calls.last().is_some_and(|call| {
+                        call.pipeline == pipeline
+                            && !call.repeat
+                            && call.textures == bucket.textures
+                            && call.page == part.page
+                            && call.count < per_call
+                    });
+                alone = false;
                 if joins {
                     if let Some(call) = state.calls.last_mut() {
                         call.count += 1;
                     }
                 } else {
                     if let Some(call) = state.calls.last() {
-                        records += (call.count * sizes::DRAW_RECORD_BYTES)
-                            .next_multiple_of(OFFSET_ALIGNMENT);
+                        records = call.records
+                            + (call.count * sizes::DRAW_RECORD_BYTES)
+                                .next_multiple_of(OFFSET_ALIGNMENT);
                     }
                     state.calls.push(Call {
-                        pipeline: bucket.pipeline,
+                        pipeline,
                         textures: bucket.textures,
                         page: part.page,
                         first: state.parts.len() as u32,
                         count: 1,
                         records,
+                        repeat: false,
                     });
                 }
                 state.parts.push(PartDraw {
@@ -174,6 +193,16 @@ impl Transparent {
                     // Only scene objects are skinned, and their rows are resident.
                     group: bucket.skinned_slot().map_or(bucket.group, |_| RESIDENT),
                 });
+            }
+            if bucket.back != 0 {
+                for k in first_call..state.calls.len() {
+                    let back = state.calls[k];
+                    state.calls.push(Call {
+                        pipeline: bucket.pipeline,
+                        repeat: true,
+                        ..back
+                    });
+                }
             }
         }
     }
@@ -195,7 +224,7 @@ impl Transparent {
         };
         let bytes = last.records + last.count * sizes::DRAW_RECORD_BYTES;
         let (from, records) = arena.push_zeroed(bytes as usize)?;
-        for call in &state.calls {
+        for call in state.calls.iter().filter(|call| !call.repeat) {
             let parts = &state.parts[call.first as usize..][..call.count as usize];
             for (k, part) in parts.iter().enumerate() {
                 let word = call.records as usize / 4 + k * 4;

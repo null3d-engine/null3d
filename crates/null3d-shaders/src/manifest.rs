@@ -41,7 +41,8 @@ pub struct Manifest {
 
 /// A feature whose shader builds go into files of their own, which a page loads the first time a
 /// pipeline asks for one of the builds. A build belongs to the feature of its shader, or else to
-/// the feature of its lowest permutation bit that a feature names.
+/// the feature of its lowest permutation bit that a feature with `claims_shared_builds` names, or
+/// else to that of its lowest bit that any feature names.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FirstUse {
@@ -52,6 +53,11 @@ pub struct FirstUse {
     /// to the feature.
     #[serde(default)]
     pub bits: Vec<String>,
+    /// True when the feature's bits take the builds that they share with the bits of features
+    /// without it, such as a rare feature's SKIN builds, which would otherwise grow the skinning
+    /// files.
+    #[serde(default)]
+    pub claims_shared_builds: bool,
 }
 
 /// One entry shader.
@@ -131,8 +137,9 @@ impl Variant {
     }
 
     /// Every build of the variant `name`, one for each combination of its permutation bits that
-    /// holds no pair of bits kept apart, in the order of their permutation words. The build
-    /// without any bit takes the variant's name,
+    /// holds the bits each bit needs (`permutation::NEEDS`) and no pair of bits kept apart
+    /// (`permutation::APART`), in the order of their permutation words. The build without any bit
+    /// takes the variant's name,
     /// and each other build adds the names of its bits in lowercase, in bit order: variant
     /// `webgl2` with `DRAW_INDEX` builds `webgl2` and `webgl2_draw_index`. The variant's names
     /// must be checked first.
@@ -325,6 +332,17 @@ fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) -> bool
         if variant.defs.contains(bit) {
             errors.push(format!(
                 "{key} lists \"{bit}\" in both defs and permutations. Keep it in permutations, which builds the variant with it and without it."
+            ));
+        }
+        let needed = permutation::bit(bit).and_then(|value| {
+            let (_, needed) = permutation::NEEDS.iter().find(|(b, _)| *b == value)?;
+            permutation::NAMES.iter().find(|(_, v)| v == needed)
+        });
+        if let Some((needed, _)) = needed
+            && !variant.permutations.iter().any(|other| other == needed)
+        {
+            errors.push(format!(
+                "{key}.permutations has \"{bit}\" without \"{needed}\", which it needs. Add \"{needed}\", or take \"{bit}\" out."
             ));
         }
     }
@@ -564,6 +582,37 @@ variants.webgpu = { targets = ["wgsl"] }
         assert_eq!(
             (plain[0].name.as_str(), plain[0].permutation),
             ("webgpu", 0)
+        );
+    }
+
+    #[test]
+    fn a_bit_builds_only_beside_the_bit_it_needs() {
+        let text = r#"
+[shaders.lit]
+file = "lit.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["ALPHA_MASK", "ALPHA_COVERAGE", "SAMPLE_MASK"], targets = ["wgsl"] }
+variants.lonely = { permutations = ["SAMPLE_MASK"], targets = ["wgsl"] }
+"#;
+        let errors = Manifest::parse(text).unwrap_err().join("\n");
+        assert!(
+            errors.contains(
+                "variants.lonely.permutations has \"SAMPLE_MASK\" without \"ALPHA_COVERAGE\""
+            ),
+            "{errors}"
+        );
+        let text = text.replace("variants.lonely", "# variants.lonely");
+        let manifest = Manifest::parse(&text).unwrap();
+        let builds = manifest.shaders["lit"].variants["webgpu"].builds("webgpu");
+        let names: Vec<&str> = builds.iter().map(|b| b.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "webgpu",
+                "webgpu_alpha_mask",
+                "webgpu_alpha_mask_alpha_coverage",
+                "webgpu_alpha_mask_sample_mask_alpha_coverage"
+            ]
         );
     }
 
