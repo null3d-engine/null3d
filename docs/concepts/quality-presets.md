@@ -158,14 +158,19 @@ The engine makes its memory while it tests the GPU paths. So the memory maximum 
 
 With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
-Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. Every preset leaves the prepass off. Ambient occlusion turns it on while it draws, because it reads the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). Turn it on with the `depthPrepass` option of `createEngine`, and compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion turns it on while it draws, because it reads the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+
+WebGL2 draws the prepass because of Apple GPUs. On them, a depth prepass restores early rejection of hidden pixels in WebGL2, so each pixel is shaded about once. In the S4 benchmark on an iPad, WebGL2 went from 38 to 60 frames per second on Low. On Medium it went from 17 to 37 frames per second. The images stay the same. On Android phones that ran S4, WebGL2 kept its frame rate with the prepass, and its CPU time did not change. On WebGPU the GPU removes hidden surfaces itself, so the prepass only adds work. On the same iPad it added about 4 ms per frame to S4 on Medium.
 
 Both GPU paths draw the prepass, and it gives the same image as a frame without it. The opaque pass shades a pixel only where its depth equals the prepass's depth exactly. So both passes must compute each vertex's depth to the last bit. On WebGPU, the prepass uses a shader that computes positions only. Custom materials and sprites place their vertices in their own way, so there they draw with their own vertex shader. On WebGL2, every object draws with the vertex shader of its own material. A fragment shader that writes nothing completes each such program. On WebGL2, two separate shader programs can compute slightly different depths for one triangle, and a surface would then vanish from the frame.
 
-One case differs: two opaque surfaces at exactly the same depth. Without the prepass, the surface drawn first shows. With it, both pass the test for equal depth, so the surface drawn last shows. Give such surfaces a depth bias, or move one a little, so one is nearer.
+One case differs: two opaque surfaces at exactly the same depth. Without the prepass, the surface drawn first shows. With it, both pass the test for equal depth, so the surface drawn last shows. The engine chooses its own draw order, so an exact tie has no defined winner. The winner may also differ between GPU paths, as WebGL2 draws the prepass by default and WebGPU does not. Give overlapping surfaces, such as decals and ground markings, a depth bias, or move one a little, so one is nearer.
 
 ```ts
+// Draw the prepass on every GPU path.
 const engine = await createEngine({ canvas, sketch, depthPrepass: true });
+// Draw no prepass, on WebGL2 too.
+const plain = await createEngine({ canvas, sketch, depthPrepass: false });
 ```
 
 ### GPU occlusion culling

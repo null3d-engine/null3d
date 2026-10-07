@@ -138,6 +138,13 @@ import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import {
+	type TextureCacheCheck,
+	type TextureCacheResult,
+	textureCacheNeeds,
+	textureCachePlan,
+	textureCacheProblems,
+} from './texture-cache.ts';
+import {
 	saveVisualResult,
 	VISUAL_LIMITS,
 	type VisualResult,
@@ -230,7 +237,9 @@ export type Check =
 	/** The scene page after a simulated GPU loss: the engine must draw the whole scene again. */
 	| { kind: 'recovery'; tier: Tier; run: ImageRun }
 	/** The warm-up time page with a scene's sketch, with fresh shaders or with those compiled before. */
-	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean };
+	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean }
+	/** A load of the texture cache page with the city's textures, with the cache off or on. */
+	| TextureCacheCheck;
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -1402,6 +1411,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	soak: soakPlan,
 	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
+	'texture-cache': textureCachePlan,
 };
 
 /**
@@ -1450,6 +1460,8 @@ export function itemsNeeded(check: Check): string[] {
 			return check.load === 'warm' && !check.first
 				? [startupItemId(check.mode, 'warm', 'first')]
 				: [];
+		case 'texture-cache':
+			return textureCacheNeeds(check);
 		default:
 			return [];
 	}
@@ -1973,6 +1985,8 @@ export function judge(
 			return parityProblems(check, result, context);
 		case 'startup':
 			return startupProblems(result as StartupResult, check.mode);
+		case 'texture-cache':
+			return textureCacheProblems(check, result as ItemResult & TextureCacheResult);
 		case 'overload': {
 			const { overloaded, steps } = result as ItemResult & OverloadResult;
 			if (!overloaded)
