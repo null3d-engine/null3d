@@ -209,20 +209,31 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'))",
-      "notes": "Prefilter HDR files offline with `bunx @null3d/cli assets env`. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. scene.environmentIntensity becomes the `intensity` option.",
+      "notes": "`loadEnvironment` takes an HDR file as it is, or its map from `bunx @null3d/cli assets env`, which needs no filtering at load. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. scene.environmentIntensity becomes the `intensity` option.",
       "docs": "concepts/lighting",
       "detect": "\\.environment\\s*=|\\bRoomEnvironment\\b"
     },
     {
       "id": "fog",
       "category": "Scene graph",
-      "three": "scene.fog = new Fog(color, near, far) / new FogExp2(color, density)",
-      "status": "direct",
+      "three": "scene.fog = new Fog(color, near, far)",
+      "status": "changed",
       "since": "0.1",
-      "target": "scene.setFog({ type: 'linear', color, near, far }) or { type: 'exp2', color, density }",
-      "notes": "Same formulas and defaults. Materials opt out with fog: false. null3D mixes the fog in linear color, as WebGPURenderer does. WebGLRenderer mixes it after the sRGB encoding when it draws to the canvas, so there the same fog looks a little darker at middle distances.",
+      "target": "scene.setFog({ curve: 'linear', color, near, far })",
+      "notes": "The linear curve keeps three.js's smooth step and its defaults of 1 and 1000. null3D measures the straight-line distance from the camera, where three.js measures the depth along the view. So fog at the screen's corners is a little thicker, and it no longer shifts as the camera turns. null3D mixes the fog in linear color before the tone mapping, as WebGPURenderer does, and as WebGLRenderer does when it draws into a half-float target. Only WebGLRenderer's default 8-bit canvas mixes the fog after the sRGB encoding, so there the same fog looks a little darker at middle distances. Materials opt out with fog: false. For new scenes, the default exponential curve looks more like real haze. The fog can also thin with height (heightFalloff) and glow toward the sun (sunGlow).",
       "docs": "api/scene",
-      "detect": "\\bFog(Exp2)?\\b"
+      "detect": "\\bFog\\b"
+    },
+    {
+      "id": "fog-exp2",
+      "category": "Scene graph",
+      "three": "scene.fog = new FogExp2(color, density)",
+      "status": "changed",
+      "since": "0.1",
+      "target": "scene.setFog({ curve: 'exp2', color, density })",
+      "notes": "Pass three.js's density. Its default there is 0.00025, and null3D's is 0.01. null3D measures the straight-line distance from the camera, where three.js measures the depth along the view. So fog at the screen's corners is a little thicker, and it no longer shifts as the camera turns. null3D mixes the fog in linear color before the tone mapping, as WebGPURenderer does, and as WebGLRenderer does when it draws into a half-float target. Only WebGLRenderer's default 8-bit canvas mixes the fog after the sRGB encoding, so there the same fog looks a little darker at middle distances. Materials opt out with fog: false.",
+      "docs": "api/scene",
+      "detect": "\\bFogExp2\\b"
     },
     {
       "id": "group",
@@ -616,7 +627,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "shadow: { mapSize, bias, normalBias, cascades, distance } in the directional light's options, or light.setShadow()",
-      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
+      "notes": "mapSize is one number, the texels on each side. bias and normalBias are in meters, where three.js gives bias in depth units, so start from the defaults. The directional light's map stores 16-bit depth, so in each cascade bias covers at least 1.5 of its depth steps, about 2 cm in a far cascade 200 m out. radius and blurSamples become the shadowFilter quality setting, 3 or 5 texels on each side. shadow.camera has no equivalent: the cascades fit the camera's view.",
       "docs": "concepts/shadows",
       "detect": "\\.shadow\\.(mapSize|bias|normalBias|camera|radius|blurSamples)\\b"
     },
@@ -1077,9 +1088,9 @@
       "three": "RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "`bunx @null3d/cli assets env sunset.hdr sunset.ktx2` offline, then assets.loadEnvironment",
-      "notes": "Prefiltering happens once at build time instead of on every visit.",
-      "docs": "guides/assets-pipeline",
+      "target": "await assets.loadEnvironment('sunset.hdr'), or `bunx @null3d/cli assets env sunset.hdr sunset.ktx2` and assets.loadEnvironment('sunset.ktx2')",
+      "notes": "One call loads a Radiance (.hdr) or OpenEXR (.exr) file and prefilters it on the GPU, as HDRLoader or EXRLoader with PMREMGenerator.fromEquirectangular do. No loader object and no generator to dispose. The tool's file skips the filtering at load. UltraHDRLoader's JPEG files with gain maps do not load: convert them to .hdr or .exr. EXR files with DWAA or DWAB compression, tiled or multi-part EXR files do not load either.",
+      "docs": "api/assets",
       "detect": "\\b(RGBE|EXR|HDR|UltraHDR)Loader\\b|\\bPMREMGenerator\\b"
     },
     {

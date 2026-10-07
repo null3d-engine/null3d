@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-R17.
 
+Summary: Every model and texture reader takes its limits from one object: 256 MiB per array or texture, a model's total of 64 MiB plus 32 times its bytes up to 1 GiB, 4,194,304 keys per clip, and KTX2 sides within `textures.maxSize`, all checked before allocation. Real models decode to at most 2.9 times their bytes. A 5 KB file that held the glTF worker for 11 minutes now fails in 3 ms. Text keys from files use maps, the parent loop check is linear, and the core builds meshes fallibly.
+
 ## Question
 
 A game can load model and texture files that its users made, or files that are broken. The review of 4 October found small files that hold the glTF worker for minutes or make it allocate hundreds of megabytes. What limits does each file get, and how are they checked before anything allocates? And how do the decoders still to come share them: Draco, WebP and AVIF images, and UASTC HDR textures?

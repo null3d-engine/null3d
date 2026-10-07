@@ -4,7 +4,7 @@
 
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import type { CubeGenerator } from './environment';
@@ -23,6 +23,7 @@ TEXTURE_FORMATS[G.FORMAT_RGBA16_FLOAT] = 'rgba16float';
 TEXTURE_FORMATS[G.FORMAT_RG11B10_UFLOAT] = 'rg11b10ufloat';
 TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
+TEXTURE_FORMATS[G.FORMAT_DEPTH16_UNORM] = 'depth16unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
 TEXTURE_FORMATS[G.FORMAT_R32_UINT] = 'r32uint';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM] = 'astc-4x4-unorm';
@@ -175,11 +176,7 @@ export class WebGPUBackend {
 		this.indirect = new IndirectArguments(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(device)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(device));
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -422,9 +419,8 @@ export class WebGPUBackend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
-		generators[name].run(this.device, texture);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
+		code.run(this.device, texture, source);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {

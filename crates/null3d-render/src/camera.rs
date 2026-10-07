@@ -249,12 +249,6 @@ fn back_axis(world: &Affine) -> [f32; 3] {
     }
 }
 
-/// The unit direction a camera looks along, its -Z axis, for either lens. A point's depth in the
-/// view is its offset from the camera along it, as three.js's fog measures depth.
-pub fn view_direction(world: &Affine) -> [f32; 3] {
-    back_axis(world).map(|v| -v)
-}
-
 /// The inverse of a column-major matrix, or `None` for a matrix that has none. Shaders that
 /// rebuild view-space positions from depth read the inverse of a projection.
 pub fn invert(m: &Mat4) -> Option<Mat4> {

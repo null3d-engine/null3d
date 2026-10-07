@@ -114,7 +114,8 @@ use crate::graph::{
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
-use crate::shadows::{MAX_CASCADES, ShadowFrame};
+use crate::shadow_tiles;
+use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
@@ -408,6 +409,8 @@ pub(crate) struct FrameGraph {
     canvas: (u32, u32),
     /// True when the builder's scene passes bind a shadow map.
     shadow_map: bool,
+    /// The depth format of the cascades' shadow map.
+    cascade_format: u32,
     /// The directional light's shadow passes, or `None` without shadows.
     shadows: Option<ShadowPasses>,
     /// Each cascade's shadow pass, once the passes are declared.
@@ -486,6 +489,7 @@ impl FrameGraph {
             layer_views: Vec::new(),
             made_views: 0,
             shadow_map: false,
+            cascade_format: CascadeDepth::default().format(),
             shadows: None,
             shadow_passes: Vec::new(),
             tiles: None,
@@ -514,10 +518,11 @@ impl FrameGraph {
         self.declared = false;
     }
 
-    /// Makes the scene passes sample a shadow map, which the builder binds with every view's
-    /// objects. Without shadows the map is one texel of one layer.
-    pub(crate) fn bind_shadow_map(&mut self) {
+    /// Makes the scene passes sample a shadow map whose cascades store `depth`, which the builder
+    /// binds with every view's objects. Without shadows the map is one texel of one layer.
+    pub(crate) fn bind_shadow_map(&mut self, depth: CascadeDepth) {
         self.shadow_map = true;
+        self.cascade_format = depth.format();
         self.declared = false;
     }
 
@@ -813,14 +818,16 @@ impl FrameGraph {
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.shadow_map {
             let (layers, size) = self.shadows.map_or((1, 1), |s| (s.cascades, s.map_size));
-            let map = Target::depth(DEPTH_FORMAT).layers(layers).array();
+            let map = Target::depth(self.cascade_format).layers(layers).array();
             let size = Size::Fixed {
                 width: size,
                 height: size,
             };
             self.graph.keep(SHADOW_MAP, map, size);
             let (tiles, size) = self.tiles.map_or((1, 1), |t| (t.tiles, t.size));
-            let atlas = Target::depth(DEPTH_FORMAT).layers(tiles).array();
+            let atlas = Target::depth(shadow_tiles::TARGETS.depth_format)
+                .layers(tiles)
+                .array();
             let size = Size::Fixed {
                 width: size,
                 height: size,

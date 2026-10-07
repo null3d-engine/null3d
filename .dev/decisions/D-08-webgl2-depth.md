@@ -2,6 +2,8 @@
 
 Status: decided by the owner on 2026-09-30. Date: 2026-09-30. Task: M1-L1. Test: T-29.
 
+Summary: Draw `reversed` depth where the browser has `EXT_clip_control`, and `reversed-gl` elsewhere. `reversed` fought in no pixel out to 10 km on the Mac, the S24+ and the iPad.
+
 ## Question
 
 Which depth mode should the WebGL2 path draw with? Where a browser has `EXT_clip_control`, is reversed depth with a range from 0 to 1 the most precise mode? Where it lacks the extension, should WebGL2 keep reversed depth in GL's own range from -1 to 1, or draw standard depth?

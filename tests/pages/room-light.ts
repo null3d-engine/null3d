@@ -1,17 +1,23 @@
-// Checks that no frame draws the scene without the built-in room's light. The sketch
+// Checks that no frame draws the scene without an environment's light: the built-in room, or with
+// ?source=<address> an HDR file that the engine reads and filters at load. The sketch
 // (sketches/room-light-sketch.ts) draws a metal sphere with no light on black. The page asks it for
-// the room during play, and captures the newest frame again and again while the room is made, until
-// it has a number of frames that use the room. The sketch sets the room and a blue background in
-// the same step, so a capture with the blue background is a frame that uses the room. Each one
-// should match the steady frame at the end. The page reports how many captures had each
-// background, and how far each blue one lay from the steady frame.
+// the environment during play, and captures the newest frame again and again while the map is made,
+// until it has a number of frames that use it. The sketch sets the environment and a blue
+// background in the same step, so a capture with the blue background is a frame that uses it. Each
+// one should match the steady frame at the end. The page reports how many captures had each
+// background, how far each blue one lay from the steady frame, and how long the environment took:
+// until it resolved, and until the first frame that uses it.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
 /** The captures with the blue background that the page takes. */
 const BLUE_FRAMES = 30;
-/** The longest the page waits for the room. */
-const LIMIT_MS = 20_000;
+/**
+ * The longest the page waits for the environment to resolve, and then for its frames. A software
+ * GPU on a busy machine takes many seconds for the map's frame, and for each capture.
+ */
+const SET_LIMIT_MS = 60_000;
+const FRAMES_LIMIT_MS = 120_000;
 /** A channel that differs from the steady frame by more than this counts the pixel as changed. */
 const CHANNEL_STEP = 4;
 
@@ -64,21 +70,46 @@ run('room-light', async () => {
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
 	let set = false;
-	const off = engine.onSketchMessage((name) => {
-		if (name === 'set') set = true;
+	let setMs: number | null = null;
+	const started = performance.now();
+	let sketchFrames = 0;
+	const off = engine.onSketchMessage((name, data) => {
+		if (name === 'frame') sketchFrames = data as number;
+		if (name !== 'set') return;
+		set = true;
+		setMs = performance.now() - started;
 	});
-	engine.postToSketch('room', null);
+	engine.postToSketch('room', new URLSearchParams(location.search).get('source'));
 	let firstBlack: Frame | undefined;
 	let blackFrames = 0;
+	let lightMs: number | null = null;
 	const blue: Frame[] = [];
-	const started = performance.now();
-	while (blue.length < BLUE_FRAMES && performance.now() - started < LIMIT_MS) {
+	// Every frame is captured from the request on, so the first frames that use the environment
+	// are among those checked, however long the map takes.
+	const waiting = () => {
+		const now = performance.now() - started;
+		return setMs === null ? now < SET_LIMIT_MS : now - setMs < FRAMES_LIMIT_MS;
+	};
+	// A capture replays the last frame that the thread that draws took. On a slow software GPU a
+	// capture blocks that thread for seconds, so captures back to back would leave it no turn to
+	// take a new frame. After each capture, the page waits for the sketch's next frame: the sketch
+	// runs at most a frame or two ahead of the thread that draws, so its count moves on only as
+	// that thread takes frames.
+	const nextSketchFrame = async (after: number) => {
+		while (sketchFrames <= after && waiting())
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+	};
+	while (blue.length < BLUE_FRAMES && waiting()) {
 		const frame = await engine.captureFrame();
-		if (isBlue(frame)) blue.push(frame);
-		else {
+		const before = sketchFrames;
+		if (isBlue(frame)) {
+			lightMs ??= performance.now() - started;
+			blue.push(frame);
+		} else {
 			firstBlack ??= frame;
 			blackFrames++;
 		}
+		await nextSketchFrame(before);
 	}
 	off();
 	await new Promise((resolve) => setTimeout(resolve, 300));
@@ -96,6 +127,12 @@ run('room-light', async () => {
 		/** The sphere's middle, lit by the room in the steady frame and unlit in the first frame. */
 		litMiddle: middle(steady),
 		unlitMiddle: firstBlack ? middle(firstBlack) : null,
+		/**
+		 * Milliseconds from the request until the environment resolved, and until the first capture
+		 * that uses it: the download, the reading and the shaders, then the map and its frame.
+		 */
+		setMs,
+		lightMs,
 		failures,
 	};
 });
