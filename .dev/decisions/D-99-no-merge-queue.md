@@ -45,6 +45,7 @@ Rules:
 - A new push to a pull request cancels the run of its older push.
 - A pull request merges once its run passes, by hand or with automatic merging, by squash only.
 - Every push to main runs every job again, on the code that the merge made. If main's run fails, nothing merges until a fix lands.
+- A newer merge to main cancels main's older run still in progress. So a burst of merges runs every job once, on the newest main, which holds every merged change. The owner added this rule on 8 October 2026 at about 00:20 (UTC+8). That night's first merges had left 3 full runs of main waiting more than 30 minutes for runners, behind the full runs of pull requests. A merge whose run was cancelled has no full run of its own. So a release or gate on exactly that commit starts a run by hand (see Consequences).
 - Before a pull request merges, its author tests it combined with main and with each pull request that will merge before it ([Pull requests](../pull-requests.md#before-a-merge)). Main's full run is the last check of combined code.
 - The size and trailer checks of a pull request read only the commits that main's squash keeps: every commit but merge commits. So a trailer that the squash would drop fails on the pull request.
 
@@ -55,5 +56,7 @@ Rules:
 - `tools/hooks/check-trailers.ts` and the size check read their commits through one function, `keptCommits`, which leaves out merge commits. Before, the size check read merge commits' trailers too.
 - The Release workflow and the exit gate's `workflows` step count main's own run of the commit, or a run started by hand. A pull request's run does not count, because it tested the pull request on an older main. A run on main from before this change kept only caches, so a commit from then still needs a run started by hand.
 - `bun run test:browser-weights` reads main's runs that passed and ran the browser job, instead of the queue's.
+- The `rust-tests` job's time limit is 25 minutes, up from 15. On 7 and 8 October its shader-build tests took 264 to 400 seconds each, depending on the runner. So the job hit 15 minutes in 3 of 4 runs of #399 and in #410's run, which changes no Rust code. Main's runs took about 9 minutes. The coordinator raised it on 8 October at about 01:00 (UTC+8), so that a slow runner does not fail a pull request.
+- Main's runs share one concurrency group, `ci-main`, with `cancel-in-progress`. The Release workflow and the exit gate already accept a run started by hand, which covers a commit whose own run was cancelled. The weights tool reads only runs that passed, so cancelled runs drop out of it.
 - More macOS time: each full run takes 2 macOS jobs. With 5 at once, two full runs and the hourly benchmark run fill them.
 - The workflow keeps its `merge_group` trigger only while main's rules still use the queue. Nothing reads the queue's runs any more.

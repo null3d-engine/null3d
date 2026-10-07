@@ -21,9 +21,10 @@ permissions:
 
 # A new push to a pull request cancels the run of its older push, so CI's machines test only the
 # newest code. Runs on main and in the merge queue each have a group of their own.
+# A newer push to a pull request, or a newer merge to main, cancels the older run still in progress (D-99).
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 env:
   BUN_VERSION: "1.3.14"
@@ -114,7 +115,8 @@ jobs:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The shader-build tests run much slower on some GitHub runners, so the limit leaves room above a typical run (D-99).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain

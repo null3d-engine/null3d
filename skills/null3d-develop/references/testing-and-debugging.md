@@ -100,6 +100,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?shaders=fresh` | Make the browser compile every shader again, as on a first visit, to time a cold warm-up |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the preset check's stored result (`concepts/quality-presets`) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, as on a device with only those. `none` uploads them uncompressed (`api/textures`) |
+| `?texture-cache=off` | Transcode every KTX2 file on every load, as on a first visit, instead of taking its texels from the cache of transcoded textures (`api/assets`) |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` do, such as Firefox before 145 |
 | `?hdr=off` | Take the 8-bit color path, where the scene shaders tone map themselves, as devices without float color targets do (`concepts/backends`) |
 | `?scene-format=rg11b10`, `?scene-format=rgba16f` | Draw the HDR scene color in the packed small float format (4 bytes a pixel) or in 16-bit floats (8 bytes), where the device can; to compare memory, speed and banding (`concepts/backends`) |
