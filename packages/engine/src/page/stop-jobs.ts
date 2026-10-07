@@ -9,6 +9,13 @@
 import { Slot } from '../shared/control';
 
 /**
+ * How long stopping the engine waits for its job workers and the worker that draws to stop. A
+ * thread that has not answered by then could still run in the engine's memory, so the page keeps
+ * no memory for the next engine after such a stop (D-98).
+ */
+export const STOP_TIMEOUT_MS = 2_000;
+
+/**
  * Sets the job system's stop flag, then wakes every job worker that waits for work, as the core's
  * own shutdown does. Each worker then leaves its loop instead of waiting again, and later parallel
  * loops run on the sketch thread alone. It does nothing before the sketch thread has created the
