@@ -1207,7 +1207,7 @@ impl FrameGraph {
         // Where a pass copies each view's image into its target, the target has one sample.
         let copies = self.view_copies.is_some();
         let kept = if copies {
-            Target::color(self.scene_color.format()).array()
+            Target::color(self.view_target_format()).array()
         } else {
             color.array()
         };
@@ -1679,15 +1679,26 @@ impl FrameGraph {
                 self.enable_outputs();
             }
         }
-        let format = self.scene_color.format();
+        let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
         let views = self.view_colors.len() > 1;
         self.view_copy_built = match self.view_copies.as_mut() {
             Some(copies) if views => {
-                let id = copies.request_pipeline(pipelines, format);
+                let id = copies.request_pipeline(pipelines, format, permutation);
                 pipelines.built(id, pipelines_built)
             }
             _ => false,
         };
+    }
+
+    /// The format of the targets that the copies fill on WebGPU: the scene color's, or on the
+    /// 8-bit path an sRGB texture, which the copy fills with the display color decoded, so that
+    /// materials which sample a view's texture read linear color on both paths.
+    fn view_target_format(&self) -> u32 {
+        if self.scene_color.is_hdr() {
+            self.scene_color.format()
+        } else {
+            format::RGBA8_UNORM_SRGB
+        }
     }
 
     /// Asks for the pipeline of the final pass's fold build while the sketch folds effects, once

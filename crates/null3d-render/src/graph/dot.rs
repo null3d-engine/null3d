@@ -251,6 +251,7 @@ fn format_name(code: u32) -> String {
         format::CANVAS => "canvas format".into(),
         format::RGBA8_UNORM => "rgba8unorm".into(),
         format::BGRA8_UNORM => "bgra8unorm".into(),
+        format::RGBA8_UNORM_SRGB => "rgba8unorm-srgb".into(),
         format::RGBA16_FLOAT => "rgba16float".into(),
         format::RG11B10_UFLOAT => "rg11b10ufloat".into(),
         format::DEPTH24_PLUS => "depth24plus".into(),

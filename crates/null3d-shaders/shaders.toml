@@ -332,7 +332,7 @@ shaders = ["ao", "ao_ms"]
 file = "view_copy.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { targets = ["wgsl"] }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 
 # A page downloads the copy when the sketch first adds a scene pass. The pass's texture samples as
 # no texture until the copy's pipeline is built.

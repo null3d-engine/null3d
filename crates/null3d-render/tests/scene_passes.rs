@@ -278,3 +278,57 @@ fn the_text_dump_of_a_frame_with_a_scene_pass_matches_its_snapshot() {
     );
     world.renderer.settings_mut().remove_view(unseen);
 }
+
+#[test]
+fn on_the_8_bit_path_the_webgpu_copy_decodes_display_color_into_an_srgb_texture() {
+    use null3d_gpu::drawlist::{permutation, template};
+    use null3d_render::frame::CanvasOutput;
+    use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+    use null3d_render::output::{Antialias, SceneColor};
+    // The 8-bit path's scene shaders write display color, so the copy decodes it into an sRGB
+    // texture, and materials read linear color. HDR color needs no decode. Compatibility mode
+    // takes the 8-bit path for MSAA, and HDR color draws with FXAA there.
+    for (scene_color, antialias, target, bits) in [
+        (
+            format::CANVAS,
+            Antialias::Msaa,
+            format::RGBA8_UNORM_SRGB,
+            permutation::TONE_MAP,
+        ),
+        (
+            format::RGBA16_FLOAT,
+            Antialias::Fxaa,
+            format::RGBA16_FLOAT,
+            0,
+        ),
+    ] {
+        let mut world = World::build(GpuDrivenRenderer::new(RendererConfig {
+            canvas: CanvasOutput {
+                scene_color: SceneColor::from_format(scene_color),
+                antialias,
+                transparent: false,
+            },
+            ..RendererConfig::default()
+        }));
+        let mut mock = MockBackend::default();
+        let map = add_map(&mut world, [0.0, 10.0, 6.0], &[]);
+        add_screen(&mut world, map);
+        let mut made = world.step(&mut mock, true);
+        made.extend(world.step(&mut mock, false));
+        let copies: Vec<&Vec<u32>> = made
+            .iter()
+            .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::VIEW_COPY)
+            .map(|(_, o)| o)
+            .collect();
+        assert_eq!(
+            copies.len(),
+            1,
+            "one copy pipeline for scene color {scene_color}"
+        );
+        assert_eq!(
+            (copies[0][2], copies[0][3]),
+            (bits, target),
+            "the copy's build and target format for scene color {scene_color}"
+        );
+    }
+}

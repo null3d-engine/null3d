@@ -27,8 +27,9 @@ interface Image {
 type Rgb = readonly [number, number, number];
 
 /**
- * A box's color, by the channels that lead in it. The 8-bit path maps the map's colors twice, so
- * they come out paler there: the tests ask for a lead, not a pure color.
+ * A box's color, by the channels that lead in it. The 8-bit path applies the tone curve twice to
+ * the map's colors, so they come out a little lighter there: the tests ask for a lead, not a pure
+ * color.
  */
 const COLORS = {
 	red: ([r, g, b]: Rgb) => r > g + 30 && r > b + 30,

@@ -440,9 +440,9 @@ export const MINIMAP_SKETCH = 'tests/pages/sketches/minimap-sketch.ts';
  * screen in the scene shows it, on every tier. Four boxes at the map's corners show that the map
  * stands upright and unmirrored on both GPU paths: WebGPU turns the image over in a copy, and
  * WebGL2 draws it in that order. The map camera sees the screen, which the pass leaves out. With
- * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes. Compatibility
- * mode draws the 8-bit path with MSAA, where the pass's texture holds display color. The scene pass
- * spec checks the boxes' colors in the screen's corners.
+ * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes.
+ * Compatibility mode draws the 8-bit path with MSAA, where the copy turns the pass's display color
+ * back to linear. The scene pass spec checks the boxes' colors in the screen's corners.
  */
 function minimapTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({

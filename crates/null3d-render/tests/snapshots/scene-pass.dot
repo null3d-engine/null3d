@@ -31,7 +31,7 @@ digraph "render graph" {
   "resource canvas" [shape=ellipse, label="canvas"];
   "resource shadowMap" [shape=ellipse, label="shadowMap\ndepth16unorm, 1 x 1\nkept in texture 0: sampled"];
   "resource shadowAtlas" [shape=ellipse, label="shadowAtlas\ndepth32float, 1 x 1\nkept in texture 1: sampled"];
-  "resource minimap" [shape=ellipse, label="minimap\ncanvas format, 64 x 64\nkept in texture 2: attachment, sampled"];
+  "resource minimap" [shape=ellipse, label="minimap\nrgba8unorm-srgb, 64 x 64\nkept in texture 2: attachment, sampled"];
   "resource lights" [shape=note, label="lights\nbuffer from outside the graph"];
   "resource lightGrid" [shape=note, label="lightGrid\nbuffer"];
   "resource objects" [shape=note, label="objects\nbuffer from outside the graph"];

@@ -29,8 +29,8 @@ pub(crate) struct ViewCopyIds {
 #[derive(Debug)]
 pub(crate) struct ViewCopies {
     ids: ViewCopyIds,
-    /// The copy's pipeline, for targets of the format it was asked for.
-    pipeline: Option<(u32, u32)>,
+    /// The copy's pipeline, for targets of the format and the permutation it was asked for.
+    pipeline: Option<(u32, u32, u32)>,
     /// The image that the bind group of each view's copy reads, or 0 before it has a group.
     bound: [u32; MAX_VIEWS],
 }
@@ -46,18 +46,19 @@ impl ViewCopies {
     }
 
     /// Asks `pipelines` for the copy's pipeline into targets of `color_format`, and returns its
-    /// id.
+    /// id. The TONE_MAP bit of `permutation` builds the copy that decodes display color.
     pub(crate) fn request_pipeline(
         &mut self,
         pipelines: &mut PipelineCache,
         color_format: u32,
+        permutation: u32,
     ) -> u32 {
         match self.pipeline {
-            Some((id, format)) if format == color_format => id,
+            Some((id, format, bits)) if format == color_format && bits == permutation => id,
             _ => {
                 let id = pipelines.id(PipelineKey {
                     template: template::VIEW_COPY,
-                    permutation: 0,
+                    permutation,
                     vertex_format: 0,
                     color_format,
                     depth_format: format::NONE,
@@ -65,7 +66,7 @@ impl ViewCopies {
                     state: state_flags::CULL_NONE,
                     bias: DepthBias::NONE,
                 });
-                self.pipeline = Some((id, color_format));
+                self.pipeline = Some((id, color_format, permutation));
                 id
             }
         }
@@ -103,7 +104,7 @@ impl ViewCopies {
     /// Records the copy of the view at `place` inside the render pass that the render graph began
     /// into its target.
     pub(crate) fn record(&self, list: &mut DrawList, place: usize) -> Result<(), RecordError> {
-        let Some((pipeline, _)) = self.pipeline else {
+        let Some((pipeline, ..)) = self.pipeline else {
             return Ok(());
         };
         list.push(Op::SetPipeline, &[pipeline])?;
