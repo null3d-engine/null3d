@@ -1,8 +1,8 @@
 # D-20: WebGPU skinning
 
-Status: proposed; the Mac and iPad timings pending. Date: 2026-10-04. Task: M2-C3.
+Status: proposed. The lean skinning pass is built (M2-C8). The Mac's Chrome figures are in; the Mac's Safari, the iPad and the Android phones are pending. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
 
-Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, the compute pass by default and `?skinning=vertex` for the other, and both draw the same images; the skinning scene matches three.js's `SkinnedMesh`. The WebGPU skinning page times both.
+Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%.
 
 ## Question
 
@@ -135,3 +135,15 @@ The Mac ran S5's 500 knights at High (3 cascades), with the governor off, on 6 O
 - On the Mac, the compute pass saves nothing against the vertex shaders: 3.60 against 3.63 ms of GPU time, far from D-20's 10%. The vertex shaders' frames cost 0.27 ms less CPU time, since they record no skinning dispatch and upload no table.
 - The skinning itself is a small part of S5's GPU frame on the Mac. The 20,002 draw calls, one per skinned object in each pass, cost more. So the Mac alone cannot settle the rule; the iPad and the Android phones, whose GPUs repeat vertex work, decide it.
 - Safari's run gave no figures: the Mac's screen was locked, so its runner page stopped on the first page. It runs again once the screen is unlocked.
+
+### A1 on the Mac, Safari
+
+A second Safari run, on 7 October 2026 at a load below 4, passed 16 of 16 runs. Every page drew about 5 fps, with about 155 ms of GPU time per frame, where Chrome needs about 3.6 ms. The branch then predated the fix for Safari 26's stall on indirect draws that share arguments ([D-85](D-85-safari-indirect-arguments.md)). That stall most likely sets these figures, so they do not count for this rule. The only reading within the run: the vertex shaders took about 11% more GPU time than the compute pass pages (172.3 against 155.2 ms). The run is to repeat on the rebuilt branch.
+
+## Addendum, 2026-10-08: the branch made again on main
+
+Since this work began, main merged three changes that touch the skinned vertex. They are the index-instance switch (M2-K1), the S25 fix that builds the pass with and without tangent code, and color morph targets (M2-C11). The lean pass now fits beside them:
+
+- The pass keeps one build per tangent and color bit. The pipeline constant for 8-bit directions applies to each build, so the constant adds no build.
+- A morphed mesh's color stays four 32-bit floats, after the 8-bit normal and tangent, since morph targets may push it outside what 8 bits hold. Its offset in the skinned vertex moves up with the narrower directions, and a unit test checks that layout.
+- Held poses count from the first frame that waits for every pipeline, as the pipeline cache counts that frame's pipelines as built.
