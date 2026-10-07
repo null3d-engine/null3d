@@ -129,6 +129,7 @@ A run of the transparent pass is a set of neighbors in the sorted order that sha
 - Masked materials of the engine's mesh templates cut their shadows: templates 37 `SHADOW_CUTOUT` and 38 `SHADOW_CUTOUT_MAP`.
 - New numbers: material features 512 `ALPHA_TO_COVERAGE`, 2048 `ALPHA_HASH` and 4096 `SINGLE_PASS`; state flag 512 `ALPHA_TO_COVERAGE`; permutation bits `SAMPLE_MASK` (1 << 20), `ALPHA_COVERAGE` (1 << 21) and `ALPHA_HASH` (1 << 22).
 - A bit builds only beside the bits it needs, and `ALPHA_COVERAGE` and `ALPHA_HASH` never build together (`permutation::NEEDS` and `APART`). The builds load on first use (`[first_use.coverage]` and `[first_use.hash]`).
+- One check, `permutation::buildable`, applies both lists for the shader build, the pipeline keys and the mock GPU. The index-only instance switch ([D-23](D-23-index-instances.md)) keeps its own pair, `SKIN` and `INSTANCE_INDEX`, in the same `APART` list. Two checks would let a build pass one list and break the other.
 
 ## Consequences
 
