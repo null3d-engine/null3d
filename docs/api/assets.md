@@ -30,7 +30,7 @@ export default defineSketch(async ({ assets, page }) => {
 | Call | Gives |
 | --- | --- |
 | `loadGltf(url)` | A `Prefab`: a glTF model, whose objects `scene.instantiate` copies |
-| `loadTexture(url, options)` | A texture from a PNG, JPEG or WebP file, an AVIF file where the browser decodes AVIF, or a KTX2 file of ETC1S or UASTC data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
+| `loadTexture(url, options)` | A texture from a PNG, JPEG, WebP or AVIF file, or a KTX2 file of ETC1S, UASTC or UASTC HDR data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
 | `loadEnvironment(url)` | An `Environment` for `scene.setEnvironment`, from a file of `bunx @null3d/cli assets env` or from an HDR file: Radiance (`.hdr`) or OpenEXR (`.exr`). [Environments](#environments) says what it reads |
@@ -66,6 +66,7 @@ The prefab turns each part of the file into the engine's own:
 | A mesh | One mesh for each material, with its vertex arrays in the types that the file holds them in, `KHR_mesh_quantization` types included. Points and lines are left out; development builds warn about them |
 | A material | `materials.standard`, or `materials.unlit` with `KHR_materials_unlit`. `KHR_materials_emissive_strength` sets `emissiveIntensity`. `KHR_materials_specular` sets `specularIntensity`, `specularColor` and their maps, and `KHR_materials_ior` sets `ior`, as three.js's `GLTFLoader` sets them on a `MeshPhysicalMaterial`. An `ior` of 0 becomes 1000, as in three.js |
 | A texture | A texture with the file's sampler and texture coordinates. `KHR_texture_basisu` textures load through the KTX2 transcoder |
+| `EXT_texture_webp`, `EXT_texture_avif` | The texture's WebP or AVIF image, which the browser decodes in the loader's worker. A texture with a KTX2 image takes that first, then WebP, then AVIF. The texture's own image is a fallback for other loaders, and the engine does not download or decode it |
 | `KHR_texture_transform` | The material's `uvTransform`: the base color map's transform, or the first map's |
 | `KHR_lights_punctual` | Directional, point and spot lights, in the units of glTF and three.js |
 | `EXT_mesh_gpu_instancing` | An instance batch for each copy, in `instance.batches` |
@@ -84,6 +85,21 @@ Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them o
 | `prefab.textures` | The textures that the materials sample |
 | `prefab.clips` | The names of the model's clips, which a copy's animator plays |
 | `prefab.url` | The address the model came from |
+| `prefab.destroy()` | Frees the model: [Freeing a model](#freeing-a-model) |
+
+### Freeing a model
+
+`prefab.destroy()` frees a model that the scene no longer needs. It frees every mesh, material and texture that the load made, and the model's skeleton and clips. First destroy the copies that `scene.instantiate` made and the batches of `scene.createInstances`. They can go in the same frame, just before the model:
+
+```ts
+for (const copy of levelCopies) copy.destroy();
+level.destroy();
+const next = await assets.loadGltf('/levels/two.glb');
+```
+
+The next model takes the memory that the old one gave back, so a game that loads and drops levels keeps the same memory. While an object or batch still uses one of the model's meshes or materials, or plays its clips, `destroy` throws [E1111](../errors/E1111.md) and keeps the model. That covers objects of your own that you made with a mesh or material from `prefab.find`. Your own materials that map one of the model's textures draw with their colors alone after it. Calls that pass a destroyed model throw [E1101](../errors/E1101.md).
+
+A load that fails frees everything that it made before the failure.
 
 ## Color grading tables
 
@@ -202,7 +218,7 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 
 | Member | Description |
 | --- | --- |
-| `loadTexture(url: string \| URL, options: LoadTextureOptions = {}): Promise<Texture>` | Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the device supports, with the file's mip levels, and the first KTX2 file loads the transcoder. Throws E1411 when the file does not download, E1413 when a server of another origin does not allow the page to read it, E1412 when the file does not decode or passes a limit of the engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the transcoder does not load, and E1208 for options the engine does not know. |
+| `loadTexture(url: string \| URL, options: LoadTextureOptions = {}): Promise<Texture>` | Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a texture from it. The browser decodes PNG, JPEG, WebP and AVIF files. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the device supports, with the file's mip levels, and UASTC HDR data becomes BC6H or shared-exponent floats. The first KTX2 file loads the transcoder. Throws E1411 when the file does not download, E1413 when a server of another origin does not allow the page to read it, E1412 when the file does not decode or passes a limit of the engine's (a KTX2 file larger than the device's textures, before it transcodes), E1406 when the transcoder does not load, and E1208 for options the engine does not know. |
 | `loadGltf(url: string \| URL, options: LoadGltfOptions = {}): Promise<Prefab>` | Downloads a glTF 2.0 model, a `.glb` file or a `.gltf` file with the files it names, and makes a prefab of it: its meshes, materials, textures, lights and nodes, made once, which `scene.instantiate` copies. A worker parses the file off the sketch's frames, and the first call downloads the loader and its worker. The first file with meshopt compression also downloads the meshopt decoder. The loads count for `onProgress`, the files the model names too, and they take files that `preload` downloaded. Throws E1411 when a file does not download, E1413 when a server of another origin does not allow the page to read it, E1416 for a file that is not a glTF model the engine reads or that passes a limit on what one file may decode to, E1417 for a file that requires an extension the engine does not read, E1412 when an image does not decode, E1109 when a mesh does not fit engine memory, and E1406 when the loader or the meshopt decoder does not download. `options.rewriteUrl` checks the addresses that the file names. |
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadLut(url: string \| URL): Promise<Lut>` | Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along; a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when the readers do not load. |
@@ -303,7 +319,7 @@ The colors that a table's first and last texels stand for along each axis: red, 
 
 Class `Prefab`.
 
-A model that `assets.loadGltf` loaded: a template whose meshes, materials and textures exist once, on the GPU. Every copy shares them. `scene.instantiate` creates a copy of its objects. `scene.createInstances` draws many copies with instance batches. A prefab does not change.
+A model that `assets.loadGltf` loaded: a template whose meshes, materials and textures exist once, on the GPU. Every copy shares them. `scene.instantiate` creates a copy of its objects. `scene.createInstances` draws many copies with instance batches. A prefab does not change until `destroy` frees it.
 
 | Member | Description |
 | --- | --- |
@@ -311,6 +327,7 @@ A model that `assets.loadGltf` loaded: a template whose meshes, materials and te
 | `readonly bounds: PrefabBounds` | The bounds of the whole model, around the origin of its copies. |
 | `readonly materials: readonly Material[]` | The model's materials, in the file's order. |
 | `readonly textures: readonly Texture[]` | The model's textures, in the order the file names their images. |
+| `destroy(): void` | Destroys the model, like calling three.js's `dispose()` on each geometry, material and texture of a loaded glTF scene. It frees the GPU memory and the engine data of every mesh, material and texture that the load made, and of its skeleton and animation clips. Destroy the copies that `scene.instantiate` and `scene.createInstances` made first, and the objects that use one of its meshes or materials, in the same frame or before. Throws E1111 while one still does, and E1101 for a model that is destroyed already. Materials of your own that map one of the model's textures draw with their colors alone afterwards. Later calls that pass the model throw E1101. |
 | `readonly clips: readonly string[]` | The names of the model's clips, which a copy's animator plays. |
 | `find(name: string): PrefabNode \| undefined` | The first node with `name`, in the file's order, or undefined when no node has it. The nodes of a copy have the same names, and its `find` gives them. |
 

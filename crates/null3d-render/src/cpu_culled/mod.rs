@@ -102,6 +102,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
@@ -112,12 +113,12 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
-use crate::meshes::{MeshStorage, Packing};
+use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
-use crate::shadow_tiles::{MAX_TILES, ShadowTiles};
-use crate::shadows::{self, MAX_CASCADES, ShadowFrame, ShadowUniform};
+use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
+use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -135,6 +136,7 @@ mod ids {
     use super::data::RING;
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::effects::MAX_EFFECTS;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -159,8 +161,10 @@ mod ids {
     pub const BLOOM: u32 = SHADOW_TILES + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = BLOOM + 1;
+    /// The uniform buffer of the custom effects' blocks.
+    pub const EFFECTS: u32 = AO + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = AO + 1;
+    pub const PAGES: u32 = EFFECTS + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -200,8 +204,10 @@ mod ids {
     pub const MORPH_WEIGHTS: u32 = MORPHS + 1;
     /// The texture that frame groups bind in place of ambient occlusion's while it draws none.
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
+    /// The texture that custom effects bind in place of the scene's depth when they read none.
+    pub const BLANK_EFFECT_DEPTH: u32 = BLANK_AO + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_AO + 1;
+    pub const TARGETS: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -212,8 +218,10 @@ mod ids {
     pub const LUT_SAMPLER: u32 = 3;
     /// The sampler of the environment's cube texture.
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
+    /// The linear sampler of the custom effects.
+    pub const EFFECT_SAMPLER: u32 = 5;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 5;
+    pub const SAMPLERS: u32 = 6;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -238,8 +246,10 @@ mod ids {
     pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
-    /// The bind groups of materials' maps, after ambient occlusion's.
-    pub const TEXTURE_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The bind group of each custom effect, after ambient occlusion's.
+    pub const EFFECT_GROUPS: u32 = AO_GROUPS + AO_STEPS as u32;
+    /// The bind groups of materials' maps, after the effects'.
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -265,6 +275,8 @@ pub struct CpuCulledConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
+    /// How the shadow cascades store depth.
+    pub cascade_depth: CascadeDepth,
 }
 
 impl Default for CpuCulledConfig {
@@ -279,6 +291,7 @@ impl Default for CpuCulledConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
+            cascade_depth: CascadeDepth::default(),
         }
     }
 }
@@ -306,12 +319,12 @@ pub struct CpuCulledRenderer {
     graph: FrameGraph,
     /// The scene's layout, which the camera views draw.
     layout: Layout,
-    /// The shadow casters' layout, which the shadow cascades draw.
+    /// The shadow casters' layout, which the shadow cascades and tiles draw.
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
-    /// True when the layouts were built for a frame with shadows.
-    layouts_shadowed: bool,
+    /// The shadow passes of the frame that the layouts were built for.
+    layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
     layouts_outlined: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
@@ -386,6 +399,7 @@ impl CpuCulledRenderer {
                 config.max_materials,
                 textures,
                 config.canvas,
+                config.cascade_depth,
             ),
             lists: ParityLists::new(config.draw_list_words, config.draw_list_limit),
             // WebGL2 has no transient attachments: the backend discards what a pass does not store
@@ -413,16 +427,22 @@ impl CpuCulledRenderer {
                             buffer: ids::AO,
                             first_group: ids::AO_GROUPS,
                         },
+                        effects: EffectIds {
+                            buffer: ids::EFFECTS,
+                            sampler: ids::EFFECT_SAMPLER,
+                            first_group: ids::EFFECT_GROUPS,
+                            blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
                     },
                 );
-                graph.bind_shadow_map();
+                graph.bind_shadow_map(config.cascade_depth);
                 graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             outlined: Layout::new(Drawn::Outlined),
-            layouts_shadowed: false,
+            layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             layout_prepass: false,
             clusters: Clusters::default(),
@@ -539,13 +559,13 @@ impl CpuCulledRenderer {
     }
 
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
-    /// the clusters, the culling runs and every view's output, and the upload arenas. With
-    /// `shadows`, the casters' layout holds the casters, and the receivers read the shadow map.
-    /// With `outlines`, the outlined layout holds the outlined objects.
+    /// the clusters, the culling runs and every view's output, and the upload arenas. While
+    /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
+    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects.
     fn rebuild_layout(
         &mut self,
         input: &FrameInput<'_>,
-        shadows: bool,
+        shadows: CasterPasses,
         outlines: bool,
     ) -> Result<(), RecordError> {
         self.settings
@@ -566,14 +586,13 @@ impl CpuCulledRenderer {
         let multi_draw = self.config.multi_draw;
         let targets = self.with_draw_index(self.graph.scene_targets());
         self.layout_prepass = self.graph.depth_prepass();
-        let prepass = Prepass::OwnVertexShader.if_on(self.layout_prepass);
+        let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
             settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
         )?;
-        // The casters' layout holds buckets only while the light casts shadows.
-        if shadows {
-            let targets = self.with_draw_index(shadows::TARGETS);
+        // The casters' layout holds buckets only while a light casts shadows.
+        if shadows.any() {
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
             self.casters.rebuild(
                 settings,
@@ -627,7 +646,7 @@ impl CpuCulledRenderer {
                 input.batches,
                 place,
                 RESIDENT,
-                shadows,
+                shadows.any(),
                 |slot, key| skins.sorted_pipeline(slot, key),
             )
             .map_err(out_of_memory)?;
@@ -994,6 +1013,12 @@ impl CpuCulledRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
+        self.graph.set_effects(
+            self.settings.effects(),
+            self.settings.clock_seconds(),
+            self.settings.camera_projection(input.canvas),
+        );
+        self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
@@ -1138,7 +1163,7 @@ impl CpuCulledRenderer {
                 frame,
                 streamed,
             )?;
-            let shadowed = self.layouts_shadowed;
+            let shadowed = self.layouts_shadowed.any();
             if self.shadow.is_none() && self.cascades_held && shadowed {
                 // Receivers of point and spot light shadows read the cascades too: none now.
                 let (at, bytes) = arena.push(ShadowUniform::default().as_bytes())?;
@@ -1234,7 +1259,7 @@ impl CpuCulledRenderer {
                 }
                 Role::Shadow(view) if tile_culling.frame(view).is_some() => {
                     let starts = tile_culling.culled(frame, view).bucket_starts();
-                    tile_draws.record(list, arena, view, starts, casters, meshes, Shading::Depth)
+                    tile_draws.record(list, arena, view, starts, casters, meshes, Shading::Tile)
                 }
                 Role::OutlineMask if outline_culling.frame(ViewId::OUTLINE).is_some() => {
                     let view = ViewId::OUTLINE;
@@ -1347,8 +1372,17 @@ impl FrameBuilder for CpuCulledRenderer {
         let filter = self.settings.shadow_quality().filter;
         self.tiles
             .plan(input, tile_settings, filter, camera.as_ref());
-        // Receivers read the shadow maps while the sun or a point or spot light casts shadows.
-        let shadows = self.shadow.is_some() || self.tiles.shape().is_some();
+        // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
+        // casters draw into the passes of each.
+        let cascades = self.settings.cascade_depth().targets();
+        let shadows = CasterPasses {
+            cascades: self
+                .shadow
+                .is_some()
+                .then(|| self.with_draw_index(cascades)),
+            tiles: (self.tiles.shape().is_some())
+                .then(|| self.with_draw_index(shadow_tiles::TARGETS)),
+        };
         let outlines = self.settings.outline().is_some();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
@@ -1478,6 +1512,18 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn casts_tile_shadows(&self) -> bool {
         self.tiles.shape().is_some()
+    }
+
+    fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves) {
+        self.meshes.moved(moves);
+        if let Some(first) = moves.morph_texels {
+            self.skins.morph_mut().deltas_moved(first);
+        }
+        self.occluders.forget(ids);
+    }
+
+    fn mesh_gpu_bytes(&self) -> u64 {
+        self.meshes.gpu_bytes() + self.skins.morph().delta_bytes()
     }
 
     fn reset_gpu(&mut self) {

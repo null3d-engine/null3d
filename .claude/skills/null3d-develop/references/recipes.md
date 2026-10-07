@@ -15,7 +15,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 9. HTML settings panel that controls the scene
 10. Day and night: sun, sky and environment (0.2)
 11. Physics with a library in the sketch worker
-12. Minimap with a second camera (0.2)
+12. Minimap with a second camera (later in 0.2)
 13. Screenshots
 14. Video on a surface, with frames from the page
 15. Custom full-screen effect (0.2)
@@ -360,31 +360,18 @@ return {
 
 WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`.
 
-## 12. Minimap with a second camera (0.2)
+## 12. Minimap with a second camera (later in 0.2)
 
 ```ts
 const MAP = 1 << 2;                                    // layer for map-only markers
 const mapCamera = scene.createOrthographicCamera({ height: 200, near: 1, far: 500, position: [0, 300, 0], target: [0, 0, 0] });
 mapCamera.setLayers(1 | MAP);
 render.addPass({ name: 'Minimap', kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256], before: 'Post' });
-post.addEffect({
-  name: 'minimap-overlay',
-  stage: 'final',
-  textures: { map: textures.fromPass('minimap') },
-  wgsl: /* wgsl */ `
-    fn effect(input: EffectInput) -> vec4f {
-      let c = sampleScene(input.uv);
-      let size = vec2f(256.0) / input.resolution;          // the map's size in screen UV
-      let local = (input.uv - vec2f(1.0 - size.x - 0.02, 0.02)) / size;
-      if (all(local >= vec2f(0.0)) && all(local <= vec2f(1.0))) {
-        return textureSampleLevel(map, mapSampler, local, 0.0);
-      }
-      return c;
-    }`,
-});
+const map = materials.unlit({ map: textures.fromPass('minimap') });
+// Show `map` on a plane in front of a second view, or on a screen in the world.
 ```
 
-Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). From 0.2, a minimap or picture in picture works with a render-to-texture pass and a final effect. The effect samples the map with `textureSampleLevel` because the branch differs between pixels, and WGSL forbids implicit-mip sampling there (`references/shaders.md`, section 8). Docs: `guides/custom-passes`, `api/post`.
+Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). A minimap or picture in picture needs a render-to-texture pass, which is not built yet; check `guides/custom-passes` before using it. Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -436,21 +423,20 @@ Each frame costs one decode-and-resize on the page and one upload in the render 
 ## 15. Custom full-screen effect (0.2)
 
 ```ts
-post.addEffect({
-  name: 'pixelate',
-  stage: 'final',                   // runs in the merged final pass, after tone mapping
-  uniforms: { size: 4 },
-  wgsl: /* wgsl */ `
-    fn effect(input: EffectInput) -> vec4f {
-      let px = max(effect.size, 1.0);
-      let uv = floor(input.fragCoord.xy / px) * px / input.resolution;
-      return sampleScene(uv);
-    }`,
-});
-post.setEffectUniform('pixelate', 'size', 8);
+const pixelate = /* wgsl */ `
+  struct Uniforms { size: f32 }
+
+  fn effect(input: EffectInput) -> vec4f {
+    let px = max(uniforms.size, 1.0);
+    let center = (floor(input.pixel / px) + 0.5) * px;   // the middle of this pixel's block
+    return effectColor(center / input.size);
+  }`;
+
+const blocks = post.addEffect({ wgsl: pixelate, uniforms: { size: 4 } });
+post.setEffectUniform(blocks, 'size', 8);
 ```
 
-Per-pixel effects merge into the single final pass, so they add no extra full-screen pass. Effects that read neighboring pixels many times, such as blurs, get their own pass: `stage: 'hdr'`. Docs: `api/post`, `references/shaders.md` section 6.
+The effect runs on HDR color before bloom and the tone curve, in a full-screen pass of its own. Each effect adds one pass, so put several per-pixel looks in one function. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
 ## 16. Very large worlds (0.2)
 

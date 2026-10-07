@@ -205,7 +205,7 @@ export type Check =
 	/** A skinning page, on WebGL2 or on WebGPU's core path, with its crowd and its cascades. */
 	| { kind: 'skinning'; tier: SkinningGpu; characters: number; cascades: number }
 	/** The effect cost page: an effect off and on in turns, at one render scale. */
-	| { kind: 'effect'; effect: 'bloom' | 'ao'; tier: Tier; scale: number }
+	| { kind: 'effect'; effect: CostedEffect; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
 	/**
@@ -215,6 +215,8 @@ export type Check =
 	| { kind: 'environment-load'; tier: Tier }
 	/** The occlusion cost page: the city with software occlusion culling off and on in turns. */
 	| { kind: 'occlusion' }
+	/** The GPU occlusion page: frames culled against unculled, then the culling off and on in turns. */
+	| { kind: 'gpu-occlusion' }
 	/** The large-world jitter page: flights at the origin and far from it, on one GPU path. */
 	| { kind: 'jitter'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
@@ -292,7 +294,13 @@ function pageItem(
 		switches = [],
 		timeoutSeconds = 30,
 		load,
-	}: { switches?: readonly string[]; timeoutSeconds?: number; load?: Load } = {},
+		ownTab = false,
+	}: {
+		switches?: readonly string[];
+		timeoutSeconds?: number;
+		load?: Load;
+		ownTab?: boolean;
+	} = {},
 ): PlanItem<Check> {
 	const query = switches.filter(Boolean).join('&');
 	const file = `${TEST_PAGES}${page}.html${query ? `?${query}` : ''}`;
@@ -301,6 +309,7 @@ function pageItem(
 		path: load ? loadPath(load, file.slice(1)) : file,
 		timeoutSeconds,
 		check,
+		...(ownTab && { ownTab: true as const }),
 	};
 }
 
@@ -532,7 +541,11 @@ export function checksPlan(): PlanItem<Check>[] {
 				`frame-restarts-${slug(mode.name)}`,
 				'shared-memory',
 				{ kind: 'restarts', mode, start: 'frame' },
-				{ switches: ['kinds=frame', mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+				{
+					switches: ['kinds=frame', mode.query],
+					timeoutSeconds: RESTARTS_TIMEOUT_SECONDS,
+					ownTab: true,
+				},
 			),
 		),
 		...TIERS.flatMap((tier) =>
@@ -556,7 +569,11 @@ export function checksPlan(): PlanItem<Check>[] {
 					`${start}-restarts-${slug(mode.name)}`,
 					'shared-memory',
 					{ kind: 'restarts', mode, start },
-					{ switches: [`kinds=${start}`, mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
+					{
+						switches: [`kinds=${start}`, mode.query],
+						timeoutSeconds: RESTARTS_TIMEOUT_SECONDS,
+						ownTab: start === 'frame-destroyed',
+					},
 				),
 			),
 		),
@@ -576,6 +593,7 @@ export const SMOKE_IMAGE_TESTS: ReadonlySet<string> = new Set([
 	's4',
 	'textures',
 	'ktx2',
+	'gltf-image-formats',
 	'standard-maps',
 	'transparency',
 	'lights-16',
@@ -863,6 +881,9 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 	);
 }
 
+/** The effects that the effect cost page measures: bloom, ambient occlusion, or 4 custom effects. */
+export type CostedEffect = 'bloom' | 'ao' | 'effects';
+
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
 /** The render scales at which the effect plans measure an effect. */
@@ -873,9 +894,11 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * and the page times its frames with the effect off and on in turns. Ambient occlusion turns the
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
- * prepass's. D-21 records the results of the bloom plan and the ao plan.
+ * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
+ * one effect's pass. D-21 records the results of the bloom plan and the ao plan, and D-71 those of
+ * the effects plan.
  */
-export function effectPlan(effect: 'bloom' | 'ao'): PlanItem<Check>[] {
+export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const prepass = effect === 'ao' ? [false, true] : [false];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
@@ -995,6 +1018,28 @@ export function occlusionPlan(): PlanItem<Check>[] {
 			'occlusion-cost',
 			{ kind: 'occlusion' },
 			{ switches: ['gpu=webgl2'], timeoutSeconds: OCCLUSION_TIMEOUT_SECONDS },
+		),
+	];
+}
+
+/** How long the GPU occlusion page may take: twelve frames read back, then six engines of 4 s. */
+const GPU_OCCLUSION_TIMEOUT_SECONDS = 120;
+
+/**
+ * What GPU occlusion culling saves and costs on WebGPU: the room scene's frames with it and
+ * without it must match, then the scene fills the window and the page times its frames with the
+ * culling off and on in turns. D-22 records the results.
+ */
+export function gpuOcclusionPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(
+			'gpu-occlusion-webgpu',
+			'gpu-occlusion',
+			{ kind: 'gpu-occlusion' },
+			{
+				switches: ['gpu=webgpu', 'seconds=4', 'rounds=3'],
+				timeoutSeconds: GPU_OCCLUSION_TIMEOUT_SECONDS,
+			},
 		),
 	];
 }
@@ -1346,9 +1391,11 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	effects: () => effectPlan('effects'),
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	occlusion: occlusionPlan,
+	'gpu-occlusion': gpuOcclusionPlan,
 	jitter: jitterPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
@@ -1665,7 +1712,8 @@ const roomLost = (room: number | undefined, round: RestartRound) =>
  * it gets a note through `note` instead; more than that fails where the engines are `threaded`. The
  * single-threaded build takes no shared memory, so any room it loses is address space. Room that
  * engines on kept canvases left held gets a note too: their starts go past the room, so a start
- * fails when that memory stops it.
+ * fails when that memory stops it. So does room that stopped engines in removed frames left held,
+ * which Safari keeps with the frame's page.
  */
 export function restartProblems(
 	result: RestartResult,
@@ -1689,6 +1737,17 @@ export function restartProblems(
 		return problems;
 	}
 	const { again } = engine;
+	// Safari can keep a removed frame's whole page, and all that it reaches, for minutes, even a
+	// page with no engine (D-92). So room that stopped engines in removed frames left held gets a
+	// note. Restarts on the page stop their engines with no frame, and still fail on it.
+	if (start === 'frame-destroyed') {
+		if (again?.error) problems.push(failed(again, ' in the second round'));
+		else
+			note?.(
+				`Safari kept the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: ${lostText}${again ? `, and for ${again.roomLater} after ${again.cycles} more${waitedText(again.roomWaitMs)}` : ''}`,
+			);
+		return problems;
+	}
 	if (!again)
 		problems.push(
 			`the browser did not get back the memory of ${words.engines}${waitedText(engine.roomWaitMs)}: ${lostText}`,
@@ -1922,6 +1981,20 @@ export function judge(
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
+			];
+		}
+		case 'gpu-occlusion': {
+			const occlusion = result as ItemResult & {
+				failures?: string[];
+				differingPixels?: number[];
+				cost?: { on?: { intervalMs?: number } };
+			};
+			return [
+				...(occlusion.failures ?? []).map((code) => `the engine failed with ${code}`),
+				...(occlusion.differingPixels ?? []).flatMap((pixels, view) =>
+					pixels > 0 ? [`view ${view} differs from culling off in ${pixels} pixels`] : [],
+				),
+				...(occlusion.cost?.on?.intervalMs ? [] : ['the page measured no frame with culling on']),
 			];
 		}
 		case 'environment-load':

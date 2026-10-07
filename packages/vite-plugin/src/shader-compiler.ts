@@ -125,6 +125,32 @@ export function compileMaterial(material: MaterialSource): MaterialResult {
 	return response.ok ? { ok: true, material: response.output } : response;
 }
 
+/** A custom effect or tone curve, built into the engine's effect template or its final pass. */
+export interface EffectBuild {
+	/** The function that the WGSL declares: `effect` or `toneCurve`. */
+	readonly function: 'effect' | 'toneCurve';
+	/** The fields of the WGSL's `struct Uniforms`, where the engine writes each. */
+	readonly uniforms: readonly CompiledUniform[];
+	/** True when the effect reads the scene's depth. */
+	readonly depth: boolean;
+	/** The template's variants with the WGSL, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
+}
+
+/** The result of a custom effect's or tone curve's compile. */
+export type EffectResult =
+	| { readonly ok: true; readonly effect: EffectBuild }
+	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
+
+/**
+ * Builds a custom effect's WGSL into every variant of the engine's effect template, or a custom
+ * tone curve's into every variant of its final pass. Problems in the WGSL name its own lines.
+ */
+export function compileEffect(effect: MaterialSource): EffectResult {
+	const response = call<EffectBuild>('compile_effect', effect);
+	return response.ok ? { ok: true, effect: response.output } : response;
+}
+
 /** A shader manifest and every WGSL file beside it, as `bun run shaders` reads them. */
 export interface ShaderBuildInputs {
 	/** The manifest's text. */
@@ -157,6 +183,7 @@ interface Exports {
 	request(length: number): number;
 	compile(): void;
 	compile_material(): void;
+	compile_effect(): void;
 	build(): void;
 	response(): number;
 	response_length(): number;
@@ -185,7 +212,10 @@ function loadModule(): WebAssembly.Module {
 }
 
 /** Runs one export on a request. The first call compiles the module. */
-function call<T>(name: 'compile' | 'compile_material' | 'build', request: unknown): Response<T> {
+function call<T>(
+	name: 'compile' | 'compile_material' | 'compile_effect' | 'build',
+	request: unknown,
+): Response<T> {
 	compiled ??= loadModule();
 	instance ??= new WebAssembly.Instance(compiled).exports as unknown as Exports;
 	const wasm = instance;

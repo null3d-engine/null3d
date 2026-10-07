@@ -207,6 +207,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'start',
 		values: 'flag',
 	},
+	// Two-phase occlusion culling on WebGPU: objects that marked occluders hide do not draw. It
+	// costs a depth-only draw of the occluders, a depth pyramid and a second culling dispatch in
+	// each frame with marked occluders. On the Mac those passes cost more GPU time than skipping
+	// hidden objects saved, in every scene measured, so every preset leaves it off (D-22).
+	gpuOcclusion: {
+		presets: [false, false, false, false],
+		changes: 'start',
+		values: 'flag',
+	},
 	// The most morph weights of each object that WebGL2 draws. Its vertex shaders morph in every
 	// pass that draws a mesh, shadow passes too, and skip a target whose weight is 0, so the cap
 	// bounds the reads of each pass. WebGPU morphs once per frame in its skinning pass and draws
@@ -371,6 +380,14 @@ export interface QualitySettings {
 	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it.
 	 */
 	depthPrepass: boolean;
+	/**
+	 * True when GPU occlusion culling runs on WebGPU: each camera view draws the depth of the
+	 * objects that `setOccluder(true)` marks and that it showed in the last frame, and skips every
+	 * object that lies wholly behind them. A frame without marked objects pays nothing for it. The
+	 * page's `gpuOcclusion` option of `createEngine` sets it, and `set` does not take it. It is
+	 * always false on WebGL2, and when the depth prepass is on.
+	 */
+	gpuOcclusion: boolean;
 	/**
 	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
 	 * 1 to 256. Each object keeps the weights farthest from 0, and draws the others as 0. WebGPU

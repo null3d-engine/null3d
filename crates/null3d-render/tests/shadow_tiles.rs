@@ -5,17 +5,20 @@
 
 mod common;
 
+use std::collections::HashSet;
+
 use common::{World, count};
 use null3d_core::animation::{Channel, Interpolation, Play, SourceTrack, resample};
 use null3d_core::lights::{LightTable, kind};
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{NO_TARGET, Op, format, view};
+use null3d_gpu::drawlist::{NO_TARGET, Op, format, template, view};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::gpu_driven::GpuDrivenRenderer;
+use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::light_grid::LightGrid;
 use null3d_render::shadow_tiles::{MAX_REDRAWS, ShadowTiles, TileSettings};
+use null3d_render::shadows::CascadeDepth;
 use null3d_render::view::ViewId;
 
 /// Two tiles of 256 texels, without point light shadows.
@@ -619,4 +622,101 @@ fn a_burst_of_redraws_spreads_over_frames_under_the_cap() {
     assert_eq!(world.renderer.tiles().waiting(), 0);
     step(&mut world, &mut mock, false);
     assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+/// The depth formats of the shadow casters' pipelines that a list creates.
+fn caster_formats(commands: &[(Op, Vec<u32>)]) -> HashSet<u32> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::SHADOW_DEPTH)
+        .map(|(_, o)| o[4])
+        .collect()
+}
+
+/// The formats of the depth textures bound as arrays that a list creates.
+fn shadow_map_formats(commands: &[(Op, Vec<u32>)]) -> HashSet<u32> {
+    commands
+        .iter()
+        .filter(|(op, o)| {
+            *op == Op::CreateTexture && format::is_depth(o[4]) && o[8] == view::D2_ARRAY
+        })
+        .map(|(_, o)| o[4])
+        .collect()
+}
+
+/// Checks that the cascades store `depth` and the tiles 32-bit floats, and that the casters get
+/// a pipeline for each format only while a light draws into it. The mock backend rejects a
+/// pipeline or a bundle whose depth format differs from its pass's.
+fn casters_draw_with_a_pipeline_for_each_depth_format<B: Tiles>(renderer: B, depth: CascadeDepth) {
+    let mut world = world(renderer, TWO_TILES);
+    let (sun, _) = world.add_sun(3);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    let (cascades, tiles) = (depth.format(), format::DEPTH32_FLOAT);
+
+    // The sun alone: the casters draw into the cascades only.
+    let first = step(&mut world, &mut mock, true);
+    let maps = shadow_map_formats(&first);
+    assert!(
+        maps.contains(&cascades) && maps.contains(&tiles),
+        "{maps:?}"
+    );
+    assert_eq!(caster_formats(&first), HashSet::from([cascades]));
+
+    // A spot light casts too: the casters get the tiles' pipelines, which the tile draws with.
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let both = step(&mut world, &mut mock, true);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    let new = caster_formats(&both);
+    if depth == CascadeDepth::Float32 {
+        assert!(
+            new.is_empty(),
+            "the cascades' pipelines serve the tiles: {new:?}"
+        );
+    } else {
+        assert_eq!(new, HashSet::from([tiles]));
+    }
+
+    // Without the sun's shadows, the tile still draws with its own pipelines.
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_flags(sun, flags::CAST_SHADOWS, 0)],
+            world.frame,
+        )
+        .unwrap();
+    step(&mut world, &mut mock, true);
+    world
+        .scene
+        .set_position(world.objects[0], [-3.0, 0.6, 0.0])
+        .unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+}
+
+#[test]
+fn webgpu_casters_draw_with_a_pipeline_for_each_depth_format() {
+    for depth in [CascadeDepth::Unorm16, CascadeDepth::Float32] {
+        let config = RendererConfig {
+            cascade_depth: depth,
+            ..RendererConfig::default()
+        };
+        casters_draw_with_a_pipeline_for_each_depth_format(GpuDrivenRenderer::new(config), depth);
+    }
+}
+
+#[test]
+fn webgl2_casters_draw_with_a_pipeline_for_each_depth_format() {
+    for (multi_draw, depth) in [
+        (true, CascadeDepth::Unorm16),
+        (false, CascadeDepth::Unorm16),
+        (true, CascadeDepth::Float32),
+    ] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            cascade_depth: depth,
+            ..CpuCulledConfig::default()
+        };
+        casters_draw_with_a_pipeline_for_each_depth_format(CpuCulledRenderer::new(config), depth);
+    }
 }
