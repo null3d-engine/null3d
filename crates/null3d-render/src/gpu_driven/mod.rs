@@ -133,7 +133,7 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
-use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
@@ -1268,6 +1268,17 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn casts_tile_shadows(&self) -> bool {
         self.tiles.shape().is_some()
+    }
+
+    fn meshes_moved(&mut self, _ids: &[u32], moves: &MeshMoves) {
+        self.meshes.moved(moves);
+        if let Some(first) = moves.morph_texels {
+            self.skinning.morph_mut().deltas_moved(first);
+        }
+    }
+
+    fn mesh_gpu_bytes(&self) -> u64 {
+        self.meshes.gpu_bytes() + self.skinning.morph().delta_bytes()
     }
 
     fn reset_gpu(&mut self) {

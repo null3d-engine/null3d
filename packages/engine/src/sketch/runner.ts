@@ -390,6 +390,7 @@ export class SketchRunner {
 			{ geometry, materials },
 			this.input,
 		);
+		geometry.users = scene;
 		this.post = new Post(
 			this.core,
 			device.effectsSceneColor !== FORMAT_CANVAS,

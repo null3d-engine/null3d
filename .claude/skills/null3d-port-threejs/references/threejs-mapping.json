@@ -450,8 +450,8 @@
       "three": "geometry.dispose() / material.dispose() / texture.dispose()",
       "status": "changed",
       "since": "0.1",
-      "target": "texture.destroy(); material.destroy() (0.2); mesh.destroy() (0.2)",
-      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. material.destroy() (0.2) frees the material's place, and a custom material's pipelines with its last material, once no object uses it; objects that still use it draw nothing. Meshes get destroy() in 0.2. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed.",
+      "target": "texture.destroy(); material.destroy() (0.2); mesh.destroy() (0.2); prefab.destroy() (0.2) for a loaded glTF model",
+      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. material.destroy() (0.2) frees the material's place, and a custom material's pipelines with its last material, once no object uses it; objects that still use it draw nothing. mesh.destroy() (0.2) frees a mesh's GPU memory and data at the next frame, and throws E1111 while an object or instance batch uses it, so destroy those first, in the same frame or before. prefab.destroy() (0.2) frees every mesh, material and texture of a loaded model, and its skeleton and clips, once its copies are destroyed. three.js's dispose leaves the object usable and uploads it again on the next render; null3D's destroy ends it, and later calls throw E1101.",
       "docs": "api/textures",
       "detect": "\\.dispose\\s*\\("
     },
