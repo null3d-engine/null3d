@@ -81,6 +81,8 @@ Four phones held their screen's rate with both formats, so the small format save
 
 Memory needs no run. The small format takes 4 bytes a pixel against 8. At 1080 x 2400 with no MSAA, it saves about 9.9 MiB of scene color. The memory plan measures which memory maximum starts the engine, not a peak. Its run also drew on WebGPU, where the format switch does not apply.
 
+P3's plan also named the iPad, which this record does not need. One default covers every device, because the engine cannot pick the format by GPU (hard rule 14). The Pixel 6's cost already keeps that default at `RGBA16F`, so no iPad result could change it. The dither and the dark tone tests draw on the Mac's Apple GPU, and the merge queue's Safari job runs them against the same references. P3's anti-aliasing part on Low belongs to the presets, not to this record.
+
 ## Decision
 
 1. The vignette takes `post.set({ vignette: { intensity, size, falloff, roundness } })`. Take a place `d` from the center, in canvas widths and heights times `size`. The roundness scales the width toward the height. HDR color there is multiplied by `max(1 - intensity × (1 - (1 - d²)^falloff), 0)`. The defaults are intensity 1, size 1, falloff 2 and roundness 0. A port sets `size` to `offset` and `intensity` to `darkness`. The four values fill the vignette's existing vector in the final pass's settings, so the uniform block keeps its size. The old `offset` and `darkness` throw E1213 with the mapping.
