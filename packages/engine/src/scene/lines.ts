@@ -12,6 +12,13 @@
 import * as C from '../generated/core';
 import type { CoreMemory } from './memory';
 import type {
+	ObjectEventHandler,
+	ObjectEventType,
+	PointerListeners,
+	PointerRows,
+	PointerTarget,
+} from './pointer-events';
+import type {
 	Geometry,
 	Material,
 	MaterialFeatures,
@@ -273,7 +280,7 @@ interface LinePoints {
 }
 
 /** What a line batch's calls that change points reach in the core: the instance batch's calls. */
-export interface LineBatchRows {
+export interface LineBatchRows extends PointerRows {
 	setActiveCount(count: number): void;
 	setLayers(mask: number): void;
 	markDirty(start: number, count: number): void;
@@ -291,6 +298,8 @@ export interface LineBatchRows {
 export class LineBatch {
 	private generation = -1;
 	private points!: LinePoints;
+	/** @internal The batch's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	/** @internal */
 	constructor(
@@ -361,6 +370,29 @@ export class LineBatch {
 	 */
 	markDirty(start = 0, count = this.count - start): void {
 		this.batch.markDirty(start, count);
+	}
+
+	/**
+	 * Calls `handler` for each pointer event of `type` on a segment of the batch, as `Object3D.on`
+	 * does. A ray hits a segment within half its width. The event's `instance` names the segment.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.batch.listen(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.batch.unlisten(this, type, handler);
+	}
+
+	/** @internal The frame in which the batch was destroyed, or -1. */
+	get destroyedFrame(): number {
+		return this.batch.destroyedFrame;
+	}
+
+	/** @internal A batch has no parent for its pointer events to go on to. */
+	pointerParent(): PointerTarget | null {
+		return null;
 	}
 
 	/**

@@ -20,7 +20,8 @@ use null3d_core::animation::{
     REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
 };
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
-use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
+use null3d_core::bvh::query::{NO_TRIANGLE, QueryHit, QueryScene, SceneQueries};
+use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
@@ -987,9 +988,10 @@ pub fn create_batch_part(
 
 /// Creates a sprite batch: `capacity` sprites drawn with `mesh`, a quad around their anchor, and
 /// `material`, a sprite material. Frames come from an atlas of `columns` by `rows`, and with
-/// `screen_size` the sizes are in CSS pixels of the screen rather than in world units. Returns
-/// its id.
+/// `screen_size` the sizes are in CSS pixels of the screen rather than in world units. `points`
+/// marks a batch of points, which a raycast's point threshold reaches. Returns its id.
 #[wasm_bindgen(js_name = createSpriteBatch)]
+#[allow(clippy::too_many_arguments)]
 pub fn create_sprite_batch(
     capacity: u32,
     dynamic: bool,
@@ -998,8 +1000,10 @@ pub fn create_sprite_batch(
     columns: u32,
     rows: u32,
     screen_size: bool,
+    points: bool,
 ) -> u32 {
     let look = SpriteLook::new(columns, rows, screen_size);
+    let look = if points { look.as_points() } else { look };
     value_with_engine(|e| {
         add_batch(e, capacity, mesh, |batches, radius| {
             batches.create_sprites(capacity, dynamic, mesh, material, radius, look)
@@ -2990,7 +2994,11 @@ fn write_hit(out: &mut [f64], hit: Option<&QueryHit>) {
     out[query::HIT_SLOT as usize] = slot;
     out[query::HIT_BATCH as usize] = batch;
     out[query::HIT_ROW as usize] = row;
-    out[query::HIT_TRIANGLE as usize] = f64::from(hit.triangle);
+    out[query::HIT_TRIANGLE as usize] = if hit.triangle == NO_TRIANGLE {
+        -1.0
+    } else {
+        f64::from(hit.triangle)
+    };
     out[query::HIT_DISTANCE as usize] = f64::from(hit.distance);
     let point = query::HIT_POINT as usize;
     out[point..point + 3].copy_from_slice(&hit.point);
@@ -3018,6 +3026,35 @@ fn ray_from(numbers: &[f64], t_max: f64) -> Option<WorldRay> {
     WorldRay::toward(origin, direction).map(|ray| ray.with_max(t_max as f32))
 }
 
+/// What a raycast's input gives the rows of sprite, point and line batches: its thresholds, and
+/// the camera that they face. Each query reads it once, so it stays out of line.
+#[inline(never)]
+fn row_query(input: &[f64]) -> RowQuery {
+    let at = |i: u32| input[i as usize];
+    let three = |i: u32| [at(i), at(i + 1), at(i + 2)];
+    let unit = |i: u32| three(i).map(|v| v as f32);
+    let threshold = |i: u32| (at(i) >= 0.0).then(|| at(i) as f32);
+    let kind = at(query::INPUT_CAMERA) as u32;
+    let camera = (kind != query::CAMERA_NONE).then(|| QueryCamera {
+        eye: three(query::INPUT_EYE),
+        right: unit(query::INPUT_RIGHT),
+        up: unit(query::INPUT_UP),
+        forward: unit(query::INPUT_FORWARD),
+        perspective: kind == query::CAMERA_PERSPECTIVE,
+        pixel: [
+            at(query::INPUT_PIXEL) as f32,
+            at(query::INPUT_PIXEL + 1) as f32,
+        ],
+        near: at(query::INPUT_NEAR) as f32,
+        far: at(query::INPUT_FAR) as f32,
+    });
+    RowQuery {
+        camera,
+        point_threshold: threshold(query::INPUT_POINT_THRESHOLD),
+        line_threshold: threshold(query::INPUT_LINE_THRESHOLD),
+    }
+}
+
 /// The parts of the engine that a query uses, with the scene's trees brought up to date.
 struct QueryParts<'a> {
     queries: &'a mut SceneQueries,
@@ -3041,6 +3078,7 @@ fn run_query(f: impl FnOnce(QueryParts<'_>) -> Result<u32, u32>) -> u32 {
             scene: &e.scene,
             batches: &e.batches,
             meshes: e.renderer.settings(),
+            rows: row_query(&e.query_input),
         };
         if let Err(error) = e.queries.sync(&view, jobs) {
             return core_failure(error);

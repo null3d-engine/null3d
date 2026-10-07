@@ -111,7 +111,7 @@ export const ERROR_FIXES = {
 	E1421:
 		'Name each feature as the message lists it. Leave a feature out to let its shaders download the first time the sketch uses it.',
 	E1422:
-		"Add what the message names to the page's Content-Security-Policy: blob: in worker-src, and the origin of the engine's files in script-src and connect-src. For example: worker-src 'self' blob:; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; connect-src 'self' https://cdn.example.com. Or serve the engine's files from the page's own origin.",
+		"Add what the message names to the page's Content-Security-Policy. Its worker-src needs blob: and the origin of the engine's files, and its script-src and connect-src need that origin. For example: worker-src 'self' blob: https://cdn.example.com; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; connect-src 'self' https://cdn.example.com. Or serve the engine's files from the page's own origin.",
 	E1423:
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
 	E1501:

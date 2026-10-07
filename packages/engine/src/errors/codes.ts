@@ -400,7 +400,7 @@ const DOCS = {
 	E1422: {
 		title: 'Engine file blocked by the page',
 		cause:
-			"The engine's files come from another origin than the page, such as a CDN, and the page's Content-Security-Policy blocks one of them. The engine starts each worker from a blob: address that imports the worker's script from that origin, and downloads its .wasm files from there. So the policy's worker-src must allow blob:, and its script-src and connect-src must allow the other origin.",
+			"The engine's files come from another origin than the page, such as a CDN, and the page's Content-Security-Policy blocks one of them. The engine starts each worker from a blob: address that imports the worker's script from that origin, and downloads its .wasm files from there. So the policy's worker-src must allow blob: and the other origin, and its script-src and connect-src must allow the other origin too. Firefox checks the modules that a worker imports against worker-src.",
 		example:
 			"E1422: the page's Content-Security-Policy blocks the job-0 worker: its worker-src does not allow blob:, which the engine starts its workers from when its files come from another origin.",
 		since: '0.2',

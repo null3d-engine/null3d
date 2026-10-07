@@ -13,11 +13,11 @@
 // with screenToRay, which must pass through the point, as a label placed on it would need.
 import {
 	defineSketch,
-	type InstanceBatch,
 	type Material,
 	type MeshGeometry,
 	type Object3D,
 	type OverlapHit,
+	type QueryTarget,
 	type RaycastHit,
 	type RaycastOptions,
 	type Vec3Like,
@@ -87,7 +87,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 
 	const three = new ThreeScene();
 	/** Each null3D object or batch, and the three.js object that stands for it. */
-	const twins = new Map<Object3D | InstanceBatch, ThreeObject>();
+	const twins = new Map<QueryTarget, ThreeObject>();
 	const front = materials.standard({ color: '#c0c0c0' });
 	const both = materials.standard({ color: '#c08040', doubleSided: true });
 	const threeFront = new MeshBasicMaterial({ side: FrontSide });
@@ -217,8 +217,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 	const origin = new Vector3();
 	const direction = new Vector3();
 	const objects = [...twins.values()];
-	const twinOf = (object: Object3D | InstanceBatch | null) =>
-		object ? twins.get(object) : undefined;
+	const twinOf = (object: QueryTarget | null) => (object ? twins.get(object) : undefined);
 	const normalMatrix = new Matrix3();
 	/** three.js's hit's triangle normal in world space, facing the ray, as null3D gives it. */
 	const rowMatrix = new Matrix4();
@@ -236,7 +235,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 		if (n.dot(raycaster.ray.direction) > 0) n.negate();
 		return n;
 	};
-	const describe = (object: Object3D | InstanceBatch | null, instance: number) => {
+	const describe = (object: QueryTarget | null, instance: number) => {
 		const twin = twinOf(object);
 		return `${twin ? objects.indexOf(twin) : 'none'}${instance >= 0 ? `#${instance}` : ''}`;
 	};
@@ -392,7 +391,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 	const batchRays = new Float64Array(BATCH_RAYS * 6);
 	const batchOut = {
 		distances: new Float32Array(BATCH_RAYS),
-		objects: new Array<Object3D | InstanceBatch | null>(BATCH_RAYS).fill(null),
+		objects: new Array<QueryTarget | null>(BATCH_RAYS).fill(null),
 		instances: new Int32Array(BATCH_RAYS),
 	};
 	for (let i = 0; i < BATCH_RAYS; i++) batchRays.set(newRay(), i * 6);

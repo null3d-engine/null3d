@@ -252,6 +252,7 @@ fn format_name(code: u32) -> String {
         format::DEPTH32_FLOAT => "depth32float".into(),
         format::RGBA32_FLOAT => "rgba32float".into(),
         format::R32_UINT => "r32uint".into(),
+        format::RGBA32_UINT => "rgba32uint".into(),
         other => format!("format {other}"),
     }
 }

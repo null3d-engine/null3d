@@ -361,6 +361,8 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 
 Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. A texture from a KTX2 file takes no `update`.
 
+On WebGL2 the maps of one standard material share six textures on the GPU. Maps of one size, format and sampling count once, but each KTX2 map counts on its own. Past six, the material draws without its specular maps, then its light map (`api/textures`). Pack occlusion, roughness and metalness into one map, as glTF does.
+
 ## 11. Assets (`api/assets`)
 
 ```ts
@@ -430,9 +432,11 @@ const n = scene.raycastAll(origin, direction, opts, hits);   // every triangle h
 scene.raycastBatch(rays, opts, { distances });         // 6 numbers per ray; job workers; -1 = miss
 scene.overlapSphere(center, radius, opts, out);        // objects with a triangle in the sphere
 scene.overlapBox(min, max, opts, out);                 // returns the count, as overlapSphere
+scene.raycast(o, d, { pointThreshold: 0.2, lineThreshold: 0.1 }, hit);   // three.js's Points and Line thresholds
+sprites.on('click', (e) => select(e.instance));        // sprite, point and line batches take pointer events
 ```
 
-Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
+Hit objects are the same wrappers you created; `hit.instance` is the row of a batch, and `hit.triangle` is three.js's `faceIndex`. Raycasts hit sprites, points and lines where they draw, through the active camera. Then `hit.object` is the batch, `hit.instance` the sprite, point or segment, and `hit.triangle` -1. Overlap queries skip them. Queries test triangles, front faces only unless the material is `doubleSided`, and never hit hidden objects. They see the positions of the last frame's update, or this frame's in `onLateUpdate`. A skinned character is tested in its bind pose. A NaN, an infinite number or a direction of length 0 throws in every build (E1203, E1108), so guard computed rays. Create `ray`, `hit`, `opts` and the `hits` and `out` arrays once and reuse them: queries then allocate nothing. The first query after a mesh appears builds its tree, about 0.25 µs per triangle on the job workers. The asset tool's `--bvh <triangles>` stores the trees of large meshes in the file instead (default 20,000).
 
 ## 14. Input (`api/input`) and controls (`api/controls`)
 

@@ -291,6 +291,7 @@ fn queries_give_brute_force_answers_as_the_scene_changes() {
             scene: &scene,
             batches: &batches,
             meshes: &meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
         // A second sync of the same frame changes nothing.
@@ -427,6 +428,7 @@ fn queries_follow_late_updates_and_batch_updates() {
             scene,
             batches,
             meshes: &meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
         queries.raycast(&view, &ray, u32::MAX).map(|h| h.distance)
@@ -488,6 +490,7 @@ fn a_late_move_after_a_query_counts_in_later_frames() {
             scene,
             batches: &batches,
             meshes: &meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
         let forward = WorldRay::new([0.0, height, 0.0], [0.0, 0.0, -1.0]);
@@ -535,6 +538,7 @@ fn missing_rays_of_a_batch_miss() {
         scene: &scene,
         batches: &batches,
         meshes: &meshes,
+        rows: Default::default(),
     };
     queries.sync(&view, jobs).unwrap();
     let directions = [
@@ -568,6 +572,7 @@ fn queries_before_the_first_frame_find_nothing() {
         scene: &scene,
         batches: &batches,
         meshes: &meshes,
+        rows: Default::default(),
     };
     queries.sync(&view, &jobs).unwrap();
     let ray = WorldRay::new([0.0; 3], [0.0, 0.0, -1.0]);
@@ -637,6 +642,7 @@ fn stored_trees_take_the_place_of_builds() {
         scene: &scene,
         batches: &batches,
         meshes: &meshes,
+        rows: Default::default(),
     };
     queries.sync(&view, jobs).unwrap();
     assert_eq!(queries.mesh_bvh(2).unwrap().to_bytes(), stored);
@@ -691,6 +697,7 @@ fn a_removed_mesh_gives_its_tree_to_the_next_mesh_with_its_id() {
             scene: &scene,
             batches: &batches,
             meshes,
+            rows: Default::default(),
         };
         queries.sync(&view, jobs).unwrap();
     };

@@ -6,7 +6,9 @@
 //! Each material has one row of [`MATERIAL_FLOATS`] floats, nine `vec4f`s, which the WGSL struct
 //! `Material` in `null3d::globals` mirrors field for field. The [`param`] module names where each
 //! value sits. A row also holds the texture array layer of each of its maps, which the table
-//! writes once the map's image is on the GPU, and [`NO_MAP`] until then. On WebGPU the table is a
+//! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
+//! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
+//! unit times [`UNIT_LAYERS`], plus its layer. On WebGPU the table is a
 //! storage buffer; on WebGL2 it is a data texture with one row of texels per material.
 //!
 //! A change marks its rows, and the next frame uploads the rows from the first changed one to the
@@ -331,6 +333,13 @@ fn marked(range: &Range<u32>, id: u32) -> Range<u32> {
 /// GPU yet. Shaders test for a layer of 0 or more.
 pub const NO_MAP: f32 = -1.0;
 
+/// The layers of one shared unit in a map's layer as a row holds it: the most layers of a texture
+/// array, so a layer and its unit never mix.
+pub const UNIT_LAYERS: u32 = crate::textures::MAX_LAYERS;
+
+/// The unit of a map that found no shared unit (see [`MaterialTable::set_map_units`]).
+pub const NO_UNIT: u8 = u8::MAX;
+
 /// The maps a material can sample, in the order their layers sit in its row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapSlot {
@@ -373,6 +382,20 @@ enum State {
 }
 
 impl MapSlot {
+    /// Every slot in the order that its map takes a shared unit, where a builder's maps share a
+    /// few. When a material's maps need more units than there are, the maps last in this order
+    /// draw without their texture: the specular maps first, which change the look least.
+    pub const SHARING_ORDER: [MapSlot; MAP_SLOTS] = [
+        MapSlot::BaseColor,
+        MapSlot::Normal,
+        MapSlot::MetalRough,
+        MapSlot::Occlusion,
+        MapSlot::Emissive,
+        MapSlot::Light,
+        MapSlot::SpecularColor,
+        MapSlot::SpecularIntensity,
+    ];
+
     /// Every slot, in the order of a row's maps, so a slot's number indexes it.
     pub const ALL: [MapSlot; MAP_SLOTS] = [
         MapSlot::BaseColor,
@@ -431,6 +454,8 @@ pub struct MaterialTable {
     features: Vec<u32>,
     /// Each material's maps by slot, `Handle::NONE` where it has none.
     maps: Vec<[Handle; MAP_SLOTS]>,
+    /// The shared unit that each material's map samples, by slot (see [`MaterialTable::set_map_units`]).
+    map_units: Vec<[u8; MAP_SLOTS]>,
     /// Each material's custom values, in id order: zero until a custom material sets them.
     values: Vec<f32>,
     /// Each material's depth bias.
@@ -468,6 +493,7 @@ impl MaterialTable {
             shading: Vec::with_capacity(capacity as usize),
             features: Vec::with_capacity(capacity as usize),
             maps: Vec::with_capacity(capacity as usize),
+            map_units: Vec::with_capacity(capacity as usize),
             values: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
             biases: Vec::with_capacity(capacity as usize),
             states: Vec::with_capacity(capacity as usize),
@@ -497,6 +523,7 @@ impl MaterialTable {
                 self.shading.push(shading);
                 self.features.push(0);
                 self.maps.push([Handle::NONE; MAP_SLOTS]);
+                self.map_units.push([0; MAP_SLOTS]);
                 self.values.extend_from_slice(&[0.0; MATERIAL_FLOATS]);
                 self.biases.push(DepthBias::NONE);
                 self.states.push(State::Live);
@@ -513,6 +540,7 @@ impl MaterialTable {
         self.shading[at] = shading;
         self.features[at] = features;
         self.maps[at] = [Handle::NONE; MAP_SLOTS];
+        self.map_units[at] = [0; MAP_SLOTS];
         self.biases[at] = DepthBias::NONE;
         self.states[at] = State::Live;
         let values = &mut self.values[at * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
@@ -674,6 +702,19 @@ impl MaterialTable {
         Ok(())
     }
 
+    /// Gives a material's maps the shared units that they sample, by slot, where a builder's
+    /// standard material samples its maps through a few shared units (WebGL2's). A map's layer in
+    /// the row then holds its unit times [`UNIT_LAYERS`], plus its layer. [`NO_UNIT`] marks a map
+    /// that found no unit, which draws as without it. Every map samples unit 0 until this is called.
+    pub fn set_map_units(&mut self, id: u32, units: [u8; MAP_SLOTS]) {
+        if let Some(held) = self.map_units.get_mut(id as usize)
+            && *held != units
+        {
+            *held = units;
+            self.maps_changed = true;
+        }
+    }
+
     /// A material's maps by slot, `Handle::NONE` where it has none.
     pub fn maps(&self, id: u32) -> [Handle; MAP_SLOTS] {
         self.maps
@@ -742,16 +783,19 @@ impl MaterialTable {
         }
         for id in 0..self.len() {
             let maps = self.maps[id as usize];
+            let units = self.map_units[id as usize];
             let row = &mut self.rows[id as usize * MATERIAL_FLOATS..][..MATERIAL_FLOATS];
             let mut changed = false;
             let layers = &mut row[param::MAP_LAYERS..param::MAP_LAYERS + MAP_SLOTS];
-            for (layer, map) in layers.iter_mut().zip(maps) {
-                let ready = if map.is_none() {
+            for ((layer, map), unit) in layers.iter_mut().zip(maps).zip(units) {
+                let ready = if map.is_none() || unit == NO_UNIT {
                     None
                 } else {
                     ready_layer(map)
                 };
-                let value = ready.map_or(NO_MAP, |layer| layer as f32);
+                let value = ready.map_or(NO_MAP, |layer| {
+                    (u32::from(unit) * UNIT_LAYERS + layer) as f32
+                });
                 changed |= *layer != value;
                 *layer = value;
             }
@@ -1149,5 +1193,61 @@ mod tests {
             table.set_map(9, MapSlot::BaseColor, ready, false),
             Err(MaterialError::Unknown(9))
         );
+    }
+
+    #[test]
+    fn the_shaders_read_the_shared_units_as_the_rows_and_groups_hold_them() {
+        use null3d_gpu::drawlist::sizes;
+        let mesh = include_str!("../../null3d-shaders/wgsl/lib/mesh.wgsl");
+        assert!(mesh.contains(&format!("const UNIT_LAYERS: u32 = {UNIT_LAYERS}u;")));
+        let lit = include_str!("../../null3d-shaders/wgsl/lit.wgsl");
+        let units = sizes::SHARED_MAP_UNITS;
+        for k in 0..units {
+            let texture =
+                format!("@group(3) @binding({k}) var unit_{k}_map: texture_2d_array<f32>;");
+            let sampler = format!(
+                "@group(3) @binding({}) var unit_{k}_sampler: sampler;",
+                MAP_SLOTS as u32 + k
+            );
+            assert!(lit.contains(&texture), "lit.wgsl lacks {texture}");
+            assert!(lit.contains(&sampler), "lit.wgsl lacks {sampler}");
+        }
+        assert!(!lit.contains(&format!("unit_{units}_map")));
+        assert!(units as usize <= MAP_SLOTS);
+    }
+
+    #[test]
+    fn rows_name_the_shared_unit_of_each_map_beside_its_layer() {
+        let mut table = MaterialTable::with_capacity(1);
+        let id = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let texture = Handle::new(1, 0);
+        for slot in [MapSlot::BaseColor, MapSlot::Normal, MapSlot::SpecularColor] {
+            table.set_map(id, slot, texture, false).unwrap();
+        }
+        let ready = |_: Handle| Some(5);
+        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        assert_eq!(
+            layers(&table, id)[MapSlot::Normal as usize],
+            5.0,
+            "unit 0 by default"
+        );
+        let mut units = [NO_UNIT; MAP_SLOTS];
+        units[MapSlot::BaseColor as usize] = 0;
+        units[MapSlot::Normal as usize] = 2;
+        table.take_changed();
+        table.set_map_units(id, units);
+        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        assert_eq!(table.take_changed(), Some(id..id + 1));
+        let mut expected = [NO_MAP; MAP_SLOTS];
+        expected[MapSlot::BaseColor as usize] = 5.0;
+        expected[MapSlot::Normal as usize] = (2 * UNIT_LAYERS + 5) as f32;
+        assert_eq!(
+            layers(&table, id),
+            expected,
+            "a map without a unit draws as without its texture"
+        );
+        table.set_map_units(id, units);
+        table.update_map_layers(false, ready, |_| Premultiplied::No);
+        assert_eq!(table.take_changed(), None, "the same units change nothing");
     }
 }

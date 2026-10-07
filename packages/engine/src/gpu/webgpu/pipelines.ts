@@ -460,6 +460,7 @@ export class Pipelines {
 			{ binding: 6, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
+			{ binding: 9, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
@@ -468,9 +469,9 @@ export class Pipelines {
 			{ binding: 1, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 2, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
 		]);
-		// The view's culling parameters, for the offset from the camera to each cell, the world
-		// matrices, the bucket table and the bucket records, which the vertex shaders of the builds
-		// that read their instances by index read. Compatibility mode may have no storage buffers
+		// The view's culling parameters, for its row of the cell offsets texture, the world matrices,
+		// the bucket table, the bucket records and the cell offsets texture, which the vertex shaders
+		// of the builds that read their instances by index read. Compatibility mode may have no storage buffers
 		// in vertex shaders, and refuses the layout itself, so only core WebGPU makes and binds it.
 		const vertex = GPUShaderStage.VERTEX;
 		this.defineLayout(
@@ -481,6 +482,7 @@ export class Pipelines {
 				{ binding: 1, visibility: vertex, buffer: { type: 'read-only-storage' } },
 				{ binding: 2, visibility: vertex, buffer: { type: 'read-only-storage' } },
 				{ binding: 3, visibility: vertex, buffer: { type: 'read-only-storage' } },
+				{ binding: 4, visibility: vertex, texture: { sampleType: 'unfilterable-float' } },
 			],
 			true,
 		);
