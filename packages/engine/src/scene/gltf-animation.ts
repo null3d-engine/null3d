@@ -8,9 +8,11 @@
 // - A node that a skin names twice with different inverse bind matrices, once per skin, gets one
 //   joint per matrix: a child joint at rest under it holds each further matrix.
 // - A skinned mesh's vertices name joints by their place in the skin, so the reader rewrites them
-//   to name the skeleton's joints. A mesh without a skin on a node that moves gets joints and
-//   weights that give its whole weight to its node's joint, so it moves through the same skinning.
-//   Each pairing of a mesh with a skin or a joint makes its own copy of the mesh.
+//   to name the skeleton's joints. The copy's box holds its vertices as the joints place them at
+//   rest, since the skin, not the mesh's node, places a skinned mesh. A mesh without a skin on a
+//   node that moves gets joints and weights that give its whole weight to its node's joint, so it
+//   moves through the same skinning. Each pairing of a mesh with a skin or a joint makes its own
+//   copy of the mesh.
 // - The other nodes stay objects. One under a joint goes under the copy's group, with the place
 //   that its joints give it at rest, which never changes, because nothing moves them.
 //
@@ -25,8 +27,18 @@
 // types.
 
 import type { FileBudget } from './file-limits';
-import { broken, type Entry, entry, index, list, type Reader, text, toFloats } from './gltf-json';
-import { affineOf, decomposeAffine, multiplyAffine } from './gltf-math';
+import {
+	broken,
+	type Entry,
+	entry,
+	index,
+	list,
+	normalizedScale,
+	type Reader,
+	text,
+	toFloats,
+} from './gltf-json';
+import { affineOf, decomposeAffine, growBox, multiplyAffine } from './gltf-math';
 import type { MeshData, NodeData, PrimitiveData, VertexData } from './gltf-parse';
 
 /** The most joints that one skeleton of the engine core holds (the core's `MAX_JOINTS`). */
@@ -339,6 +351,7 @@ export function parseAnimation(
 		broken(
 			`its skins and clips move ${joints.length} nodes, and the engine's skeletons hold up to ${MAX_RIG_JOINTS}`,
 		);
+	const skinning = restSkinning(joints);
 
 	// The meshes that joints move, as copies whose vertices name the skeleton's joints.
 	const copies = new Map<string, number>();
@@ -358,13 +371,13 @@ export function parseAnimation(
 			const map = skinJoints[node.skin] as number[];
 			const name = (meshes[node.mesh] as MeshData).name;
 			node.mesh = copy(node.mesh, `skin ${node.skin} ${node.mesh}`, (p) =>
-				skinned(p, map, wide, `mesh "${name}" with skin ${node.skin}`, budget, notes),
+				skinned(p, map, skinning, wide, `mesh "${name}" with skin ${node.skin}`, budget, notes),
 			);
 			node.skinned = true;
 		} else if ((rigid[k] as number) >= 0) {
 			const joint = rigid[k] as number;
 			node.mesh = copy(node.mesh, `joint ${joint} ${node.mesh}`, (p) =>
-				onJoint(p, joint, wide, budget, `mesh "${(meshes[node.mesh] as MeshData).name}"`),
+				onJoint(p, joint, skinning, wide, budget, `mesh "${(meshes[node.mesh] as MeshData).name}"`),
 			);
 			node.skinned = true;
 		}
@@ -647,10 +660,14 @@ function jointArray(
 	return wide ? new Uint16Array(length) : new Uint8Array(length);
 }
 
-/** A primitive whose vertices name the skeleton's joints, through `map`, in place of the skin's. */
+/**
+ * A primitive whose vertices name the skeleton's joints, through `map`, in place of the skin's,
+ * with its box and its place at rest, which the skin's joints give, not the positions alone.
+ */
 function skinned(
 	p: PrimitiveData,
 	map: readonly number[],
+	skinning: Float64Array,
 	wide: boolean,
 	what: string,
 	budget: FileBudget,
@@ -673,13 +690,128 @@ function skinned(
 		}
 		joints[i] = joint;
 	}
-	return { ...p, joints: { array: joints, normalized: false } };
+	return {
+		...p,
+		joints: { array: joints, normalized: false },
+		...skinnedRest(p.positions, joints, p.weights, skinning),
+	};
 }
 
-/** A primitive whose every vertex moves with `joint` alone. */
+/**
+ * Each joint's skinning matrix at rest, 12 numbers by rows per joint: its place in the space of
+ * the copy's group, from the joints' own transforms, times its inverse bind matrix.
+ */
+function restSkinning(joints: readonly RigJoint[]): Float64Array {
+	const worlds = new Float64Array(joints.length * 12);
+	const out = new Float64Array(joints.length * 12);
+	joints.forEach((joint, j) => {
+		const local = affineOf([...joint.translation, ...joint.rotation, ...joint.scale]);
+		const at = joint.parent * 12;
+		const world = joint.parent < 0 ? local : multiplyAffine(worlds.subarray(at, at + 12), local);
+		worlds.set(world, j * 12);
+		out.set(multiplyAffine(world, Float64Array.from(joint.inverseBind)), j * 12);
+	});
+	return out;
+}
+
+/**
+ * The box of skinned vertices at rest, in the space of the copy's group, and their place at rest.
+ * Each vertex moves by the sum of its joints' skinning matrices times their weights, as the
+ * skinning passes move it. So the box holds the model as it draws, whatever scale the inverse bind
+ * matrices hold: files that store positions as integers keep their scale there.
+ *
+ * The place is the skinning matrix of the joint that carries the most weight. It is exact when
+ * every joint's matrix moves the vertices to within a thousandth of the box's size of where that
+ * one moves them: the rest pose is then the bind pose.
+ */
+function skinnedRest(
+	positions: VertexData,
+	joints: Uint8Array | Uint16Array,
+	weights: VertexData,
+	skinning: Float64Array,
+): Partial<Pick<PrimitiveData, 'min' | 'max' | 'rest'>> {
+	const p = positions.array;
+	const w = weights.array;
+	const scale = positions.normalized ? normalizedScale(p) : 1;
+	// Normalized positions read as fractions, as the shaders read them.
+	const read = (i: number) =>
+		scale === 1 ? (p[i] as number) : Math.max((p[i] as number) / scale, -1);
+	const toWeight = weights.normalized ? normalizedScale(w) : 1;
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	/** The largest size of a position on each axis, before skinning. */
+	const reach = [0, 0, 0];
+	/** Each joint's weight over all the vertices. */
+	const carried = new Float64Array(skinning.length / 12);
+	const m = new Float64Array(12);
+	for (let v = 0; v < p.length / 3; v++) {
+		m.fill(0);
+		for (let k = v * 4; k < v * 4 + 4; k++) {
+			const weight = (w[k] as number) / toWeight;
+			if (weight === 0) continue;
+			const joint = joints[k] as number;
+			carried[joint] = (carried[joint] as number) + weight;
+			for (let i = 0; i < 12; i++)
+				m[i] = (m[i] as number) + weight * (skinning[joint * 12 + i] as number);
+		}
+		const x = read(v * 3);
+		const y = read(v * 3 + 1);
+		const z = read(v * 3 + 2);
+		reach[0] = Math.max(reach[0] as number, Math.abs(x));
+		reach[1] = Math.max(reach[1] as number, Math.abs(y));
+		reach[2] = Math.max(reach[2] as number, Math.abs(z));
+		for (let r = 0; r < 3; r++) {
+			const value =
+				(m[r * 4] as number) * x +
+				(m[r * 4 + 1] as number) * y +
+				(m[r * 4 + 2] as number) * z +
+				(m[r * 4 + 3] as number);
+			if (value < (min[r] as number)) min[r] = value;
+			if (value > (max[r] as number)) max[r] = value;
+		}
+	}
+	if (!((min[0] as number) <= (max[0] as number))) return {};
+	let main = 0;
+	carried.forEach((weight, j) => {
+		if (weight > (carried[main] as number)) main = j;
+	});
+	const matrix = Array.from(skinning.subarray(main * 12, main * 12 + 12));
+	// How far a joint's matrix moves a vertex from where the main joint's moves it, at most.
+	const apart = (j: number) => {
+		let far = 0;
+		for (let r = 0; r < 3; r++) {
+			let d = Math.abs((skinning[j * 12 + r * 4 + 3] as number) - (matrix[r * 4 + 3] as number));
+			for (let c = 0; c < 3; c++)
+				d +=
+					Math.abs((skinning[j * 12 + r * 4 + c] as number) - (matrix[r * 4 + c] as number)) *
+					(reach[c] as number);
+			far = Math.max(far, d);
+		}
+		return far;
+	};
+	const size = Math.hypot(...max.map((high, r) => high - (min[r] as number)));
+	const exact = carried.every((weight, j) => weight === 0 || apart(j) <= size * REST_TOLERANCE);
+	return {
+		min: [min[0] as number, min[1] as number, min[2] as number],
+		max: [max[0] as number, max[1] as number, max[2] as number],
+		rest: { matrix, exact },
+	};
+}
+
+/**
+ * How far apart the joints may place a skinned mesh at rest, as a share of its size, for its rest
+ * pose to count as its bind pose.
+ */
+const REST_TOLERANCE = 1e-3;
+
+/**
+ * A primitive whose every vertex moves with `joint` alone, with its box and its place at rest,
+ * where the joint rests.
+ */
 function onJoint(
 	p: PrimitiveData,
 	joint: number,
+	skinning: Float64Array,
 	wide: boolean,
 	budget: FileBudget,
 	what: string,
@@ -692,10 +824,16 @@ function onJoint(
 		joints[v * 4] = joint;
 		weights[v * 4] = 255;
 	}
-	const out: PrimitiveData = {
+	const matrix = Array.from(skinning.subarray(joint * 12, joint * 12 + 12));
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	growBox(matrix, p.min, p.max, min, max);
+	return {
 		...p,
 		joints: { array: joints, normalized: false },
 		weights: { array: weights, normalized: true } satisfies VertexData,
+		min: [min[0] as number, min[1] as number, min[2] as number],
+		max: [max[0] as number, max[1] as number, max[2] as number],
+		rest: { matrix, exact: true },
 	};
-	return out;
 }

@@ -215,9 +215,14 @@ export interface PrimitiveData {
 	indices?: Uint16Array | Uint32Array;
 	/** The material's index in the file, or -1 for glTF's default material. */
 	material: number;
-	/** The lowest and highest position on each axis, from the position accessor. */
+	/**
+	 * The lowest and highest position on each axis, from the position accessor. A copy that a skin
+	 * moves holds the box of its vertices at rest instead, in the space of the copy's group.
+	 */
 	min: [number, number, number];
 	max: [number, number, number];
+	/** The place of a copy that joints move, where its vertices lie at rest without skinning. */
+	rest?: RestPlace;
 	/** The deltas of the primitive's morph targets, when it has any. */
 	morph?: MorphTargetsData;
 	/**
@@ -230,6 +235,16 @@ export interface PrimitiveData {
 	 * with the blocker to draw in its place when the file holds one.
 	 */
 	occluder?: true | BlockerData;
+}
+
+/**
+ * Where a mesh that joints move lies at rest when nothing skins it, as instance batches draw it: a
+ * 3 × 4 matrix by rows in the space of the copy's group. `exact` is false for a skinned mesh whose
+ * rest pose is not its bind pose, which no one matrix places.
+ */
+export interface RestPlace {
+	matrix: number[];
+	exact: boolean;
 }
 
 /** A blocker mesh: three floats per corner, and three indices per triangle. */
@@ -960,7 +975,10 @@ function compressedView(
  */
 const ATTRIBUTES: readonly [
 	name: string,
-	field: Exclude<keyof PrimitiveData, 'indices' | 'material' | 'min' | 'max' | 'bvh' | 'occluder'>,
+	field: Exclude<
+		keyof PrimitiveData,
+		'indices' | 'material' | 'min' | 'max' | 'rest' | 'bvh' | 'occluder'
+	>,
 	components: readonly number[],
 	types: Readonly<Record<number, boolean | undefined>>,
 ][] = [

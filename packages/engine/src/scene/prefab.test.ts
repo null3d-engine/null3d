@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { AnimationRig } from './animation';
 import { CoreMemory } from './memory';
-import { boundsOf, Prefab, type PrefabOwned, type TemplateNode } from './prefab';
+import { boundsOf, type PartTemplate, Prefab, type PrefabOwned, type TemplateNode } from './prefab';
 import { Geometry, Material, MeshGeometry } from './resources';
 import { Group, Mesh, type PointLight, SCENE_CHECKS, Scene } from './scene';
 import type { Texture } from './textures';
@@ -521,6 +521,34 @@ describe('scene.createInstances with a prefab', () => {
 			NOT_OWNED,
 		);
 		expect(() => scene.createInstances(instanced, 4)).toThrow('instancing of its own');
+	});
+
+	test('warns when a skinned mesh draws in its bind pose, and only then', () => {
+		const { core, scene } = fakeCore();
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			const chain = chainPrefab(core, 1);
+			scene.createInstances(chain, 4);
+			expect(warn).not.toHaveBeenCalled();
+			const [first, ...others] = chain.parts as [PartTemplate, ...PartTemplate[]];
+			const posed = new Prefab(
+				core,
+				'knight.glb',
+				chain.template,
+				[{ ...first, bindPose: true }, ...others],
+				[],
+				chain.bounds,
+				[],
+				[],
+				undefined,
+				NOT_OWNED,
+			);
+			scene.createInstances(posed, 4);
+			expect(warn).toHaveBeenCalledTimes(1);
+			expect(String(warn.mock.calls[0]?.[0])).toContain('in their bind pose');
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });
 
