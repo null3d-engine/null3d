@@ -29,6 +29,12 @@ export interface PlanItem<Check = unknown> {
 	 */
 	endsTab?: true;
 	/**
+	 * The page runs in a runner page of its own: where the runner tool can open runner pages, the
+	 * runner page hands the run to a new one before the page and after it, and closes. Safari can keep
+	 * the memory of engines in a removed frame for minutes, and a new tab does not inherit it.
+	 */
+	ownTab?: true;
+	/**
 	 * The page's check times its frames, so the runner page keeps the page's frame on top in a plan
 	 * that draws its report over pages. Under an opaque report, a canvas that a worker draws changes
 	 * nothing on the screen. The browser then sends the screen a few frames a second, and Android
@@ -190,6 +196,21 @@ export function readDevice(
 	runner: string,
 ): (DeviceFacts & Record<string, unknown>) | undefined {
 	return readJson(join(RUNS_DIR, run, runner, 'device.json'));
+}
+
+/**
+ * The plan items at which a runner page handed the run to a new runner page, that `handled` does
+ * not name yet, in order.
+ */
+export function handovers(run: string, runner: string, handled: ReadonlySet<number>): number[] {
+	const dir = join(RUNS_DIR, run, runner);
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.map((name) => /^handover-(\d+)\.json$/.exec(name)?.[1])
+		.filter((from) => from !== undefined)
+		.map(Number)
+		.filter((from) => !handled.has(from))
+		.sort((a, b) => a - b);
 }
 
 export function finished(run: string, runner: string): boolean {
@@ -397,6 +418,11 @@ export interface WaitOptions<Check = unknown> {
 	 * browser keeps refusing memory. The wait then stops waiting for it.
 	 */
 	endTurn?: (runner: string) => boolean;
+	/**
+	 * Opens a new runner page at the plan's item `from`, for a runner page that handed the run over
+	 * there, and says whether it opened. Without it, a handover ends the runner's turn.
+	 */
+	onHandover?: (runner: string, from: number) => boolean;
 }
 
 /**
@@ -415,14 +441,17 @@ export async function waitForRunners<Check>(
 		endTurn = () => false,
 		startMs,
 		onNoStart = () => {},
+		onHandover = () => false,
 	}: WaitOptions<Check> = {},
 ): Promise<string[]> {
 	const startedAt = Date.now();
 	let deadline = startedAt + batchTimeoutMs(plan);
 	const done: string[] = [];
 	const waiting = new Set(runners);
-	/** When the runner tool last opened a new runner page for a runner that went quiet. */
+	/** When the runner tool last opened a new runner page for a runner. */
 	const reopenedAt = new Map<string, number>();
+	/** For each runner, the plan items at which its runner pages handed the run over. */
+	const handled = new Map<string, Set<number>>();
 	while (waiting.size > 0 && Date.now() < deadline) {
 		for (const runner of waiting) {
 			const written = lastWrite(plan.run, runner);
@@ -436,6 +465,16 @@ export async function waitForRunners<Check>(
 				waiting.delete(runner);
 				done.push(runner);
 				onFinish(runner);
+				continue;
+			}
+			const seen = handled.get(runner) ?? new Set<number>();
+			handled.set(runner, seen);
+			const pending = handovers(plan.run, runner, seen);
+			const handedAt = pending.at(-1);
+			if (handedAt !== undefined) {
+				for (const from of pending) seen.add(from);
+				if (onHandover(runner, handedAt)) reopenedAt.set(runner, Date.now());
+				else waiting.delete(runner);
 				continue;
 			}
 			if (last === undefined) {
