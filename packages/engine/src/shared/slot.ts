@@ -103,3 +103,9 @@ export const JobsServing = 30;
  * then on those effects draw one pass each.
  */
 export const JoinFailed = 31;
+/**
+ * The milliseconds that the thread that draws waits before it replays each frame's list, from the
+ * ?replay-delay= test switch, or 0. The sketch thread then steps the next frame before the replay
+ * reads the engine memory that the list points at.
+ */
+export const ReplayDelayMs = 32;
