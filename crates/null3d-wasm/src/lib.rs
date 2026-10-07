@@ -70,6 +70,8 @@ use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+mod heap;
 
 use constants::{
     CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,

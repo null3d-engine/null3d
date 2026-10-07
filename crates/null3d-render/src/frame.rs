@@ -1388,23 +1388,41 @@ impl SceneSettings {
     }
 
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
-    /// `pipeline`: only its back faces, as three.js draws them with its filtered shadow maps,
-    /// moved toward the light by part of a texel, or both faces of a double-sided material, where
-    /// they stay. The material's depth bias moves what the camera sees, so the caster draws
-    /// without it.
-    pub fn caster_of(&self, pipeline: DrawKey) -> DrawKey {
-        let (faces, permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
+    /// `pipeline`, and the bind group of the map that it reads, or 0 for none: only its back faces,
+    /// as three.js draws them with its filtered shadow maps, moved toward the light by part of a
+    /// texel, or both faces of a double-sided material, where they stay. The material's depth bias
+    /// moves what the camera sees, so the caster draws without it. A masked material of the
+    /// engine's mesh templates cuts the holes of its mask, alpha to coverage or alpha hash into its
+    /// shadow, with the alpha of its vertex colors and its base color map where it has them. A
+    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape.
+    pub fn caster_of(&self, pipeline: DrawKey, material: u32) -> (DrawKey, u32) {
+        let (faces, mut permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
             (state_flags::CULL_NONE, 0)
         } else {
             (state_flags::CULL_FRONT, permutation::CASTER_OFFSET)
         };
-        DrawKey {
-            template: template::SHADOW_DEPTH,
+        let mut template = template::SHADOW_DEPTH;
+        let mut group = 0;
+        let masked = pipeline.permutation & permutation::ALPHA_MASK != 0;
+        if masked && cuts_shadows(pipeline.template) {
+            permutation |= permutation::ALPHA_MASK
+                | (pipeline.permutation & (permutation::VERTEX_COLOR | permutation::ALPHA_HASH));
+            template = template::SHADOW_CUTOUT;
+            let map = self.materials.map(material - 1, MapSlot::BaseColor);
+            let mapped = pipeline.vertex_format & vertex::UV0 != 0 && self.textures.is_live(map);
+            if let Some(id) = self.textures.group_id(map).filter(|_| mapped) {
+                template = template::SHADOW_CUTOUT_MAP;
+                group = id;
+            }
+        }
+        let key = DrawKey {
+            template,
             permutation,
             vertex_format: pipeline.vertex_format,
             state: faces,
             bias: DepthBias::NONE,
-        }
+        };
+        (key, group)
     }
 
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
@@ -1458,8 +1476,8 @@ impl SceneSettings {
     /// standard material with a live map draws with the maps template, whose normal map takes its
     /// frame from the mesh's tangents where the mesh has them. A
     /// material with vertex colors reads them only from a mesh that has them, a masked material
-    /// draws with the shader variant that discards fragments, and a double-sided material culls no
-    /// faces. The material's depth options and depth bias set the pipeline's depth state, and a
+    /// draws with the shader variant that discards fragments, with alpha to coverage where the
+    /// material asks for it, and a double-sided material culls no faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
@@ -1485,7 +1503,10 @@ impl SceneSettings {
         let has = |bit: u32| features & bit != 0;
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
-        let masked = has(feature::ALPHA_MASK) && !has(feature::BLEND);
+        let masked = base_color && feature::masks(features);
+        let own_way = masked && tests_alpha_its_way(shading);
+        let hashed = own_way && has(feature::ALPHA_HASH);
+        let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
             && live(MapSlot::Normal)
             && format & vertex::TANGENT != 0;
@@ -1493,12 +1514,14 @@ impl SceneSettings {
         let key = ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
-                | bit(base_color && masked, permutation::ALPHA_MASK)
+                | bit(masked, permutation::ALPHA_MASK)
+                | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
+                | bit(covers, state_flags::ALPHA_TO_COVERAGE)
                 | blend_state(features),
             bias: self.materials.depth_bias(id),
         });
@@ -1760,6 +1783,28 @@ impl MeshBuffers {
     pub(crate) fn forget(&mut self) {
         self.pages.clear();
     }
+}
+
+/// True for the templates whose masked casters cut holes in their shadows: the engine's mesh
+/// templates, whose alpha the cutout templates compute alike.
+const fn cuts_shadows(template: u32) -> bool {
+    matches!(
+        template,
+        template::INSTANCED_LIT
+            | template::INSTANCED_STANDARD_MAPS
+            | template::INSTANCED_UNLIT
+            | template::INSTANCED_UNLIT_MAP
+    )
+}
+
+/// True for the shadings whose masked builds test alpha by alpha to coverage's fade or by the
+/// alpha hash: the engine's mesh and sprite templates. Custom materials have no such builds, and
+/// test their alpha against the cutoff.
+pub const fn tests_alpha_its_way(shading: Shading) -> bool {
+    !matches!(
+        shading,
+        Shading::Custom(_) | Shading::TexCoords | Shading::Line | Shading::LineLit
+    )
 }
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly

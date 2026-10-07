@@ -865,13 +865,57 @@
     {
       "id": "mat-flags",
       "category": "Materials",
-      "three": "transparent / opacity / alphaTest / side / depthWrite / depthTest / blending / vertexColors / flatShading",
+      "three": "transparent / opacity / alphaTest / depthWrite / depthTest / blending / vertexColors / flatShading",
       "status": "changed",
       "since": "0.1",
-      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), doubleSided, depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
-      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too.",
+      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
+      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too.",
       "docs": "api/materials",
-      "detect": "\\b(transparent|alphaTest|side|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
+      "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
+    },
+    {
+      "id": "mat-side",
+      "category": "Materials",
+      "three": "side: DoubleSide",
+      "status": "changed",
+      "since": "0.1",
+      "target": "doubleSided: true",
+      "notes": "Fixed when the material is created. A back face lights as if it faced the camera, as in three.js. A double-sided material with alphaMode: 'blend' draws its back faces first, then its front faces, as three.js does (since 0.2). BackSide has no equivalent: flip the geometry.",
+      "docs": "api/materials",
+      "detect": "\\bside\\s*[:=]"
+    },
+    {
+      "id": "mat-force-single-pass",
+      "category": "Materials",
+      "three": "forceSinglePass: true",
+      "status": "direct",
+      "since": "0.2",
+      "target": "forceSinglePass: true",
+      "notes": "With alphaMode: 'blend' and doubleSided: true, both faces draw in one draw, in the mesh's triangle order. Fixed when the material is created.",
+      "docs": "api/materials",
+      "detect": "\\bforceSinglePass\\s*[:=]"
+    },
+    {
+      "id": "mat-alpha-to-coverage",
+      "category": "Materials",
+      "three": "alphaToCoverage: true (with alphaTest)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "alphaMode: 'mask', alphaCutoff (alphaToCoverage is on by default)",
+      "notes": "The cut edges fade over one pixel above the cutoff and MSAA covers that share of each pixel, as in three.js. null3D turns it on for every mask; alphaToCoverage: false turns it off. Without MSAA it is a plain mask. Without alphaTest, three.js turns raw alpha into coverage: use alphaMode: 'hash' for that look. Fixed when the material is created.",
+      "docs": "api/materials",
+      "detect": "\\balphaToCoverage\\s*[:=]"
+    },
+    {
+      "id": "mat-alpha-hash",
+      "category": "Materials",
+      "three": "alphaHash: true",
+      "status": "changed",
+      "since": "0.2",
+      "target": "alphaMode: 'hash'",
+      "notes": "Three.js's cells and threshold on each point's place on the mesh, so the alpha sets the share of the surface that draws. The noise pattern differs: null3D hashes each cell with integer math, so every GPU draws the same pattern, where three.js's sine hash changes from GPU to GPU. alphaCutoff has no effect in this mode. A hashed surface casts a hashed shadow, where three.js casts the whole shape.",
+      "docs": "api/materials",
+      "detect": "\\balphaHash\\s*[:=]"
     },
     {
       "id": "mat-wireframe",
