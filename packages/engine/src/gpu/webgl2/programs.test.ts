@@ -254,9 +254,29 @@ describe('withoutDerivatives', () => {
 				'#define dFdx(x) ((x) * 0.0)',
 				'#define dFdy(x) ((x) * 0.0)',
 				'#define fwidth(x) ((x) * 0.0)',
-				'#define textureGrad(s, c, dx, dy) texture(s, c)',
+				'#define texture(s, c) textureGrad(s, c, vec2(0.0), vec2(0.0))',
 			]);
 			expect(out.vertex).toBe(program.vertex);
+		}
+	});
+
+	it('finds only reads of 2D textures and 2D arrays at their own level, with two arguments', () => {
+		for (const [name, program] of glslPrograms()) {
+			const text = program.fragment.source;
+			const kinds = new Map(
+				[...text.matchAll(/uniform highp (\w+) (\w+);/g)].map((m) => [m[2], m[1]]),
+			);
+			for (const [, sampler, rest] of text.matchAll(/\btexture\((\w+),([^;]*)\);/g)) {
+				expect(kinds.get(sampler as string), name).toMatch(/^[iu]?sampler2D(Array)?(Shadow)?$/);
+				let depth = 0;
+				let commas = 0;
+				for (const c of rest as string) {
+					if (c === '(') depth++;
+					else if (c === ')') depth--;
+					else if (c === ',' && depth === 0) commas++;
+				}
+				expect(commas, name).toBe(0);
+			}
 		}
 	});
 });

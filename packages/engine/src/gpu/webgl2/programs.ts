@@ -222,8 +222,10 @@ export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'
 
 /**
  * Measurement only: true with ?glderiv=off in the page's address, so only with render=main. The
- * fragment shaders then take no screen derivatives: each derivative reads as zero, and each read
- * with explicit gradients takes the texture's own gradients instead. The image changes a little.
+ * fragment shaders then take no screen derivatives, which ANGLE's Metal output answers with a
+ * sample mask on Apple GPUs: each derivative reads as zero, and each read at the texture's own
+ * level reads level 0 through zero gradients instead. The engine's fragment shaders make such reads
+ * only of 2D textures and 2D arrays, whose gradients are 2D. The image changes a little.
  */
 export const NO_DERIVATIVES: boolean = (() => {
 	try {
@@ -238,7 +240,7 @@ const NO_DERIVATIVE_MACROS = [
 	'#define dFdx(x) ((x) * 0.0)',
 	'#define dFdy(x) ((x) * 0.0)',
 	'#define fwidth(x) ((x) * 0.0)',
-	'#define textureGrad(s, c, dx, dy) texture(s, c)',
+	'#define texture(s, c) textureGrad(s, c, vec2(0.0), vec2(0.0))',
 ].join('\n');
 
 /** A program whose fragment shader takes no screen derivatives (see `NO_DERIVATIVES`). */
