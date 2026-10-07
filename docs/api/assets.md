@@ -80,7 +80,7 @@ Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them o
 
 | Member | Gives |
 | --- | --- |
-| `prefab.find(name)` | The first node with the name: its `position`, `rotation`, `scale`, `mesh` and `material` |
+| `prefab.find(name)` | The first node with the name: its `position`, `rotation`, `scale`, `mesh`, `material` and `occluder`. `occluder` is true when the asset tool gave the mesh a blocker. Pass it to `createMesh` to keep that choice |
 | `prefab.bounds` | `min`, `max`, `center` and `radius` of the whole model, around the origin of its copies |
 | `prefab.materials` | The file's materials, in the file's order. `set` changes them in every copy |
 | `prefab.textures` | The textures that the materials sample |
@@ -392,6 +392,7 @@ A node of a prefab: its name, its place relative to its parent, and the mesh and
 | `readonly scale: readonly [number, number, number]` | The scale relative to the node's parent. |
 | `readonly mesh: MeshGeometry \| undefined` | The node's mesh, which `scene.createMesh` and `scene.createInstances` take too. |
 | `readonly material: Material \| undefined` | The node's material. |
+| `readonly occluder: boolean` | True when the asset tool gave the node's mesh a blocker, so its copies block the view. Pass it as `createMesh`'s `occluder` option to keep the tool's choice for a mesh made from the node. |
 
 ### `ProgressHandler`
 
