@@ -19,12 +19,15 @@
 // ?kinds= tests other ways a thread holds a shared memory, such as a worker stopped inside a
 // blocking wait (see ./lib/memory-holder.ts). ?cycles= sets the number of starts and stops in each
 // round, ?room=off skips the counts of the room, ?room=each also counts it after each start, and
-// ?room=full counts the whole room, as the memory plan does.
+// ?room=full counts the whole room, as the memory plan does. ?release=on stops each engine with
+// destroy({ release: true }), so the page keeps no memory for the next engine. ?sketch=heap starts
+// a scene of a million instances in place of the empty sketch, so each engine's memory grows.
+// ?ballast=on fills the address space with memories before the starts, as busy pages do.
 import { createEngine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import type { EngineFrameMessage } from './engine-frame';
 import { CORE_KINDS, type HoldKind, type HoldMessage, WOKEN_KINDS } from './lib/memory-holder';
-import { progress, run } from './lib/result';
+import { progress, run, sharedMemories } from './lib/result';
 import {
 	allocateMemory,
 	countRoom,
@@ -78,6 +81,37 @@ const CAP = params.get('room') === 'full' ? FULL_COUNT : ROOM_CAP;
  * memory, so its starts never go past the room: they would only split the address space.
  */
 const THREADED = params.get('threads') !== 'off';
+const RELEASE = params.get('release') === 'on';
+const BALLAST = params.get('ballast') === 'on';
+/**
+ * The ballast's first memories, which the page drops again. Safari gives each of the first 8
+ * memories of a page a large "fast" place, so the engines then get such places, and refuses a new
+ * memory while a dropped one still holds its place, for as long as the page keeps asking (D-98).
+ */
+const BALLAST_FREED = 2;
+/** The most memories in the ballast, beyond the room of any browser. */
+const BALLAST_MOST = 256;
+/** How long the page waits after it drops the ballast's first memories, so the browser frees them. */
+const BALLAST_SETTLE_MS = 5_000;
+/** The memories that the page holds through its starts. */
+const ballast: WebAssembly.Memory[] = [];
+
+/** Fills the address space with memories, then drops the first few: the count it holds. */
+async function fillBallast(): Promise<number> {
+	try {
+		while (ballast.length < BALLAST_MOST) ballast.push(allocateMemory(MAXIMUM_PAGES));
+	} catch {
+		// The browser has no room for more.
+	}
+	ballast.splice(0, BALLAST_FREED);
+	await sleep(BALLAST_SETTLE_MS);
+	return ballast.length;
+}
+
+const SKETCH =
+	params.get('sketch') === 'heap'
+		? new URL('./sketches/heap-sketch.ts', import.meta.url)
+		: new URL('./sketches/empty-sketch.ts', import.meta.url);
 
 /** One round of starts and stops, and the counts of the room after it. */
 interface RoundResult {
@@ -88,6 +122,13 @@ interface RoundResult {
 	/** Starts that the browser refused at first, and the time they waited for it, in all. */
 	lateStarts: number;
 	lateStartsMs: number;
+	/**
+	 * The shared memories that the cycles made and that the browser refused, the engine's included,
+	 * and the starts whose engine reported a long wait for memory.
+	 */
+	memoriesMade: number;
+	memoriesRefused: number;
+	memoryWaits: number;
 	/** Each count of the room after the cycles, the last of them, and the time they took. */
 	roomCounts?: number[];
 	roomLater?: number;
@@ -178,9 +219,17 @@ interface StartRecord {
 	jobs: number;
 	jobsReadyAtStop: number;
 	jobsStopped: number;
+	/** The size of the last shared memory that the page made, in MiB, at the stop. */
+	memoryMiB?: number;
 	roomAfter?: number;
 }
 const starts: StartRecord[] = [];
+/** The shared memories that counts of the room made between the starts, which the rounds leave out. */
+let countedMemories = 0;
+
+/** A memory's size in MiB, or undefined once the browser collected it. */
+const memoryMiB = (memory: WebAssembly.Memory | undefined) =>
+	memory && Math.round(memory.buffer.byteLength / 2 ** 20);
 
 /** The job workers that a slice of the page's trail names with `reply`. */
 const jobsWith = (steps: readonly string[], reply: string) =>
@@ -203,7 +252,7 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 		const engine = await withTimeout(
 			createEngine({
 				canvas,
-				sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
+				sketch: SKETCH,
 				onProgress: progress,
 			}),
 			START_TIMEOUT_MS,
@@ -216,7 +265,7 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 		} finally {
 			stopAt = performance.now();
 			stopIndex = trail.length;
-			await engine.destroy();
+			await engine.destroy({ release: RELEASE });
 			const steps = trail.slice(from);
 			starts.push({
 				firstFrameMs: Math.round(stopAt - began),
@@ -224,6 +273,7 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 				jobs: jobsWith(steps, 'started'),
 				jobsReadyAtStop: jobsWith(trail.slice(from, stopIndex), 'ready'),
 				jobsStopped: jobsWith(steps, 'stopped'),
+				memoryMiB: sharedMemories.last && memoryMiB(sharedMemories.last.deref()),
 			});
 		}
 	} finally {
@@ -231,7 +281,9 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 	}
 	if (COUNT_EACH) {
 		const last = starts.at(-1);
+		const made = sharedMemories.made;
 		if (last) last.roomAfter = (await countRoom(CAP, MAXIMUM_PAGES)).room;
+		countedMemories += sharedMemories.made - made;
 	}
 }
 
@@ -242,7 +294,8 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 async function startEngineInFrame(destroy: boolean): Promise<void> {
 	const frame = document.createElement('iframe');
 	const switches = new URLSearchParams(location.search);
-	for (const name of ['kinds', 'cycles', 'room', 'maximum']) switches.delete(name);
+	for (const name of ['kinds', 'cycles', 'room', 'maximum', 'release', 'sketch', 'ballast'])
+		switches.delete(name);
 	if (destroy) switches.set('stop', 'destroy');
 	frame.src = `./engine-frame.html?${switches}`;
 	try {
@@ -360,6 +413,9 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 	let failure: Pick<RoundResult, 'error' | 'trail'> = {};
 	late.starts = 0;
 	late.ms = 0;
+	const made = sharedMemories.made + countedMemories;
+	const refused = sharedMemories.refused;
+	const trailFrom = window.__null3dProgress?.length ?? 0;
 	try {
 		for (; done < cycles; done++) {
 			cycleStart = window.__null3dProgress?.length ?? 0;
@@ -369,6 +425,13 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 	} catch (e) {
 		failure = { error: (e as Error).message, trail: window.__null3dProgress?.slice(cycleStart) };
 	}
+	const memories = {
+		memoriesMade: sharedMemories.made - countedMemories - made,
+		memoriesRefused: sharedMemories.refused - refused,
+		memoryWaits: (window.__null3dProgress ?? [])
+			.slice(trailFrom)
+			.filter((step) => step.endsWith(' memory-wait')).length,
+	};
 	const wait =
 		roomBefore === undefined
 			? undefined
@@ -378,6 +441,7 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 		...failure,
 		lateStarts: late.starts,
 		lateStartsMs: Math.round(late.ms),
+		...memories,
 		roomCounts: wait?.counts,
 		roomLater: wait?.counts.at(-1),
 		roomWaitMs: wait?.waitMs,
@@ -397,6 +461,7 @@ run('shared-memory', async () => {
 		params.get('cycles') ??
 			(before ? (THREADED ? past : Math.min(past, UNCOUNTED_CYCLES)) : UNCOUNTED_CYCLES),
 	);
+	const ballastHeld = BALLAST ? await fillBallast() : undefined;
 	const kinds: Partial<Record<Kind, KindResult>> = {};
 	for (const kind of KINDS) {
 		window.__jobsServingAtLeave = [];
@@ -424,6 +489,7 @@ run('shared-memory', async () => {
 		roomError: before?.error,
 		roomPassing: before?.passing,
 		cycles,
+		ballastHeld,
 		kinds,
 	};
 });

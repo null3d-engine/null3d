@@ -48,6 +48,23 @@ export const AO_MAX_DIFFERENT_PERCENT = 1;
 export const BLOOM_STRONG_MAX_DIFFERENT_PERCENT = 20;
 
 /**
+ * The alpha to coverage scene's limit. Coverage takes a whole sample of the pixel's four at each
+ * step, so where the two engines' alphas differ in their last bits at a cut edge, a sample flips:
+ * isolated edge pixels, 0.113% of the frame with WebGL2 on SwiftShader, where three.js's own two
+ * renderers differ by 0.063%, and 0.153% on the Mac's GPU, where they differ by 0.155% (D-82).
+ */
+export const ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT = 0.25;
+
+/**
+ * The alpha hash scene's limit, a sanity comparison. null3D keeps three.js's cells and threshold but
+ * hashes each cell with integer math, so every GPU draws one pattern, where three.js's sine hash
+ * draws a pattern of each GPU's own (D-82). The two patterns differ in most pixels of the hashed
+ * cards: 5.0% of the frame on the Mac. The limit sits just above that. The image tests, against
+ * null3D's own references, check the pattern itself.
+ */
+export const ALPHA_HASH_MAX_DIFFERENT_PERCENT = 6;
+
+/**
  * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
  * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
  * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
@@ -136,13 +153,15 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * pages that end in -low, the low-latency mode, for those that end in -cells-off, culling with no
  * grid cells skipped, for those that end in -half, color math at half precision, for those that
  * end in -prepass, the depth prepass, for the one that ends in -index, vertex shaders that read
- * instance data by index, for those that end in -depth32, shadow cascades in 32-bit float depth,
- * for those that end in -blend-off, S4's shadow cascades with no band between them, for those
- * with -sky, a background behind S1 (the benchmarks guide lists them), for those that end in
- * -first, a background drawn before the objects, for those that end in -box, a small box that
- * writes depth, for those with -skin-, a way of skinning that ?skinning= picks, for those that end
- * in -timed, the time of each WebGL call, and for those that end in -synced, that time with a wait
- * for the browser's GPU process after each call, and the GPU interface it draws with.
+ * instance data by index, for those that end in -one-pass and -two-pass, S2's boxes see-through
+ * and double-sided in one draw or in two, for those that end in -hash, S2's boxes with the alpha
+ * hash, for those that end in -depth32, shadow cascades in 32-bit float depth, for those that end
+ * in -blend-off, S4's shadow cascades with no band between them, for those with -sky, a background
+ * behind S1 (the benchmarks guide lists them), for those that end in -first, a background drawn
+ * before the objects, for those that end in -box, a small box that writes depth, for those with
+ * -skin-, a way of skinning that ?skinning= picks, for those that end in -timed, the time of each
+ * WebGL call, and for those that end in -synced, that time with a wait for the browser's GPU
+ * process after each call, and the GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -163,6 +182,12 @@ const PAGES = {
 		switches: 'gpu=webgpu&instances=index',
 		api: 'webgpu',
 	},
+	'null3d-webgpu-one-pass': { folder: 'null3d', switches: 'gpu=webgpu&sides=one', api: 'webgpu' },
+	'null3d-webgl2-one-pass': { folder: 'null3d', switches: 'gpu=webgl2&sides=one', api: 'webgl2' },
+	'null3d-webgpu-two-pass': { folder: 'null3d', switches: 'gpu=webgpu&sides=two', api: 'webgpu' },
+	'null3d-webgl2-two-pass': { folder: 'null3d', switches: 'gpu=webgl2&sides=two', api: 'webgl2' },
+	'null3d-webgpu-hash': { folder: 'null3d', switches: 'gpu=webgpu&alpha=hash', api: 'webgpu' },
+	'null3d-webgl2-hash': { folder: 'null3d', switches: 'gpu=webgl2&alpha=hash', api: 'webgl2' },
 	'null3d-webgpu-depth32': {
 		folder: 'null3d',
 		switches: 'gpu=webgpu&shadowdepth=32',
@@ -385,7 +410,27 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
+	{
+		test: 'alpha-coverage',
+		twin: `${TWINS}/alpha-mask.html?mode=coverage`,
+		limit: ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
+	},
+	{
+		test: 'alpha-hash',
+		twin: `${TWINS}/alpha-mask.html?mode=hash`,
+		limit: ALPHA_HASH_MAX_DIFFERENT_PERCENT,
+	},
+	// three.js's shadows ignore vertex alpha, so only the cards that their map cuts cast here.
+	{
+		test: 'alpha-mask-shadows',
+		twin: `${TWINS}/alpha-mask.html?shadows`,
+		sketchSwitches: 'ringShadows=off',
+		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+	// alpha-coverage-shadows has no twin: three.js cuts the shadow of alpha to coverage at 0.5, and
+	// null3D at each card's own cutoff, which glTF's alpha mode MASK means (D-82).
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
+	{ test: 'transparency-solids', twin: `${TWINS}/transparency.html?solids` },
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
 	// Points against three.js's Points and PointsMaterial, whose WebGPURenderer draws them one pixel
 	// wide, so WebGLRenderer's frame is the reference on every tier. WebGPU's samples within a pixel
