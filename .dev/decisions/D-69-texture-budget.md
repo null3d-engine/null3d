@@ -47,6 +47,8 @@ The memory count before the change left out the old array in the frame that it h
 
 [D-83](D-83-gate-rulings-2026-10-06.md) gives about 6.5 ms of the S24+'s cold start on Slow 4G for each KB of start download. So the core's growth costs about 43 ms. The whole start download grows about 7.7 KB, which costs about 50 ms. That is about 0.9% of D-83's cold start target of 5.5 s. The core keeps 52% of its 600 KB budget. Most of the growth is the budget's order, its estimate of need and the arrays' moves and shrinks. All of them run in the core every frame. None of it can load on first use: the budget must hold from the first texture. The owner sees the figure in pull request #346.
 
+**The owner's iPad.** On 2026-10-07 the same page passed on both GPU paths in Safari on the owner's iPad Pro (run 20261007-062131-checks, [tested devices](../tested-devices.md)). The KTX2 texture became ETC2 on both paths and dropped a level by loading its file again. The WebGPU page ran at High and started with a budget of 1008 MiB, the tablet cap, not High's 1024 MiB. The WebGL2 page ran at Medium, WebGL2's highest preset, and started with Medium's 512 MiB. The test sets its own budgets with `quality.set`, so the preset does not change what it checks.
+
 How the data was produced: on 2026-10-05, `NULL3D_PORT=17373 bun run test:images -g texture-budget`, then the same with `CI=1`. The size figures come from `bun run build:check-size` on 2026-10-07. The unit tests in `crates/null3d-render/src/textures.rs` and `textures/budget.rs` give the table's array figures.
 
 ## Decision
