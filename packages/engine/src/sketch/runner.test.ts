@@ -174,7 +174,8 @@ const MEDIUM: QualityStart = {
  * `quality` replaces the page's quality start. With `drawing`, a stand-in for the thread that
  * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in. With
  * `grows`, each frame step grows the memory. `cellsRefused` gives the core's count of refused grid
- * cells. The log also shows the settings that the page got.
+ * cells. `control` gives the page's control block, which the test can write. The log also shows the
+ * settings that the page got.
  */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
@@ -186,6 +187,7 @@ async function start(
 		holdSeconds,
 		shared = false,
 		cellsRefused,
+		control = controlViews(createControlBuffer(shared)),
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -193,12 +195,12 @@ async function start(
 		holdSeconds?: number;
 		shared?: boolean;
 		cellsRefused?: () => number;
+		control?: ReturnType<typeof controlViews>;
 	} = {},
 ) {
 	const log: string[] = [];
 	const calls: unknown[][] = [];
 	const updates: QualityUpdate[] = [];
-	const control = controlViews(createControlBuffer(shared));
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
@@ -540,6 +542,49 @@ describe('SketchRunner', () => {
 			true,
 		]);
 		expect(scaled.calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(750);
+	});
+
+	it('tells a held sketch that no reduced motion is asked for, and of no change, whatever the page reports', async () => {
+		/** A sketch that logs the preference, and whose first update has the page report a change. */
+		const motion =
+			(control: ReturnType<typeof controlViews>) => (context: SketchContext, log: string[]) => {
+				const { preferences } = context;
+				log.push(`setup ${preferences.reducedMotion}`);
+				preferences.onChange(() => log.push(`change ${preferences.reducedMotion}`));
+				return {
+					onUpdate() {
+						log.push(`update ${preferences.reducedMotion}`);
+						Atomics.store(control.slots, Slot.ReducedMotion, 0);
+					},
+				};
+			};
+		const preferenceLines = (log: string[]) =>
+			log.filter((line) => /^(setup|change|update) /.test(line));
+		const asking = () => {
+			const control = controlViews(createControlBuffer(false));
+			Atomics.store(control.slots, Slot.ReducedMotion, 1);
+			return control;
+		};
+
+		const liveControl = asking();
+		const live = await start(motion(liveControl), undefined, { control: liveControl });
+		live.runner.step(0);
+		live.runner.step(1000 / 60);
+		expect(preferenceLines(live.log)).toEqual([
+			'setup true',
+			'update true',
+			'change false',
+			'update false',
+		]);
+
+		const heldControl = asking();
+		const held = await start(motion(heldControl), undefined, {
+			control: heldControl,
+			holdSeconds: 0.1,
+		});
+		const lines = preferenceLines(held.log);
+		expect(lines.length).toBeGreaterThan(2);
+		expect(new Set(lines)).toEqual(new Set(['setup false', 'update false']));
 	});
 
 	it("gives the core the preset's texture settings before the setup, then only those that change", async () => {
