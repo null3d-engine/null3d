@@ -44,7 +44,8 @@ use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
-    CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings, fit_cascades,
+    CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
+    fit_cascades,
 };
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -602,6 +603,8 @@ pub struct SceneSettings {
     lighting: Lighting,
     /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
     shadow_schedule: CascadeSchedule,
+    /// How the cascades' shadow map stores depth.
+    cascade_depth: CascadeDepth,
     /// The casters that move in every frame, which keep far cascades drawing.
     moving_casters: MovingCasters,
     canvas: CanvasOutput,
@@ -642,11 +645,13 @@ pub struct SceneSettings {
 }
 
 impl SceneSettings {
+    /// Settings with no scene content yet, whose cascades' shadow map stores `cascade_depth`.
     pub fn new(
         meshes: MeshStorage,
         max_materials: u32,
         textures: TextureStore,
         canvas: CanvasOutput,
+        cascade_depth: CascadeDepth,
     ) -> Self {
         Self {
             meshes,
@@ -666,6 +671,7 @@ impl SceneSettings {
                 fog: None,
             },
             shadow_schedule: CascadeSchedule::default(),
+            cascade_depth,
             moving_casters: MovingCasters::default(),
             canvas,
             output: Output::default(),
@@ -1182,6 +1188,11 @@ impl SceneSettings {
         self.lighting.sun_shadow.map_or(0, |shadow| shadow.cascades)
     }
 
+    /// How the cascades' shadow map stores depth.
+    pub fn cascade_depth(&self) -> CascadeDepth {
+        self.cascade_depth
+    }
+
     /// The shadow filter and how the far cascades update.
     pub fn shadow_quality(&self) -> ShadowQuality {
         self.lighting.shadow_quality
@@ -1255,6 +1266,7 @@ impl SceneSettings {
             camera: position,
             layers: shadow.layers,
             drawn,
+            depth: self.cascade_depth,
         })
     }
 

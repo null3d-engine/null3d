@@ -60,7 +60,7 @@ use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
-use null3d_render::shadows::ShadowQuality;
+use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
@@ -395,6 +395,7 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
 /// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
 /// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
@@ -414,6 +415,7 @@ pub fn init_engine(
     depth_prepass: bool,
     vertex_skinning: bool,
     large_world: bool,
+    shadow_depth_bits: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -442,6 +444,7 @@ pub fn init_engine(
         transparent,
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
+    let cascade_depth = CascadeDepth::from_bits(shadow_depth_bits);
     *cell = Some(Engine {
         scene: if large_world {
             SceneStorage::with_large_world(scene_capacity)
@@ -459,6 +462,7 @@ pub fn init_engine(
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
+                cascade_depth,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -472,6 +476,7 @@ pub fn init_engine(
                 cell_culling,
                 depth_prepass,
                 vertex_skinning,
+                cascade_depth,
                 ..RendererConfig::default()
             }))
         },

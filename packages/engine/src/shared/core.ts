@@ -42,6 +42,7 @@ export interface CoreGlue extends CoreErrors {
 		depthPrepass: boolean,
 		vertexSkinning: boolean,
 		largeWorld: boolean,
+		shadowDepthBits: number,
 	): number;
 	/**
 	 * Counts the frame chunk that job worker `index` held when its loop failed as done and as
