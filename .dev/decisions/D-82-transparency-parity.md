@@ -1,6 +1,6 @@
 # D-82: Transparency parity: two-sided blending, alpha to coverage, the alpha hash and cut-out shadows
 
-Status: decided; the owner confirmed alpha to coverage on by default on 2026-10-07, and kept two draws for double-sided blended materials on 2026-10-07, which replaces the 5% cost rule. The cloud S25's runs are done; the iPad's cool cost run is pending, for the record. The owner skipped the optional S24+ run. Date: 2026-10-05. Task: M2-J6.
+Status: decided; the owner confirmed alpha to coverage on by default on 2026-10-07, and kept two draws for double-sided blended materials on 2026-10-07, which replaces the 5% cost rule. The cost runs on the Mac, the cloud S25 and the owner's iPad are done. The owner skipped the optional S24+ run. Date: 2026-10-05. Task: M2-J6.
 
 Summary: A double-sided blended run draws its back faces, then its front faces, unless `forceSinglePass` is set. Masks take alpha to coverage by default: the pipeline's where the target has alpha, the shader's `sample_mask` on WebGPU's `rg11b10ufloat`. `alphaMode: 'hash'` ports three.js's alpha hash with an integer hash of each cell, so every GPU draws the same pattern. Masked casters cut their shadows at their own cutoff.
 
@@ -99,7 +99,20 @@ The Mac, 7 October 2026, Chrome, S2, 5 runs of 10 s per page, a load of about 5,
 
   On WebGPU the second draw adds 26% of GPU time on the S25. On WebGL2 the frame rate fell from 30 to 17 fps, with the eightfold upload that the records fix halves. On the fixed build (run `20261007-095947-bench`) two draws uploaded 1.50 MB per frame and ran at 17.7 fps. So the WebGL2 cost is the draws themselves: each run's two draws switch pipelines, so about 9,600 single draws cannot join multi-draw calls. The alpha hash cost 2% of GPU time on WebGPU (3.34 ms plain, 3.41 ms hashed), and nothing measurable on WebGL2 (1.10 and 1.12 ms of CPU time, both at 30 fps).
 - The S25 and the iPad drew the integer hash's images within the Mac's tolerance: the 6 hash checks passed on 1fd345ab3 on each (runs `20261007-095744-checks` and `20261007-101259-checks`). With the sine hash the iPad had differed from the Mac too, in 4.7% of pixels, so the hash's pattern depended on Apple's GPU as well as Adreno's.
-- The iPad's cost waits for a cool run. The first, on 7 October 2026, ran with the display at 45 Hz, so `.dev/tested-devices.md` keeps it only as a hot run.
+- The owner's iPad Pro 11-inch (A12X, Safari 26.6.2), 7 October 2026, after a 15-minute rest, with the display at 59 Hz before every page, on 1fd345ab3 with the WebGL2 records fix, 3 runs per page in turns (run `20261007-103322-bench`):
+
+| Page | GPU ms | Busiest thread, CPU ms | Draws | Presented fps |
+| --- | --- | --- | --- | --- |
+| WebGPU, one pass | 8.90 | 1.74 | 4,726 | 49.8 |
+| WebGPU, two passes | 11.94 | 2.31 | 9,464 | 30.9 |
+| WebGL2, one pass | no timer | 9.94 | 4,795 | 60.0 |
+| WebGL2, two passes | no timer | 37.20 | 9,399 | 20.6 |
+| WebGPU, S2 as it is | 4.33 | 0.42 | | 60.0 |
+| WebGPU, hashed | 5.58 | 0.42 | | 60.0 |
+| WebGL2, S2 as it is | no timer | 0.92 | | 60.0 |
+| WebGL2, hashed | no timer | 0.92 | | 60.0 |
+
+  On the iPad the second draw adds 34% of WebGPU GPU time, and 3.7 times the drawing thread's CPU time on WebGL2, where Safari pays for each of the 9,400 single draws. The alpha hash adds 29% of WebGPU GPU time on this tile GPU, where a shader that drops fragments loses part of the hidden-surface removal, and nothing on WebGL2. An earlier run the same day ran hot, with the display at 45 Hz; `.dev/tested-devices.md` keeps it as a hot run.
 - The pages of plain S2 and the hash later in the same run overlapped a shader build and the end of the quiet window, so the hash's cost comes from the iPad.
 - The cost rule needed a ruling: this worst case cannot meet it, as three.js's own two draws would not.
 
