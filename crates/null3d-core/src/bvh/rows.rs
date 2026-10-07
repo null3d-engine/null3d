@@ -179,6 +179,8 @@ pub fn ray_segment(
     half: [f64; 3],
 ) -> (f64, f64, f64) {
     let extent = dot(half, half).sqrt();
+    // `max` and `min`, not `clamp`: clamp's check of its bounds would bring the code that formats
+    // floats into the WebAssembly file.
     let along = if extent > 0.0 {
         half.map(|v| v / extent)
     } else {
@@ -212,17 +214,17 @@ pub fn ray_segment(
             s1 = if s0 > 0.0 {
                 -extent
             } else {
-                (-b1).clamp(-extent, extent)
+                (-b1).max(-extent).min(extent)
             };
         } else if r1 <= ext_det {
             s0 = 0.0;
-            s1 = (-b1).clamp(-extent, extent);
+            s1 = (-b1).max(-extent).min(extent);
         } else {
             s0 = (-(a01 * extent + b0)).max(0.0);
             s1 = if s0 > 0.0 {
                 extent
             } else {
-                (-b1).clamp(-extent, extent)
+                (-b1).max(-extent).min(extent)
             };
         }
     } else {

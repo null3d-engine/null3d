@@ -202,7 +202,8 @@ export class SpriteBatch {
 		readonly count: number,
 		/** The sprites' material: `set` changes the color, opacity and alpha cutoff of every sprite. */
 		readonly material: Material<SpriteValues>,
-		private readonly batch: SpriteBatchRows,
+		/** @internal The instance batch's calls, which a point batch's calls reach too. */
+		readonly batch: SpriteBatchRows,
 	) {}
 
 	/**
@@ -301,16 +302,6 @@ export class SpriteBatch {
 	/** @internal A batch has no parent for its pointer events to go on to. */
 	pointerParent(): PointerTarget | null {
 		return null;
-	}
-
-	/** @internal Adds a handler of the events of `target`, the point batch that holds this one. */
-	listenFor(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.batch.listen(target, type, handler);
-	}
-
-	/** @internal Removes a handler that `listenFor` added. */
-	unlistenFor(target: PointerTarget, type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.batch.unlisten(target, type, handler);
 	}
 
 	/**
@@ -457,17 +448,17 @@ export class PointBatch {
 	 * does. A ray hits a point where its square draws. The event's `instance` names the point.
 	 */
 	on(type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.sprites.listenFor(this, type, handler);
+		this.sprites.batch.listen(this, type, handler);
 	}
 
 	/** Removes a handler that `on` added for events of `type`. */
 	off(type: ObjectEventType, handler: ObjectEventHandler): void {
-		this.sprites.unlistenFor(this, type, handler);
+		this.sprites.batch.unlisten(this, type, handler);
 	}
 
 	/** @internal The frame in which the batch was destroyed, or -1. */
 	get destroyedFrame(): number {
-		return this.sprites.destroyedFrame;
+		return this.sprites.batch.destroyedFrame;
 	}
 
 	/** @internal A batch has no parent for its pointer events to go on to. */

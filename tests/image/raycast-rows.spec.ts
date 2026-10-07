@@ -47,13 +47,12 @@ for (const tier of ['webgpu', 'compat', 'webgl2'] as const)
 		// Every batch was hit often enough to mean something.
 		for (const batch of ROW_BATCHES)
 			expect(results.hitsByBatch[batch] ?? 0, batch).toBeGreaterThan(20);
-		// Every pixel away from a row's edge shows what its ray hits.
-		expect([picture.missing, picture.extra, picture.swapped, picture.examples]).toEqual([
-			0,
-			0,
-			0,
-			[],
-		]);
+		// Every pixel away from a row's edge shows a row where its ray hits one, and nothing where it
+		// hits none. Where two rows overlap at almost one depth, the GPU's depth test and the ray can
+		// pick either: a line's depth on the GPU is its end point's, and a ray's hit near a line is its
+		// closest point. So a few such pixels may show the other row.
+		expect([picture.missing, picture.extra], picture.examples.join('\n')).toEqual([0, 0]);
+		expect(picture.swapped, picture.examples.join('\n')).toBeLessThanOrEqual(3);
 		expect(picture.judged).toBeGreaterThan(50_000);
 		expect(picture.drawn).toBeGreaterThan(2_000);
 		// A click on a sprite, a point and a line reaches the handler of its batch.
