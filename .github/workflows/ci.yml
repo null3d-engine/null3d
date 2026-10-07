@@ -115,7 +115,8 @@ jobs:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The shader-build tests run much slower on some GitHub runners, so the limit leaves room above a typical run (D-99).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
