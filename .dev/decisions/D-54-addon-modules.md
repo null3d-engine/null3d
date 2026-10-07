@@ -68,7 +68,7 @@ Draco:
 
 - The main path is bundled: the engine and its add-ons from npm, built with Vite and the null3D plugin.
 - CDN use works through one shared mechanism in the engine. Each worker starts from a small `blob:` bootstrap that the page makes, which imports the worker's code from the CDN. The core's own workers start the same way, so there is one way to start workers.
-- The docs state the policy that this needs (`blob:` and the CDN in `worker-src`, the CDN in `script-src` and `connect-src`, and `'wasm-unsafe-eval'`) and the headers (cross-origin isolation, and CORS or `Cross-Origin-Resource-Policy` on the CDN's files).
+- The docs state the policy that this needs: `blob:` and the CDN in `worker-src`, the CDN in `script-src` and `connect-src`, and `'wasm-unsafe-eval'`. They also state the headers: cross-origin isolation, and CORS or `Cross-Origin-Resource-Policy` on the CDN's files.
 - The engine gives a clear error, with a code and a fix, when the policy or a header is missing.
 - No self-hosted worker copies: a page never has to copy worker files to its own origin.
 
@@ -120,6 +120,16 @@ Two runs each. The differences are within the Mac's run-to-run spread.
 - Codes: E1422 names the directive when the page's policy blocks a worker's bootstrap or an engine file. E1423 is for an engine file of another origin without a CORS header. E1418 stays for `'wasm-unsafe-eval'`. A page without the isolation headers runs single-threaded, as on any host.
 - `Cross-Origin-Resource-Policy` alone does not serve: module imports and `fetch` of another origin are CORS requests, which need `Access-Control-Allow-Origin`.
 - A `blob:` worker takes the page's policy. The official Basis Universal transcoder makes its bindings with `new Function`. So KTX2 textures failed under any policy without `'unsafe-eval'`. On main they failed too when the host sent its policy on the transcoder's script. The engine now ships its own build of v2.50 without that, which writes the same bytes (implementation notes, KTX2 textures).
+
+### Firefox and worker-src (found 7 October 2026)
+
+- The first stated policy allowed only `'self'` and `blob:` in `worker-src`. A run of the CDN test in Playwright's Firefox, after the loader merged (#340), found that a threaded page did not start under it. The run failed 3 of 3 times.
+- The cause: Firefox checks the modules that a worker imports against `worker-src`. Chrome and WebKit check them against `script-src`. The sketch worker imports the sketch from the CDN, and that import's shared chunk was blocked. Firefox's console named `worker-src` and the chunk's address.
+- The start then failed with E1410, whose fix tells the developer to pass the sketch differently. That is the wrong fix.
+- The fix: the stated policy names the CDN in `worker-src` too. The policy then serves every browser, and it allows nothing that `script-src` does not allow already. With it, the CDN test passed 8 of 8 in Playwright's Firefox and 8 of 8 in its WebKit.
+- The sketch's loader now looks for the worker's violation report when the import fails. It accepts a report from the module's origin by a script, worker or default directive. It then fails with E1422, which names the directive and the blocked file. Under the old policy, Firefox now gives `E1422: ... its worker-src does not allow <CDN>/.../src-<hash>.js`.
+- Rejected: a CI job in Firefox for the CDN test. The queue's Firefox job runs the runner's pages, which cannot set a page's policy, and the case needs only one rule in the policy.
+- Chrome's tests cannot show this fault, so the CDN test's policy is the one guard. Run `cdn.spec.ts` in Playwright's Firefox after a change to how workers import modules.
 
 ### Tests
 
