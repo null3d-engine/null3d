@@ -50,6 +50,14 @@ On WebGL2 only, the standard material frees four units in three ways.
 
 Packing the maps by family alone was rejected. One binding for the color maps and one for the data maps works only when every map of a family is in one array. A compressed texture has an array of its own, so a KTX2 material would need copies or decompression. Atlases were rejected as the main method for the same reason, and because filtering and wrapping across an atlas's tiles needs padding and shader code.
 
+### Why the shader picks a unit with a switch
+
+GLSL ES 3.00 indexes an array of samplers only with a constant. A unit known only at run time therefore needs a branch: a switch on the unit number, with one texture read in each case. On WebGPU the same helper switches on the slot, a constant at each call, which the GPU compilers fold away. The unit comes from the material's row, so the pixels of one material all take the same branch, and a GPU runs only that one. A program per arrangement of maps would need no branch. It was rejected because each arrangement would add pipelines and compiles. No benchmark scene uses texture maps, so the branch's cost is not measured yet. A WebGL2 timing of S3 and S4 in a quiet window compares main with this change. It measures the shared light texture and the table reads.
+
+### Which maps a material drops
+
+`MapSlot::SHARING_ORDER` gives the order in which a material's maps take units. Base color comes first, then normal, metal-rough, occlusion, emissive and light. The specular color and specular intensity maps come last. The specular maps go first because they change the look least, and a light map carries a scene's baked light. A glTF file has no light maps, so a glTF material loses at most its specular intensity map. The owner confirmed this order on 7 October 2026.
+
 ## Consequences
 
 - `null3d::tables` is a new library module. It holds the material table's binding on WebGL2 and reads the split-sum table on both paths. `null3d::lighting` imports it. A module that `null3d::lighting` imports cannot import `null3d::mesh`, which imports the tone mapping, which imports `null3d::lighting`.
