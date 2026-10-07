@@ -6,6 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import { QUALITY_SETTINGS } from '../quality/presets';
 import { type Build, coreUrls } from '../shared/core';
 import { compileWasm, type MemoryLimits, readMemoryLimits, type WasmError } from '../shared/wasm';
+import { type MemoryKey, takeMemory } from './memory-pool';
 import { endParkedWorkers } from './ownership';
 
 /**
@@ -39,6 +40,8 @@ export interface LoadedCore {
 	build: Build;
 	module: WebAssembly.Module;
 	memory?: WebAssembly.Memory;
+	/** What the shared memory is for, so that a stop can keep it for the next engine. */
+	memoryKey?: MemoryKey;
 }
 
 const coreError: WasmError = (code, message) => new EngineError(code, message);
@@ -142,11 +145,12 @@ export async function createSharedMemory(
 }
 
 /**
- * Downloads and compiles a core build. For the threaded build it also creates the shared memory,
- * with the initial size and the maximum that the module's import declares, which the loader reads
- * from the start of the download while the browser compiles the rest. The limits need no file of
- * their own, so a strict Content-Security-Policy has no inline address to block. `memoryWait` hears
- * when the browser has refused the memory for 10 seconds and the loader still tries.
+ * Downloads and compiles a core build. For the threaded build it also gets the shared memory: one
+ * that an engine before kept with the same core and maximum, or a new one with the initial size and
+ * the maximum that the module's import declares. The loader reads those from the start of the
+ * download while the browser compiles the rest. The limits need no file of their own, so a strict
+ * Content-Security-Policy has no inline address to block. `memoryWait` hears when the browser has
+ * refused a new memory for 10 seconds and the loader still tries.
  */
 export async function loadCore(
 	build: Build,
@@ -168,16 +172,19 @@ export async function loadCore(
 			'E1402',
 			'the threaded engine core imports no shared memory, so it comes from another build.',
 		);
-	const maximum = maximumPages(limits, maximumMiB);
+	const memoryKey = { core: url.href, maximum: maximumPages(limits, maximumMiB) };
 	return {
 		build,
 		module,
-		memory: await createSharedMemory(
-			{ initial: limits.initial, maximum, shared: true },
-			undefined,
-			undefined,
-			undefined,
-			memoryWait,
-		),
+		memoryKey,
+		memory:
+			takeMemory(memoryKey, limits.initial) ??
+			(await createSharedMemory(
+				{ initial: limits.initial, maximum: memoryKey.maximum, shared: true },
+				undefined,
+				undefined,
+				undefined,
+				memoryWait,
+			)),
 	};
 }

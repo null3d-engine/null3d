@@ -1659,6 +1659,9 @@ interface RestartRound {
 	/** The room when it came back, or when the page stopped waiting for it. */
 	roomLater?: number;
 	roomWaitMs?: number;
+	/** The shared memories that the starts made, and those that the browser refused. */
+	memoriesMade?: number;
+	memoriesRefused?: number;
 }
 
 /** What the restart page reports about the engine's starts and stops. */
@@ -1730,6 +1733,13 @@ export function restartProblems(
 		`${words.cycle} ${round.cycles + 1} of ${result.cycles}${which} failed: ${round.error}${lastSteps(round.trail)}`;
 	const problems: string[] = [];
 	if (engine.error) problems.push(failed(engine, ''));
+	// Each start on the page after the first takes the memory that the page kept from the stop
+	// before (D-98). Engines in frames keep theirs in the frame's page, which goes with the frame.
+	const made = engine.memoriesMade ?? 0;
+	if (threaded && !engine.error && (start === 'engine' || start === 'canvas-kept') && made > 1)
+		problems.push(
+			`the ${engine.cycles} ${words.cycles} made ${made} shared memories: each start after the first should take the memory that the page kept`,
+		);
 	if (!roomLost(result.room, engine)) return problems;
 	const lostText = `it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`;
 	// The workers that stay with kept canvases may hold memory until a start needs it, which the
