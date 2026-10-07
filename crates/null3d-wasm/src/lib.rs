@@ -26,7 +26,7 @@ use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
-use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
@@ -60,7 +60,7 @@ use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
-use null3d_render::shadows::ShadowQuality;
+use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
@@ -397,7 +397,7 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// shaders read each culled instance by index from storage buffers, not from a copy that the
 /// culling shader writes, for the test of decision record D-23. With `large_world`, each object's
 /// position holds whole cells besides its 32-bit part, so positions keep their precision at any
-/// distance.
+/// distance. The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
@@ -418,6 +418,7 @@ pub fn init_engine(
     vertex_skinning: bool,
     index_instances: bool,
     large_world: bool,
+    shadow_depth_bits: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -446,6 +447,7 @@ pub fn init_engine(
         transparent,
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
+    let cascade_depth = CascadeDepth::from_bits(shadow_depth_bits);
     *cell = Some(Engine {
         scene: if large_world {
             SceneStorage::with_large_world(scene_capacity)
@@ -463,6 +465,7 @@ pub fn init_engine(
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
+                cascade_depth,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -477,6 +480,7 @@ pub fn init_engine(
                 depth_prepass,
                 vertex_skinning,
                 index_instances,
+                cascade_depth,
                 ..RendererConfig::default()
             }))
         },
@@ -523,11 +527,33 @@ pub fn destroy_engine() {
     unsafe { *ENGINE.0.get() = None };
 }
 
-/// Serves the job system on a job worker until the page sets its stop flag. It first waits for
-/// the sketch thread to create the job system.
+// Each doc comment below stays short: wasm-bindgen copies it into the glue.
+/// Serves the job system on job worker `index`: true when a call made it return, false at stop.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
-pub fn job_worker_loop(index: u32) {
-    JOBS.wait().worker_loop(index);
+pub fn job_worker_loop(index: u32) -> bool {
+    JOBS.wait().worker_loop(index) == LoopExit::Called
+}
+
+/// Asks job worker `index` to leave its loop to run a task.
+#[wasm_bindgen(js_name = callJobWorker)]
+pub fn call_job_worker(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.call_worker(index);
+    }
+}
+
+/// Ends one task call of job worker `index`.
+#[wasm_bindgen(js_name = jobWorkerCallDone)]
+pub fn job_worker_call_done(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.call_done(index);
+    }
+}
+
+/// The task calls of job worker `index` that it has not finished.
+#[wasm_bindgen(js_name = jobWorkerCalls)]
+pub fn job_worker_calls(index: u32) -> u32 {
+    JOBS.get().map_or(0, |jobs| jobs.pending_calls(index))
 }
 
 /// Counts the frame chunk that job worker `index` held when its loop failed as done and as
@@ -2301,12 +2327,35 @@ pub fn set_debug_view(view: u32) -> u32 {
     })
 }
 
-/// The scene's fog: its kind (`constants::fog_kind`), its linear color, the near and far distances
-/// of linear fog, and the density of exponential squared fog.
+/// The scene's fog: its curve (`constants::fog_curve`), or no fog, its linear color, the density of
+/// exponential and exponential squared fog, the near and far distances of linear fog, the height
+/// where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 #[wasm_bindgen(js_name = setFog)]
-pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: f32) -> u32 {
+#[allow(clippy::too_many_arguments)]
+pub fn set_fog(
+    curve: u32,
+    r: f32,
+    g: f32,
+    b: f32,
+    density: f32,
+    near: f32,
+    far: f32,
+    height: f32,
+    height_falloff: f32,
+    sun_glow: f32,
+    sun_exponent: f32,
+) -> u32 {
     with_engine(|e| {
-        let fog = Fog::from_code(kind, [r, g, b], near, far, density);
+        let values = [
+            density,
+            near,
+            far,
+            height,
+            height_falloff,
+            sun_glow,
+            sun_exponent,
+        ];
+        let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
         0
     })

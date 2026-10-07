@@ -342,9 +342,12 @@ pub mod format {
     /// ambient occlusion's copy of the depth. WebGL2 calls it `R32F`, and draws into it with
     /// `EXT_color_buffer_float`.
     pub const R32_FLOAT: u32 = 20;
+    /// Depth as a 16-bit unsigned normalized number: half the bytes of `DEPTH32_FLOAT`, with even
+    /// steps of 1 / 65,535 from 0 to 1. WebGL2 calls it `DEPTH_COMPONENT16`.
+    pub const DEPTH16_UNORM: u32 = 22;
 
     /// Every format.
-    pub const ALL: [u32; 21] = [
+    pub const ALL: [u32; 22] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -366,6 +369,7 @@ pub mod format {
         ETC2_RGBA8_UNORM_SRGB,
         RGB9E5_UFLOAT,
         R32_FLOAT,
+        DEPTH16_UNORM,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -396,7 +400,7 @@ pub mod format {
 
     /// True for the depth formats.
     pub const fn is_depth(format: u32) -> bool {
-        matches!(format, DEPTH24_PLUS | DEPTH32_FLOAT)
+        matches!(format, DEPTH16_UNORM | DEPTH24_PLUS | DEPTH32_FLOAT)
     }
 
     /// True for the formats stored in compressed blocks of texels.
@@ -430,6 +434,7 @@ pub mod format {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
             | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
+            DEPTH16_UNORM => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
             | ASTC_4X4_UNORM
@@ -1504,6 +1509,7 @@ pub fn typescript_constants() -> String {
                 ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
                 ("RGB9E5_UFLOAT", format::RGB9E5_UFLOAT),
                 ("R32_FLOAT", format::R32_FLOAT),
+                ("DEPTH16_UNORM", format::DEPTH16_UNORM),
             ],
         ),
         (
@@ -2120,6 +2126,8 @@ mod tests {
         assert_eq!(format::texel_bytes(format::DEPTH24_PLUS), 0);
         assert_eq!(format::texel_bytes(99), 0);
         assert!(format::is_depth(format::DEPTH32_FLOAT));
+        assert!(format::is_depth(format::DEPTH16_UNORM));
+        assert_eq!(format::texel_bytes(format::DEPTH16_UNORM), 2);
         assert!(!format::is_depth(format::RGBA8_UNORM_SRGB));
     }
 

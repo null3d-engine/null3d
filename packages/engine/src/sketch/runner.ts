@@ -279,6 +279,7 @@ export class SketchRunner {
 			device.vertexSkinning,
 			device.indexInstances,
 			device.largeWorld,
+			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		const {

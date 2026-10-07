@@ -1,22 +1,25 @@
-// Makes the built-in room's environment map with the engine's generator for the GPU path that
-// ?gpu= names: core WebGPU (webgpu), WebGPU in compatibility mode (compat) or WebGL2 (webgl2). The
-// page reads every level of every face back as shared-exponent texels, which the test compares
-// with the asset tool's map of the room. WebGL2 reads no shared-exponent texture, so there the
-// generator hands each level's texels over on their way into the cube, and the page then checks
-// that the finished cube holds the same light: it draws every texel of every level into a float
-// target, where the device has one, and counts the texels that differ. The page also times the
-// generator as the engine runs it, the whole map in one go: it first builds the pipelines in the
-// background, as the engine does while a sketch loads, then makes the first map, as at load, then
-// ?runs= more. Each map's time runs from the call until the GPU has finished it. Where the device
-// has WebGL2's timer queries, it gives their GPU times as well.
+// Makes the built-in room's environment map with the engine's generator for the GPU path that ?gpu=
+// names: core WebGPU (webgpu), WebGPU in compatibility mode (compat) or WebGL2 (webgl2), or with
+// ?source=<address> the map of a Radiance or OpenEXR file, which the page reads with the engine's
+// readers first, as the panorama worker does. The page reads every level of every face back as
+// shared-exponent texels, which the test compares with the asset tool's map. WebGL2 reads no
+// shared-exponent texture, so there the generator hands each level's texels over on their way into
+// the cube, and the page then checks that the finished cube holds the same light: it draws every
+// texel of every level into a float target, where the device has one, and counts the texels that
+// differ. The page also times the generator as the engine runs it, the whole map in one go: it
+// first builds the pipelines in the background, as the engine does while a sketch loads, then makes
+// the first map, as at load, then ?runs= more. Each map's time runs from the call until the GPU has
+// finished it. Where the device has WebGL2's timer queries, it gives their GPU times as well.
 import {
 	DEPTH_SETUPS,
 	programHost,
-	webgl2RoomGenerator,
-	webgpuRoomGenerator,
+	webgl2EnvironmentGenerator,
+	webgpuEnvironmentGenerator,
 } from '@null3d/engine/internal';
 import { ENVIRONMENT_SHADER as GLSL } from '../../packages/engine/src/generated/shaders-environment-glsl';
 import { ENVIRONMENT_SHADER as WGSL } from '../../packages/engine/src/generated/shaders-environment-wgsl';
+import { readPanorama } from '../../packages/engine/src/scene/panorama-files';
+import type { GeneratorSource } from '../../packages/engine/src/shared/images';
 import { run, toBase64 } from './lib/result';
 
 /** The room's map: faces of 256 texels down to 8, as the engine makes it. */
@@ -28,6 +31,10 @@ const params = new URLSearchParams(location.search);
 const requested = params.get('gpu');
 const tier: Tier = requested === 'compat' || requested === 'webgl2' ? requested : 'webgpu';
 const runs = Number(params.get('runs') ?? '0');
+const file = params.get('source');
+
+/** The largest side of a panorama on the GPU, as the engine's panorama loader sets it. */
+const PANORAMA_SIDE = 8 * SIZE;
 
 /** Bytes of the texels of a level's six faces, tightly packed. */
 const levelBytes = (level: number) => 6 * (SIZE >> level) ** 2 * 4;
@@ -55,7 +62,7 @@ interface Made {
 	core?: boolean;
 }
 
-async function makeWebGPU(): Promise<Made> {
+async function makeWebGPU(source: GeneratorSource): Promise<Made> {
 	const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const coreFeatures = 'core-features-and-limits' as GPUFeatureName;
@@ -72,7 +79,7 @@ async function makeWebGPU(): Promise<Made> {
 		mipLevelCount: LEVELS,
 		textureBindingViewDimension: 'cube',
 	});
-	const generator = webgpuRoomGenerator(WGSL.webgpu);
+	const generator = webgpuEnvironmentGenerator(WGSL.webgpu);
 	const started = performance.now();
 	await generator.prepare(device);
 	const prepareTime = performance.now() - started;
@@ -81,7 +88,7 @@ async function makeWebGPU(): Promise<Made> {
 	device.pushErrorScope('validation');
 	for (let k = 0; k <= runs; k++) {
 		const start = performance.now();
-		generator.run(device, target);
+		generator.run(device, target, source);
 		callTimes.push(performance.now() - start);
 		await device.queue.onSubmittedWorkDone();
 		times.push(performance.now() - start);
@@ -227,7 +234,7 @@ interface TimerQuery {
 	readonly GPU_DISJOINT_EXT: number;
 }
 
-async function makeWebGL2(): Promise<Made> {
+async function makeWebGL2(source: GeneratorSource): Promise<Made> {
 	const canvas = new OffscreenCanvas(1, 1);
 	const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false });
 	if (!gl) throw new Error('no WebGL2 context');
@@ -235,7 +242,7 @@ async function makeWebGL2(): Promise<Made> {
 	const target = gl.createTexture();
 	gl.bindTexture(gl.TEXTURE_CUBE_MAP, target);
 	gl.texStorage2D(gl.TEXTURE_CUBE_MAP, LEVELS, gl.RGB9_E5, SIZE, SIZE);
-	const generator = webgl2RoomGenerator(GLSL.webgl2);
+	const generator = webgl2EnvironmentGenerator(GLSL.webgl2);
 	const parallel = gl.getExtension('KHR_parallel_shader_compile');
 	const host = programHost(gl, DEPTH_SETUPS.reversed, parallel);
 	const started = performance.now();
@@ -259,8 +266,8 @@ async function makeWebGL2(): Promise<Made> {
 			channel.port1.onmessage = () => resolve();
 			channel.port2.postMessage(0);
 		});
-	const make = (read?: Parameters<typeof generator.run>[4]) =>
-		generator.run(host, target as WebGLTexture, SIZE, LEVELS, read);
+	const make = (read?: Parameters<typeof generator.run>[5]) =>
+		generator.run(host, target as WebGLTexture, SIZE, LEVELS, source, read);
 	const times: number[] = [];
 	const callTimes: number[] = [];
 	const queries: WebGLQuery[] = [];
@@ -307,8 +314,24 @@ async function makeWebGL2(): Promise<Made> {
 }
 
 run('environment-generator', async () => {
-	const made = tier === 'webgl2' ? await makeWebGL2() : await makeWebGPU();
+	let source: GeneratorSource = 'room';
+	let sh: number[] = [];
+	let readTime = 0;
+	let gain = 1;
+	if (file) {
+		const bytes = await (await fetch(file)).arrayBuffer();
+		const started = performance.now();
+		const read = await readPanorama(bytes, PANORAMA_SIDE);
+		readTime = performance.now() - started;
+		source = read.panorama;
+		sh = Array.from(read.sh);
+		gain = read.panorama.gain;
+	}
+	const made = tier === 'webgl2' ? await makeWebGL2(source) : await makeWebGPU(source);
 	return {
+		sh,
+		readTime,
+		gain,
 		tier: tier === 'compat' ? 'webgpu-compat' : tier,
 		core: made.core,
 		errors: made.errors,

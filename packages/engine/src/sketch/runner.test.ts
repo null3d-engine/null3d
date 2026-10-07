@@ -229,6 +229,7 @@ async function start(
 				depthPrepass: false,
 				vertexSkinning: false,
 				indexInstances: false,
+				shadowDepthBits: 16,
 				largeWorld: false,
 			},
 			capabilities: CAPABILITIES,
