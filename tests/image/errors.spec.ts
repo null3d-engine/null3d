@@ -8,7 +8,7 @@ import { ERROR_FIXES, type ErrorCode } from '../../packages/engine/src/errors/fi
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
-const DOCS = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
+const DOCS = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
 interface Raised {
 	code: string;
