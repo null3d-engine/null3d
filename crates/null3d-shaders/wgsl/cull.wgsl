@@ -1,10 +1,17 @@
 // GPU culling. One thread per instance tests the instance's bounding sphere against the six
 // frustum planes and appends each survivor to its bucket's slice of the compacted instance buffer,
-// raising the instance count of the bucket's indirect draws with atomic adds. A bucket has one
-// draw per part of its mesh, and each part's draw reads the same slice, so every draw of the
-// bucket counts each survivor. The sphere comes from the bucket's local sphere and the world
-// matrix: the matrix moves the local center, which is the origin for most buckets, and the radius
-// is the local radius times the largest axis scale.
+// raising the instance count of the bucket's indirect draws. A bucket has one draw per part of its
+// mesh, and each part's draw reads the same slice, so every draw of the bucket counts each
+// survivor. The sphere comes from the bucket's local sphere and the world matrix: the matrix moves
+// the local center, which is the origin for most buckets, and the radius is the local radius times
+// the largest axis scale.
+//
+// A workgroup counts its survivors per bucket in workgroup memory first. One thread per bucket then
+// adds the workgroup's count to each of the bucket's draws with one atomic add each, and the add on
+// the first draw gives the workgroup its place in the slice. So the threads of a large bucket do
+// not all add to the same words of the indirect draws in turn (decision record D-100). The table
+// has one slot per thread. A bucket takes the slot at its index modulo the table's size, or the
+// next free one after it, so the table holds every bucket that the workgroup's threads can name.
 //
 // World matrices are relative to the centers of their grid cells, and the planes to the camera. An
 // instance's entry in the bucket table holds its cell index above its bucket, and the thread moves
@@ -182,11 +189,18 @@ struct Survivor {
     radius: f32,
 }
 
-/// Instance `i`, tested against the view's layers and frustum.
-fn survivor(i: u32) -> Survivor {
+/// Instance `i` where it draws nowhere in the view, which is also what a thread past every run
+/// appends.
+fn hidden(i: u32) -> Survivor {
     var out: Survivor;
     out.bucket = HIDDEN;
     out.index = i;
+    return out;
+}
+
+/// Instance `i`, tested against the view's layers and frustum.
+fn survivor(i: u32) -> Survivor {
+    var out = hidden(i);
     let entry = instance_buckets[i];
     if entry == HIDDEN || (instance_layers[i] & params.layers) == 0u {
         return out;
@@ -215,20 +229,62 @@ fn survivor(i: u32) -> Survivor {
     return out;
 }
 
-/// Appends an instance in the view to its bucket's slice, and counts it in each of the bucket's
-/// draws, which start `draws_before` draws into the indirect draws.
-fn append(s: Survivor, draws_before: u32) {
-    let bucket = buckets[s.bucket];
-    let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
-    let slot = atomicAdd(&indirect[first], 1u);
-    for (var d = 1u; d < bucket.draws; d++) {
-        atomicAdd(&indirect[first + d * INDIRECT_WORDS], 1u);
+/// Each workgroup's table of buckets: a slot's bucket, or `HIDDEN` when the slot is free, the
+/// survivors of the bucket that the workgroup counts, and where they start in the bucket's slice.
+var<workgroup> slot_buckets: array<atomic<u32>, WORKGROUP_SIZE>;
+var<workgroup> slot_counts: array<atomic<u32>, WORKGROUP_SIZE>;
+var<workgroup> slot_starts: array<u32, WORKGROUP_SIZE>;
+
+/// Appends the workgroup's instances in the view to their buckets' slices, and counts them in
+/// each of their buckets' draws, which start `draws_before` draws into the indirect draws. Every
+/// thread of the workgroup calls it, with a bucket of `HIDDEN` for a thread whose instance does
+/// not draw.
+fn append(s: Survivor, lane: u32, draws_before: u32) {
+    // Workgroup memory starts unset on some GPUs, so each thread clears its own slot.
+    atomicStore(&slot_buckets[lane], HIDDEN);
+    atomicStore(&slot_counts[lane], 0u);
+    workgroupBarrier();
+    var slot = s.bucket % WORKGROUP_SIZE;
+    var rank = 0u;
+    var owner = false;
+    if s.bucket != HIDDEN {
+        // A weak exchange can fail on a free slot, which the next turn tries again.
+        loop {
+            let claim = atomicCompareExchangeWeak(&slot_buckets[slot], HIDDEN, s.bucket);
+            if claim.exchanged {
+                owner = true;
+                break;
+            }
+            if claim.old_value == s.bucket {
+                break;
+            }
+            if claim.old_value != HIDDEN {
+                slot = (slot + 1u) % WORKGROUP_SIZE;
+            }
+        }
+        rank = atomicAdd(&slot_counts[slot], 1u);
     }
-    if bucket.indices != 0u {
-        visible[bucket.base + slot] = vec4u(s.index, 0u, 0u, 0u);
+    workgroupBarrier();
+    if owner {
+        let bucket = buckets[s.bucket];
+        let count = atomicLoad(&slot_counts[slot]);
+        let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
+        slot_starts[slot] = atomicAdd(&indirect[first], count);
+        for (var d = 1u; d < bucket.draws; d++) {
+            atomicAdd(&indirect[first + d * INDIRECT_WORDS], count);
+        }
+    }
+    workgroupBarrier();
+    if s.bucket == HIDDEN {
         return;
     }
-    let dst = (bucket.base + slot) * 4u;
+    let bucket = buckets[s.bucket];
+    let entry = slot_starts[slot] + rank;
+    if bucket.indices != 0u {
+        visible[bucket.base + entry] = vec4u(s.index, 0u, 0u, 0u);
+        return;
+    }
+    let dst = (bucket.base + entry) * 4u;
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
@@ -244,13 +300,11 @@ fn main(
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE {
-        return;
+    var s = hidden(i);
+    if i != NONE {
+        s = survivor(i);
     }
-    let s = survivor(i);
-    if s.bucket != HIDDEN {
-        append(s, params.occlusion.info.y);
-    }
+    append(s, lane, params.occlusion.info.y);
 }
 
 #else
@@ -262,21 +316,25 @@ fn early(
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE || atomicLoad(&indirect[params.occlusion.info.z + i]) == 0u {
-        return;
+    var s = hidden(i);
+    if i != NONE && atomicLoad(&indirect[params.occlusion.info.z + i]) != 0u {
+        s = survivor(i);
     }
-    let s = survivor(i);
-    if s.bucket == HIDDEN || !s.occluder {
-        return;
+    if s.bucket != HIDDEN && s.occluder && large_enough(s.center, s.radius) {
+        atomicAdd(&pyramid[0], 1u);
+    } else {
+        s.bucket = HIDDEN;
     }
-    // A sphere that reaches the camera's plane covers much of the screen.
-    let bounds = screen_bounds(s.center, s.radius);
+    append(s, lane, 0u);
+}
+
+/// True when the sphere around `center`, relative to the camera, of `radius` spans at least the
+/// occluders' span of the screen. A sphere that reaches the camera's plane covers much of the
+/// screen.
+fn large_enough(center: vec3f, radius: f32) -> bool {
+    let bounds = screen_bounds(center, radius);
     let span = max(bounds.high.x - bounds.low.x, bounds.high.y - bounds.low.y);
-    if bounds.valid && span < f32(params.occlusion.info.w) {
-        return;
-    }
-    atomicAdd(&pyramid[0], 1u);
-    append(s, 0u);
+    return !bounds.valid || span >= f32(params.occlusion.info.w);
 }
 
 /// The second occlusion phase: tests every instance in view against the depth pyramid, keeps
@@ -287,15 +345,16 @@ fn late(
     @builtin(local_invocation_index) lane: u32,
 ) {
     let i = instance_of(group.x, lane);
-    if i == NONE {
-        return;
+    var s = hidden(i);
+    if i != NONE {
+        s = survivor(i);
+        let seen = s.bucket != HIDDEN && !occluded(s.center, s.radius);
+        atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
+        if !seen {
+            s.bucket = HIDDEN;
+        }
     }
-    let s = survivor(i);
-    let seen = s.bucket != HIDDEN && !occluded(s.center, s.radius);
-    atomicStore(&indirect[params.occlusion.info.z + i], select(0u, 1u, seen));
-    if seen {
-        append(s, params.occlusion.info.y);
-    }
+    append(s, lane, params.occlusion.info.y);
 }
 
 /// The lowest and highest values of `a / b` for `a` from `a0` to `a1` and `b` from `b0` to `b1`,
