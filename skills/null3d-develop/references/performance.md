@@ -23,7 +23,7 @@ A frame has three kinds of cost, and each has its own fixes.
 | --- | --- | --- | --- |
 | Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
 | Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, LODs, fewer point and spot lights |
-| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw (section 7) |
+| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw on WebGPU (section 7) |
 
 On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. Both paths list the same lights for each cluster (`concepts/lighting`).
 
@@ -133,7 +133,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | Frame budget | `governor` | During play |
 | Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
 | Spot and point light shadows | `shadowTiles`, `shadowTileSize`, `pointLightShadows` (High and Ultra only) | At the start |
-| Depth prepass | `depthPrepass`, off on every preset | At the start |
+| Depth prepass | `depthPrepass`, on for WebGL2 and off for WebGPU on every preset | At the start |
 | GPU occlusion culling | `gpuOcclusion`, off on every preset (WebGPU only) | At the start |
 | Engine memory | `memoryMaximumMiB` | Before the engine loads |
 
@@ -159,9 +159,13 @@ Read the current render scale in `quality.renderScale`, and the shadow settings 
 
 ### The depth prepass
 
-With `createEngine({ depthPrepass: true })`, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. It saves GPU time only where objects hide many others and their shading costs much, such as a street of lit buildings.
+With the depth prepass, each camera view first draws the depth of its opaque objects. The opaque pass then shades each pixel once, for its nearest surface. The prepass costs a second pass over the objects' vertices. Both GPU paths draw it, with the same image as without it. Blended objects and alpha-cutoff materials stay out of the prepass. Custom materials and sprites join it with their own vertex shader, so their vertex offsets keep their depth.
 
-Every preset leaves it off. S2 is a benchmark scene with little overdraw. In Chrome on a MacBook Pro, the prepass raised its GPU time per frame on WebGPU from 0.28 ms to 0.40 ms. On WebGL2 it doubled the draw calls. Both GPU paths draw the prepass, with the same image as without it. Blended objects and alpha-cutoff materials stay out of the prepass. Custom materials and sprites join it with their own vertex shader, so their vertex offsets keep their depth. Turn it on only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
+On WebGL2, every preset turns it on. On Apple GPUs, a depth prepass restores early rejection of hidden pixels in WebGL2. In the S4 benchmark on an iPad, the prepass took WebGL2 from 38 to 60 frames per second on Low. On Medium it went from 17 to 37. Android phones kept their frame rates with it. Do not turn it off on WebGL2 unless you measure the scene on an iPhone or iPad.
+
+On WebGPU, every preset leaves it off: the GPU removes hidden surfaces itself, so the prepass only adds work. S2 is a benchmark scene with little overdraw. In Chrome on a MacBook Pro, the prepass raised its GPU time per frame on WebGPU from 0.28 ms to 0.40 ms. Turn it on there with `createEngine({ depthPrepass: true })` only after you compare the scene's GPU time with `?prepass=on` and `?prepass=off`.
+
+Two opaque surfaces at exactly the same depth show the one drawn last with the prepass, and the one drawn first without it. The engine chooses the draw order, so an exact tie has no defined winner, and it may differ between GPU paths. Give overlapping surfaces, such as decals, a depth bias. Engine docs: `concepts/quality-presets`.
 
 ### GPU occlusion culling
 
@@ -219,7 +223,7 @@ Performance advice for three.js and other engines assumes things that do not hol
 | Merge meshes to cut draw calls | Objects that share a mesh and material already share one draw. Merge only different small static meshes, to cut buckets |
 | Share materials so objects share a shader | Every material already shares its pipeline. Share materials anyway: each mesh and material pair is its own draw |
 | Compile shaders before the first frame | The first frame waits for its pipelines. Wait for `engine.firstFrame`; warm up later stages with `scene.warmUp()` |
-| Download every shader before play | Skinning, morph targets, bloom, ambient occlusion, sprites, lines, backgrounds that are not a color (`'background'`), the sky (`'sky'`) and GPU occlusion culling (`'occlusion'`) download their shaders on first use. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials. Leave the list out otherwise: each listed file grows the start |
+| Download every shader before play | Skinning, morph targets, bloom, ambient occlusion, sprites, lines, backgrounds that are not a color (`'background'`), the sky (`'sky'`), alpha to coverage (`'coverage'`), the alpha hash (`'hash'`), masked shadows (`'cutout'`) and GPU occlusion culling (`'occlusion'`) download their shaders on first use. A masked object casts no shadow until `'cutout'` loads. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials. Leave the list out otherwise: each listed file grows the start |
 | Turn off matrix updates for still objects | Objects are static by default and cost nothing until a setter changes them |
 | Set a needs-update flag after a change | Setters mark changes themselves |
 | Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |

@@ -55,22 +55,35 @@ pub struct FirstUseFeatures {
     pub shaders: BTreeMap<String, String>,
     /// Features by permutation bit, in bit order.
     pub bits: BTreeMap<u32, String>,
+    /// The bits whose features take the builds that they share with other features' bits.
+    pub claiming: BTreeSet<u32>,
 }
 
 impl FirstUseFeatures {
     /// The feature that a build of `shader` with the permutation word `permutation` belongs to:
-    /// the shader's, or else that of the lowest bit of the word that a feature names. None for a
+    /// the shader's, or else that of the first bit of the word in [`Self::bit_order`]. None for a
     /// build that loads at the start.
     pub fn feature_of(&self, shader: &str, permutation: u32) -> Option<&str> {
         self.shaders
             .get(shader)
             .or_else(|| {
-                self.bits
-                    .iter()
-                    .find(|&(&bit, _)| permutation & bit != 0)
+                self.bit_order()
+                    .find(|&(bit, _)| permutation & bit != 0)
                     .map(|(_, feature)| feature)
             })
             .map(String::as_str)
+    }
+
+    /// The bits that features name, in the order in which they take builds: the bits of features
+    /// that claim shared builds, lowest first, then the others, lowest first.
+    pub fn bit_order(&self) -> impl Iterator<Item = (u32, &String)> {
+        let claiming = |claims: bool| {
+            self.bits
+                .iter()
+                .filter(move |(bit, _)| self.claiming.contains(bit) == claims)
+                .map(|(&bit, feature)| (bit, feature))
+        };
+        claiming(true).chain(claiming(false))
     }
 }
 
@@ -149,7 +162,7 @@ pub struct GlslTexture {
 
 #[cfg(test)]
 mod tests {
-    use null3d_gpu::drawlist::permutation::{BLOOM, FXAA, MORPH};
+    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, BLOOM, FXAA, MORPH};
 
     use super::*;
 
@@ -165,5 +178,17 @@ mod tests {
         assert_eq!(first_use.feature_of("final", FXAA | BLOOM), Some("bloom"));
         assert_eq!(first_use.feature_of("lit", MORPH | BLOOM), Some("morph"));
         assert_eq!(first_use.feature_of("lit", FXAA), None);
+        // A feature that claims shared builds takes them from features of lower bits.
+        first_use.bits.insert(ALPHA_HASH, "alpha_hash".to_owned());
+        assert_eq!(
+            first_use.feature_of("lit", MORPH | ALPHA_HASH),
+            Some("morph")
+        );
+        first_use.claiming.insert(ALPHA_HASH);
+        assert_eq!(
+            first_use.feature_of("lit", MORPH | ALPHA_HASH),
+            Some("alpha_hash")
+        );
+        assert_eq!(first_use.feature_of("lit", MORPH), Some("morph"));
     }
 }
