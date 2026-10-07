@@ -66,6 +66,21 @@ Other claims weighed:
 - A loop that ends when every bucket has a slot. It needs every thread to read a shared flag the same way, which takes `workgroupUniformLoad` of a flag and one more barrier in every turn. A flag that several threads write without atomics is a data race in WGSL.
 - A test at start-up that builds a pipeline with `atomicCompareExchangeWeak`, and the old form where it compiles. It adds a pipeline build to every start, and two forms of the shader to test.
 
+The Mac's figures for this form, against main ebd64cc21, in Chrome 155 at 120 Hz, 10 rounds as in G2. The run began at a load of 7.75, which rose to 37 by its end, so its CPU figures are noisy. The GPU figures are per pass and suffer less from it.
+
+| Measure | Main | Workgroup counts, claimed with loads and stores | Change, median of the rounds |
+| --- | --- | --- | --- |
+| Culling pass, S1 | 0.230 ms | 0.059 ms | -75% |
+| Culling pass, S1-static | 0.222 ms | 0.062 ms | -72% |
+| Whole frame's GPU time, S1 | 1.840 ms | 1.777 ms | -5% |
+| Whole frame's GPU time, S1-static | 1.186 ms | 1.051 ms | -12% |
+
+- The culling pass was faster in each of the 10 rounds of both scenes. Main's slowest round took 0.244 ms in S1 and 0.233 ms in S1-static, and this form's 0.061 ms and 0.065 ms.
+- The compare-exchange form cut the same pass by 77% and 72% against its own main (see Data). So the turns and their barriers keep the speed-up. Main's own culling pass took 0.23 ms in this run, against 0.62 and 0.37 ms in the first, because main changed in between and the GPU ran at another clock speed. So compare the changes, not the times, across the two runs.
+- The comparison judged the CPU figures of both pages the same. One run of main in S1 was dropped, as it measured 124 Hz.
+- The run's record is `bench/results/20261007-221015-compare.json`, made with `bun run bench:run --compare ../m2-i5-main,. --runs 10 --seconds 5 --scenes s1,s1-static --pages null3d-webgpu --switches n=240000` on 8 October 2026, 06:10 to 06:18.
+- The Galaxy S25's figures in Data come from the compare-exchange form. The runs on phones and iPads of this form are pending.
+
 The shader build now rejects `atomicCompareExchangeWeak` in every shader, the engine's and users' alike, with the reason and the forms that compile (`crates/null3d-shaders/src/features.rs`, `docs/shaders/wgsl-rules.md`). A test in the shader crate checks the rule. Users' shaders would fail on Safari 27.0 the same way, and the build cannot tell which address space a call uses before naga reads the module. The rule can go once the oldest Safari that null3D supports has WebKit's fix.
 
 ## Decision
@@ -77,4 +92,4 @@ Pending the figures of G2.
 - `bench/lib/archive.ts`: each archived run keeps its median GPU time per pass, so a record holds the culling pass's figures that this record cites.
 - `crates/null3d-shaders/wgsl/cull.wgsl`: `main`, `early` and `late` call one `append` from every thread. A thread whose instance does not draw passes no bucket, because the workgroup's barriers need every thread.
 - The order of instances within a bucket's slice was already not fixed between frames, so no image changes. The image tests on WebGPU and compatibility mode passed 473 of 473 on the Mac's GPU, with both checks that occlusion culling draws what culling without it draws.
-- The occlusion phases' shader file, which loads on first use, grows from 4,049 to 4,502 bytes after Brotli (+11.2%). The start shader files grow by 1.1% to 1.3%.
+- The occlusion phases' shader file, which loads on first use, grows from 4,049 to 4,740 bytes after Brotli (+17.1%). The start shader files grow by 2.1% to 2.3%. The compare-exchange form grew them by 11.2% and by 1.1% to 1.3%. The turns and the path for a bucket without a slot add the rest.
