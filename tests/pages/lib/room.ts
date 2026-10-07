@@ -54,14 +54,24 @@ export interface RoomCount {
 	room: number;
 	/** Set when the browser refused a memory below the cap, so the count is the whole room. */
 	error?: string;
+	/** Refusals that a later ask in the same count got past. */
+	passing?: number;
 }
 
 /**
- * Counts the room up to `cap`, then lets the browser find the counted memories unused. When the
- * browser refused one, the page asks for one more once they are garbage. Safari refuses it too and
- * runs a full collection, which finds them; otherwise Safari can keep them until a later refusal,
- * and the next count finds less room. A count that reached the cap asks for no more, since the
- * browser would grant it.
+ * How many times in a row a count asks again at once after a refusal. Safari refuses a new memory
+ * while it still holds memories that the page dropped, and the refusal itself makes it free them:
+ * on CI's Mac, at each of 18 refusals of a count, the same request made straight after was
+ * granted, and so were 5 more. So only a refusal that holds through these asks ends a count.
+ */
+const ASKS_AFTER_REFUSAL = 3;
+
+/**
+ * Counts the room up to `cap`, then lets the browser find the counted memories unused. A refusal
+ * ends the count only when it holds through a few more asks made at once. When it held, the page asks for one
+ * more memory once the counted ones are garbage. Safari refuses it too and runs a full collection,
+ * which finds them; otherwise Safari can keep them until a later refusal, and the next count finds
+ * less room. A count that reached the cap asks for no more, since the browser would grant it.
  */
 export async function countRoom(
 	cap = ROOM_CAP,
@@ -70,12 +80,25 @@ export async function countRoom(
 	let counted: RoomCount;
 	{
 		const memories: WebAssembly.Memory[] = [];
-		try {
-			while (memories.length < cap) memories.push(allocateMemory(maximumPages));
-			counted = { room: memories.length };
-		} catch (e) {
-			counted = { room: memories.length, error: (e as Error).message };
+		let passing = 0;
+		let refusedInRow = 0;
+		let error: string | undefined;
+		while (memories.length < cap && refusedInRow <= ASKS_AFTER_REFUSAL) {
+			try {
+				memories.push(allocateMemory(maximumPages));
+				passing += refusedInRow;
+				refusedInRow = 0;
+				error = undefined;
+			} catch (e) {
+				error = (e as Error).message;
+				refusedInRow++;
+			}
 		}
+		counted = {
+			room: memories.length,
+			...(error === undefined ? {} : { error }),
+			...(passing > 0 ? { passing } : {}),
+		};
 	}
 	if (counted.error === undefined) return counted;
 	await sleep(0);
