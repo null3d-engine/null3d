@@ -42,6 +42,7 @@ import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { ShaderPreloads } from '../scene/shader-preloads';
+import { ShaderTemplates } from '../scene/shader-templates';
 import { Textures } from '../scene/textures';
 import {
 	type ControlViews,
@@ -278,6 +279,7 @@ export class SketchRunner {
 			device.depthPrepass,
 			device.vertexSkinning,
 			device.largeWorld,
+			device.gpuOcclusion,
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
@@ -369,11 +371,8 @@ export class SketchRunner {
 				renderScaleThousandths: () => this.renderScale(),
 			},
 		};
-		const materials = new Materials(
-			this.core,
-			sketch.sendShader,
-			new ShaderPreloads(sketch.sendPreload),
-		);
+		const templates = new ShaderTemplates(sketch.sendShader);
+		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
 			this.core,
@@ -390,6 +389,7 @@ export class SketchRunner {
 			device.effectsSceneColor !== FORMAT_CANVAS,
 			device.occlusionTargets,
 			materials.shaders,
+			templates,
 		);
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
@@ -688,7 +688,8 @@ export class SketchRunner {
 	private followEffects(): boolean {
 		const ao = this.followAo();
 		const bloom = this.followBloom();
-		return ao || bloom;
+		const custom = this.post.takeNewPipelines();
+		return ao || bloom || custom;
 	}
 
 	/**
@@ -708,19 +709,21 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Follows the sketch's bloom: the governor's bloom step needs it on. The first time an effect
-	 * that needs HDR color turns on, on a device that started on the 8-bit path only for MSAA, the
-	 * core moves to HDR color with FXAA for the engine's life. Returns true then: the frame has new
-	 * targets and pipelines, so the thread that draws holds it until they are built, and the frame
-	 * before stays on screen meanwhile.
+	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
+	 * The first time bloom, a custom effect or a custom tone curve turns on, on a device that started
+	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
+	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
+	 * until they are built, and the frame before stays on screen meanwhile.
 	 */
 	private followBloom(): boolean {
 		const on = this.post.bloomOn;
-		if (on === this.bloomOn) return false;
-		this.bloomOn = on;
-		this.governor.setBloom(on, this.bloomSetting);
+		if (on !== this.bloomOn) {
+			this.bloomOn = on;
+			this.governor.setBloom(on, this.bloomSetting);
+		}
 		const { device, glue } = this.sketch;
-		if (!on || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
+		if (!this.post.needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS)
+			return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)

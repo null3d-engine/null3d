@@ -1,9 +1,10 @@
 // The KTX2 transcoder's task, which runs in a job worker, or in the task worker where the engine has
 // no job workers (workers/tasks.ts). The on-demand loader sends the transcoder's compiled module
 // with the first file, and this module starts the transcoder with it once per worker. Each file is
-// ETC1S or UASTC data, and the task writes its mip levels in the format that the request names,
-// level after level, each level's layers in turn, into one buffer that it hands back. The sketch
-// thread reads the file's header and picks the format (scene/ktx2.ts), so the task decides nothing.
+// ETC1S, UASTC or UASTC HDR data, and the task writes its mip levels in the format that the request
+// names, level after level, each level's layers in turn, into one buffer that it hands back. The
+// sketch thread reads the file's header and picks the format (scene/ktx2.ts), so the task decides
+// nothing.
 //
 // The transcoder is the engine's build of Basis Universal v2.50 (packages/engine/vendor/basis,
 // tools/build-basis-transcoder.ts), which makes no code from strings, so a strict

@@ -37,6 +37,7 @@ const engine = await createEngine({
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets leave it off
+  gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
@@ -324,7 +325,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 ## 10. Textures (`api/textures`)
 
 ```ts
-const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, AVIF where decoded
+const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP or AVIF
   colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
   flipY: true,               // default, as three.js's TextureLoader; glTF textures use false
   wrap: 'repeat',            // 'clamp' (default) | 'repeat' | 'mirror', or [u, v]
@@ -337,6 +338,8 @@ const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, A
 // KTX2 of ETC1S or UASTC data (basisu, toktx): the device's compressed format, with the file's mip levels
 const floor = await assets.loadTexture('/tex/floor.ktx2', { wrap: 'repeat' }); // color space from the file
 floor.format;              // 'astc-4x4-unorm' | 'bc7-rgba-unorm' | 'etc2-rgb8unorm' | 'etc2-rgba8unorm' | 'rgba8unorm'
+// KTX2 of UASTC HDR data (0.2): 'bc6h-rgb-ufloat' with BC formats, else 'rgb9e5ufloat'; always linear
+const lamp = await assets.loadTexture('/tex/lamp-hdr.ktx2');
 // KTX2 rows stay as the file holds them (first row at v = 0): encode with basisu -y_flip for planes; no flipY
 textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
 textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
@@ -469,9 +472,10 @@ post.set({
   vignette: { offset: 1, darkness: 1 },  // (0.2) VignetteShader's meanings; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
-post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // (0.2) textures: named textures the effect samples
-post.setEffectUniform('pixelate', 'size', 8);  // (0.2)
-post.removeEffect('pixelate');                 // (0.2)
+post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
+const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; one pass each, at most 8
+post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
+post.removeEffect(fx);                  // (0.2)
 ```
 
 ## 16. Render graph (0.2) (`api/render`)
@@ -503,6 +507,7 @@ quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });  // the range dynamic r
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
 quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
+quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects; fixed at the start
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
 quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)

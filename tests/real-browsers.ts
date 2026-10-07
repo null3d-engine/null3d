@@ -990,7 +990,9 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'bloom-sizes',
 	'environment',
 	'ao',
+	'effects',
 	'occlusion',
+	'gpu-occlusion',
 	'overload',
 	'soak',
 ]);

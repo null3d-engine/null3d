@@ -30,6 +30,7 @@ TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM] = 'astc-4x4-unorm';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM_SRGB] = 'astc-4x4-unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM] = 'bc7-rgba-unorm';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM_SRGB] = 'bc7-rgba-unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_BC6H_RGB_UFLOAT] = 'bc6h-rgb-ufloat';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM] = 'etc2-rgb8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM_SRGB] = 'etc2-rgb8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
@@ -65,6 +66,19 @@ COMPARE_FUNCTIONS[G.COMPARE_GREATER] = 'greater';
 COMPARE_FUNCTIONS[G.COMPARE_NOT_EQUAL] = 'not-equal';
 COMPARE_FUNCTIONS[G.COMPARE_GREATER_EQUAL] = 'greater-equal';
 COMPARE_FUNCTIONS[G.COMPARE_ALWAYS] = 'always';
+
+/**
+ * The compute pipelines that a preloaded feature's file builds at once, each a template and its
+ * permutation bits: their layouts are fixed, so the scene need not draw first.
+ */
+const PRECOMPILED: Readonly<Record<string, readonly (readonly [number, number])[]>> = {
+	skinning: SKIN_BUILDS.map((bits) => [G.TEMPLATE_SKIN, bits] as const),
+	occlusion: [
+		[G.TEMPLATE_OCCLUSION_EARLY, 0],
+		[G.TEMPLATE_OCCLUSION_LATE, 0],
+		[G.TEMPLATE_DEPTH_PYRAMID, 0],
+	],
+};
 
 /** Reads a code from a table, and fails with its kind when the table has no entry for it. */
 function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
@@ -493,16 +507,17 @@ export class WebGPUBackend {
 	/**
 	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
 	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the skinning pass's pipelines, whose layout is fixed. A render pipeline also needs the targets,
-	 * the vertex format and the state of the objects that draw with it, which the scene gives, so
-	 * `scene.warmUp()` builds those. Skinning's builds for the vertex shader serve only the
-	 * `?skinning=vertex` switch, and are left out.
+	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
+	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
+	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's builds for the vertex
+	 * shader serve only the `?skinning=vertex` switch, and are left out.
 	 */
 	precompile(feature: string, module: FirstUseShaders): void {
-		if (feature === 'skinning') {
-			for (const bits of SKIN_BUILDS)
+		const compute = PRECOMPILED[feature];
+		if (compute) {
+			for (const [template, bits] of compute)
 				this.device
-					.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN, bits))
+					.createComputePipelineAsync(this.pipelines.compute(template, bits))
 					.catch(() => undefined);
 			return;
 		}
