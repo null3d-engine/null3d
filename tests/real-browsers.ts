@@ -29,6 +29,7 @@
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan texture-cache --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan bsgalaxys25-samsung
 //   bun tests/real-browsers.ts --plan smoke --cloud bsiphone17-safari,bspixel10-chrome --parallel 2
 // Options:
@@ -56,7 +57,9 @@
 //                       pipelines of each benchmark scene and demo hold up the first frame, with
 //                       fresh shaders and with compiled ones, or scale, which finds the largest
 //                       count of S1's objects or S5's characters at which three.js holds 30
-//                       frames per second
+//                       frames per second, or texture-cache, which times first and repeat visits
+//                       that load the city scene's 120 KTX2 textures, with the cache of
+//                       transcoded textures off and on
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -64,8 +67,9 @@
 //                       each maximum of the memory plan, 20 by default, where 0 runs only the
 //                       counts of how many engines fit at once, cold and warm loads of each
 //                       thread mode in the startup plan, 5 by default, rounds of the tab
-//                       memory plan, 1 by default, or loads of each scene with fresh shaders in
-//                       the warm-up time plan, 2 by default
+//                       memory plan, 1 by default, loads of each scene with fresh shaders in
+//                       the warm-up time plan, 2 by default, or runs of the texture cache plan's
+//                       four loads, 5 by default
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
@@ -251,6 +255,7 @@ import {
 	startServer,
 } from './lib/server.ts';
 import { progressName, tabEndedResult } from './lib/tab-end.ts';
+import { textureCacheSummary } from './lib/texture-cache.ts';
 
 export interface Options {
 	plan: string;
@@ -1014,6 +1019,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'gpu-occlusion',
 	'overload',
 	'soak',
+	'texture-cache',
 ]);
 
 /**
@@ -1476,6 +1482,7 @@ async function runPlan(
 			soakSummary,
 			warmUpTimeSummary,
 			governorSummary,
+			textureCacheSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		// The frames that the bench plan's pages captured, which people look at after each run.

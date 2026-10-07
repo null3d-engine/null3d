@@ -26,6 +26,7 @@ describe('parseSwitches', () => {
 			vertexSkinning: false,
 			indexInstances: false,
 			shadowDepthBits: 16,
+			textureCache: true,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -49,6 +50,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?shadowdepth=32').shadowDepthBits).toBe(32);
 		expect(parseSwitches('?shadowdepth=16').shadowDepthBits).toBe(16);
 		expect(parseSwitches('?shadowdepth=24').shadowDepthBits).toBe(16);
+	});
+
+	it('turns the cache of transcoded textures off with ?texture-cache=off, and leaves it on otherwise', () => {
+		expect(parseSwitches('?texture-cache=off').textureCache).toBe(false);
+		expect(parseSwitches('?texture-cache=on').textureCache).toBe(true);
+		expect(parseSwitches('?texture-cache=no').textureCache).toBe(true);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
