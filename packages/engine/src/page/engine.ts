@@ -76,6 +76,7 @@ import {
 } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
+import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
@@ -430,6 +431,9 @@ function fallbackText(report: CapabilityReport): string {
 
 /** True once an engine on the page has warned that the page draws instead of a worker. */
 let warnedFallback = false;
+
+/** True once an engine on the page has warned that a service worker's page lost its isolation. */
+let warnedIsolation = false;
 
 /**
  * A running engine, as `createEngine` returns it.
@@ -925,6 +929,13 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
+	if (DEV && !warnedIsolation) {
+		const warning = lostIsolationWarning(pageIsolation());
+		if (warning) {
+			warnedIsolation = true;
+			console.warn(warning);
+		}
+	}
 	const canvas = canvasHold(options.canvas);
 	// This engine's hold on the canvas, and on the page's copy of the core when its sketch runs on
 	// the page. Each serves one engine at a time.
