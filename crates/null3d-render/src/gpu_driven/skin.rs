@@ -818,8 +818,10 @@ impl Skinning {
             segment.groups = 0;
         }
         // The regions keep a pose only once the pipelines that write them are surely built: a
-        // dispatch whose pipeline is still building writes nothing.
-        let built = built_by(self.pipeline_frame, self.pipelines_built);
+        // dispatch whose pipeline is still building writes nothing. A first frame that waits for
+        // every pipeline counts them all as built, as the pipeline cache does.
+        let built =
+            self.pipelines_built == 0 || built_by(self.pipeline_frame, self.pipelines_built);
         let keeps = self.mode.skip_held_poses && self.gate.drawn() && built;
         self.skinned_vertices = 0;
         for ((object, &seen), held) in self.objects.iter().zip(&self.seen).zip(&mut self.held) {
@@ -1011,6 +1013,14 @@ mod tests {
         assert_eq!(more[3], 15);
         let color = 11 | (Type::Unorm8 as u32) << 8 | (12 << 16);
         assert_eq!(runs, [5 | (6 << 8) | (2 << 16), 0, color, 0]);
+        // With 8-bit directions the normal and the tangent take one word each, and the attributes
+        // after them move up. Skinned: position 0, normal 12, uv 16, tangent 24, the color as
+        // floats at 28, 44 bytes in all.
+        let [strides, more, runs] = format_entries(morphed, true);
+        assert_eq!(strides[..2], [17, 11]);
+        assert_eq!(more[0], 7 | (6 << 16));
+        let color = 11 | (Type::Unorm8 as u32) << 8 | (7 << 16);
+        assert_eq!(runs, [5 | (4 << 8) | (2 << 16), 0, color, 0]);
         // Floats with no tangent, coordinates or color: nothing to copy.
         let plain = format_entries(vertex::JOINTS | vertex::WEIGHTS, false);
         assert_eq!(plain[1][0], NONE);
