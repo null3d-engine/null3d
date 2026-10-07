@@ -56,10 +56,11 @@ jobs:
         with:
           name: page-wasm
 
-      - name: Generated files are committed
+      # Git keeps no generated file (D-105). The install step wrote them before the shader modules
+      # arrived, so this writes them again, and fails when a generator wrote a file that git keeps.
+      - name: The generators change no file that git keeps
         run: |
-          bun run docs
-          bun tools/skills.ts sync
+          bun tools/generate.ts
           git status --porcelain
           test -z "$(git status --porcelain)"
 
@@ -115,7 +116,8 @@ jobs:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The shader-build tests run much slower on some GitHub runners, so the limit leaves room above a typical run (D-99).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -468,6 +470,37 @@ jobs:
             target/runs/
             test-results/images/
           if-no-files-found: ignore
+
+  generated-branch:
+    # After a full run on main passes, the "generated" branch gets main's commit with every
+    # generated file added, since main keeps none (D-105). Links that must work on GitHub point
+    # there, such as the docs link in each engine error message. Only this job writes to the
+    # repository, and main's rules cover only main. Each push replaces the branch's one commit.
+    needs: ci-passed
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      # The engine's API reference names the shader features, which the shader modules hold.
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - name: Push main's commit and its generated files to the generated branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          bun tools/generate.ts --stage
+          git commit -q -m "chore: generated files of ${GITHUB_SHA}"
+          git push --force origin HEAD:refs/heads/generated
 
   ci-passed:
     # The one check of this workflow that main's rules require, so that the jobs above can split into

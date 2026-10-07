@@ -407,9 +407,9 @@ const MEMBER_KINDS: Partial<Record<ApiSymbol['kind'], string>> = {
 	namespace: 'Namespace',
 };
 
-/** One export as Markdown: its declaration or members, and its summary. */
-export function renderSymbol(symbol: ApiSymbol): string {
-	const lines = [`### \`${symbol.name}\``, ''];
+/** One export as Markdown under a heading of the given level: its declaration or members, and its summary. */
+export function renderSymbol(symbol: ApiSymbol, heading = '###'): string {
+	const lines = [`${heading} \`${symbol.name}\``, ''];
 	if (symbol.signature) lines.push('```ts', symbol.signature, '```', '');
 	else {
 		const base = symbol.extends.map((name) => `\`${name}\``).join(', ');
@@ -426,7 +426,7 @@ export function renderSymbol(symbol: ApiSymbol): string {
 	return lines.join('\n').trimEnd();
 }
 
-/** A page's reference: its exports in name order. */
-export function renderReference(symbols: readonly ApiSymbol[]): string {
-	return symbols.map(renderSymbol).join('\n\n');
+/** A page's reference: its exports in name order, each under a heading of the given level. */
+export function renderReference(symbols: readonly ApiSymbol[], heading = '###'): string {
+	return symbols.map((symbol) => renderSymbol(symbol, heading)).join('\n\n');
 }
