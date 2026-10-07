@@ -13,6 +13,13 @@
 import * as C from '../generated/core';
 import type { CoreMemory } from './memory';
 import type {
+	ObjectEventHandler,
+	ObjectEventType,
+	PointerListeners,
+	PointerRows,
+	PointerTarget,
+} from './pointer-events';
+import type {
 	AlphaMode,
 	Geometry,
 	Material,
@@ -167,7 +174,7 @@ interface SpriteRows {
 }
 
 /** What a sprite batch's calls that change rows reach in the core: the instance batch's calls. */
-export interface SpriteBatchRows {
+export interface SpriteBatchRows extends PointerRows {
 	setActiveCount(count: number): void;
 	setLayers(mask: number): void;
 	markDirty(start?: number, count?: number): void;
@@ -184,6 +191,8 @@ export interface SpriteBatchRows {
 export class SpriteBatch {
 	private generation = -1;
 	private rows!: SpriteRows;
+	/** @internal The batch's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
 
 	/** @internal */
 	constructor(
@@ -193,7 +202,8 @@ export class SpriteBatch {
 		readonly count: number,
 		/** The sprites' material: `set` changes the color, opacity and alpha cutoff of every sprite. */
 		readonly material: Material<SpriteValues>,
-		private readonly batch: SpriteBatchRows,
+		/** @internal The instance batch's calls, which a point batch's calls reach too. */
+		readonly batch: SpriteBatchRows,
 	) {}
 
 	/**
@@ -269,6 +279,29 @@ export class SpriteBatch {
 	/** Marks sprites of a static batch to update and upload. */
 	markDirty(start = 0, count = this.count - start): void {
 		this.batch.markDirty(start, count);
+	}
+
+	/**
+	 * Calls `handler` for each pointer event of `type` on a sprite of the batch, as `Object3D.on`
+	 * does. A ray hits a sprite where its quad draws. The event's `instance` names the sprite.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.batch.listen(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.batch.unlisten(this, type, handler);
+	}
+
+	/** @internal The frame in which the batch was destroyed, or -1. */
+	get destroyedFrame(): number {
+		return this.batch.destroyedFrame;
+	}
+
+	/** @internal A batch has no parent for its pointer events to go on to. */
+	pointerParent(): PointerTarget | null {
+		return null;
 	}
 
 	/**
@@ -353,6 +386,9 @@ export interface PointChecks {
  * @category api/points
  */
 export class PointBatch {
+	/** @internal The batch's pointer event handlers, from its first `on`. */
+	pointerListeners: PointerListeners | undefined = undefined;
+
 	/** @internal */
 	constructor(
 		private readonly sprites: SpriteBatch,
@@ -405,6 +441,29 @@ export class PointBatch {
 	/** Marks points of a static batch to update and upload. */
 	markDirty(start = 0, count = this.count - start): void {
 		this.sprites.markDirty(start, count);
+	}
+
+	/**
+	 * Calls `handler` for each pointer event of `type` on a point of the batch, as `Object3D.on`
+	 * does. A ray hits a point where its square draws. The event's `instance` names the point.
+	 */
+	on(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.sprites.batch.listen(this, type, handler);
+	}
+
+	/** Removes a handler that `on` added for events of `type`. */
+	off(type: ObjectEventType, handler: ObjectEventHandler): void {
+		this.sprites.batch.unlisten(this, type, handler);
+	}
+
+	/** @internal The frame in which the batch was destroyed, or -1. */
+	get destroyedFrame(): number {
+		return this.sprites.batch.destroyedFrame;
+	}
+
+	/** @internal A batch has no parent for its pointer events to go on to. */
+	pointerParent(): PointerTarget | null {
+		return null;
 	}
 
 	/**

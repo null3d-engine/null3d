@@ -8,7 +8,7 @@ summary: "createSprites; world and screen size modes; atlases."
 
 # Sprites
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Sprites do not cast or receive shadows, and raycasts and overlap queries do not find them. Coding agents must not rely on either.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Sprites do not cast or receive shadows, and overlap queries do not find them. Coding agents must not rely on either.
 
 ```mermaid
 flowchart LR
@@ -145,6 +145,18 @@ Blended sprites draw after the opaque objects, farthest first, in the same trans
 
 `alphaMode: 'mask'` draws sprites opaque, cut out by their alpha, with no sorting. Use it for foliage and other sharp edged pictures.
 
+## Clicks and raycasts
+
+Raycasts hit a sprite where the ray crosses its quad, as three.js's `Raycaster` hits a `Sprite`. The hit's `object` is the batch, and its `instance` is the sprite. A sprite batch takes `sprites.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. A ray hits the whole quad, also where the sprite's map is clear. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+
+```ts
+sprites.on('click', (event) => {
+  const i = event.instance; // the sprite under the pointer
+  sprites.colors[i * 4 + 3] = 0.3;
+  sprites.markDirty(i, 1);
+});
+```
+
 ## Speed
 
 A batch costs about the same per sprite as an instance batch costs per row. The engine packs each sprite into the data that it keeps for an instance row. So sprites share the culling, sorting and drawing of instance batches. One batch of 100,000 sprites draws in one draw on WebGPU and WebGL2.
@@ -165,7 +177,7 @@ Every sprite counts toward the device's limit of objects and instance rows, as a
 | `material.transparent` (true for sprites) | `alphaMode: 'blend'`, the default |
 | `material.alphaTest` | `alphaMode: 'mask'` with `alphaCutoff` |
 
-three.js makes one object and one draw per sprite. null3D draws a whole batch in one draw. Without size attenuation, a three.js sprite's size is a fraction of the view's height that depends on the camera's field of view. A null3D sprite's size is in CSS pixels. A three.js scale of `s` shows `s × h / (2 × tan(fov / 2))` pixels on a canvas `h` CSS pixels high. three.js's `Raycaster` can hit sprites; null3D's raycasts do not find them yet.
+three.js makes one object and one draw per sprite. null3D draws a whole batch in one draw. Without size attenuation, a three.js sprite's size is a fraction of the view's height that depends on the camera's field of view. A null3D sprite's size is in CSS pixels. A three.js scale of `s` shows `s × h / (2 × tan(fov / 2))` pixels on a canvas `h` CSS pixels high. Raycasts hit sprites as three.js's `Raycaster` does. Sprites face the active camera, which takes the place of `raycaster.camera`.
 
 <!-- null3d:api:start -->
 
@@ -198,6 +210,8 @@ Many sprites: quads that face the camera, each with its own position, size, rota
 | `setActiveCount(count: number): void` | Draws only the first `count` sprites. |
 | `setLayers(mask: number): void` | Puts every sprite on the layers of a 32-bit mask. A new mask needs no rebuild. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks sprites of a static batch to update and upload. |
+| `on(type: ObjectEventType, handler: ObjectEventHandler): void` | Calls `handler` for each pointer event of `type` on a sprite of the batch, as `Object3D.on` does. A ray hits a sprite where its quad draws. The event's `instance` names the sprite. |
+| `off(type: ObjectEventType, handler: ObjectEventHandler): void` | Removes a handler that `on` added for events of `type`. |
 | `destroy(): void` | Removes the batch and frees its rows. Its typed arrays are not valid after this: another batch can take their memory. |
 
 ### `SpriteOptions`

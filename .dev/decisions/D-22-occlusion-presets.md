@@ -1,8 +1,8 @@
 # D-22: Occlusion culling per preset on each path
 
-Status: WebGPU rows decided from the Mac's timings, 2026-10-04; the iPad's WebGPU timings and the WebGL2 rows (T-36, M2-I3) pending. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
+Status: WebGPU rows decided from the Mac's timings, 2026-10-04, and confirmed by the iPad's and the S25's timings, 2026-10-07; the WebGL2 rows (T-36, M2-I3) pending. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
 
-Summary: GPU occlusion culling is off on every preset for now. On a quiet Mac it took 37% off a room scene whose walls hide 94% of its objects, but with another program drawing on the GPU it cost 19% to 40% more, and desktops turn it on only if a loaded run loses no more than 5%. A scene that marks no occluder pays nothing for it.
+Summary: GPU occlusion culling is off on every preset for now. On a quiet Mac it took 37% off a room scene whose walls hide 94% of its objects, but with another program drawing on the GPU it cost 19% to 40% more, and desktops turn it on only if a loaded run loses no more than 5%. A scene that marks no occluder pays nothing for it. On the owner's iPad and the cloud Galaxy S25, the same room cost 4% and 30% more GPU time with it.
 
 ## Question
 
@@ -37,7 +37,13 @@ Where walls hide most of the scene: the room scene of the GPU occlusion page (`t
 
 The culling works: in the 96-segment run the opaque pass took 0.92 ms with culling off and 0.39 ms with it on. But the frame grew elsewhere, as [D-40](D-40-gpu-occlusion.md#the-stall-between-passes) says.
 
-The iPad Pro (A12X) in Safari 26 is pending: the device runner's `gpu-occlusion` plan measures it.
+The owner's iPad Pro 11-inch (A12X) ran the device runner's `gpu-occlusion` plan in Safari 26.6.2 on 2026-10-07. It ran main with this work, at a9ac1834d (run 20261007-054639-gpu-occlusion). The page was 1194 x 722 at a pixel ratio of 2, with 32-segment spheres, in 3 rounds of 4 s. All six views matched culling off in every pixel, and the walls hid 94.4% of the spheres.
+
+| Culling off | Culling on | Change |
+| --- | --- | --- |
+| 7.76 ms | 8.10 ms | +4% |
+
+Both sides held 59 Hz frames (15.6 and 15.4 ms), and the render worker's CPU time stayed at 0.16 to 0.18 ms. So on the iPad too, culling cost more GPU time than it saved.
 
 The first phone, on 2026-10-07: BrowserStack's Galaxy S25 (Adreno 830) in Chrome 149, with the device runner's `gpu-occlusion` plan, on the M2-I1 branch at 89032719b (run 20261007-035830-gpu-occlusion). All six views matched culling off in every pixel. The room scene's GPU time per frame, with 32-segment spheres and the walls hiding 94% of them:
 
@@ -53,14 +59,16 @@ Pending: M2-I2 and M2-I3 (T-36).
 
 ## Decision
 
-WebGPU: off on every preset. On the Mac it cost more GPU time than it saved in every scene measured, even where it hid 94% of 8.8 million triangles. It stays as the `gpuOcclusion` option of `createEngine`, which costs nothing in a frame that marks no occluder. The iPad's run decides whether a preset turns it on there.
+WebGPU: off on every preset. On the Mac it cost more GPU time than it saved in every scene measured, even where it hid 94% of 8.8 million triangles. It stays as the `gpuOcclusion` option of `createEngine`, which costs nothing in a frame that marks no occluder.
+
+The device runs of 7 October 2026 keep it off. The room scene hides 94% of its spheres, so it favors culling more than most scenes. Even there, culling cost 0.34 ms (4%) of GPU time per frame on the owner's iPad, and 1.1 ms (30%) on the cloud S25. Its images matched in every pixel on both. So a scene may still turn it on, once it measures a gain with `?occlusion=on` and `?occlusion=off`.
 
 ## Consequences
 
 - `gpuOcclusion` in the preset table: false on every preset.
 - The docs say to compare a scene's GPU time with `?occlusion=on` and `?occlusion=off` before keeping it on.
 - The stall between passes is open for the owner (D-40). If a later change removes it, run the room scene and S1 again, and revisit these rows.
-- The iPad run of the `gpu-occlusion` plan fills the pending row. M2-I3 adds the WebGL2 rows.
+- M2-I3 adds the WebGL2 rows.
 
 ## Addendum, 2026-10-04: a quiet GPU
 
