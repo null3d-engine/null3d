@@ -128,6 +128,8 @@ export const LAYOUT_BACKGROUND = 19;
 export const LAYOUT_INSTANCE_INDEX = 20;
 export const LAYOUT_EFFECT = 21;
 export const LAYOUT_EFFECT_DEPTH_MS = 22;
+export const LAYOUT_FINAL_EFFECTS = 23;
+export const LAYOUT_FINAL_EFFECTS_DEPTH_MS = 24;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;

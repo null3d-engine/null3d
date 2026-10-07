@@ -26,14 +26,22 @@ import {
 	TEXTURE_FORMAT_SRGB,
 	TEXTURE_MAX_DEPTH,
 	TEXTURE_OPTION_MAX_ANISOTROPY,
+	TEXTURE_OPTION_MEMORY_BUDGET_KIB,
 	TEXTURE_OPTION_UPLOAD_BUDGET,
 	TEXTURE_PREMULTIPLIED_ALPHA,
+	TEXTURE_STAT_BUDGET_EPOCH,
+	TEXTURE_STAT_DROPPED_LEVELS,
+	TEXTURE_STAT_DROPPED_TEXTURES,
+	TEXTURE_STAT_DROPPED_TOTAL,
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_LARGEST_FRAME_BYTES,
 	TEXTURE_STAT_LAST_FRAME_BYTES,
 	TEXTURE_STAT_MAX_ANISOTROPY,
 	TEXTURE_STAT_MAX_SIZE,
+	TEXTURE_STAT_MEMORY_BUDGET,
 	TEXTURE_STAT_MEMORY_BYTES,
+	TEXTURE_STAT_RELOAD_LEVEL,
+	TEXTURE_STAT_RELOAD_TEXTURE,
 	TEXTURE_STAT_TEXTURE_BYTES,
 	TEXTURE_STAT_UPLOAD_BUDGET,
 	TEXTURE_STAT_WAITING,
@@ -161,6 +169,32 @@ export interface TextureData extends TextureOptions {
 	data: TextureDataArray;
 }
 
+/**
+ * The GPU memory that textures take, against the quality setting `textureMemoryMiB`, and the mip
+ * levels that the engine dropped to stay under it, as `quality.textureMemory` reports them.
+ *
+ * @category api/quality
+ */
+export interface TextureMemory {
+	/** The GPU bytes that every texture takes now, with the free layers of their texture arrays. */
+	readonly bytes: number;
+	/** The GPU bytes that textures may take: `textureMemoryMiB` in bytes. */
+	readonly budgetBytes: number;
+	/** The largest mip levels that the engine dropped, over every texture. */
+	readonly droppedLevels: number;
+	/** The textures that hold fewer mip levels than their own. */
+	readonly droppedTextures: number;
+}
+
+/**
+ * @internal Loads a texture's texels again from its file without the largest `level` mip levels,
+ * and gives them to `target`, a hidden texture of that size.
+ */
+export type TextureReloader = (level: number, target: Texture) => Promise<void>;
+
+/** The loads again that run at once, at most, so a burst of them does not crowd the network. */
+const RELOADS_AT_ONCE = 2;
+
 /** Numbers of the texture uploads. */
 export interface TextureUploads {
 	/** Texel bytes that the last recorded frame uploads. */
@@ -268,9 +302,20 @@ export class Texture {
 		return this.size[1];
 	}
 
-	/** The GPU bytes of the texture: its layers, with every mip level. */
+	/**
+	 * The GPU bytes of the texture: its layers, with every mip level that the GPU holds. A texture
+	 * whose largest levels the memory budget dropped takes less.
+	 */
 	get bytes(): number {
 		return this.textures.bytesOf(this);
+	}
+
+	/**
+	 * The largest mip levels that the GPU does not hold, which the texture memory budget dropped:
+	 * 0 to 3. `width` and `height` stay the texture's own size.
+	 */
+	get droppedLevels(): number {
+		return this.textures.droppedLevelsOf(this);
 	}
 
 	/**
@@ -288,6 +333,7 @@ export class Texture {
 				call,
 				'got a texture from a KTX2 file, whose texels come from the file alone. Load the file again, or make the texture with fromImageBitmap or fromData.',
 			);
+		this.textures.forgetFile(this);
 		if (ArrayBuffer.isView(source)) this.textures.setData(this, source, call);
 		else this.textures.setImage(this, source, 0, call);
 	}
@@ -319,6 +365,16 @@ export class Texture {
  * @category api/textures
  */
 export class Textures {
+	/** The function that loads each texture from a file again, by the texture's handle. */
+	private readonly reloaders = new Map<number, { texture: Texture; reload: TextureReloader }>();
+	/** The budget's number of changes when this thread last looked. */
+	private budgetEpoch = 0;
+	/** Loads again under way. */
+	private reloading = 0;
+
+	/** @internal The texture memory, as `quality.textureMemory` reports it. */
+	readonly memory: TextureMemory;
+
 	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,
@@ -336,7 +392,24 @@ export class Textures {
 		 * so later loads of the same file skip the transcoder.
 		 */
 		readonly textureCache = false,
-	) {}
+		private readonly ownMemory: () => void = () => {},
+	) {
+		const stat = (field: number) => this.stat(field);
+		this.memory = {
+			get bytes() {
+				return stat(TEXTURE_STAT_MEMORY_BYTES);
+			},
+			get budgetBytes() {
+				return stat(TEXTURE_STAT_MEMORY_BUDGET);
+			},
+			get droppedLevels() {
+				return stat(TEXTURE_STAT_DROPPED_TOTAL);
+			},
+			get droppedTextures() {
+				return stat(TEXTURE_STAT_DROPPED_TEXTURES);
+			},
+		};
+	}
 
 	/**
 	 * A texture from a decoded image. The image's first row goes to v = 0, the bottom of a plane.
@@ -671,7 +744,98 @@ export class Textures {
 	}
 
 	/** @internal */
+	droppedLevelsOf(texture: Texture): number {
+		return this.stat(TEXTURE_STAT_DROPPED_LEVELS, texture.handle);
+	}
+
+	/**
+	 * @internal Lets the texture memory budget drop the largest mip levels of a texture whose
+	 * texels `reload` can load again from its file, at any level.
+	 */
+	reloadsFrom(texture: Texture, reload: TextureReloader): void {
+		if (this.core.glue.setTextureReloadable(texture.handle) === 0)
+			this.reloaders.set(texture.handle, { texture, reload });
+	}
+
+	/** @internal Forgets a texture's file once the sketch gives it texels of its own. */
+	forgetFile(texture: Texture): void {
+		this.reloaders.delete(texture.handle);
+	}
+
+	/**
+	 * @internal Writes texels that bring their own mip levels into a texture, as a load again of a
+	 * file without its largest levels does.
+	 */
+	setTexels(texture: Texture, texels: Uint8Array, call: string): void {
+		const address = this.texelAddress(texture, texture.width, texture.height, call);
+		new Uint8Array(this.core.memory.buffer, address, texels.length).set(texels);
+	}
+
+	/**
+	 * @internal Looks for a change of the texture memory budget's work once per frame, and starts
+	 * the loads again that the engine asks for. Returns true when levels dropped or came back,
+	 * or a load again started, so the quality change handlers run.
+	 */
+	pollBudget(): boolean {
+		const epoch = this.stat(TEXTURE_STAT_BUDGET_EPOCH);
+		if (epoch === this.budgetEpoch) return false;
+		this.budgetEpoch = epoch;
+		this.startReloads();
+		return true;
+	}
+
+	/** Starts the loads again that the engine asks for, up to `RELOADS_AT_ONCE` at a time. */
+	private startReloads(): void {
+		const { glue } = this.core;
+		while (this.reloading < RELOADS_AT_ONCE) {
+			const handle = glue.takeTextureReload();
+			if (handle === 0) return;
+			const file = this.reloaders.get(handle);
+			if (!file) {
+				glue.failTextureReload(handle);
+				continue;
+			}
+			const level = this.stat(TEXTURE_STAT_RELOAD_LEVEL, handle);
+			const { texture } = file;
+			const target = new Texture(
+				this.stat(TEXTURE_STAT_RELOAD_TEXTURE, handle),
+				Math.max(1, texture.width >> level),
+				Math.max(1, texture.height >> level),
+				texture.depth,
+				texture.format,
+				texture.colorSpace,
+				texture.uvSet,
+				this,
+				texture.fromFile,
+			);
+			this.reloading++;
+			file.reload(level, target).then(
+				() => this.finishReload(),
+				(error: unknown) => {
+					// A texture destroyed meanwhile took its hidden texture with it, and an engine that
+					// stopped meanwhile took every texture: its core belongs to no sketch any more.
+					if (!this.core.stopped && this.reloaders.get(handle) === file) {
+						this.reloaders.delete(handle);
+						this.core.glue.failTextureReload(handle);
+						if (DEV)
+							console.warn(
+								`The engine could not load a texture's file again, so the texture keeps the mip levels it holds: ${error instanceof Error ? error.message : String(error)}`,
+							);
+					}
+					this.finishReload();
+				},
+			);
+		}
+	}
+
+	private finishReload(): void {
+		this.reloading--;
+		if (!this.core.stopped) this.startReloads();
+	}
+
+	/** @internal */
 	destroy(texture: Texture): void {
+		this.reloaders.delete(texture.handle);
 		this.core.checkGrowth(
 			this.core.glue.destroyTexture(texture.handle, this.time.frame),
 			'texture.destroy',
@@ -724,6 +888,16 @@ export class Textures {
 		this.ownBudget();
 	}
 
+	/**
+	 * @internal Sets the GPU bytes that textures may take, rounded up to whole KiB, in place of the
+	 * quality setting's value until the sketch changes the setting or the preset. Tests take budgets
+	 * below the setting's range.
+	 */
+	setMemoryBudget(bytes: number): void {
+		this.core.glue.setTextureOption(TEXTURE_OPTION_MEMORY_BUDGET_KIB, Math.ceil(bytes / 1024));
+		this.ownMemory();
+	}
+
 	/** @internal The texel bytes that one frame may upload, as the core holds it. */
 	get uploadBudget(): number {
 		return this.stat(TEXTURE_STAT_UPLOAD_BUDGET);
@@ -735,8 +909,8 @@ export class Textures {
 	}
 
 	/**
-	 * @internal Gives the core the texture settings among `names`: the upload budget and the
-	 * anisotropy cap. The others belong to other parts of the engine.
+	 * @internal Gives the core the texture settings among `names`: the upload budget, the
+	 * anisotropy cap and the memory budget. The others belong to other parts of the engine.
 	 */
 	applyQuality(settings: QualitySettings, names: readonly QualitySettingName[]): void {
 		const { glue } = this.core;
@@ -744,6 +918,8 @@ export class Textures {
 			glue.setTextureOption(TEXTURE_OPTION_UPLOAD_BUDGET, settings.uploadBytesPerFrame);
 		if (names.includes('maxAnisotropy'))
 			glue.setTextureOption(TEXTURE_OPTION_MAX_ANISOTROPY, settings.maxAnisotropy);
+		if (names.includes('textureMemoryMiB'))
+			glue.setTextureOption(TEXTURE_OPTION_MEMORY_BUDGET_KIB, settings.textureMemoryMiB * 1024);
 	}
 }
 

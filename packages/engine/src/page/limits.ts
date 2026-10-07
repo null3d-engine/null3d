@@ -113,6 +113,8 @@ export interface CoreDevice {
 	shaderBits: number;
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
 	cellCulling: boolean;
+	/** False when each custom effect draws in a pass of its own, with none joined or folded. */
+	joinEffects: boolean;
 	/**
 	 * True when each camera view draws its opaque objects' depth before it shades them.
 	 */
@@ -196,6 +198,7 @@ export type DeviceOptions = Pick<
 	| 'freshShaders'
 	| 'compression'
 	| 'cells'
+	| 'join'
 	| 'vertexSkinning'
 	| 'indexInstances'
 	| 'shadowDepthBits'
@@ -368,6 +371,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		occlusionTargets: tier !== 'webgl2' || webgl2DrawsOcclusion(report.webgl2),
 		transparent: options.transparent,
 		cellCulling: options.cells,
+		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
 		vertexSkinning: options.vertexSkinning,
 		shadowDepthBits: options.shadowDepthBits,

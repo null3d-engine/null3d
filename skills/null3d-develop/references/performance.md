@@ -100,6 +100,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - Shadows: leave `cascades` and `mapSize` out of a light's `shadow` options, so the preset sets them: two cascades of 1,024 texels on Low, for phones. Keep `distance` no longer than the scene needs. Far cascades draw every few frames by preset. On every preset they draw every frame while a dynamic object touches them, so moving shadows never trail. Set `followMovingCasters: false` to keep their turns where moving objects stay far and small; their shadows then trail by up to the interval less one frame. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. A shadowed spot light draws its casters into one tile of the shadow atlas, and a point light into six. Low and Medium turn point light shadows off and give the atlas fewer tiles, so avoid shadowed point lights on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
 - Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. (0.2) Between levels, destroy the old level's copies, then `prefab.destroy()`: the next level reuses the memory (`api/assets`).
+- Texture memory budget (0.2): the preset's `textureMemoryMiB` caps the GPU memory of textures. It is 256 MiB on Low, and at most 1,008 MiB on any phone or tablet. Past it, the engine drops up to 3 of the largest mip levels of textures from files (`assets.loadTexture`, glTF). It drops first where no view needs the detail, then from the textures unseen the longest, then from the largest. It loads the levels again from the file once room returns. Textures from `fromImageBitmap` or `fromData` never drop, so keep big ones in files. Do not raise the budget on phones to stop the drops: the cap stays under half the memory at which an iPad's tab died (`concepts/quality-presets`).
 - For comparison runs, fix the refresh rate at 60 Hz and start with a cool, charged device (engine docs `guides/phones`).
 
 ## 6. Memory
@@ -114,7 +115,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | Directional light shadows: one map per cascade, 2048 x 2048 at 4 bytes per texel by default | about 16 MB per cascade, 48 MB for the default 3 cascades | Fewer cascades and a smaller `mapSize` in the light's `shadow` option on phones |
 | Spot and point light shadows: one atlas tile per spot light, six per point light | 1 MB per 512 x 512 tile, 4 MB per 1024 x 1024 tile | The preset sets the tile count and size; fewer shadowed lights |
 
-`engine.measure()` reports the engine's WebAssembly memory and the JavaScript heaps in `memory`. In the sketch, `textures.memoryBytes` gives the GPU memory that textures hold.
+`engine.measure()` reports the engine's WebAssembly memory and the JavaScript heaps in `memory`. In the sketch, `textures.memoryBytes` gives the GPU memory that textures hold. In 0.2, `quality.textureMemory` gives it with the budget and the dropped levels, and `debug.frameStats()` reports them as `textureBytes`, `textureBudgetBytes` and `droppedLevels`.
 
 The number of objects and instance rows one scene can draw depends on the GPU path and the device. On WebGPU every device draws 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows. It is 1,048,576 at the 2,048 pixels that every WebGL2 device allows, 2,097,152 at 4,096, and at most 8,388,608. For the device the page runs on, `engine.capabilities.maxInstances` gives the number. Past it, the call fails with E1501. With worker threads, engine memory stops at 1 GiB by default, about 5 million rows; past that, the call fails with E1109. The `memory` option of `createEngine` raises the maximum up to 4096 MiB (`api/engine`). A larger maximum leaves less address space for other engines and WebAssembly modules on the page. Raise it only for a scene that needs it. In development builds the engine warns once when a scene passes the number that every device of its GPU path draws. That is 2,097,152 on WebGPU and 1,048,576 on WebGL2. The engine picks the GPU path for each device. So test a scene of more than 1,048,576 on both paths, on the devices your users have.
 
@@ -127,7 +128,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | Group | Settings | Changes |
 | --- | --- | --- |
 | Pixels | `maxPixelRatio`, `minRenderScale`, `maxRenderScale` | During play |
-| Textures | `maxAnisotropy`, `uploadBytesPerFrame` | During play |
+| Textures | `maxAnisotropy`, `uploadBytesPerFrame`, `textureMemoryMiB` (0.2) | During play |
 | Directional light shadows | `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` | During play |
 | Directional light shadow maps | `shadowCascades`, `shadowMapSize` | At the start |
 | Frame budget | `governor` | During play |
@@ -137,10 +138,10 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | GPU occlusion culling | `gpuOcclusion`, off on every preset (WebGPU only) | At the start |
 | Engine memory | `memoryMaximumMiB` | Before the engine loads |
 
-The table marks its other rows as planned, such as the light caps and the texture memory budget. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
+The table marks its other rows as planned, such as the light caps. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 ### The governor

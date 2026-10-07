@@ -136,7 +136,7 @@ mod ids {
     use super::data::RING;
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
-    use crate::effects::MAX_EFFECTS;
+    use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -249,10 +249,11 @@ mod ids {
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The background's bind group, after ambient occlusion's.
     pub const BACKGROUND_GROUP: u32 = AO_GROUPS + AO_STEPS as u32;
-    /// The bind group of each custom effect, after the background's.
+    /// The bind group of each custom effect, and of each group of joined effects, after the
+    /// background's.
     pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1;
     /// The bind groups of materials' maps, after the effects'.
-    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + MAX_EFFECTS as u32;
+    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -1028,6 +1029,7 @@ impl CpuCulledRenderer {
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
         self.graph.set_effects(
             self.settings.effects(),
+            self.settings.effect_joins(),
             self.settings.clock_seconds(),
             self.settings.camera_projection(input.canvas),
         );
@@ -1109,8 +1111,7 @@ impl CpuCulledRenderer {
             .upload(list, arena, self.settings.meshes().pages())?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
-        self.settings
-            .record_materials(list, arena, table, input.frame)?;
+        self.settings.record_materials(input, list, arena, table)?;
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);

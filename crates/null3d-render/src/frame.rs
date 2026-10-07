@@ -27,12 +27,12 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
-use crate::background::Background;
+use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
-use crate::effects::{Effect, MAX_EFFECTS};
+use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -52,6 +52,7 @@ use crate::shadows::{
     fit_cascades,
 };
 use crate::textures::TextureStore;
+use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -653,6 +654,8 @@ pub struct SceneSettings {
     outline: Option<Outline>,
     /// The sketch's custom effects, in the order they run.
     effects: Vec<Effect>,
+    /// How the sketch joins its effects into groups and folds them into the final pass.
+    effect_joins: EffectJoins,
     /// The first template of the sketch's custom tone curve, while it sets one.
     tone_curve: Option<u32>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
@@ -713,6 +716,7 @@ impl SceneSettings {
             environment: None,
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
+            effect_joins: EffectJoins::default(),
             tone_curve: None,
             clock: [0.0; 4],
             render_scaling: false,
@@ -830,6 +834,32 @@ impl SceneSettings {
             Some(_) => {}
             None => self.effects.truncate(index),
         }
+    }
+
+    /// How the sketch joins its effects.
+    pub(crate) fn effect_joins(&self) -> &EffectJoins {
+        &self.effect_joins
+    }
+
+    /// Makes the `length` effects from place `place` on draw as one group with the joined shader
+    /// of template `template`, from the next recorded frame on, once its pipeline is built. A
+    /// template of 0 ends the group that starts there. Places past [`MAX_EFFECTS`] change nothing.
+    pub fn set_effect_group(&mut self, place: usize, length: usize, template: u32) {
+        if let Some(group) = self.effect_joins.groups.get_mut(place) {
+            *group = if template == 0 {
+                (0, 0)
+            } else {
+                (length.min(MAX_EFFECTS) as u8, template)
+            };
+        }
+    }
+
+    /// Folds the effects from place `first` on into the final pass, with the final pass's fold
+    /// build of template `template`, from the next recorded frame on, while nothing reads the image
+    /// between them and the pass. A template of 0 folds none.
+    pub fn set_effect_fold(&mut self, first: usize, template: u32) {
+        self.effect_joins.fold =
+            (template != 0 && first < MAX_EFFECTS).then_some((first as u8, template));
     }
 
     /// The first template of the custom tone curve, while the sketch sets one and no debug view
@@ -1062,15 +1092,23 @@ impl SceneSettings {
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a
     /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
-    /// that changed into `table`. Returns true when a map's bind group was made again, which
-    /// render bundles that bind it must see.
+    /// that changed into `table`. While the textures near their memory budget, it also reads part
+    /// of the scene for the budget's estimate of what each texture needs. Returns true when a map's
+    /// bind group was made again, which render bundles that bind it must see.
     pub(crate) fn record_materials(
         &mut self,
+        input: &FrameInput<'_>,
         list: &mut DrawList,
         arena: &mut UploadArena,
         table: MaterialStorage,
-        frame: u32,
     ) -> Result<bool, RecordError> {
+        let frame = input.frame;
+        if self.textures.needs_estimate()
+            && let Some(view) = self.need_view(input)
+        {
+            self.textures
+                .estimate_needs(input.scene, input.batches, &self.materials, &view);
+        }
         let remade = self.textures.record(list, frame)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
@@ -1100,6 +1138,34 @@ impl SceneSettings {
             )?;
         }
         Ok(remade)
+    }
+
+    /// What the texture budget's estimate of need reads of the camera's view, or `None` when the
+    /// view has no camera.
+    fn need_view(&self, input: &FrameInput<'_>) -> Option<NeedView> {
+        let (_, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+        let parity = input.parity();
+        let view = self.view_frame(
+            ViewId::CAMERA,
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
+        )?;
+        Some(NeedView {
+            camera: view.camera,
+            frustum: view.frustum,
+            lens,
+            height: input.canvas.1 as f32,
+            frame: input.frame,
+            parity,
+            // Only a 2D background takes a layer that the budget may drop; cube textures keep
+            // their levels.
+            background: match self.background.map(|b| b.source) {
+                Some(BackgroundSource::Texture(texture)) => texture,
+                _ => Handle::NONE,
+            },
+        })
     }
 
     /// The bind group of the maps that a material draws with through `pipeline`, as

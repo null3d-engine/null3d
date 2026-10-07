@@ -8,7 +8,7 @@ summary: "Pixel-ratio caps; memory budgets; heat; testing on real devices."
 
 # Phones and tablets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The texture memory budgets are not built yet. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 Phones have small GPUs, sharp screens and little memory, and they slow down when they heat up. The quality presets set how much work the engine does on each device. This guide says what the engine does on a phone or a tablet, and how to test your sketch on one.
 
@@ -60,13 +60,13 @@ A phone closes a tab that uses too much memory, with no warning. The engine's ta
 | 11-inch iPad Pro, Safari, WebGL2 | 2,528 MiB | 2,496 MiB |
 | Galaxy S24+, Chrome, WebGL2 | 7,296 MiB | 7,616 MiB |
 
-No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So on phones and tablets, keep a scene's textures under 1 GiB. On an iPad's WebGPU path, keep its GPU buffers under 256 MiB.
+No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. On an iPad's WebGPU path, keep a scene's GPU buffers under 256 MiB.
 
 On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
 
 To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use.
 
-Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. The sketch reads the GPU memory of every texture in `textures.memoryBytes`, and frees a texture that it no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
+Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. When the textures pass their budget, the engine drops the largest mip levels of textures from files, and loads them again once room returns. The sketch reads the memory and the dropped levels in `quality.textureMemory`, and [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order. A texture that the sketch makes from an image or from data keeps its levels, so free one that the scene no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
 
 Load large textures from KTX2 files. Phones and tablets have the ASTC and ETC2 formats, so a KTX2 texture stays compressed on the GPU. The same 1024 x 1024 texture then takes about 1.3 MiB, or 0.7 MiB in ETC2 without alpha. Encode its mip levels into the file, as `basisu -mipmap` does, because the GPU cannot make them for compressed texels. Use UASTC for normal maps and detailed color maps, and ETC1S where the download must stay small. `texture.format` tells which format the device got. [Textures](../api/textures.md#ktx2-files) covers KTX2 files.
 

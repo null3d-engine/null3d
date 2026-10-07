@@ -85,3 +85,35 @@ fn item_names(module: &Module) -> impl Iterator<Item = &str> {
         .chain(overrides)
         .chain(entry_points)
 }
+
+/// Gives each argument, local variable and named expression of each function and entry point a
+/// name that starts with its function's name. The writers make names unique across the whole
+/// module, in order, so without this an argument's name would depend on the functions before it.
+/// With it, each function's text depends on that function alone, which the pieces of joined
+/// effects need: a piece's items must read the same in every build that holds them.
+pub(crate) fn tie_locals_to_functions(module: &mut Module) {
+    let tie = |owner: &str, name: &mut Option<String>| {
+        if let Some(own) = name.as_deref() {
+            *name = Some(format!("{owner}_{own}"));
+        }
+    };
+    let tie_function = |owner: &str, function: &mut naga::Function| {
+        for argument in &mut function.arguments {
+            tie(owner, &mut argument.name);
+        }
+        for (_, local) in function.local_variables.iter_mut() {
+            tie(owner, &mut local.name);
+        }
+        for name in function.named_expressions.values_mut() {
+            *name = format!("{owner}_{name}");
+        }
+    };
+    for (_, function) in module.functions.iter_mut() {
+        let owner = function.name.clone().unwrap_or_default();
+        tie_function(&owner, function);
+    }
+    for entry in &mut module.entry_points {
+        let owner = entry.name.clone();
+        tie_function(&owner, &mut entry.function);
+    }
+}

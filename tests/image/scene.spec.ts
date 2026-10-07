@@ -19,6 +19,7 @@ interface SceneResult {
 		uploadBytes: { count: number };
 		frames: number;
 		rebuilds: number;
+		gpuMs: { count: number } | null;
 		gpuPassMs: { name: string; ms: { count: number } }[] | null;
 	};
 	failures: string[];
@@ -63,6 +64,11 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 			['between passes', 'compute 1', 'copies', ...renders].sort(),
 		);
 		for (const part of parts) expect(part.ms.count).toBeGreaterThan(0);
+	} else if (tier === 'webgl2' && stats.gpuMs) {
+		// WebGL2's timer queries, where the browser offers them, time the frame as a whole, so the
+		// frame has no parts.
+		expect(stats.gpuMs.count).toBeGreaterThan(0);
+		expect(stats.gpuPassMs).toEqual([]);
 	} else expect(stats.gpuPassMs).toBeNull();
 }
 

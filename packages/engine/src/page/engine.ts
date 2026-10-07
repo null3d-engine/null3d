@@ -13,11 +13,14 @@ import type { PresetCheck } from '../quality/check';
 import {
 	choosePreset,
 	crashTier,
+	deviceKind,
 	memoryPreset,
 	type PresetRequest,
+	textureMemoryCap,
 	withinTier,
 } from '../quality/chooser';
 import {
+	capTextureMemory,
 	checkedSettings,
 	checkSettings,
 	presetOption,
@@ -76,6 +79,7 @@ import {
 } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
+import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
 import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
@@ -213,6 +217,14 @@ export interface EngineOptions {
 	 * Another value fails with E1213.
 	 */
 	softwareOcclusion?: boolean;
+	/**
+	 * The GPU memory in MiB that textures may take, a whole number from 64 to 16,384. Past it, the
+	 * engine drops the largest mip levels of textures from files, and loads them again once room
+	 * returns. Without it, the quality preset sets it: 256, 512, 1,024 or 2,048 from Low to Ultra,
+	 * and at most 1,008 on phones and tablets. A sketch can change it during play with
+	 * `quality.set`. Another value fails with E1213.
+	 */
+	textureMemoryMiB?: number;
 	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
@@ -443,6 +455,9 @@ function fallbackText(report: CapabilityReport): string {
 
 /** True once an engine on the page has warned that the page draws instead of a worker. */
 let warnedFallback = false;
+
+/** True once an engine on the page has warned that a service worker's page lost its isolation. */
+let warnedIsolation = false;
 
 /**
  * A running engine, as `createEngine` returns it.
@@ -944,6 +959,13 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
+	if (DEV && !warnedIsolation) {
+		const warning = lostIsolationWarning(pageIsolation());
+		if (warning) {
+			warnedIsolation = true;
+			console.warn(warning);
+		}
+	}
 	const canvas = canvasHold(options.canvas);
 	// This engine's hold on the canvas, and on the page's copy of the core when its sketch runs on
 	// the page. Each serves one engine at a time.
@@ -1072,6 +1094,7 @@ async function startEngine(
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
+		textureMemoryMiB: options.textureMemoryMiB,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
@@ -1452,10 +1475,16 @@ async function startEngine(
 			tier === 'webgl2' || pageSettings.depthPrepass
 				? { ...pageSettings, gpuOcclusion: false }
 				: pageSettings;
+		const textureCapMiB = textureMemoryCap(deviceKind(presetRequest.hints));
 		const quality: QualityStart = {
 			preset,
-			settings: checkedSettings(chosen, preset, tierSettings, tier),
+			settings: capTextureMemory(
+				checkedSettings(chosen, preset, tierSettings, tier),
+				tierSettings,
+				textureCapMiB,
+			),
 			options: tierSettings,
+			textureCapMiB,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
 		};
