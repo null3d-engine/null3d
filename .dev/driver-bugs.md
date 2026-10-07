@@ -38,3 +38,18 @@ The engine's case also uses the transient attachment usage on the multisampled t
 Workaround in the engine: the frame graph makes its multisampled targets again when the pass to the canvas changes. A capture draws such targets into textures of its own (see "Browser faults").
 
 To report: as above, after a standalone page confirms the three steps.
+
+## Firefox: freeing a moved MessagePort's old object drops the unread messages that its new owner sent
+
+Status: not reported yet. Found 7 October 2026.
+
+- Browser: Firefox 156.0 on Linux (GitHub's Ubuntu 24.04 runner, x86-64, and an ARM container on a Mac), with a software renderer. The code below is the same on every platform, so Firefox on macOS and Windows should fail the same way.
+- Seen in: null3D's image channel from the sketch worker to the render worker, and the merge queue run 37599350642 of pull request #346 (E1404).
+
+What happens: a page makes a `MessageChannel`. It moves `port1` to worker A and `port2` to worker B, and lets the channel go. Worker A posts image bitmaps through its port while worker B is busy. When the page's garbage collector frees the old `port1` object, every message that A sent and B has not read yet is lost. B gets a `messageerror` event for each. Messages that can leave the process, such as array buffers, are not lost. Firefox keeps a message that must stay in the process in `RefMessageBodyService`, under the sending port's ID. The destructor and the cycle collector's unlink call `MessagePort::CloseInternal`. It runs `ForgetPort` with the object's own ID. A moved port keeps that ID in its new thread.
+
+Smallest known case: a page and two workers of about 60 lines in all. One worker posts 20 image bitmaps, the other is busy for 6 s, and the page makes garbage meanwhile. 6 of 10 runs lost bitmaps when the page let the channel go, 0 of 10 when it kept it.
+
+Workaround in the engine: the page keeps every channel that it makes for the engine's threads until the engine stops ([Browser faults](implementation-notes.md#browser-faults)).
+
+To report: Mozilla's Bugzilla (Core, DOM: postMessage), with the test page.
