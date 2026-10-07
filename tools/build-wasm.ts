@@ -26,8 +26,8 @@
 // Node and Bun, never in a page, so they have no size budget. Every mode first builds the shader modules
 // when they are missing or out of date, because git does not keep them.
 //
-// The size check's base is a build of main, or in the merge queue of the commit that the group
-// builds on: tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
+// The size check's base is a build of main, or on main and in the merge queue of the commit before:
+// tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
 // target/ with that commit's own build script. It keeps the sizes of each base commit it built and
 // reuses them. Every mode that measures writes the sizes to target/size-report.json, so CI can keep
 // a commit's sizes as the base of later checks.
@@ -51,6 +51,7 @@ import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
+import { keptCommits } from './hooks/check-trailers';
 import { ensureShaderModules } from './lib/shader-modules';
 import {
 	type BaseChoice,
@@ -543,15 +544,6 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 	return JSON.parse(readFileSync(kept, 'utf8'));
 }
 
-/** The commits after the base up to HEAD, with their messages. */
-function commitsSince(base: string): { sha: string; message: string }[] {
-	return git(['log', '--format=%H%x1f%B%x1e', `${base}..HEAD`])
-		.split('\x1e')
-		.map((entry) => entry.trim().split('\x1f'))
-		.filter(([sha]) => sha)
-		.map(([sha = '', message = '']) => ({ sha, message }));
-}
-
 /**
  * Compares each file's size with the base build and shows the growth in the log and in CI's job
  * summary. Returns a problem for each file that grew past the limit with no trailer to explain it.
@@ -560,7 +552,7 @@ function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined):
 	const base = resolveBase(chooseBase(ref, process.env));
 	const changes = compareSizes(baseSizes(base.sha), sizes);
 	const grown = grownFiles(changes).map(({ file }) => file);
-	const explainedBy = explainedFiles(commitsSince(base.sha), grown);
+	const explainedBy = explainedFiles(keptCommits(`${base.sha}..HEAD`, root), grown);
 	const short = base.sha.slice(0, 8);
 	console.log(`\ngrowth after Brotli against the base, ${short} "${base.subject}", ${base.why}`);
 	for (const line of growthLines(changes, explainedBy)) console.log(line);
@@ -673,7 +665,7 @@ async function main(): Promise<void> {
 		console.error('');
 		for (const line of SIZE_GROWTH_GUIDANCE) console.error(line);
 		console.error(
-			'\nThe check reads the trailers of every commit after the base, so an empty commit can carry them.',
+			"\nThe check reads the trailers of every commit after the base except merge commits, which main's squash drops. An empty commit can carry them.",
 		);
 	}
 	if (problems.length + growth.length > 0) process.exit(1);

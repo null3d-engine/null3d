@@ -82,6 +82,8 @@ export interface CompiledShader {
 	 * each render pipeline. Null when the shader has only compute entry points.
 	 */
 	readonly webgl2: ShaderVariant | null;
+	/** On the dev server, the key that the plugin sends this WGSL's hot updates under. */
+	readonly hot?: string;
 }
 
 /** A type that a uniform of a custom material can have, as a field of its `struct Uniforms`. */
@@ -138,6 +140,11 @@ export interface CompiledMaterial<
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
+	/**
+	 * On the dev server, the key that the plugin sends this WGSL's hot updates under. The engine
+	 * swaps the shader of each material made from it when an update comes.
+	 */
+	readonly hot?: string;
 }
 
 /** The top-level items that a custom effect's or tone curve's piece adds to a WGSL host. */

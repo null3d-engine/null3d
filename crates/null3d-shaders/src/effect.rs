@@ -335,6 +335,7 @@ impl Compiler {
             &source,
             template.pipelines(),
             &variants,
+            None,
             &str::to_owned,
             &mut errors,
         );
@@ -440,6 +441,7 @@ impl Compiler {
             &source,
             host.pipelines(),
             &variants,
+            None,
             &str::to_owned,
             &mut errors,
         );

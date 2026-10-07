@@ -63,6 +63,7 @@ import {
 } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
+import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
@@ -579,6 +580,11 @@ export class SketchRunner {
 	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
 	receive(type: string, data: unknown): void {
 		for (const handler of this.messageHandlers) handler(type, data);
+	}
+
+	/** Swaps the shaders of the sketch's custom materials that hot updates of WGSL name. */
+	updateShaders(updates: readonly WgslUpdate[]): void {
+		this.context.materials.updateShaders(updates);
 	}
 
 	/** Reads the canvas's size into the viewport, when the page wrote a new one. */

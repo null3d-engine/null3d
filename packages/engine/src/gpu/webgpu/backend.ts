@@ -2,8 +2,10 @@
 // replays binary draw lists into WebGPU calls. The replay loop reads 32-bit words from a view on
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
+import { messageOf } from '../../errors/message';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
+import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
@@ -15,6 +17,12 @@ import { Pipelines, type RenderTemplate, SKIN_BUILDS } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
 import { StagingRing } from './staging';
 import { UploadRoutes } from './upload-routes';
+
+/**
+ * The operands of a `CreateRenderPipeline` command: its id, template, permutation, color and depth
+ * formats, sample count, state flags, vertex format, and depth bias and slope.
+ */
+const RENDER_PIPELINE_OPERANDS = 10;
 
 const TEXTURE_FORMATS: (GPUTextureFormat | undefined)[] = [];
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
@@ -116,6 +124,14 @@ export class WebGPUBackend {
 	 * this thread yet. Each builds once its shader arrives.
 	 */
 	private readonly parked: Uint32Array[] = [];
+	/**
+	 * In development builds, the operands of each render pipeline of a custom material, by
+	 * pipeline id, which a hot update of the material's shader builds again.
+	 */
+	private readonly customOperands = new Map<number, Uint32Array>();
+	/** The newest hot rebuild of each pipeline, by pipeline id, and the count of rebuilds so far. */
+	private readonly swaps = new Map<number, number>();
+	private swapCount = 0;
 	/**
 	 * The operands of each `CreateComputePipeline` whose shader file has not arrived yet: the
 	 * skinning pass's, which loads with the first skinned mesh. Each builds once its file arrives.
@@ -528,10 +544,49 @@ export class WebGPUBackend {
 		return i;
 	}
 
-	/** True while a pipeline is building. Pipelines whose shaders arrived start to build first. */
+	/**
+	 * True while a pipeline is building. Pipelines whose shaders arrived start to build first, and
+	 * so do those of custom materials whose shader a hot update replaced.
+	 */
 	get building(): boolean {
+		if (DEV && this.images.replaced.length > 0) this.swapReplaced();
 		if (this.parked.length > 0 || this.parkedCompute.length > 0) this.unpark();
 		return this.builds > 0;
+	}
+
+	/**
+	 * Builds each pipeline of a custom material whose shader a hot update replaced again, in the
+	 * background. The old pipeline draws until the new one is built, so no frame loses the
+	 * material's objects. A pipeline that fails to build keeps the old one and logs why.
+	 */
+	private swapReplaced(): void {
+		if (!DEV) return;
+		for (const template of this.images.replaced.splice(0)) {
+			const shader = this.images.shaders.get(template);
+			// A template that no pipeline has used takes the new shader at its first use.
+			if (!shader || !this.pipelines.has(template)) continue;
+			this.pipelines.replaceCustom(template, shader);
+			for (const [id, operands] of this.customOperands) {
+				if (operands[1] !== template) continue;
+				const swap = ++this.swapCount;
+				this.swaps.set(id, swap);
+				this.builds++;
+				this.counts.pipelines++;
+				const keep = (error: unknown) =>
+					console.error(
+						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${messageOf(error)}`,
+					);
+				Promise.resolve()
+					.then(() => this.device.createRenderPipelineAsync(this.renderDescriptor(operands, 0)))
+					.then((pipeline) => {
+						// A pipeline destroyed meanwhile stays gone, and a later swap wins.
+						if (this.swaps.get(id) === swap) this.renderPipelines[id] = pipeline;
+					}, keep)
+					.finally(() => {
+						this.builds--;
+					});
+			}
+		}
 	}
 
 	/**
@@ -643,21 +698,13 @@ export class WebGPUBackend {
 			this.parked.push(words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 			return;
 		}
-		const descriptor = this.pipelines.render(
-			words[a + 1] as number,
-			words[a + 2] as number,
-			this.format(words[a + 3] as number),
-			this.format(words[a + 4] as number),
-			words[a + 5] as number,
-			words[a + 6] as number,
-			words[a + 7] as number,
-			(words[a + 8] as number) | 0,
-			floatOfBits(words[a + 9] as number),
-		);
+		const descriptor = this.renderDescriptor(words, a);
 		// A joined shader always builds in the background, so a frame never waits for it and its
 		// failure only sends its effects back to a pass each.
 		const template = words[a + 1] as number;
 		const joined = this.joins.joined(template);
+		if (DEV && !joined && this.images.shaders.has(template))
+			this.customOperands.set(id, words.slice(a, a + RENDER_PIPELINE_OPERANDS));
 		if (!background && !joined) {
 			this.renderPipelines[id] = device.createRenderPipeline(descriptor);
 			return;
@@ -675,6 +722,21 @@ export class WebGPUBackend {
 				this.builds--;
 				this.joins.failed(template, error);
 			},
+		);
+	}
+
+	/** How to build the render pipeline of a `CreateRenderPipeline` command with its operands at `a`. */
+	private renderDescriptor(words: Uint32Array, a: number): GPURenderPipelineDescriptor {
+		return this.pipelines.render(
+			words[a + 1] as number,
+			words[a + 2] as number,
+			this.format(words[a + 3] as number),
+			this.format(words[a + 4] as number),
+			words[a + 5] as number,
+			words[a + 6] as number,
+			words[a + 7] as number,
+			(words[a + 8] as number) | 0,
+			floatOfBits(words[a + 9] as number),
 		);
 	}
 
@@ -696,6 +758,10 @@ export class WebGPUBackend {
 			this.builds--;
 		}
 		this.renderPipelines[id] = undefined;
+		if (DEV) {
+			this.customOperands.delete(id);
+			this.swaps.delete(id);
+		}
 	}
 
 	private failed(error: unknown): void {

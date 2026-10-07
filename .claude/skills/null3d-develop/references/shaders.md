@@ -344,5 +344,5 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 - A surface function's error names its own line in your file. An error that says it is in the engine's standard material usually comes from a name clash or a whole-module import.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene, in development builds. A debug view ignores custom shaders.
-- Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2). Until then, editing a shader reloads the page.
+- Shader hot reload (0.2): on the dev server, an edit to a `.wgsl` file reaches the running page without a reload. So does an edit to only the WGSL of tagged literals in a script. The old shader draws until the new one builds. A WGSL error shows in Vite's overlay and the page keeps the last shader that compiled. These changes reload the page: a material's uniforms, textures or vertex attributes, other code in the script, and a whole shader. So does an edit to a custom post effect or tone curve. (`guides/custom-shaders`)
 - Check both backends: `?gpu=webgl2` runs the translated shaders.

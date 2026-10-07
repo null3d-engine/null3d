@@ -5,11 +5,12 @@
 // so pages never download a shader translator. `bun run build` builds the module from the
 // `null3d-shaders-wasm` crate into this package's dist folder.
 //
-// The module takes and gives JSON: a call writes its request into the module's memory, runs an
-// export, and reads the response. The first call loads the module; later calls reuse it, and the
-// library modules it composed.
+// The module takes and gives JSON, through `CompilerCalls`. The functions here run it on this
+// thread: the first call loads the module, and later calls reuse it and the library modules it
+// composed. The compiler pool runs the same calls on worker threads.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { CompilerCalls } from './compiler-calls.js';
 import type {
 	CompiledTexture,
 	CompiledUniform,
@@ -82,7 +83,11 @@ export type CompileResult =
  * several variants comes once, with each variant's name.
  */
 export function compileShader(shader: ShaderSource): CompileResult {
-	const response = call<Record<string, ShaderVariant>>('compile', shader);
+	return shaderResult(call<Record<string, ShaderVariant>>('compile', shader));
+}
+
+/** A shader compile's result from the module's response. */
+export function shaderResult(response: Response<Record<string, ShaderVariant>>): CompileResult {
 	return response.ok ? { ok: true, variants: response.output } : response;
 }
 
@@ -92,6 +97,11 @@ export interface MaterialSource {
 	readonly path: string;
 	/** The WGSL, which declares `fn surface`, `struct Uniforms`, and anything they use. */
 	readonly source: string;
+	/**
+	 * The share of the material's builds to make, for one of `count` threads that build the
+	 * material together, or every build without it. `joinShares` joins the shares' results.
+	 */
+	readonly share?: { readonly index: number; readonly count: number };
 }
 
 /** A custom material, built into every variant of the engine's standard material. */
@@ -122,7 +132,11 @@ export type MaterialResult =
  * then calls its functions. Problems in the WGSL name its own lines.
  */
 export function compileMaterial(material: MaterialSource): MaterialResult {
-	const response = call<MaterialBuild>('compile_material', material);
+	return materialResult(call<MaterialBuild>('compile_material', material));
+}
+
+/** A custom material's result from the module's response. */
+export function materialResult(response: Response<MaterialBuild>): MaterialResult {
 	return response.ok ? { ok: true, material: response.output } : response;
 }
 
@@ -152,9 +166,60 @@ export type EffectResult =
  * tone curve's into every variant of its final pass. Problems in the WGSL name its own lines.
  */
 export function compileEffect(effect: MaterialSource): EffectResult {
-	const response = call<EffectBuild>('compile_effect', effect);
+	return effectResult(call<EffectBuild>('compile_effect', effect));
+}
+
+/** A custom effect's or tone curve's result from the module's response. */
+export function effectResult(response: Response<EffectBuild>): EffectResult {
 	return response.ok ? { ok: true, effect: response.output } : response;
 }
+
+/**
+ * The result of a custom material from the results of its shares: every build, by name in the
+ * order that the compiler gives them, or every problem of every share, each once with every
+ * build that has it.
+ */
+export function joinShares(shares: readonly MaterialResult[]): MaterialResult {
+	const problems = new Map<string, ShaderProblem>();
+	const builds: MaterialBuild[] = [];
+	for (const share of shares) {
+		if (share.ok) {
+			builds.push(share.material);
+			continue;
+		}
+		for (const problem of share.problems) {
+			const { file, line, column, feature, message } = problem;
+			const key = JSON.stringify([file, line, column, feature, message]);
+			const known = problems.get(key);
+			const variants = known ? [...new Set([...known.variants, ...problem.variants])] : [];
+			problems.set(key, known ? { ...known, variants: variants.sort() } : problem);
+		}
+	}
+	const [first] = builds;
+	if (problems.size > 0 || !first) return { ok: false, problems: [...problems.values()] };
+	const all = Object.assign({}, ...builds.map((build) => build.variants));
+	const variants: Record<string, ShaderVariant> = {};
+	// The compiler's builds come in the byte order of their names, as Rust's sorted map gives them.
+	for (const name of Object.keys(all).sort()) variants[name] = all[name];
+	return { ok: true, material: { ...first, variants } };
+}
+
+/**
+ * Compiles shaders and custom materials: on this thread, which waits for each compile, or on worker
+ * threads, while this thread goes on.
+ */
+export interface ShaderCompiler {
+	shader(shader: ShaderSource): Promise<CompileResult>;
+	material(material: MaterialSource): Promise<MaterialResult>;
+	effect(effect: MaterialSource): Promise<EffectResult>;
+}
+
+/** Compiles on this thread. */
+export const compileHere: ShaderCompiler = {
+	shader: async (shader) => compileShader(shader),
+	material: async (material) => compileMaterial(material),
+	effect: async (effect) => compileEffect(effect),
+};
 
 /** A shader manifest and every WGSL file beside it, as `bun run shaders` reads them. */
 export interface ShaderBuildInputs {
@@ -182,28 +247,23 @@ export function buildShaders(inputs: ShaderBuildInputs): ShaderBuildResult {
 	return call<ShaderBuildOutput>('build', inputs);
 }
 
-/** The module's exports. */
-interface Exports {
-	readonly memory: WebAssembly.Memory;
-	request(length: number): number;
-	compile(): void;
-	compile_material(): void;
-	compile_effect(): void;
-	build(): void;
-	response(): number;
-	response_length(): number;
-}
-
-type Response<T> =
+/** The module's response to a call: its output, or the problems that stopped the call. */
+export type Response<T> =
 	| { readonly ok: true; readonly output: T }
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
-let compiled: WebAssembly.Module | undefined;
-let instance: Exports | undefined;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+/** The name of one of the module's exports that takes a request. */
+export type CallName = 'compile' | 'compile_material' | 'compile_effect' | 'build';
 
-function loadModule(): WebAssembly.Module {
+let compiled: WebAssembly.Module | undefined;
+let calls: CompilerCalls | undefined;
+
+/**
+ * The compiled module, from the file that `bun run build` writes. The first call compiles it, and
+ * throws when the file is missing.
+ */
+export function compilerModule(): WebAssembly.Module {
+	if (compiled) return compiled;
 	// A copy of the file's bytes, in memory of its own that WebAssembly accepts under every lib.
 	let bytes: Uint8Array<ArrayBuffer>;
 	try {
@@ -213,41 +273,12 @@ function loadModule(): WebAssembly.Module {
 			`null3D: the shader compiler is missing from ${fileURLToPath(SHADER_COMPILER_URL)}. Reinstall @null3d/vite-plugin; in a copy of the engine's source, run bun run build first.`,
 		);
 	}
-	return new WebAssembly.Module(bytes);
+	compiled = new WebAssembly.Module(bytes);
+	return compiled;
 }
 
-/** Runs one export on a request. The first call compiles the module. */
-function call<T>(
-	name: 'compile' | 'compile_material' | 'compile_effect' | 'build',
-	request: unknown,
-): Response<T> {
-	compiled ??= loadModule();
-	instance ??= new WebAssembly.Instance(compiled).exports as unknown as Exports;
-	const wasm = instance;
-	const bytes = encoder.encode(JSON.stringify(request));
-	// Making room can grow the memory, which replaces its buffer, so the view comes after.
-	const at = wasm.request(bytes.length);
-	new Uint8Array(wasm.memory.buffer, at, bytes.length).set(bytes);
-	let stopped: unknown;
-	try {
-		wasm[name]();
-	} catch (error) {
-		// A call that stops part way can leave the instance in any state, so the next call makes a
-		// new instance. A panic has written its own response first.
-		instance = undefined;
-		stopped = error;
-	}
-	const length = wasm.response_length();
-	if (length === 0) {
-		const problem: ShaderProblem = {
-			file: null,
-			line: null,
-			column: null,
-			feature: null,
-			message: `the shader compiler stopped on an internal error, which is a bug in null3D: ${String(stopped)}. Report it with the shader that caused it.`,
-			variants: [],
-		};
-		return { ok: false, problems: [problem] };
-	}
-	return JSON.parse(decoder.decode(new Uint8Array(wasm.memory.buffer, wasm.response(), length)));
+/** Runs one export on a request on this thread. The first call compiles the module. */
+function call<T>(name: CallName, request: unknown): Response<T> {
+	calls ??= new CompilerCalls(compilerModule());
+	return JSON.parse(calls.call(name, JSON.stringify(request)));
 }
