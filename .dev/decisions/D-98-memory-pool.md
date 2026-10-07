@@ -53,7 +53,7 @@ On tablets and phones, the restart pages ran on main d6292d4b5 and on the branch
 | --- | --- | --- |
 | The owner's iPad Pro 11-inch (A12X), Safari 26.6.2 | 8 pages: 7 of 8, one shared memory per start. 50 starts: Safari refused the memory at the 11th start in pipelined mode and at the 7th with the sketch on the page (E1109) | 8 of 8 and 3 of 3; 1 shared memory for each threaded page, none refused |
 | BrowserStack's iPad (10th generation), Safari 27.0 | 8 of 8 and 3 of 3; one memory per start | 8 of 8 and 3 of 3; 1 memory for each threaded page |
-| BrowserStack's Galaxy S25, Chrome 149 | 8 of 8 and 3 of 3; one memory per start | 50 starts: 3 of 3. With the sketch on the page, 6 of 50 stops waited out the 2 s limit, so its starts made 7 memories. The 8 pages did not run: the runner page did not start |
+| BrowserStack's Galaxy S25, Chrome 149 and 152 | 8 of 8 and 3 of 3; one memory per start | 8 of 8 (run 20261007-161109-checks) and 3 of 3; 1 memory for each threaded page, apart from one run with the sketch on the page, where 6 of 50 stops waited out the 2 s limit and the starts made 7 |
 
 The first branch commit kept each test page's memory after the runner removed the page. On BrowserStack's iPad, each page then left one place of room taken, and the 7th page found none (E1109). The rule below that lets go of the pool on `pagehide` fixed it.
 
@@ -91,5 +91,5 @@ The heap starts one page after the end of the linker's memory, `__heap_end`. Ver
 - The RAM of a kept memory stays taken for up to 30 seconds after the stop.
 - The restart checks count the kept memory: after the starts, the page reaches 1 memory, and the threaded starts on the page made 1. A restart page whose starts made more fails. With `?release=on`, the page reaches none.
 - The engine API page and the skill's quick reference describe `destroy({ release })`.
-- Open: BrowserStack's Galaxy S25 ran 50 starts with the sketch on the page. There the branch's stops took 1.7 s at the median, and 6 of 50 reached the 2 s limit. On main they took 1.55 s, and none did. Most of each stop waits for job workers that were still starting. In pipelined mode the branch's stops were shorter than main's. The two runs came from different sessions, so this needs a run of both in one session.
+- Stops on the S25 come close to the 2 s limit with the sketch on the page, on main and with the pool. In one run, 6 of the pool's 50 stops reached the limit, so its starts made 7 memories. Four runs back to back then settled it, on 8 October 2026: main, the pool, main and the pool. The median stop took 1.69 s and 1.73 s on main, and 1.70 s and 1.69 s with the pool. Main's runs had 1 stop at the limit each, and the pool's 0 and 1. So the pool does not slow a stop. Most of each stop waits for job workers that are still starting (runs 20261007-164615, -165055, -165537 and -170021-checks).
 - The decoders make memories of their own in their workers: the meshopt decoder in the glTF worker, and the KTX2 transcoder in the job workers. The pool does not cover them. Whether their memories hold fast places after an engine stops is not measured yet.
