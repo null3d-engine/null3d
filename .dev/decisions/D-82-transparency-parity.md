@@ -88,7 +88,16 @@ The Mac, 7 October 2026, Chrome, S2, 5 runs of 10 s per page, a load of about 5,
 
 - On WebGPU the second draw adds 118% of GPU time in this scene, against the rule's 5%. The second draw doubles the transparent pass's draws, and three.js's WebGLRenderer draws the same two per object. Opaque double-sided materials take no second draw, so the cost falls only on double-sided see-through materials.
 - On WebGL2 each run's back faces and front faces wrote their own block of draw records, each padded to 256 bytes, so the upload rose eight times. A run's front faces now draw from its back faces' records: one block per run. The render crate's test `a_runs_front_faces_reuse_the_records_of_its_back_faces_on_webgl2` checks it. After the fix, a short check run at a load of about 9 uploaded 1.49 MB per frame with two draws, 308 bytes per visible entry against 559 before, and 0.34 MB with one. The rest is the second draw's own records and multi-draw arrays: each run's two draws use different pipelines, so they cannot join one multi-draw call.
-- The cloud Galaxy S25's first try (run `20261007-090833-bench`) stopped after one full pair, at 30 fps: WebGPU GPU time 18.93 ms with one draw and 24.08 ms with two (+27%). That is one run; the full run is pending.
+- The cloud Galaxy S25 (Chrome, a 30 Hz screen), 7 October 2026, the build before the WebGL2 records fix, 3 runs per page in turns (run `20261007-092945-bench`):
+
+| Page | GPU ms | CPU ms | Draws | Upload per frame | Presented fps |
+| --- | --- | --- | --- | --- | --- |
+| WebGPU, one pass | 19.01 | 2.49 | 4,796 | | 30 |
+| WebGPU, two passes | 23.99 | 2.80 | 9,591 | | 30 |
+| WebGL2, one pass | no timer | 2.02 | | 0.34 MB | 29.8 |
+| WebGL2, two passes | no timer | 3.80 | 9,662 | 2.74 MB | 16.9 |
+
+  On WebGPU the second draw adds 26% of GPU time on the S25. On WebGL2 the frame rate fell from 30 to 17 fps, with the eightfold upload that the records fix halves; a rerun on the fixed build is owed. The alpha hash cost 2% of GPU time on WebGPU (3.34 ms plain, 3.41 ms hashed), and nothing measurable on WebGL2 (1.10 and 1.12 ms of CPU time, both at 30 fps).
 - The pages of plain S2 and the hash later in the same run overlapped a shader build and the end of the quiet window, so the hash's cost comes from the iPad.
 - The cost rule needed a ruling: this worst case cannot meet it, as three.js's own two draws would not.
 
