@@ -143,6 +143,12 @@ export const ANTIALIAS_NONE = 0;
 export const ANTIALIAS_FXAA = 1;
 export const ANTIALIAS_MSAA = 2;
 
+export const SKINNING_LEAN = 0;
+export const SKINNING_VERTEX = 1;
+export const SKINNING_FULL = 2;
+export const SKINNING_SKIP_ONLY = 3;
+export const SKINNING_NARROW_ONLY = 4;
+
 export const TONE_MAPPING_ACES = 0;
 export const TONE_MAPPING_AGX = 1;
 export const TONE_MAPPING_NEUTRAL = 2;

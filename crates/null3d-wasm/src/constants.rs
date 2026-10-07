@@ -21,6 +21,7 @@ use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
 use null3d_render::output::{Antialias, ToneMapping};
+use null3d_render::skinning::SkinningMode;
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 use null3d_render::{debug_view, fog};
 
@@ -735,6 +736,17 @@ pub fn typescript() -> String {
                 ("NONE", Antialias::None.code()),
                 ("FXAA", Antialias::Fxaa.code()),
                 ("MSAA", Antialias::Msaa.code()),
+            ],
+        ),
+        // WebGPU's skinning modes, which ?skinning= picks to measure them (decision record D-20).
+        (
+            "SKINNING",
+            &[
+                ("LEAN", SkinningMode::LEAN.code()),
+                ("VERTEX", SkinningMode::VERTEX.code()),
+                ("FULL", SkinningMode::FULL.code()),
+                ("SKIP_ONLY", SkinningMode::SKIP_ONLY.code()),
+                ("NARROW_ONLY", SkinningMode::NARROW_ONLY.code()),
             ],
         ),
         (

@@ -4,6 +4,7 @@
 // with the pipelines it creates, which begin to build, without blocking, when the frame is first
 // prepared.
 
+import { SKINNING_FULL, SKINNING_SKIP_ONLY } from '../generated/core';
 import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
@@ -224,6 +225,12 @@ export class WebGPUSceneRenderer implements Renderer {
 
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
 	resize(): void {}
+
+	/** Makes the skinning pass write 32-bit float directions where core skinning mode `mode` asks. */
+	setSkinningMode(mode: number): void {
+		if (mode === SKINNING_FULL || mode === SKINNING_SKIP_ONLY)
+			this.backend.skinWithFloatDirections();
+	}
 
 	prepare(frame: number): boolean {
 		return this.frames.prepare(frame);

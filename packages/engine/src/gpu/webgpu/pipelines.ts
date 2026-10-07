@@ -289,6 +289,8 @@ export function gpuVertexFormat(attribute: VertexAttribute): GPUVertexFormat {
 
 /** The id of the pipeline constant that scales the attribute at a location: 1000 plus it. */
 const SCALE_ID = 1000;
+/** The id of the skinning pass's pipeline constant that writes normals and tangents in 8 bits. */
+const NARROW_DIRECTIONS_ID = 1100;
 
 /** The mesh locations that a template's variant reads, or undefined for a template without meshes. */
 function meshLocations(t: RenderTemplate, permutation: number): number[] | undefined {
@@ -347,6 +349,12 @@ function scaleConstants(
 }
 
 export class Pipelines {
+	/**
+	 * True when the skinning pass writes normals and tangents as 32-bit floats, in place of 8-bit
+	 * integers, as the core's skinned vertex format then has them. Only the switch that measures
+	 * the two asks for it.
+	 */
+	floatSkinnedDirections = false;
 	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
 	/** The layouts that only some devices bind, which the first pipeline or bind group to use them makes. */
 	private readonly laterLayouts: (GPUBindGroupLayoutDescriptor | undefined)[] = [];
@@ -1020,10 +1028,11 @@ export class Pipelines {
 			const color = (permutation & PERMUTATION_VERTEX_COLOR) !== 0 ? ' color' : '';
 			const shader = variantFor(this.skin, permutation, 'wgsl')?.wgsl;
 			if (!shader) throw new Error("the device's shader modules have no skinning shader");
+			const constants = this.floatSkinnedDirections ? { [NARROW_DIRECTIONS_ID]: 0 } : undefined;
 			return {
 				label: `skin${tangent}${color}`,
 				layout: this.skinLayout,
-				compute: { module: this.module('skin', shader), entryPoint: 'main' },
+				compute: { module: this.module('skin', shader), entryPoint: 'main', constants },
 			};
 		}
 		if (template === TEMPLATE_CULL) {
