@@ -13,7 +13,9 @@ import {
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
+	MATERIAL_FEATURE_ALPHA_HASH,
 	MATERIAL_FEATURE_ALPHA_MASK,
+	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_BLEND,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
@@ -21,6 +23,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
@@ -723,12 +726,14 @@ export interface MaterialOptions {
  * How a material uses its alpha: its opacity, times its base color map's alpha, and times its
  * mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode
  * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque, as three.js's
- * `alphaTest` does. The `blend` mode blends the surface over what lies behind it, as three.js's
+ * `alphaTest` does. The `hash` mode draws each point of the surface opaque or not at all, by a
+ * pattern that stays on the mesh. The alpha then sets how much of the surface draws, as three.js's
+ * `alphaHash` does. The `blend` mode blends the surface over what lies behind it, as three.js's
  * `transparent: true` does. Blended objects draw after the opaque ones, farthest first.
  *
  * @category api/materials
  */
-export type AlphaMode = 'opaque' | 'mask' | 'blend';
+export type AlphaMode = 'opaque' | 'mask' | 'hash' | 'blend';
 
 /**
  * How a blended surface meets what lies behind it. The `normal` blending covers it as far as the
@@ -880,6 +885,20 @@ export interface MaterialFeatures {
 	fog?: boolean;
 	/** How the material uses its alpha. The default is `opaque`. */
 	alphaMode?: AlphaMode;
+	/**
+	 * With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's
+	 * `alphaToCoverage` does: the alpha fades over about one pixel above `alphaCutoff`, and covers
+	 * that share of the pixel. Without MSAA the mask cuts as without it. False gives three.js's hard
+	 * cut edges of `alphaTest`. Custom materials do not take it. The default is true.
+	 */
+	alphaToCoverage?: boolean;
+	/**
+	 * With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, in the mesh's
+	 * order, as three.js's `forceSinglePass` does. By default such a surface draws its back faces
+	 * first and then its front faces, so its near side always covers its far side. The default is
+	 * false.
+	 */
+	forceSinglePass?: boolean;
 	/** With the `blend` alpha mode, how the surface meets what lies behind it. The default is `normal`. */
 	blending?: Blending;
 	/** False to write no depth, so the surface hides nothing behind it. The default is true. */
@@ -1205,6 +1224,7 @@ function reflectance(ior: number): number {
 const ALPHA_MODES: Readonly<Record<AlphaMode, number>> = {
 	opaque: 0,
 	mask: MATERIAL_FEATURE_ALPHA_MASK,
+	hash: MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_ALPHA_HASH,
 	blend: MATERIAL_FEATURE_BLEND,
 };
 
@@ -1224,7 +1244,7 @@ function checkFeatures(options: StandardOptions, call: string): void {
 	if (alphaMode !== undefined && !Object.hasOwn(ALPHA_MODES, alphaMode))
 		throw new EngineError(
 			'E1217',
-			`${call}() got the alpha mode ${JSON.stringify(alphaMode)}; it takes 'opaque', 'mask' or 'blend'.`,
+			`${call}() got the alpha mode ${JSON.stringify(alphaMode)}; it takes 'opaque', 'mask', 'hash' or 'blend'.`,
 		);
 	if (blending !== undefined && !Object.hasOwn(BLENDINGS, blending))
 		throw new EngineError(
@@ -1248,7 +1268,11 @@ function featureBits(options: StandardOptions): number {
 		BLENDINGS[options.blending ?? 'normal'] |
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
 		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
-		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0)
+		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0) |
+		(options.alphaMode === 'mask' && options.alphaToCoverage !== false
+			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE
+			: 0) |
+		(options.forceSinglePass ? MATERIAL_FEATURE_SINGLE_PASS : 0)
 	);
 }
 
@@ -1553,7 +1577,9 @@ export class Materials {
 	 * function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D
 	 * Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no
 	 * `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a
-	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. When
+	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. Throws
+	 * E1217 for the `hash` alpha mode and for `alphaToCoverage`, which custom materials do not take.
+	 * When
 	 * TypeScript can see the WGSL, a wrong name or a value of the wrong kind also fails the type
 	 * check.
 	 */
@@ -1561,6 +1587,11 @@ export class Materials {
 		options: ShaderOptions<Wgsl>,
 	): Material<ShaderValues<Wgsl>> {
 		const call = 'materials.shader';
+		if (DEV && (options.alphaMode === 'hash' || options.alphaToCoverage === true))
+			throw new EngineError(
+				'E1217',
+				`${call}() got ${options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'}; a custom material takes 'opaque', 'mask' or 'blend', and tests its alpha against alphaCutoff.`,
+			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		for (const name of uniforms.keys())
@@ -1577,7 +1608,7 @@ export class Materials {
 			(compiled.attributes << SHADING_CUSTOM_ATTRIBUTE_SHIFT) |
 			(compiled.baseColor ? SHADING_CUSTOM_BASE_COLOR : 0) |
 			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT);
-		const id = this.createId(shading, options, call);
+		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);
 		const { core } = this;
