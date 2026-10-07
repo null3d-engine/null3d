@@ -164,7 +164,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 
 - Give it run folders, or run names that this checkout's `target/runs`, `target/bench` or `target/gate` holds. It reads runs of the device runner, of `bun run bench:run` and of `bun run gate`.
 - It keeps benchmark, job worker, comparison, sweep, scale, governor, soak, startup and gate runs. Other plans, such as the checks plan, have no figures to keep.
-- A benchmark record keeps the plan's pages, each runner's device and browser, and each page's medians. It also keeps each null3D page's share of three.js, by whole frame and by own work. Each run's figures stay too: CPU time, own work, frame interval percentiles, frames per second, GPU time, preset and heat.
+- A benchmark record keeps the plan's pages, each runner's device and browser, and each page's medians. It also keeps each null3D page's share of three.js, by whole frame and by own work. Each run's figures stay too: CPU time, own work, frame interval percentiles, frames per second, GPU time, preset and heat. Where the browser times passes, each pass's GPU time stays too.
 - A comparison keeps its verdict, each page's medians and changes, and each run. A gate run keeps each step's figure and verdict, and the benchmark runs of its timing steps.
 - The governor, soak and startup plans keep the runner's report, and each page's result without images, browser facts or lists of more than 120 entries.
 - Records keep no frames, images, per-second lists of benchmark runs, or WebGL call tables. Fractions keep four significant digits. A record takes under 1 KB to 35 KB, and the 229 runs of 27 September to 4 October 2026 take 1.75 MB.
