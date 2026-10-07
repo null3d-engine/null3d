@@ -393,7 +393,7 @@ export class Pipelines {
 			),
 		]);
 		this.defineLayout(LAYOUT_CULL, 'cull', [
-			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
@@ -401,6 +401,11 @@ export class Pipelines {
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{
+				binding: 8,
+				visibility: GPUShaderStage.COMPUTE,
+				texture: { sampleType: 'unfilterable-float' },
+			},
 		]);
 		// Light clustering's parameters, the light list, and the light grid that it fills.
 		this.defineLayout(LAYOUT_LIGHT_CLUSTERS, 'light clusters', [

@@ -277,8 +277,11 @@ mod ids {
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
+    /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
+    /// per view (see [`super::cull`]).
+    pub const CELL_OFFSETS: u32 = BLANK_OUTLINE + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_OUTLINE + 1;
+    pub const TARGETS: u32 = CELL_OFFSETS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.

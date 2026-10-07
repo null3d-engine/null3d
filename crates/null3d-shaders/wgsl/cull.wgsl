@@ -11,13 +11,13 @@
 // the instance by its cell's offset from the camera before it tests it. The compacted instance
 // buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
 //
+// The offsets come from a data texture, one row per view and one texel per cell, which each thread
+// reads at its own cell. A table in the uniform parameters, read at each thread's own index, gave
+// every thread of a group the same thread's entry on the Galaxy S25 (Adreno 830). A texture keeps
+// the culling group within the eight storage buffers that every device allows a shader stage.
+//
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
-//
-// The parameters sit in a read-only storage buffer, not a uniform buffer. Each thread indexes the
-// table of cell offsets by its own instance's cell. The Adreno 830's Vulkan driver (Galaxy S25)
-// reads one thread's entry of a uniform array for every thread that indexes it, so most instances
-// took another cell's offset there. Storage reads keep each thread's own index.
 //
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
@@ -26,8 +26,6 @@
 
 /// An entry holds its bucket in the bits below CELL_SHIFT, and the instance's cell index above.
 const CELL_SHIFT: u32 = 23u;
-/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
-const MAX_CELLS: u32 = 512u;
 /// Runs of the cell order that one dispatch covers at most.
 const MAX_RANGES: u32 = 257u;
 /// Threads per workgroup.
@@ -40,9 +38,8 @@ struct CullParams {
     layers: u32,
     /// The runs of the cell order to cull, or 0 to cull every instance in place.
     range_count: u32,
-    pad2: u32,
-    /// The offset from the camera to the center of each grid cell, by cell index.
-    cell_offsets: array<vec4f, MAX_CELLS>,
+    /// The view's row of the cell offsets texture.
+    offsets_row: u32,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
 }
@@ -64,7 +61,7 @@ struct Bucket {
     first_joint: u32,
 }
 
-@group(0) @binding(0) var<storage, read> params: CullParams;
+@group(0) @binding(0) var<uniform> params: CullParams;
 @group(0) @binding(1) var<storage, read> matrices: array<vec4f>;
 @group(0) @binding(2) var<storage, read> instance_buckets: array<u32>;
 @group(0) @binding(3) var<storage, read> buckets: array<Bucket>;
@@ -73,6 +70,9 @@ struct Bucket {
 @group(0) @binding(6) var<storage, read> instance_layers: array<u32>;
 /// The instances in cell order: each cell's still instances, then the ones that move.
 @group(0) @binding(7) var<storage, read> order: array<u32>;
+/// The offset from each view's camera to the center of each grid cell: texel x of row y holds
+/// cell x's offset for the view whose row is y.
+@group(0) @binding(8) var cell_offsets: texture_2d<f32>;
 
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
@@ -122,7 +122,7 @@ fn main(
         return;
     }
     let b = entry & ((1u << CELL_SHIFT) - 1u);
-    let offset = params.cell_offsets[entry >> CELL_SHIFT];
+    let offset = textureLoad(cell_offsets, vec2u(entry >> CELL_SHIFT, params.offsets_row), 0);
     let r0 = matrices[i * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
     let r1 = matrices[i * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
     let r2 = matrices[i * 3u + 2u] + vec4f(0.0, 0.0, 0.0, offset.z);

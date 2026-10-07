@@ -11,7 +11,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_core::scene::{Command, NO_PARENT, flags};
 use null3d_core::world::SphereArrays;
-use null3d_gpu::drawlist::{NO_TARGET, Op, buffer_usage, layout};
+use null3d_gpu::drawlist::{NO_TARGET, Op, format, layout, resource_kind};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::frame::FrameBuilder;
@@ -20,9 +20,8 @@ use null3d_render::light_grid::{CLUSTER_PARAMS_BYTES, DEFAULT_GRID};
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
-/// Where a view's culling parameters hold the runs of the cell order: after the planes and the
-/// offsets to 512 cells.
-const RANGES: u32 = 112 + 512 * 16;
+/// Where a view's culling parameters hold the runs of the cell order: after the planes.
+const RANGES: u32 = 112;
 /// The builder's buffers of world matrices, of the bucket of every source, and of the layer
 /// mask of every source.
 const MATRICES: u32 = 2;
@@ -128,10 +127,18 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // its own, which share the camera's textures, as the two render passes do not overlap. The
     // textures: the color and depth targets, the shadow map and the shadow atlas, one texel each
     // while no light casts shadows, the table of specular terms, the materials' custom values,
-    // the environment's blank cube, and the blank texture that stands in for ambient occlusion.
+    // the environment's blank cube, the blank texture that stands in for ambient occlusion, and
+    // the views' cell offsets.
     assert_eq!(camera.pass[1], 0);
     assert_eq!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 8);
+    assert_eq!(count(&commands, Op::CreateTexture), 9);
+    // Each view writes its cell offsets into a row of its own.
+    let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
+        .iter()
+        .map(|&(row, _)| row)
+        .collect();
+    assert_eq!(rows.len(), 2);
+    assert_ne!(rows[0], rows[1]);
 
     // Each view's culling tests its own frustum: the side view's leaves out the object at
     // x = -3, which the camera sees. A frustum is relative to its view's camera, so each sphere
@@ -245,8 +252,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the table of specular terms, the materials' custom values, the
-    // environment's blank cube, and the blank texture that stands in for ambient occlusion.
-    assert_eq!(count(&commands, Op::CreateTexture), 8);
+    // environment's blank cube, the blank texture that stands in for ambient occlusion, and the
+    // views' cell offsets.
+    assert_eq!(count(&commands, Op::CreateTexture), 9);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -590,22 +598,43 @@ fn cull_params_writes(commands: &[(Op, Vec<u32>)], params: u32) -> Vec<(u32, u32
         .collect()
 }
 
+/// The texture of cell offsets that a frame's culling groups bind, after their buffers.
+fn offsets_texture(commands: &[(Op, Vec<u32>)]) -> u32 {
+    let group = commands
+        .iter()
+        .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CULL)
+        .map(|(_, o)| o)
+        .expect("the frame binds a culling group");
+    assert_eq!(group[3 + 8 * 5 + 1], resource_kind::TEXTURE);
+    group[3 + 8 * 5 + 2]
+}
+
+/// Writes of a frame into the texture of cell offsets: the view's row and the cells it writes.
+fn offsets_writes(commands: &[(Op, Vec<u32>)], texture: u32) -> Vec<(u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteTexture && o[0] == texture)
+        .map(|(_, o)| (o[3], o[5]))
+        .collect()
+}
+
 #[test]
-fn culling_parameters_are_a_storage_buffer() {
-    // Each culling thread reads its own cell's offset from the parameters. The Galaxy S25's
-    // driver reads one thread's entry of a uniform array for all of them, so the parameters
-    // must stay out of uniform buffers.
+fn each_view_writes_its_cell_offsets_into_its_own_row_of_a_float_texture() {
+    // Each culling thread reads its own cell's offset. The Galaxy S25's driver read a table in the
+    // uniform parameters at one thread's index for all of them, so the offsets sit in a texture.
     let mut world = World::new();
     world.move_far_out();
     world.record(true);
     let commands = world.commands();
-    let buffer = views_of(&commands)[0].culling[0];
-    let usage = commands
+    let texture = offsets_texture(&commands);
+    let created = commands
         .iter()
-        .find(|(op, o)| *op == Op::CreateBuffer && o[0] == buffer)
-        .map(|(_, o)| o[2])
-        .expect("the frame creates the view's culling parameters");
-    assert_eq!(usage, buffer_usage::STORAGE | buffer_usage::COPY_DST);
+        .find(|(op, o)| *op == Op::CreateTexture && o[0] == texture)
+        .map(|(_, o)| o.clone())
+        .expect("the frame creates the texture of cell offsets");
+    assert_eq!([created[1], created[4]], [512, format::RGBA32_FLOAT]);
+    // The camera's view, row 0, uses the origin cell and the far cell.
+    assert_eq!(offsets_writes(&commands, texture), vec![(0, 2)]);
 }
 
 #[test]
@@ -622,12 +651,14 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
         let slot = world.scene.resolve(object).unwrap() as usize;
         assert_eq!(world.scene.cells()[slot], far);
     }
-    // The planes, then the offsets from the camera to the two cells in use, in one write. Then the
-    // runs of the cell order that the view culls: the far cell's still objects and the batch's
-    // moving rows, which follow them, joined into one.
-    let params = vec![(0, 112 + 2 * 16), (RANGES, 16)];
+    // The planes, then the runs of the cell order that the view culls: the far cell's still
+    // objects and the batch's moving rows, which follow them, joined into one. The offsets from
+    // the camera to the two cells in use go into the view's row of the offsets texture.
+    let params = vec![(0, 112), (RANGES, 16)];
     let buffer = views_of(&world.commands())[0].culling[0];
+    let texture = offsets_texture(&world.commands());
     assert_eq!(cull_params_writes(&world.commands(), buffer), params);
+    assert_eq!(offsets_writes(&world.commands(), texture), vec![(0, 2)]);
 
     for frame in 2..=5 {
         world.frame = frame;
@@ -654,6 +685,11 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
             params,
             "frame {frame}"
         );
+        assert_eq!(
+            offsets_writes(&commands, texture),
+            vec![(0, 2)],
+            "frame {frame}"
+        );
     }
 }
 
@@ -666,8 +702,10 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(
         cull_params_writes(&world.commands(), buffer),
-        vec![(0, 112 + 16)]
+        vec![(0, 112)]
     );
+    let texture = offsets_texture(&world.commands());
+    assert_eq!(offsets_writes(&world.commands(), texture), vec![(0, 1)]);
 
     world.frame = 2;
     world.scene.begin_frame(2);
@@ -689,8 +727,9 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     // moved object's cell, out of view, lies between them.
     assert_eq!(
         cull_params_writes(&commands, buffer),
-        vec![(0, 112 + 2 * 16), (RANGES, 2 * 16)]
+        vec![(0, 112), (RANGES, 2 * 16)]
     );
+    assert_eq!(offsets_writes(&commands, texture), vec![(0, 2)]);
 }
 
 /// A WebGPU world spread over 5 x 5 grid cells, with room for `objects` more scene objects, and

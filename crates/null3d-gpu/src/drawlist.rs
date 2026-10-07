@@ -1760,7 +1760,6 @@ mod tests {
         for line in [
             format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
-            format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
             format!("const MAX_RANGES: u32 = {}u;", sizes::MAX_CULL_RANGES),
             format!(
                 "const WORKGROUP_SIZE: u32 = {}u;",

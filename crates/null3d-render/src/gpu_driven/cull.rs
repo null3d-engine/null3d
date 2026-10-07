@@ -8,10 +8,12 @@
 //! A view's parameters also hold its layer mask, and the shader skips a source whose layer mask
 //! shares no bit with it.
 //!
-//! A view's planes are relative to its camera, and its parameters also hold the offset from its
-//! camera to each cell in use. The shader adds a source's offset to its matrix before it tests the
-//! source, and copies the moved matrix into the compacted instance buffer, so the vertex shader
-//! draws positions relative to the view's camera.
+//! A view's planes are relative to its camera. The offset from its camera to each cell in use goes
+//! into the view's row of the cell offsets texture, and its parameters name the row. The shader
+//! adds a source's offset to its matrix before it tests the source, and copies the moved matrix
+//! into the compacted instance buffer, so the vertex shader draws positions relative to the view's
+//! camera. Each thread reads its own cell's texel: a table in the uniform parameters gave every
+//! thread of a group one thread's entry on the Galaxy S25 (Adreno 830).
 //!
 //! When the scene's sources lie in more than one grid cell, the CPU first finds the cells whose
 //! still sources a view can see (see [`crate::cells`]). The view's parameters then hold the runs of
@@ -22,39 +24,37 @@
 use null3d_core::cells::MAX_CELLS;
 use null3d_core::scene::SceneStorage;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
+    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind, sizes,
+    template, texture_usage, view,
 };
 
 use super::ids;
 use super::layout::Layout;
 use crate::cells::{CellCulling, CellMask};
-use crate::frame::{
-    CELL_OFFSET_BYTES, CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes,
-};
-use crate::view::{ViewFrame, ViewId};
+use crate::frame::{CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes};
+use crate::view::{MAX_VIEW_IDS, ViewFrame, ViewId};
 
 /// Bytes of the culling planes: six planes, the source count, the view's layer mask, the count of
-/// runs of the cell order, and padding.
+/// runs of the cell order, and the view's row of the cell offsets texture.
 const CULL_PLANES_BYTES: u32 = 112;
-/// The words of the culling planes that hold the source count, the view's layer mask and the
-/// count of runs.
+/// The words of the culling planes that hold the source count, the view's layer mask, the count
+/// of runs and the view's row of offsets.
 const SOURCES_WORD: usize = 24;
 const LAYERS_WORD: usize = 25;
 const RANGES_WORD: usize = 26;
-/// Where the runs of the cell order start in the culling parameters: after the offset from the
-/// camera to each cell.
-const RANGES_OFFSET: u32 = CULL_PLANES_BYTES + MAX_CELLS * CELL_OFFSET_BYTES;
+const OFFSETS_ROW_WORD: usize = 27;
+/// Where the runs of the cell order start in the culling parameters: after the planes.
+const RANGES_OFFSET: u32 = CULL_PLANES_BYTES;
 /// Bytes of one run of the cell order: its first position, its end, its first workgroup, and
 /// padding.
 const RANGE_BYTES: u32 = 16;
-/// Bytes of the culling parameters: the planes, the offset from the camera to each cell, then the
-/// runs of the cell order.
+/// Bytes of the culling parameters: the planes, then the runs of the cell order.
 pub(super) const CULL_PARAMS_BYTES: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES * RANGE_BYTES;
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
-/// The buffers of the culling pass's bind group, one per binding.
-const CULL_BINDINGS: usize = 8;
-/// Words of the culling pass's bind group entries: three for the group, five per buffer.
+/// The buffers of the culling pass's bind group, one per binding, then the cell offsets texture.
+const CULL_BINDINGS: usize = 9;
+/// Words of the culling pass's bind group entries: three for the group, five per entry.
 const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
 
 // Runs of the cell order that follow each other join, so a view's runs are at most one per pair
@@ -92,6 +92,8 @@ pub(super) struct Culling {
     views: Vec<Option<ViewBuffers>>,
     /// The offsets from the camera of the view being uploaded to each cell in use.
     offsets: CellOffsets,
+    /// True once the cell offsets texture exists.
+    offsets_made: bool,
 }
 
 /// Records the creation of the culling pipeline.
@@ -115,12 +117,29 @@ impl Culling {
         if self.has_view(view) {
             return Ok(());
         }
+        if !self.offsets_made {
+            list.push(
+                Op::CreateTexture,
+                &[
+                    ids::CELL_OFFSETS,
+                    MAX_CELLS,
+                    MAX_VIEW_IDS as u32,
+                    1,
+                    format::RGBA32_FLOAT,
+                    texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                    1,
+                    1,
+                    view::D2,
+                ],
+            )?;
+            self.offsets_made = true;
+        }
         list.push(
             Op::CreateBuffer,
             &[
                 ids::cull_params(view),
                 CULL_PARAMS_BYTES,
-                usage::STORAGE | usage::COPY_DST,
+                usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
         if self.views.len() <= view.index() {
@@ -198,6 +217,14 @@ impl Culling {
                     0,
                 ]);
             }
+            let at = 3 + (CULL_BINDINGS - 1) * 5;
+            entries[at..at + 5].copy_from_slice(&[
+                CULL_BINDINGS as u32 - 1,
+                resource_kind::TEXTURE,
+                ids::CELL_OFFSETS,
+                0,
+                0,
+            ]);
             list.push(Op::CreateBindGroup, &entries)?;
         }
         Ok(())
@@ -240,13 +267,30 @@ impl Culling {
             (0, sources.sources.div_ceil(sizes::CULL_WORKGROUP_SIZE))
         };
         params[RANGES_WORD] = ranges as u32;
+        params[OFFSETS_ROW_WORD] = view.index() as u32;
         (buffers.groups, buffers.range_count) = (groups, ranges);
-        // The planes fill whole words, so the arena lays the offsets right after them, as the
-        // parameters hold them, and one write carries both.
         let (at, planes) = arena.push(words_as_bytes(&params))?;
-        let (_, offsets) = arena.push(self.offsets.as_bytes())?;
         let params_id = ids::cull_params(view);
-        list.push(Op::WriteBuffer, &[params_id, 0, at, planes + offsets])?;
+        list.push(Op::WriteBuffer, &[params_id, 0, at, planes])?;
+        let cells = self.offsets.as_slice().len() as u32;
+        if cells > 0 {
+            let (at, bytes) = arena.push(self.offsets.as_bytes())?;
+            list.push(
+                Op::WriteTexture,
+                &[
+                    ids::CELL_OFFSETS,
+                    0,
+                    0,
+                    view.index() as u32,
+                    0,
+                    cells,
+                    1,
+                    1,
+                    at,
+                    bytes,
+                ],
+            )?;
+        }
         if ranges > 0 {
             let words = buffers.ranges[..ranges].as_flattened();
             let (at, bytes) = arena.push(words_as_bytes(words))?;
@@ -299,5 +343,6 @@ impl Culling {
     /// the GPU.
     pub(super) fn forget_gpu(&mut self) {
         self.views.clear();
+        self.offsets_made = false;
     }
 }
