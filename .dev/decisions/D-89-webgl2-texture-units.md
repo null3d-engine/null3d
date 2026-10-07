@@ -1,6 +1,6 @@
 # D-89: Texture units of the standard material on WebGL2
 
-Status: decided. Date: 2026-10-07. Task: M2-J7.
+Status: decided; the order in which maps are dropped confirmed by the owner, 7 October 2026. Date: 2026-10-07. Task: M2-J7.
 
 ## Question
 
@@ -35,6 +35,8 @@ How many units a material's maps take with shared units:
 | glTF's seven maps, each in a different array or with a different sampler | 7: the specular intensity map is dropped |
 
 How the data was produced, 7 October 2026: the unit test in `gpu/webgl2/programs.test.ts` prints the most textures in one GLSL stage. On main (74d5f4956) it printed 16 of 16, and on this change 12 of 16, in `standard_maps.webgl2_alpha_mask_receive_shadows`. The texture store's unit test `maps_of_one_array_and_sampler_share_a_unit_and_late_maps_lose_theirs` gives the units of the first two material rows. The image tests ran for every WebGL2 test, and for the maps, glTF, KTX2, environment and light tests on WebGPU. All 262 passed on SwiftShader and on the Mac's GPU, with no reference changed.
+
+On a cloud Galaxy S25 in Chrome 149, 18 image pages passed on all three paths (run 20261007-035252-checks). They cover the maps, glTF specular and environment tests. On the owner's iPad Pro 11 in Safari 26.6.2 they passed too (run 20261007-053931-checks).
 
 ## Decision
 
