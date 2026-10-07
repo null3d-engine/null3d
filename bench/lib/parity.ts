@@ -48,6 +48,14 @@ export const AO_MAX_DIFFERENT_PERCENT = 1;
 export const BLOOM_STRONG_MAX_DIFFERENT_PERCENT = 20;
 
 /**
+ * The alpha to coverage scene's limit. Coverage takes a whole sample of the pixel's four at each
+ * step, so where the two engines' alphas differ in their last bits at a cut edge, a sample flips:
+ * isolated edge pixels, 0.113% of the frame with WebGL2 on SwiftShader, where three.js's own two
+ * renderers differ by 0.063%, and 0.153% on the Mac's GPU, where they differ by 0.155% (D-82).
+ */
+export const ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT = 0.25;
+
+/**
  * The alpha hash scene's limit, a sanity comparison. null3D keeps three.js's cells and threshold but
  * hashes each cell with integer math, so every GPU draws one pattern, where three.js's sine hash
  * draws a pattern of each GPU's own (D-82). The two patterns differ in most pixels of the hashed
@@ -381,7 +389,11 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
-	{ test: 'alpha-coverage', twin: `${TWINS}/alpha-mask.html?mode=coverage` },
+	{
+		test: 'alpha-coverage',
+		twin: `${TWINS}/alpha-mask.html?mode=coverage`,
+		limit: ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
+	},
 	{
 		test: 'alpha-hash',
 		twin: `${TWINS}/alpha-mask.html?mode=hash`,

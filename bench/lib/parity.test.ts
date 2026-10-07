@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { decode } from 'fast-png';
 import { featureImagePath } from '../../tests/image/manifest.ts';
 import {
+	ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
 	ALPHA_HASH_MAX_DIFFERENT_PERCENT,
 	BENCH_SCENES,
 	BLOOM_STRONG_MAX_DIFFERENT_PERCENT,
@@ -263,9 +264,11 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the alpha hash, the masked shadows, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give alpha to coverage, the alpha hash, the masked shadows, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
+		// Coverage flips a sample at some cut edges, so its scene takes a small limit of its own.
+		expect(featureScene('alpha-coverage')?.limit).toBe(ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT);
 		// null3D's integer hash draws its own pattern, so the hash scene is a sanity comparison.
 		expect(featureScene('alpha-hash')?.limit).toBe(ALPHA_HASH_MAX_DIFFERENT_PERCENT);
 		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
@@ -278,6 +281,7 @@ describe('feature scenes', () => {
 		expect(featureScene('lut-cube')?.limit).toBeUndefined();
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
+			'alpha-coverage',
 			'alpha-hash',
 			'alpha-mask-shadows',
 			'points',
