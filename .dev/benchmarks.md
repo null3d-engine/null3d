@@ -276,7 +276,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 
 - The page switch `?sides=two` draws every box of S2 see-through and double-sided. The transparent pass then draws each run's back faces, then its front faces ([D-82](decisions/D-82-transparency-parity.md)). `?sides=one` draws the same boxes with `forceSinglePass`, in one draw. The difference between the two is the cost of the second draw.
 - The page kinds that end in `-one-pass` and `-two-pass` carry the two switches, and `-hash` carries `?alpha=hash`. So one run takes turns between them, with no change of session or of the Mac's state between them. On the Mac: `bun run bench:run --scenes s2 --pages null3d-webgpu-one-pass,null3d-webgpu-two-pass,null3d-webgl2-one-pass,null3d-webgl2-two-pass`. Compare `gpuMs` on WebGPU. Chrome on the Mac has no GPU timer on WebGL2. So the WebGL2 figure needs the iPad or a phone: the bench plan with the same page kinds in `--pages`.
-- The rule is under 5% more GPU time with two passes.
+- The first rule was under 5% more GPU time with two passes. Every device paid far more in this worst case, and the owner kept two draws on 7 October 2026. [D-82](decisions/D-82-transparency-parity.md#cost) gives each device's figures.
 - The page switch `?alpha=hash` draws S2's boxes with the alpha hash. The shader that drops fragments costs tile GPUs part of their hidden-surface removal, so its difference from S2's own run is the hash's cost. Run it on the iPad: the bench plan with the pages `null3d-webgpu,null3d-webgpu-hash,null3d-webgl2,null3d-webgl2-hash`.
 
 ## Sweeps for the open defaults
