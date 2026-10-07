@@ -74,9 +74,15 @@ Never merge a generated file by hand. Take main's side, run the file's generator
 
 ## A branch from before generated files left git
 
-Git kept the generated files until 8 October 2026 ([D-105](decisions/D-105-generated-files-out-of-git.md)). A branch from before then conflicts with main once, when it merges main. Merge main, and for each conflict on a generated file that main deleted, take the deletion with `git rm --cached <path>`. Where a written page conflicts on its old generated part (an API reference, the page list or a table), keep main's side. Delete the branch's lines from the `<<<<<<<` line to the `=======` line, and the `>>>>>>>` line. Then run `bun install`, check that `bun run docs:check` passes, and commit the merge.
+Git kept the generated files until 8 October 2026 ([D-105](decisions/D-105-generated-files-out-of-git.md)). A branch from before then conflicts with main once, when it merges main. Fetch main, then run main's merge script from the branch's copy:
 
-A test on 8 October 2026 used a branch that edited a skill, its copy, an API page's prose and reference, an error page and the page list. After these steps, it differed from main only in its edits to sources: the skill and the prose.
+```sh
+sh -c "$(git show origin/main:tools/merge-main.sh)"
+```
+
+The script merges main. A generated file that main deleted stays deleted, and the file stays on disk. Where a written page conflicts on its old generated part, such as an API reference, the page list or a table, it keeps main's side. Then it runs `bun install`, which writes every generated file, and commits the merge. It stops and lists any other conflict. Resolve those by hand, then run `git commit --no-edit`. Last, check that `bun run docs:check` passes.
+
+A test on 8 October 2026 used a branch that edited a skill, its copy, an API page's prose and reference, an error page, the page list and a preset table. After the script, the branch differed from main only in its edits to sources: the skill and the prose.
 
 ## A branch that edited the old table of tested devices
 
