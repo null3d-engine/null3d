@@ -53,6 +53,14 @@ describe('RefreshMeter', () => {
 		expect(timer.onDisplayRate).toBe(false);
 	});
 
+	it('measures chosen intervals alone, with a sample count of its own', () => {
+		const meter = new RefreshMeter(8);
+		// Safari's page callbacks carry whole milliseconds: 13 to 15 ms on a 72 Hz display.
+		const intervals = [14, 14, 13, 15, 14, 14, 14];
+		for (const interval of intervals) expect(meter.add(interval)).toBeUndefined();
+		expect(meter.add(14)).toBe(72);
+	});
+
 	it('keeps a long pause from swamping the samples', () => {
 		const intervals = Array.from({ length: 32 }, (_, i) => (i === 5 ? 3_600_000 : 1000 / 120));
 		expect(feed(new RefreshMeter(), intervals)).toBe(120);

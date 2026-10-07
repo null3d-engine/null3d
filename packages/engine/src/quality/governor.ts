@@ -20,7 +20,9 @@
 // the frames fall behind instead of swinging across it, while steps up into other settings stay
 // quick. A shadow step happens only where the scene has a light that casts shadows, and only where
 // the step changes what the frame draws: the far cascades need a directional light with two
-// cascades or more, and the filter any light that casts shadows. A bloom step happens only while
+// cascades or more, and the filter any light that casts shadows. The far cascades' step also needs
+// far cascades that draw in every frame while moving casters touch them: where they keep their
+// turns instead, a longer interval would leave moving shadows further behind their casters. A bloom step happens only while
 // the sketch has bloom on, above the smallest base: it halves the base, and the chain drops its
 // narrowest level, so the glow keeps its size. The ambient occlusion step happens only while it
 // draws at half the render size: it draws at a quarter.
@@ -197,6 +199,8 @@ export class Governor {
 	/** The settings that the shadow steps start from. */
 	private intervalSetting = 1;
 	private filterSetting: number = LIGHTEST_FILTER;
+	/** True when far cascades draw in every frame while moving casters touch them. */
+	private followMovers = true;
 	/** The cascades of the main directional light's shadows, or 0 for none. */
 	private cascades = 0;
 	/** True when point or spot lights cast shadows, which the filter's step lightens too. */
@@ -225,10 +229,14 @@ export class Governor {
 		this.scale = this.on ? Math.min(high, Math.max(low, this.scale)) : high;
 	}
 
-	/** Sets the shadow settings that the shadow steps start from. */
-	setShadows(filter: number, interval: number): void {
+	/**
+	 * Sets the shadow settings that the shadow steps start from, and whether far cascades draw in
+	 * every frame while moving casters touch them, which the far cascades' step needs.
+	 */
+	setShadows(filter: number, interval: number, followMovers: boolean): void {
 		this.filterSetting = filter;
 		this.intervalSetting = interval;
+		this.followMovers = followMovers;
 		this.applySteps();
 	}
 
@@ -448,9 +456,12 @@ export class Governor {
 		this.applySteps();
 	}
 
-	/** The far cascades' steps: none without far cascades. */
+	/**
+	 * The far cascades' steps: none without far cascades, and none while far cascades keep their
+	 * turns around moving casters.
+	 */
 	private intervalSteps(): number {
-		return this.cascades > 1 ? farIntervalSteps(this.intervalSetting) : 0;
+		return this.cascades > 1 && this.followMovers ? farIntervalSteps(this.intervalSetting) : 0;
 	}
 
 	/** The filter's step: one where shadows filter with more than the lightest filter. */

@@ -1,10 +1,11 @@
 // Sprites: quads that face the camera, drawn in batches. A sprite batch is an instance batch in
 // the engine core whose rows hold a size, a rotation, a color and an atlas frame instead of a
 // rotation and a scale. The core packs each row into the row's world matrix, so sprites cull, sort
-// and draw as other rows do, and the sprite shaders unpack them.
+// and draw as other rows do, and the sprite shaders unpack them. Points are sprites of one size,
+// with no rotation and no atlas, so a point batch is a sprite batch with fewer arrays.
 //
-// `scene.createSprites` imports this module the first time, so a page without sprites downloads
-// none of it. Like the glTF loader, it imports no engine module but constants and types. The
+// `scene.createSprites` and `scene.createPoints` import this module the first time, so a page
+// without sprites or points downloads none of it. Like the glTF loader, it imports no engine module but constants and types. The
 // bundler would move a module that it shares with its thread's first file into a file of its own,
 // which every page would then download at its start. So the scene checks the options, and hands
 // this module the engine's geometry and materials.
@@ -12,6 +13,7 @@
 import * as C from '../generated/core';
 import type { CoreMemory } from './memory';
 import type {
+	AlphaMode,
 	Geometry,
 	Material,
 	MaterialFeatures,
@@ -86,6 +88,9 @@ export interface SpriteOptions
 	alphaMode?: MaterialFeatures['alphaMode'];
 }
 
+/** The options of a sprite batch besides its count: what its quad, material and rows take. */
+export type SpriteLook = Omit<SpriteOptions, 'count'>;
+
 /** What a sprite batch's quad and material are made with: the engine's objects. */
 export interface SpriteMakers {
 	geometry: Geometry;
@@ -125,22 +130,24 @@ function quadMesh(
 }
 
 /**
- * Makes a batch's quad and material from the options of `scene.createSprites`, which the scene
- * has checked, and the atlas's frames across and down. `quads` holds the quads made so far, by
+ * Makes a batch's quad and material from the options of `scene.createSprites` or
+ * `scene.createPoints`, which the scene has checked, and the atlas's frames across and down. The
+ * material takes `alphaMode` when the options give none. `quads` holds the quads made so far, by
  * center.
  */
 export function spriteParts(
 	{ geometry, materials }: SpriteMakers,
 	quads: Map<string, MeshGeometry>,
-	options: SpriteOptions,
+	options: SpriteLook,
 	[columns, rows]: readonly [number, number],
+	alphaMode: AlphaMode,
 	call: string,
 ): SpriteParts {
 	const material = materials.create<SpriteValues>(
 		C.SHADING_SPRITE,
 		{
 			...options,
-			alphaMode: options.alphaMode ?? 'blend',
+			alphaMode: options.alphaMode ?? alphaMode,
 			doubleSided: true,
 			vertexColors: false,
 			uvTransform: { repeat: [1 / columns, 1 / rows] },
@@ -273,4 +280,160 @@ export class SpriteBatch {
 		this.material.destroy();
 		this.generation = -1;
 	}
+}
+
+/**
+ * The values of a point batch's material, which `points.material.set` changes at any time.
+ *
+ * @category api/points
+ */
+export type PointValues = MaterialOptions;
+
+/**
+ * Options of `scene.createPoints`. The look of the points takes the options of an unlit material.
+ * Points are opaque by default, as three.js's `PointsMaterial` is.
+ *
+ * @category api/points
+ */
+export interface PointOptions
+	extends PointValues,
+		Omit<MaterialFeatures, 'doubleSided' | 'vertexColors'> {
+	/**
+	 * The points: 3 numbers each. Their number is the batch's capacity, which never changes, and
+	 * `points.positions` holds them after the call.
+	 */
+	positions: ArrayLike<number>;
+	/**
+	 * Linear colors that multiply `color`: 3 numbers per point (RGB), or 4 (RGBA). The default is
+	 * white.
+	 */
+	colors?: ArrayLike<number>;
+	/**
+	 * The width and height of every point: world units, or CSS pixels without size attenuation. The
+	 * default is 1.
+	 */
+	size?: number;
+	/**
+	 * True gives the size in world units, so far points look smaller. False gives it in CSS pixels,
+	 * so every point keeps its size on screen, as three.js's `sizeAttenuation: false` does. The
+	 * default is true.
+	 */
+	sizeAttenuation?: boolean;
+	/**
+	 * A color map, in sRGB, that each point shows whole and upright, and whose color multiplies the
+	 * point's. It is fixed when the batch is created.
+	 */
+	map?: Texture;
+	/** Every point updates and uploads every frame; a static batch updates points marked dirty only. */
+	dynamic?: boolean;
+	/** The layers every point is on, as a 32-bit mask. The default, 1, is layer 0. */
+	layers?: number;
+	/**
+	 * The point that every point's position is relative to, as an instance batch's `origin`. The
+	 * default is (0, 0, 0). Points near it keep the precision of 32-bit floats at any distance from
+	 * the world's origin.
+	 */
+	origin?: Vec3;
+	/** How the points use their alpha. The default is `opaque`, as three.js's points are. */
+	alphaMode?: MaterialFeatures['alphaMode'];
+}
+
+/** The checks of a point batch's later calls, which the scene gives, as this module has no errors. */
+export interface PointChecks {
+	/** Throws for a size that is not a positive finite number. */
+	size(size: number, call: string): void;
+}
+
+/**
+ * Many points: squares that face the camera, all of one size, each with its own position and color,
+ * like three.js's `Points` with a `PointsMaterial`. Write points straight into the typed arrays, as
+ * for an instance batch. A dynamic batch updates every point every frame, and a static batch
+ * updates the points you mark dirty.
+ *
+ * @category api/points
+ */
+export class PointBatch {
+	/** @internal */
+	constructor(
+		private readonly sprites: SpriteBatch,
+		private readonly checks: PointChecks,
+	) {}
+
+	/** The number of points: the batch's capacity. */
+	get count(): number {
+		return this.sprites.count;
+	}
+
+	/** The points' material: `set` changes the color, opacity and alpha cutoff of every point. */
+	get material(): Material<PointValues> {
+		return this.sprites.material;
+	}
+
+	/** Positions in the world, 3 floats per point. */
+	get positions(): Float32Array {
+		return this.sprites.positions;
+	}
+
+	/**
+	 * Linear RGBA colors, 4 floats per point, which multiply the material's color and map.
+	 * Components from 0 to 1024 draw, and alpha from 0 to 1.
+	 */
+	get colors(): Float32Array {
+		return this.sprites.colors;
+	}
+
+	/**
+	 * Sets the size of every point: world units, or CSS pixels for points made with
+	 * `sizeAttenuation: false`. Every point updates and uploads once.
+	 */
+	setSize(size: number): void {
+		this.checks.size(size, 'points.setSize');
+		this.sprites.sizes.fill(size);
+		this.sprites.markDirty();
+	}
+
+	/** Draws only the first `count` points. */
+	setActiveCount(count: number): void {
+		this.sprites.setActiveCount(count);
+	}
+
+	/** Puts every point on the layers of a 32-bit mask. A new mask needs no rebuild. */
+	setLayers(mask: number): void {
+		this.sprites.setLayers(mask);
+	}
+
+	/** Marks points of a static batch to update and upload. */
+	markDirty(start = 0, count = this.count - start): void {
+		this.sprites.markDirty(start, count);
+	}
+
+	/**
+	 * Removes the batch and frees its points. Its typed arrays are not valid after this: another
+	 * batch can take their memory.
+	 */
+	destroy(): void {
+		this.sprites.destroy();
+	}
+}
+
+/**
+ * Makes the point batch of a new sprite batch, and writes the points of `scene.createPoints`, which
+ * the scene has checked: their positions, their colors of 3 or 4 numbers each, and their size.
+ */
+export function pointBatch(
+	sprites: SpriteBatch,
+	checks: PointChecks,
+	positions: ArrayLike<number>,
+	colors: ArrayLike<number> | undefined,
+	size: number,
+): PointBatch {
+	sprites.positions.set(positions);
+	sprites.sizes.fill(size);
+	if (colors?.length === sprites.count * 4) sprites.colors.set(colors);
+	else if (colors) {
+		const target = sprites.colors;
+		for (let i = 0; i < sprites.count; i++)
+			for (let c = 0; c < 3; c++) target[i * 4 + c] = colors[i * 3 + c] as number;
+	}
+	return new PointBatch(sprites, checks);
 }

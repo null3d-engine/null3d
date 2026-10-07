@@ -16,12 +16,14 @@ describe('parseSwitches', () => {
 			freshShaders: false,
 			freshCheck: false,
 			wakeByMessage: false,
+			displayChecks: true,
 			hdr: true,
 			half: undefined,
 			cells: true,
 			prepass: undefined,
 			occlusion: undefined,
 			vertexSkinning: false,
+			shadowDepthBits: 16,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -38,6 +40,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
 	});
 
+	it('keeps shadow cascades in 16-bit depth unless ?shadowdepth=32 asks for 32-bit floats', () => {
+		expect(parseSwitches('?shadowdepth=32').shadowDepthBits).toBe(32);
+		expect(parseSwitches('?shadowdepth=16').shadowDepthBits).toBe(16);
+		expect(parseSwitches('?shadowdepth=24').shadowDepthBits).toBe(16);
+	});
+
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
 		expect(parseSwitches('?occlusion=on').occlusion).toBe(true);
 		expect(parseSwitches('?occlusion=off').occlusion).toBe(false);
@@ -48,6 +56,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=on').prepass).toBe(true);
 		expect(parseSwitches('?prepass=off').prepass).toBe(false);
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
+	});
+
+	it('turns GPU occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
+		expect(parseSwitches('?occlusion=on').occlusion).toBe(true);
+		expect(parseSwitches('?occlusion=off').occlusion).toBe(false);
+		expect(parseSwitches('').occlusion).toBeUndefined();
 	});
 
 	it('reads the compressed texture families that ?compression= keeps, and none for ?compression=none', () => {
@@ -152,6 +166,11 @@ describe('parseSwitches', () => {
 	it('makes the threads wake each other with messages with ?wake=message only', () => {
 		expect(parseSwitches('?wake=message').wakeByMessage).toBe(true);
 		expect(parseSwitches('?wake=atomics').wakeByMessage).toBe(false);
+	});
+
+	it('stops the checks of the display only with ?display-check=off', () => {
+		expect(parseSwitches('?display-check=off').displayChecks).toBe(false);
+		expect(parseSwitches('?display-check=on').displayChecks).toBe(true);
 	});
 
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {

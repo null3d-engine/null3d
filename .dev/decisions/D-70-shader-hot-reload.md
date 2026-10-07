@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-05. Task: M2-J2.
 
+Summary: The Vite plugin compiles WGSL on up to 8 worker threads, with each custom material split among them (960 ms on one thread, 269 ms on 8). On the dev server, WGSL edits go to the page under a key per file or tagged literal, and each backend builds the new pipelines in the background while the old ones draw. An edit that changes a material's uniforms, textures or vertex inputs reloads the page.
+
 ## Question
 
 How does an edit to WGSL reach a running dev page without a reload? And how does the Vite plugin compile WGSL without blocking the dev server, which then answers no request?

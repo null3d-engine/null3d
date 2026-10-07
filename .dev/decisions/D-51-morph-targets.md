@@ -1,6 +1,8 @@
 # D-51: Morph targets
 
-Status: decided, 2026-10-04. Task: M2-C5.
+Status: decided, 2026-10-04. Task: M2-C5. Color targets added on 2026-10-05, task M2-C11.
+
+Summary: Sparse deltas per vertex in half floats, in one RGBA16F texture, and the weights in an RGBA32F texture of their own. WebGPU morphs in the skinning pass; WebGL2 in each pass's vertex shader under the MORPH bit, keeping a preset's count of each object's largest weights (8 on Low to 64 on Ultra). Clips animate weights through joints that move no vertex. The MORPH builds load on first use, in shader files of 18.6 to 20.5 KB after Brotli, under the owner's limit of the start shader file's size. Custom materials draw morphed meshes at rest on WebGL2.
 
 ## Question
 
@@ -18,7 +20,7 @@ A morph target is a second shape of a mesh: a face that smiles, a door that bend
 
 ### Storage: sparse deltas
 
-A target of a face moves a small part of the face. three.js's morph texture holds every vertex of every target, so a face of 52 targets stores 52 copies of its vertices. The engine stores, for each vertex, only the targets that move it. An entry is one texel of the position's delta, with the target's number in its fourth value. A texel of the normal's delta and one of the tangent's follow, where the targets move them. Each vertex gets a morph attribute at location 8: its first entry's texel, and its count of entries. An RGBA16F texture, 2,048 texels wide, holds every mesh's entries. A small RGBA32F texture of the same width holds each morphed object's weights, four to a texel. That width is the widest that every WebGL2 device takes.
+A target of a face moves a small part of the face. three.js's morph texture holds every vertex of every target, so a face of 52 targets stores 52 copies of its vertices. The engine stores, for each vertex, only the targets that move it. An entry is one texel of the position's delta, with the target's number in its fourth value. A texel each of the normal's, the tangent's and the color's delta follow, where the targets move them. Each vertex gets a morph attribute at location 8: its first entry's texel, and a word for its entries. The word is the count of entries times 8, plus 1 when normals follow, 2 for tangents and 4 for colors. An RGBA16F texture, 2,048 texels wide, holds every mesh's entries. A small RGBA32F texture of the same width holds each morphed object's weights, four to a texel. That width is the widest that every WebGL2 device takes.
 
 The limits are 256 targets per mesh and 255 entries per vertex. Every mesh's deltas together take up to 4,194,304 texels, and the core's table holds 65,536 weights. The engine refuses a mesh past them with E1206, and a weight past the table with E1102.
 
@@ -127,7 +129,36 @@ The Rust tests cover both frame builders. On WebGPU they check the skinning pass
 - Clips animate weights through joints that move no vertex.
 - The MORPH builds load on first use: those without SKIN in the morph files, and those with SKIN in the skinning files. Each file keeps to the start shader file's limits.
 - Custom materials draw morphed meshes at rest on WebGL2.
-- Color morph targets are a gap. three.js morphs vertex colors through `morphAttributes.color`, and glTF allows `COLOR_0` in a target. The engine reads targets of positions, normals and tangents. Development builds note a file's other targets, and the mesh draws them at rest. Colors would add a texel to each entry, and a color input to each template's MORPH build. No sample model or port needs them yet.
+- Color targets morph vertex colors, as the next section says. Development builds note only targets of other attributes, such as texture coordinates, which three.js does not morph either.
+
+## Color targets
+
+Added on 5 October 2026 by M2-C11. Under D-52, glTF's meaning is strict, and glTF allows `COLOR_0` in a target. three.js morphs vertex colors through `morphAttributes.color`. Development builds had noted color targets, and the mesh drew them at rest.
+
+- **Storage.** A color's delta is one more texel of each entry, red, green, blue and alpha in half floats, after the tangent's. It shares the texture of deltas and its cap of 4,194,304 texels, 32 MiB. A color target of three values per vertex takes an alpha delta of 0. The vertex's morph attribute counts entries times 8, so the count keeps three bits for the kinds of delta. A count of 255 entries then gives 2,047, which a 32-bit float holds exactly.
+- **WebGPU.** The skinning pass adds each entry's color delta times its weight, and writes the color as four 32-bit floats. A morphed mesh's skinned vertex format therefore holds its colors as floats, whatever type the mesh holds them in. This costs 12 more bytes per skinned vertex for a mesh of 8-bit colors, only for morphed meshes with colors. The pass copied colors unchanged before. The color's code sits in the pass's VERTEX_COLOR builds, which skin only morphed formats with a color. The tangent's code sits in its VERTEX_TANGENT builds in the same way. A build without the bit holds no color code at all. Adreno 830 runs a write behind a runtime check even where the check is false ("Browser faults" in the [implementation notes](../implementation-notes.md)).
+- **WebGL2.** `morph_vertex` adds the color deltas with the others, in the same loop over the vertex's entries. The lit, unlit and unlit map templates pass the vertex color in and take the morphed one out under VERTEX_COLOR. The shadow, texture coordinate and debug templates pass white and ignore the result, which the shader compiler drops.
+- **Clamping.** The glTF specification says that clients should clamp `COLOR_0` to 0 to 1 after morphing. null3D does so where the vertex's entries hold colors. three.js r186 does not clamp. The two engines then differ only where the weights push a color past 0 or 1.
+- **Targets that leave an attribute out.** The specification reads a left-out attribute as a delta of 0. The loader now gives every target a list for each attribute that any target moves, with zeros where a target leaves it out. Before, a later target that moved an attribute which the first target left out failed the file. three.js r186's GLTFLoader reads a left-out color or position delta as the base attribute, which `morphTargetsRelative` then adds. That is a three.js fault, and null3D follows the specification.
+- **Types.** A color delta may be floats or normalized 8-bit or 16-bit integers, signed or not, with three or four values, as the specification's table allows. A target of four values on colors of three values keeps no alpha. The loader refuses integers that are not normalized. A primitive without `COLOR_0` must not have color targets; the loader notes them and leaves them out.
+- **three.js's renderers.** r186's WebGPURenderer packs color targets into its morph texture. Its vertex stage adds only position and normal deltas, so it draws the colors at rest. Its WebGLRenderer fails to compile a program for color targets on colors without alpha. Its `vColor` is a `vec4`, and the morph chunk adds a `vec3` to it. The parity scene therefore uses colors with alpha, and compares every tier with WebGLRenderer.
+- **The shader download.** The color work adds 0.2 to 0.4 KB after Brotli to each of the eight WebGL2 morph shader files. They take 19.9 to 21.7 KB with colors, against 19.7 to 21.4 KB on main and their limit of 24 KB. The glTF worker grows by 222 bytes after Brotli (2.2%). It reads the color targets' types, and fills the targets that leave attributes out.
+- **A WebGL2 fault on the way.** WGSL's `countOneBits` becomes GLSL's `bitCount`, which GLSL ES 3.00 lacks: it came in GLSL ES 3.10. Every WebGL2 MORPH program failed to link with it. The stride of an entry adds its three bits one by one instead. [Implementation notes](../implementation-notes.md) records the fault.
+
+### Measurements
+
+The image test `gltf-morph-colors` loads a file that the test makes in code (`colorMorphBuilder` in `tests/pages/lib/gltf-files.ts`). It has three panels of one mesh, with two targets at weights 0.75 and 0.4. The left panel has 8-bit colors with targets of three values, one of them sparse. The middle panel blends, with float colors whose targets fade the alpha, one in normalized 16-bit integers. The right panel's 16-bit colors have no color targets, so its skinned colors on WebGPU are converted, not morphed. References exist in both sets, on all three tiers.
+
+The parity check compares it with three.js r186's WebGLRenderer on every tier, by three.js's rule of under 0.1% of the pixels:
+
+| GPU set | WebGPU | Compatibility mode | WebGL2 |
+| --- | --- | --- | --- |
+| The Mac's GPU | 0.000% | 0.000% | 0.000% |
+| SwiftShader | 0.000% | 0.000% | 0.000% |
+
+Against three.js's WebGPURenderer, which leaves the color targets out, 13.0% of the pixels differ. So the scene catches color targets that a renderer does not draw. The earlier morph scenes did not change. The 26 morph image tests pass on both sets. Their parity figures on the Mac match those of the first measurements within 0.01% of the pixels.
+
+`bun run bench:allocation --morphed 64` now gives the 64 spheres vertex colors that their three targets change. Every place stayed within its budget on both GPU paths. The sketch worker took 328.8 bytes per frame on WebGPU and 342.5 on WebGL2, and the render worker 558.0 and 149.4.
 
 ## How three.js handles it
 
@@ -137,5 +168,6 @@ The Rust tests cover both frame builders. On WebGPU they check the skinning pass
 
 - `crates/null3d-core/src/morph.rs` holds the weight table and `posed_weight`; scene command 12 (`SET_MORPH`) links a block to an object.
 - `crates/null3d-render/src/morph.rs` holds the sparse deltas, the morph texture, the cap and the bounds; both builders' skin modules bind the texture.
+- `MorphTargets.colors` takes color targets in `geometry.fromArrays`, and the glTF loader reads `COLOR_0` targets into it.
 - `Mesh.setMorphWeight` and `getMorphWeight`, `MeshArrays.morphTargets`, `MeshGeometry.morphTargets` and `morphTargetNames`, and the `morphTargets` quality setting are the public API.
 - The record is in the table in [README.md](README.md).

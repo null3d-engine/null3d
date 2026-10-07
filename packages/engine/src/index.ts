@@ -82,13 +82,14 @@ export type {
 	ProgressHandler,
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
+export type { Effect, EffectOptions } from './scene/effects';
 export type {
 	BuiltinEnvironmentName,
 	Environment,
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
-export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
+export type { FogCurve, FogOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
 export type {
 	LineBatch,
@@ -110,6 +111,7 @@ export type {
 	OutlineSettings,
 	Post,
 	PostSettings,
+	ToneCurve,
 	ToneMapping,
 	VignetteSettings,
 } from './scene/post';
@@ -192,6 +194,9 @@ export type {
 	Vec3,
 } from './scene/scene';
 export type {
+	PointBatch,
+	PointOptions,
+	PointValues,
 	SpriteAtlas,
 	SpriteBatch,
 	SpriteOptions,

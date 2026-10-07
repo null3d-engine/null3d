@@ -35,6 +35,13 @@
 #              compiler adds a material's WGSL after the file's last line, and builds every variant
 #              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
 #              `fn surface`). The shader compiler holds this manifest and the entry shaders.
+#   custom_effects  True for the one template that custom effects build with. It is a template
+#              only: the build checks that it builds, with an effect that keeps each pixel, and
+#              writes no module of it. The shader compiler adds an effect's WGSL after its last
+#              line, and builds every variant with the shader def CUSTOM_EFFECT.
+#   custom_tone_curves  True for the one shader that custom tone curves build with, the final
+#              pass: the shader compiler adds a curve's WGSL after its last line, and builds every
+#              variant but its HALF builds with the shader def CUSTOM_TONE_CURVE.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -199,9 +206,20 @@ shaders = ["texcoords"]
 [shaders.final]
 file = "final.wgsl"
 by_device = true
+custom_tone_curves = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["FXAA", "HALF", "BLOOM"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["FXAA", "HALF", "BLOOM"], targets = ["glsl"] }
+
+# The template of custom effects: one triangle over the effect's target, which calls the effect's
+# function for each pixel. It builds for WebGPU, where DEPTH_MULTISAMPLED reads a multisampled
+# scene depth, and for WebGL2. Only effects build it: the build writes no module of it.
+[shaders.effect]
+file = "effect.wgsl"
+custom_effects = true
+pipelines.main = { vertex = "effect_vs", fragment = "effect_fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 
 # One step of bloom's mip chain: a 13-tap step down or a tent step up, as its uniform block says.
 # Each step reads its source with a linear filter. A step up blends over its own level.
@@ -293,6 +311,13 @@ file = "cull.wgsl"
 by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
+# The two phases of two-phase occlusion culling, from the same file: compute entry points `early`
+# and `late`. WebGPU only.
+[shaders.cull_occlusion]
+file = "cull.wgsl"
+by_device = true
+variants.webgpu = { defs = ["OCCLUSION"], targets = ["wgsl"] }
+
 # The mip levels of a layer of a texture array, one render pass per level. It loads by device, as
 # the backends make the mip levels of textures that the scene uploads. The copy pipeline copies a
 # layer texel by texel, for the WebGL2 backend.
@@ -304,10 +329,11 @@ pipelines.copy = { vertex = "vs_main", fragment = "fs_copy" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
-# Environment maps made on the GPU (D-19): the built-in room, traced from its center, blurred as
-# three.js's examples blur it, halved into a chain of levels, and filtered for each roughness, one
-# face of one level per draw. It loads on first use, with the generator code that the thread that
-# draws loads when a sketch first asks for the room.
+# Environment maps made on the GPU (D-19): the built-in room, traced from its center and blurred as
+# three.js's examples blur it, or a panorama from an HDR file mapped onto the cube; then halved into
+# a chain of levels, and filtered for each roughness, the six faces of one level per draw. It loads
+# on first use, with the generator code that the thread that draws loads when a sketch first asks
+# for the room or loads an HDR file.
 [shaders.environment]
 file = "environment.wgsl"
 first_use = true
@@ -315,6 +341,7 @@ pipelines.trace = { vertex = "vs_main", fragment = "fs_trace" }
 pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
 pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
 pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
+pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
@@ -382,11 +409,12 @@ variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }
 
 # The skinning pass on WebGPU: one thread per vertex of each part of each skinned mesh that a view
 # draws, into the skinned vertex buffer that the shadow and main passes draw. VERTEX_TANGENT builds
-# the pass for vertex formats with a tangent; the build without it holds no tangent code at all.
+# the pass for vertex formats with a tangent, and VERTEX_COLOR for those of morphed meshes with a
+# color; a build without a bit holds no code for that attribute at all.
 [shaders.skin]
 file = "skin.wgsl"
 by_device = true
-variants.webgpu = { permutations = ["VERTEX_TANGENT"], targets = ["wgsl"] }
+variants.webgpu = { permutations = ["VERTEX_TANGENT", "VERTEX_COLOR"], targets = ["wgsl"] }
 
 # A page downloads the skinning pass and every SKIN build with its first skinned mesh. The passes
 # leave skinned meshes out until every pipeline that draws or skins them is built.
@@ -398,6 +426,19 @@ bits = ["SKIN"]
 # skinning pass, so it has no MORPH builds.
 [first_use.morph]
 bits = ["MORPH"]
+
+# The depth pyramid of two-phase occlusion culling, a batch of levels per dispatch; its compute
+# entry point is `main`. WebGPU only.
+[shaders.pyramid]
+file = "pyramid.wgsl"
+by_device = true
+variants.webgpu = { targets = ["wgsl"] }
+
+# A WebGPU page downloads occlusion culling's phases and its depth pyramid when the engine runs
+# GPU occlusion culling and the scene first marks an occluder. Until their pipelines are built,
+# each camera view culls once, against the frustum alone.
+[first_use.occlusion]
+shaders = ["cull_occlusion", "pyramid"]
 
 # Light clustering on the GPU: three compute entry points, `count_lights`, `place_lights` and
 # `write_lights`, that list each cluster's point and spot lights in the light grid. WebGPU only;

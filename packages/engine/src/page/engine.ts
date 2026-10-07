@@ -32,11 +32,14 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { URL_SWITCHES } from '../shared/dev';
+import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
+import { spawnWorker } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -183,6 +186,17 @@ export interface EngineOptions {
 	 */
 	depthPrepass?: boolean;
 	/**
+	 * True to run GPU occlusion culling on WebGPU: objects that `setOccluder(true)` marks hide the
+	 * objects that lie wholly behind them, so the GPU skips those. Each camera view draws the depth
+	 * of the marked objects that it showed in the last frame and tests every object against it. It
+	 * saves GPU time where walls and large objects hide many detailed ones; a scene that marks no
+	 * object pays nothing. Every quality preset leaves it off: measure your scene's GPU time with it
+	 * first, as its passes can cost more than they save. It stays fixed while the engine runs, and
+	 * the `?occlusion=on` or `?occlusion=off` switch wins over this option. WebGL2 and the depth
+	 * prepass draw without it. Another value fails with E1213.
+	 */
+	gpuOcclusion?: boolean;
+	/**
 	 * The most morph target weights of each object that a WebGL2 device draws, a whole number from
 	 * 1 to 256. Each object keeps the weights farthest from 0. Without it, the quality preset sets
 	 * it. WebGPU draws every weight. Another value fails with E1213.
@@ -266,8 +280,10 @@ export interface EngineOptions {
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
-	 * batch, and `'background'` with a texture background. WebGPU morphs in the skinning pass, so
-	 * there `'morph'` loads the skinning shaders. Listed features download beside the engine's own
+	 * batch, `'background'` with a texture background, and `'occlusion'` with the first object that
+	 * `setOccluder(true)` marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the
+	 * skinning pass, so there `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'`
+	 * shaders to load. Listed features download beside the engine's own
 	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
@@ -443,14 +459,23 @@ export interface Engine {
 	/**
 	 * Resolves with an image of the next frame that the engine draws, as a PNG file. The thread
 	 * that draws reads the frame back and encodes it, so the page's thread does no work for it when
-	 * a worker draws. In hold mode, and while the engine is paused, the image shows the frame on the
-	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. Fails
-	 * with E1414 once the engine has stopped.
+	 * a worker draws. In hold mode it is an image of the held frame, whose pixels the page keeps, so
+	 * the GPU draws nothing for it. While the engine is paused, the image shows the frame on the
+	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. When no
+	 * new frame comes within a second or two, as after a sketch error, the image shows the frame
+	 * drawn last. Fails with E1414 once the engine has stopped, or when the thread that draws could
+	 * not read the frame back, with the cause that the GPU gave, such as a lost device or too little
+	 * memory.
 	 */
 	capture(): Promise<Blob>;
 	/**
-	 * Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first, for tests. In
-	 * hold mode, it returns the held frame.
+	 * Resolves with the pixels of the next frame that the engine draws, as RGBA8 rows, top row
+	 * first, for tests. The thread that draws waits until its frame loop has taken a new frame, then
+	 * draws that frame again offscreen and reads it back, so captures back to back give newer frames
+	 * even where each readback holds that thread up. In hold mode, and while the engine is paused,
+	 * it returns the frame on the canvas. A hidden page draws no frames, so its pixels come once the
+	 * page shows again. When no new frame comes within a second or two, as after a
+	 * sketch error, it returns the frame drawn last.
 	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
@@ -772,7 +797,8 @@ function startWorkers(
 ): EngineWorkers {
 	/** Each worker as it starts, so that a refusal can stop the ones before it. */
 	const made: Worker[] = [];
-	const kept = (worker: Worker) => {
+	const kept = (start: () => Worker) => {
+		const worker = spawnWorker(start, (code, message) => new EngineError(code, message));
 		made.push(worker);
 		return worker;
 	};
@@ -782,10 +808,11 @@ function startWorkers(
 					reused?.role === 'sketch'
 						? reused.worker
 						: kept(
-								new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-									type: 'module',
-									name: 'null3d-sketch',
-								}),
+								() =>
+									new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+										type: 'module',
+										name: 'null3d-sketch',
+									}),
 							),
 					'sketch',
 					events,
@@ -796,10 +823,11 @@ function startWorkers(
 					reused?.role === 'render'
 						? reused.worker
 						: kept(
-								new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-									type: 'module',
-									name: 'null3d-render',
-								}),
+								() =>
+									new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
+										type: 'module',
+										name: 'null3d-render',
+									}),
 							),
 					'render',
 					events,
@@ -808,10 +836,11 @@ function startWorkers(
 		const jobs = Array.from({ length: jobWorkers }, (_, index) => {
 			const job = new EngineWorker(
 				kept(
-					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-						type: 'module',
-						name: `null3d-job-${index}`,
-					}),
+					() =>
+						new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+							type: 'module',
+							name: `null3d-job-${index}`,
+						}),
 				),
 				`job ${index}`,
 				events,
@@ -829,13 +858,10 @@ function startWorkers(
 		});
 		return { sketch, render, jobs };
 	} catch (thrown) {
-		// A browser refuses a dedicated worker whose script comes from another origin, such as a CDN.
+		// A browser that refuses a worker at once, such as for a script address it cannot read.
 		for (const worker of made) worker.terminate();
 		const reason = thrown instanceof Error ? thrown.message : String(thrown);
-		throw new EngineError(
-			'E1405',
-			`the browser refused to start an engine worker: ${reason}. A worker's script must come from the page's own origin.`,
-		);
+		throw new EngineError('E1405', `the browser refused to start an engine worker: ${reason}.`);
 	}
 }
 
@@ -991,6 +1017,7 @@ async function startEngine(
 		shadowTileSize: options.shadowTileSize,
 		pointLightShadows: options.pointLightShadows,
 		depthPrepass: switches.prepass ?? options.depthPrepass,
+		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
 	};
@@ -1186,6 +1213,8 @@ async function startEngine(
 	 * memory, so each engine starts a core of its own.
 	 */
 	let localCore: CoreGlue | undefined;
+	/** The job workers' task ports that the page's on-demand loader uses, when the page runs the sketch. */
+	let jobTaskHost: JobTaskHost | undefined;
 	let stopping: Promise<void> | undefined;
 	/** The marker of a start that may crash the tab, which the start sets once it knows the tier. */
 	let markerSet = false;
@@ -1252,7 +1281,9 @@ async function startEngine(
 			// list that the page's engine holds, so the engine stays until that worker has stopped.
 			localCore?.destroyEngine();
 			// The job workers have left the job system, so the page's threaded core has no more work,
-			// and the browser can free the engine's memory once the page lets go of the core.
+			// and the browser can free the engine's memory once the page lets go of the core and of the
+			// loader's call into it.
+			clearJobTasks(jobTaskHost);
 			localCore?.releaseInstance?.();
 			release();
 		})();
@@ -1320,10 +1351,16 @@ async function startEngine(
 		}
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
+		// Occlusion culling on the GPU needs WebGPU's compute passes, and does not run with the depth
+		// prepass, which only the page turns on.
+		const tierSettings =
+			tier === 'webgl2' || pageSettings.depthPrepass
+				? { ...pageSettings, gpuOcclusion: false }
+				: pageSettings;
 		const quality: QualityStart = {
 			preset,
-			settings: checkedSettings(chosen, preset, pageSettings),
-			options: pageSettings,
+			settings: checkedSettings(chosen, preset, tierSettings),
+			options: tierSettings,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
 		};
@@ -1348,6 +1385,7 @@ async function startEngine(
 			powerPreference,
 			fps: switches.fps,
 			queue: switches.queue,
+			displayChecks: switches.displayChecks,
 			hold: hold !== undefined,
 			glTiming: switches.glTiming,
 			preload: options.preload,
@@ -1359,6 +1397,7 @@ async function startEngine(
 			transparent: options.transparent === true,
 			depthPrepass: quality.settings.depthPrepass,
 			largeWorld: options.largeWorld === true,
+			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
 		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
 		// first, so the thread that draws starts its download now, while the core downloads.
@@ -1469,13 +1508,19 @@ async function startEngine(
 		if (DEV) globalThis.addEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 
 		/**
-		 * Hands the core to the job workers. A stop waits until each job worker reports that it left the
-		 * job system, which one without the core never does.
+		 * Hands the core to the job workers, each with a port for the on-demand loader's tasks. A stop
+		 * waits until each job worker reports that it left the job system, which one without the core
+		 * never does. Returns the other end of each port, for the thread that runs the sketch.
 		 */
-		const startJobs = (jobs: readonly EngineWorker[]) => {
-			for (const [index, job] of jobs.entries())
-				job.worker.postMessage({ type: 'init', ...handoff, index });
+		const startJobs = (jobs: readonly EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
+			return jobs.map((job, index) => {
+				const tasks = new MessageChannel();
+				job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: tasks.port1 }, [
+					tasks.port1,
+				]);
+				return tasks.port2;
+			});
 		};
 		/**
 		 * Moves the canvas to the worker that draws, unless that worker kept it from an engine before.
@@ -1520,7 +1565,14 @@ async function startEngine(
 			wasmMemory = memory;
 			const imageTable = new ImageTable();
 			const render = threads?.render;
-			if (threads) startJobs(threads.jobs);
+			// The page's on-demand loader sends its tasks to this engine's job workers; without them, it
+			// starts a task worker.
+			const glue = started.glue;
+			jobTaskHost = {
+				ports: threads ? startJobs(threads.jobs) : [],
+				call: (index) => glue.callJobWorker(index),
+			};
+			setJobTasks(jobTaskHost);
 			let imagePort: MessagePort | undefined;
 			if (render) {
 				// The setup can wait for frames of the render worker: in hold mode, for a warm-up, and
@@ -1589,8 +1641,9 @@ async function startEngine(
 			}
 		} else if (threads?.sketch) {
 			const { sketch, render, jobs } = threads;
-			startJobs(jobs);
+			const taskPorts = startJobs(jobs);
 			const init: SketchWorkerInit = {
+				taskPorts,
 				type: 'init',
 				...handoff,
 				sketchUrl,
@@ -1606,15 +1659,18 @@ async function startEngine(
 			withCore.add(sketch);
 			if (renderThread === 'sketch-worker') {
 				const canvas = moveCanvas(sketch, 'sketch');
-				sketch.worker.postMessage(
-					{ ...init, renderer: { canvas, ...rendererSetup } },
-					canvas ? [canvas] : [],
-				);
+				sketch.worker.postMessage({ ...init, renderer: { canvas, ...rendererSetup } }, [
+					...(canvas ? [canvas] : []),
+					...taskPorts,
+				]);
 				rendererHost = sketch;
 			} else {
 				// Texture images go from the sketch worker straight to the thread that draws.
 				const images = new MessageChannel();
-				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [images.port1]);
+				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [
+					images.port1,
+					...taskPorts,
+				]);
 				if (render) startRenderWorker(render, images.port2);
 				else
 					localDrawing = await abortable(
@@ -1663,8 +1719,12 @@ async function startEngine(
 				return { width: reply.width, height: reply.height, pixels: reply.pixels };
 			throw captureFailure(reply);
 		};
-		/** Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. */
+		/**
+		 * Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. Hold
+		 * mode's frame is read back already, so the page encodes that and the GPU draws nothing more.
+		 */
 		const captureImage = async (): Promise<Blob> => {
+			if (held) return encodeFrame({ ...held, pixels: held.pixels.slice() }, device.transparent);
 			if (localDrawing && draw) return draw.captureImage(localDrawing, slots);
 			const reply = await rendererHost?.request({ type: 'capture', image: true });
 			if (reply?.type === 'captured-image') return reply.image;
@@ -1751,7 +1811,6 @@ async function startEngine(
 			},
 			async capture() {
 				try {
-					if (!stopped()) await nextFrame(slots, hold !== undefined);
 					if (stopped()) throw new Error('the engine has stopped');
 					return await captureImage();
 				} catch (error) {
@@ -1794,27 +1853,6 @@ async function startEngine(
 		await stop();
 		throw e;
 	}
-}
-
-/**
- * Resolves once the thread that draws has taken a frame after this call. It resolves at once when
- * no new frame comes: in hold mode, and while the engine is paused or stopped.
- */
-function nextFrame(slots: Int32Array, holding: boolean): Promise<void> {
-	const taken = Atomics.load(slots, Slot.FramesTaken);
-	return new Promise((resolve) => {
-		const check = () => {
-			if (
-				holding ||
-				Atomics.load(slots, Slot.Paused) !== 0 ||
-				Atomics.load(slots, Slot.Running) === 0 ||
-				Atomics.load(slots, Slot.FramesTaken) !== taken
-			)
-				resolve();
-			else requestAnimationFrame(check);
-		};
-		check();
-	});
 }
 
 /**

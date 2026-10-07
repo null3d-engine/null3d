@@ -139,6 +139,36 @@ export function materialResult(response: Response<MaterialBuild>): MaterialResul
 	return response.ok ? { ok: true, material: response.output } : response;
 }
 
+/** A custom effect or tone curve, built into the engine's effect template or its final pass. */
+export interface EffectBuild {
+	/** The function that the WGSL declares: `effect` or `toneCurve`. */
+	readonly function: 'effect' | 'toneCurve';
+	/** The fields of the WGSL's `struct Uniforms`, where the engine writes each. */
+	readonly uniforms: readonly CompiledUniform[];
+	/** True when the effect reads the scene's depth. */
+	readonly depth: boolean;
+	/** The template's variants with the WGSL, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
+}
+
+/** The result of a custom effect's or tone curve's compile. */
+export type EffectResult =
+	| { readonly ok: true; readonly effect: EffectBuild }
+	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
+
+/**
+ * Builds a custom effect's WGSL into every variant of the engine's effect template, or a custom
+ * tone curve's into every variant of its final pass. Problems in the WGSL name its own lines.
+ */
+export function compileEffect(effect: MaterialSource): EffectResult {
+	return effectResult(call<EffectBuild>('compile_effect', effect));
+}
+
+/** A custom effect's or tone curve's result from the module's response. */
+export function effectResult(response: Response<EffectBuild>): EffectResult {
+	return response.ok ? { ok: true, effect: response.output } : response;
+}
+
 /**
  * The result of a custom material from the results of its shares: every build, by name in the
  * order that the compiler gives them, or every problem of every share, each once with every
@@ -176,12 +206,14 @@ export function joinShares(shares: readonly MaterialResult[]): MaterialResult {
 export interface ShaderCompiler {
 	shader(shader: ShaderSource): Promise<CompileResult>;
 	material(material: MaterialSource): Promise<MaterialResult>;
+	effect(effect: MaterialSource): Promise<EffectResult>;
 }
 
 /** Compiles on this thread. */
 export const compileHere: ShaderCompiler = {
 	shader: async (shader) => compileShader(shader),
 	material: async (material) => compileMaterial(material),
+	effect: async (effect) => compileEffect(effect),
 };
 
 /** A shader manifest and every WGSL file beside it, as `bun run shaders` reads them. */
@@ -216,7 +248,7 @@ export type Response<T> =
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
 /** The name of one of the module's exports that takes a request. */
-export type CallName = 'compile' | 'compile_material' | 'build';
+export type CallName = 'compile' | 'compile_material' | 'compile_effect' | 'build';
 
 let compiled: WebAssembly.Module | undefined;
 let calls: CompilerCalls | undefined;

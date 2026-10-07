@@ -222,6 +222,59 @@ export function thirdPartyNotices(root: string): string | null {
 	return texts.length > 0 ? `${texts.join('\n\n')}\n` : null;
 }
 
+/** Vite's setting that decides which assets become data: addresses. */
+type InlineLimit = number | ((file: string, content: Buffer) => boolean | undefined);
+
+/**
+ * A test for files of the null3D packages: a file belongs to one when the nearest package.json
+ * above it names a published package of the @null3d scope. This holds for an installed package
+ * and for a package's source in a copy of the repository, where the project may not install it.
+ * Each folder's answer is kept for later files.
+ */
+function null3dPackageFiles(): (file: string) => boolean {
+	const folders = new Map<string, boolean>();
+	const inPackage = (folder: string): boolean => {
+		let known = folders.get(folder);
+		if (known === undefined) {
+			const manifest = join(folder, 'package.json');
+			const parent = dirname(folder);
+			known = existsSync(manifest)
+				? isNull3dPackage(manifest)
+				: parent !== folder && inPackage(parent);
+			folders.set(folder, known);
+		}
+		return known;
+	};
+	return (file) => inPackage(dirname(file));
+}
+
+/** True when the package.json at `manifest` names a published package of the @null3d scope. */
+function isNull3dPackage(manifest: string): boolean {
+	try {
+		const { name, private: unpublished } = JSON.parse(readFileSync(manifest, 'utf8'));
+		return typeof name === 'string' && name.startsWith('@null3d/') && unpublished !== true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Vite's inline limit with one change: no file of a null3D package becomes a data: address. The
+ * engine loads its workers' scripts, its WebAssembly and its shader files by address, and a strict
+ * Content-Security-Policy blocks a data: address, as does a worker's origin. `own` is the
+ * project's setting, which every other file keeps.
+ */
+export function inlineLimit(
+	own: InlineLimit | undefined,
+	isPackageFile: (file: string) => boolean = null3dPackageFiles(),
+): InlineLimit {
+	return (file, content) => {
+		if (isPackageFile(file)) return false;
+		if (typeof own === 'function') return own(file, content);
+		return own === undefined ? undefined : content.length < own;
+	};
+}
+
 /** True for a sketch module: a script that calls `defineSketch`. */
 function isSketchModule(path: string): boolean {
 	return existsSync(path) && readFileSync(path, 'utf8').includes('defineSketch(');
@@ -341,10 +394,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },
+				build: {
+					assetsInlineLimit: inlineLimit(config.build?.assetsInlineLimit),
+				},
 				// A prebundled copy of the engine would lose the addresses of its workers and core files.
-				// The meshopt decoder is a plain module that the glTF worker imports on first use; a
-				// prebundle found that late would reload the page.
-				optimizeDeps: { exclude: ['@null3d/engine', 'meshoptimizer'] },
+				optimizeDeps: { exclude: ['@null3d/engine'] },
 			};
 		},
 		configResolved(config) {

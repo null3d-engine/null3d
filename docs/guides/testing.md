@@ -159,9 +159,11 @@ The engine reads these switches from the page's address in development builds, o
 | `?threads=off` | The single-threaded build |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` need, such as Firefox before 145 |
 | `?render=main` | Draw on the page's main thread |
+| `?display-check=off` | Where the page's main thread draws, stop the checks of the display. While the frames run slower than the display, two frame callbacks now and then draw nothing, and the time between them measures the display's refresh rate. The switch measures what they cost |
 | `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
 | `?cells=off` | Cull every object, with no [grid cell](../concepts/culling.md) out of view skipped first, to measure what skipping cells saves |
 | `?skinning=vertex` | On WebGPU, skin skinned meshes in the vertex shader of each pass that draws them, as WebGL2 does, instead of once per frame in a compute pass, to compare the two ([Animation](../api/animation.md#skinned-meshes)). Custom materials then draw skinned meshes in their rest pose |
+| `?shadowdepth=32` | Store the directional light's shadow map in 32-bit float depth, instead of 16-bit depth, to compare the two ([Shadows](../concepts/shadows.md#bias)) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision. WebGPU needs the device feature `shader-f16`, and a device without it keeps full precision. `engine.capabilities.halfPrecision` says which one the engine took |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |

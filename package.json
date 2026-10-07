@@ -17,7 +17,8 @@
 	],
 	"scripts": {
 		"docs": "bun tools/gen-docs.ts",
-		"docs:check": "bun tools/gen-docs.ts --check && bun tools/hooks/check-commands.ts",
+		"docs:check": "bun tools/gen-docs.ts --check && bun tools/hooks/check-commands.ts && bun tools/decisions.ts --check",
+		"decisions": "bun tools/decisions.ts",
 		"docs:style": "bun tools/hooks/check-docs-style.ts --all",
 		"skills": "bun tools/skills.ts sync && bun tools/skills.ts check",
 		"skills:check": "bun tools/skills.ts check",
@@ -32,6 +33,7 @@
 		"prepare": "husky",
 		"test:browser": "bun run --cwd tests test",
 		"test:images": "bun run --cwd tests test images.spec.ts",
+		"test:browser-weights": "bun tools/shard-weights.ts",
 		"images:review": "bun tests/review-images.ts",
 		"test:packages": "bun tests/fresh-project.ts",
 		"test:shader-compiler": "NULL3D_SHADER_COMPILER=1 cargo test -p null3d-shaders --test build && bun tools/shaders.ts && NULL3D_SHADER_COMPILER=1 bun test ./packages/vite-plugin/src/shader-compiler.test.ts ./packages/vite-plugin/src/wgsl.test.ts ./packages/vite-plugin/src/declarations.test.ts ./packages/vite-plugin/src/compile-pool.test.ts",

@@ -9,6 +9,9 @@ import {
 	type CallName,
 	type CompileResult,
 	compilerModule,
+	type EffectBuild,
+	type EffectResult,
+	effectResult,
 	joinShares,
 	type MaterialBuild,
 	type MaterialResult,
@@ -64,6 +67,11 @@ export class CompilerPool implements ShaderCompiler {
 			this.run<MaterialBuild>('compile_material', { ...material, share: { index, count } }),
 		);
 		return joinShares((await Promise.all(shares)).map(materialResult));
+	}
+
+	/** Compiles a custom effect or tone curve, whose few builds take one worker. */
+	async effect(effect: MaterialSource): Promise<EffectResult> {
+		return effectResult(await this.run<EffectBuild>('compile_effect', effect));
 	}
 
 	/** Stops every worker. A later compile starts them again. */

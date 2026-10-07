@@ -18,8 +18,10 @@ use crate::Problem;
 use crate::position::locate;
 use crate::scan::{Kind, Token, matching};
 use crate::uniforms::ROW_FLOATS;
+use null3d_gpu::drawlist::sizes;
 
-/// The most textures a custom material can declare: the map slots of the material's bind group.
+/// The most textures a custom material can declare. They take the first map slots of the
+/// material's bind group, and their layers take the last floats of its row of custom values.
 pub(crate) const MAX_TEXTURES: usize = 6;
 
 /// The type a texture of a custom material has, as the WGSL declares it.
@@ -105,16 +107,16 @@ struct Edit {
 
 /// A module-scope `var` declaration: the token that starts it, its name's token, the tokens of its
 /// type, and the token that ends it.
-struct Declaration {
-    first: usize,
-    name: usize,
+pub(crate) struct Declaration {
+    pub(crate) first: usize,
+    pub(crate) name: usize,
     ty: std::ops::Range<usize>,
     end: usize,
 }
 
 /// The module-scope `var` declarations of resources, which have no address space: textures and
 /// samplers.
-fn resource_declarations(tokens: &[Token]) -> Vec<Declaration> {
+pub(crate) fn resource_declarations(tokens: &[Token]) -> Vec<Declaration> {
     let mut found = Vec::new();
     let mut depth = 0usize;
     for (index, token) in tokens.iter().enumerate() {
@@ -406,7 +408,7 @@ fn declarations(names: &[&str]) -> String {
             .map(|(k, name)| {
                 format!(
                     "@group({group}) @binding({k}) var {name}: texture_2d_array<f32>;\n@group({group}) @binding({}) var {name}{SAMPLER_SUFFIX}: sampler;\n",
-                    k + MAX_TEXTURES
+                    k + sizes::MAP_SLOTS as usize
                 )
             })
             .collect::<String>()
@@ -485,7 +487,7 @@ mod tests {
         );
         let tail = &found.declarations;
         assert!(tail.contains("@group(3) @binding(1) var noise: texture_2d_array<f32>;"));
-        assert!(tail.contains("@group(1) @binding(6) var baseSampler: sampler;"));
+        assert!(tail.contains("@group(1) @binding(8) var baseSampler: sampler;"));
         assert!(tail.contains("var<private> custom_texture_layers: array<i32, 2>;"));
         assert!(tail.contains("let t7 = custom_value(id, 7u);"));
         assert!(tail.contains("custom_texture_layers[0] = i32(t7.w);"));

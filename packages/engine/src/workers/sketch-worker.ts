@@ -13,6 +13,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { drawingSenders, ImageTable } from '../shared/images';
+import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
@@ -35,6 +36,8 @@ let controlSlots: Int32Array | undefined;
 /** The canvas that the first engine moved here in low-latency mode, which later engines draw on. */
 let canvas: OffscreenCanvas | undefined;
 let core: CoreGlue | undefined;
+/** The job workers' task ports that this worker's on-demand loader uses while the engine runs. */
+let jobTaskHost: JobTaskHost | undefined;
 
 const step = startSteps('sketch');
 
@@ -58,7 +61,10 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			controlSlots = control.slots;
 			setWakeByMessage(message.wakeByMessage);
 			const started = await startWorkerCore(message, step);
-			core = started.glue;
+			const glue = started.glue;
+			core = glue;
+			jobTaskHost = { ports: message.taskPorts, call: (index) => glue.callJobWorker(index) };
+			setJobTasks(jobTaskHost);
 			const memory = started.memory as WebAssembly.Memory;
 			// Texture images and custom materials' shaders go to the thread that draws: another
 			// through a port, or this one.
@@ -150,6 +156,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		await host.stop('sketch');
 	} else if (message.type === 'park') {
 		controlSlots = undefined;
+		clearJobTasks(jobTaskHost);
+		jobTaskHost = undefined;
 		core?.releaseInstance?.();
 		core = undefined;
 	}

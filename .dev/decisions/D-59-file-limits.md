@@ -2,6 +2,8 @@
 
 Status: decided. Date: 2026-10-04. Task: M2-R17.
 
+Summary: Every model and texture reader takes its limits from one object: 256 MiB per array or texture, a model's total of 64 MiB plus 32 times its bytes up to 1 GiB, 4,194,304 keys per clip, and KTX2 sides within `textures.maxSize`, all checked before allocation. Real models decode to at most 2.9 times their bytes. A 5 KB file that held the glTF worker for 11 minutes now fails in 3 ms. Text keys from files use maps, the parent loop check is linear, and the core builds meshes fallibly.
+
 ## Question
 
 A game can load model and texture files that its users made, or files that are broken. The review of 4 October found small files that hold the glTF worker for minutes or make it allocate hundreds of megabytes. What limits does each file get, and how are they checked before anything allocates? And how do the decoders still to come share them: Draco, WebP and AVIF images, and UASTC HDR textures?
@@ -115,12 +117,12 @@ A KTX2 texture whose sides are not whole 4 x 4 blocks still loads as RGBA8, at 4
 M2-A6 (Draco) and M2-A7 (WebP, AVIF and UASTC HDR) take their limits from `FILE_LIMITS`:
 
 - Draco runs in the job workers through M2-R18's loader. Before it decodes a mesh, it takes the decoded attribute and index bytes from the file's `FileBudget`, as meshopt views do, and each array stays within `itemBytes`.
-- WebP and AVIF images in a glTF file read their width and height from the image header with `imageSize`, as PNG and JPEG images do now. Each side must stay within `textureSide`, and each decode counts 4 bytes per pixel against the file's image budget.
-- UASTC HDR textures pass `ktx2TooLarge` with their own format's bytes per block, as ETC1S and UASTC files do.
+- WebP and AVIF images in a glTF file read their width and height from the image header with `imageSize`, as PNG and JPEG images do. Each side must stay within `textureSide`, and each decode counts 4 bytes per pixel against the file's image budget. M2-A7 built this ([D-72](D-72-image-formats.md)).
+- UASTC HDR textures pass `ktx2TooLarge` with their own format's bytes: 16 per block of BC6H, and 4 per texel of `rgb9e5ufloat`. M2-A7 built this too.
 
 ### Images
 
-A PNG or JPEG file of a few dozen bytes can claim 65,536 x 65,536 pixels. The browser then tries to allocate 16 GiB to decode it. So the readers take the size from the header first, with `imageSize`. A PNG gives it in its IHDR chunk, and a JPEG in its frame header after the segments before it. A format it does not read, or a header cut short, goes on to the browser, which refuses what it cannot decode.
+A PNG or JPEG file of a few dozen bytes can claim 65,536 x 65,536 pixels. The browser then tries to allocate 16 GiB to decode it. So the readers take the size from the header first, with `imageSize`. A PNG gives it in its IHDR chunk, and a JPEG in its frame header after the segments before it. A WebP gives it in its first chunk (`VP8 `, `VP8L` or `VP8X`). An AVIF gives it in the image spatial extents (`ispe`) of its item properties, one for each image it holds, and the reader takes the largest. A format it does not read, or a header cut short, goes on to the browser, which refuses what it cannot decode.
 
 | Where the image is | Limit on each side | Other limit | Code |
 | --- | --- | --- | --- |

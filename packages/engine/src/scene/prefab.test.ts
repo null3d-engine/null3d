@@ -1,15 +1,24 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { setErrorFixes } from '../errors/engine-error';
+import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import { AnimationRig } from './animation';
 import { CoreMemory } from './memory';
-import { boundsOf, Prefab, type TemplateNode } from './prefab';
-import { Material, MeshGeometry } from './resources';
-import { Group, Mesh, type PointLight, Scene } from './scene';
+import { boundsOf, Prefab, type PrefabOwned, type TemplateNode } from './prefab';
+import { Geometry, Material, MeshGeometry } from './resources';
+import { Group, Mesh, type PointLight, SCENE_CHECKS, Scene } from './scene';
+import type { Texture } from './textures';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
+
+/** What a prefab that no load made owns: nothing to free, and no scene that uses it. */
+const NOT_OWNED: PrefabOwned = {
+	meshes: [],
+	materials: [],
+	geometry: undefined,
+	error: SCENE_CHECKS.error,
+};
 
 /** Object slots in the fake core: room for a prefab of 1,000 objects and a copy of it. */
 const CAPACITY = 2100;
@@ -69,6 +78,13 @@ function fakeCore(largeWorld = false, growOnReserve = false) {
 	let morphEnd = 0;
 	const lights = new Map<number, { kind: number; values: Map<number, number> }>();
 	const batches: { source: number; mesh: number; material: number; part: number[] }[] = [];
+	/** The ids that each destroy call of the core got, in order. */
+	const destroyed = {
+		meshes: [] as number[],
+		meshCalls: 0,
+		materials: [] as number[],
+		skeletons: [] as number[],
+	};
 	/** The origin that each batch was given, by id. */
 	const origins = new Map<number, number[]>();
 	const glue = {
@@ -160,6 +176,21 @@ function fakeCore(largeWorld = false, growOnReserve = false) {
 		},
 		morphWeightsAddress: () => at.morphs,
 		morphWeightsFirst: (id: number) => morphs[id]?.first ?? 0,
+		createBatch: () => batches.push({ source: 0, mesh: 0, material: 0, part: [] }),
+		meshArrays: () => at.handles,
+		destroyMeshes: (count: number) => {
+			destroyed.meshes.push(...new Uint32Array(memory.buffer, at.handles, count));
+			destroyed.meshCalls++;
+			return 0;
+		},
+		destroyMaterial: (material: number) => {
+			destroyed.materials.push(material);
+			return 0;
+		},
+		destroySkeleton: (skeleton: number) => {
+			destroyed.skeletons.push(skeleton);
+			return 0;
+		},
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -177,6 +208,7 @@ function fakeCore(largeWorld = false, growOnReserve = false) {
 		failure,
 		batchLayers,
 		destroyedBatches,
+		destroyed,
 		/** A batch's first rows of positions. */
 		batchPositions(count: number) {
 			return [...new Float32Array(memory.buffer, at.batch, count * 3)];
@@ -240,6 +272,8 @@ function chainPrefab(core: CoreMemory, count: number, extra: TemplateNode[] = []
 		boundsOf([-0.5, 0, -0.5], [0.5, count, 0.5]),
 		[material],
 		[],
+		undefined,
+		NOT_OWNED,
 	);
 }
 
@@ -374,6 +408,8 @@ describe('far from the origin', () => {
 			chain.bounds,
 			[],
 			[],
+			undefined,
+			NOT_OWNED,
 		);
 		const copy = scene.instantiate(prefab, { position: FAR });
 		const [batch] = copy.batches;
@@ -449,7 +485,18 @@ describe('scene.createInstances with a prefab', () => {
 
 	test('a model without meshes, or with instancing of its own, gives E1417', () => {
 		const { core, scene } = fakeCore();
-		const empty = new Prefab(core, 'empty.glb', [], [], [], boundsOf([0, 0, 0], [0, 0, 0]), [], []);
+		const empty = new Prefab(
+			core,
+			'empty.glb',
+			[],
+			[],
+			[],
+			boundsOf([0, 0, 0], [0, 0, 0]),
+			[],
+			[],
+			undefined,
+			NOT_OWNED,
+		);
 		expect(() => scene.createInstances(empty, 4)).toThrow('E1417');
 		const prefab = chainPrefab(core, 1);
 		const instanced = new Prefab(
@@ -470,6 +517,8 @@ describe('scene.createInstances with a prefab', () => {
 			prefab.bounds,
 			[],
 			[],
+			undefined,
+			NOT_OWNED,
 		);
 		expect(() => scene.createInstances(instanced, 4)).toThrow('instancing of its own');
 	});
@@ -509,7 +558,18 @@ describe('animated prefabs', () => {
 			node({ name: 'Hat', parent: 0, mesh, material }),
 		];
 		const bounds = boundsOf([0, 0, 0], [1, 1, 1]);
-		return new Prefab(core, 'https://example.com/leg.glb', template, [], [], bounds, [], [], rig);
+		return new Prefab(
+			core,
+			'https://example.com/leg.glb',
+			template,
+			[],
+			[],
+			bounds,
+			[],
+			[],
+			rig,
+			NOT_OWNED,
+		);
 	}
 
 	test("a copy's group gets the animator, which skins the copy's skinned meshes", () => {
@@ -543,7 +603,18 @@ describe('animated prefabs', () => {
 			node({ name: 'Face', parent: 0, mesh: face, material, morph }),
 		];
 		const bounds = boundsOf([0, 0, 0], [1, 1, 1]);
-		return new Prefab(core, 'https://example.com/face.glb', template, [], [], bounds, [], [], rig);
+		return new Prefab(
+			core,
+			'https://example.com/face.glb',
+			template,
+			[],
+			[],
+			bounds,
+			[],
+			[],
+			rig,
+			NOT_OWNED,
+		);
 	}
 
 	test("a copy's morphed mesh gets weights of its own, which the copy's clips animate", () => {
@@ -613,7 +684,18 @@ describe('whole copies', () => {
 			scales: new Float32Array([1, 1, 1, 1, 1, 1]),
 			parts: chain.parts.slice(0, 1),
 		};
-		return new Prefab(core, chain.url, chain.template, chain.parts, [spec], chain.bounds, [], []);
+		return new Prefab(
+			core,
+			chain.url,
+			chain.template,
+			chain.parts,
+			[spec],
+			chain.bounds,
+			[],
+			[],
+			undefined,
+			NOT_OWNED,
+		);
 	}
 
 	test('layers reach every object of the copy and its batches, not the group alone', () => {
@@ -659,7 +741,18 @@ describe('whole copies', () => {
 			},
 		]);
 		const chain = chainPrefab(core, 2);
-		const prefab = new Prefab(core, chain.url, chain.template, [], [], chain.bounds, [], [], rig);
+		const prefab = new Prefab(
+			core,
+			chain.url,
+			chain.template,
+			[],
+			[],
+			chain.bounds,
+			[],
+			[],
+			rig,
+			NOT_OWNED,
+		);
 		Object.assign(failure, { animations: true, code: 1102, details: [6, 1024] });
 		expect(() => scene.instantiate(prefab, { name: 'hero' })).toThrow('E1102');
 		const records = take();
@@ -723,4 +816,159 @@ describe('clone walks the tree it copies', () => {
 		scene.clone(leaf);
 		expect(take()).toHaveLength(1);
 	});
+});
+
+/** A code that `call` throws, or 'none'. */
+function codeOf(call: () => unknown): string {
+	try {
+		call();
+	} catch (error) {
+		return (error as EngineError).code ?? String(error);
+	}
+	return 'none';
+}
+
+describe('mesh.destroy', () => {
+	/** A mesh that a geometry made, whose scene says which objects use it. */
+	function madeMesh(core: CoreMemory, scene: Scene, id = 7): MeshGeometry {
+		const geometry = new Geometry(core);
+		geometry.users = scene;
+		return new MeshGeometry(id, 0.5, core, 0, [], geometry);
+	}
+
+	test('frees the mesh in the engine core once, and later calls throw E1101', () => {
+		const { core, scene, destroyed } = fakeCore();
+		const mesh = madeMesh(core, scene);
+		const paint = new Material(4, core, 'materials.standard.set');
+		mesh.destroy();
+		expect(destroyed.meshes).toEqual([7]);
+		expect(codeOf(() => mesh.destroy())).toBe('E1101');
+		expect(codeOf(() => scene.createMesh({ mesh, material: paint }))).toBe('E1101');
+		expect(codeOf(() => scene.createInstances(mesh, 4, { material: paint }))).toBe('E1101');
+		expect(destroyed.meshes).toEqual([7]);
+	});
+
+	test('refuses with E1111 while an object or a batch uses the mesh, and frees it after they go', () => {
+		const { core, scene, destroyed } = fakeCore();
+		const mesh = madeMesh(core, scene);
+		const other = madeMesh(core, scene, 8);
+		const paint = new Material(4, core, 'materials.standard.set');
+		const crate = scene.createMesh({ name: 'Crate', mesh, material: paint });
+		const batch = scene.createInstances(mesh, 4, { material: paint });
+		expect(() => mesh.destroy()).toThrow(
+			/E1111: mesh.destroy\(\) was called on a mesh that "Crate" \(slot \d+\) still uses/,
+		);
+		// Another mesh in its place frees the object's hold, and the batch still holds it.
+		crate.setMesh(other);
+		expect(() => mesh.destroy()).toThrow(/an instance batch still uses/);
+		// Destroying the batch in the same frame lets the mesh go: the core frees it at the next
+		// frame, after the batch.
+		batch.destroy();
+		mesh.destroy();
+		expect(destroyed.meshes).toEqual([7]);
+		crate.destroy();
+		other.destroy();
+		expect(destroyed.meshes).toEqual([7, 8]);
+	});
+});
+
+describe('prefab.destroy', () => {
+	/** A prefab of two meshes, two materials, a texture and a rig, whose load made them all. */
+	function ownedPrefab(core: CoreMemory, scene: Scene) {
+		const geometry = new Geometry(core);
+		geometry.users = scene;
+		const body = new MeshGeometry(7, 0.5, core, 0, [], geometry);
+		const wheel = new MeshGeometry(8, 0.5, core, 0, [], geometry);
+		const paint = new Material(4, core, 'materials.standard.set');
+		const variant = new Material(5, core, 'materials.standard.set');
+		const texture = { live: true, destroy: () => (texture.live = false) };
+		const joint = {
+			name: 'Root',
+			parent: -1,
+			translation: [0, 0, 0] as [number, number, number],
+			rotation: [0, 0, 0, 1] as [number, number, number, number],
+			scale: [1, 1, 1] as [number, number, number],
+			inverseBind: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+		};
+		const rig = new AnimationRig(3, new Map([['Spin', 1]]), [joint]);
+		const template = [
+			node({ parent: -1, root: true }),
+			node({ name: 'Body', parent: 0, mesh: body, material: paint }),
+			node({ name: 'Wheel', parent: 1, mesh: wheel, material: variant }),
+		];
+		const parts = [body, wheel].map((mesh, k) => ({
+			mesh,
+			material: k === 0 ? paint : variant,
+			matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]),
+		}));
+		const prefab = new Prefab(
+			core,
+			'https://example.com/cart.glb',
+			template,
+			parts,
+			[],
+			boundsOf([0, 0, 0], [1, 1, 1]),
+			[paint],
+			[texture as unknown as Texture],
+			rig,
+			{
+				meshes: [body, wheel],
+				materials: [paint, variant],
+				geometry,
+				error: scene.checks.error,
+			},
+		);
+		return { prefab, body, paint, texture };
+	}
+
+	test('frees every mesh, material, texture and the skeleton once, and later calls throw E1101', () => {
+		const { core, scene, destroyed } = fakeCore();
+		const { prefab, texture } = ownedPrefab(core, scene);
+		prefab.destroy();
+		expect(destroyed).toEqual({ meshes: [7, 8], meshCalls: 1, materials: [4, 5], skeletons: [3] });
+		expect(texture.live).toBe(false);
+		expect(() => prefab.destroy()).toThrow(
+			/E1101: prefab.destroy\(\) was called on the model https:\/\/example.com\/cart.glb, which was destroyed/,
+		);
+		expect(codeOf(() => scene.instantiate(prefab))).toBe('E1101');
+		expect(codeOf(() => scene.createInstances(prefab, 2))).toBe('E1101');
+		expect(destroyed.meshes).toEqual([7, 8]);
+	});
+
+	test('refuses with E1111 while a copy, a batch or an object of the sketch uses the model', () => {
+		const { core, scene, destroyed } = fakeCore();
+		const { prefab, body, paint } = ownedPrefab(core, scene);
+		const copy = scene.instantiate(prefab);
+		const batch = scene.createInstances(prefab, 2);
+		expect(codeOf(() => prefab.destroy())).toBe('E1111');
+		copy.destroy();
+		expect(() => prefab.destroy()).toThrow(/an instance batch still uses/);
+		batch.destroy();
+		// The sketch's own object that draws the model's material holds the model too.
+		const mine = scene.createMesh({ name: 'Mine', mesh: madeOwn(core), material: paint });
+		expect(() => prefab.destroy()).toThrow(/"Mine" \(slot \d+\) still uses/);
+		mine.destroy();
+		// A mesh that the sketch destroyed itself is skipped.
+		body.destroy();
+		prefab.destroy();
+		expect(destroyed).toEqual({ meshes: [7, 8], meshCalls: 2, materials: [4, 5], skeletons: [3] });
+	});
+
+	test("refuses while an object animates with the model's skeleton", () => {
+		const { core, scene } = fakeCore();
+		const { prefab } = ownedPrefab(core, scene);
+		const copy = scene.instantiate(prefab);
+		// The copy's meshes go, and its group keeps the animator.
+		for (const name of ['Body', 'Wheel']) copy.find(name)?.destroy();
+		expect(() => prefab.destroy()).toThrow(
+			/E1111: prefab.destroy\(\) was called on the model https:\/\/example.com\/cart.glb, which .* still uses/,
+		);
+		copy.destroy();
+		prefab.destroy();
+	});
+
+	/** A mesh of the sketch's own, which no prefab owns. */
+	function madeOwn(core: CoreMemory): MeshGeometry {
+		return new MeshGeometry(20, 1, core);
+	}
 });

@@ -186,6 +186,48 @@ export function stairSteps(factors: Float32Array, width: number, box: PixelBox):
 }
 
 /**
+ * The widest that a row's edge counts, in pixels, in the seam check. A wider span between the
+ * edge's light and its shadow crosses another object's shadow, so the row is left out.
+ */
+export const SEAM_WIDEST_EDGE = 10;
+
+/**
+ * How sharply the softness of a shadow edge that crosses each row of `box` changes from one row to
+ * the next, in pixels: a seam line where one cascade hands over to the next. Each row's soft width
+ * is the span between the first places, from the left, where the shadow factor crosses 0.9 and
+ * 0.1. A median of each three neighboring rows takes out the texels' small steps. The figure is
+ * the largest change of that median between neighboring rows. A cascade's texels are larger than
+ * the cascade's before it, so its edges are softer. Where the cascades meet with no blend, the
+ * width jumps by pixels in one row; a blend spreads the change over the band's rows.
+ */
+export function seamJump(factors: Float32Array, width: number, box: PixelBox): number {
+	const [x0, y0, x1, y1] = box;
+	const widths: number[] = [];
+	for (let y = y0; y < y1; y++) {
+		const row = y * width;
+		const cross = (level: number) => {
+			for (let x = x0; x + 1 < x1; x++) {
+				const [a, b] = [factors[row + x] ?? 0, factors[row + x + 1] ?? 0];
+				if ((a - level) * (b - level) <= 0 && a !== b) return x + (level - a) / (b - a);
+			}
+			return Number.NaN;
+		};
+		const soft = cross(0.1) - cross(0.9);
+		if (soft >= 0 && soft <= SEAM_WIDEST_EDGE) widths.push(soft);
+	}
+	const medians = widths
+		.slice(1, -1)
+		.map(
+			(_, k) =>
+				[widths[k], widths[k + 1], widths[k + 2]].sort((a, b) => (a ?? 0) - (b ?? 0))[1] ?? 0,
+		);
+	let jump = 0;
+	for (let k = 1; k < medians.length; k++)
+		jump = Math.max(jump, Math.abs((medians[k] ?? 0) - (medians[k - 1] ?? 0)));
+	return jump;
+}
+
+/**
  * The contact check's thresholds. A pixel of the normals view counts as level, such as the ground
  * or a roof, where its normal points up within about 25 degrees, and as a side where its normal
  * lies within 30 degrees of level. A side pixel darker than `dark` faces away from the sun or lies

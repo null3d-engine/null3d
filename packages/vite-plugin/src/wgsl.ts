@@ -4,7 +4,9 @@
 // compiled result where its source was: WGSL for WebGPU, and GLSL ES 3.00 for WebGL2 with the
 // reflection that the WebGL2 backend binds by. WGSL with entry points is a whole shader. WGSL
 // without them holds a custom material's functions, such as `fn surface`, which the plugin builds
-// into every variant of the engine's standard material. WGSL that does not compile stops the
+// into every variant of the engine's standard material, or a custom effect's `fn effect` or tone
+// curve's `fn toneCurve`, which it builds into the effect template or the final pass. WGSL that
+// does not compile stops the
 // module with an error at the file, line and column of each problem.
 import { type ESTree, parseSync, Visitor } from 'vite';
 import {
@@ -158,10 +160,13 @@ function isMeshShader(source: string): boolean {
 	return false;
 }
 
-/** True when WGSL declares a function of a custom material, such as `fn surface`. */
-function declaresMaterialFunction(source: string): boolean {
+/** The functions that a custom effect's or tone curve's WGSL declares for the engine to call. */
+const POST_FUNCTIONS: ReadonlySet<string> = new Set(['effect', 'toneCurve']);
+
+/** True when WGSL declares a function of `functions`, such as a custom material's `fn surface`. */
+function declaresFunction(source: string, functions: ReadonlySet<string>): boolean {
 	for (const match of blankComments(source).matchAll(FUNCTION))
-		if (MATERIAL_FUNCTIONS.has(match[2] ?? '')) return true;
+		if (functions.has(match[2] ?? '')) return true;
 	return false;
 }
 
@@ -209,7 +214,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point and no function of a custom material. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material or effect. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, or both. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, and for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {
@@ -256,8 +261,9 @@ export type WgslCompile =
 /**
  * Compiles WGSL from a project with the engine's shader library. A whole shader builds for WebGPU,
  * and for WebGL2 when it has a render pipeline. A custom material's functions build into every
- * variant of the engine's standard material. `path` names the file in messages, and `hint` ends
- * the message about WGSL that is neither. `compiler` runs the compile, on this thread by default.
+ * variant of the engine's standard material, and a custom effect's or tone curve's into its
+ * template. `path` names the file in messages, and `hint` ends the message about WGSL that is
+ * none of these. `compiler` runs the compile, on this thread by default.
  */
 export async function compileWgsl(
 	path: string,
@@ -265,7 +271,16 @@ export async function compileWgsl(
 	hint: string,
 	compiler: ShaderCompiler = compileHere,
 ): Promise<WgslCompile> {
-	const material = entryPoints(source).length === 0 && declaresMaterialFunction(source);
+	const noEntryPoints = entryPoints(source).length === 0;
+	if (noEntryPoints && declaresFunction(source, POST_FUNCTIONS)) {
+		const result = await compiler.effect({ path, source });
+		// Effects and tone curves build for both GPU paths.
+		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
+		const { function: kind, uniforms, depth, variants } = result.effect;
+		if (kind === 'toneCurve') return { ok: true, shader: { kind, variants } };
+		return { ok: true, shader: { kind, uniforms, depth, variants } };
+	}
+	const material = noEntryPoints && declaresFunction(source, MATERIAL_FUNCTIONS);
 	if (material || isMeshShader(source)) {
 		const result = await compiler.material({ path, source });
 		// Custom materials build for both GPU paths.

@@ -16,7 +16,7 @@ function helix(x: number, z: number): number[] {
 
 export default defineSketch(async ({ scene, materials, geometry }) => {
 	scene.setBackground('#202830');
-	scene.setFog({ type: 'linear', color: '#202830', near: 6, far: 16 });
+	scene.setFog({ curve: 'linear', color: '#202830', near: 6, far: 16 });
 	scene.createDirectionalLight({ direction: [-1, -2, -1], color: '#ffffff', intensity: 3 });
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.3 });
 	scene.createPointLight({ position: [0, 1.4, 1], color: '#ff4030', intensity: 8, range: 4 });

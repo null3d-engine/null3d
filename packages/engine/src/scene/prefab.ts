@@ -5,10 +5,10 @@
 // so the scene imports this module for its types alone, and calls the prefab's methods.
 
 import type { Vec3Like } from '../math/types';
-import { type AnimationRig, animateObject, morphObject, skinObject } from './animation';
+import { type AnimationRig, animateObject, destroyRig, morphObject, skinObject } from './animation';
 import type { CoreMemory } from './memory';
-import type { Material, MeshGeometry } from './resources';
-import type { Mesh, Object3D } from './scene';
+import type { Geometry, Material, MeshGeometry } from './resources';
+import type { Mesh, Object3D, SceneChecks } from './scene';
 import type { Texture } from './textures';
 
 /** @internal A light that a template node creates: its kind and values in the light table. */
@@ -122,13 +122,29 @@ export interface PrefabNode {
 }
 
 /**
+ * @internal What a prefab owns besides its public lists: every mesh and material that its load
+ * made, the variants of its materials among them, the geometry that made the meshes, whose scene
+ * says which objects use them, and the scene's maker of errors. This module loads on first use,
+ * so it takes them rather than import engine code.
+ */
+export interface PrefabOwned {
+	meshes: readonly MeshGeometry[];
+	materials: readonly Material[];
+	geometry: Geometry | undefined;
+	error: SceneChecks['error'];
+}
+
+/**
  * A model that `assets.loadGltf` loaded: a template whose meshes, materials and textures exist
  * once, on the GPU. Every copy shares them. `scene.instantiate` creates a copy of its objects.
- * `scene.createInstances` draws many copies with instance batches. A prefab does not change.
+ * `scene.createInstances` draws many copies with instance batches. A prefab does not change until
+ * `destroy` frees it.
  *
  * @category api/assets
  */
 export class Prefab {
+	private destroyed = false;
+
 	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
@@ -147,8 +163,50 @@ export class Prefab {
 		/** The model's textures, in the order the file names their images. */
 		readonly textures: readonly Texture[],
 		/** @internal The skeleton and clips that every copy animates with, if the model has any. */
-		readonly rig?: AnimationRig,
+		readonly rig: AnimationRig | undefined,
+		/** @internal What the prefab frees besides its public lists. */
+		private readonly owned: PrefabOwned,
 	) {}
+
+	/**
+	 * Destroys the model, like calling three.js's `dispose()` on each geometry, material and
+	 * texture of a loaded glTF scene. It frees the GPU memory and the engine data of every mesh,
+	 * material and texture that the load made, and of its skeleton and animation clips. Destroy
+	 * the copies that `scene.instantiate` and `scene.createInstances` made first, and the objects
+	 * that use one of its meshes or materials, in the same frame or before. Throws E1111 while one
+	 * still does, and E1101 for a model that is destroyed already. Materials of your own that map
+	 * one of the model's textures draw with their colors alone afterwards. Later calls that pass
+	 * the model throw E1101.
+	 */
+	destroy(): void {
+		const call = 'prefab.destroy';
+		this.checkLive(call);
+		const { meshes, materials, geometry, error } = this.owned;
+		const user = geometry?.users?.userOf(new Set(meshes), new Set(materials), this.rig);
+		if (user)
+			throw error(
+				'E1111',
+				`${call}() was called on ${this.describe()}, which ${user} still uses. Destroy its copies and the objects that use its meshes or materials first.`,
+			);
+		// A mesh, material or texture that the sketch destroyed itself is gone already.
+		geometry?.destroyMeshes(
+			meshes.filter((mesh) => mesh.live),
+			call,
+		);
+		for (const material of materials) if (material.live) material.destroy();
+		for (const texture of this.textures) if (texture.live) texture.destroy();
+		if (this.rig) destroyRig(this.core, this.rig);
+		this.destroyed = true;
+	}
+
+	/** @internal Throws E1101 once the model is destroyed. */
+	checkLive(call: string): void {
+		if (this.destroyed)
+			throw this.owned.error(
+				'E1101',
+				`${call}() was called on ${this.describe()}, which was destroyed.`,
+			);
+	}
 
 	/** The names of the model's clips, which a copy's animator plays. */
 	get clips(): readonly string[] {

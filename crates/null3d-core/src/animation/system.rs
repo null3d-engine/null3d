@@ -36,7 +36,7 @@ pub const EVENT_CAPACITY: usize = 1024;
 /// bits), its kind (bits 8 to 15) and its clip's layer (low 8 bits); the clip; the clip event's id.
 pub const EVENT_WORDS: usize = 4;
 
-/// The skeleton of an instance id that holds no instance: one that was removed.
+/// The skeleton of an instance id that holds no instance, and of a removed clip or mask.
 const REMOVED: u32 = u32::MAX;
 
 /// The source clip of a sample slot that no play fills ([`SampleSlots::source`]).
@@ -219,6 +219,10 @@ pub struct Animations {
     additive_clips: Vec<u32>,
     pub(super) clip_events: Vec<ClipEvents>,
     masks: Vec<Mask>,
+    /// The ids of removed skeletons, clips and masks, which the next ones added take.
+    free_skeletons: Vec<u32>,
+    free_clips: Vec<u32>,
+    free_masks: Vec<u32>,
     /// The skeleton of each instance, or [`REMOVED`].
     instance_skeletons: Box<[u32]>,
     /// The first joint of each instance in the matrix buffer.
@@ -284,6 +288,9 @@ impl Animations {
             additive_clips: Vec::new(),
             clip_events: Vec::new(),
             masks: Vec::new(),
+            free_skeletons: Vec::new(),
+            free_clips: Vec::new(),
+            free_masks: Vec::new(),
             instance_skeletons: boxed(n, REMOVED)?,
             first_joints: boxed(n, 0)?,
             instances: 0,
@@ -316,24 +323,15 @@ impl Animations {
         })
     }
 
-    /// Adds a skeleton and returns its id.
+    /// Adds a skeleton and returns its id: a removed skeleton's, or a new one.
     pub fn add_skeleton(&mut self, skeleton: Skeleton) -> Result<u32, AnimationError> {
         let lanes = skeleton.lanes();
         if lanes > self.scratch_lanes {
-            let len = POSE_FIELDS * lanes as usize;
-            for scratch in &mut self.scratch {
-                *scratch.0.get_mut() = Scratch {
-                    pose: boxed(len, 0.0)?,
-                    sample: boxed(len, 0.0)?,
-                    layer: boxed(len, 0.0)?,
-                    add: boxed(len, 0.0)?,
-                    weights: boxed(3 * lanes as usize, 0.0)?,
-                    shares: boxed(3 * lanes as usize, 0.0)?,
-                    matrices: boxed(lanes as usize, [0.0; MATRIX_FLOATS])?,
-                };
-            }
-            self.ones = boxed(lanes as usize, 1.0)?;
-            self.scratch_lanes = lanes;
+            self.size_scratch(lanes)?;
+        }
+        if let Some(id) = self.free_skeletons.pop() {
+            self.skeletons[id as usize] = skeleton;
+            return Ok(id);
         }
         self.skeletons
             .try_reserve(1)
@@ -342,9 +340,85 @@ impl Animations {
         Ok(self.skeletons.len() as u32 - 1)
     }
 
-    /// The skeleton with this id.
+    /// Gives each thread's scratch memory room for skeletons of `lanes` lanes, and no more.
+    fn size_scratch(&mut self, lanes: u32) -> Result<(), AnimationError> {
+        let len = POSE_FIELDS * lanes as usize;
+        for scratch in &mut self.scratch {
+            *scratch.0.get_mut() = Scratch {
+                pose: boxed(len, 0.0)?,
+                sample: boxed(len, 0.0)?,
+                layer: boxed(len, 0.0)?,
+                add: boxed(len, 0.0)?,
+                weights: boxed(3 * lanes as usize, 0.0)?,
+                shares: boxed(3 * lanes as usize, 0.0)?,
+                matrices: boxed(lanes as usize, [0.0; MATRIX_FLOATS])?,
+            };
+        }
+        self.ones = boxed(lanes as usize, 1.0)?;
+        self.scratch_lanes = lanes;
+        Ok(())
+    }
+
+    /// Removes skeleton `skeleton` with its clips, their additive versions and events, and its
+    /// joint masks. Their ids go to the next ones added. Each thread's scratch memory shrinks to
+    /// the largest skeleton left. Fails while a live instance uses the skeleton.
+    pub fn remove_skeleton(&mut self, skeleton: u32) -> Result<(), AnimationError> {
+        if self.skeleton(skeleton).is_none() {
+            return Err(AnimationError::UnknownSkeleton { skeleton });
+        }
+        if let Some(instance) =
+            (0..self.instances).find(|&i| self.instance_skeletons[i as usize] == skeleton)
+        {
+            return Err(AnimationError::SkeletonInUse { instance });
+        }
+        let failed = |_| out_of_memory(size_of::<u32>());
+        let clips = self
+            .clip_skeletons
+            .iter()
+            .filter(|&&s| s == skeleton)
+            .count();
+        let masks = self.masks.iter().filter(|m| m.skeleton == skeleton).count();
+        self.free_skeletons.try_reserve(1).map_err(failed)?;
+        self.free_clips.try_reserve(clips).map_err(failed)?;
+        self.free_masks.try_reserve(masks).map_err(failed)?;
+        self.skeletons[skeleton as usize] = Skeleton::default();
+        self.free_skeletons.push(skeleton);
+        for clip in 0..self.clips.len() {
+            if self.clip_skeletons[clip] != skeleton {
+                continue;
+            }
+            self.clips[clip] = Clip::default();
+            self.clip_events[clip] = ClipEvents::default();
+            self.clip_skeletons[clip] = REMOVED;
+            self.additive_clips[clip] = u32::MAX;
+            self.free_clips.push(clip as u32);
+        }
+        for (id, mask) in self.masks.iter_mut().enumerate() {
+            if mask.skeleton == skeleton {
+                *mask = Mask {
+                    skeleton: REMOVED,
+                    weights: Box::default(),
+                };
+                self.free_masks.push(id as u32);
+            }
+        }
+        let lanes = self
+            .skeletons
+            .iter()
+            .map(Skeleton::lanes)
+            .max()
+            .unwrap_or(0);
+        if lanes < self.scratch_lanes {
+            self.size_scratch(lanes)?;
+        }
+        Ok(())
+    }
+
+    /// The live skeleton with this id.
     pub fn skeleton(&self, skeleton: u32) -> Option<&Skeleton> {
-        self.skeletons.get(skeleton as usize)
+        self.skeletons
+            .get(skeleton as usize)
+            .filter(|s| s.joints() > 0)
     }
 
     /// Adds a clip that [`super::resample`] built for skeleton `skeleton`, and returns its id.
@@ -359,12 +433,39 @@ impl Animations {
                 skeleton_joints: joints,
             });
         }
-        let id = self.clips.len() as u32;
-        self.push_clip(skeleton, clip, id)
+        self.push_clip(skeleton, clip, None)
     }
 
-    /// Stores a clip with its skeleton and source, and returns its id.
-    fn push_clip(&mut self, skeleton: u32, clip: Clip, source: u32) -> Result<u32, AnimationError> {
+    /// The clips held now that [`super::resample`] evaluated at each frame, in some track at
+    /// least. The others were copied from keys already on their frames, and removed clips hold no
+    /// tracks.
+    pub fn resampled_clips(&self) -> u32 {
+        // An additive clip counts through its source.
+        self.clips
+            .iter()
+            .enumerate()
+            .filter(|(k, clip)| self.clip_sources[*k] as usize == *k && clip.resampled_tracks() > 0)
+            .count() as u32
+    }
+
+    /// Stores a clip with its skeleton and source, or itself as its source with `None`, and
+    /// returns its id: a removed clip's, or a new one.
+    fn push_clip(
+        &mut self,
+        skeleton: u32,
+        clip: Clip,
+        source: Option<u32>,
+    ) -> Result<u32, AnimationError> {
+        if let Some(id) = self.free_clips.pop() {
+            let k = id as usize;
+            self.clips[k] = clip;
+            self.clip_skeletons[k] = skeleton;
+            self.clip_sources[k] = source.unwrap_or(id);
+            self.additive_clips[k] = u32::MAX;
+            self.clip_events[k] = ClipEvents::default();
+            return Ok(id);
+        }
+        let source = source.unwrap_or(self.clips.len() as u32);
         let failed = |_| out_of_memory(size_of::<Clip>());
         self.clips.try_reserve(1).map_err(failed)?;
         self.clip_skeletons.try_reserve(1).map_err(failed)?;
@@ -379,9 +480,11 @@ impl Animations {
         Ok(self.clips.len() as u32 - 1)
     }
 
-    /// The clip with this id.
+    /// The live clip with this id.
     pub fn clip(&self, clip: u32) -> Option<&Clip> {
-        self.clips.get(clip as usize)
+        self.clips
+            .get(clip as usize)
+            .filter(|_| self.clip_skeletons[clip as usize] != REMOVED)
     }
 
     /// The additive version of clip `clip` ([`Clip::additive`]), which it builds on first use.
@@ -396,7 +499,7 @@ impl Animations {
         }
         let additive = self.clips[source as usize].additive()?;
         let skeleton = self.clip_skeletons[source as usize];
-        let id = self.push_clip(skeleton, additive, source)?;
+        let id = self.push_clip(skeleton, additive, Some(source))?;
         self.additive_clips[source as usize] = id;
         Ok(id)
     }
@@ -410,10 +513,10 @@ impl Animations {
         times: &[f32],
         ids: &[u32],
     ) -> Result<(), AnimationError> {
-        let source = *self
-            .clip_sources
-            .get(clip as usize)
-            .ok_or(AnimationError::UnknownClip { clip })?;
+        if self.clip(clip).is_none() {
+            return Err(AnimationError::UnknownClip { clip });
+        }
+        let source = self.clip_sources[clip as usize];
         let duration = self.clips[source as usize].duration();
         if times.len() != ids.len() {
             return Err(AnimationError::Events {
@@ -458,13 +561,18 @@ impl Animations {
         }
         let mut padded = filled(target.lanes() as usize, 0.0f32)?;
         padded[..weights.len()].copy_from_slice(weights);
+        let mask = Mask {
+            skeleton,
+            weights: padded.into_boxed_slice(),
+        };
+        if let Some(id) = self.free_masks.pop() {
+            self.masks[id as usize] = mask;
+            return Ok(id);
+        }
         self.masks
             .try_reserve(1)
             .map_err(|_| out_of_memory(size_of::<Mask>()))?;
-        self.masks.push(Mask {
-            skeleton,
-            weights: padded.into_boxed_slice(),
-        });
+        self.masks.push(mask);
         Ok(self.masks.len() as u32 - 1)
     }
 

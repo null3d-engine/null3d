@@ -241,7 +241,7 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		);
 		expect([none.line, none.column]).toEqual([1, 1]);
 		expect(none.message).toStartWith(
-			'the WGSL has no entry point and no function of a custom material.',
+			'the WGSL has no entry point and no function of a custom material or effect.',
 		);
 		expect(none.message).toEndWith(' HINT');
 		const twice = SHADER.replace(
@@ -255,6 +255,58 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(failure(await compileWgsl('a.wgsl', alone, HINT)).message).toContain(
 			'no `@fragment` one',
 		);
+	});
+
+	it('builds an effect into the effect template, with its uniforms and depth read', async () => {
+		const effect = /* wgsl */ `struct Uniforms { amount: f32, tint: vec3f }
+
+fn effect(input: EffectInput) -> vec4f {
+    let fade = clamp(effectDistance(input.uv) * 0.01, 0.0, 1.0);
+    return vec4f(mix(input.color.rgb, uniforms.tint, fade * uniforms.amount), input.color.a);
+}
+`;
+		const result = await compileWgsl('src/fog.wgsl', effect, HINT);
+		if (!result.ok) throw new Error(JSON.stringify(result.problems));
+		const built = result.shader;
+		if (built.kind !== 'effect') throw new Error(`a ${built.kind}`);
+		expect(built.uniforms.map((u) => [u.name, u.type, u.offset])).toEqual([
+			['amount', 'f32', 0],
+			['tint', 'vec3f', 4],
+		]);
+		expect(built.depth).toBe(true);
+		expect(Object.keys(built.variants).sort()).toEqual([
+			'webgl2',
+			'webgpu',
+			'webgpu_depth_multisampled',
+		]);
+		expect(built.variants.webgl2?.glsl?.main?.fragment.source).toContain('#version 300 es');
+	});
+
+	it("stops a script at the line of a bad effect's problem in the script", async () => {
+		const code = [
+			"import { defineSketch } from '@null3d/engine';",
+			'',
+			'const fade = /* wgsl */ `',
+			'fn effect(input: EffectInput) -> vec4f {',
+			'    return input.color * strength;',
+			'}',
+			'`;',
+			'',
+		].join('\n');
+		const result = await compileTaggedWgsl(code, '/project/src/sketch.ts', 'src/sketch.ts');
+		if (!('error' in result)) throw new Error('the bad effect compiled');
+		expect(result.error.loc).toEqual({ file: '/project/src/sketch.ts', line: 5, column: 26 });
+		expect(result.error.message).toContain('src/sketch.ts:5:26:');
+	});
+
+	it('builds a tone curve into the final pass, and names a bad effect line', async () => {
+		const curve = 'fn toneCurve(color: vec3f) -> vec3f {\n    return color / (1.0 + color);\n}\n';
+		const result = await compileWgsl('src/curve.wgsl', curve, HINT);
+		if (!result.ok) throw new Error(JSON.stringify(result.problems));
+		expect(result.shader.kind).toBe('toneCurve');
+		const bad = 'fn effect(input: EffectInput) -> vec4f {\n    return input.color * missing;\n}\n';
+		const problem = failure(await compileWgsl('src/bad.wgsl', bad, HINT));
+		expect([problem.file, problem.line]).toEqual(['src/bad.wgsl', 2]);
 	});
 
 	it('builds a surface function into every variant of the standard material', async () => {

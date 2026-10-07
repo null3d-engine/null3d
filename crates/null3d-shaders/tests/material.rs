@@ -473,7 +473,7 @@ fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     for line in [
         "@group(1) @binding(0)\nvar detail: texture_2d_array<f32>;",
-        "@group(1) @binding(7)\nvar heightsSampler: sampler;",
+        "@group(1) @binding(9)\nvar heightsSampler: sampler;",
         "load_custom_texture_layers(",
     ] {
         assert!(wgsl.contains(line), "{line}\n{wgsl}");
@@ -626,7 +626,8 @@ fn custom_materials_build_arrays_without_sized_array_types_in_glsl() {
         for program in variant.glsl.iter().flat_map(|programs| programs.values()) {
             checked += 1;
             for (stage, fragment) in [(&program.vertex, false), (&program.fragment, true)] {
-                let breaks = precision::precision_breaks(&stage.source, fragment);
+                let mut breaks = precision::precision_breaks(&stage.source, fragment);
+                breaks.extend(precision::newer_built_in_calls(&stage.source));
                 assert!(breaks.is_empty(), "{name}: {breaks:#?}\n{}", stage.source);
             }
         }

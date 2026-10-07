@@ -10,6 +10,8 @@ import {
 	MAP_SLOT_METAL_ROUGH,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_OCCLUSION,
+	MAP_SLOT_SPECULAR_COLOR,
+	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_BLEND,
@@ -30,12 +32,14 @@ import {
 	MATERIAL_PARAM_NORMAL_SCALE,
 	MATERIAL_PARAM_OCCLUSION_STRENGTH,
 	MATERIAL_PARAM_OPACITY,
+	MATERIAL_PARAM_REFLECTANCE,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_SPECULAR_COLOR,
+	MATERIAL_PARAM_SPECULAR_INTENSITY,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
-	SHADING_CUSTOM_FIRST,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
@@ -51,14 +55,28 @@ import {
 	SHAPE_TORUS,
 } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
-import type { CustomShader, ShaderSender } from '../shared/images';
+import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
 import { ShaderPreloads } from './shader-preloads';
+import { ShaderTemplates } from './shader-templates';
 import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
+
+/**
+ * @internal What a destroy asks before it frees anything: a description of the first live object
+ * or instance batch that uses one of `meshes` or `materials`, or that `rig` animates, or undefined
+ * when none does. The scene answers.
+ */
+export interface ResourceUsers {
+	userOf(
+		meshes: ReadonlySet<MeshGeometry>,
+		materials?: ReadonlySet<Material>,
+		rig?: object,
+	): string | undefined;
+}
 
 /**
  * A mesh the engine can draw: its id in the engine core, its bounding radius, and its morph
@@ -67,9 +85,12 @@ import type { TextureValues, UniformType, UniformValue, UniformValues } from './
  * @category api/geometry
  */
 export class MeshGeometry {
+	/** The engine core's id, or 0 once the mesh is destroyed. */
+	private liveId: number;
+
 	/** @internal */
 	constructor(
-		/** @internal */ readonly id: number,
+		id: number,
 		/** The distance from the mesh's origin to its farthest vertex, at rest. */
 		readonly radius: number,
 		/** @internal */ readonly core: CoreMemory,
@@ -80,7 +101,63 @@ export class MeshGeometry {
 		 * three.js's `morphTargetDictionary`, turned around. `mesh.setMorphWeight` takes a name too.
 		 */
 		readonly morphTargetNames: readonly string[] = [],
-	) {}
+		/** The geometry that made the mesh, whose scene says which objects use it. */
+		private readonly maker?: Geometry,
+	) {
+		this.liveId = id;
+	}
+
+	/** @internal The engine core's id. Throws E1101 once the mesh is destroyed. */
+	get id(): number {
+		if (this.liveId === 0)
+			throw new EngineError('E1101', 'a call used a mesh after its destroy().');
+		return this.liveId;
+	}
+
+	/** @internal True until `destroy` runs. */
+	get live(): boolean {
+		return this.liveId !== 0;
+	}
+
+	/**
+	 * Destroys the mesh, like three.js's `geometry.dispose()`. The engine frees its GPU memory and
+	 * its other data at once, and later meshes take its room. Destroy the objects and instance
+	 * batches that use it first, in the same frame or before. Throws E1111 while one
+	 * still uses it, and E1101 for a mesh that is destroyed already. Later calls that pass the mesh
+	 * throw E1101.
+	 */
+	destroy(): void {
+		const call = 'mesh.destroy';
+		const user = this.maker?.users?.userOf(new Set([this]));
+		if (user)
+			throw new EngineError(
+				'E1111',
+				`${call}() was called on a mesh that ${user} still uses. Destroy the objects and instance batches that use it first.`,
+			);
+		destroyMeshes(this.core, [this], call);
+	}
+
+	/** @internal Marks the mesh destroyed, once the engine core freed it. */
+	ended(): void {
+		this.liveId = 0;
+	}
+}
+
+/**
+ * @internal Frees live meshes in the engine core in one pass, which no object or batch uses any
+ * more, and marks them destroyed. The meshes that stay move once for all of them.
+ */
+export function destroyMeshes(
+	core: CoreMemory,
+	meshes: readonly MeshGeometry[],
+	call: string,
+): void {
+	if (meshes.length === 0) return;
+	const ids = meshes.map((mesh) => mesh.id);
+	const at = core.checkGrowth(core.glue.meshArrays(ids.length), call);
+	core.u32(at, ids.length).set(ids);
+	core.check(core.glue.destroyMeshes(meshes.length), call, 'a mesh', true);
+	for (const mesh of meshes) mesh.ended();
 }
 
 /**
@@ -381,10 +458,11 @@ export type VertexValues = Float32Array | IntegerArray | readonly number[] | Ver
 
 /**
  * A mesh's morph targets, like three.js's `morphAttributes` with `morphTargetsRelative` set, as
- * glTF stores them. Each list holds one array per target, of three numbers per vertex. They say how
- * far the target moves the vertex's position, normal or tangent at weight 1. Every list has the same number
- * of targets, from 1 to 256. A mesh's targets move its vertices by their weights, which each
- * object sets with `setMorphWeight`, and clips animate.
+ * glTF stores them. Each list holds one array per target, of three numbers per vertex, or for
+ * colors as many as the mesh's `colors` hold. They say how far the target moves the vertex's
+ * position, normal, tangent or color at weight 1. Every list has the same number of targets, from
+ * 1 to 256. A mesh's targets move its vertices by their weights, which each object sets with
+ * `setMorphWeight`, and clips animate.
  *
  * @category api/geometry
  */
@@ -398,6 +476,12 @@ export interface MorphTargets {
 	 * glTF gives them. three.js does not morph tangents.
 	 */
 	tangents?: readonly (Float32Array | readonly number[])[];
+	/**
+	 * For each target, how far it changes each vertex color: three or four numbers per vertex, as
+	 * many as the mesh's `colors` hold, in linear color. Like `morphAttributes.color`. A morphed
+	 * color is clamped to the range 0 to 1, as the glTF specification asks. Needs `colors`.
+	 */
+	colors?: readonly (Float32Array | readonly number[])[];
 	/** The targets' names, one per target, which `setMorphWeight` takes in place of numbers. */
 	names?: readonly string[];
 }
@@ -491,11 +575,32 @@ export interface MeshArrays {
  * @category api/geometry
  */
 export class Geometry {
+	/** @internal The scene, which says which objects use a mesh that a destroy names. */
+	users: ResourceUsers | undefined;
+
 	constructor(private readonly core: CoreMemory) {}
+
+	/**
+	 * The GPU bytes that every mesh holds: the shared vertex and index buffers, which keep room to
+	 * grow, and the texture of morph target deltas. It counts what the frames made so far, so it
+	 * grows once a frame draws a new mesh. Destroyed meshes give their room to later ones, so a
+	 * scene that loads and destroys the same models keeps the same figure.
+	 */
+	get memoryBytes(): number {
+		return this.core.glue.meshMemoryBytes();
+	}
+
+	/**
+	 * @internal Frees live meshes that no object or batch uses any more, in one pass, as a model's
+	 * destroy does.
+	 */
+	destroyMeshes(meshes: readonly MeshGeometry[], call: string): void {
+		destroyMeshes(this.core, meshes, call);
+	}
 
 	private mesh(id: number, call: string): MeshGeometry {
 		this.core.checkGrowth(id, call);
-		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core);
+		return new MeshGeometry(id, this.core.glue.meshRadius(id), this.core, 0, [], this);
 	}
 
 	/**
@@ -588,6 +693,7 @@ export class Geometry {
 			this.core,
 			morphTargetCount(morphTargets),
 			morphTargets?.names?.slice() ?? [],
+			this,
 		);
 	}
 }
@@ -680,6 +786,27 @@ export interface StandardValues extends MaterialOptions {
 	/** The factor of the light map's light: 0 or more. The default is 1. */
 	lightMapIntensity?: number;
 	/**
+	 * The index of refraction of the surface's non-metallic part, 1 or more, as three.js's
+	 * `MeshPhysicalMaterial.ior`. It sets how much light the surface reflects when seen head on:
+	 * `((ior - 1) / (ior + 1))^2`. The default is 1.5, which reflects 4%, as glTF's metallic-roughness
+	 * model does.
+	 */
+	ior?: number;
+	/**
+	 * The strength of the specular reflection of the surface's non-metallic part, from 0 to 1, as
+	 * three.js's `specularIntensity`. It scales the reflection at every angle, so 0 leaves only
+	 * diffuse light. Metals ignore it. The default is 1.
+	 */
+	specularIntensity?: number;
+	/**
+	 * The color that tints the specular reflection of the surface's non-metallic part when seen head
+	 * on, as three.js's `specularColor`. At grazing angles the reflection stays white, and metals
+	 * ignore it. It takes the forms that `color` takes, and its three linear components may also
+	 * exceed 1, as glTF allows, to reflect more than the index of refraction gives, up to all the
+	 * light. The default is white.
+	 */
+	specularColor?: ColorInput;
+	/**
 	 * The factor of the scene environment's light on the surface, 0 or more, as three.js's
 	 * `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The
 	 * default is 1.
@@ -729,6 +856,10 @@ export interface StandardMaps {
 	emissiveMap?: Texture;
 	/** Baked light, added to the ambient light. Light maps usually use the second coordinates. */
 	lightMap?: Texture;
+	/** The specular intensity in alpha, in linear color. Its alpha multiplies `specularIntensity`. */
+	specularIntensityMap?: Texture;
+	/** The specular color, in sRGB. Its color multiplies `specularColor`. */
+	specularColorMap?: Texture;
 }
 
 /**
@@ -813,8 +944,11 @@ export interface UnlitOptions extends UnlitValues, MaterialFeatures {
  * @category api/materials
  */
 export interface CompiledWgsl {
-	/** `'material'` for the functions of a custom material, and `'shader'` for a whole shader. */
-	readonly kind: 'material' | 'shader';
+	/**
+	 * `'material'` for the functions of a custom material, `'effect'` for a custom effect,
+	 * `'toneCurve'` for a custom tone curve, and `'shader'` for a whole shader.
+	 */
+	readonly kind: 'material' | 'effect' | 'toneCurve' | 'shader';
 }
 
 /**
@@ -918,6 +1052,7 @@ type Ranged =
 	| 'emissiveIntensity'
 	| 'aoMapIntensity'
 	| 'lightMapIntensity'
+	| 'specularIntensity'
 	| 'envIntensity';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
@@ -939,6 +1074,7 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 		Number.POSITIVE_INFINITY,
 		'lightMapIntensity',
 	],
+	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1, 'specularIntensity'],
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
 ];
 
@@ -950,6 +1086,8 @@ const MAP_OPTIONS: readonly (readonly [keyof StandardMaps, number])[] = [
 	['aoMap', MAP_SLOT_OCCLUSION],
 	['emissiveMap', MAP_SLOT_EMISSIVE],
 	['lightMap', MAP_SLOT_LIGHT],
+	['specularIntensityMap', MAP_SLOT_SPECULAR_INTENSITY],
+	['specularColorMap', MAP_SLOT_SPECULAR_COLOR],
 ];
 
 /** Throws E1108 for a pair or a transform with a number that is not finite. */
@@ -971,6 +1109,9 @@ function checkNumbers(values: AnyValues, call: string): void {
 /** Throws E1108 for each number of `values` outside its range. Call it inside `if (DEV)`. */
 function checkValues(values: AnyValues, call: string): void {
 	checkNumbers(values, call);
+	const { ior } = values;
+	if (ior !== undefined && !(ior >= 1 && ior < Number.POSITIVE_INFINITY))
+		throw new EngineError('E1108', `${call}() got the ior ${ior}; it takes a finite 1 or more.`);
 	for (const [key, , most, name] of RANGED) {
 		const value = values[key];
 		if (value === undefined) continue;
@@ -996,6 +1137,7 @@ function writeValues(
 	values: AnyValues,
 	color: readonly number[] | undefined,
 	emissive: readonly number[] | undefined,
+	specular: readonly number[] | undefined,
 ): void {
 	const write = (param: number, x: number, y: number, z: number) =>
 		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
@@ -1008,11 +1150,19 @@ function writeValues(
 			emissive[1] as number,
 			emissive[2] as number,
 		);
+	if (specular)
+		write(
+			MATERIAL_PARAM_SPECULAR_COLOR,
+			specular[0] as number,
+			specular[1] as number,
+			specular[2] as number,
+		);
 	for (const [key, param] of RANGED) {
 		const value = values[key];
 		if (value !== undefined) write(param, value, 0, 0);
 	}
-	const { normalScale, uvTransform } = values;
+	const { normalScale, uvTransform, ior } = values;
+	if (ior !== undefined) write(MATERIAL_PARAM_REFLECTANCE, reflectance(ior), 0, 0);
 	if (normalScale) write(MATERIAL_PARAM_NORMAL_SCALE, normalScale[0], normalScale[1], 0);
 	if (uvTransform) {
 		// three.js's texture matrix with its center at the origin, by rows.
@@ -1028,6 +1178,27 @@ function writeValues(
 /** The linear value of a color option, or none when it is not set. */
 function linearOrNone(color: ColorInput | undefined, call: string): readonly number[] | undefined {
 	return color === undefined ? undefined : linearColor(color, call);
+}
+
+/**
+ * The linear value of a specular color option, or none when it is not set. Its three linear
+ * components may exceed 1, as glTF's specular color factor may.
+ */
+function specularOrNone(
+	color: ColorInput | undefined,
+	call: string,
+): readonly number[] | undefined {
+	if (Array.isArray(color) && color.length === 3 && color.every((c) => c >= 0 && c < Infinity))
+		return color;
+	return linearOrNone(color, call);
+}
+
+/**
+ * The dielectric reflectance at normal incidence of a surface with index of refraction `ior`, by
+ * the Fresnel equations, as three.js's physical material computes it.
+ */
+function reflectance(ior: number): number {
+	return ((ior - 1) / (ior + 1)) ** 2;
 }
 
 /** The alpha modes, each with the core's feature bit that draws it. */
@@ -1095,6 +1266,8 @@ const UNIFORM_FLOATS: Readonly<Record<CompiledUniform['type'], number>> = {
 const STANDARD_VALUES: ReadonlySet<string> = new Set([
 	'color',
 	'emissive',
+	'specularColor',
+	'ior',
 	...RANGED.map(([key]) => key),
 ]);
 
@@ -1211,6 +1384,11 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		this.liveId = id;
 	}
 
+	/** @internal True until `destroy` runs. */
+	get live(): boolean {
+		return this.liveId !== 0;
+	}
+
 	/** @internal The engine core's id. Throws E1101 once the material is destroyed. */
 	get id(): number {
 		if (this.liveId === 0)
@@ -1233,7 +1411,8 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		if (DEV) checkValues(values, call);
 		const color = linearOrNone(values.color, call);
 		const emissive = linearOrNone(values.emissive, call);
-		writeValues(core, id, call, values, color, emissive);
+		const specular = specularOrNone(values.specularColor, call);
+		writeValues(core, id, call, values, color, emissive, specular);
 	}
 
 	/**
@@ -1293,19 +1472,11 @@ class ShaderMaterial extends Material<ShaderValues> {
  * @category api/materials
  */
 export class Materials {
-	/** The render pipeline template of each custom material's compiled WGSL. */
-	private readonly templates = new WeakMap<CompiledWgsl, number>();
-	private nextTemplate = SHADING_CUSTOM_FIRST;
-	/** In development builds, the template of the WGSL under each hot update key. */
-	private readonly hotTemplates = new Map<string, number>();
-	/** In development builds, the newest WGSL under each hot update key that an update brought. */
-	private readonly hotShaders = new Map<string, CompiledMaterial>();
-
 	/** @internal */
 	constructor(
 		private readonly core: CoreMemory,
-		/** Sends each custom material's shader to the thread that draws, once. */
-		private readonly sendShader: ShaderSender = () => {},
+		/** The templates of compiled WGSL, which send each custom material's shader once. */
+		private readonly templates = new ShaderTemplates(),
 		/** @internal Asks the thread that draws for the shader files of features early. */
 		readonly shaders: ShaderPreloads = new ShaderPreloads(),
 	) {}
@@ -1326,6 +1497,7 @@ export class Materials {
 	private createId(shading: number, options: StandardOptions, call: string): number {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call);
+		const specular = specularOrNone(options.specularColor, call);
 		if (DEV) {
 			checkValues(options, call);
 			checkFeatures(options, call);
@@ -1339,7 +1511,7 @@ export class Materials {
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
-		writeValues(core, id, call, values, undefined, emissive);
+		writeValues(core, id, call, values, undefined, emissive, specular);
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
 			if (!map) continue;
@@ -1442,18 +1614,7 @@ export class Materials {
 	 * dev server, WGSL under one hot update key shares one template, which takes the newest WGSL.
 	 */
 	private templateOf(compiled: CompiledMaterial): number {
-		let template = this.templates.get(compiled);
-		if (template !== undefined) return template;
-		const key = DEV ? compiled.hot : undefined;
-		template = key === undefined ? undefined : this.hotTemplates.get(key);
-		if (template === undefined) {
-			template = this.nextTemplate++;
-			const newest = key === undefined ? undefined : this.hotShaders.get(key);
-			this.sendShader(template, customShader(newest ?? compiled));
-			if (key !== undefined) this.hotTemplates.set(key, template);
-		}
-		this.templates.set(compiled, template);
-		return template;
+		return this.templates.of(compiled, () => [customShader(compiled)], compiled.hot);
 	}
 
 	/**
@@ -1465,10 +1626,7 @@ export class Materials {
 		if (!DEV) return;
 		for (const { key, shader } of updates) {
 			if (shader.kind !== 'material') continue;
-			const compiled = shader as CompiledMaterial;
-			this.hotShaders.set(key, compiled);
-			const template = this.hotTemplates.get(key);
-			if (template !== undefined) this.sendShader(template, customShader(compiled));
+			this.templates.update(key, [customShader(shader as CompiledMaterial)]);
 		}
 	}
 }

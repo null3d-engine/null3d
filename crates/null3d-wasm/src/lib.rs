@@ -16,8 +16,8 @@ use std::cell::{Cell, UnsafeCell};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
-    AnimationError, Animations, Blend, Channel, Clip, Interpolation, MATRIX_FLOATS, MAX_BLEND,
-    MAX_JOINTS, Play, REST_FLOATS, Skeleton, SourceTrack, TrackProblem, resample,
+    AnimationError, Animations, Blend, Clip, MATRIX_FLOATS, MAX_BLEND, MAX_JOINTS, Play,
+    REST_FLOATS, Skeleton, as_floats, resample, staged_tracks,
 };
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 use null3d_core::bvh::query::{QueryHit, QueryScene, SceneQueries};
@@ -26,7 +26,7 @@ use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
-use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
 use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
@@ -44,6 +44,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::effects::{EFFECT_FLOATS, Effect};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
@@ -55,12 +56,12 @@ use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::RenderScale;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::MeshError;
-use null3d_render::morph::{MAX_DELTA_TEXELS, MorphError, MorphTargets};
+use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
-use null3d_render::shadows::ShadowQuality;
+use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
@@ -69,9 +70,9 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    CLIP_PENDING, TRACK_WORDS, animation_field, animation_problem, arrays_problem, batch_field,
-    camera_target, debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query,
-    ring_field, scene_field, shading, texture_option, texture_stat,
+    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
+    debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
+    scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -104,6 +105,9 @@ mod codes {
     /// (`constants::animation_problem`). No public call raises it yet, so the TypeScript error
     /// table does not list it.
     pub const BAD_ANIMATION: u32 = 1218;
+    /// A destroy named a skeleton that a live animated instance still uses; the second detail is
+    /// the instance.
+    pub const IN_USE: u32 = 1111;
     /// A function that needs the engine ran before `initEngine`, or `initEngine` ran twice.
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).
@@ -153,6 +157,9 @@ struct Engine {
     animations: Option<Animations>,
     /// The morph weights of morphed objects, which TypeScript writes.
     morphs: MorphWeights,
+    /// The ids of meshes that `destroyMeshes` removed, counting from 1, which the next frame
+    /// gives to later meshes once no object or batch names them.
+    removed_meshes: Vec<u32>,
     /// The clips that job workers resample in the background, by `createClipLater` ticket, each
     /// with its skeleton's id.
     clip_jobs: Vec<Option<(u32, Arc<ClipJob>)>>,
@@ -172,6 +179,8 @@ struct Engine {
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
     /// The environment's values that TypeScript writes (`constants::environment_value`).
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
+    /// The uniforms of the custom effect that TypeScript sets next with `setEffect`.
+    effect_values: Box<[f32; EFFECT_FLOATS]>,
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
@@ -395,6 +404,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
 /// the vertex shader of each pass, not in a compute pass. With `large_world`, each object's position
 /// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid.
+/// The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
@@ -414,6 +425,8 @@ pub fn init_engine(
     depth_prepass: bool,
     vertex_skinning: bool,
     large_world: bool,
+    gpu_occlusion: bool,
+    shadow_depth_bits: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -442,6 +455,7 @@ pub fn init_engine(
         transparent,
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
+    let cascade_depth = CascadeDepth::from_bits(shadow_depth_bits);
     *cell = Some(Engine {
         scene: if large_world {
             SceneStorage::with_large_world(scene_capacity)
@@ -459,6 +473,7 @@ pub fn init_engine(
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
                 depth_prepass,
+                cascade_depth,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -472,6 +487,8 @@ pub fn init_engine(
                 cell_culling,
                 depth_prepass,
                 vertex_skinning,
+                gpu_occlusion,
+                cascade_depth,
                 ..RendererConfig::default()
             }))
         },
@@ -483,6 +500,7 @@ pub fn init_engine(
         lines: LineStore::default(),
         animations: None,
         morphs: MorphWeights::new(),
+        removed_meshes: Vec::new(),
         clip_jobs: Vec::new(),
         queries: SceneQueries::new(),
         query_input: [0.0; query::INPUT_FLOATS as usize],
@@ -490,6 +508,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
+        effect_values: Box::new([0.0; EFFECT_FLOATS]),
     });
     0
 }
@@ -499,6 +518,44 @@ pub fn init_engine(
 #[wasm_bindgen(js_name = environmentValues)]
 pub fn environment_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
+/// The address of a custom effect's uniforms, the floats that TypeScript writes before it calls
+/// `setEffect`.
+#[wasm_bindgen(js_name = effectValues)]
+pub fn effect_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.effect_values[..])))
+}
+
+/// Sets the custom effect at place `index` in the order effects run, from the next frame on: the
+/// effect whose compiled WGSL has render pipeline template `template`, with the flags
+/// (`constants::effect_flag`) and the uniforms at `effectValues`. A new place goes after the last
+/// one. Template 0 removes the effect at `index` and every one after it. The TypeScript API checks
+/// the places and the uniforms.
+#[wasm_bindgen(js_name = setEffect)]
+pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
+    with_engine(|e| {
+        let effect = (template != 0).then_some(Effect {
+            template,
+            depth: flags & constants::effect_flag::DEPTH != 0,
+            values: *e.effect_values,
+        });
+        e.renderer.settings_mut().set_effect(index as usize, effect);
+        0
+    })
+}
+
+/// Makes the final pass map HDR color with the custom tone curve whose compiled WGSL has render
+/// pipeline templates from `template` on, from the next frame on: the pass's build at `template`
+/// and its bloom build at the next. Template 0 returns to the tone mapping that `setOutput` sets.
+#[wasm_bindgen(js_name = setToneCurve)]
+pub fn set_tone_curve(template: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_tone_curve((template != 0).then_some(template));
+        0
+    })
 }
 
 /// The address of the post-processing values (`constants::post_value`), which TypeScript writes
@@ -518,11 +575,33 @@ pub fn destroy_engine() {
     unsafe { *ENGINE.0.get() = None };
 }
 
-/// Serves the job system on a job worker until the page sets its stop flag. It first waits for
-/// the sketch thread to create the job system.
+// Each doc comment below stays short: wasm-bindgen copies it into the glue.
+/// Serves the job system on job worker `index`: true when a call made it return, false at stop.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
-pub fn job_worker_loop(index: u32) {
-    JOBS.wait().worker_loop(index);
+pub fn job_worker_loop(index: u32) -> bool {
+    JOBS.wait().worker_loop(index) == LoopExit::Called
+}
+
+/// Asks job worker `index` to leave its loop to run a task.
+#[wasm_bindgen(js_name = callJobWorker)]
+pub fn call_job_worker(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.call_worker(index);
+    }
+}
+
+/// Ends one task call of job worker `index`.
+#[wasm_bindgen(js_name = jobWorkerCallDone)]
+pub fn job_worker_call_done(index: u32) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.call_done(index);
+    }
+}
+
+/// The task calls of job worker `index` that it has not finished.
+#[wasm_bindgen(js_name = jobWorkerCalls)]
+pub fn job_worker_calls(index: u32) -> u32 {
+    JOBS.get().map_or(0, |jobs| jobs.pending_calls(index))
 }
 
 /// Counts the frame chunk that job worker `index` held when its loop failed as done and as
@@ -655,6 +734,9 @@ pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
         e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
         e.structure_changed |= e.scene.take_structure_changed();
+        if !e.removed_meshes.is_empty() {
+            release_mesh_ids(e);
+        }
         match applied {
             Ok(()) => 0,
             Err(failure) => {
@@ -1207,8 +1289,17 @@ pub fn create_mesh_from_arrays(
     value_with_engine(|e| {
         let jobs = JOBS.get().ok_or_else(|| fail(codes::NOT_READY, [0, 0]))?;
         let staging = std::mem::take(&mut e.staging);
-        let per_array = (targets as usize).saturating_mul(vertices as usize * 3);
-        let morph_words = per_array.saturating_mul(morph.count_ones() as usize);
+        let bits = [
+            morph_arrays::POSITIONS,
+            morph_arrays::NORMALS,
+            morph_arrays::TANGENTS,
+            morph_arrays::COLORS,
+        ];
+        let per_vertex = (targets as usize).saturating_mul(vertices as usize);
+        let words_of = |k: usize| per_vertex.saturating_mul(ARRAY_VALUES[k]);
+        let morph_words = (0..bits.len())
+            .filter(|&k| morph & bits[k] != 0)
+            .fold(0usize, |sum, k| sum.saturating_add(words_of(k)));
         let base = staging.len().checked_sub(morph_words);
         let short = || arrays_failure(ArraysError::Length(ArrayName::Positions));
         let geometry = {
@@ -1218,19 +1309,20 @@ pub fn create_mesh_from_arrays(
             from_arrays(&arrays, jobs).map_err(arrays_failure)?
         };
         let mut at = base.unwrap_or(0);
-        let mut array = |bit: u32| {
-            (morph & bit != 0).then(|| {
-                let words = &staging[at..at + per_array];
-                at += per_array;
+        let mut array = |k: usize| {
+            (morph & bits[k] != 0).then(|| {
+                let words = &staging[at..at + words_of(k)];
+                at += words.len();
                 // SAFETY: the words are initialized and aligned, and every bit pattern is a float.
                 unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<f32>(), words.len()) }
             })
         };
         let targets = MorphTargets {
             targets,
-            positions: array(morph_arrays::POSITIONS),
-            normals: array(morph_arrays::NORMALS),
-            tangents: array(morph_arrays::TANGENTS),
+            positions: array(0),
+            normals: array(1),
+            tangents: array(2),
+            colors: array(3),
         };
         let added = if morph == 0 {
             add_mesh(e, &geometry)
@@ -1480,6 +1572,81 @@ fn staged_values(words: &[u32], ty: Type, count: usize) -> Values<'_> {
         }
     };
     Values::integers(data, ty.normalized())
+}
+
+// The data goes at once, so the frame loop never moves it. The ids stay taken until the next
+// frame starts, after it applies the commands that destroy the objects that drew the meshes, so a
+// sketch can destroy its objects and then the meshes in one callback.
+/// Destroys `count` meshes whose ids, counting from 1, the staging words hold: their data goes,
+/// the meshes after them in each page move down, and the next frame gives their ids to later
+/// meshes. Fails, destroying none, for an id that names no live mesh.
+#[wasm_bindgen(js_name = destroyMeshes)]
+pub fn destroy_meshes(count: u32) -> u32 {
+    with_engine(|e| {
+        let mut ids = std::mem::take(&mut e.staging);
+        ids.truncate(count as usize);
+        let meshes = e.renderer.settings().meshes();
+        let unknown = ids
+            .iter()
+            .copied()
+            .find(|&mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_none());
+        if let Some(mesh) = unknown {
+            return render_failure(render_detail::UNKNOWN_MESH, mesh);
+        }
+        e.queries.forget_meshes(&ids);
+        e.removed_meshes.extend_from_slice(&ids);
+        for id in &mut ids {
+            *id -= 1;
+        }
+        e.renderer.remove_meshes(&ids);
+        e.structure_changed = true;
+        0
+    })
+}
+
+/// Gives the ids of removed meshes to later meshes, but those that a created object or a live
+/// batch still names: they wait for a later frame, so a stray object draws nothing rather than
+/// another mesh. It runs only in a frame after a destroy, and allocates nothing.
+fn release_mesh_ids(e: &mut Engine) {
+    // The top bit marks an id that something still names; ids never reach it.
+    const HELD: u32 = 1 << 31;
+    let removed = &mut e.removed_meshes;
+    removed.sort_unstable();
+    let mut hold = |mesh: u32| {
+        if let Ok(k) = removed.binary_search_by_key(&mesh, |&id| id & !HELD) {
+            removed[k] |= HELD;
+        }
+    };
+    let created = e.scene.created();
+    for (slot, &mesh) in e.scene.meshes().iter().enumerate() {
+        if mesh != 0 && created.get(slot as u32) {
+            hold(mesh);
+        }
+    }
+    for (_, batch) in e.batches.iter() {
+        hold(batch.mesh());
+    }
+    let meshes = e.renderer.settings_mut().meshes_mut();
+    removed.retain_mut(|id| {
+        if *id & HELD != 0 {
+            *id &= !HELD;
+            return true;
+        }
+        meshes.release(&[*id - 1]);
+        false
+    });
+}
+
+/// The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas, as the
+/// frames recorded so far made them.
+#[wasm_bindgen(js_name = meshMemoryBytes)]
+pub fn mesh_memory_bytes() -> f64 {
+    let mut bytes = 0.0;
+    with_engine(|e| {
+        bytes = e.renderer.mesh_gpu_bytes() as f64;
+        0
+    });
+    bytes
 }
 
 /// The distance from a mesh's origin to its farthest vertex, or 0 for an unknown mesh.
@@ -1783,8 +1950,8 @@ pub fn destroy_texture(texture: u32, frame: u32) -> u32 {
     })
 }
 
-// Tells the texture store what the thread that draws has: the images it received, in id order,
-// and the newest frame it took. The sketch thread calls it before it records each frame.
+// Tells the texture store what the thread that draws has: the newest image id it received, which
+// says that every earlier id arrived too, and the newest frame it took. The sketch thread calls it before it records each frame.
 /// Tells the texture store what the thread that draws has.
 #[wasm_bindgen(js_name = syncTextures)]
 pub fn sync_textures(images_arrived: u32, frames_taken: u32) {
@@ -2044,15 +2211,17 @@ pub fn shadow_casters() -> u32 {
 }
 
 /// The shadow settings that the quality settings give every light: the texels on each side of the
-/// shadow filter, how many frames pass between two draws of a far cascade, and whether a far
-/// cascade draws in every frame while a moving caster touches it. The TypeScript API checks them.
+/// shadow filter, how many frames pass between two draws of a far cascade, whether a far cascade
+/// draws in every frame while a moving caster touches it, and the share of each cascade's length
+/// over which it blends into the next. The TypeScript API checks them.
 #[wasm_bindgen(js_name = setShadowQuality)]
-pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool) -> u32 {
+pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool, blend: f32) -> u32 {
     with_engine(|e| {
         let quality = ShadowQuality {
             filter,
             far_interval,
             follow_movers,
+            blend,
         };
         e.renderer.settings_mut().set_shadow_quality(quality);
         0
@@ -2284,12 +2453,35 @@ pub fn set_debug_view(view: u32) -> u32 {
     })
 }
 
-/// The scene's fog: its kind (`constants::fog_kind`), its linear color, the near and far distances
-/// of linear fog, and the density of exponential squared fog.
+/// The scene's fog: its curve (`constants::fog_curve`), or no fog, its linear color, the density of
+/// exponential and exponential squared fog, the near and far distances of linear fog, the height
+/// where the fog has that density, its height falloff, its sun glow and the glow's exponent.
 #[wasm_bindgen(js_name = setFog)]
-pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: f32) -> u32 {
+#[allow(clippy::too_many_arguments)]
+pub fn set_fog(
+    curve: u32,
+    r: f32,
+    g: f32,
+    b: f32,
+    density: f32,
+    near: f32,
+    far: f32,
+    height: f32,
+    height_falloff: f32,
+    sun_glow: f32,
+    sun_exponent: f32,
+) -> u32 {
     with_engine(|e| {
-        let fog = Fog::from_code(kind, [r, g, b], near, far, density);
+        let values = [
+            density,
+            near,
+            far,
+            height,
+            height_falloff,
+            sun_glow,
+            sun_exponent,
+        ];
+        let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
         0
     })
@@ -2306,6 +2498,7 @@ pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: 
 fn animation_failure(error: AnimationError) -> u32 {
     let (problem, at) = match error {
         AnimationError::Core(error) => return core_failure(error),
+        AnimationError::SkeletonInUse { instance } => return fail(codes::IN_USE, [1, instance]),
         AnimationError::Joints { joints } => (animation_problem::JOINTS, joints),
         AnimationError::Parent { joint, .. } => (animation_problem::PARENT, joint),
         AnimationError::Length { array, .. } => (animation_problem::LENGTH, array),
@@ -2405,56 +2598,6 @@ pub fn create_skeleton(joints: u32) -> u32 {
             .map_err(animation_failure)?;
         Ok(id + 1)
     })
-}
-
-/// The tracks that the staging words hold for `createClip`.
-fn staged_tracks(words: &[u32], tracks: usize) -> Result<Vec<SourceTrack<'_>>, AnimationError> {
-    let header = TRACK_WORDS as usize;
-    if tracks.saturating_mul(header) > words.len() {
-        return Err(AnimationError::Track {
-            track: (words.len() / header) as u32,
-            problem: TrackProblem::Keys,
-        });
-    }
-    let floats = as_floats(words);
-    let mut at = tracks * header;
-    let mut out = Vec::with_capacity(tracks);
-    for track in 0..tracks {
-        let problem = |problem| AnimationError::Track {
-            track: track as u32,
-            problem,
-        };
-        let head = &words[track * header..track * header + header];
-        let channel = Channel::from_u32(head[1]).ok_or(problem(TrackProblem::Kind))?;
-        let interpolation = Interpolation::from_u32(head[2]).ok_or(problem(TrackProblem::Kind))?;
-        let keys = head[3] as usize;
-        let per_key = match interpolation {
-            Interpolation::CubicSpline => 3 * channel.components(),
-            Interpolation::Linear | Interpolation::Step => channel.components(),
-        };
-        let end = keys
-            .checked_mul(1 + per_key)
-            .and_then(|n| n.checked_add(at))
-            .filter(|&end| end <= floats.len());
-        let Some(end) = end else {
-            return Err(problem(TrackProblem::Keys));
-        };
-        out.push(SourceTrack {
-            joint: head[0],
-            channel,
-            interpolation,
-            times: &floats[at..at + keys],
-            values: &floats[at + keys..end],
-        });
-        at = end;
-    }
-    Ok(out)
-}
-
-/// The staging words as 32-bit floats, which have the same size and alignment.
-fn as_floats(words: &[u32]) -> &[f32] {
-    // SAFETY: `u32` and `f32` have the same size and alignment, and every bit pattern is a float.
-    unsafe { std::slice::from_raw_parts(words.as_ptr().cast(), words.len()) }
 }
 
 // The staging words hold `tracks` headers of `TRACK_WORDS` words (joint, channel, interpolation,
@@ -2591,6 +2734,27 @@ pub fn clip_ready(ticket: u32) -> u32 {
     })
 }
 
+/// Removes `skeleton` with its clips and joint masks; their ids go to later ones. Fails while an
+/// animated instance uses it. Clips of it that job workers still resample are dropped.
+#[wasm_bindgen(js_name = destroySkeleton)]
+pub fn destroy_skeleton(skeleton: u32) -> u32 {
+    with_engine(|e| {
+        let id = skeleton.wrapping_sub(1);
+        let Some(animations) = e.animations.as_mut() else {
+            return fail(codes::NOT_READY, [2, 0]);
+        };
+        if let Err(error) = animations.remove_skeleton(id) {
+            return animation_failure(error);
+        }
+        for job in &mut e.clip_jobs {
+            if job.as_ref().is_some_and(|(of, _)| *of == id) {
+                *job = None;
+            }
+        }
+        0
+    })
+}
+
 /// Adds an animated instance of `skeleton`; returns its id plus one.
 #[wasm_bindgen(js_name = createAnimatedInstance)]
 pub fn create_animated_instance(skeleton: u32) -> u32 {
@@ -2611,6 +2775,13 @@ pub fn remove_animated_instance(instance: u32) -> u32 {
             .map_err(animation_failure)?;
         Ok(0)
     })
+}
+
+/// The clips that loading resampled at each frame, plus one: the others held keys on their frames
+/// already, as the asset tool writes them, and were copied.
+#[wasm_bindgen(js_name = resampledClips)]
+pub fn resampled_clips() -> u32 {
+    with_animations(|animations, _| Ok(animations.resampled_clips() + 1))
 }
 
 /// The first joint of animated instance `instance` in the skinning matrices, plus one, or 0 when

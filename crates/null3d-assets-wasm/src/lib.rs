@@ -28,6 +28,12 @@
 //!   per corner and three 32-bit indices per triangle. It returns 1 when the request breaks its
 //!   layout and 2 when the mesh gets no blocker, and the response then holds a message that says
 //!   why.
+//! - `clip()` puts an animation clip's tracks on the frames that the engine stores the clip at,
+//!   in the form that the engine copies at load without resampling (see [`clip_bytes`]). The
+//!   request is three little-endian 32-bit words: the track count, the joint count and the rate
+//!   in keys per second as a float (0 for the default). The clip's staging words follow, as the
+//!   engine's `createClip` reads them. It returns 0 when the response holds the baked clip, and 1
+//!   when it holds a message that says why the clip could not be baked.
 //! - `response()` and `response_length()` give the last call's response.
 
 pub mod blocker;
@@ -35,6 +41,7 @@ pub mod environment;
 
 use std::cell::RefCell;
 
+use null3d_core::animation::{BakedKeys, bake, staged_tracks};
 use null3d_core::bvh::mesh::{IndexedTriangles, MeshBvh};
 
 thread_local! {
@@ -81,6 +88,15 @@ pub extern "C" fn blocker() -> u32 {
     };
     RESPONSE.set(bytes);
     status
+}
+
+/// Bakes the clip in the request.
+#[unsafe(no_mangle)]
+pub extern "C" fn clip() -> u32 {
+    let result = REQUEST.with_borrow(|request| clip_bytes(request));
+    let failed = u32::from(result.is_err());
+    RESPONSE.set(result.unwrap_or_else(String::into_bytes));
+    failed
 }
 
 /// Where the last response starts.
@@ -198,6 +214,57 @@ pub fn blocker_bytes(request: &[u8]) -> Result<Result<Vec<u8>, blocker::Dropped>
     }))
 }
 
+/// A clip's tracks baked on its frames ([`bake`]), from a request in the layout of the module's
+/// documentation. The response holds little-endian 32-bit words: the frame count, then each
+/// frame's time as a float. Then, track by track in the request's order, the track's kind and its
+/// value count: kind 0 for rotation keys as 16-bit integers, and kind 1 for
+/// floats.
+///
+/// # Errors
+/// When the request is shorter than its header, its tracks break the staging layout, or the
+/// engine would refuse the clip.
+pub fn clip_bytes(request: &[u8]) -> Result<Vec<u8>, String> {
+    let head: Vec<u32> = words(request.get(..12).ok_or("the request has no header")?)
+        .map(u32::from_le_bytes)
+        .collect();
+    let (tracks, joints, rate) = (head[0], head[1], f32::from_bits(head[2]));
+    let body = &request[12..];
+    if !body.len().is_multiple_of(4) {
+        return Err(format!(
+            "the clip's {} bytes are not whole words",
+            body.len()
+        ));
+    }
+    let staged: Vec<u32> = words(body).map(u32::from_le_bytes).collect();
+    let sources = staged_tracks(&staged, tracks as usize).map_err(|e| format!("{e:?}"))?;
+    let baked = bake(&sources, joints, rate).map_err(|e| format!("{e:?}"))?;
+    let mut out = Vec::new();
+    out.extend((baked.times.len() as u32).to_le_bytes());
+    for time in &baked.times {
+        out.extend(time.to_le_bytes());
+    }
+    for track in &baked.tracks {
+        match track {
+            BakedKeys::Rotations(keys) => {
+                out.extend(0u32.to_le_bytes());
+                out.extend((keys.len() as u32).to_le_bytes());
+                // Four integers a key fill whole words.
+                for key in keys {
+                    out.extend(key.to_le_bytes());
+                }
+            }
+            BakedKeys::Floats(values) => {
+                out.extend(1u32.to_le_bytes());
+                out.extend((values.len() as u32).to_le_bytes());
+                for value in values {
+                    out.extend(value.to_le_bytes());
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// The KTX2 file of the environment map in the request's layout, or why it could not be built.
 ///
 /// # Errors
@@ -292,5 +359,56 @@ mod tests {
         assert!(mesh_bvh_bytes(&request_of(&[0.0; 9], &[0, 1, 3])).is_err());
         assert!(mesh_bvh_bytes(&request_of(&[0.0; 9], &[0, 1])).is_err());
         assert!(mesh_bvh_bytes(&[1, 2]).is_err());
+    }
+
+    /// A track of a clip request: joint, channel, interpolation, times and values.
+    type RequestTrack<'a> = (u32, u32, u32, &'a [f32], &'a [f32]);
+
+    /// A clip request of `tracks`.
+    fn clip_request(joints: u32, tracks: &[RequestTrack<'_>]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for word in [tracks.len() as u32, joints, 0] {
+            out.extend(word.to_le_bytes());
+        }
+        for &(joint, channel, interpolation, times, _) in tracks {
+            for word in [joint, channel, interpolation, times.len() as u32] {
+                out.extend(word.to_le_bytes());
+            }
+        }
+        for &(.., times, values) in tracks {
+            for v in times.iter().chain(values) {
+                out.extend(v.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_module_bakes_clips_on_the_cores_frames() {
+        // A rotation at uneven times, and a translation that never changes.
+        let times = [0.0, 0.1, 0.45];
+        let turn = [
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.38268343, 0.9238795, 0.0, 0.0, 0.70710677, 0.70710677,
+        ];
+        let still = [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0];
+        let request = clip_request(2, &[(0, 1, 0, &times, &turn), (1, 0, 0, &times, &still)]);
+        let bytes = clip_bytes(&request).expect("a clip");
+        let word = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        // 30 keys a second, adjusted to end on the last key: 14 intervals.
+        let frames = word(0) as usize;
+        assert_eq!(frames, 15);
+        let last = f32::from_le_bytes(bytes[4 * frames..4 * frames + 4].try_into().unwrap());
+        assert_eq!(last, 0.45);
+        let at = 4 + 4 * frames;
+        assert_eq!((word(at), word(at + 4)), (0, 4 * frames as u32));
+        let first: Vec<i16> = (0..4)
+            .map(|c| i16::from_le_bytes(bytes[at + 8 + 2 * c..at + 10 + 2 * c].try_into().unwrap()))
+            .collect();
+        assert_eq!(first, [0, 0, 0, 32767]);
+        let at = at + 8 + 8 * frames;
+        assert_eq!((word(at), word(at + 4)), (1, 3));
+        assert_eq!(bytes.len(), at + 8 + 12);
+        assert!(clip_bytes(&request[..request.len() - 4]).is_err());
+        assert!(clip_bytes(&clip_request(1, &[(1, 0, 0, &[0.0], &[0.0; 3])])).is_err());
     }
 }

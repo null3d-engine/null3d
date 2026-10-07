@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow settings, texture settings, anti-aliasing mode, depth prepass and memory maximum, and reports it. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -172,7 +172,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | built |
 | Shadow filter (`shadowFilter`) | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
-| Far cascades follow moving casters (`followMovingCasters`) | no | yes | yes | yes | during play | built |
+| Far cascades follow moving casters (`followMovingCasters`) | yes | yes | yes | yes | during play | built |
+| Blend between shadow cascades (`shadowCascadeBlend`) | 10% of each cascade | 10% of each cascade | 10% of each cascade | 10% of each cascade | during play | built |
 | Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
 | Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | built |
@@ -180,6 +181,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Ambient occlusion (`aoScale`) | off | off | half resolution | half resolution | during play | built |
 | Frame-budget governor (`governor`) | on | on | on | on | during play | built |
 | Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
+| GPU occlusion culling (WebGPU) (`gpuOcclusion`) | no | no | no | no | at the start | built |
 | Morph targets per object on WebGL2 (`morphTargets`) | 8 | 16 | 32 | 64 | at the start | built |
 | Software occlusion culling (WebGL2) (`softwareOcclusion`) | no | yes | yes | yes | during play | built |
 | Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
@@ -192,6 +194,17 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 <!-- null3d:preset-settings:end -->
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
+
+The shadow settings set the GPU memory that shadows take. The shadow map stores 2 bytes per texel, and the atlas of spot and point light tiles stores 4:
+
+| Preset | Shadow map | Shadow atlas | Both |
+| --- | --- | --- | --- |
+| Low | 4 MiB | 4 MiB | 8 MiB |
+| Medium | 24 MiB | 8 MiB | 32 MiB |
+| High | 24 MiB | 64 MiB | 88 MiB |
+| Ultra | 128 MiB | 96 MiB | 224 MiB |
+
+The shadow map takes its memory once the directional light casts shadows, and the atlas once a spot or point light does. The atlas grows to the preset's tiles only as more lights cast. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
 
 The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
 
@@ -212,6 +225,12 @@ One case differs: two opaque surfaces at exactly the same depth. Without the pre
 ```ts
 const engine = await createEngine({ canvas, sketch, depthPrepass: true });
 ```
+
+### GPU occlusion culling
+
+With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the marked occluders that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. Every preset leaves it off. Its passes cost GPU time in each frame with marked occluders. On a fast desktop GPU they cost more than skipping hidden objects saved, in every scene measured.
+
+The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, and not with the depth prepass, so `quality.settings.gpuOcclusion` is false on WebGL2 and when the page turns the prepass on.
 
 ## Dynamic resolution
 

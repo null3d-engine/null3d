@@ -2,6 +2,8 @@
 
 Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-C7.
 
+Summary: One skeleton per model: skin joints, moved nodes and the nodes above and below them are joints, not objects. Meshes on bones move as one-joint skins. The job workers resample clips as background tasks. Seven sample models match three.js within 3e-4, Fox within 5e-3.
+
 ## Question
 
 How does a glTF file's animation reach the engine core? A file has skins, which name nodes as joints, and clips, whose channels move any node. The core takes one skeleton per animated object ([D-26](D-26-animation-clips.md)) and plays its clips through the animator ([D-28](D-28-animator.md)). So the loader must decide which nodes become joints and which stay objects. It must also decide how meshes that hang on bones follow them, and where clips are resampled. Cubic spline keys need converting too.
@@ -112,6 +114,8 @@ The core resamples each clip as a background task on the job workers. The job sy
 | Resample on the sketch's thread at load, with `createClip` | Yes, for every clip of the model | The Knight's 76 clips would hold its frames |
 | Resample in the glTF worker | No | The worker would need a second copy of the core's WebAssembly, 550 KB, or a resampler in TypeScript beside the core's |
 | Background tasks on the job workers (chosen) | No | The resampler that D-26 tested runs as it is |
+
+The resampler copies a track that holds one key, or one linear or step key at each frame's time, and evaluates only the others. The asset tool writes every track so, and its files load with copies alone ([D-18](D-18-asset-tool.md#clips)). The Knight's 76 clips then took 7.9 ms on two job workers, against 16.5 ms from its source file.
 
 ### The correction between rotation keys
 

@@ -15,7 +15,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 9. HTML settings panel that controls the scene
 10. Day and night: sun, sky and environment (0.2)
 11. Physics with a library in the sketch worker
-12. Minimap with a second camera (0.2)
+12. Minimap with a second camera (later in 0.2)
 13. Screenshots
 14. Video on a surface, with frames from the page
 15. Custom full-screen effect (0.2)
@@ -87,7 +87,7 @@ return {
 
 For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`.
 
-The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers resample every clip while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices and KTX2 textures in a `textures` folder beside each `.glb`. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -360,31 +360,18 @@ return {
 
 WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`.
 
-## 12. Minimap with a second camera (0.2)
+## 12. Minimap with a second camera (later in 0.2)
 
 ```ts
 const MAP = 1 << 2;                                    // layer for map-only markers
 const mapCamera = scene.createOrthographicCamera({ height: 200, near: 1, far: 500, position: [0, 300, 0], target: [0, 0, 0] });
 mapCamera.setLayers(1 | MAP);
 render.addPass({ name: 'Minimap', kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256], before: 'Post' });
-post.addEffect({
-  name: 'minimap-overlay',
-  stage: 'final',
-  textures: { map: textures.fromPass('minimap') },
-  wgsl: /* wgsl */ `
-    fn effect(input: EffectInput) -> vec4f {
-      let c = sampleScene(input.uv);
-      let size = vec2f(256.0) / input.resolution;          // the map's size in screen UV
-      let local = (input.uv - vec2f(1.0 - size.x - 0.02, 0.02)) / size;
-      if (all(local >= vec2f(0.0)) && all(local <= vec2f(1.0))) {
-        return textureSampleLevel(map, mapSampler, local, 0.0);
-      }
-      return c;
-    }`,
-});
+const map = materials.unlit({ map: textures.fromPass('minimap') });
+// Show `map` on a plane in front of a second view, or on a screen in the world.
 ```
 
-Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). From 0.2, a minimap or picture in picture works with a render-to-texture pass and a final effect. The effect samples the map with `textureSampleLevel` because the branch differs between pixels, and WGSL forbids implicit-mip sampling there (`references/shaders.md`, section 8). Docs: `guides/custom-passes`, `api/post`.
+Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). A minimap or picture in picture needs a render-to-texture pass, which is not built yet; check `guides/custom-passes` before using it. Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -436,21 +423,20 @@ Each frame costs one decode-and-resize on the page and one upload in the render 
 ## 15. Custom full-screen effect (0.2)
 
 ```ts
-post.addEffect({
-  name: 'pixelate',
-  stage: 'final',                   // runs in the merged final pass, after tone mapping
-  uniforms: { size: 4 },
-  wgsl: /* wgsl */ `
-    fn effect(input: EffectInput) -> vec4f {
-      let px = max(effect.size, 1.0);
-      let uv = floor(input.fragCoord.xy / px) * px / input.resolution;
-      return sampleScene(uv);
-    }`,
-});
-post.setEffectUniform('pixelate', 'size', 8);
+const pixelate = /* wgsl */ `
+  struct Uniforms { size: f32 }
+
+  fn effect(input: EffectInput) -> vec4f {
+    let px = max(uniforms.size, 1.0);
+    let center = (floor(input.pixel / px) + 0.5) * px;   // the middle of this pixel's block
+    return effectColor(center / input.size);
+  }`;
+
+const blocks = post.addEffect({ wgsl: pixelate, uniforms: { size: 4 } });
+post.setEffectUniform(blocks, 'size', 8);
 ```
 
-Per-pixel effects merge into the single final pass, so they add no extra full-screen pass. Effects that read neighboring pixels many times, such as blurs, get their own pass: `stage: 'hdr'`. Docs: `api/post`, `references/shaders.md` section 6.
+The effect runs on HDR color before bloom and the tone curve, in a full-screen pass of its own. Each effect adds one pass, so put several per-pixel looks in one function. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
 ## 16. Very large worlds (0.2)
 

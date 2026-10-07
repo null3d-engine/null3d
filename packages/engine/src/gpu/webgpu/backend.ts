@@ -6,12 +6,13 @@ import { messageOf } from '../../errors/message';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
-import { type GeneratorName, ImageTable } from '../../shared/images';
+import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { floatOfBits } from '../float-bits';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
-import { Pipelines, type RenderTemplate } from './pipelines';
+import { IndirectArguments } from './indirect-arguments';
+import { Pipelines, type RenderTemplate, SKIN_BUILDS } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
 import { StagingRing } from './staging';
 import { UploadRoutes } from './upload-routes';
@@ -30,12 +31,14 @@ TEXTURE_FORMATS[G.FORMAT_RGBA16_FLOAT] = 'rgba16float';
 TEXTURE_FORMATS[G.FORMAT_RG11B10_UFLOAT] = 'rg11b10ufloat';
 TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
+TEXTURE_FORMATS[G.FORMAT_DEPTH16_UNORM] = 'depth16unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
 TEXTURE_FORMATS[G.FORMAT_R32_UINT] = 'r32uint';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM] = 'astc-4x4-unorm';
 TEXTURE_FORMATS[G.FORMAT_ASTC_4X4_UNORM_SRGB] = 'astc-4x4-unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM] = 'bc7-rgba-unorm';
 TEXTURE_FORMATS[G.FORMAT_BC7_RGBA_UNORM_SRGB] = 'bc7-rgba-unorm-srgb';
+TEXTURE_FORMATS[G.FORMAT_BC6H_RGB_UFLOAT] = 'bc6h-rgb-ufloat';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM] = 'etc2-rgb8unorm';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGB8_UNORM_SRGB] = 'etc2-rgb8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM] = 'etc2-rgba8unorm';
@@ -71,6 +74,19 @@ COMPARE_FUNCTIONS[G.COMPARE_GREATER] = 'greater';
 COMPARE_FUNCTIONS[G.COMPARE_NOT_EQUAL] = 'not-equal';
 COMPARE_FUNCTIONS[G.COMPARE_GREATER_EQUAL] = 'greater-equal';
 COMPARE_FUNCTIONS[G.COMPARE_ALWAYS] = 'always';
+
+/**
+ * The compute pipelines that a preloaded feature's file builds at once, each a template and its
+ * permutation bits: their layouts are fixed, so the scene need not draw first.
+ */
+const PRECOMPILED: Readonly<Record<string, readonly (readonly [number, number])[]>> = {
+	skinning: SKIN_BUILDS.map((bits) => [G.TEMPLATE_SKIN, bits] as const),
+	occlusion: [
+		[G.TEMPLATE_OCCLUSION_EARLY, 0],
+		[G.TEMPLATE_OCCLUSION_LATE, 0],
+		[G.TEMPLATE_DEPTH_PYRAMID, 0],
+	],
+};
 
 /** Reads a code from a table, and fails with its kind when the table has no entry for it. */
 function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
@@ -130,6 +146,10 @@ export class WebGPUBackend {
 	 * an indirect draw again at every execution, which costs its GPU process milliseconds per frame.
 	 */
 	private readonly bundles: (Uint32Array | undefined)[] = [];
+	/** Each indirect draw's own copy of its arguments, for the render passes that hold several. */
+	private readonly indirect: IndirectArguments;
+	/** `commandEncoder` as a function made once, for helpers that record commands outside a pass. */
+	private readonly openEncoder = () => this.commandEncoder();
 	private readonly pipelines: Pipelines;
 	/** Staging buffers for the uploads that writeBuffer copies slowly. */
 	private readonly staging: StagingRing;
@@ -183,13 +203,10 @@ export class WebGPUBackend {
 		this.pipelines = new Pipelines(device, shaders);
 		this.pipelines.prebuildMipmaps();
 		this.staging = new StagingRing(device);
+		this.indirect = new IndirectArguments(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
-		this.images.warmGeneratorsWith((code) =>
-			Promise.all(
-				Object.values(code as Record<GeneratorName, CubeGenerator>).map((g) => g.prepare(device)),
-			),
-		);
+		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(device));
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -393,9 +410,8 @@ export class WebGPUBackend {
 	private generateTexture(words: Uint32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
 		const generator = words[a + 1] as number;
-		const [name, generators] =
-			this.images.generator<Record<GeneratorName, CubeGenerator>>(generator);
-		generators[name].run(this.device, texture);
+		const [source, code] = this.images.generator<CubeGenerator>(generator);
+		code.run(this.device, texture, source);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -439,7 +455,7 @@ export class WebGPUBackend {
 	private submit(): void {
 		if (!this.encoder && !this.staging.pending) return;
 		const encoder = this.commandEncoder();
-		this.timer?.resolve(encoder);
+		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;
@@ -546,16 +562,17 @@ export class WebGPUBackend {
 	/**
 	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
 	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the skinning pass's pipelines, whose layout is fixed. A render pipeline also needs the targets,
-	 * the vertex format and the state of the objects that draw with it, which the scene gives, so
-	 * `scene.warmUp()` builds those. Skinning's builds for the vertex shader serve only the
-	 * `?skinning=vertex` switch, and are left out.
+	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
+	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
+	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's builds for the vertex
+	 * shader serve only the `?skinning=vertex` switch, and are left out.
 	 */
 	precompile(feature: string, module: FirstUseShaders): void {
-		if (feature === 'skinning') {
-			for (const bits of [0, G.PERMUTATION_VERTEX_TANGENT])
+		const compute = PRECOMPILED[feature];
+		if (compute) {
+			for (const [template, bits] of compute)
 				this.device
-					.createComputePipelineAsync(this.pipelines.compute(G.TEMPLATE_SKIN, bits))
+					.createComputePipelineAsync(this.pipelines.compute(template, bits))
 					.catch(() => undefined);
 			return;
 		}
@@ -719,14 +736,22 @@ export class WebGPUBackend {
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
 			switch (op) {
-				case G.OP_CREATE_BUFFER:
+				case G.OP_CREATE_BUFFER: {
 					this.counts.objects++;
 					this.buffers[words[a] as number]?.destroy();
+					// Where draws copy their arguments, a buffer of indirect draws is also a source of
+					// copies: a render pass with several of its draws copies each one's arguments out
+					// (see ./indirect-arguments.ts).
+					const usage = words[a + 2] as number;
 					this.buffers[words[a] as number] = device.createBuffer({
 						size: words[a + 1] as number,
-						usage: words[a + 2] as number,
+						usage:
+							this.indirect.copying && usage & G.BUFFER_USAGE_INDIRECT
+								? usage | G.BUFFER_USAGE_COPY_SRC
+								: usage,
 					});
 					break;
+				}
 				case G.OP_WRITE_BUFFER: {
 					const target = this.need(this.buffers, words[a] as number, 'buffer');
 					const offset = words[a + 1] as number;
@@ -886,6 +911,7 @@ export class WebGPUBackend {
 						a + 7,
 					);
 					setup.setTimestampWrites(this.timer?.passWrites(true));
+					this.indirect.begin(words, i + length, end, this.bundles, this.buffers, this.openEncoder);
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					this.skipDraws = false;
 					break;
@@ -1060,14 +1086,16 @@ export class WebGPUBackend {
 					words[a + 4] as number,
 				);
 				return true;
-			case G.OP_DRAW_INDEXED_INDIRECT:
+			case G.OP_DRAW_INDEXED_INDIRECT: {
+				const id = words[a] as number;
+				const offset = words[a + 1] as number;
+				const copy = this.indirect.take(id, offset);
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
-				pass.drawIndexedIndirect(
-					this.need(this.buffers, words[a] as number, 'buffer'),
-					words[a + 1] as number,
-				);
+				if (copy) pass.drawIndexedIndirect(copy, 0);
+				else pass.drawIndexedIndirect(this.need(this.buffers, id, 'buffer'), offset);
 				return true;
+			}
 			default:
 				return false;
 		}
@@ -1099,6 +1127,7 @@ export class WebGPUBackend {
 		for (const texture of this.textures) texture?.destroy();
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
+		this.indirect.destroy();
 		this.copyBuffer?.destroy();
 		this.destroyRetired();
 	}

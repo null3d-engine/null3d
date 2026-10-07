@@ -34,7 +34,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `emissiveMap` | `emissiveMap` | Must be sRGB |
 | `envMap`, `envMapIntensity` | `scene.setEnvironment(env)`, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything. `envIntensity` multiplies the scene's `intensity`, where three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment |
 | `envMapRotation` | `scene.setEnvironment(env, { rotation })` (0.2) | The scene's rotation; materials share it |
-| `scene.environment` from `PMREMGenerator` | `scene.setEnvironment(await assets.loadEnvironment(url))` (0.2) | Prefilter HDR files offline with `bunx @null3d/cli assets env`. `RoomEnvironment` is `await assets.builtinEnvironment('room')`, which the GPU makes with no file. Reflections match three.js's PMREM, roughness by roughness |
+| `scene.environment` from `PMREMGenerator` | `scene.setEnvironment(await assets.loadEnvironment(url))` (0.2) | `loadEnvironment` takes the `.hdr` or `.exr` file that `HDRLoader` or `EXRLoader` loaded, and filters it on the GPU. Prefiltering it offline with `bunx @null3d/cli assets env` skips that work at load. `RoomEnvironment` is `await assets.builtinEnvironment('room')`, which the GPU makes with no file. Reflections match three.js's PMREM, roughness by roughness |
 | `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function: procedural now, from a height texture in 0.2 (section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | Alpha packed into `map`'s alpha offline, or a surface function that samples the alpha map (0.2) | three.js reads the alpha map's G channel (recipe in section 8) |
@@ -56,16 +56,24 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` covers the base layer. The extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
+`materials.standard` covers the base layer, and takes the index of refraction and specular options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+
+| three.js | null3D | Notes |
+| --- | --- | --- |
+| `ior` | `ior` | 1 or more; the default 1.5 reflects 4% head on, as `MeshStandardMaterial` does |
+| `reflectivity` | `ior` | Convert: `ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity)`, as three.js does |
+| `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
+| `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
+
+glTF files with `KHR_materials_ior` and `KHR_materials_specular` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
 | `clearcoat`, `clearcoatRoughness` | Lower `roughness`; raise `envIntensity` (0.2) slightly | The second highlight is lost |
-| `transmission`, `thickness`, `ior`, `attenuationColor` | `alphaMode: 'blend'`, low `opacity`, tint with `color`, higher `envIntensity` (0.2) | No refraction or thickness color |
+| `transmission`, `thickness`, `attenuationColor` | `alphaMode: 'blend'`, low `opacity`, tint with `color`, higher `envIntensity` (0.2). Keep `ior` | No refraction or thickness color |
 | `sheen`, `sheenColor`, `sheenRoughness` | Surface function adding a fresnel rim to `emissive` | Approximate |
 | `iridescence` | Surface function tinting by view angle | Approximate |
 | `anisotropy` | Not available | Brushed-metal streaks are lost |
-| `specularIntensity`, `specularColor` | Adjust `roughness` and `metalness` | Approximate |
 | `dispersion` | Not available | |
 
 Tell the user which of these a scene relies on before porting it. Glass and car-paint showcases depend on them heavily.
@@ -94,7 +102,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `MeshNormalMaterial` | `debug.view('normals')` for debugging (world-space normals; three.js shows view-space ones); a surface function that outputs the normal as color for a styled look |
 | `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')` for debugging; custom shadow materials are not needed |
 | `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2) |
-| `PointsMaterial` | Options of `scene.createPoints`: `size`, `sizeAttenuation`, `texture`, `colors` (0.2) |
+| `PointsMaterial` | Options of `scene.createPoints`: `size` (with `sizeAttenuation`, world units: three.js's size times `tan(fov / 2)`; without it, CSS pixels), `sizeAttenuation`, `map`, `color`, `opacity`, `colors` for `vertexColors`, `alphaMode` (`'opaque'` by default; `'blend'` for `transparent`, `'mask'` with `alphaCutoff` for `alphaTest`), `blending` (0.2). Points do not vanish at the screen's edge as WebGL points do. Docs `api/points` |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width` (1 for a one-pixel line), `worldUnits`, `dashed` with `dashSize`, `gapSize`, `dashScale` and `dashOffset`, `colors` (0.2). Docs `api/lines` |
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
 | `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
@@ -117,7 +125,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `premultiplyAlpha` | `premultipliedAlpha` |
 | `needsUpdate = true` after changing pixels | `texture.update(bitmap)`, or `texture.update(data)` for a texture from `textures.fromData` |
 
-Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files where the browser supports them. It also loads KTX2 files of ETC1S or UASTC data, in the device's compressed format. Convert PNG and JPEG textures to KTX2 with `basisu -mipmap`, or with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
+Texture formats: `loadTexture` decodes PNG, JPEG, WebP and AVIF files. It also loads KTX2 files of ETC1S or UASTC data, in the device's compressed format. KTX2 files of UASTC HDR data (0.2) load too, as with three.js's `KTX2Loader`. They become `bc6h-rgb-ufloat` where the device has BC formats, and `rgb9e5ufloat` elsewhere. three.js uses ASTC HDR or half floats there. They stay linear, so keep tone mapping on. glTF textures in `EXT_texture_webp` and `EXT_texture_avif` (0.2) load with no setup. Convert PNG and JPEG textures to KTX2 with `basisu -mipmap`, or with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files load as they are with `assets.loadEnvironment`, or as prefiltered KTX2 from `bunx @null3d/cli assets env` (0.2).
 
 ## 8. Recipes
 

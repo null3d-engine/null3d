@@ -5,6 +5,7 @@
 // the job workers where the mode has them. And a loop of every query allocates nothing.
 import { expect, type Page, test } from '@playwright/test';
 import { allocatingPlaces } from '../lib/allocations.ts';
+import { ALONE } from '../lib/alone.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { RaycastResults } from '../pages/lib/raycast.ts';
@@ -53,21 +54,23 @@ const switchesOf = (mode: EngineMode, tier: string) =>
 	[`gpu=${tier}`, mode.query].filter(Boolean).join('&');
 
 for (const tier of ['webgpu', 'webgl2'] as const)
-	test(`raycasts give three.js's hits, and batches run on the job workers, on ${tier}`, async ({
-		page,
-	}) => {
-		// Where the GPU draws slowly, the page measures for up to 31 s to see every job worker work.
-		test.setTimeout(180_000);
-		const mode = ENGINE_MODES[0];
-		const result = await open(page, `${switchesOf(mode, tier)}&everyWorker`, 150_000);
-		expectParity(result, tier);
-		expect(result.mode.jobWorkers).toBeGreaterThan(0);
-		expect(result.jobBusyMs).toHaveLength(result.mode.jobWorkers);
-		// Each measured frame cast 10,000 rays, and every job worker took part of the batches. Which
-		// worker takes which part changes from frame to frame, so the check counts all the frames.
-		const idle = result.jobBusyMs.flatMap((ms, k) => (ms > 0 ? [] : [`job-${k}`]));
-		expect(idle, `${result.frames} frames in ${result.seconds} s`).toEqual([]);
-	});
+	test(
+		`raycasts give three.js's hits, and batches run on the job workers, on ${tier}`,
+		ALONE,
+		async ({ page }) => {
+			// Where the GPU draws slowly, the page measures for up to 31 s to see every job worker work.
+			test.setTimeout(180_000);
+			const mode = ENGINE_MODES[0];
+			const result = await open(page, `${switchesOf(mode, tier)}&everyWorker`, 150_000);
+			expectParity(result, tier);
+			expect(result.mode.jobWorkers).toBeGreaterThan(0);
+			expect(result.jobBusyMs).toHaveLength(result.mode.jobWorkers);
+			// Each measured frame cast 10,000 rays, and every job worker took part of the batches. Which
+			// worker takes which part changes from frame to frame, so the check counts all the frames.
+			const idle = result.jobBusyMs.flatMap((ms, k) => (ms > 0 ? [] : [`job-${k}`]));
+			expect(idle, `${result.frames} frames in ${result.seconds} s`).toEqual([]);
+		},
+	);
 
 // The scene at the Earth's radius, off any cell's center. In large-world mode the engine finds
 // three.js's hits, which three.js computes in 64-bit numbers, and screen points come back to their
@@ -92,7 +95,7 @@ for (const mode of ENGINE_MODES.slice(1))
 		expectParity(result, mode.name);
 	});
 
-test('every query allocates nothing, with hits in each call', async ({ page }) => {
+test('every query allocates nothing, with hits in each call', ALONE, async ({ page }) => {
 	await page.goto('query-loop.html?threads=off');
 	const result = await pageResult<{ ok: boolean; error?: string; loop: string }>(page, 60_000);
 	expect(result.error).toBeUndefined();
@@ -118,10 +121,9 @@ test('every query allocates nothing, with hits in each call', async ({ page }) =
 		warmUpIterations: 500,
 		sampledIterations: 20_000,
 		// The query calls, the scene that passes them on, the engine memory's views, the math
-		// helpers that the loop calls, and the core's generated glue. The engine's own frames run
-		// on this thread between the loop's runs, and the frame checks that development builds add
-		// are not the queries' work.
+		// helpers that the loop calls, and the core's generated glue.
 		counted: /\/packages\/engine\/(src\/(scene\/(queries|scene|memory)\.ts|math\/)|dist\/wasm\/)/,
+		pauseEngine: true,
 	};
 	expect(await allocatingPlaces(page, plan, runLoop)).toEqual([]);
 });

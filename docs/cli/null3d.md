@@ -255,7 +255,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 
 ## assets
 
-`assets optimize` makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model.
+`assets optimize` makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size 1024
