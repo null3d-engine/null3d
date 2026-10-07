@@ -112,7 +112,7 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::RenderGraph;
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
-use crate::meshes::{MeshStorage, Packing};
+use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
@@ -1490,6 +1490,18 @@ impl FrameBuilder for CpuCulledRenderer {
 
     fn casts_tile_shadows(&self) -> bool {
         self.tiles.shape().is_some()
+    }
+
+    fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves) {
+        self.meshes.moved(moves);
+        if let Some(first) = moves.morph_texels {
+            self.skins.morph_mut().deltas_moved(first);
+        }
+        self.occluders.forget(ids);
+    }
+
+    fn mesh_gpu_bytes(&self) -> u64 {
+        self.meshes.gpu_bytes() + self.skins.morph().delta_bytes()
     }
 
     fn reset_gpu(&mut self) {
