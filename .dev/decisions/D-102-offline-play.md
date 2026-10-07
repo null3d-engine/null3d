@@ -39,6 +39,16 @@ A game that caches every file stores 17.8 MB. One that uses no skinning, morph t
 
 How the data was produced: `bunx vite build --outDir <folder>` in the repository, then the sizes of each group's files in the written `null3d-files.json`.
 
+The offline reload in each browser. The fresh project's production build has the guide's worker, which caches the start and the sprite feature. A first visit fills the cache. Then the server stops, and the page reloads from the cache alone.
+
+| Browser | First visit | Offline reload | Run |
+| --- | --- | --- | --- |
+| Chrome 155 (Playwright, the Mac's GPU) | Threaded, isolated; the cache holds exactly the page, the start and the sprites | Threaded, isolated; no failed request but the worker's own check of the list | `bun run test:packages` |
+| Safari 26.6.2, the owner's Mac | Threaded, isolated; 59 files cached | Threaded, isolated, under the worker's control | offline-check-1791390521124 |
+| Firefox 157, the owner's Mac | Threaded, isolated; 59 files cached | Threaded, isolated, under the worker's control; only the browser's own `favicon.ico` request failed | offline-check-1791390669975 |
+
+How the browser runs were made: a script served the build with the isolation headers. It added a reporting script to the page, which posted to a second port. The page reported its first start once the cache held the page. The script then stopped the server, and the page reloaded itself and reported again. Last, the page removed its worker and caches and closed its window. Safari and Firefox ran on 2026-10-08 from the branch at 95aa3f907.
+
 ## Decision
 
 1. The list. Each production build of pages writes `null3d-files.json` beside the page: `version`, `start`, and `features` by name. The shader features take the names of `preload` (`skinning`, `bloom`, and so on). The loaders form four more: `gltf`, `ktx2`, `environment` and `lut`. The `gltf` group holds the meshopt decoder, which only glTF files use, and `ktx2` holds the transcoder. The stats overlay, the label loop, the preset check and the WebGL call timing are small, so they stay in the start. Each feature's list holds the shaders of every GPU path and device setting. A device can switch to another variant during play. For example, bloom on the 8-bit path moves to HDR color, which loads the start's builds without the tone mapping bit.
@@ -46,7 +56,7 @@ How the data was produced: `bunx vite build --outDir <folder>` in the repository
 3. The service worker is the game's. The guide gives a worker of about 25 lines, not a tool. Its call to `cache.addAll` caches the page by its own address. That call keeps each response's headers, so the cached page stays isolated. The cache's name holds the list's `version`. On each visit with a network, the worker checks the list and caches a new build in one step. When one download fails, `cache.addAll` stores nothing, so a half-cached build never runs. Tools that write workers, such as vite-plugin-pwa, need more settings for the engine: its `.wasm` files, and files over their size limits. Their versions also move on their own, so the guide does not depend on one.
 4. Lost isolation. A development build of the engine warns once when a service worker controls the page and the page is not isolated. That is the one sign of a worker that dropped the headers. Production builds drop the check with the other development checks. The guide says to check `crossOriginIsolated` after an offline reload.
 5. Stable addresses. Vite already names every engine file with a content hash, on the page's origin. The engine starts its workers from `blob:` scripts that it makes in the page. The offline test checks that no request fails with the server stopped.
-6. The engine's own cache. The KTX2 loader keeps transcoded textures in Cache Storage, in caches whose names start with `null3d-` (D-24). The guide's worker deletes only its own caches. The transcoder stays in the `ktx2` group, because a texture that the engine's cache does not hold still needs it.
+6. The engine's own cache. The KTX2 loader keeps transcoded textures in Cache Storage, in caches whose names start with `null3d-` ([D-24](D-24-transcode-cache.md)). The guide's worker deletes only its own caches. The transcoder stays in the `ktx2` group, because a texture that the engine's cache does not hold still needs it.
 
 Rejected:
 
