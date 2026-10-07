@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
+import { walkFiles } from './files';
 import { fixture } from './fixture';
-import { checkSkills, docIdsIn, skillCopyProblems, syncSkills } from './skills';
+import { checkSkills, docIdsIn, syncSkills } from './skills';
 
 const repoRoot = join(import.meta.dir, '../..');
 
@@ -25,7 +26,6 @@ describe('checkSkills', () => {
 			'skills/demo-skill/SKILL.md': skill('Read `concepts/missing-page` first.'),
 			'skills/demo-skill/evals/evals.json': EVALS,
 		});
-		syncSkills(root);
 		const { problems } = checkSkills(root);
 		expect(problems).toEqual([
 			'docs page "concepts/missing-page" does not exist (named in skills/demo-skill/SKILL.md)',
@@ -38,50 +38,29 @@ describe('checkSkills', () => {
 			'skills/demo-skill/SKILL.md': skill('See `concepts/handles`.'),
 			'skills/demo-skill/evals/evals.json': JSON.stringify({ skill_name: 'demo-skill', evals: [] }),
 		});
-		syncSkills(root);
 		expect(checkSkills(root).problems).toEqual([
 			'demo-skill: evals.json needs engine_version, the engine version its expectations assume, such as "0.1"',
 		]);
 	});
 
-	it('fails when the mapping copy differs from its source', () => {
+	it('syncs the copy: rewrites stale files, adds missing ones, removes those without a source', () => {
 		const root = fixture({
-			'docs/concepts/handles.md': PAGE,
-			'docs/data/threejs-mapping.json': JSON.stringify({ entries: [] }),
-			'skills/null3d-port-threejs/SKILL.md': skill('See `concepts/handles`.').replace(
-				'demo-skill',
-				'null3d-port-threejs',
-			),
-			'skills/null3d-port-threejs/evals/evals.json': EVALS.replace(
-				'demo-skill',
-				'null3d-port-threejs',
-			),
-			'skills/null3d-port-threejs/references/threejs-mapping.json': JSON.stringify({
-				entries: [{ docs: 'concepts/handles' }],
-			}),
-		});
-		syncSkills(root);
-		expect(checkSkills(root).problems).toEqual([
-			'skills/null3d-port-threejs/references/threejs-mapping.json differs from docs/data/threejs-mapping.json: run bun run docs',
-		]);
-	});
-
-	it('fails when a skill copy is stale, missing or has no source', () => {
-		const root = fixture({
-			'docs/concepts/handles.md': PAGE,
-			'skills/demo-skill/SKILL.md': skill('See `concepts/handles`.'),
+			'skills/demo-skill/SKILL.md': skill('Body.'),
 			'skills/demo-skill/references/notes.md': 'notes',
 			'skills/demo-skill/evals/evals.json': EVALS,
 			'.claude/skills/demo-skill/SKILL.md': 'old',
 			'.claude/skills/demo-skill/extra.md': 'extra',
 		});
-		expect(skillCopyProblems(root)).toEqual([
-			'.claude/skills/demo-skill/SKILL.md is out of date: run bun run skills',
-			'.claude/skills/demo-skill/references/notes.md is missing: run bun run skills',
-			'.claude/skills/demo-skill/extra.md has no source in skills/: run bun run skills',
+		expect(syncSkills(root).sort()).toEqual([
+			'.claude/skills/demo-skill/SKILL.md',
+			'.claude/skills/demo-skill/extra.md',
+			'.claude/skills/demo-skill/references/notes.md',
 		]);
-		syncSkills(root);
-		expect(checkSkills(root).problems).toEqual([]);
+		expect(walkFiles(root, '.claude/skills')).toEqual([
+			'.claude/skills/demo-skill/SKILL.md',
+			'.claude/skills/demo-skill/references/notes.md',
+		]);
+		expect(syncSkills(root)).toEqual([]);
 	});
 
 	it('fails when a skill points at the private build plan', () => {
@@ -89,7 +68,6 @@ describe('checkSkills', () => {
 			'skills/demo-skill/SKILL.md': skill('The rules are in the build plan, section 4.'),
 			'skills/demo-skill/evals/evals.json': EVALS,
 		});
-		syncSkills(root);
 		expect(checkSkills(root).problems).toEqual([
 			"skills/demo-skill/SKILL.md points at the maintainers' private build plan",
 		]);
@@ -100,7 +78,6 @@ describe('checkSkills', () => {
 			'skills/demo-skill/SKILL.md': skill('The first milestone adds this call.'),
 			'skills/demo-skill/evals/evals.json': EVALS,
 		});
-		syncSkills(root);
 		expect(checkSkills(root).problems).toEqual([
 			"skills/demo-skill/SKILL.md names the maintainers' build process (milestones, checkpoints or task IDs)",
 		]);
@@ -114,7 +91,6 @@ describe('checkSkills', () => {
 			'skills/claude-demo/references/SKILL.md': skill('A second one.'),
 			'skills/claude-demo/evals/evals.json': EVALS.replace('demo-skill', 'claude-demo'),
 		});
-		syncSkills(root);
 		expect(checkSkills(root).problems).toEqual([
 			'claude-demo: name must not contain the reserved words "anthropic" or "claude"',
 			'claude-demo: metadata must map names to strings',

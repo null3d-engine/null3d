@@ -10,7 +10,7 @@
 
 import type { ErrorCode, ErrorFixes } from './fixes';
 
-const DOCS_BASE = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
+const DOCS_BASE = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
 /** The key of the thread's table of fixes on its global object. */
 const FIXES = Symbol.for('null3d.errorFixes');

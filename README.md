@@ -213,7 +213,7 @@ null3D picks its GPU path at startup from feature tests. It never picks the path
 | Android phones without WebGPU, such as those with Samsung Xclipse GPUs | WebGL2 |
 | Firefox on Android and Linux | WebGL2 |
 
-The minimum versions are Safari 18 on macOS, iOS and iPadOS, Chrome and Edge 91, and Firefox 89. In an older browser, `createEngine` fails with a clear error ([E1306](docs/errors/E1306.md) for Safari, [E1303](docs/errors/E1303.md) for the others), so the page can show its own message. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3D runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
+The minimum versions are Safari 18 on macOS, iOS and iPadOS, Chrome and Edge 91, and Firefox 89. In an older browser, `createEngine` fails with a clear error ([E1306](https://github.com/null3d-engine/null3d/blob/generated/docs/errors/E1306.md) for Safari, [E1303](https://github.com/null3d-engine/null3d/blob/generated/docs/errors/E1303.md) for the others), so the page can show its own message. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3D runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
 
 ## Porting from three.js
 
@@ -228,7 +228,7 @@ The API uses three.js names where the ideas match. A few entries of the mapping:
 | `GLTFLoader` | `await assets.loadGltf(url)`, then `scene.instantiate(prefab)` | 0.2 |
 | `Raycaster` | `camera.screenToRay(x, y, ray)`, then `scene.raycast(...)` | 0.2 |
 
-The full [three.js to null3D mapping](docs/porting/threejs-mapping.md) covers renderers, materials, loaders, animation, post-processing and more. The [porting skill](skills/null3d-port-threejs/SKILL.md) walks a coding agent through a port, and its scanner lists every three.js feature an app uses.
+The full [three.js to null3D mapping](https://github.com/null3d-engine/null3d/blob/generated/docs/porting/threejs-mapping.md) covers renderers, materials, loaders, animation, post-processing and more. The [porting skill](skills/null3d-port-threejs/SKILL.md) walks a coding agent through a port, and its scanner lists every three.js feature an app uses.
 
 ## For AI agents
 
@@ -306,7 +306,7 @@ if (input.wasPressed('Mouse0')) {
 - [Static and dynamic objects](docs/concepts/static-dynamic.md)
 - [GPU tiers and backends](docs/concepts/backends.md)
 - [Hosting and cross-origin isolation](docs/getting-started/hosting.md)
-- [three.js to null3D mapping](docs/porting/threejs-mapping.md)
+- [three.js to null3D mapping](https://github.com/null3d-engine/null3d/blob/generated/docs/porting/threejs-mapping.md)
 
 ## Roadmap
 
