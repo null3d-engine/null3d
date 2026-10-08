@@ -17,12 +17,49 @@ The examples and the three.js comparison pages need one overlay that any page ca
 
 ## Data
 
-The browser runs that give the figures for this record have not run yet.
+All runs are from 8 October 2026, in Chrome on the owner's Mac (Apple M5 Max), on the stats test page and on S1.
+
+**How Chrome counts the shared memory.** `performance.measureUserAgentSpecificMemory` on the stats test page, threaded build, pipelined:
+
+| GPU path | WebAssembly memory | Browser's figure | Parts that hold the memory | Counted once |
+| --- | --- | --- | --- | --- |
+| WebGPU, High | 22.1 MiB | 116.1 MiB | 3: the page 28.5, the sketch worker 32.3, the render worker 54.8 MiB | 71.8 MiB |
+| WebGL2, Medium | 22.4 MiB | 99.0 MiB | 3: the page 28.8, the sketch worker 32.6, the render worker 37.2 MiB | 54.2 MiB |
+
+The page's own JavaScript heap was 5.5 MiB, so the page's part is the shared memory plus its heap. The 16 job workers gave no part, and each measurement took 58 s, which is Chrome's time limit for workers that do not answer.
+
+**What the engine's start downloads.** After Brotli, against main's build:
+
+| File | Main | First build of this change | Final |
+| --- | --- | --- | --- |
+| `page.js` | 31,263 B | 31,767 B (+1.6%) | 31,370 B (+0.3%) |
+| `page-renderer.js` | 32,091 B | 32,987 B (+2.8%) | 32,405 B (+1.0%) |
+| `sketch-worker.js` | 45,641 B | | 45,894 B (+0.6%) |
+| `sketch-worker-renderer.js` | 32,439 B | 33,279 B (+2.6%) | 32,713 B (+0.8%) |
+| `render-worker.js` | 34,902 B | 35,794 B (+2.6%) | 35,165 B (+0.8%) |
+| Pipelined start | 136.1 KB (97.2%) | 137.8 KB (98.4%) | 136.7 KB (97.6%) |
+
+The first build kept the reader of the culled draws' counts in each renderer, and the page thread's windows and the page memory sampler in `page.js`. The final build loads the reader at the first frame that samples, about 1 KB in each thread that draws. The page's meters moved into the overlay's file, which grew from 882 B to 2,245 B.
+
+**Allocation with the overlay shown.** `bun run bench:allocation --stats` on S1, bytes per frame of the render worker in the sample where each place allocated least:
+
+| Place | WebGPU, 100,000 instances | WebGPU, 20,000 instances | Budget |
+| --- | --- | --- | --- |
+| GPU timer: `copyOut` | 14.2 | 12.1 | 24 more |
+| GPU timer: `read` | 10.5 | 12.2 | 16 more |
+| GPU timer: `afterSubmit` | 8.9 | 11.7 | 16 more |
+| Culled counts: `afterSubmit` | 12.2 | 12.7 | 16 more |
+| Culled counts: `read` | 5.9 | 5.2 | 12 more |
+| Culled counts: the view of the mapped range | 3.5 | 4.8 | 8 more |
+
+The GPU timer's places are the timer's own, which only showed once the check could run with sampling on. Its first run found an array and an iterator for each pass that the timer read, and an array for each submit. The timer now reads the words one by one and submits through the shared list. What remains are objects that the browser returns: a command buffer, a promise and its reaction, and a view of each mapped range. Each mapped range is new memory, so no pool can keep these objects. They come once in eleven frames, and the culled counts make about half of what the timer makes. The smaller scene allocates no more per readback; it draws more frames a second. WebGL2 with the overlay shown allocated nothing more that the profiler saw, and both paths with the overlay hidden passed their old budgets.
+
+**Browser tests.** The stats test passes on both GPU paths, in every thread mode and from the `?stats` switch: 14 of 14. It ran in Chrome on the Mac's GPU and in the production build. The demo interaction test passes with the overlay on the demos: 2 of 2.
 
 ## Decision
 
-1. **Turning it on.** `createEngine({ stats: true })`, `engine.stats(show)` and the `?stats` switch show the overlay from the page. The sketch's `debug.stats` shows the same overlay, and the last call wins. Production builds read the switch only with the Vite plugin's `urlSwitches`, as they read every switch. A held engine shows no overlay, since it presents no frames.
-2. **Sampling.** The overlay, a measurement and the sketch's first `debug.frameStats()` each turn on sampling, and the engine samples while any of them wants it. Sampling times one frame in eleven on the GPU, with the measurement's timer code. On WebGPU it also reads back the counts of the culled draws on those frames. The sketch thread then publishes the memory of textures and meshes in the metrics buffer's header every eighth frame. Without sampling, none of this runs.
+1. **Turning it on.** `createEngine({ stats: true })`, `engine.stats(show)` and the `?stats` switch show the overlay from the page. The sketch's `debug.stats` shows the same overlay, and the last call from either side wins. Each sketch call reaches the page, which may have changed the overlay since. Production builds read the switch only with the Vite plugin's `urlSwitches`, as they read every switch. A held engine shows no overlay, since it presents no frames.
+2. **Sampling.** The overlay, a measurement and the sketch's first `debug.frameStats()` each turn on sampling, and the engine samples while any of them wants it. Sampling times one frame in eleven on the GPU, with the measurement's timer code. On WebGPU it also reads back the counts of the culled draws on those frames. The code that reads them back loads at the first frame that samples. The sketch thread then publishes the memory of textures and meshes in the metrics buffer's header every eighth frame. Without sampling, none of this runs.
 3. **Triangles and objects.** The thread that draws counts every draw of every pass: shadow maps, the depth prepass, the passes that shade and post effects. A draw of triangles adds its vertices or indices over 3, times its instances. A draw of lines adds none. Each draw adds its instances to the objects. three.js's `renderer.info.update` counts triangles the same way, per draw call, shadow maps included, so the figures compare. A three.js page gets the same object count by adding each call's instance count.
 4. **Counts on WebGPU's GPU-culled path.** The culling shaders write the instance count of each indirect draw on the GPU, so the CPU never sees it. Two counts were possible:
    - The submitted count: every source in the buckets, before culling. It is known on the CPU, but it measures the scene, not what the GPU drew, and differs from WebGL2's count of the same scene.
@@ -34,9 +71,13 @@ The browser runs that give the figures for this record have not run yet.
 7. **Figures only the page has.** The JavaScript heap, the page memory and the main thread's figures stay on the overlay and out of `debug.frameStats()`. A worker cannot measure them.
 8. **The shared layout.** `@null3d/engine/stats` exports `statsText`, the figure types, `MainThreadWindow`, `PageMemorySampler` and `pageHeapBytes`, with the percentile helpers. The package now builds the module, so a page outside the repository can import it.
 
+9. **The start's cost.** The start holds only what runs each frame: the per-draw counts and the memory figures' writes. The overlay's own file holds the page's meters. The reader of the culled draws' counts loads on first use. A measurement with `engine.measure` keeps its own small meters of the page thread and the page memory in the start. They repeat about 20 lines of the overlay's meters. That costs less than moving the meters into the start. The overlay's file loads none of the page's modules that the start holds. When it did, Vite's build split shared modules out of `page.js` into files of their own.
+
 ## Consequences
 
 - `FrameStats` gains `gpuMs`, `triangles`, `objects`, `wasmBytes` and `meshBytes`. The overlay on the page now shows the real texture bytes, where it read 0 before.
 - Each frame record has two more counters, `Triangles` and `DrawnObjects`, and the metrics header four memory figures.
 - The stats test page turns the overlay on from the page, through the option and the switch. Its checks need non-zero triangles, objects and memory on both GPU paths, and GPU time where the path has a timer.
+- The examples' `startDemo` shows the overlay by default, and takes `stats: false` to leave it off.
+- `bun run bench:allocation --stats` checks the allocation with the overlay shown.
 - `docs/api/debug.md`, `docs/api/engine.md`, the performance and debugging guides, the three.js mapping and the skills describe the figures.
