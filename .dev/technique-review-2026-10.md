@@ -326,7 +326,7 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 8 | Physics adapter | three.js add-ons, Babylon.js, PlayCanvas, Godot | M | M3 add-on |
 | 9 | GLSL-to-WGSL port command | three.js's transpiler | S to M | M3, command line only |
 | 10 | Gaussian splats, on WebGL2 too | PlayCanvas, Babylon.js; three.js on WebGPU only | M to L | M3 add-on |
-| 11 | Planar reflections and linked views | three.js add-ons, Babylon.js | M | M3 |
+| 11 | Planar reflections and linked views | three.js add-ons, Babylon.js | M | M3; planar reflections in M2-EX15 for the showcase scenes ([D-117](decisions/D-117-showcase-features-before-1-0.md)) |
 | 12 | Particles on the job workers | Babylon.js, PlayCanvas, Godot | M | M3 add-on |
 | 13 | Projected decals | three.js's `DecalGeometry` | S | M2 or M3 |
 | 14 | Per-object light maps, reading `NEEDLE_lightmaps` first | Bevy, PlayCanvas, Godot | S to M | M3 |
@@ -338,13 +338,13 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 20 | Shape casts and closest-point queries | three-mesh-bvh | M | M3, with physics |
 | 21 | Probe grid | three.js, Bevy, Unity, Godot | M to L | M3 |
 | 22 | Area lights | three.js, Babylon.js, Bevy, PlayCanvas, Godot | M | After 1.0 |
-| 23 | Transmission | three.js, Filament, Babylon.js | L | After 1.0 |
+| 23 | Transmission | three.js, Filament, Babylon.js | L | Before 1.0, M2-EX16 ([D-117](decisions/D-117-showcase-features-before-1-0.md)) |
 | 24 | Physical sky and atmosphere | Babylon.js, Bevy, Godot | M | After 1.0 |
 | 25 | Automatic exposure | Godot, Unity, Filament | M | After 1.0 |
-| 26 | Depth of field and motion blur | Most engines | M | After 1.0 |
+| 26 | Depth of field and motion blur | Most engines | M | Depth of field before 1.0, M2-EX17 ([D-117](decisions/D-117-showcase-features-before-1-0.md)); motion blur after 1.0 |
 | 27 | Weighted blended transparency | | M | After 1.0, opt-in for particle scenes |
 | 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | After 1.0; god rays as a custom-effect recipe in M3 |
-| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | After 1.0 |
+| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)); screen-space reflections after 1.0 |
 | 30 | WebXR | Babylon.js, PlayCanvas, three.js | L | After 1.0. XR needs the thread mode that draws on the main thread, so keep that mode working |
 | 31 | Terrain | No engine core | L | After 1.0 |
 
