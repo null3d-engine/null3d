@@ -556,15 +556,27 @@ export class WebGPUBackend {
 
 	/**
 	 * Builds each pipeline of a custom material whose shader a hot update replaced again, in the
-	 * background. The old pipeline draws until the new one is built, so no frame loses the
-	 * material's objects. A pipeline that fails to build keeps the old one and logs why.
+	 * background, once the new shader's builds for those pipelines have downloaded. The old
+	 * pipeline draws until the new one is built, so no frame loses the material's objects. A
+	 * pipeline that fails to build keeps the old one and logs why.
 	 */
 	private swapReplaced(): void {
 		if (!DEV) return;
+		const waiting: number[] = [];
 		for (const template of this.images.replaced.splice(0)) {
 			const shader = this.images.shaders.get(template);
 			// A template that no pipeline has used takes the new shader at its first use.
 			if (!shader || !this.pipelines.has(template)) continue;
+			let ready = true;
+			for (const operands of this.customOperands.values())
+				if (operands[1] === template)
+					ready =
+						(this.moreShaders?.ready(shader.variants, operands[2] as number, 'wgsl') ?? true) &&
+						ready;
+			if (!ready) {
+				waiting.push(template);
+				continue;
+			}
 			this.pipelines.replaceCustom(template, shader);
 			for (const [id, operands] of this.customOperands) {
 				if (operands[1] !== template) continue;
@@ -587,6 +599,7 @@ export class WebGPUBackend {
 					});
 			}
 		}
+		this.images.replaced.push(...waiting);
 	}
 
 	/**

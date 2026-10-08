@@ -603,7 +603,8 @@ export class WebGL2Backend {
 
 	/**
 	 * Compiles each program of a custom material whose shader a hot update replaced again, in the
-	 * background where the context can, and swaps each in once it has linked. The old program
+	 * background where the context can, once the new shader's builds for those programs have
+	 * downloaded, and swaps each in once it has linked. The old program
 	 * draws until then, so no frame loses the material's objects. A link that fails with Safari's
 	 * random Metal fault is done once more, also in the background. A program that fails to link
 	 * otherwise keeps the old one and logs why.
@@ -611,11 +612,23 @@ export class WebGL2Backend {
 	private swapReplaced(): void {
 		if (!DEV) return;
 		const gl = this.gl;
+		const waiting: number[] = [];
 		for (const template of this.images.replaced.splice(0)) {
 			const shader = this.images.shaders.get(template);
 			// A template that no pipeline has used takes the new shader at its first use.
 			if (!shader || !this.templates[template]) continue;
 			const defined = customTemplate(shader);
+			let ready = true;
+			for (const key of this.programs.keys()) {
+				const [owner, permutation] = key.split(' ').map(Number);
+				if (owner !== template) continue;
+				const build = buildPermutation(defined, permutation as number);
+				ready = (this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true) && ready;
+			}
+			if (!ready) {
+				waiting.push(template);
+				continue;
+			}
 			this.templates[template] = defined;
 			for (const key of this.programs.keys()) {
 				const [owner, permutation] = key.split(' ').map(Number);
@@ -628,6 +641,7 @@ export class WebGL2Backend {
 				this.counts.pipelines++;
 			}
 		}
+		this.images.replaced.push(...waiting);
 		for (const [key, swap] of this.swapping) {
 			const program = swap.program;
 			if (!this.compiled(program)) continue;
