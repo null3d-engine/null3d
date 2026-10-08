@@ -2,9 +2,9 @@
 // emissive maps, lit by the built-in room environment, as three.js's glTF viewer examples light
 // their models. assets.loadGltf reads the file into a prefab, and scene.instantiate places a copy
 // of it in one batch of changes. The prefab's bounds scale the 2 cm model up to a size the camera
-// frames. Orbit controls turn the camera on their own, and dragging turns it by hand.
-import { createOrbitControls } from '@null3d/controls';
+// frames. The camera circles the model by itself until the user's first drag, scroll or pinch.
 import { defineSketch } from '@null3d/engine';
+import { interact } from '../lib/interact';
 import { sampleUrl } from '../lib/samples';
 
 /** The model's radius after scaling, in meters. */
@@ -38,11 +38,11 @@ export default defineSketch(async (ctx) => {
 		near: 0.05,
 		far: 50,
 		position: [1.6, lift + 0.7, 2.3],
+		target: [0, lift, 0],
 	});
 	scene.setActiveCamera(camera);
-	const controls = createOrbitControls(ctx, camera, {
+	const view = interact(ctx, camera, {
 		target: [0, lift, 0],
-		enableDamping: true,
 		autoRotate: true,
 		autoRotateSpeed: 1.5,
 		minDistance: 1.2,
@@ -50,7 +50,7 @@ export default defineSketch(async (ctx) => {
 	});
 	return {
 		onUpdate(dt) {
-			controls.update(dt);
+			view.update(dt);
 		},
 	};
 });

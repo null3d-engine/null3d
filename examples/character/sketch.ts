@@ -2,9 +2,10 @@
 // idle, walk and run clips by speed, and keeps their steps in phase. A second layer, masked to the
 // spine and every joint above it, swings the sword now and then while the legs keep walking. A
 // 'finished' event fades the swing out. The engine samples and blends the clips on its job workers,
-// so the sketch only sets the speed. The sun casts the Knight's skinned shadow.
-import { createOrbitControls } from '@null3d/controls';
-import { defineSketch } from '@null3d/engine';
+// so the sketch only sets the speed. The sun casts the Knight's skinned shadow. The pointer can lead
+// the Knight: it walks to the pointed point, and runs when the point is far.
+import { defineSketch, math, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 import { sampleUrl } from '../lib/samples';
 
 /** The Knight's accessories that it carries: one sword and one shield. */
@@ -23,6 +24,8 @@ const RADIUS = 2.5;
 /** The highest speed, in meters per second, and how fast the speed rises and falls. */
 const TOP = 5;
 const RATE = 0.4;
+/** A led walk's speed for each meter left to walk, up to the highest speed. */
+const EAGERNESS = 1.5;
 /** Seconds between two sword swings. */
 const SWING_EVERY = 4;
 const SWING = '1H_Melee_Attack_Chop';
@@ -42,18 +45,24 @@ export default defineSketch(async (ctx) => {
 	scene.createAmbientLight({ color: '#dbe8ff', intensity: 0.8 });
 	scene.createMesh({
 		mesh: geometry.circle({ radius: 60, segments: 64 }),
-		material: materials.standard({ color: '#7c9a52' }),
+		// Both faces draw, so the ground stays in view when a pan takes the camera below it.
+		material: materials.standard({ color: '#7c9a52', doubleSided: true }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 		receiveShadows: true,
 	});
-	const camera = scene.createPerspectiveCamera({ fov: 45, position: [0, 3, 7.5] });
-	scene.setActiveCamera(camera);
-	const controls = createOrbitControls(ctx, camera, {
+	const camera = scene.createPerspectiveCamera({
+		fov: 45,
+		position: [0, 3, 7.5],
 		target: [0, 0.5, 0],
-		enableDamping: true,
+	});
+	scene.setActiveCamera(camera);
+	const view = interact(ctx, camera, {
+		target: [0, 0.5, 0],
 		maxPolarAngle: Math.PI * 0.48,
 		minDistance: 3,
 		maxDistance: 20,
+		groundY: 0,
+		bounds: [-8, 0, -8, 8, 0, 8],
 	});
 
 	const knight = await assets.loadGltf(sampleUrl('sources/characters/kaykit-knight/Knight.glb'));
@@ -66,6 +75,11 @@ export default defineSketch(async (ctx) => {
 		if (event.clip === SWING) animator.stop(SWING, FADE_OUT);
 	});
 
+	// The Knight's place on the circle, and its led walk: where it is, the way it faces, its speed.
+	const at = vec3.create();
+	const led = vec3.create();
+	let heading = 0;
+	let pace = 0;
 	let swings = 0;
 	return {
 		onUpdate(dt) {
@@ -74,15 +88,37 @@ export default defineSketch(async (ctx) => {
 			const t = time.now;
 			const speed = (TOP / 2) * (1 - Math.cos(RATE * t));
 			const angle = ((TOP / 2) * (t - Math.sin(RATE * t) / RATE)) / RADIUS;
-			walker.setPosition(Math.cos(angle) * RADIUS, 0, -Math.sin(angle) * RADIUS);
-			// The Knight faces +Z, so turn it to face along the circle.
-			walker.setRotationEuler(0, angle + Math.PI, 0);
-			animator.setBlend(speed);
+			vec3.set(at, Math.cos(angle) * RADIUS, 0, -Math.sin(angle) * RADIUS);
+			view.update(dt);
+			const { point, steering } = view;
+			if (steering === 0) {
+				// A led walk starts from the Knight's place on the circle. The Knight faces +Z.
+				vec3.copy(led, at);
+				heading = angle + Math.PI;
+				pace = speed;
+			} else {
+				const dx = point[0] - led[0];
+				const dz = point[2] - led[2];
+				const left = Math.hypot(dx, dz);
+				pace = Math.min(TOP, left * EAGERNESS);
+				if (left > 0.1) {
+					heading = Math.atan2(dx, dz);
+					const step = (pace * dt) / left;
+					led[0] += dx * step;
+					led[2] += dz * step;
+				}
+			}
+			// Blend from the circle to the led walk, turning the shorter way.
+			const turn = heading - angle - Math.PI;
+			const shorter = turn - Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
+			vec3.lerp(at, at, led, steering);
+			walker.setPosition(at[0], at[1], at[2]);
+			walker.setRotationEuler(0, angle + Math.PI + shorter * steering, 0);
+			animator.setBlend(math.lerp(speed, pace, steering));
 			if (Math.floor(t / SWING_EVERY) > swings) {
 				swings = Math.floor(t / SWING_EVERY);
 				animator.play(SWING, SWING_OPTIONS);
 			}
-			controls.update(dt);
 		},
 	};
 });

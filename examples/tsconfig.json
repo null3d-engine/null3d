@@ -5,5 +5,5 @@
 		"noUncheckedIndexedAccess": false
 	},
 	"include": ["**/*.ts"],
-	"exclude": ["vite.build.config.ts", "node_modules"]
+	"exclude": ["vite.build.config.ts", "node_modules", "**/*.test.ts"]
 }

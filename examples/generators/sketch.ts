@@ -1,9 +1,11 @@
 // Geometry generators: the nine shapes that geometry makes, with the parameters of three.js's
-// geometry classes. Each shape turns back and forth. The flat shapes face +Z and draw only their
-// front faces, so none turns far enough to show its back.
-import { defineSketch } from '@null3d/engine';
+// geometry classes. Each shape turns back and forth, or toward the pointer while it points. The flat
+// shapes, the last three, draw both faces, so they stay in view when the camera orbits behind them.
+import { defineSketch, math } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground('#15191f');
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
@@ -11,6 +13,8 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 		target: [0, 0, 0],
 	});
 	scene.setActiveCamera(camera);
+	// The pointer points at an upright plane in front of the shapes.
+	const view = interact(ctx, camera, { target: [0, 0, 0], planeZ: 3 });
 	scene.createDirectionalLight({ direction: [-1, -1.5, -2], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.5 });
 
@@ -40,16 +44,24 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 	const meshes = shapes.map((mesh, i) =>
 		scene.createMesh({
 			mesh,
-			material: materials.standard({ color: colors[i] }),
+			material: materials.standard({ color: colors[i], doubleSided: i >= 6 }),
 			position: [((i % 3) - 1) * 2.6, (1 - Math.floor(i / 3)) * 2.2, 0],
 			dynamic: true,
 		}),
 	);
 
 	return {
-		onUpdate() {
-			for (let i = 0; i < meshes.length; i++)
-				meshes[i].setRotationEuler(0.35, Math.sin(time.now + i * 0.7), 0);
+		onUpdate(dt) {
+			view.update(dt);
+			const { point, steering } = view;
+			for (let i = 0; i < meshes.length; i++) {
+				// From the shape's place to the pointed point: the turns that face its front there.
+				const dx = point[0] - ((i % 3) - 1) * 2.6;
+				const dy = point[1] - (1 - Math.floor(i / 3)) * 2.2;
+				const tilt = math.lerp(0.35, -Math.atan2(dy, Math.hypot(dx, point[2])), steering);
+				const turn = math.lerp(Math.sin(time.now + i * 0.7), Math.atan2(dx, point[2]), steering);
+				meshes[i].setRotationEuler(tilt, turn, 0);
+			}
 		},
 	};
 });

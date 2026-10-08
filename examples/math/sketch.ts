@@ -1,12 +1,15 @@
 // Math helpers: 300 drones chase a light that loops through the air. In each frame, each drone
 // eases toward its own place near the light with vec3.lerp, and turns toward the way it moves with
 // quat.lookAt and quat.slerp. The helpers write into arrays made once in the setup, so the frame
-// loop allocates nothing. A seeded math.random places the drones the same way on every run.
+// loop allocates nothing. A seeded math.random places the drones the same way on every run. The
+// pointer can lead the light over the floor.
 import { defineSketch, math, quat, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 const DRONES = 300;
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground('#10131a');
 	const camera = scene.createPerspectiveCamera({
 		fov: 55,
@@ -14,6 +17,12 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 		target: [0, 1.5, 0],
 	});
 	scene.setActiveCamera(camera);
+	// The pointer leads the light over the floor, at the light's mean height.
+	const view = interact(ctx, camera, {
+		target: [0, 1.5, 0],
+		groundY: 2.5,
+		bounds: [-7, 0, -7, 7, 5, 7],
+	});
 	scene.createDirectionalLight({ direction: [-0.5, -2, -1], intensity: 2.5 });
 	scene.createAmbientLight({ intensity: 0.5 });
 
@@ -61,6 +70,8 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 				2.5 + Math.sin(t * 1.3) * 1.5,
 				Math.sin(t * 1.4) * 3,
 			);
+			view.update(dt);
+			view.steer(lightAt);
 			light.setPosition(lightAt[0], lightAt[1], lightAt[2]);
 			// Read the arrays in each frame: they are views of engine memory, which moves when it grows.
 			const positions = drones.positions;
