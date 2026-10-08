@@ -97,7 +97,11 @@ S6's page tests are the only tests that stream the city in. On CI's SwiftShader 
 
 | Option | What CI checks | Cost |
 | --- | --- | --- |
-| (a) As now: no CI check of the streamed load | Held frames of the city on 3 tiers; the scene-code page and three.js's WebGL page | None |
+| (a) As now: no CI check of the streamed load | Held frames of the city on 3 tiers and the scene-code page | None |
 | (b) A third benchmark shard for S6 alone, with a longer wait for each page's result | The streamed load and the load report on null3D's 5 S6 pages, on SwiftShader | About 11 minutes of one runner in every CI run, and a page wait above the usual 90 seconds |
 
 The coordinator put the choice on the owner's list on 8 October 2026. The owner chose (a) on 8 October 2026: CI keeps no check of the streamed load, and gets no extra shard. The held frames and the real-GPU runs on the Mac and the devices cover the city.
+
+### three.js's WebGL city page on SwiftShader
+
+After S6 merged, benchmark shard 2 failed on main and on pull requests (runs 37721322396, 37722644771 and main's 37726871551, 8 October 2026). The test after S6's three.js WebGL page, `s2's shadows stay still and keep their edges on webgpu`, timed out after 2 minutes while it set up its browser context. That page draws about one frame in 8 seconds on SwiftShader, and its tests take 35 to 45 seconds each. The busy software GPU then held the next test's context past its limit. Main's one passing run took that test 1.9 of its 2 minutes. So `s6 on threejs-webgl` joins the pages that run on real GPUs only. CI no longer runs three.js's city twin. The Mac and device runs still compare both engines on S6.
