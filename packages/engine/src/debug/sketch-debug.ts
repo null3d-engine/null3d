@@ -52,8 +52,6 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 }
 
 export class SketchDebug implements Debug {
-	/** The overlay as the sketch last asked for it. */
-	private showing = false;
 	private window: FrameStatsWindow | undefined;
 	private empty: FrameStats | undefined;
 	private loading = false;
@@ -73,8 +71,7 @@ export class SketchDebug implements Debug {
 	shadowCamera(_camera?: Camera): void {}
 
 	stats(show = true): void {
-		if (show === this.showing) return;
-		this.showing = show;
+		// The page may have changed the overlay since this sketch's last call, so each call goes on.
 		this.host.showStats(show);
 	}
 

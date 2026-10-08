@@ -65,7 +65,8 @@ export interface Debug {
 	 * frame of each thread and phase, GPU time, draw calls, triangles and objects drawn, memory, and
 	 * the page thread's long tasks and input delay. The page draws the overlay and updates it twice
 	 * a second. Its code downloads at the first call. The page's `engine.stats` shows and hides the
-	 * same overlay, and the last call wins.
+	 * same overlay, and the last call wins. Each call sends a message to the page, so call it when
+	 * the choice changes, not in every frame.
 	 */
 	stats(show?: boolean): void;
 	/**

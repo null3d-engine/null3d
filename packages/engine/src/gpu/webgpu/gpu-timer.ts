@@ -18,6 +18,7 @@ import {
 	UNTIMED,
 } from '../../shared/metrics';
 import { wgslOf } from './pipelines';
+import { submitOne } from './reusable';
 
 /** Frames whose results can be in flight at once. */
 const SLOTS = 4;
@@ -45,7 +46,8 @@ function written(words: Uint32Array, q: number): boolean {
 /** Whether the GPU timed the pass whose beginning is timestamp `q`: both written, in order. */
 function timedPass(words: Uint32Array, q: number): boolean {
 	if (!written(words, q) || !written(words, q + 1)) return false;
-	const [beginHigh, endHigh] = [words[2 * q + 1] as number, words[2 * q + 3] as number];
+	const beginHigh = words[2 * q + 1] as number;
+	const endHigh = words[2 * q + 3] as number;
 	return (
 		endHigh > beginHigh ||
 		(endHigh === beginHigh && (words[2 * q + 2] as number) >= (words[2 * q] as number))
@@ -194,7 +196,7 @@ export class GpuTimer {
 		const encoder = this.device.createCommandEncoder();
 		encoder.resolveQuerySet(this.querySet, slot * QUERIES, count, this.resolveBuffer, offset);
 		encoder.copyBufferToBuffer(this.resolveBuffer, offset, readback, 0, count * TIMESTAMP_BYTES);
-		this.device.queue.submit([encoder.finish()]);
+		submitOne(this.device.queue, encoder.finish());
 		readback.mapAsync(GPUMapMode.READ).then(this.onMapped[slot], this.onFailed[slot]);
 	}
 
