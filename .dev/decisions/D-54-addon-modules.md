@@ -54,7 +54,7 @@ Draco:
 ### Core or add-on
 
 - A feature that a glTF file or a standard scene needs to show correctly stays in the core. Its code loads on first use. Examples: morph targets, environment light and the generated room, Draco, KTX2 and meshopt decoding.
-- An optional feature with heavy machinery of its own is an add-on. Examples: physics (`@null3d/rapier`), Gaussian splats, particles, MSDF text, `three-compat`, and IK if it grows large.
+- An optional feature with heavy machinery of its own is an add-on. Examples: physics (`@null3d/rapier`), Gaussian splats, particles (`@null3d/particles`), MSDF text, `three-compat`, and IK if it grows large. Splats, MSDF text, physics and particles ship in 0.1.0, at M3's gate ([D-108](D-108-first-release.md)).
 - An add-on has its own package or entry point, its own WebAssembly if it needs one, and shaders that load on first use. It takes one install and one import, with no manual file copying. Its version follows the engine's.
 
 ### One on-demand loader
