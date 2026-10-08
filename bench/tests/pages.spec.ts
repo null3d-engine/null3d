@@ -3,7 +3,7 @@
 // with their references, and the parity command compares them with three.js's.
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { defaultEnvironment } from '../../packages/cli/src/browser.js';
+import { browserOptions, defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import type { TraceSecond } from '../pages/lib/trace';
@@ -417,8 +417,12 @@ for (const scene of SCENES) {
 	if (isPhoneScene(scene))
 		// S4, S5 and S6 keep SwiftShader's processor busy, so two runs of one side by side can measure no
 		// whole second. Each one's pages take turns in one worker, while other tests run beside them.
+		// Their pages also leave SwiftShader busy after they close, and the browser then sets up no new
+		// context for minutes. So each scene's pages get a browser of their own, in a worker of their
+		// own, which closes after them, and the next test starts in a fresh browser.
 		test.describe(`${scene.toUpperCase()}'s pages take turns`, () => {
 			test.describe.configure({ mode: 'default' });
+			test.use({ launchOptions: browserOptions(defaultEnvironment()) });
 			sceneTests(scene);
 			if (scene === 's4') s4LowPassesTest();
 		});
