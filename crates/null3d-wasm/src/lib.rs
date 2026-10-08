@@ -276,6 +276,7 @@ impl Engine {
             lines: self.lines.lines(),
             lights: self.lights.visible(),
             shadow_lights: self.lights.shadows(),
+            light_table: Some(&self.lights),
             pipelines_built,
             animations: self.animations.as_ref(),
             morphs: &self.morphs,

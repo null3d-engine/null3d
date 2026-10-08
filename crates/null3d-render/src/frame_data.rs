@@ -49,6 +49,10 @@ pub struct FrameUniform {
     pub occlusion: [f32; 4],
     /// The scene's environment: see [`crate::environment`].
     pub environment: EnvironmentUniform,
+    /// The view's camera relative to the camera of the camera's view, and 0. The matrices of the
+    /// shadow maps take positions relative to the camera of the camera's view, so shadow lookups
+    /// add this to a position relative to the view's camera. It is 0 in the camera's view.
+    pub shadow_origin: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

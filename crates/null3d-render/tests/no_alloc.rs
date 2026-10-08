@@ -6,7 +6,8 @@
 //! or that sort blended objects whose order changes. The render graph allocates nothing while it
 //! stays the same, nor when passes switch on and off after it has compiled once, nor when the
 //! render scale changes. WebGPU frames with the depth prepass allocate nothing either. The job
-//! workers and the calling thread assign moving lights to the light grid without allocating.
+//! workers and the calling thread assign moving lights to the light grid without allocating, and a
+//! scene pass's grid takes a moving lamp without allocating either.
 #![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
 mod common;
@@ -301,6 +302,51 @@ fn switching_a_scene_pass_on_and_off_allocates_nothing() {
     CountingAllocator::track_this_thread();
     assert_eq!(view_switch_allocations(World::new()), 0, "WebGPU");
     assert_eq!(view_switch_allocations(webgl2_world(true)), 0, "WebGL2");
+}
+
+/// Records warm-up frames of a world whose second view a texture shows, with a lamp between the
+/// two cameras that moves in and out of the second view's sight, which only that view sees, and a
+/// spot light that both views see and the main camera's view gives a shadow tile. Then it records
+/// more such frames, and returns what those allocated.
+fn pass_lamp_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world
+        .renderer
+        .settings_mut()
+        .set_tile_settings(TileSettings {
+            tiles: 7,
+            size: 256,
+            point_shadows: true,
+        });
+    world.add_view([0.0, 0.0, 40.0]);
+    let lamp = world.add_point([0.0, 0.0, 30.0], 3.0);
+    world.add_spot([0.0, 3.0, 0.0], 6.0);
+    world.record(true);
+    let step = |world: &mut World<B>, last: u32| {
+        while world.frame < last {
+            world.frame += 1;
+            let frame = world.frame;
+            // Out of the view's sight one frame in four, and along the view the rest.
+            let x = if frame.is_multiple_of(4) { 500.0 } else { 0.0 };
+            let z = 25.0 + (frame % 7) as f32;
+            world.scene.set_position(lamp, [x, 0.0, z]).unwrap();
+            world.record(false);
+        }
+    };
+    step(&mut world, 12);
+    CountingAllocator::arm();
+    step(&mut world, 120);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn a_moving_lamp_that_a_scene_pass_sees_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(pass_lamp_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let allocated = pass_lamp_allocations(webgl2_world(multi_draw));
+        assert_eq!(allocated, 0, "WebGL2, multi-draw {multi_draw}");
+    }
 }
 
 #[test]

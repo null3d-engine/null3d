@@ -2168,10 +2168,6 @@ export class Scene {
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
-	/** @internal True once development builds saw a point or spot light. */
-	rangedLights = false;
-	/** @internal Called in development builds when the scene gets its first point or spot light. */
-	onRangedLight: (() => void) | undefined;
 	/**
 	 * The camera of each scene pass's view, by the view's place, with the pass's own layers, or
 	 * undefined to follow the camera's.
@@ -3303,10 +3299,6 @@ export class Scene {
 		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
-		if (DEV && ranged && !this.rangedLights) {
-			this.rangedLights = true;
-			this.onRangedLight?.();
-		}
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
 			if (which === C.LIGHT_VALUE_INTENSITY) {

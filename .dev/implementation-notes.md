@@ -482,7 +482,7 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 
 ## Light clusters
 
-- On WebGPU a compute pass fills the camera's light grid in three dispatches. They count each cluster's lights, add up the counts with the caps in one workgroup, and write each cluster's lights. On WebGL2 the job workers do the same work.
+- On WebGPU a compute pass fills the camera's light grid in three dispatches. They count each cluster's lights, add up the counts with the caps in one workgroup, and write each cluster's lights. On WebGL2 the job workers do the same work. Each scene pass that sees a light has a grid of its own, which the same pass fills with three more dispatches ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)).
 - Both paths share one tile test, which the shader repeats step by step. It keeps to the operations that WGSL rounds as the CPU does. It multiplies by the inverse of the depth row's length, and reads each slice's bounds from a table that the CPU fills. So the GPU lists the same lights as the job workers, word for word, and the `light-clusters` page checks it.
 - The pass runs in every frame with lights, because the thread that draws skips the dispatches of a pipeline that is still building. The uploads happen only when the lights or the view change.
 - The counting and writing steps test each tile only against the lights that reach the workgroup's slice. On the Mac's GPU that cut the three dispatches for S3's 256 lights from about 0.31 ms to 0.23 ms.

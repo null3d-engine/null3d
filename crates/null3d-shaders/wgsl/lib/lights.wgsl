@@ -136,7 +136,8 @@ fn clustered_light(
 #ifdef RECEIVE_SHADOWS
         let tile = light.penumbra.w;
         if tile > 0.5 && strength > 0.0 {
-            strength *= light_shadow(u32(tile) - 1u, relative, normal, to_light, gap);
+            let seen = relative + frame.shadow_origin.xyz;
+            strength *= light_shadow(u32(tile) - 1u, seen, normal, to_light, gap);
         }
 #endif
         let reflected = direct_light(

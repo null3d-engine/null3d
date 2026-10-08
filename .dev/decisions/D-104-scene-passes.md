@@ -54,9 +54,33 @@ Images upload with their first row at v = 0, the bottom of a plane (`textures.fr
 7. **Sizes and views.** A pass has a fixed size in pixels, and its camera's lens takes the target's aspect. A texel counts as a pixel for sizes given in pixels, such as wide lines and sprites of constant size. A scene pass culls in one phase: two-phase occlusion culling builds its depth pyramid at the render size, so only views at the render size use it. A removed pass leaves its place free for the next one, so the other views keep their GPU objects.
 8. **Dump.** `render.dumpGraph()` returns the core's DOT text of the whole graph, with culled passes dashed and marked.
 
-### M2 limits, and the follow-up task
+### M2 limits
 
-Scene passes draw the sun, its shadows where the camera's cascades reach, the ambient light, the environment's light and fog. They draw no point or spot lights, because the light grid is the camera's alone, no ambient occlusion and no sky background. Development builds warn once when a scene pass draws a scene that has point or spot lights, so an author is not surprised by a mirror or minimap without its lamps. Point and spot lights in scene passes would take about two days on both GPU paths: each view needs its own pick of lamps, its own light grid, its own buffers or data textures and bind groups. Reusing the main camera's lamp list would still drop the lamps behind the main camera, which a minimap shows, so it would not meet intent parity either. The coordinator ruled on 8 October 2026 that part 1 ships without them, and that they come as their own task right after part 1, before part 2. Ambient occlusion and the sky in scene passes wait for a later task. On the 8-bit path, WebGL2 devices without float targets keep display color in a pass texture, as the next section says. Part 2 of M2-F6 adds full-screen passes of the sketch's WGSL, targets at half and quarter size, and the outline mask as an input.
+Scene passes draw the sun, its shadows, the ambient light, the point and spot lights that their cameras see, the environment's light and fog. They draw no ambient occlusion and no sky background, which wait for a later task. Part 1 shipped without point and spot lights. The coordinator ruled on 8 October 2026 that they come as their own task right after part 1, before part 2, and the next section records that task. On the 8-bit path, WebGL2 devices without float targets keep display color in a pass texture, as the section after it says. Part 2 of M2-F6 adds full-screen passes of the sketch's WGSL, targets at half and quarter size, and the outline mask as an input.
+
+### Point and spot lights in scene passes (8 October 2026)
+
+Part 1 drew no point or spot lights in a scene pass, because only the camera's view had a light grid: every other view's uniform block said that its grid listed none. Development builds warned once when a pass drew a scene with such lights. A minimap of a lit street at night showed the street dark.
+
+Options:
+
+- A. Reuse the camera's light list in the passes. It drops every lamp outside the camera's view, and a minimap or a rear-view mirror shows mostly such places. The grid's clusters belong to one view, so the pass would still need a grid of its own.
+- B. Each camera view picks its own lamps and has its own light grid, buffers and bind groups. Chosen.
+- C. B, with every view's lists packed into one buffer and one data texture, and each view's start in its uniform block. It saves the per-view objects, but it changes how every lit shader finds its lists, on both paths, for no gain in what draws.
+
+How B works:
+
+- The core's `LightTable::gather_view` picks the point and spot lights that a view sees, on the view's layers and against its frustum, at positions relative to its camera. It shares its code with the camera's gather. The frame builder calls it for each view other than the camera's that draws in the frame, with the values that the view draws with, so a culled pass costs nothing (`LightGrids::assign` in `light_grid.rs`, through the light table in `FrameInput`).
+- A view gets its grid on the first frame that it sees a light, with the camera's limits, and keeps it from then on, also for the next view in its place. A pass that sees no lamp makes no grid and no GPU object. With the default limits a grid takes about 0.5 MB of memory on WebGPU and 0.8 MB on WebGL2, which also keeps the words it uploaded. On WebGPU its buffers take 0.34 MB more.
+- WebGPU: each camera view has three buffer ids (grid, light records, parameters) and a bind group of the light clustering layout. The one light clustering pass of the graph dispatches its three steps for each view with lights, so the graph is unchanged. A view's frame group binds its own buffers once they exist, and the camera's before then, which it never reads, as its grid's slices are 0. The fragment stage binds as many storage buffers as before.
+- WebGL2: each camera view has its own ring of three light data textures, sized to its lists, and its frame groups bind them. Before the view has a grid, its groups bind the camera's ring, which it never reads. The fragment stage binds as many textures as before.
+- The light clustering pass runs only for views that draw in the frame and have lights.
+
+Shadows: the shadow maps' matrices, of the cascades and of the atlas's tiles, take positions relative to the camera of the camera's view. Part 1 passed positions relative to the pass's own camera, so a pass read every shadow at the offset between the two cameras. The frame uniform now holds that offset (`shadow_origin`, 16 bytes more, 528 in all), computed from the cameras' cells in 64-bit floats, and the shadow lookups add it. It is 0 in the camera's view. SHADOW_PROOF
+
+The atlas's tiles go to the lamps that the camera sees, the largest first (`shadow_tiles.rs`). A lamp that the camera gave a tile casts its shadow in a pass from the same tile. A lamp that only a pass sees lights the pass without a shadow. Giving passes tiles of their own would split the atlas's few tiles between the views, and a tile would draw again for each view that wants it. Recorded as a limit in `api/render` and `guides/custom-passes`.
+
+Tests: the core's `another_view_gathers_the_lights_it_sees_and_leaves_the_camera_s_lists_alone`; the render crate's scene pass tests on both paths: a lamp that only the pass sees lights the pass alone, and both paths list the same lights; each WebGPU view with lamps fills its own grid; a pass that sees no lamp makes no grid; a pass reads the camera's tiles from its own camera; the no-allocation test with a moving lamp and a pass on both paths; and the `minimap-lamps` image test on all three tiers in both reference sets. The development warning is gone.
 
 ### Display color on the 8-bit path (coordinator's call, 8 October 2026, pending the owner's review)
 
@@ -76,4 +100,5 @@ The coordinator chose B on 8 October 2026, at the helper's recommendation, and f
 - The 8-bit copy: `view_copy.wgsl` has a TONE_MAP build, and the pass targets that WebGPU's copies fill are `rgba8unorm-srgb` on the 8-bit path (`view_target_format` in `frame_graph.rs`).
 - Docs: `api/render` (written), `guides/custom-passes` (render to a texture), `concepts/render-graph`, `api/textures`, the mapping entry `render-target`, E1220 and the fixes of E1502 to E1505.
 - Skills: the develop skill's quick reference, recipes, shaders and `SKILL.md`, and the port skill's post-processing notes.
+- Lights in passes: `null3d-core/src/lights.rs` (`gather_view`), `light_grid.rs` (`LightGrids`, `ViewLights`), both builders and their `lights.rs`, `frame_data.rs` and `globals.wgsl` (`shadow_origin`), `lit.wgsl` and `lib/lights.wgsl` (shadow lookups), and the removal of the warning in `render.ts` and `scene.ts`.
 - Demo: `examples/security-camera` shows a scene pass on a monitor, and its held frame checks option B's colours in compatibility mode against the tone curve applied twice ([image tests](../image-tests.md#the-feature-demos)).

@@ -5,7 +5,9 @@
 // map camera sees the screen too, and the pass leaves it out, as it leaves out every object that
 // shows the pass's own texture. ?clear gives the pass a clear color of its own, which the map shows
 // around the ground; without it the map clears to the scene's background. ?layers draws only the
-// boxes into the map, through the pass's own layers.
+// boxes into the map, through the pass's own layers. ?lamps dims the sun and lights the ground with
+// a warm point light in the middle and a blue spot light on the yellow box; the sun and the spot
+// light cast shadows, which the map draws where the main view draws them.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -18,7 +20,9 @@ const BOXES = [
 	{ position: [3, 0.5, 3], color: '#e0c030' },
 ] as const;
 
-export default defineSketch(({ scene, materials, geometry, textures, render }) => {
+const LAMPS = params.has('lamps');
+
+export default defineSketch(({ scene, materials, geometry, textures, render, quality }) => {
 	scene.setBackground('#20242c');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,
@@ -26,11 +30,38 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 		target: [0, 1.5, 0],
 	});
 	scene.setActiveCamera(camera);
-	scene.createDirectionalLight({ direction: [-0.4, -1, -0.6], intensity: 2.5 });
-	scene.createAmbientLight({ intensity: 0.6 });
+	scene.createDirectionalLight({
+		direction: [-0.4, -1, -0.6],
+		intensity: LAMPS ? 0.8 : 2.5,
+		castShadows: LAMPS,
+		shadow: { distance: 30 },
+	});
+	scene.createAmbientLight({ intensity: LAMPS ? 0.15 : 0.6 });
+	const shadows = { castShadows: LAMPS, receiveShadows: LAMPS };
+	if (LAMPS) {
+		// A fixed shadow filter, so every GPU tier draws the same image whatever preset it runs.
+		quality.set({ shadowFilter: 3 });
+		scene.createPointLight({
+			position: [0, 1.2, 0],
+			color: '#ffb060',
+			intensity: 12,
+			range: 5,
+		});
+		scene.createSpotLight({
+			position: [1.5, 5, 1.5],
+			target: [3, 0, 3],
+			color: '#60c8ff',
+			intensity: 160,
+			range: 10,
+			angle: 0.45,
+			penumbra: 0.2,
+			castShadows: true,
+		});
+	}
 	const ground = scene.createMesh({
 		mesh: geometry.plane({ width: 10, height: 10 }),
 		material: materials.standard({ color: '#9aa0a8', roughness: 0.9 }),
+		receiveShadows: LAMPS,
 	});
 	ground.setRotationEuler(-Math.PI / 2, 0, 0);
 	const box = geometry.box({ width: 1.4, height: 1, depth: 1.4 });
@@ -39,6 +70,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 			mesh: box,
 			material: materials.standard({ color, roughness: 0.6 }),
 			position: [...position],
+			...shadows,
 		});
 		object.setLayers(0b11);
 	}

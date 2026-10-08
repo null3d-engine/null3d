@@ -48,13 +48,15 @@ const TEXTURES_GROUP: u32 = 3;
 
 /// The textures that a camera view's frame groups bind for the surfaces they light: the shadow
 /// map of the main directional light, the shadow atlas of point and spot lights, the texture of
-/// ambient occlusion, and the environment's cube texture, or the blank one.
+/// ambient occlusion, the environment's cube texture, or the blank one, and the first light data
+/// texture of the ring that the groups bind, one per ring slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LitTextures {
     pub(super) shadow_map: u32,
     pub(super) atlas: u32,
     pub(super) occlusion: u32,
     pub(super) environment: u32,
+    pub(super) lights: u32,
 }
 
 /// The ring slots a view's frame draws from.
@@ -248,9 +250,9 @@ impl Opaque {
     /// offsets and the material table's texture, which also holds three.js's table of the
     /// split-sum terms of specular light. A camera's view has one group for each slot of the light
     /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
-    /// cascades' uniform block that read it, the slot's light data texture, the shadow atlas of
-    /// `lit` with the tiles' uniform block, the texture of ambient occlusion, and the
-    /// environment's cube texture of `lit` with its sampler. A shadow cascade's or a shadow tile's
+    /// cascades' uniform block that read it, the slot's texture of `lit`'s ring of light data
+    /// textures, the shadow atlas of `lit` with the tiles' uniform block, the texture of ambient
+    /// occlusion, and the environment's cube texture of `lit` with its sampler. A shadow cascade's or a shadow tile's
     /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
@@ -283,6 +285,7 @@ impl Opaque {
             atlas,
             occlusion,
             environment,
+            lights,
         }) = lit
         else {
             let mut words = [0; 18];
@@ -322,13 +325,7 @@ impl Opaque {
         ]);
         for slot in 0..RING {
             words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 12]);
-            words[43..48].copy_from_slice(&[
-                7,
-                resource_kind::TEXTURE,
-                ids::LIGHT_DATA + slot,
-                0,
-                0,
-            ]);
+            words[43..48].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
             words[48..53].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
             words[53..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));

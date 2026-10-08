@@ -144,8 +144,6 @@ export class Render {
 	private readonly passes: RenderPass[] = [];
 	/** True when a pass came since the last frame, with pipelines to build. */
 	private newPipelines = false;
-	/** True once development builds warned that scene passes draw no point or spot lights. */
-	private warnedLights = false;
 
 	/** @internal */
 	constructor(
@@ -155,23 +153,7 @@ export class Render {
 		private readonly shaders: ShaderPreloads,
 		/** The widest and tallest texture of the device. */
 		private readonly maxSize: number,
-	) {
-		if (DEV) scene.onRangedLight = () => this.warnLights();
-	}
-
-	/**
-	 * Warns once, in development builds, when a scene pass draws a scene that has point or spot
-	 * lights, which its view does not draw.
-	 */
-	private warnLights(): void {
-		if (!DEV || this.warnedLights || !this.scene.rangedLights) return;
-		const pass = this.passes[0];
-		if (pass === undefined) return;
-		this.warnedLights = true;
-		console.warn(
-			`render.addPass(): the scene has point or spot lights, and scene passes do not draw them yet. The texture of "${pass.name}" shows the scene lit by the sun, the ambient light and the environment alone. The main camera's view draws every light.`,
-		);
-	}
+	) {}
 
 	/**
 	 * Adds a pass to the render graph, from the next frame on, and returns it. A scene pass draws
@@ -179,9 +161,10 @@ export class Render {
 	 * materials. It runs only while something shows its texture.
 	 *
 	 * A scene pass draws the sun, its shadows where the main camera's cascades reach, the ambient
-	 * light, the environment's light and fog. It does not draw point or spot lights, ambient
-	 * occlusion or the sky background yet, and development builds warn once when the scene has
-	 * point or spot lights.
+	 * light, the point and spot lights that its camera sees, the environment's light and fog. A
+	 * point or spot light casts its shadow in the pass where the main camera's view gives it a
+	 * shadow, so a light that only the pass sees casts none there. A pass does not draw ambient
+	 * occlusion or the sky background yet.
 	 *
 	 * Throws E1220 for options it does not take, a name that a live pass writes already, or the
 	 * 32nd live pass. Throws the render graph's code when the pass does not fit the graph: E1502
@@ -249,7 +232,6 @@ export class Render {
 		this.passes.push(pass);
 		this.scene.setPassCamera(place, camera, pass.layers);
 		this.newPipelines = true;
-		this.warnLights();
 		return pass;
 	}
 

@@ -46,6 +46,10 @@ struct Frame {
     occlusion: vec4f,
     /// The scene's environment, which null3d::ibl reads.
     environment: EnvironmentLight,
+    /// This view's camera relative to the main camera, and 0. The shadow maps' matrices take
+    /// positions relative to the main camera, so shadow lookups add this to a position relative to
+    /// this view's camera. It is 0 in the main camera's view.
+    shadow_origin: vec4f,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every

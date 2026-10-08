@@ -447,7 +447,9 @@ export const MINIMAP_SKETCH = 'tests/pages/sketches/minimap-sketch.ts';
  * screen in the scene shows it, on every tier. Four boxes at the map's corners show that the map
  * stands upright and unmirrored on both GPU paths: WebGPU turns the image over in a copy, and
  * WebGL2 draws it in that order. The map camera sees the screen, which the pass leaves out. With
- * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes.
+ * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes. With
+ * ?lamps a point light and a spot light light the map as they light the main view, and the map
+ * draws the sun's and the spot light's shadows where the main view draws them.
  * Compatibility mode draws the 8-bit path with MSAA, where the copy turns the pass's display color
  * back to linear. The scene pass spec checks the boxes' colors in the screen's corners.
  */
@@ -457,7 +459,12 @@ function minimapTests(): ImageTest[] {
 		sketch: `${MINIMAP_SKETCH}${query}`,
 		hold: 0,
 	});
-	return [test('minimap', ''), test('minimap-clear', '?clear'), test('minimap-layers', '?layers')];
+	return [
+		test('minimap', ''),
+		test('minimap-clear', '?clear'),
+		test('minimap-layers', '?layers'),
+		test('minimap-lamps', '?lamps'),
+	];
 }
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */

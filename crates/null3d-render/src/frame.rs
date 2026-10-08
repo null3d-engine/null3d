@@ -230,6 +230,10 @@ pub struct FrameInput<'a> {
     pub lights: &'a [VisibleLight],
     /// The point and spot lights that cast shadows (see [`LightTable::shadows`]).
     pub shadow_lights: &'a [LightShadow],
+    /// The scene's light table, from which each camera view other than the camera's gathers the
+    /// point and spot lights it sees (see [`LightTable::gather_view`]), or `None`: then only the
+    /// camera's view lists such lights.
+    pub light_table: Option<&'a LightTable>,
     /// The newest frame that the thread that draws drew with every pipeline built, or 0 before
     /// any.
     pub pipelines_built: u32,

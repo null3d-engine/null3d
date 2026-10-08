@@ -65,8 +65,6 @@ function setup() {
 	} as unknown as CoreMemory;
 	const cameras: [number, Camera | undefined, number | undefined][] = [];
 	const scene = {
-		rangedLights: false,
-		onRangedLight: undefined as (() => void) | undefined,
 		setPassCamera(place: number, camera: Camera | undefined, layers: number | undefined) {
 			cameras.push([place, camera, layers]);
 			if (camera) camera.sendLens(glue as never, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
@@ -235,24 +233,6 @@ describe('render passes', () => {
 		);
 		expect(error.code).toBe('E1220');
 		expect(error.message).toContain(`at most ${C.SCENE_PASS_MAX} scene passes`);
-	});
-
-	it('warns once in development builds when a pass draws a scene with point or spot lights', () => {
-		const { render, scene } = setup();
-		const warnings: unknown[] = [];
-		const warn = console.warn;
-		console.warn = (message: unknown) => warnings.push(message);
-		try {
-			render.addPass({ kind: 'scene', camera: camera().camera, writes: 'map', size: [8, 8] });
-			expect(warnings).toEqual([]);
-			scene.rangedLights = true;
-			scene.onRangedLight?.();
-			render.addPass({ kind: 'scene', camera: camera().camera, writes: 'other', size: [8, 8] });
-			expect(warnings.length).toBe(1);
-			expect(String(warnings[0])).toContain('scene passes do not draw them yet');
-		} finally {
-			console.warn = warn;
-		}
 	});
 
 	it("dumps the core's graph", () => {

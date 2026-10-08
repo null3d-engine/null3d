@@ -50,14 +50,16 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
 /// the materials' custom values, three.js's table of the split-sum terms of specular light, the
 /// main directional light's shadow map, which is `shadow_map`, with its cascades and the sampler
-/// that reads four of its texels at once, the camera's light grid and light records, the shadow
-/// atlas of point and spot lights, which is `atlas`, with its comparison sampler and its tiles,
-/// the texture of ambient occlusion, `occlusion`, and the environment's cube texture, which is
-/// `environment`, with its sampler. A new shadow map, atlas, occlusion texture or environment
-/// needs the group again.
+/// that reads four of its texels at once, the light grid and light records of view `lights`: the
+/// view's own once they exist, the camera's before, the shadow atlas of point and spot lights,
+/// which is `atlas`, with its comparison sampler and its tiles, the texture of ambient occlusion,
+/// `occlusion`, and the environment's cube texture, which is `environment`, with its sampler. A
+/// new shadow map, atlas, occlusion texture, environment or light buffers needs the group again.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn bind_frame(
     list: &mut DrawList,
     view: ViewId,
+    lights: ViewId,
     shadow_map: u32,
     atlas: u32,
     occlusion: u32,
@@ -72,8 +74,8 @@ pub(super) fn bind_frame(
         entry(4, resource_kind::TEXTURE, shadow_map),
         entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
         entry(6, resource_kind::BUFFER, ids::SHADOWS),
-        entry(7, resource_kind::BUFFER, ids::LIGHT_GRID),
-        entry(8, resource_kind::BUFFER, ids::LIGHTS),
+        entry(7, resource_kind::BUFFER, ids::light_grid(lights)),
+        entry(8, resource_kind::BUFFER, ids::lights(lights)),
         entry(9, resource_kind::TEXTURE, atlas),
         entry(10, resource_kind::BUFFER, ids::SHADOW_TILES),
         entry(11, resource_kind::TEXTURE, occlusion),

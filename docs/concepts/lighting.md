@@ -34,6 +34,8 @@ Setters change the engine's memory at once, and they allocate nothing except tho
 3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
+A scene pass ([Custom passes](../guides/custom-passes.md)) does steps 3 and 4 again for its own camera and layers, with a light grid of its own. Its point and spot lights cast shadows where the camera's view gives them shadows.
+
 ## Kinds of light and their units
 
 Units follow three.js since r155, which dropped its legacy light mode. A scene tuned for three.js's current units needs the same intensities in null3D.

@@ -528,7 +528,7 @@ fn light_surface(
     // holds, so it skips the lookup and the filter's reads.
     let to_sun = -engine_frame.sun_direction.xyz;
     if dot(normal, to_sun) > 0.0 {
-        sun_color *= sun_shadow(relative, normal, to_sun);
+        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun);
     }
 #endif
     let sun = direct_light(

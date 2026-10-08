@@ -240,7 +240,9 @@ return {
 
 ### What a scene pass draws
 
-A scene pass draws with the scene's materials, the sun, the sun's shadows where the camera's shadow cascades reach, the ambient light, the environment's light and the fog. In this version it draws no point or spot lights, no ambient occlusion and no sky background. Its texture clears to `clearColor`, or to the scene's background color.
+A scene pass draws with the scene's materials, the sun, the sun's shadows where the camera's shadow cascades reach, the ambient light, the point and spot lights that its camera sees, the environment's light and the fog. In this version it draws no ambient occlusion and no sky background. Its texture clears to `clearColor`, or to the scene's background color.
+
+A point or spot light casts its shadow in a pass when the camera's view gives it a shadow. The engine gives shadows to the lights that the camera sees, so a light that only the pass sees lights the pass without a shadow. A pass that sees a point or spot light keeps its own list of lights, as the camera's view does, which takes under 1 MB of memory. A pass that sees none keeps no list.
 
 The texture holds linear color after the exposure, so a material that shows it gives the camera the light that the pass saw. On devices that draw 8-bit color, each material tone maps its own color. In compatibility mode with MSAA, the texture holds that color turned back to linear, so the tone curve applies twice and the image looks a little lighter in the middle tones. On WebGL2 devices without float targets, the texture holds display color, which looks brighter and flatter.
 

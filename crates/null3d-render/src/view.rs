@@ -297,4 +297,13 @@ impl ViewFrame {
             layers,
         }
     }
+
+    /// Gives the view's uniform block the offset that its shadow lookups add: from `main`, the
+    /// camera of the camera's view, whose positions the shadow maps' matrices take, to this view's
+    /// camera. The offset to the camera's cell is computed in 64-bit floats.
+    pub(crate) fn set_shadow_origin(&mut self, main: &CellPosition) {
+        let to_cell = main.offset_to(self.camera.cell);
+        let [x, y, z] = std::array::from_fn(|k| to_cell[k] + self.camera.local[k]);
+        self.uniform.shadow_origin = [x, y, z, 0.0];
+    }
 }

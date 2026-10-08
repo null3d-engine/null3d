@@ -355,6 +355,7 @@ impl<B: FrameBuilder> World<B> {
             lines: self.lines.lines(),
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
+            light_table: self.light_table.as_ref(),
             pipelines_built: if self.pipelines_built == u32::MAX {
                 frame
             } else {

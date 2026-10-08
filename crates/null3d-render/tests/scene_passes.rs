@@ -7,14 +7,18 @@ mod common;
 
 use common::{LENS, World, count, grid};
 use null3d_core::handle::Handle;
+use null3d_core::lights::VisibleLight;
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{Op, format};
+use null3d_gpu::drawlist::{Op, format, layout};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, NO_MESH};
+use null3d_render::gpu_driven::GpuDrivenRenderer;
 use null3d_render::graph::{ALL_LAYERS, GraphError};
+use null3d_render::light_grid::LightGrid;
 use null3d_render::materials::{MapSlot, Shading};
-use null3d_render::view::{View, ViewId, ViewNames, ViewTarget};
+use null3d_render::shadow_tiles::TileSettings;
+use null3d_render::view::{View, ViewFrame, ViewId, ViewNames, ViewTarget};
 
 /// The size of the minimap's texture in the tests.
 const SIZE: u32 = 64;
@@ -331,4 +335,219 @@ fn on_the_8_bit_path_the_webgpu_copy_decodes_display_color_into_an_srgb_texture(
             "the copy's build and target format for scene color {scene_color}"
         );
     }
+}
+
+/// The light grid and values of a view in the frame recorded last, on either GPU path.
+trait ViewLighting {
+    fn view_light_grid(&self, view: ViewId) -> Option<&LightGrid>;
+    fn camera_grid(&self) -> &LightGrid;
+    fn values(&self, view: ViewId) -> Option<&ViewFrame>;
+}
+
+impl ViewLighting for GpuDrivenRenderer {
+    fn view_light_grid(&self, view: ViewId) -> Option<&LightGrid> {
+        self.view_light_grid(view)
+    }
+    fn camera_grid(&self) -> &LightGrid {
+        self.light_grid()
+    }
+    fn values(&self, view: ViewId) -> Option<&ViewFrame> {
+        self.view_frame(view)
+    }
+}
+
+impl ViewLighting for CpuCulledRenderer {
+    fn view_light_grid(&self, view: ViewId) -> Option<&LightGrid> {
+        self.view_light_grid(view)
+    }
+    fn camera_grid(&self) -> &LightGrid {
+        self.light_grid()
+    }
+    fn values(&self, view: ViewId) -> Option<&ViewFrame> {
+        self.view_frame(view)
+    }
+}
+
+/// Where the second view's camera stands: behind the main camera, which stands at z = 20, both
+/// looking down -z.
+const BEHIND: [f32; 3] = [0.0, 0.0, 40.0];
+/// A lamp between the two cameras, which only the second view sees.
+const BETWEEN: [f32; 3] = [0.0, 0.0, 30.0];
+
+/// Records `world`, with a second view at [`BEHIND`] that a texture shows, for a few frames on
+/// `mock`, after `setup` added its lights. Returns the view and every frame's operations.
+fn lit_views_on<B: FrameBuilder>(
+    world: &mut World<B>,
+    mock: &mut MockBackend,
+    setup: impl FnOnce(&mut World<B>),
+) -> (ViewId, Vec<(Op, Vec<u32>)>) {
+    let view = world.add_view(BEHIND);
+    setup(world);
+    let mut commands = Vec::new();
+    for frame in 0..4 {
+        commands.extend(world.step(mock, frame == 0));
+    }
+    (view, commands)
+}
+
+/// As [`lit_views_on`], on a mock of its own.
+fn lit_views<B: FrameBuilder>(
+    world: &mut World<B>,
+    setup: impl FnOnce(&mut World<B>),
+) -> (ViewId, Vec<(Op, Vec<u32>)>) {
+    lit_views_on(world, &mut MockBackend::default(), setup)
+}
+
+/// The bind groups that the frame's light clustering dispatches set: the groups that `created`
+/// made with the light clustering layout, in the order the frame sets them.
+fn light_groups(created: &[(Op, Vec<u32>)], frame: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    let groups: Vec<u32> = created
+        .iter()
+        .filter(|(op, words)| *op == Op::CreateBindGroup && words[1] == layout::LIGHT_CLUSTERS)
+        .map(|(_, words)| words[0])
+        .collect();
+    frame
+        .iter()
+        .filter(|(op, words)| *op == Op::SetBindGroup && groups.contains(&words[1]))
+        .map(|(_, words)| words[1])
+        .collect()
+}
+
+/// Checks that a lamp that only the second view sees lights that view alone, as its grid lists it
+/// for positions relative to the view's camera, and returns the view's grid's lights.
+fn lamp_only_the_view_sees<B: FrameBuilder + ViewLighting>(
+    world: &mut World<B>,
+) -> Vec<VisibleLight> {
+    let (view, _) = lit_views(world, |world| {
+        world.add_point(BETWEEN, 3.0);
+    });
+    let renderer = &world.renderer;
+    assert!(
+        renderer.camera_grid().lights().is_empty(),
+        "the camera sees no lamp"
+    );
+    let grid = renderer.view_light_grid(view).expect("the view has a grid");
+    assert_eq!(grid.lights().len(), 1);
+    let lamp = grid.lights()[0];
+    assert_eq!(
+        lamp.position,
+        [0.0, 0.0, -10.0],
+        "relative to the view's camera"
+    );
+    let values = renderer.values(view).unwrap();
+    assert_ne!(
+        values.uniform.cluster_grid[2], 0.0,
+        "the view's shaders read its grid"
+    );
+    let camera = renderer.values(ViewId::CAMERA).unwrap();
+    assert_eq!(camera.uniform.cluster_grid[2], 0.0);
+    // A surface 1 m in front of the lamp, seen from the view, finds the lamp in its cluster.
+    let cluster = grid.cluster_at([0.0, 0.0, -9.0]).expect("in the grid");
+    assert!(grid.reaches(0, cluster));
+    grid.lights().to_vec()
+}
+
+#[test]
+fn a_lamp_that_only_a_scene_pass_sees_lights_the_pass_alone_on_both_paths() {
+    let gpu = lamp_only_the_view_sees(&mut World::new());
+    let cpu = lamp_only_the_view_sees(&mut World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+    assert_eq!(gpu, cpu, "both paths list the same lights");
+}
+
+#[test]
+fn each_webgpu_view_with_lamps_fills_its_own_grid() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let (view, created) = lit_views_on(&mut world, &mut mock, |world| {
+        world.add_point(BETWEEN, 3.0);
+        world.add_point([0.0, 0.0, 0.0], 3.0);
+    });
+    // Both views see a lamp: each gets its own light buffers and group, and the light clustering
+    // pass fills both grids.
+    let frame = world.step(&mut mock, true);
+    let set = light_groups(&created, &frame);
+    assert_eq!(set.len(), 2, "one group per view with lamps: {set:?}");
+    assert_ne!(set[0], set[1]);
+    let grid = world.renderer.view_light_grid(view).unwrap();
+    assert_eq!(grid.lights().len(), 2, "the view sees both lamps");
+    let max_words = grid.max_words() * 4;
+    let grids = created
+        .iter()
+        .filter(|(op, words)| *op == Op::CreateBuffer && words[1] == max_words)
+        .count();
+    assert_eq!(grids, 2, "a grid buffer for each view");
+}
+
+#[test]
+fn a_pass_that_sees_no_lamp_makes_no_grid() {
+    let mut world = World::new();
+    let (view, created) = lit_views(&mut world, |world| {
+        // Lamps that only the main camera sees: past the far plane of the view's camera, which
+        // stands 20 m further back.
+        world.add_point([0.0, 0.0, -70.0], 1.0);
+        world.add_point([1.0, 0.0, -70.0], 1.0);
+    });
+    assert!(world.renderer.view_light_grid(view).is_none());
+    assert_eq!(world.renderer.light_grid().lights().len(), 2);
+    let made = created
+        .iter()
+        .filter(|(op, words)| *op == Op::CreateBindGroup && words[1] == layout::LIGHT_CLUSTERS)
+        .count();
+    assert_eq!(made, 1, "only the camera's light group");
+    let mut cpu = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    let (view, _) = lit_views(&mut cpu, |world| {
+        world.add_point([0.0, 0.0, -70.0], 1.0);
+    });
+    assert!(cpu.renderer.view_light_grid(view).is_none(), "WebGL2");
+}
+
+/// Checks that the second view's shadow lookups add its camera's offset from the main camera,
+/// and that a lamp that the main camera's view gives a shadow tile keeps it in the second view,
+/// while a lamp that only the second view sees has none.
+fn shadows_in_the_view<B: FrameBuilder + ViewLighting>(world: &mut World<B>) {
+    let (view, _) = lit_views(world, |world| {
+        world
+            .renderer
+            .settings_mut()
+            .set_tile_settings(TileSettings {
+                tiles: 7,
+                size: 256,
+                point_shadows: true,
+            });
+        world.add_spot([0.0, 3.0, 0.0], 6.0);
+        world.add_point(BETWEEN, 3.0);
+    });
+    let renderer = &world.renderer;
+    let values = renderer.values(view).unwrap();
+    assert_eq!(values.uniform.shadow_origin, [0.0, 0.0, 20.0, 0.0]);
+    let camera = renderer.values(ViewId::CAMERA).unwrap();
+    assert_eq!(camera.uniform.shadow_origin, [0.0; 4]);
+    let shared = renderer.camera_grid().lights()[0];
+    assert!(
+        shared.shadow > 0.0,
+        "the camera's view gives the spot light a tile"
+    );
+    let lights = renderer.view_light_grid(view).unwrap().lights();
+    assert_eq!(lights.len(), 2);
+    let tile_of = |light: u32| lights.iter().find(|l| l.light == light).unwrap().shadow;
+    assert_eq!(
+        tile_of(shared.light),
+        shared.shadow,
+        "the view reads the same tile"
+    );
+    let only = lights.iter().find(|l| l.light != shared.light).unwrap();
+    assert_eq!(
+        only.shadow, 0.0,
+        "a lamp that only the view sees has no tile"
+    );
+}
+
+#[test]
+fn a_pass_reads_the_camera_s_shadow_tiles_from_its_own_camera_on_both_paths() {
+    shadows_in_the_view(&mut World::new());
+    shadows_in_the_view(&mut World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
 }
