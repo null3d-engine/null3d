@@ -47,7 +47,8 @@ export interface ModelScene {
 	clip?: { name: string; time: number };
 	/**
 	 * A frame that both engines place the camera from, in place of their bounds. three.js's bounds
-	 * of a mesh with morph targets hold every target's shape, and null3D's the shape at rest.
+	 * of a mesh with morph targets hold every target's shape, and null3D's the shape at rest. Its
+	 * bounds of a skinned mesh hold the pose, and null3D's the bind pose.
 	 */
 	frame?: { center: readonly [number, number, number]; radius: number };
 }
@@ -113,10 +114,12 @@ export const MODEL_SCENES = {
 	rigged: {
 		url: sampleUrl('sources/khronos/RiggedSimple/glTF-Binary/RiggedSimple.glb'),
 		clip: { name: 'animation_0', time: 1 },
+		frame: { center: [0, 0, 0], radius: 4.8 },
 	},
 	'draco-rigged': {
 		url: sampleUrl('sources/khronos/RiggedSimple/glTF-Draco/RiggedSimple.gltf'),
 		clip: { name: 'animation_0', time: 1 },
+		frame: { center: [0, 0, 0], radius: 4.8 },
 		uncompressed: 'rigged',
 	},
 	'draco-texture-coordinates': {

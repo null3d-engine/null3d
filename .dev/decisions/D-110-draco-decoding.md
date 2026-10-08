@@ -92,7 +92,7 @@ The spec says that the accessors "must match the decompressed data". three.js ig
 
 - Unit tests (`tests/lib/draco-decoding.test.ts`) with the shipped decoder. The Khronos RiggedSimple Draco model gives the triangles of its uncompressed twin, each vertex within 0.005 of its twin's position, normals within 0.02, the same joints and weights within 0.01. The test file's texture coordinates match its source within 0.001. Six broken files each give E1416, and a fresh decoder reads the whole file after a spent one.
 - `tests/lib/draco-fixtures.test.ts` checks that the test file is what the encoder builds, and `tools/lib/draco-vendor.test.ts` that the vendored files are the pinned release's.
-- Image tests on all three tiers: `gltf-rigged` (new references), and `gltf-draco-rigged` and `gltf-draco-texture-coordinates`, which must match their uncompressed scenes' references.
+- Image tests on all three tiers: `gltf-rigged` (new references), and `gltf-draco-rigged` and `gltf-draco-texture-coordinates`, which match their uncompressed scenes' references within the default tolerance, on the Mac's GPU and on SwiftShader. The parity check compares all three with three.js's `GLTFLoader` and `DRACOLoader`: 0.000% of the pixels differ on every tier in both sets (8 October 2026). The rigged scenes needed a fixed frame, since three.js's bounds of a skinned mesh hold the pose.
 - A browser test in each thread mode on both GPU paths loads both Draco files, refuses a broken one with E1416, and loads the test file again. The page downloads the decoder's script and module once, and pages without Draco files download neither.
 
 ## Decision
