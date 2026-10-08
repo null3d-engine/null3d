@@ -373,6 +373,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	generateTexture(texture: number): number;
 	/**
+	 * Makes a generated cube texture a map of the scene's sky, which fills once its generator ran
+	 * and refreshes over the next frames whenever the sky changes. Before the scene's first sky
+	 * background, the maps show the sky of the background's values, which TypeScript writes first.
+	 */
+	addSkyMap(texture: number): number;
+	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
 	 * layer, and level after level for a texture whose data brings its mip levels.
@@ -782,6 +788,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setTextureImage',
 	'setCubeImages',
 	'generateTexture',
+	'addSkyMap',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',

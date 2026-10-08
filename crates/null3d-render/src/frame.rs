@@ -51,6 +51,7 @@ use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
     fit_cascades,
 };
+use crate::sky_maps::SkyMaps;
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -663,6 +664,8 @@ pub struct SceneSettings {
     vignette: Option<Vignette>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
+    /// The environment maps of the scene's sky.
+    sky_maps: SkyMaps,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
     /// The sketch's custom effects, in the order they run.
@@ -728,6 +731,7 @@ impl SceneSettings {
             lut: None,
             vignette: None,
             environment: None,
+            sky_maps: SkyMaps::default(),
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
             effect_joins: EffectJoins::default(),
@@ -988,6 +992,15 @@ impl SceneSettings {
         self.environment = environment;
     }
 
+    /// The environment maps of the scene's sky.
+    pub fn sky_maps(&self) -> &SkyMaps {
+        &self.sky_maps
+    }
+
+    pub fn sky_maps_mut(&mut self) -> &mut SkyMaps {
+        &mut self.sky_maps
+    }
+
     /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
     /// while the scene has no environment to draw, with the environment's part of the frame
     /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
@@ -997,10 +1010,15 @@ impl SceneSettings {
             Some((environment, self.textures.ready_cube(environment.texture)?))
         });
         match ready {
-            Some((environment, (map, levels))) => (
-                map,
-                environment.uniform(levels, self.drawn_output().exposure),
-            ),
+            Some((mut environment, (map, levels))) => {
+                if let Some(sh) = self.sky_maps.sh(environment.texture) {
+                    environment.sh = sh;
+                }
+                (
+                    map,
+                    environment.uniform(levels, self.drawn_output().exposure),
+                )
+            }
             None => (blank, EnvironmentUniform::default()),
         }
     }
@@ -1115,6 +1133,13 @@ impl SceneSettings {
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
     pub fn set_background_source(&mut self, background: Option<Background>) {
+        if let Some(Background {
+            source: BackgroundSource::Sky(sky),
+            ..
+        }) = background
+        {
+            self.sky_maps.set_sky(sky);
+        }
         self.background = background;
     }
 
@@ -1138,6 +1163,7 @@ impl SceneSettings {
                 .estimate_needs(input.scene, input.batches, &self.materials, &view);
         }
         let remade = self.textures.record(list, frame)?;
+        self.sky_maps.record(&self.textures, list)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(

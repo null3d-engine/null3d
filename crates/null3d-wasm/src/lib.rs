@@ -2832,20 +2832,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
         let values = &e.background_values;
         let value = |place: u32| values[place as usize];
         let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
-        let sky = Sky {
-            sun_position: three(at::SUN_POSITION),
-            turbidity: value(at::TURBIDITY),
-            rayleigh: value(at::RAYLEIGH),
-            mie_coefficient: value(at::MIE_COEFFICIENT),
-            mie_directional_g: value(at::MIE_DIRECTIONAL_G),
-            cloud_scale: value(at::CLOUD_SCALE),
-            cloud_speed: value(at::CLOUD_SPEED),
-            cloud_coverage: value(at::CLOUD_COVERAGE),
-            cloud_density: value(at::CLOUD_DENSITY),
-            cloud_elevation: value(at::CLOUD_ELEVATION),
-            time: value(at::TIME),
-            sun_disc: value(at::SUN_DISC) > 0.0,
-        };
+        let sky = sky_of(&values[..]);
         let (intensity, blur, rotation) =
             (value(at::INTENSITY), value(at::BLUR), three(at::ROTATION));
         let settings = e.renderer.settings_mut();
@@ -2869,6 +2856,52 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             blur,
             rotation,
         }));
+        0
+    })
+}
+
+/// The sky's settings in the background's values.
+fn sky_of(values: &[f32]) -> Sky {
+    use constants::background_value as at;
+    let value = |place: u32| values[place as usize];
+    Sky {
+        sun_position: std::array::from_fn(|k| value(at::SUN_POSITION + k as u32)),
+        turbidity: value(at::TURBIDITY),
+        rayleigh: value(at::RAYLEIGH),
+        mie_coefficient: value(at::MIE_COEFFICIENT),
+        mie_directional_g: value(at::MIE_DIRECTIONAL_G),
+        cloud_scale: value(at::CLOUD_SCALE),
+        cloud_speed: value(at::CLOUD_SPEED),
+        cloud_coverage: value(at::CLOUD_COVERAGE),
+        cloud_density: value(at::CLOUD_DENSITY),
+        cloud_elevation: value(at::CLOUD_ELEVATION),
+        time: value(at::TIME),
+        sun_disc: value(at::SUN_DISC) > 0.0,
+    }
+}
+
+// Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
+// scene's sky, which fills in the first frame after the generator ran and refreshes over the next
+// frames whenever the sky changes. Before the scene's first sky background, the maps show the sky
+// of the background's values, which TypeScript writes first. Fails for a texture that is not live.
+/// Makes a generated cube texture a map of the scene's sky.
+#[wasm_bindgen(js_name = addSkyMap)]
+pub fn add_sky_map(texture: u32) -> u32 {
+    with_engine(|e| {
+        let sky = sky_of(&e.background_values[..]);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        if texture.is_none() {
+            return 0;
+        }
+        let maps = settings.sky_maps_mut();
+        if maps.sky().is_none() {
+            maps.set_sky(sky);
+        }
+        maps.add(texture);
         0
     })
 }

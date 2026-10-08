@@ -125,8 +125,8 @@ export default defineSketch(async (ctx) => {
 | `scene.setActiveCamera(camera)` | | The camera the canvas shows |
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
-| `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing |
-| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` or `assets.builtinEnvironment('room')`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
+| `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing by itself: `assets.skyEnvironment()` lights with it |
+| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment`, `assets.builtinEnvironment('room')` or `assets.skyEnvironment()`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
 | `scene.setBackground(env or cubemap, { blur, intensity, rotation })` (0.2) | | An environment or a cube map around the scene, as three.js's `backgroundBlurriness`, `backgroundIntensity` and `backgroundRotation`. Only environments blur, at no extra cost. Allocates nothing, so it can change every frame |
 | `scene.setFog({ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent })` or `null` | | Fog by straight-line distance from the camera. `curve`: `'exponential'` (default, `density` 0.01), `'exp2'` or `'linear'` (`near`, `far`). `heightFalloff` above 0 thins the fog above `height`; `sunGlow` above 0 lights the fog toward the main directional light. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
@@ -232,6 +232,8 @@ scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   /
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
   castShadows: true, shadow: { bias: 0.2, normalBias: 0.3 } });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });  // stored, but does not light surfaces yet
+const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, light, fog, ambient, exposure }, plain values
+scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
 
@@ -386,6 +388,7 @@ ship.clips;                // (0.2) clip names, which a copy's animator plays
 const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const hdr = await assets.loadEnvironment('/hdri/sunset_2k.hdr');  // (0.2) .hdr or .exr, filtered on the GPU at load
 const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment, made on the GPU; no file. Ask while loading: the next frame makes it whole (50-110 ms on phones)
+const skyLight = await assets.skyEnvironment();                 // (0.2) the light of setBackground({ sky }); follows the sun by itself, 6 frames after each change
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2) square faces in three.js's order, for scene.setBackground
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
 ship.destroy();   // (0.2) frees its meshes, materials, textures, skeleton and clips; destroy its copies first, else E1111

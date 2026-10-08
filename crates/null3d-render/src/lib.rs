@@ -80,6 +80,8 @@ pub mod queries;
 pub mod shadow_tiles;
 pub mod shadows;
 pub mod skinning;
+mod sky_light;
+pub mod sky_maps;
 pub mod sorted;
 pub mod textures;
 pub mod view;

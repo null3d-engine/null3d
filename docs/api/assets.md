@@ -35,6 +35,7 @@ export default defineSketch(async ({ assets, page }) => {
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
 | `loadEnvironment(url)` | An `Environment` for `scene.setEnvironment`, from a file of `bunx @null3d/cli assets env` or from an HDR file: Radiance (`.hdr`) or OpenEXR (`.exr`). [Environments](#environments) says what it reads |
 | `builtinEnvironment('room')` | The built-in room, the scene of three.js's `RoomEnvironment`, as an `Environment` |
+| `skyEnvironment()` | The light of the scene's sky, as an `Environment` that follows the sky background |
 | `loadCubemap(urls)` | A `Cubemap` of six images, a sky box for `scene.setBackground`. [Cube maps](#cube-maps) says what it reads |
 | `loadJson(url)` | The file parsed as JSON |
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
@@ -120,7 +121,7 @@ A load that fails frees everything that it made before the failure.
 - The KTX2 file that `bunx @null3d/cli assets env` writes, the fast path. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light.
 - An HDR file of an equirectangular panorama, as three.js's `HDRLoader` and `EXRLoader` read it: a Radiance file (`.hdr`) or an OpenEXR file (`.exr`). The engine filters it on the GPU at load, with the asset tool's steps, as three.js's `PMREMGenerator.fromEquirectangular` does.
 
-`builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. The GPU draws it and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
+`builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. `skyEnvironment()` makes the light of the sky that [`scene.setBackground({ sky })`](scene.md#environments-cube-maps-and-the-sky) draws, as three.js's `PMREMGenerator.fromScene` does with its `Sky`. The GPU draws each of them and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -143,6 +144,8 @@ export default defineSketch(async ({ scene, assets }) => {
 - An HDR map has faces of 256 texels, as the asset tool's default. An image wider than 2,048 texels becomes the averages of squares of its texels first. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files.
 - The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
 - `builtinEnvironment` resolves once the code and the shaders that make the room are ready. The GPU then makes the whole map in the next frame, before that frame draws. So the first frame with the room already has its light. That frame takes longer by the map's GPU time: about 20 ms on a MacBook Pro, and 50 to 110 ms on recent phones. Ask for the room while the scene loads. During play, the call makes one long frame.
+- `skyEnvironment` loads the same code and shaders as the room, and resolves once they are ready. The next frame makes the whole map, in about 10 ms on a MacBook Pro. Until the scene's first sky background, the map shows the sky's defaults.
+- The sky's map follows the sky. After `setBackground({ sky })` changes it, the map refreshes in 7 steps, one a frame. The scene draws with the old map until the last step. Each step takes under 1.1 ms on a MacBook Pro. The map leaves out the sun's disc, whose light the scene's directional light gives. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
 - The tool's file needs no reading or filtering at load, so prefer it for maps that ship with a game. HDR files suit maps that change, such as files that users upload. The tool's file is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. A 1K OpenEXR file and its map take about 1.3 MB each.

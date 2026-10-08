@@ -313,31 +313,31 @@ UI libraries need the DOM, so they live on the page. Each change sends one messa
 ## 10. Day and night: sun, sky and environment (0.2)
 
 ```ts
-const sun = scene.createDirectionalLight({ direction: [0, -1, 0], intensity: 3, castShadows: true });
-const dir = vec3.create();
-const sunPosition: [number, number, number] = [0, 1, 0];
-const settings = { sunPosition, turbidity: 8, rayleigh: 2, time: 0 };  // three.js's Sky uniforms
-const sky = { sky: settings };
-scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.3 });
-let t = 0.3; // 0 = midnight, 0.5 = noon
+import { timeOfDay } from '@null3d/engine';
+
+const skyLight = await assets.skyEnvironment();     // the sky's light; it follows setBackground({ sky })
+const sun = scene.createDirectionalLight({ castShadows: true });
+let hours = 15;
+let shown = -1;
 return {
   onUpdate(dt) {
-    t = (t + dt / 240) % 1;                                  // 4-minute day
-    const a = t * Math.PI * 2;
-    vec3.set(dir, 0.3, -Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2));
-    sun.setDirection(dir[0], dir[1], dir[2]);
-    const daylight = math.clamp(-dir[1] * 2, 0, 1);
-    sun.setIntensity(3 * daylight);
-    sunPosition[0] = -dir[0];                                // toward the sun
-    sunPosition[1] = -dir[1];
-    sunPosition[2] = -dir[2];
-    settings.time += dt;                                     // the clouds drift
-    scene.setBackground(sky);
+    hours = (hours + dt / 10) % 24;                  // a 4-minute day
+    const step = Math.floor(hours * 20);              // a new time of day 2 times a second
+    if (step === shown) return;
+    shown = step;
+    const day = timeOfDay(hours);                     // sun or moon, sky, fog and exposure of the hour
+    scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.3 } }, { intensity: day.skyIntensity });
+    scene.setEnvironment(skyLight, { intensity: day.skyIntensity });
+    sun.setDirection(...day.light.direction);
+    sun.setColor(day.light.color);
+    sun.setIntensity(day.light.intensity);
+    scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
+    post.set({ exposure: day.exposure });
   },
 };
 ```
 
-Calling `setBackground` every frame is fine: the sky's settings are values, not shader builds, and the call allocates nothing. Keep one settings object and change it in place. The sky lights nothing, so the sun light and an environment light the scene. Docs: `api/scene`, `concepts/lighting`.
+`timeOfDay` returns a new object, and `setColor` converts the color, so this updates a few times a second, not in every frame. The sky's environment takes 7 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue, then to night. The sky lights nothing by itself, so the sun light and the sky's environment light the scene. Docs: `concepts/lighting`, `api/scene`.
 
 ## 11. Physics with a library in the sketch worker
 
