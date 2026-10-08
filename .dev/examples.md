@@ -127,6 +127,23 @@ Why it works this way:
 - Hover steers, not a drag, because a drag already turns the camera. On a touch screen, a tap is the only gesture that a drag does not take.
 - The weight eases back after an idle time because the sketch cannot see a pointer leave the canvas. Without it, the last pointed point would hold the object for the rest of the visit.
 
+## Showcase scenes
+
+The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
+
+- **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
+- **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain, rocks, grass).
+- **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
+- **Interaction:** a showcase scene takes the same interaction as the other demos: the camera, and the pointer that leads.
+- **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0 ([D-117](decisions/D-117-showcase-features-before-1-0.md)):
+  - per-row values in instance batches;
+  - environment light from the sky, with time of day;
+  - planar reflections, transmission and depth of field;
+  - a temporal anti-aliasing prototype.
+
+  Batch shadows come from M2-R6.
+- **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
+
 ## Decisions of 8 October 2026
 
 The owner decided these points about the examples:
