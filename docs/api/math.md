@@ -64,7 +64,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 });
 ```
 
-The [math helpers demo](https://github.com/null3d-engine/null3d/tree/main/examples/math) moves 300 drones this way, as the rows of one instance batch.
+The [math helpers demo](https://github.com/null3d-engine/null3d/tree/main/examples/math) moves 300 drones with the same helpers, as the rows of one instance batch. There, each drone's place comes from `time.now` alone, so a held frame shows what the live demo shows at that time. A drone flies the lamp's path a moment behind the lamp, and `quat.lookAt` turns it from its place a moment ago toward its place now.
 
 ## Conventions
 

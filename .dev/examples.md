@@ -104,7 +104,7 @@ What the pointer steers in each demo:
 
 | Demo | The pointer steers |
 | --- | --- |
-| math | The light that the drones chase, on the plane at the light's mean height, inside the room |
+| math | The lamp that the drones chase, on the plane at the lamp's mean height, inside the ring of pylons |
 | character | The Knight, which walks to the pointed point. Its speed, and so its blend of clips, comes from the distance left |
 | sprites-lines | The fountain. Each spark keeps the place it was born at, so the fountain does not slide |
 | instances | The center of the wave |
@@ -128,6 +128,41 @@ Why it works this way:
 - The controls start with the demo, not at the first gesture. Controls ignore a button that is already down when they start, so controls made at the first press would ignore the whole first drag.
 - Hover steers, not a drag, because a drag already turns the camera. On a touch screen, a tap is the only gesture that a drag does not take.
 - The weight eases back after an idle time because the sketch cannot see a pointer leave the canvas. Without it, the last pointed point would hold the object for the rest of the visit.
+
+## The look of the feature demos
+
+On 8 October 2026 the owner asked for feature demos that look much better, while each stays one short sketch that is easy to copy. The engine makes each part of the look cost a line or so. The parts are the generated sky with clouds and a low sun, cascade shadows and the built-in room environment. Height fog with sun glow, ambient occlusion, bloom from bright emissive surfaces, the tone curve and a vignette complete it. A small texture from `textures.fromData` adds detail where it helps. The math, instances and generators demos changed first, so the owner could review the look before the other demos follow (M2-EX9).
+
+| Demo | What it shows now |
+| --- | --- |
+| math | 300 drones chase a lamp over a landing pad at dusk. The lamp is a point light that casts the shadows of pylons and crates. Each drone has a metal hull and a tail light that blooms. The floor's texture is concrete grain with painted lines |
+| instances | 100,489 columns (317 on each side) in one batch, under a dusk sky, and 10,201 on the Low preset of phones. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
+| generators | The nine shapes in polished, gold and brushed metal, plastic, a tile texture that shows each shape's texture coordinates, and a ring that blooms, over a tiled terrace at golden hour |
+
+The rules that the reworked demos follow, and why:
+
+- They use only what the engine draws today. Instance batches cast and receive no shadows yet, and their row colors do not draw yet. So the instances demo gets its depth from the low sun, the room's reflections in metal columns, the lamp, ambient occlusion and fog.
+- They leave the count of shadow cascades to the preset: 2 on Low, 3 on Medium and High, and 4 on Ultra. They set only the shadow distance. A light that names 4 cascades draws 4 on a phone too.
+- Point lights cast shadows only on the presets with `pointLightShadows`, High and Ultra. WebGL2 and WebGPU's compatibility mode run at most Medium. There the math demo's lamp lights the pad, but casts no shadows.
+- The math demo's lamp shadows did not show at first, because the ambient and environment light filled them in. A test frame lit by the lamp alone showed the crates' shadows. So the demo lowered the fill light, and made the lamp and the floor brighter.
+- The fog does not cover the sky. A ground 40 m across ended well below the horizon, and a band of the sky's dark lower part showed between them. Each ground now reaches 5 km from the camera, as does the camera's far plane. So the ground ends a pixel or two under the horizon. Each fog color matches the sky just above the horizon in the held frame, so the far ground fades into the sky. The colors came from samples of the held frames: the generators' sky there was pinkish gray, and the math demo's sky almost black.
+- Motion comes from `time.now` ([Image tests](image-tests.md#the-feature-demos)). The math demo moved each drone a share of the way to its goal in each frame, which adds up the frame steps. Now each drone's place is a function of the time. It flies the lamp's path a moment behind the lamp, on a circle of its own around that path. It faces the way from its place 50 ms before to its place now. While the pointer steers, the same function moves the lamp's path toward the pointed point, so the drones gather round the lamp.
+- The instances demo writes each row's place across the field once, in the setup, since only the heights change. In each frame it works out the part of the height that depends only on the column once per column, not once per row.
+- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. No phone has run it yet.
+- The demos' interaction test (`tests/image/demo-interaction.spec.ts`) opens the math and instances demos on the Low preset. It checks the camera and the steering, not the look. On SwiftShader on the Mac, the full look took the instances test from 11.4 s to 25 to 30 s. The math test took 17 s. In CI, main's instances test already took 44.6 s of its 60 s, about four times its time on the Mac. On Low, the two tests took 7 to 10 s and 12 s on the Mac. With a quarter of the field on Low, the instances test took 14 s. That is too close to the limit in CI.
+- The three demos make the room environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 6 to 15 s, four tests at once. So their image tests take 60 s, as the other demos with the room environment do, since CI's machines are slower.
+
+### Frame rates on the Mac
+
+The figures come from Chrome 155 on a Mac with an Apple M5 Max, on 9 October 2026. Each demo ran at the preset that the engine chose, with the governor on. The display runs at 120 Hz. Each figure is the stats overlay's reading, 15 seconds after the start, over 5 seconds.
+
+| Demo | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| math | 120 fps, GPU 3.8 to 4.7 ms | 120 fps, GPU 4.1 to 5.6 ms |
+| instances | 120 fps, GPU 3.6 to 4.3 ms, sketch 1.1 ms, 1.25 million triangles | 118 to 120 fps, GPU 4.2 to 5.9 ms, sketch 1.1 to 1.4 ms |
+| generators | 120 fps, GPU 3.9 to 4.7 ms | 120 fps, GPU 4.1 to 5.2 ms |
+
+Before the change, all three held 120 fps on both paths too. The instances demo had 10,000 rows then. On a phone, a loop over all 100,489 rows should take about four times as long as on the Mac. The phone and tablet checks of the three demos are still to run.
 
 ## Showcase scenes
 

@@ -35,7 +35,10 @@ export interface Demo {
 	hold: number;
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
-	/** How long the demo's image test may take, in seconds, for a demo that loads large files. */
+	/**
+	 * How long the demo's image test may take, in seconds, for a demo that loads large files or
+	 * makes the room environment.
+	 */
 	timeoutSeconds?: number;
 	/**
 	 * Why the demo loads files. A demo makes its meshes, textures, environments and grading tables
@@ -55,9 +58,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./instances/sketch.ts', import.meta.url),
 		title: 'Instance batches',
 		summary:
-			'10,000 boxes in one batch. Each frame the sketch writes every row into the batch arrays, with no call per row.',
+			'100,000 columns in one batch at dusk, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the center of the wave.`,
 		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'mesh-arrays',
@@ -75,9 +79,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./generators/sketch.ts', import.meta.url),
 		title: 'Geometry generators',
 		summary:
-			'The nine shapes that geometry makes, from a box to a ring, with the parameters of three.js geometry classes.',
+			'The nine shapes that geometry makes, from a box to a ring, with the parameters of three.js geometry classes, in metal, plastic and a tile texture made in code.',
 		controls: `${CAMERA} Move the mouse, or tap, and the shapes turn toward it.`,
 		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'math',
@@ -85,9 +90,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./math/sketch.ts', import.meta.url),
 		title: 'Math helpers',
 		summary:
-			'300 drones chase a moving light. vec3 and quat helpers ease and turn each drone with no allocation, and a seeded math.random places them.',
-		controls: `${CAMERA} Move the mouse, or tap, to lead the light.`,
+			'300 drones chase a lamp over a landing pad at dusk. vec3 and quat helpers place and turn each drone from the time with no allocation, and a seeded math.random spreads them.',
+		controls: `${CAMERA} Move the mouse, or tap, to lead the lamp.`,
 		hold: 8,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'input',
