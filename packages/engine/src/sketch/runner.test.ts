@@ -243,6 +243,7 @@ async function start(
 				expectedObjects: 0,
 				gpuOcclusion: false,
 				textureCache: true,
+				occlusionBuffer: 0,
 			},
 			capabilities: CAPABILITIES,
 			quality,

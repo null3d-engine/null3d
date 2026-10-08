@@ -503,6 +503,11 @@ export interface CoreGlue extends CoreErrors {
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
+	 * Sets the pixels that software occlusion culling's buffer holds about from the next frame
+	 * on, or 0 for the core's default, where the path culls on the CPU.
+	 */
+	setOcclusionBuffer(pixels: number): number;
+	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
 	 * from the next frame on, with the post-processing values' intensity and domain.
 	 */
@@ -809,6 +814,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setAo',
 	'setAoScale',
 	'setSoftwareOcclusion',
+	'setOcclusionBuffer',
 	'setLut',
 	'setVignette',
 	'environmentValues',

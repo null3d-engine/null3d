@@ -89,7 +89,7 @@ Tests:
 
 The development warning is gone.
 
-### Display color on the 8-bit path (coordinator's call, 8 October 2026, pending the owner's review)
+### Display color on the 8-bit path (owner, 8 October 2026)
 
 The 8-bit path serves compatibility mode with MSAA, and WebGL2 devices whose float targets fail. There each scene shader tone maps its own color and encodes it as sRGB, so a view draws display color. The first build stored that color in the pass texture as it was. A material that showed it took the encoded values for linear color, then tone mapped and encoded them again. On Chrome on the Mac's GPU, the minimap's grey ground showed at about 207 to 210 of 255 in compatibility mode, against 157 to 168 on core WebGPU. Its red box showed at (228, 167, 163) against (218, 72, 70). The map looked pale and washed out, far from what the author drew.
 
@@ -99,7 +99,7 @@ Options:
 - B. On WebGPU, decode the color back in the copy that already turns each image upright, into an sRGB texture. The copy's TONE_MAP build writes the decoded color, and the sRGB texture encodes it again as it stores it, so the texture keeps the image's bytes, and materials that sample it read linear color. This costs no new pass and no new texture. WebGL2 has no copy, so its 8-bit devices keep the limit.
 - C. Draw the views of the 8-bit path without the tone curve: a second pipeline for each material that a pass draws. It is exact, but every such material builds an extra shader on first use, on the weakest devices that take this path.
 
-The coordinator chose B on 8 October 2026, at the helper's recommendation, and flagged it for the owner's review. With B, the same picture gave the ground at 173 to 183 and the red box at (227, 78, 72). The remaining difference is the tone curve, which the material that shows the texture applies a second time to color that was already tone mapped. With the default ACES curve, a mid grey of 0.5 comes out at about 0.62; with `toneMapping: 'none'`, nothing changes. WebGL2 devices without float targets still store display color, which a material shows washed out, as above. Those devices are rare, since nearly every WebGL2 device passes the engine's float target test.
+The coordinator chose B on 8 October 2026, at the helper's recommendation, and flagged it for the owner's review. The owner confirmed B the same day. With B, the same picture gave the ground at 173 to 183 and the red box at (227, 78, 72). The remaining difference is the tone curve, which the material that shows the texture applies a second time to color that was already tone mapped. With the default ACES curve, a mid grey of 0.5 comes out at about 0.62; with `toneMapping: 'none'`, nothing changes. WebGL2 devices without float targets still store display color, which a material shows washed out, as above. Those devices are rare, since nearly every WebGL2 device passes the engine's float target test.
 
 ## Consequences
 

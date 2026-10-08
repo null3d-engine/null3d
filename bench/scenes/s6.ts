@@ -81,6 +81,15 @@ export const S6_MESSAGES = {
 	loaded: 's6-loaded',
 	/** A click picked a building: its number. */
 	picked: 's6-picked',
+	/**
+	 * The page's occlusion turns put the camera at a share of the route, `{ share, still }`: held
+	 * there, or driving on from there.
+	 */
+	drive: 's6-drive',
+	/** The page's occlusion turns turn software occlusion culling on or off: true or false. */
+	occlusion: 's6-occlusion',
+	/** The answer to either, once a frame has the change: the frame's number. */
+	done: 's6-done',
 } as const;
 
 /** The label that names the picked building. */

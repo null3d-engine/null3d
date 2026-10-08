@@ -2811,6 +2811,16 @@ pub fn set_software_occlusion(on: bool) -> u32 {
     })
 }
 
+/// Sets the pixels that software occlusion culling's buffer holds about from the next frame on,
+/// or 0 for the core's default, where the frame builder culls on the CPU.
+#[wasm_bindgen(js_name = setOcclusionBuffer)]
+pub fn set_occlusion_buffer(pixels: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.set_occlusion_buffer(pixels);
+        0
+    })
+}
+
 // Draws the source `kind` (`background_kind`) behind every object in the camera's view, with the
 // background's values, or only the background color for `NONE`. A texture, an environment or a
 // cube map is cube texture or texture `texture`; the sky takes none. The TypeScript API checks the
