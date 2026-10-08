@@ -12,7 +12,8 @@
 //
 // Custom materials' shaders take the same way, each under its render pipeline template. A backend
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
-// not arrived yet builds once it has. On the dev server, a hot update sends a template's shader
+// not arrived yet builds once it has. A custom material's shader names the files of its builds,
+// and the renderer starts to download its device's file as soon as the shader arrives. On the dev server, a hot update sends a template's shader
 // again: the table lists the template as replaced, and the backend builds its pipelines again.
 //
 // So do the names of features whose shader files the sketch will need, such as skinning when a
@@ -26,6 +27,19 @@ import type { EffectPieces } from '../gpu/effect-join';
 import type { Panorama } from '../scene/panorama-files';
 import { frameAfter, Slot } from './control';
 import { notifySlot, slotChangeOrRecheck, type WakeTarget, wakeWaiters } from './wake';
+
+/**
+ * The files of a custom material's builds, which the null3D Vite plugin writes: one for each GPU
+ * path and each value of the permutation bits that a device fixes. Each file lists the builds of
+ * several materials, and `index` is this material's place in that list.
+ */
+export interface ShaderFiles {
+	readonly index: number;
+	/** The address of each WebGPU file, by the fixed bits of its builds. */
+	readonly wgsl: Readonly<Record<number, string>>;
+	/** The address of each WebGL2 file, by the fixed bits of its builds. */
+	readonly glsl: Readonly<Record<number, string>>;
+}
 
 /** An effect of a group or a fold: the template of its own shader, and the slot of its block. */
 export interface JoinedEffect {
@@ -48,9 +62,12 @@ export interface CustomShader {
 	readonly kind?: 'effect' | 'final' | 'finalBloom' | 'effectGroup' | 'effectFold';
 	/**
 	 * The shader's builds. A group's or a fold's are empty until the thread that draws joins them
-	 * from its effects' pieces, at its first pipeline.
+	 * from its effects' pieces, at its first pipeline. A custom material's are empty until the
+	 * thread that draws downloads them from its files.
 	 */
 	readonly variants: ShaderVariants;
+	/** Where a custom material's builds download from, by GPU path and fixed bits. */
+	readonly files?: ShaderFiles;
 	readonly locations: readonly number[];
 	/** The textures that the material's WGSL declares, which its pipelines bind with the maps' layout. */
 	readonly textures: number;
@@ -87,10 +104,14 @@ export class ImageTable {
 	/** The templates whose shader a hot update replaced, which the backend has not built again yet. */
 	readonly replaced: number[] = [];
 
+	/** Hears each custom material's shader that arrives, while a renderer runs. */
+	onShader: ((shader: CustomShader) => void) | undefined;
+
 	/** Keeps a custom material's shader under its template, and lists a template it replaces. */
 	setShader(template: number, shader: CustomShader): void {
 		if (this.shaders.has(template)) this.replaced.push(template);
 		this.shaders.set(template, shader);
+		this.onShader?.(shader);
 	}
 
 	/** The features whose shader files the sketch asked for, which every renderer loads. */

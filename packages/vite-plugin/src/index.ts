@@ -30,8 +30,14 @@ import {
 	HotState,
 	hotKey,
 	WGSL_UPDATE_EVENT,
-	type WgslUpdate,
 } from './hot.ts';
+import {
+	devFileName,
+	hotShaders,
+	MATERIAL_FOLDER,
+	type ModuleShader,
+	shaderValues,
+} from './material-files.ts';
 import {
 	FILES_LIST,
 	listedFiles,
@@ -40,7 +46,8 @@ import {
 	workerFilesPlugin,
 } from './offline.ts';
 import { null3dPackages } from './package-files.ts';
-import type { CompiledWgsl } from './shader-types.ts';
+import type { MaterialFile } from './shader-compiler.ts';
+import type { BuiltWgsl } from './shader-types.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -276,12 +283,9 @@ function projectPath(root: string, file: string): string {
 	return relative(root, file).split(sep).join('/');
 }
 
-/**
- * A compiled shader as the JavaScript value that takes its source's place, with the key of its hot
- * updates on the dev server.
- */
-function shaderValue(shader: CompiledWgsl, key?: string): string {
-	return `(${JSON.stringify(key === undefined ? shader : { ...shader, hot: key })})`;
+/** A file of custom materials' builds, as a production build writes it beside the bundle. */
+function materialAsset(file: MaterialFile): Rollup.EmittedAsset {
+	return { type: 'asset', name: `material-${file.name}.js`, source: file.source };
 }
 
 /** Shows WGSL that did not compile in Vite's overlay on the dev server's pages, and in the terminal. */
@@ -345,17 +349,64 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const emitted = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
+	/** On the dev server, the files of custom materials' builds by name, served from memory. */
+	const materialFiles = new Map<string, string>();
+	/** The names of the files that each source's latest compile wrote on the dev server. */
+	const filesOfSource = new Map<string, string[]>();
+	/**
+	 * Keeps the files of a source's custom materials on the dev server, in place of those of its
+	 * last compile, and returns the address of each.
+	 */
+	const devAddress = (source: string) => {
+		for (const name of filesOfSource.get(source) ?? []) materialFiles.delete(name);
+		const names: string[] = [];
+		filesOfSource.set(source, names);
+		return (file: MaterialFile) => {
+			const name = devFileName(file);
+			names.push(name);
+			materialFiles.set(name, file.source);
+			return `${base}${MATERIAL_FOLDER}/${name}`;
+		};
+	};
+	/**
+	 * The code of each compiled shader's value in the module `source`. A production build writes
+	 * the files of custom materials' builds beside the bundle through `emit`.
+	 */
+	const valuesOf = (
+		source: string,
+		shaders: readonly ModuleShader[],
+		emit: (file: MaterialFile) => string,
+	) => {
+		const dev = building ? undefined : devAddress(source);
+		// The dev server's address starts at its root, which serves the engine's modules too.
+		return shaderValues(shaders, compiler, (file) =>
+			dev
+				? JSON.stringify(dev(file))
+				: `new URL(import.meta.ROLLUP_FILE_URL_${emit(file)}, import.meta.url).href`,
+		);
+	};
 	/** What the dev server's pages run, to judge each change of WGSL. */
 	const hot = new HotState();
 	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
 	const keyOf = (id: string, path: string, literal?: number) =>
 		building || PACKAGE_MODULE.test(id) ? undefined : hotKey(path, literal);
-	/** Sends hot updates to the dev server's pages. */
-	const sendUpdates = (environment: DevEnvironment, updates: WgslUpdate[]) => {
-		environment.logger.info(`null3D hot update ${updates.map((u) => u.key).join(', ')}`, {
-			timestamp: true,
+	/**
+	 * Sends hot updates of the source `source` to the dev server's pages, each custom material with
+	 * the addresses of new files of its builds.
+	 */
+	const sendUpdates = async (
+		environment: DevEnvironment,
+		source: string,
+		updates: readonly ModuleShader[],
+	) => {
+		const shaders = await hotShaders(updates, compiler, devAddress(`${source}#hot`));
+		const keys = updates.map(({ key }) => key);
+		environment.logger.info(`null3D hot update ${keys.join(', ')}`, { timestamp: true });
+		environment.hot.send({
+			type: 'custom',
+			event: WGSL_UPDATE_EVENT,
+			data: { updates: shaders.map((shader, k) => ({ key: keys[k], shader })) },
 		});
-		environment.hot.send({ type: 'custom', event: WGSL_UPDATE_EVENT, data: { updates } });
 	};
 	return {
 		name: 'null3d',
@@ -502,8 +553,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						);
 					}
 				}
+				const [value] = await valuesOf(id, [{ shader: compiled.shader, key }], (file) =>
+					this.emitFile(materialAsset(file)),
+				);
 				return {
-					code: `export default ${shaderValue(compiled.shader, key)};\n`,
+					code: `export default ${value};\n`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -521,11 +575,17 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					const path = projectPath(root, file);
 					const tagged = await compileTaggedWgsl(code, file, path, compiler);
 					if ('error' in tagged) return this.error(tagged.error);
-					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
+					const shaders = tagged.shaders.map(({ shader }, literal) => {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
+						return { shader, key };
+					});
+					const values = await valuesOf(file, shaders, (asset) =>
+						this.emitFile(materialAsset(asset)),
+					);
+					for (const [literal, { start, end }] of tagged.shaders.entries()) {
 						out ??= new MagicString(code);
-						out.overwrite(start, end, shaderValue(shader, key));
+						out.overwrite(start, end, values[literal] as string);
 					}
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
 						hot.scripts.set(file, code);
@@ -570,7 +630,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				// Without a hot update, Vite reloads the page as it does for any module.
 				if (!hot.swaps(key, compiled.shader)) return;
 				hot.remember(key, compiled.shader);
-				sendUpdates(environment, [{ key, shader: compiled.shader }]);
+				await sendUpdates(environment, file, [{ key, shader: compiled.shader }]);
 				return otherModules(modules, file);
 			}
 			const before = hot.scripts.get(file);
@@ -581,7 +641,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			const results = await Promise.all(
 				changed.map(({ literal }) => compileLiteral(literal, code, file, path, compiler)),
 			);
-			const updates: WgslUpdate[] = [];
+			const updates: { key: string; shader: BuiltWgsl }[] = [];
 			for (const [k, result] of results.entries()) {
 				if ('error' in result) {
 					showError(environment, result.error);
@@ -595,7 +655,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			// after an error sends every literal that changed since.
 			hot.scripts.set(file, code);
 			for (const { key, shader } of updates) hot.remember(key, shader);
-			if (updates.length > 0) sendUpdates(environment, updates);
+			if (updates.length > 0) await sendUpdates(environment, file, updates);
 			return otherModules(modules, file);
 		},
 		// After Vite's own plugins, which add the worker builds' files and the pages to the bundle.
@@ -615,6 +675,18 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);
+			server.middlewares.use(`${server.config.base}${MATERIAL_FOLDER}/`, (req, res) => {
+				// A file that a later compile replaced answers 404, not the page that Vite falls back to.
+				const source = materialFiles.get((req.url ?? '').split('?')[0]?.slice(1) ?? '');
+				res.setHeader('Cache-Control', 'no-cache');
+				if (source === undefined) {
+					res.statusCode = 404;
+					res.end();
+					return;
+				}
+				res.setHeader('Content-Type', 'text/javascript');
+				res.end(source);
+			});
 			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
 				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');
 				const bytes = cachedFile(root, path);

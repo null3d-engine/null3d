@@ -1,6 +1,8 @@
 // Failures after the start, and engines that follow one another on one canvas. ?case= picks one:
 // - fault: the engine's frame step throws once, and the page must hear E1404 while it stays
 //   responsive.
+// - material-fault: the sketch creates a custom material after the start, and the test blocks the
+//   download of its builds, so the page must hear E1424 while it stays responsive.
 // - job-fault: the test makes a job worker fail inside the job system (it rewrites the job
 //   worker's script), and the page must hear E1404 while it stays responsive. A failure during the
 //   start comes as the start's rejection.
@@ -71,9 +73,9 @@ function codeOf(call: () => unknown): string {
 
 run('failures', async () => {
 	const which = params.get('case');
-	if (which === 'fault') {
+	if (which === 'fault' || which === 'material-fault') {
 		const faulty = new URL(sketch);
-		faulty.searchParams.set('fault', 'step');
+		faulty.searchParams.set('fault', which === 'fault' ? 'step' : 'material');
 		return firstFailure(await started(faulty));
 	}
 	if (which === 'job-fault') {

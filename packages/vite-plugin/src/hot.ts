@@ -4,7 +4,7 @@
 // null3D engines there, which swap the shader of each custom material with that key. WGSL that
 // does not compile shows in Vite's overlay, and the page keeps the old shader. An edit that
 // changes what the page keeps of a material, such as its uniforms, reloads the page as before.
-import type { CompiledWgsl } from './shader-types.ts';
+import type { BuiltWgsl, CompiledWgsl } from './shader-types.ts';
 import { findTaggedWgsl, type TaggedWgsl } from './wgsl.ts';
 
 /** The event that carries hot updates, on Vite's channel and on the page's global object. */
@@ -29,7 +29,10 @@ export const HOT_CLIENT_CODE = `if (import.meta.hot) {
 }
 `;
 
-/** One hot update: the new compiled WGSL under its key. */
+/**
+ * One hot update: the new compiled WGSL under its key, a custom material's with the addresses of
+ * new files of its builds.
+ */
 export interface WgslUpdate {
 	readonly key: string;
 	readonly shader: CompiledWgsl;
@@ -49,7 +52,7 @@ export function hotKey(path: string, literal?: number): string {
  * code outside the engine uses as it likes, and for a custom effect or tone curve, which the
  * engine does not swap. Only a reload brings either a new one.
  */
-export function contractOf(shader: CompiledWgsl): string | null {
+export function contractOf(shader: BuiltWgsl): string | null {
 	if (shader.kind !== 'material') return null;
 	const { uniforms, textures, locations, attributes, baseColor } = shader;
 	return JSON.stringify({ uniforms, textures, locations, attributes, baseColor });
@@ -101,7 +104,7 @@ export class HotState {
 	readonly scripts = new Map<string, string>();
 
 	/** Notes the WGSL that the page runs under a key. */
-	remember(key: string, shader: CompiledWgsl): void {
+	remember(key: string, shader: BuiltWgsl): void {
 		this.contracts.set(key, contractOf(shader));
 	}
 
@@ -109,7 +112,7 @@ export class HotState {
 	 * True when the page can swap the WGSL under a key for `shader` without a reload: both are
 	 * custom materials with the same contract.
 	 */
-	swaps(key: string, shader: CompiledWgsl): boolean {
+	swaps(key: string, shader: BuiltWgsl): boolean {
 		const before = this.contracts.get(key);
 		const after = contractOf(shader);
 		return before !== undefined && before !== null && before === after;

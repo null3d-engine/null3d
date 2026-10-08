@@ -7,7 +7,7 @@
 // effect's.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import type { CompiledWgsl } from './shader-types.ts';
+import type { BuiltWgsl } from './shader-types.ts';
 
 /** The longest line that a formatter keeps whole. */
 const LINE_WIDTH = 100;
@@ -16,7 +16,7 @@ const LINE_WIDTH = 100;
 const PLAIN_NAME = /^[A-Za-z_$][\w$]*$/;
 
 /** The type that each kind of compiled WGSL has. */
-const KIND_TYPES: Readonly<Record<CompiledWgsl['kind'], string>> = {
+const KIND_TYPES: Readonly<Record<BuiltWgsl['kind'], string>> = {
 	shader: 'CompiledShader',
 	material: 'CompiledMaterial',
 	effect: 'CompiledEffect',
@@ -32,7 +32,7 @@ export function declarationPath(file: string): string {
  * The type of a compiled shader, as TypeScript code: its kind, its uniforms by name, and the names
  * of its textures.
  */
-function shaderType(shader: CompiledWgsl): string {
+function shaderType(shader: BuiltWgsl): string {
 	if (shader.kind === 'shader') return 'CompiledShader';
 	if (shader.kind === 'toneCurve') return 'CompiledToneCurve';
 	const fields = shader.uniforms.map(({ name, type }) => {
@@ -53,7 +53,7 @@ function shaderType(shader: CompiledWgsl): string {
 }
 
 /** The declaration of a compiled `.wgsl` file, which TypeScript reads for imports of the file. */
-export function wgslDeclaration(file: string, shader: CompiledWgsl): string {
+export function wgslDeclaration(file: string, shader: BuiltWgsl): string {
 	const kind = KIND_TYPES[shader.kind];
 	return [
 		`// The types of ${basename(file)}, which the null3D Vite plugin writes when it compiles the file.`,
@@ -70,7 +70,7 @@ export function wgslDeclaration(file: string, shader: CompiledWgsl): string {
  * Writes the declaration of a compiled `.wgsl` file beside it, unless the file there already holds
  * it. An unchanged declaration is left alone, so that editors and file watchers see no change.
  */
-export function writeWgslDeclaration(file: string, shader: CompiledWgsl): void {
+export function writeWgslDeclaration(file: string, shader: BuiltWgsl): void {
 	const path = declarationPath(file);
 	const text = wgslDeclaration(file, shader);
 	let current: string | undefined;

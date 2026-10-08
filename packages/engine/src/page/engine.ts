@@ -4,7 +4,7 @@
 // when it runs the sketch itself: in the single-threaded build, and with sketchThread: 'main'.
 
 import { DEV } from '../errors/checks';
-import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
+import { EngineError, errorOfMessage, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
@@ -488,10 +488,11 @@ export interface Engine {
 	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
-	 * not carry on with a new device (E1302), or an engine thread failed (E1404). After E1404 the
-	 * engine draws no new frames: destroy it and start a new one. On WebGPU, the GPU can also run out
-	 * of memory (E1304) or reject the engine's work (E1305), and the engine draws on without the
-	 * objects that failed. The engine reports each failure once. Without a handler, it logs the
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A shader file that
+	 * a pipeline needs and that did not download fails the thread that draws: the engine's own with
+	 * E1406, a custom material's with E1424. After E1404, E1406 or E1424 the engine draws no new
+	 * frames: destroy it and start a new one. On WebGPU, the GPU can also run out of memory (E1304)
+	 * or reject the engine's work (E1305), and the engine draws on without the objects that failed. The engine reports each failure once. Without a handler, it logs the
 	 * failure to the console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
@@ -610,13 +611,19 @@ type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) =
  * other failure becomes E1405.
  */
 export function startError(role: string, message: string): EngineError {
-	const code = /^(E\d{4}): /.exec(message)?.[1];
-	if (code && isErrorCode(code)) {
-		const error = new EngineError(code, '');
-		error.message = message;
-		return error;
-	}
-	return new EngineError('E1405', `the ${role} worker did not start: ${message}.`);
+	return (
+		errorOfMessage(message) ??
+		new EngineError('E1405', `the ${role} worker did not start: ${message}.`)
+	);
+}
+
+/**
+ * The error of an engine thread, or of the drawing on the page, that failed after the start,
+ * where `what` names it. An engine error keeps its code and message, such as E1406 for shaders
+ * that did not download; any other failure becomes E1404.
+ */
+export function failureError(what: string, message: string): EngineError {
+	return errorOfMessage(message) ?? new EngineError('E1404', `${what} failed: ${message}.`);
 }
 
 type RunnerModule = typeof import('../sketch/runner');
@@ -661,7 +668,8 @@ export function gpuFailure(thread: string, outOfMemory: boolean, message: string
 
 /**
  * A worker whose replies are routed: events to the page's handlers, answers to the oldest request.
- * A failure that a started worker reports, or that ends it, reaches the page as E1404.
+ * A failure that a started worker reports, or that ends it, reaches the page as E1404, or with its
+ * own code when it is an engine error.
  */
 export class EngineWorker {
 	private readonly waiting: Pending[] = [];
@@ -698,8 +706,7 @@ export class EngineWorker {
 		const failed = (message: string) => {
 			this.stoppedCleanly = false;
 			this.waiting.shift()?.reject(startError(role, message));
-			if (this.started)
-				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
+			if (this.started) events.failure(failureError(`the ${role} worker`, message));
 		};
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
@@ -1624,10 +1631,7 @@ async function startEngine(
 				...images,
 				presented: () => labels.update(),
 				fail: pageLoss,
-				fault: (error) =>
-					onFailure(
-						new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`),
-					),
+				fault: (error) => onFailure(failureError('the drawing on the page', messageOf(error))),
 				gpuError: (outOfMemory, message) =>
 					onFailure(gpuFailure('the page', outOfMemory, message), false),
 			});

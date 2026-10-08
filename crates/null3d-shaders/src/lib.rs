@@ -57,6 +57,7 @@ pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
 pub use problem::{BuildError, Problem};
 pub use textures::Texture;
+pub use typescript::{MaterialFile, material_files};
 pub use uniforms::Uniform;
 
 use library::{Composers, Library, View};

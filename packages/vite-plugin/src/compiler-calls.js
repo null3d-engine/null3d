@@ -19,7 +19,7 @@ export class CompilerCalls {
 	 * Runs one export on a request in JSON, and returns the response in JSON. The first call makes
 	 * the instance, and later calls reuse it with the library modules that it composed.
 	 *
-	 * @param {'compile' | 'compile_material' | 'compile_effect' | 'build'} name
+	 * @param {'compile' | 'compile_material' | 'compile_effect' | 'material_files' | 'build'} name
 	 * @param {string} request
 	 * @returns {string}
 	 */

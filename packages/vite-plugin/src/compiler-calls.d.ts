@@ -10,5 +10,8 @@ export declare class CompilerCalls {
 	 * Runs one export on a request in JSON, and returns the response in JSON. The first call makes
 	 * the instance, and later calls reuse it with the library modules that it composed.
 	 */
-	call(name: 'compile' | 'compile_material' | 'compile_effect' | 'build', request: string): string;
+	call(
+		name: 'compile' | 'compile_material' | 'compile_effect' | 'material_files' | 'build',
+		request: string,
+	): string;
 }

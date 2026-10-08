@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { startError } from '../page/engine';
+import { failureError, startError } from '../page/engine';
 import { checkNumber, checkVector, DEV } from './checks';
 import { ERRORS } from './codes';
 import { type CoreErrors, coreFailure } from './core-failure';
@@ -157,6 +157,22 @@ describe('errors a worker reports while it starts', () => {
 				`E1405: the render worker did not start: ${message}. ${ERROR_FIXES.E1405} See ${DOCS}E1405.md`,
 			);
 		}
+	});
+});
+
+describe('errors of an engine thread after the start', () => {
+	it('keep an engine error whole, and give a bare coded message its fix and link', () => {
+		const inWorker = new EngineError('E1406', 'the KTX2 transcoder did not download.');
+		expect(failureError('the render worker', inWorker.message).message).toBe(inWorker.message);
+		const bare = 'E1424: the shaders of a custom material from m.js did not download: 404.';
+		const error = failureError('the render worker', bare);
+		expect(error.code).toBe('E1424');
+		expect(error.message).toBe(`${bare} ${ERROR_FIXES.E1424} See ${DOCS}E1424.md`);
+	});
+
+	it('become E1404, naming the thread, for any other failure', () => {
+		const error = failureError('the drawing on the page', 'out of range');
+		expect(error.message).toStartWith('E1404: the drawing on the page failed: out of range.');
 	});
 });
 

@@ -2,16 +2,24 @@
 // make the core's transform and culling steps run as parallel loops on the job workers, and a few
 // hundred keep the frames quick on a software GPU. With ?fault=step in the sketch's
 // address, the engine's own frame step throws once, after some frames, from outside the sketch's
-// callbacks. On the page's thread it leaves its context on the page, so the page can call the
-// engine after it stopped, and counts its onDestroy calls there.
+// callbacks. With ?fault=material, the sketch creates a custom material after some frames, and the
+// test blocks the download of its builds. On the page's thread it leaves its context on the page,
+// so the page can call the engine after it stopped, and counts its onDestroy calls there.
 import { defineSketch, type SketchContext } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
 const FAULT = params.get('fault');
-/** The frame after which the frame step throws, with ?fault=step. */
+/** The frame after which the frame step throws, with ?fault=step, or the custom material comes. */
 const FAULT_FRAME = 10;
 const MESHES = Number(params.get('meshes') ?? 200);
 const COLUMNS = 60;
+
+/** A custom material's WGSL, which keeps the standard look. */
+const plain = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    return defaultSurface(input);
+}
+`;
 
 /** What a sketch on the page's thread leaves on the page. */
 export interface FailuresSketch {
@@ -40,6 +48,8 @@ export default defineSketch((context) => {
 				const [x, y, z] = place(k, offset);
 				meshes[k]?.setPosition(x, y, z);
 			}
+			if (FAULT === 'material' && time.frame === FAULT_FRAME)
+				scene.createMesh({ mesh: box, material: materials.shader({ wgsl: plain }) });
 			if (FAULT === 'step' && time.frame === FAULT_FRAME) {
 				// The engine reads the clock right after this update, outside the sketch's callbacks.
 				const now = performance.now;

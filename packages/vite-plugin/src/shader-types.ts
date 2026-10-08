@@ -132,8 +132,8 @@ export interface CompiledMaterial<
 	}[keyof Uniforms & string][];
 	/** The textures that the WGSL declares as `var name: texture_2d<f32>;`, in order. */
 	readonly textures: readonly CompiledTexture<Textures>[];
-	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
-	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/** Where the thread that draws downloads the material's builds for its device. */
+	readonly files: MaterialFiles;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
 	readonly locations: readonly number[];
 	/** The optional vertex attributes that those locations read, as the engine's format bits. */
@@ -146,6 +146,33 @@ export interface CompiledMaterial<
 	 */
 	readonly hot?: string;
 }
+
+/**
+ * The files that hold a custom material's builds: one for each GPU path and each value of the
+ * permutation bits that a device fixes. Each file lists the builds of every material that the
+ * plugin compiled with it, from one `.wgsl` file or from one script's tagged literals, so the
+ * text that they share is written once. The thread that draws downloads only its device's file.
+ */
+export interface MaterialFiles {
+	/** The material's place in each file's list. */
+	readonly index: number;
+	/** The address of each WebGPU file, by the permutation bits that a device fixes. */
+	readonly wgsl: Readonly<Record<number, string>>;
+	/** The address of each WebGL2 file, by the permutation bits that a device fixes. */
+	readonly glsl: Readonly<Record<number, string>>;
+}
+
+/**
+ * A custom material as the shader compiler builds it, with every build: what the plugin writes
+ * into the material's files, and what a hot update on the dev server sends.
+ */
+export interface BuiltMaterial extends Omit<CompiledMaterial, 'files'> {
+	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
+}
+
+/** WGSL as the shader compiler builds it: a custom material's with every build. */
+export type BuiltWgsl = CompiledShader | BuiltMaterial | CompiledEffect | CompiledToneCurve;
 
 /** The top-level items that a custom effect's or tone curve's piece adds to a WGSL host. */
 export interface WgslPiece {

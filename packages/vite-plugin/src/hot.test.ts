@@ -2,8 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { WGSL_UPDATE_EVENT as ENGINE_EVENT } from '../../engine/src/shared/wgsl-updates';
 import { changedLiterals, contractOf, HOT_CLIENT_CODE, HotState, WGSL_UPDATE_EVENT } from './hot';
 import type {
+	BuiltMaterial,
 	CompiledEffect,
-	CompiledMaterial,
 	CompiledShader,
 	CompiledToneCurve,
 } from './shader-types';
@@ -15,7 +15,7 @@ export default [a, b];
 `;
 
 /** A custom material as the plugin compiles it, with stand-in builds. */
-function material(uniforms: CompiledMaterial['uniforms'] = []): CompiledMaterial {
+function material(uniforms: BuiltMaterial['uniforms'] = []): BuiltMaterial {
 	return {
 		kind: 'material',
 		functions: ['surface'],

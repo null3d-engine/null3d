@@ -199,7 +199,7 @@ A game can play with no network after its first visit. Its own service worker ca
 }
 ```
 
-- `start` holds every file that a page may need to start. These are the pages and their scripts, the engine's workers, both engine builds and each GPU path's shaders.
+- `start` holds every file that a page may need to start. These are the pages and their scripts, the engine's workers, both engine builds, each GPU path's shaders and the files of your custom materials' builds (`material-*.js`).
 - `features` holds the files that each feature downloads on its first use, by the feature's name. A page that does not use a feature never downloads its files, so a game caches only the features that it uses.
 - `version` changes whenever a file of the build changes. Each address is relative to the list.
 

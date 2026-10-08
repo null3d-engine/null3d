@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { fixture } from '../../../tools/lib/fixture';
 import { declarationPath, wgslDeclaration, writeWgslDeclaration } from './declarations';
 import type {
+	BuiltMaterial,
 	CompiledEffect,
-	CompiledMaterial,
 	CompiledShader,
 	CompiledToneCurve,
 } from './shader-types';
@@ -22,9 +22,9 @@ const ROOT = join(import.meta.dirname, '../../..');
 
 /** A custom material with the given uniforms and textures, and nothing else that a declaration reads. */
 function material(
-	uniforms: CompiledMaterial['uniforms'],
-	textures: CompiledMaterial['textures'] = [],
-): CompiledMaterial {
+	uniforms: BuiltMaterial['uniforms'],
+	textures: BuiltMaterial['textures'] = [],
+): BuiltMaterial {
 	return {
 		kind: 'material',
 		functions: ['surface'],

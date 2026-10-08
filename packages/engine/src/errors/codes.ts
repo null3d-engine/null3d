@@ -283,7 +283,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			"A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. A feature's shaders load the first time a pipeline needs them. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. After the start, a shader file that does not download stops the drawing: the engine draws no new frames.",
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
@@ -419,6 +419,14 @@ const DOCS = {
 			"The engine's files come from another origin than the page, such as a CDN. One of them came without a CORS header, or did not download. A page loads a module or a .wasm file from another origin only when the response carries Access-Control-Allow-Origin.",
 		example:
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
+		since: '0.2',
+	},
+	E1424: {
+		title: 'Custom material file not downloaded',
+		cause:
+			"The thread that draws could not download its device's file of a custom material's builds. The null3D Vite plugin builds each custom material for every GPU path and writes the builds into files beside the sketch's module, one for each kind of device, named material-*.js. Each device downloads only its own file, when the material is first used. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. A file left from another build, which does not list the material, fails too. The engine then draws no new frames.",
+		example:
+			'E1424: the shaders of a custom material from https://example.com/assets/material-glsl-draw-index-tone-map-4c1d2e9a.js did not download: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-draw-index-tone-map-4c1d2e9a.js.',
 		since: '0.2',
 	},
 	E1501: {

@@ -48,6 +48,23 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
+for (const mode of ENGINE_MODES) {
+	test(`a custom material whose builds do not download reaches onFailure as E1424, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page
+			.context()
+			.route(/\/(null3d-materials\/|assets\/material-)[^/]*\.js(\?|$)/, (route) => route.abort());
+		await page.goto(`failures.html?case=material-fault&${mode.query}`);
+		const result = await pageResult<FailureResult>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(result.codes[0]).toBe('E1424');
+		expect(result.messages[0]).toContain('the shaders of a custom material from ');
+		expect(result.messages[0]).toContain(' did not download: ');
+		expect(result.ticks).toBeGreaterThan(0);
+	});
+}
+
 for (const mode of THREADED_MODES) {
 	test(`a job worker that fails reaches onFailure, and the page never hangs, ${mode.name}`, async ({
 		page,

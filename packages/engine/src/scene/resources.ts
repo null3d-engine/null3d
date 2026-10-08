@@ -57,8 +57,7 @@ import {
 	SHAPE_SPHERE,
 	SHAPE_TORUS,
 } from '../generated/core';
-import type { ShaderVariants } from '../generated/shaders';
-import type { CustomShader } from '../shared/images';
+import type { CustomShader, ShaderFiles } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
@@ -1032,12 +1031,13 @@ interface CompiledUniform {
 }
 
 /**
- * A custom material's WGSL as the plugin compiles it: the standard material's variants with it, or
- * a full shader's, with the vertex attributes that its vertex stage reads.
+ * A custom material's WGSL as the plugin compiles it: the files of the standard material's variants
+ * with it, or of a full shader's, with the vertex attributes that its vertex stage reads.
  */
 interface CompiledMaterial extends CompiledWgsl {
 	readonly kind: 'material';
-	readonly variants: ShaderVariants;
+	/** The files of the builds, from which the thread that draws downloads its device's builds. */
+	readonly files: ShaderFiles;
 	readonly locations: readonly number[];
 	/** The optional vertex attributes (`VERTEX_*` bits) that the vertex stage reads. */
 	readonly attributes: number;
@@ -1050,10 +1050,14 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly hot?: string;
 }
 
-/** What the thread that draws builds a custom material's pipelines from. */
+/**
+ * What the thread that draws builds a custom material's pipelines from: empty variants, which it
+ * fills from its device's file of the material's builds.
+ */
 function customShader(compiled: CompiledMaterial): CustomShader {
 	return {
-		variants: compiled.variants,
+		variants: {},
+		files: compiled.files,
 		locations: compiled.locations,
 		textures: compiled.textures.length,
 	};

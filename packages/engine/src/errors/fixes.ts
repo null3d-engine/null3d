@@ -77,7 +77,7 @@ export const ERROR_FIXES = {
 	E1405:
 		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load. Allow the workers in the worker-src of a Content-Security-Policy. For the engine's files on another origin, such as a CDN, the hosting page of the docs gives the headers and the policy. Report the error if it repeats.",
 	E1406:
-		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files, the KTX2 transcoder's files, the glTF loader's files and the meshopt decoder are among them. If the page loads at other times, the network dropped: reload the page.",
+		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files, the KTX2 transcoder's files, the glTF loader's files, the meshopt decoder and the shader files are among them. If the page loads at other times, the network dropped: reload the page. After a failure during play, destroy the engine and start a new one.",
 	E1407:
 		'Give the sketch time to hold at in seconds, such as ?hold=1.5 or hold: 1.5. A bare ?hold holds at the time of the hold option, or at 0 without one.',
 	E1408:
@@ -112,6 +112,8 @@ export const ERROR_FIXES = {
 		"Add what the message names to the page's Content-Security-Policy. Its worker-src needs blob: and the origin of the engine's files, and its script-src and connect-src need that origin. For example: worker-src 'self' blob: https://cdn.example.com; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; connect-src 'self' https://cdn.example.com. Or serve the engine's files from the page's own origin.",
 	E1423:
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
+	E1424:
+		"Deploy every file that the build wrote, the material-*.js files beside the sketch's module among them, and serve them as JavaScript at the paths that the build gave them. Do not mix files from two builds. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, destroy the engine and start a new one.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:

@@ -205,13 +205,44 @@ export function joinShares(shares: readonly MaterialResult[]): MaterialResult {
 }
 
 /**
- * Compiles shaders and custom materials: on this thread, which waits for each compile, or on worker
- * threads, while this thread goes on.
+ * One file of custom materials' builds: those for one GPU path and one value of the permutation
+ * bits that a device fixes. The thread that draws downloads only its device's file.
+ */
+export interface MaterialFile {
+	/** The file's name without its extension, such as `glsl-draw-index-tone-map`. */
+	readonly name: string;
+	/** The GPU path's language. */
+	readonly target: ShaderTarget;
+	/** The permutation bits that a device fixes, which every build in the file has. */
+	readonly bits: number;
+	/** The file's JavaScript: its `SHADERS` export lists each material's builds, in order. */
+	readonly source: string;
+}
+
+/** The files of custom materials' builds, or the problems that stopped them. */
+export type MaterialFilesResult = Response<readonly MaterialFile[]>;
+
+/**
+ * Writes the builds of custom materials into one file for each GPU path and each value of the
+ * bits that a device fixes, with each source and paragraph that several builds share once.
+ */
+export function writeMaterialFiles(
+	materials: readonly Readonly<Record<string, ShaderVariant>>[],
+): MaterialFilesResult {
+	return call<readonly MaterialFile[]>('material_files', { materials });
+}
+
+/**
+ * Compiles shaders and custom materials, and writes custom materials' files: on this thread, which
+ * waits for each call, or on worker threads, while this thread goes on.
  */
 export interface ShaderCompiler {
 	shader(shader: ShaderSource): Promise<CompileResult>;
 	material(material: MaterialSource): Promise<MaterialResult>;
 	effect(effect: MaterialSource): Promise<EffectResult>;
+	files(
+		materials: readonly Readonly<Record<string, ShaderVariant>>[],
+	): Promise<MaterialFilesResult>;
 }
 
 /** Compiles on this thread. */
@@ -219,6 +250,7 @@ export const compileHere: ShaderCompiler = {
 	shader: async (shader) => compileShader(shader),
 	material: async (material) => compileMaterial(material),
 	effect: async (effect) => compileEffect(effect),
+	files: async (materials) => writeMaterialFiles(materials),
 };
 
 /** A shader manifest and every WGSL file beside it, as `bun run shaders` reads them. */
@@ -253,7 +285,12 @@ export type Response<T> =
 	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
 
 /** The name of one of the module's exports that takes a request. */
-export type CallName = 'compile' | 'compile_material' | 'compile_effect' | 'build';
+export type CallName =
+	| 'compile'
+	| 'compile_material'
+	| 'compile_effect'
+	| 'material_files'
+	| 'build';
 
 let compiled: WebAssembly.Module | undefined;
 let calls: CompilerCalls | undefined;

@@ -34,6 +34,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use null3d_gpu::drawlist::permutation;
+use serde::Serialize;
 
 use crate::glsl::DEPTH_MAPPING_UNIFORM;
 use crate::{FirstUseFeatures, GlslStage, Output, Target, VariantOutput};
@@ -758,6 +759,84 @@ fn device_module(module: DeviceModule, builds: &Builds<'_>) -> String {
     ts.out
 }
 
+/// One file of custom materials' builds: those for one target and one value of the permutation
+/// bits that a device fixes. A page downloads only its device's file, as it does the engine's own
+/// device modules.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct MaterialFile {
+    /// The file's name without its extension: the target, then the name of each of its bits in
+    /// lowercase, all joined with hyphens, such as `glsl-draw-index-tone-map`.
+    pub name: String,
+    /// The target's name: `wgsl` or `glsl`.
+    pub target: &'static str,
+    /// The permutation bits that a device fixes, which every build in the file has.
+    pub bits: u32,
+    /// The file's JavaScript. Its `SHADERS` export lists each material's builds, by name, in the
+    /// order of the materials given.
+    pub source: String,
+}
+
+/// Writes the builds of custom materials into one file for each target and each value of the bits
+/// that a device fixes. Each file lists every material, in order, with its builds of the file's
+/// target and bits, and writes each source and each paragraph that several of them share once.
+pub fn material_files(materials: &[BTreeMap<String, VariantOutput>]) -> Vec<MaterialFile> {
+    let none = FirstUseFeatures::default();
+    let mut files: BTreeMap<DeviceModule<'_>, Vec<BTreeMap<&str, &VariantOutput>>> =
+        BTreeMap::new();
+    for (index, variants) in materials.iter().enumerate() {
+        for (name, variant) in variants {
+            let module = DeviceModule::of("", variant, &none);
+            let builds = files
+                .entry(module)
+                .or_insert_with(|| vec![BTreeMap::new(); materials.len()]);
+            builds[index].insert(name.as_str(), variant);
+        }
+    }
+    files
+        .into_iter()
+        .map(|(module, builds)| {
+            let mut js = Writer::default();
+            let bits: Vec<&str> = module.bit_names().collect();
+            let with = if bits.is_empty() {
+                "without the bits that a device fixes".to_owned()
+            } else {
+                format!("with {}", bits.join(" and "))
+            };
+            js.line(&format!(
+                "// The {} builds of custom materials, {with}, written by the null3D Vite plugin.",
+                module.target.name().to_ascii_uppercase()
+            ));
+            js.shared_sources(builds.iter().flat_map(|b| b.values().copied()), true);
+            js.line("");
+            js.open("export const SHADERS = [");
+            for variants in &builds {
+                if variants.is_empty() {
+                    js.line("{},");
+                    continue;
+                }
+                js.open("{");
+                for (name, variant) in variants {
+                    js.open(&format!("{name}: {{"));
+                    js.variant(variant);
+                    js.close("},");
+                }
+                js.close("},");
+            }
+            js.close("];");
+            let stem = module.stem();
+            MaterialFile {
+                name: stem
+                    .strip_prefix(DEVICE_MODULE_PREFIX)
+                    .unwrap_or(&stem)
+                    .to_owned(),
+                target: module.target.name(),
+                bits: module.bits,
+                source: js.out,
+            }
+        })
+        .collect()
+}
+
 /// The union of a shader's pipeline names as a TypeScript type: `never` for none.
 fn pipeline_union(pipelines: &[String]) -> String {
     if pipelines.is_empty() {
@@ -1272,6 +1351,65 @@ mod tests {
             vertex: stage(vertex),
             fragment: stage(fragment),
         }
+    }
+
+    #[test]
+    fn custom_materials_have_a_file_for_each_target_and_value_of_the_device_bits() {
+        use permutation::{DRAW_INDEX, RECEIVE_SHADOWS, TONE_MAP};
+        let material = |fragment: &str| {
+            let mut builds = BTreeMap::new();
+            for (name, bits) in [("webgpu", 0), ("webgpu_tone_map", TONE_MAP)] {
+                builds.insert(name.to_owned(), build(Target::Wgsl, bits));
+            }
+            for (name, bits) in [
+                ("webgl2_draw_index", DRAW_INDEX),
+                (
+                    "webgl2_draw_index_receive_shadows",
+                    DRAW_INDEX | RECEIVE_SHADOWS,
+                ),
+            ] {
+                let mut glsl = build(Target::Glsl, bits);
+                glsl.glsl = Some(BTreeMap::from([(
+                    "main".to_owned(),
+                    glsl_program("vert shared", fragment),
+                )]));
+                builds.insert(name.to_owned(), glsl);
+            }
+            builds
+        };
+        let mut second = material("frag two");
+        second.remove("webgpu_tone_map");
+        let files = material_files(&[material("frag one"), second]);
+        let names: Vec<(&str, &str, u32)> = files
+            .iter()
+            .map(|file| (file.name.as_str(), file.target, file.bits))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("wgsl", "wgsl", 0),
+                ("wgsl-tone-map", "wgsl", TONE_MAP),
+                ("glsl-draw-index", "glsl", DRAW_INDEX),
+            ]
+        );
+        let glsl = &files[2].source;
+        assert!(glsl.starts_with("// The GLSL builds of custom materials, with DRAW_INDEX,"));
+        assert_eq!(glsl.matches("vert shared").count(), 1, "{glsl}");
+        assert_eq!(
+            glsl.matches("webgl2_draw_index_receive_shadows: {").count(),
+            2
+        );
+        let order = (glsl.find("frag one"), glsl.find("frag two"));
+        assert!(order.0 < order.1, "each material in its place: {glsl}");
+        let tone_map = &files[1].source;
+        assert!(
+            tone_map.contains("export const SHADERS = [\n\t{\n\t\twebgpu_tone_map: {"),
+            "{tone_map}"
+        );
+        assert!(
+            tone_map.ends_with("\t{},\n];\n"),
+            "a material without builds there keeps its place: {tone_map}"
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ import {
 	type ShaderProblem,
 	type ShaderVariantSpec,
 } from './shader-compiler.ts';
-import type { CompiledWgsl, WgslPipeline } from './shader-types.ts';
+import type { BuiltWgsl, WgslPipeline } from './shader-types.ts';
 
 /** The block comment that tags a template literal as WGSL, with any spacing inside it. */
 export const WGSL_TAG = /\/\*\s*wgsl\s*\*\//;
@@ -250,7 +250,7 @@ const BUILDS = {
 
 /** The result of compiling WGSL from a project: the shader, or the problems that stopped it. */
 export type WgslCompile =
-	| { readonly ok: true; readonly shader: CompiledWgsl }
+	| { readonly ok: true; readonly shader: BuiltWgsl }
 	| {
 			readonly ok: false;
 			readonly problems: readonly ShaderProblem[];
@@ -382,7 +382,7 @@ export function wgslError(
 }
 
 /** Compiled WGSL, or the error that stops the module that holds it. */
-export type ShaderOrError = { readonly shader: CompiledWgsl } | { readonly error: WgslError };
+export type ShaderOrError = { readonly shader: BuiltWgsl } | { readonly error: WgslError };
 
 /**
  * Compiles a `.wgsl` file. `path` names the file in messages, `id` is its module id, and `text` its
@@ -426,7 +426,7 @@ export async function compileLiteral(
 export interface TaggedShader {
 	readonly start: number;
 	readonly end: number;
-	readonly shader: CompiledWgsl;
+	readonly shader: BuiltWgsl;
 }
 
 /**

@@ -14,6 +14,8 @@ import {
 	effectResult,
 	joinShares,
 	type MaterialBuild,
+	type MaterialFile,
+	type MaterialFilesResult,
 	type MaterialResult,
 	type MaterialSource,
 	materialResult,
@@ -72,6 +74,13 @@ export class CompilerPool implements ShaderCompiler {
 	/** Compiles a custom effect or tone curve, whose few builds take one worker. */
 	async effect(effect: MaterialSource): Promise<EffectResult> {
 		return effectResult(await this.run<EffectBuild>('compile_effect', effect));
+	}
+
+	/** Writes custom materials' files by device, on one worker. */
+	async files(
+		materials: readonly Readonly<Record<string, ShaderVariant>>[],
+	): Promise<MaterialFilesResult> {
+		return this.run<readonly MaterialFile[]>('material_files', { materials });
 	}
 
 	/** Stops every worker. A later compile starts them again. */

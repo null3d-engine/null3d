@@ -156,6 +156,19 @@ Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one G
 
 Both builds follow the [WGSL rules for portable shaders](../shaders/wgsl-rules.md). The rules page says what the build rejects, and what you must test on each path yourself.
 
+### Where a custom material's builds go
+
+A custom material has many builds: one for each variant of the standard material on each GPU path, 80 in all. A device draws with only 8 of them on WebGPU, or 16 on WebGL2. So the plugin does not put the builds in your module:
+
+- It writes them into small files beside the module, one for each GPU path and each kind of device, named `material-*.js`. The 6 files of a module hold the builds of all its custom materials, from one `.wgsl` file or from the tagged literals of one script. The text that the builds share is in each file once.
+- The material's value in your module holds only its uniforms, its textures, its vertex inputs and the address of each file. It takes less than 1 KB.
+- The thread that draws downloads its device's file as soon as the sketch creates the material. The first frame waits for that file and for the material's pipelines, as it waits for any pipeline.
+- In `vite build`, the files go into the assets folder with the build's other files. On the dev server, the plugin serves them from memory.
+
+For example, the 4 custom materials of one test sketch made a module of 15 MB when their builds were in the module. The module now takes about 2 KB, and a device downloads one file of 110 to 230 KB, or 12 to 16 KB with Brotli compression.
+
+Deploy every file that the build writes. When a device's file does not download, the engine stops drawing with [E1424](../errors/E1424.md).
+
 You can use arrays in every form that WGSL allows. A function can return an array, and an array can take values that are not constants, such as `array<vec3f, 2>(a, b)`. Some Android GPUs reject these forms in GLSL, so the WebGL2 build rewrites them. A function that returns an array gives it through an extra `out` parameter, and an array built from values fills one element at a time. Your WGSL does not change, and the WebGPU build keeps it as you wrote it.
 
 ## Shader errors
@@ -175,7 +188,7 @@ src/sketch.ts:14:23: expected `;`, found "2.0"
 On the dev server, the plugin sends a shader that you change to the running page. The page does not reload, so the sketch keeps its state, its camera and its time:
 
 1. You save a `.wgsl` file, or a script file in which only the WGSL of tagged literals changed.
-2. The plugin compiles the new WGSL and sends it to each page of the dev server.
+2. The plugin compiles the new WGSL and sends it to each page of the dev server. A custom material's update names new files of its builds, which the thread that draws downloads.
 3. The engine builds the new shader's pipelines in the background. The old shader draws until they are ready, so no frame loses an object.
 
 On a desktop computer, an edit shows within about a second. Most of that time is the compile, which builds every variant of a custom material for both GPU paths.

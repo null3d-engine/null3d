@@ -13,6 +13,10 @@
 //! - `compile_effect()` builds a custom effect's or a custom tone curve's WGSL, an
 //!   [`EffectSource`], into every variant of the engine's effect template or of its final pass.
 //!   The output is an [`EffectOutput`](null3d_shaders::EffectOutput).
+//! - `material_files()` writes the builds of custom materials into one file for each target and
+//!   each value of the bits that a device fixes. The request is `{"materials": [...]}`, each
+//!   material's builds by name as `compile_material()` gives them, and the output is a list of
+//!   [`MaterialFile`](null3d_shaders::MaterialFile).
 //! - `build()` builds a whole manifest, as the native `shader-build` command does. The request is
 //!   the manifest and every file, the library modules too, as [`Inputs`], and the output is an
 //!   [`Output`](null3d_shaders::Output).
@@ -28,10 +32,10 @@ use std::sync::Once;
 
 use null3d_shaders::{
     BuildError, Compiler, EffectSource, Inputs, MaterialSource, MaterialTemplate, PostTemplates,
-    Problem, Response, ShaderSource,
+    Problem, Response, ShaderSource, VariantOutput,
 };
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 /// The engine's shader files, each by its path in the shader folder with its text: the entry
 /// shaders, and the library modules in `lib/`.
@@ -120,6 +124,22 @@ fn with_compiler<T>(
         *slot = Some(compiler);
         result
     })
+}
+
+/// The builds of custom materials, for [`material_files`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MaterialBuilds {
+    materials: Vec<BTreeMap<String, VariantOutput>>,
+}
+
+/// Writes the builds of the custom materials in the request into files by device.
+#[unsafe(no_mangle)]
+pub extern "C" fn material_files() {
+    respond(|request| {
+        let builds: MaterialBuilds = parse(request)?;
+        Ok(null3d_shaders::material_files(&builds.materials))
+    });
 }
 
 /// Builds the manifest in the request.

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import { build, createServer, type Rollup } from 'vite';
+import { build, createServer, type Rollup, type ViteDevServer } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import { WGSL_UPDATE_EVENT } from './hot';
 import null3d, { type Null3dPluginOptions } from './index';
 import type { ShaderProblem } from './shader-compiler';
-import type { CompiledMaterial, CompiledShader } from './shader-types';
+import type { BuiltMaterial, CompiledMaterial, CompiledShader } from './shader-types';
 import {
 	codeFrame,
 	compileTaggedWgsl,
@@ -171,6 +172,31 @@ describe('the places of problems', () => {
 	});
 });
 
+/**
+ * What the dev server's own middlewares answer for `path`: the body and its type, or no body when
+ * they pass the request on.
+ */
+function serve(
+	server: ViteDevServer,
+	path: string,
+): Promise<{ status?: number; type?: string; body?: string }> {
+	return new Promise((resolve) => {
+		const headers = new Map<string, string>();
+		const res = {
+			statusCode: 200,
+			setHeader: (name: string, value: string) => headers.set(name.toLowerCase(), value),
+			getHeader: (name: string) => headers.get(name.toLowerCase()),
+			end(body: string) {
+				resolve({ status: this.statusCode, type: headers.get('content-type'), body });
+			},
+		};
+		const req = { url: path, originalUrl: path, method: 'GET', headers: {} };
+		server.middlewares(req as unknown as IncomingMessage, res as unknown as ServerResponse, () =>
+			resolve({}),
+		);
+	});
+}
+
 /** The compiled WGSL of a compile that should pass, or the failure's message. */
 function passed(result: WgslCompile) {
 	if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
@@ -185,7 +211,7 @@ function compiled(result: WgslCompile): CompiledShader {
 }
 
 /** The compiled custom material. */
-function material(result: WgslCompile): CompiledMaterial {
+function material(result: WgslCompile): BuiltMaterial {
 	const shader = passed(result);
 	if (shader.kind !== 'material') throw new Error('the WGSL compiled as a whole shader');
 	return shader;
@@ -538,6 +564,49 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		);
 	});
 
+	it("writes custom materials' builds into files by device, which the offline list holds", async () => {
+		const surface =
+			'fn surface(input: SurfaceInput) -> Surface {\n    return defaultSurface(input);\n}\n';
+		const sketch = `const defineSketch = (setup: () => unknown) => setup;
+export default defineSketch(() => [/* wgsl */ \`${surface}\`, /* wgsl */ \`${surface.replace('return', 'var s = defaultSurface(input);\n    return')}\`]);
+`;
+		const result = await build({
+			root: project({ 'src/sketch.ts': sketch }),
+			configFile: false,
+			logLevel: 'silent',
+			plugins: [null3d()],
+			build: { write: false },
+		});
+		const output = (Array.isArray(result) ? result : [result]).flatMap((out) =>
+			'output' in out ? out.output : [],
+		);
+		const files = output.filter(({ fileName }) => /^assets\/material-/.test(fileName));
+		expect(files.map(({ fileName }) => fileName.replace(/-[\w-]{8}\.js$/, '')).sort()).toEqual(
+			[
+				'glsl',
+				'glsl-draw-index',
+				'glsl-draw-index-tone-map',
+				'glsl-tone-map',
+				'wgsl',
+				'wgsl-tone-map',
+			].map((name) => `assets/material-${name}`),
+		);
+		const code = output.find(
+			(file): file is Rollup.OutputChunk =>
+				file.type === 'chunk' && !!file.facadeModuleId?.endsWith('src/sketch.ts'),
+		)?.code;
+		// The two materials of the script share the files, each at its own place.
+		expect(code).not.toContain('#version 300 es');
+		expect(code).toContain('files:{index:0,');
+		expect(code).toContain('files:{index:1,');
+		for (const { fileName } of files) expect(code).toContain(fileName.slice('assets/'.length));
+		const list = output.find(({ fileName }) => fileName === 'null3d-files.json');
+		const { start } = JSON.parse(list?.type === 'asset' ? String(list.source) : '{}') as {
+			start: string[];
+		};
+		for (const { fileName } of files) expect(start).toContain(fileName);
+	}, 60_000);
+
 	it('writes the types of each WGSL file that a module imports beside it', async () => {
 		const root = project();
 		await buildProject(root);
@@ -597,7 +666,17 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		};
 		try {
 			const file = await server.transformRequest('/src/tint.wgsl');
-			expect(file?.code).toContain('"hot":"src/tint.wgsl"}');
+			expect(file?.code).toContain('"hot":"src/tint.wgsl","files":{"index":0,');
+			// The material names the files of its builds, which the dev server serves.
+			const files = [...(file?.code ?? '').matchAll(/"(\/null3d-materials\/[^"]+)"/g)].map(
+				([, path]) => path ?? '',
+			);
+			expect(files).toHaveLength(6);
+			const served = await serve(server, files.find((path) => path.endsWith('-glsl.js')) ?? '');
+			expect(served.type).toBe('text/javascript');
+			expect(served.body).toStartWith('// The GLSL builds of custom materials');
+			expect(served.body).toContain('#version 300 es');
+			expect((await serve(server, '/null3d-materials/missing.js')).status).toBe(404);
 			const literal = await server.transformRequest('/src/tint.ts');
 			expect(literal?.code).toMatch(/"hot": ?"src\/tint\.ts#0"/);
 
@@ -607,11 +686,17 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			expect(update?.event).toBe(WGSL_UPDATE_EVENT);
 			const updates = (data: unknown) =>
 				(data as { updates: { key: string; shader: CompiledMaterial }[] }).updates.map(
-					({ key, shader }) => [key, shader.kind],
+					({ key, shader }) => [
+						key,
+						shader.kind,
+						Object.keys(shader.files.glsl).length,
+						'variants' in shader,
+					],
 				);
-			expect(updates(update?.data)).toEqual([['src/tint.wgsl', 'material']]);
+			// A custom material's update names new files of its builds, not the builds.
+			expect(updates(update?.data)).toEqual([['src/tint.wgsl', 'material', 4, false]]);
 			const [literalUpdate] = await change('src/tint.ts', sketch.replace(surface, brighter));
-			expect(updates(literalUpdate?.data)).toEqual([['src/tint.ts#0', 'material']]);
+			expect(updates(literalUpdate?.data)).toEqual([['src/tint.ts#0', 'material', 4, false]]);
 
 			const [error] = await change('src/tint.wgsl', brighter.replace('input);', 'input) 2.0;'));
 			expect(error?.type).toBe('error');

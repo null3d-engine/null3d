@@ -316,11 +316,13 @@ const WGSL_FEATURE_FILES: Readonly<Record<string, string>> = { morph: 'skinning'
  * download with the start's, and the set holds them before the renderer starts. The features that
  * the sketch asks for later, through the image table, load as soon as they are asked for.
  * `featureFiles` names, for a feature whose work this path does with another feature's builds,
- * the feature whose file to load in its place.
+ * the feature whose file to load in its place. Each custom material's file of `target` for the
+ * device's fixed bits downloads as soon as the material's shader arrives.
  */
 async function deviceShaders(
 	device: CoreDevice,
 	options: RendererOptions,
+	target: 'wgsl' | 'glsl',
 	load: (bits: number) => Promise<DeviceShaders>,
 	loadFeature: (feature: string, bits: number) => Promise<FirstUseShaders>,
 	featureFiles: Readonly<Record<string, string>> = {},
@@ -338,6 +340,8 @@ async function deviceShaders(
 	if (table) {
 		void shaders.preload([...table.preloads].map(fileOf));
 		table.onPreload = (feature) => void shaders.preload([fileOf(feature)]);
+		for (const shader of table.shaders.values()) shaders.custom(shader, target);
+		table.onShader = (shader) => shaders.custom(shader, target);
 	}
 	return shaders;
 }
@@ -374,7 +378,7 @@ export async function createRenderer(
 			const [, , shaders, timing] = await Promise.all([
 				reclaimContext(canvas),
 				contextRestored(gl),
-				scene && deviceShaders(device, options, loadGlslShaders, loadGlslFeature),
+				scene && deviceShaders(device, options, 'glsl', loadGlslShaders, loadGlslFeature),
 				options.glTiming && import('../gpu/webgl2/call-timing'),
 			]);
 			// The context may have been lost again during the downloads. The renderer starts on a
@@ -398,7 +402,8 @@ export async function createRenderer(
 	}
 	const [gpu, shaders] = await Promise.all([
 		requestDevice(options),
-		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature, WGSL_FEATURE_FILES),
+		scene &&
+			deviceShaders(device, options, 'wgsl', loadWgslShaders, loadWgslFeature, WGSL_FEATURE_FILES),
 	]);
 	if (scene && shaders) {
 		const renderer = new WebGPUSceneRenderer(

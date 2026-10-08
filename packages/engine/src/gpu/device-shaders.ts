@@ -8,7 +8,14 @@
 // first time a pipeline asks for one of the feature's builds. Until a module arrives, the pipeline
 // waits as a custom material's pipeline waits for its shader. Before the first frame, the frame
 // waits with it. After it, frames go on, and what the pipeline draws appears once it is built.
+//
+// A custom material's builds load the same way, from files that the null3D Vite plugin writes: one
+// for each GPU path and each value of the fixed bits. The set starts to download the device's file
+// as soon as the material's shader reaches the thread that draws, and adds the file's builds to the
+// shader's variants, which start empty. A download that fails stops the drawing: E1406 for the
+// engine's own file, E1424 for a custom material's.
 
+import { reasonOf } from '../errors/message';
 import { PERMUTATION_DRAW_INDEX, PERMUTATION_HALF, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import {
 	type DeviceShaders,
@@ -17,6 +24,7 @@ import {
 	type ShaderVariant,
 	type ShaderVariants,
 } from '../generated/shaders';
+import type { CustomShader, ShaderFiles } from '../shared/images';
 import { variantFor } from './variants';
 
 /** The permutation bits that a device fixes and that a pipeline's word can hold. */
@@ -37,6 +45,15 @@ export type DeviceModuleLoader = (
 	feature: string | undefined,
 ) => Promise<FirstUseShaders>;
 
+/** Loads a file of custom materials' builds: each material's builds, in the file's order. */
+export type MaterialFileLoader = (url: string) => Promise<readonly ShaderVariants[]>;
+
+/** Imports a file of custom materials' builds by its address. */
+const importMaterialFile: MaterialFileLoader = (url) =>
+	import(/* @vite-ignore */ url).then(
+		(module: { SHADERS: readonly ShaderVariants[] }) => module.SHADERS,
+	);
+
 /** The device shaders that a backend reads, which grow by another module when a pipeline needs it. */
 export class DeviceShaderSet {
 	/**
@@ -52,19 +69,23 @@ export class DeviceShaderSet {
 	private listener: ((feature: string, module: FirstUseShaders) => void) | undefined;
 	/** The key of each module whose builds the set holds, or that failed to load. */
 	private readonly settled = new Set<string>();
-	/** Why each module that failed to load failed, by its key. */
-	private readonly failures = new Map<string, unknown>();
+	/** What failed to download, and why, by the key of each module or file that failed. */
+	private readonly failures = new Map<string, string>();
 	/** The name of each shader whose variants the backends hold, by those variants. */
 	private readonly names = new Map<ShaderVariants, string>();
+	/** The files of each custom material's builds, by the variants that the builds go into. */
+	private readonly files = new WeakMap<ShaderVariants, ShaderFiles>();
 
 	/**
 	 * `shaders` are the builds of the start's module with the fixed bits `bits`, which the backends
-	 * hold, with an entry for every shader that loads by device. `load` loads another module.
+	 * hold, with an entry for every shader that loads by device. `load` loads another module, and
+	 * `loadFile` a file of custom materials' builds.
 	 */
 	constructor(
 		readonly shaders: DeviceShaders,
 		private readonly bits: number,
 		private readonly load: DeviceModuleLoader,
+		private readonly loadFile: MaterialFileLoader = importMaterialFile,
 	) {
 		const key = moduleKey(undefined, bits);
 		this.modules.set(key, Promise.resolve(undefined));
@@ -74,24 +95,43 @@ export class DeviceShaderSet {
 
 	/**
 	 * True when `variants` hold a build for `permutation` with output for `target`, or when the
-	 * module that would hold it has loaded, so the backend can build the pipeline or report its
-	 * error. Otherwise it starts to load that module, once, and returns false until it has. It
-	 * throws when that module failed to load, with the reason.
+	 * module or custom material's file that would hold it has loaded, so the backend can build the
+	 * pipeline or report its error. Otherwise it starts to load that module or file, once, and
+	 * returns false until it has. When that download failed, it throws the reason with its code:
+	 * E1406 for the engine's module and E1424 for a custom material's file. The page makes it an
+	 * engine error, so this thread does not load the error table.
 	 */
 	ready(variants: ShaderVariants, permutation: number, target: 'wgsl' | 'glsl'): boolean {
 		if (variantFor(variants, permutation, target)) return true;
-		const bits = (permutation & PIPELINE_DEVICE_BITS) | (this.bits & PERMUTATION_HALF);
-		const name = this.names.get(variants);
-		const feature = name === undefined ? undefined : firstUseFeature(name, permutation);
-		const key = this.loadModule(feature, bits);
-		if (this.failures.has(key)) {
-			const reason = this.failures.get(key);
-			throw new Error(
-				`the engine could not download the shaders that a pipeline needs: ${reason instanceof Error ? reason.message : String(reason)}. Check the network, and that the page's build is deployed whole`,
-				{ cause: reason },
-			);
+		const fixed = permutation & PIPELINE_DEVICE_BITS;
+		const files = this.files.get(variants);
+		let key: string;
+		if (files) {
+			const url = files[target][fixed];
+			// A custom material without a file for these bits has no build for them.
+			if (url === undefined) return true;
+			key = this.loadMaterialFile(variants, url, files.index);
+		} else {
+			const name = this.names.get(variants);
+			const feature = name === undefined ? undefined : firstUseFeature(name, permutation);
+			key = this.loadModule(feature, fixed | (this.bits & PERMUTATION_HALF));
 		}
+		const failure = this.failures.get(key);
+		if (failure !== undefined) throw new Error(failure);
 		return this.settled.has(key);
+	}
+
+	/**
+	 * Notes the files of a custom material's builds, when its shader has them, and starts to
+	 * download the file of this device's fixed bits for `target`, once. The file's builds then go
+	 * into the shader's variants. A pipeline with other fixed bits loads its file when it asks.
+	 */
+	custom(shader: CustomShader, target: 'wgsl' | 'glsl'): void {
+		const files = shader.files;
+		if (!files || this.files.has(shader.variants)) return;
+		this.files.set(shader.variants, files);
+		const url = files[target][this.bits & PIPELINE_DEVICE_BITS];
+		if (url !== undefined) this.loadMaterialFile(shader.variants, url, files.index);
 	}
 
 	/**
@@ -136,18 +176,57 @@ export class DeviceShaderSet {
 
 	/** Starts to load the module of `feature` and `bits`, once, and returns its key. */
 	private loadModule(feature: string | undefined, bits: number): string {
-		const key = moduleKey(feature, bits);
+		return this.download(
+			moduleKey(feature, bits),
+			"E1406: the engine's shaders that a pipeline needs",
+			() =>
+				this.load(bits, feature).then((more) => {
+					this.add(more);
+					return more;
+				}),
+		);
+	}
+
+	/**
+	 * Starts to load the file at `url` of a custom material's builds, once, adds the builds at
+	 * `index` in it to `variants`, and returns its key.
+	 */
+	private loadMaterialFile(variants: ShaderVariants, url: string, index: number): string {
+		return this.download(
+			`${url}#${index}`,
+			`E1424: the shaders of a custom material from ${url}`,
+			() =>
+				this.loadFile(url).then((list) => {
+					const builds = list[index];
+					if (!builds)
+						throw new Error(
+							`the file does not list the material at place ${index}, so it may come from another build`,
+						);
+					Object.assign(variants, builds);
+					return undefined;
+				}),
+		);
+	}
+
+	/**
+	 * Starts `load` under `key`, once, and returns the key. `what` names the download, after the
+	 * code of its error, in the message of its failure.
+	 */
+	private download(
+		key: string,
+		what: string,
+		load: () => Promise<FirstUseShaders | undefined>,
+	): string {
 		if (this.modules.has(key)) return key;
 		this.modules.set(
 			key,
-			this.load(bits, feature).then(
+			load().then(
 				(more) => {
-					this.add(more);
 					this.settled.add(key);
 					return more;
 				},
 				(error: unknown) => {
-					this.failures.set(key, error);
+					this.failures.set(key, `${what} did not download: ${reasonOf(error)}.`);
 					this.settled.add(key);
 					return undefined;
 				},

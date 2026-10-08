@@ -169,7 +169,7 @@ function fakeCore() {
 	};
 }
 
-/** A custom material's WGSL as the Vite plugin compiles it, with a stand-in for its variants. */
+/** A custom material's WGSL as the Vite plugin compiles it, with stand-in files of its builds. */
 function compiledMaterial(
 	uniforms: { name: string; type: string; offset: number }[] = [],
 	textures: { name: string; offset: number }[] = [],
@@ -177,7 +177,7 @@ function compiledMaterial(
 	return {
 		kind: 'material',
 		functions: ['surface'],
-		variants: {},
+		files: { index: 0, wgsl: {}, glsl: {} },
 		uniforms,
 		textures,
 		locations: [0, 1, 2],
@@ -497,12 +497,15 @@ describe('Material.set', () => {
 });
 
 describe('hot updates of a custom material', () => {
-	/** WGSL of a custom material under a hot update key, with its own stand-in variants. */
-	const hotMaterial = (key: string, build: string) => ({
+	/** WGSL of a custom material under a hot update key, with its own stand-in file. */
+	const hotMaterial = (key: string, file: string) => ({
 		...compiledMaterial(),
-		variants: { [build]: { permutation: 0, wgsl: null, glsl: null } },
+		files: { index: 0, wgsl: { 0: file }, glsl: {} },
 		hot: key,
 	});
+	/** The file of each shader sent to the thread that draws, by its template. */
+	const sentFiles = (sent: [number, CustomShader][]) =>
+		sent.map(([template, shader]) => [template, shader.files?.wgsl[0]]);
 
 	test('send the new shader of every material under the key to the thread that draws', () => {
 		const { sent, materials } = fakeCore();
@@ -514,10 +517,10 @@ describe('hot updates of a custom material', () => {
 			{ key: 'src/glow.wgsl', shader: newer },
 			{ key: 'src/other.wgsl', shader: hotMaterial('src/other.wgsl', 'other') },
 		]);
-		expect(sent.map(([template, shader]) => [template, Object.keys(shader.variants)])).toEqual([
-			[SHADING_CUSTOM_FIRST, ['first']],
-			[SHADING_CUSTOM_FIRST + 1, []],
-			[SHADING_CUSTOM_FIRST, ['newer']],
+		expect(sentFiles(sent)).toEqual([
+			[SHADING_CUSTOM_FIRST, 'first'],
+			[SHADING_CUSTOM_FIRST + 1, undefined],
+			[SHADING_CUSTOM_FIRST, 'newer'],
 		]);
 	});
 
@@ -534,9 +537,7 @@ describe('hot updates of a custom material', () => {
 			standardCustom(SHADING_CUSTOM_FIRST),
 			standardCustom(SHADING_CUSTOM_FIRST),
 		]);
-		expect(sent.map(([template, shader]) => [template, Object.keys(shader.variants)])).toEqual([
-			[SHADING_CUSTOM_FIRST, ['newer']],
-		]);
+		expect(sentFiles(sent)).toEqual([[SHADING_CUSTOM_FIRST, 'newer']]);
 	});
 });
 
@@ -556,8 +557,14 @@ describe('materials.shader', () => {
 			standardCustom(SHADING_CUSTOM_FIRST),
 		]);
 		expect(sent).toEqual([
-			[SHADING_CUSTOM_FIRST, { variants: stripes.variants, locations: [0, 1, 2], textures: 0 }],
-			[SHADING_CUSTOM_FIRST + 1, { variants: rings.variants, locations: [0, 1, 2], textures: 0 }],
+			[
+				SHADING_CUSTOM_FIRST,
+				{ variants: {}, files: stripes.files, locations: [0, 1, 2], textures: 0 },
+			],
+			[
+				SHADING_CUSTOM_FIRST + 1,
+				{ variants: {}, files: rings.files, locations: [0, 1, 2], textures: 0 },
+			],
 		]);
 	});
 
@@ -588,7 +595,10 @@ describe('materials.shader', () => {
 			SHADING_CUSTOM_FIRST | (VERTEX_COLOR << SHADING_CUSTOM_ATTRIBUTE_SHIFT),
 		]);
 		expect(sent).toEqual([
-			[SHADING_CUSTOM_FIRST, { variants: {}, locations: [0, 1, 5], textures: 0 }],
+			[
+				SHADING_CUSTOM_FIRST,
+				{ variants: {}, files: full.files, locations: [0, 1, 5], textures: 0 },
+			],
 		]);
 	});
 
@@ -711,7 +721,10 @@ describe('custom material textures', () => {
 			standardCustom(SHADING_CUSTOM_FIRST) | (2 << SHADING_CUSTOM_TEXTURE_SHIFT),
 		]);
 		expect(sent).toEqual([
-			[SHADING_CUSTOM_FIRST, { variants: {}, locations: [0, 1, 2], textures: 2 }],
+			[
+				SHADING_CUSTOM_FIRST,
+				{ variants: {}, files: wgsl.files, locations: [0, 1, 2], textures: 2 },
+			],
 		]);
 		expect(maps).toEqual([
 			[1, 1, 7, 0],
