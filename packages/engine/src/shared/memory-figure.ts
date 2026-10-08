@@ -1,6 +1,7 @@
-// The memory figures that the sketch thread publishes in the metrics buffer's header while the page
-// samples, by name. Each is a plain constant, which the bundler writes into the code as a number; an
-// enum would ship as an object with every name, in every thread's file.
+// The memory figures that the engine's threads publish in the metrics buffer's header while the page
+// samples, by name. The sketch thread publishes the figures of its scene, and the thread that draws
+// publishes what its GPU backend holds. Each is a plain constant, which the bundler writes into the
+// code as a number; an enum would ship as an object with every name, in every thread's file.
 
 /** The GPU bytes that every texture takes, with the free layers of their texture arrays. */
 export const TextureBytes = 0;
@@ -10,5 +11,9 @@ export const TextureBudgetBytes = 1;
 export const DroppedLevels = 2;
 /** The GPU bytes that every mesh takes: the shared vertex and index buffers and morph deltas. */
 export const MeshBytes = 3;
+/** The GPU bytes of every texture and renderbuffer that the GPU backend holds. */
+export const GpuTextureBytes = 4;
+/** The GPU bytes of every buffer and query set that the GPU backend holds. */
+export const GpuBufferBytes = 5;
 /** The number of figures. */
-export const Count = 4;
+export const Count = 6;

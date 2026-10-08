@@ -49,10 +49,10 @@ export interface StatsMainThread {
 export interface StatsMemory {
 	/** The size of the engine's WebAssembly memory, which every engine thread shares. */
 	readonly wasmBytes: number | null;
-	/** The GPU bytes that every texture takes. */
-	readonly textureBytes: number | null;
-	/** The GPU bytes that every mesh takes. */
-	readonly meshBytes: number | null;
+	/** The GPU bytes of every texture and render target. */
+	readonly gpuTextureBytes: number | null;
+	/** The GPU bytes of every buffer: vertices, indices, instances, uniforms and the like. */
+	readonly gpuBufferBytes: number | null;
 	/** The JavaScript heap of the page's own thread, where the browser has `performance.memory`. */
 	readonly jsHeapBytes: number | null;
 	/**
@@ -166,7 +166,7 @@ export function statsText(figures: StatsFigures): string {
 		`draw calls ${Math.round(figures.drawCalls)}${upload}`,
 		`triangles ${count(figures.triangles)}  objects ${count(figures.objects)}`,
 		`memory  wasm ${mib(memory.wasmBytes)}  js heap ${mib(memory.jsHeapBytes)}`,
-		`gpu memory  textures ${mib(memory.textureBytes)}  meshes ${mib(memory.meshBytes)}`,
+		`gpu memory  textures ${mib(memory.gpuTextureBytes)}  buffers ${mib(memory.gpuBufferBytes)}`,
 		pageLine(memory.page),
 		mainThreadLine(mainThread),
 	);

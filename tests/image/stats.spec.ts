@@ -1,7 +1,13 @@
 import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
-import { type OverlayBoxes, type StatsResult, statsProblems } from '../lib/stats-checks.ts';
+import {
+	instanceFloors,
+	type OverlayBoxes,
+	type StatsResult,
+	statsProblems,
+	tenths,
+} from '../lib/stats-checks.ts';
 
 /** The overlay's element, which the page adds to its body. */
 const OVERLAY = '[data-null3d-stats]';
@@ -95,6 +101,31 @@ for (const mode of MODES)
 		await expect(overlay).toHaveCount(1);
 		await page.evaluate(() => (globalThis as { stopEngine?: () => Promise<void> }).stopEngine?.());
 		await expect(overlay).toHaveCount(0);
+	});
+
+/** The instance rows of the GPU memory test: twice the instances demo's. */
+const ROWS = 20_000;
+const MIB = 1024 * 1024;
+
+for (const gpu of ['webgpu', 'webgl2'])
+	test(`the stats overlay counts the GPU memory of instance rows and a shadow map, on ${gpu}`, async ({
+		page,
+	}) => {
+		const result = await openStats(page, `gpu=${gpu}&instances=${ROWS}`);
+		expect(statsProblems(result)).toEqual([]);
+		const { figures, instances, overlay } = result;
+		if (!figures || !instances || !overlay) throw new Error('the page gave no figures');
+		// Each row takes its 64 bytes in a GPU buffer, and each shadow cascade at least 2 bytes per
+		// texel in a texture. The engine holds more besides, such as the canvas's targets.
+		const floors = instanceFloors(instances);
+		expect(figures.gpuBufferBytes).toBeGreaterThanOrEqual(floors.buffers);
+		expect(figures.gpuTextureBytes).toBeGreaterThanOrEqual(floors.textures);
+		expect(tenths(overlay.figures['gpu-buffers'])).toBeGreaterThanOrEqual(
+			Math.floor((floors.buffers * 10) / MIB),
+		);
+		expect(tenths(overlay.figures['gpu-textures'])).toBeGreaterThanOrEqual(
+			Math.floor((floors.textures * 10) / MIB),
+		);
 	});
 
 test('the stats overlay leaves out the figures that the browser does not give, and its memory adds up', async ({

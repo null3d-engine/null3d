@@ -166,7 +166,8 @@ h3 span { text-transform: none; letter-spacing: 0; font-weight: 500; }
 /** The parts of the memory bar: each figure's name, label and color. */
 const MEMORY_PARTS = [
 	['engine-memory', 'Engine', '#2f6fde'],
-	['gpu-memory', 'GPU', '#8e6cf0'],
+	['gpu-textures', 'GPU textures', '#8e6cf0'],
+	['gpu-buffers', 'GPU buffers', '#b79cf5'],
 	['js-heap', 'JS heap', '#23a862'],
 ] as const;
 const MIB = 1024 * 1024;
@@ -197,6 +198,9 @@ export function tenthsOfMib(bytes: number): number {
 
 /** Tenths of a MiB as text. */
 const mibText = (tenths: number) => `${(tenths / 10).toFixed(1)} MiB`;
+
+/** A memory part in tenths of a MiB, or -1 where the page does not know it. */
+const memoryPart = (bytes: number | null) => (bytes === null ? -1 : tenthsOfMib(bytes));
 
 /** The time of a thread's frame that the sketch's own code takes: its update step. */
 export function codeMs(thread: StatsThread): number {
@@ -710,19 +714,18 @@ export class StatsCard {
 	}
 
 	/**
-	 * The memory bar: the engine's memory, the GPU's and the page's JavaScript heap, each where the
-	 * page knows it, adding up to the total. The browser's whole-page figure counts a shared memory
-	 * once for each thread that holds it, so it shows on its own line.
+	 * The memory bar: the engine's memory, the GPU's textures and buffers, and the page's
+	 * JavaScript heap, each where the page knows it, adding up to the total. The browser's
+	 * whole-page figure counts a shared memory once for each thread that holds it, so it shows on
+	 * its own line.
 	 */
 	private updateMemory(figures: StatsFigures): void {
 		const { memory } = figures;
 		const parts = this.memory;
-		parts[0] = memory.wasmBytes === null ? -1 : tenthsOfMib(memory.wasmBytes);
-		parts[1] =
-			memory.textureBytes === null && memory.meshBytes === null
-				? -1
-				: tenthsOfMib((memory.textureBytes ?? 0) + (memory.meshBytes ?? 0));
-		parts[2] = memory.jsHeapBytes === null ? -1 : tenthsOfMib(memory.jsHeapBytes);
+		parts[0] = memoryPart(memory.wasmBytes);
+		parts[1] = memoryPart(memory.gpuTextureBytes);
+		parts[2] = memoryPart(memory.gpuBufferBytes);
+		parts[3] = memoryPart(memory.jsHeapBytes);
 		let total = 0;
 		for (const part of parts) if (part > 0) total += part;
 		setText(this.memoryTotal, mibText(total));

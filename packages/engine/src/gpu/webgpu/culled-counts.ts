@@ -8,6 +8,7 @@
 // sums are 0, so a frame counts only the draws that the CPU issued.
 
 import { SAMPLED_EVERY } from '../../shared/metrics';
+import { GpuMemory } from '../memory';
 
 /** Frames whose arguments can be on their way back at once. */
 const SLOTS = 3;
@@ -58,7 +59,11 @@ export class CulledCounts {
 	private frames = 0;
 	private destroyed = false;
 
-	constructor(private readonly device: GPUDevice) {
+	/** `memory` counts the readback buffers' bytes with the rest of the backend's GPU memory. */
+	constructor(
+		private readonly device: GPUDevice,
+		private readonly memory = new GpuMemory(),
+	) {
 		for (let k = 0; k < SLOTS; k++) {
 			const slot: Slot = {
 				draws: new Int32Array(FIRST_DRAWS * DRAW_VALUES),
@@ -150,12 +155,14 @@ export class CulledCounts {
 			bytes += (slot.ends[k] as number) - (slot.starts[k] as number);
 		}
 		if (!slot.readback || slot.readback.size < bytes) {
-			slot.readback?.destroy();
+			this.release(slot);
+			const size = Math.ceil(bytes / READBACK_STEP) * READBACK_STEP;
 			slot.readback = this.device.createBuffer({
 				label: 'culled draw counts',
-				size: Math.ceil(bytes / READBACK_STEP) * READBACK_STEP,
+				size,
 				usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
 			});
+			this.memory.addBuffers(size);
 		}
 		for (let k = 0; k < slot.sourceCount; k++) {
 			const start = slot.starts[k] as number;
@@ -195,7 +202,16 @@ export class CulledCounts {
 
 	destroy(): void {
 		this.destroyed = true;
-		for (const slot of this.slots) slot.readback?.destroy();
+		for (const slot of this.slots) this.release(slot);
+	}
+
+	/** Destroys a slot's readback buffer, and takes its bytes off the memory total. */
+	private release(slot: Slot): void {
+		const readback = slot.readback;
+		if (!readback) return;
+		readback.destroy();
+		this.memory.addBuffers(-readback.size);
+		slot.readback = undefined;
 	}
 }
 

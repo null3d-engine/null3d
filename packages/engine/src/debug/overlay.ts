@@ -4,8 +4,8 @@
 // as they always do. The panel's header is a button with the frame rate, which shows and hides a
 // card of the other figures under it. The figures are judged against the engine's target frame
 // rate (frame-target.ts). While the card shows, the engine samples the costly figures: GPU time,
-// the counts of the draws that the GPU culls, and the memory figures that the sketch thread
-// publishes. Collapsed to its header, the overlay turns that sampling off and formats none of the
+// the counts of the draws that the GPU culls, and the memory figures that the engine's threads
+// publish. Collapsed to its header, the overlay turns that sampling off and formats none of the
 // card's figures. The page adds what only it can measure, where the browser offers it: its
 // JavaScript heap and the whole page's memory. Only the header button takes the pointer, so drags
 // on the rest of the panel still reach the canvas.
@@ -75,8 +75,8 @@ export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigur
 		objects: stats.objects,
 		memory: {
 			wasmBytes: stats.wasmBytes,
-			textureBytes: stats.textureBytes,
-			meshBytes: stats.meshBytes,
+			gpuTextureBytes: stats.gpuTextureBytes,
+			gpuBufferBytes: stats.gpuBufferBytes,
 			jsHeapBytes: page.jsHeapBytes,
 			page: page.page,
 		},

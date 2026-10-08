@@ -99,7 +99,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.stats(true), or createEngine({ stats: true }) on the page; debug.frameStats() for numbers",
-      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. From 0.2 it sits at the canvas's top right, and its header shows the frame rate. A click opens a card with each thread's and the GPU's time against the target frame rate, triangles and objects drawn, and the engine's, GPU, heap and page memory. Triangles count every pass, shadow maps included, as renderer.info.render.triangles does. Objects count the instances of each draw, so an object counts once per pass that draws it. The page shows it with createEngine({ stats: true }), engine.stats(true) or ?stats (0.2). @null3d/engine/stats (0.2) prints a three.js page's own figures in the same layout. engine.measure() on the page gives percentiles of CPU and GPU time, and memory. In the sketch, debug.frameStats() (0.2) also gives the textures' GPU bytes, their budget and their dropped mip levels.",
+      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. From 0.2 it sits at the canvas's top right, and its header shows the frame rate. A click opens a card with each thread's and the GPU's time against the target frame rate, triangles and objects drawn, and the memory of the engine, the GPU's textures and buffers, the heap and the page. Triangles count every pass, shadow maps included, as renderer.info.render.triangles does. Objects count the instances of each draw, so an object counts once per pass that draws it. The page shows it with createEngine({ stats: true }), engine.stats(true) or ?stats (0.2). @null3d/engine/stats (0.2) prints a three.js page's own figures in the same layout. engine.measure() on the page gives percentiles of CPU and GPU time, and memory. In the sketch, debug.frameStats() (0.2) also gives the textures' GPU bytes, their budget and their dropped mip levels.",
       "docs": "api/debug",
       "detect": "\\.info\\.(render|programs)|from\\s+['\"][^'\"]*stats(\\.module)?(\\.js)?['\"]|\\bnew\\s+Stats\\s*\\("
     },
@@ -109,8 +109,8 @@
       "three": "renderer.info.memory.textures",
       "status": "changed",
       "since": "0.2",
-      "target": "quality.textureMemory; textures.memoryBytes; the quality setting textureMemoryMiB",
-      "notes": "three.js counts the textures that the renderer holds, not their bytes, and sets no budget. null3D reports the textures' GPU bytes and holds them under the preset's budget: past it, textures from files drop their largest mip levels, which load again once room returns.",
+      "target": "quality.textureMemory; textures.memoryBytes; the quality setting textureMemoryMiB; debug.frameStats().gpuTextureBytes and gpuBufferBytes",
+      "notes": "three.js counts the textures that the renderer holds, not their bytes, and sets no budget. null3D reports the textures' GPU bytes and holds them under the preset's budget: past it, textures from files drop their largest mip levels, which load again once room returns. debug.frameStats() (0.2) also gives the bytes of every GPU texture and buffer that the engine holds, render targets and shadow maps included.",
       "docs": "concepts/quality-presets",
       "detect": "\\.info\\.memory\\b"
     },

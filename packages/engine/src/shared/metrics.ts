@@ -112,11 +112,11 @@ const FIRST_FRAME_PIPELINES = 7;
 /** Float64 index of the time, in ms, that the thread that draws spent on the first frame's draw. */
 const FIRST_DRAW = 8;
 /**
- * Float64 index of the first of the memory figures that the sketch thread publishes while the page
+ * Float64 index of the first of the memory figures that the engine's threads publish while the page
  * samples, in the order of `MemoryFigure`.
  */
 const MEMORY = 9;
-const HEADER_WORDS = 26;
+const HEADER_WORDS = 2 * (MEMORY + MemoryFigure.Count);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -190,8 +190,8 @@ function sample(header: Int32Array, word: number, on: boolean): void {
 }
 
 /**
- * A view of the memory figures that the sketch thread publishes, in the order of `MemoryFigure`, for
- * code on any thread. Each is 0 before the sketch thread first published it.
+ * A view of the memory figures that the engine's threads publish, in the order of `MemoryFigure`,
+ * for code on any thread. Each is 0 before its thread first published it.
  */
 export function memoryFigures(buffer: ArrayBufferLike): Float64Array {
 	return new Float64Array(buffer, MEMORY * 8, MemoryFigure.Count);
@@ -294,6 +294,14 @@ export class FrameRecorder {
 	/** Publishes a memory figure by its `MemoryFigure` place, for the frame figures on any thread. */
 	publishMemory(figure: number, value: number): void {
 		this.views.times[MEMORY + figure] = value;
+	}
+
+	/**
+	 * Publishes the GPU memory that the backend holds: its texture bytes, then its buffer bytes, as
+	 * `GpuMemory.bytes` keeps them. A copy between typed arrays boxes no fraction.
+	 */
+	publishGpuMemory(bytes: Float64Array): void {
+		this.views.times.set(bytes, MEMORY + MemoryFigure.GpuTextureBytes);
 	}
 
 	/**

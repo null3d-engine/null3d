@@ -49,6 +49,8 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 		textureBudgetBytes: 0,
 		droppedLevels: 0,
 		meshBytes: 0,
+		gpuTextureBytes: 0,
+		gpuBufferBytes: 0,
 	};
 }
 

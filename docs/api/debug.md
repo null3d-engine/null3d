@@ -177,7 +177,7 @@ The header stays in the corner when the card opens, and the card opens under it,
 | `Frame work` | The target frame rate and its interval, such as `Target 60 fps · 16.7 ms`, after a symbol of the engine's thread mode |
 | Work bars | CPU time per frame of each engine thread, and the GPU's time per frame, against the target |
 | `Held back by` | Below the target frame rate, the part of the frame that holds it back |
-| `Memory` | The engine's memory, the GPU's memory and the page's JavaScript heap, as one bar with a legend |
+| `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend |
 | Whole page | The memory of the whole page and its workers, as the browser counts it |
 | Counts | Draw calls, triangles and objects per frame |
 | Last line | The GPU path, the quality preset and the render scale |
@@ -236,7 +236,8 @@ export default defineSketch(({ debug, page, time }) => {
 | `drawCalls`, `uploadBytes` | Draw calls and bytes uploaded to the GPU, per frame |
 | `triangles`, `objects` | Triangles and objects drawn per frame, over every pass |
 | `wasmBytes` | The size of the engine's WebAssembly memory |
-| `textureBytes`, `meshBytes` | The GPU memory of every texture and of every mesh |
+| `textureBytes`, `meshBytes` | The GPU memory of the scene's textures and of its meshes, as `quality.textureMemory.bytes` and `geometry.memoryBytes` give them |
+| `gpuTextureBytes`, `gpuBufferBytes` | The GPU memory of every texture and of every buffer that the engine holds, render targets and shadow maps included ([GPU memory](#gpu-memory)) |
 | `textureBudgetBytes`, `droppedLevels` | The texture memory budget, and the largest mip levels that the budget dropped |
 | `tier`, `preset`, `renderScale` | The GPU path, the quality preset, and the share of the canvas's size that the scene draws at |
 
@@ -253,17 +254,34 @@ The engine counts every draw of every pass on the thread that draws. That covers
 | Figure | Where it comes from |
 | --- | --- |
 | `Engine` | The size of the engine's WebAssembly memory, which every engine thread shares. It holds the scene and grows as the scene needs, up to the memory maximum |
-| `GPU` | The GPU bytes of every texture, with the free layers of texture arrays, as `quality.textureMemory.bytes` gives them, and of every mesh, as `geometry.memoryBytes` gives them |
+| `GPU textures` | The GPU bytes of every texture and render target that the engine holds, as `gpuTextureBytes` gives them |
+| `GPU buffers` | The GPU bytes of every buffer that the engine holds, as `gpuBufferBytes` gives them |
 | `JS heap` | The JavaScript heap of the page's own thread, from `performance.memory`, where the browser gives it |
 | Whole page | The memory of the whole page and its workers, from `performance.measureUserAgentSpecificMemory`, where the browser gives it |
 
-The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. The browser answers once every worker has run the measurement, or after about a minute. The engine's job workers never stop to run it, so in the threaded build each measurement takes about a minute. Until the first one ends, the line reads `measuring`.
+The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. The browser answers once every worker has run the measurement, or after about a minute. The engine's job workers never stop to run it, so in the threaded build each measurement takes about a minute. Until the first one ends, the line reads `measuring`. The page asks for one measurement at a time.
+
+Some browsers offer the measurement but never answer it. When no answer comes within two minutes of the first request, the overlay hides the line. The page then asks no more for the rest of its life. An answer that comes later still shows.
+
+### GPU memory
+
+The thread that draws keeps two running totals of the GPU memory that the engine holds. It adds an object's bytes when it creates the object, and takes them away when it frees it. So the figures cost nothing to read, and nothing walks the scene to find them.
+
+- `GPU textures` counts the scene's textures, the render targets and their multisampled copies, and the depth and shadow maps. It also counts the targets of post effects, the environment's maps and color grading tables, and the textures that copies and mip levels pass through.
+- `GPU buffers` counts vertices and indices, instance rows, uniforms and storage, and the buffers of GPU culling and indirect draws. It also counts upload staging and the readbacks of GPU timings and culled counts.
+
+A texture counts every mip level of every layer, as the GPU stores it. A compressed texture counts whole blocks of texels, a multisampled target counts each sample, and 24-bit depth counts 4 bytes per texel. The figures have these limits:
+
+- They count the size that the engine asks for. A driver may round an object up to its own alignment, and no browser reports that.
+- The canvas's own image belongs to the browser, so the figures leave it out.
+- They also leave out a texture that lives only during one step, such as a capture's target.
+- A phone's tiled GPU may keep a multisampled target in its tile memory alone. The figure still counts it.
 
 ### Cost
 
 - With the overlay hidden and no call of `debug.frameStats()`, the figures cost the frame almost nothing. The engine's threads write them anyway, for `engine.measure`. The counts of triangles and objects add a few operations per draw call.
 - With the card closed, the overlay costs nothing more. Its header reads the frame rate from the frame intervals that the engine records anyway. It times nothing on the GPU, reads nothing back and measures no memory.
-- While the card is open, the engine times one frame in eleven on the GPU, as `engine.measure` does. On WebGPU it also copies the counts of the culled draws back on those frames. The sketch thread publishes the memory of textures and meshes every eighth frame, and the page measures its own memory. Closing the card stops all of it.
+- While the card is open, the engine times one frame in eleven on the GPU, as `engine.measure` does. On WebGPU it also copies the counts of the culled draws back on those frames. The sketch thread publishes the memory of textures and meshes every eighth frame. The thread that draws copies its two GPU memory totals each frame, and the page measures its own memory. Closing the card stops all of it.
 - The sketch's first call of `debug.frameStats()` turns the same sampling on for the rest of the engine's life. Reading the figures allocates nothing, so a sketch can call it every frame.
 - The overlay's code downloads at its first showing, and the figures' code at the first call of `debug.frameStats()` or the overlay's first showing. Pages that never call them download neither.
 - Both work in every build, production builds included.
@@ -302,8 +320,8 @@ function showFigures(fps: number, cpuMs: number, info: { calls: number; triangle
     objects: null,
     memory: {
       wasmBytes: null,
-      textureBytes: null,
-      meshBytes: null,
+      gpuTextureBytes: null,
+      gpuBufferBytes: null,
       jsHeapBytes: pageHeapBytes(),
       page: pageMemory.page,
     },

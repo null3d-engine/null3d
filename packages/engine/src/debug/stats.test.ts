@@ -237,7 +237,7 @@ describe('statsText', () => {
 			'draw calls 12  upload 3.0 KB',
 			'triangles 1536  objects 40',
 			'memory  wasm 64.0 MiB  js heap n/a',
-			'gpu memory  textures 0.0 MiB  meshes 0.0 MiB',
+			'gpu memory  textures 0.0 MiB  buffers 0.0 MiB',
 			'page memory n/a',
 			'main thread n/a',
 		]);
@@ -248,6 +248,9 @@ describe('statsText', () => {
 		const sketch = recorders[0] as FrameRecorder;
 		sketch.publishMemory(MemoryFigure.TextureBytes, 8 * 1024 * 1024);
 		sketch.publishMemory(MemoryFigure.MeshBytes, 2.5 * 1024 * 1024);
+		// The thread that draws publishes what its GPU backend holds, beside the sketch's figures.
+		const drawing = recorders[1] as FrameRecorder;
+		drawing.publishGpuMemory(Float64Array.of(24 * 1024 * 1024, 3.5 * 1024 * 1024));
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
 		for (let frame = 1; frame <= 30; frame++) {
 			writeFrame(recorders, frame);
@@ -256,6 +259,10 @@ describe('statsText', () => {
 			gpu.commit(frame === 10 ? 1.5 : 2.5);
 		}
 		window.update();
+		expect(window.stats.textureBytes).toBe(8 * 1024 * 1024);
+		expect(window.stats.meshBytes).toBe(2.5 * 1024 * 1024);
+		expect(window.stats.gpuTextureBytes).toBe(24 * 1024 * 1024);
+		expect(window.stats.gpuBufferBytes).toBe(3.5 * 1024 * 1024);
 		const text = statsText({
 			...overlayFigures(window.stats, {
 				jsHeapBytes: 12 * 1024 * 1024,
@@ -268,7 +275,7 @@ describe('statsText', () => {
 			'draw calls 12  upload 3.0 KB',
 			'triangles 1536  objects 40',
 			'memory  wasm 64.0 MiB  js heap 12.0 MiB',
-			'gpu memory  textures 8.0 MiB  meshes 2.5 MiB',
+			'gpu memory  textures 24.0 MiB  buffers 3.5 MiB',
 			'page memory 300.0 MiB (browser 492.0 MiB)',
 			'main thread 5 s  long tasks 2 (120 ms)  input delay 8 ms',
 		]);
@@ -289,8 +296,8 @@ describe('statsText', () => {
 			objects: 15_000_000,
 			memory: {
 				wasmBytes: null,
-				textureBytes: null,
-				meshBytes: null,
+				gpuTextureBytes: null,
+				gpuBufferBytes: null,
 				jsHeapBytes: null,
 				page: { bytes: null, browserBytes: null },
 			},
@@ -305,7 +312,7 @@ describe('statsText', () => {
 			'draw calls 120',
 			'triangles 2345.7 k  objects 15.00 M',
 			'memory  wasm n/a  js heap n/a',
-			'gpu memory  textures n/a  meshes n/a',
+			'gpu memory  textures n/a  buffers n/a',
 			'page memory measuring',
 			'main thread 5 s  long tasks 0  input delay n/a',
 		]);

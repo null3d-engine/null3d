@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { JoinedBuilds } from '../gpu/effect-join';
+import { GpuMemory } from '../gpu/memory';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { BUILD_WAIT_LIMIT_MS, FrameReplay } from './scene-renderer';
 
@@ -31,6 +32,7 @@ function fakeBackend() {
 			this.replayedFrom.push(from);
 		},
 		resetCounts() {},
+		gpuMemory: new GpuMemory(),
 		joins: new JoinedBuilds(new Map()),
 	};
 }

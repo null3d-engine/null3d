@@ -17,6 +17,7 @@ import {
 	SAMPLED_EVERY,
 	UNTIMED,
 } from '../../shared/metrics';
+import { GpuMemory } from '../memory';
 import { wgslOf } from './pipelines';
 import { submitOne } from './reusable';
 
@@ -29,6 +30,11 @@ const FIRST_PASS = 2;
 /** resolveQuerySet writes only at offsets that are multiples of 256 bytes. */
 const RESOLVE_STRIDE = 256;
 const TIMESTAMP_BYTES = 8;
+/**
+ * The GPU memory that a timer holds. Each slot has its timestamps in the query set, a stride of the
+ * buffer they resolve into, and a readback buffer of the timestamps.
+ */
+const TIMER_BYTES = SLOTS * (2 * QUERIES * TIMESTAMP_BYTES + RESOLVE_STRIDE);
 const NS_PER_MS = 1e6;
 /** A timestamp's high 32 bits count this many nanoseconds. */
 const HIGH_WORD_NS = 2 ** 32;
@@ -84,7 +90,9 @@ export class GpuTimer {
 	private constructor(
 		private readonly device: GPUDevice,
 		private readonly recorder: FrameRecorder,
+		private readonly memory: GpuMemory,
 	) {
+		memory.addBuffers(TIMER_BYTES);
 		this.querySet = device.createQuerySet({ type: 'timestamp', count: SLOTS * QUERIES });
 		this.resolveBuffer = device.createBuffer({
 			size: SLOTS * RESOLVE_STRIDE,
@@ -126,10 +134,17 @@ export class GpuTimer {
 		return { querySet: this.querySet, beginningOfPassWriteIndex: begin, endOfPassWriteIndex: end };
 	}
 
-	/** A timer when the device has timestamp queries, else undefined. */
-	static create(device: GPUDevice, metrics: ArrayBufferLike): GpuTimer | undefined {
+	/**
+	 * A timer when the device has timestamp queries, else undefined. `memory` counts the timer's
+	 * bytes with the rest of the backend's GPU memory.
+	 */
+	static create(
+		device: GPUDevice,
+		metrics: ArrayBufferLike,
+		memory = new GpuMemory(),
+	): GpuTimer | undefined {
 		if (!device.features.has('timestamp-query')) return undefined;
-		return new GpuTimer(device, new FrameRecorder(metrics, Role.Gpu));
+		return new GpuTimer(device, new FrameRecorder(metrics, Role.Gpu), memory);
 	}
 
 	/** Starts timing a frame, if the page is measuring, it is a sampled frame, and a readback buffer is free. */
@@ -248,6 +263,7 @@ export class GpuTimer {
 
 	destroy(): void {
 		this.destroyed = true;
+		this.memory.addBuffers(-TIMER_BYTES);
 		this.querySet.destroy();
 		this.resolveBuffer.destroy();
 		for (const buffer of this.readbacks) buffer.destroy();

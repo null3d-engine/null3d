@@ -5,7 +5,8 @@
 // pointer events, and the sketch's figures.
 //
 // `?no-page-memory` hides the browser's JavaScript heap and page memory figures, as a browser
-// without them would. `?quiet` runs a sketch that reads no figures, so that only the overlay turns
+// without them would. `?instances=N` asks the sketch for N instance rows and a light that casts
+// shadows, and waits until the figures and the overlay count at least their GPU memory. `?quiet` runs a sketch that reads no figures, so that only the overlay turns
 // the engine's sampling on, and reports once the first frame is on screen. With `?render=main` the
 // engine draws on this thread, where the page counts the GPU timing work that it does.
 //
@@ -14,10 +15,13 @@
 import { createEngine, type StatsOverlayOptions } from '@null3d/engine';
 import {
 	gpuTimerFeature,
+	instanceFloors,
 	type OverlayBoxes,
 	type OverlayView,
 	type StatsFigures,
+	type StatsInstances,
 	type StatsResult,
+	tenths,
 } from '../lib/stats-checks';
 import { run } from './lib/result';
 
@@ -140,21 +144,42 @@ run('stats', async (): Promise<StatsResult> => {
 		mode: engine.mode,
 		gpuTimer,
 		noPageMemory: params.has('no-page-memory'),
+		instances: null,
 	};
 	if (quiet) return { ...result, overlay: readOverlay(canvas), figures: null };
-	const askFigures = () =>
-		new Promise<StatsFigures>((resolve) => {
-			const off = engine.onSketchMessage((name, data) => {
-				if (name !== 'figures') return;
+	/** Posts a message to the sketch, and resolves with the data of its answer of the same name. */
+	const ask = <T>(message: string, data?: unknown) =>
+		new Promise<T>((resolve) => {
+			const off = engine.onSketchMessage((name, answer) => {
+				if (name !== message) return;
 				off();
-				resolve(data as StatsFigures);
+				resolve(answer as T);
 			});
-			engine.postToSketch('figures');
+			engine.postToSketch(message, data);
 		});
+	const askFigures = () => ask<StatsFigures>('figures');
+	const rows = Number(params.get('instances') ?? 0);
+	const instances: StatsInstances | null =
+		rows > 0 ? { rows, ...(await ask<Omit<StatsInstances, 'rows'>>('instances', rows)) } : null;
+	const floors = instances && instanceFloors(instances);
+	/** True once the figures and the overlay count the GPU memory of the instances asked for. */
+	const counted = (figures: StatsFigures) => {
+		if (!floors) return true;
+		const shown = readOverlay(canvas)?.figures ?? {};
+		return (
+			figures.gpuBufferBytes >= floors.buffers &&
+			figures.gpuTextureBytes >= floors.textures &&
+			tenths(shown['gpu-buffers']) >= Math.floor((floors.buffers * 10) / 2 ** 20) &&
+			tenths(shown['gpu-textures']) >= Math.floor((floors.textures * 10) / 2 ** 20)
+		);
+	};
 	const ready = (figures: StatsFigures) =>
 		figures.frames > 0 &&
 		figures.triangles > 0 &&
 		figures.meshBytes > 0 &&
+		figures.gpuTextureBytes > 0 &&
+		figures.gpuBufferBytes > 0 &&
+		counted(figures) &&
 		(!gpuTimer || figures.gpuMs !== null) &&
 		/^[1-9]/.test(readOverlay(canvas)?.figures.triangles ?? '');
 	const until = performance.now() + WAIT_MS;
@@ -163,5 +188,5 @@ run('stats', async (): Promise<StatsResult> => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		figures = await askFigures();
 	}
-	return { ...result, overlay: readOverlay(canvas), figures };
+	return { ...result, instances, overlay: readOverlay(canvas), figures };
 });

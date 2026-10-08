@@ -2,7 +2,8 @@
 // overlay sits on the canvas's top-right corner, lets the pointer through apart from its header
 // button, and shows the figures: a bar of work for each engine thread and the GPU, memory parts
 // that add up to the total, and the counts. The sketch's frame figures name every engine thread as
-// `engine.measure` names them, and count the triangles and objects drawn and the engine's memory.
+// `engine.measure` names them, and count the triangles and objects drawn and the engine's memory,
+// the GPU's among it.
 
 /** The figures of `debug.frameStats`, as the sketch posts their JSON. */
 export interface StatsFigures {
@@ -15,10 +16,36 @@ export interface StatsFigures {
 	objects: number;
 	wasmBytes: number;
 	meshBytes: number;
+	gpuTextureBytes: number;
+	gpuBufferBytes: number;
 	tier: string;
 	preset: string;
 	renderScale: number;
 	threads: { name: string; busyMs: number; phases: Record<string, number> }[];
+}
+
+/** The instance rows and the shadow map that the stats page added on request. */
+export interface StatsInstances {
+	rows: number;
+	shadowMapSize: number;
+	shadowCascades: number;
+}
+
+/** The GPU bytes that each instance row takes: the core's instance stride. */
+const INSTANCE_ROW_BYTES = 64;
+/** The fewest bytes that a texel of a shadow map takes: 16-bit depth. */
+const SHADOW_TEXEL_BYTES = 2;
+
+/**
+ * The GPU memory that the stats page's instance rows and shadow map take at least: their buffer
+ * bytes and their texture bytes. The engine holds more, such as the canvas's targets.
+ */
+export function instanceFloors(added: StatsInstances): { buffers: number; textures: number } {
+	const { rows, shadowMapSize, shadowCascades } = added;
+	return {
+		buffers: rows * INSTANCE_ROW_BYTES,
+		textures: shadowMapSize * shadowMapSize * shadowCascades * SHADOW_TEXEL_BYTES,
+	};
 }
 
 /** What the page reads from the overlay. */
@@ -62,6 +89,8 @@ export type StatsResult = {
 	overlay: OverlayView | null;
 	/** The sketch's figures, or null on the page that reads none. */
 	figures: StatsFigures | null;
+	/** The instance rows and shadow map that `?instances=` added, or null without them. */
+	instances: StatsInstances | null;
 };
 
 /** The threads that a mode's figures name, as `engine.measure` names them. */
@@ -93,11 +122,14 @@ export function workBars(mode: StatsResult['mode']): string[] {
 }
 
 /** A memory figure's text, such as `64.0 MiB`, in tenths of a MiB, or NaN. */
-const tenths = (text: string | undefined) => Math.round(Number.parseFloat(text ?? '') * 10);
+export const tenths = (text: string | undefined) => Math.round(Number.parseFloat(text ?? '') * 10);
+
+/** The parts of the overlay's memory bar, by the names of their figures. */
+const MEMORY_PARTS = ['engine-memory', 'gpu-textures', 'gpu-buffers', 'js-heap'];
 
 /** What is wrong with the overlay's memory figures: the parts that show must add up to the total. */
 export function memoryProblems(figures: Record<string, string>): string[] {
-	const parts = ['engine-memory', 'gpu-memory', 'js-heap'].filter((name) => name in figures);
+	const parts = MEMORY_PARTS.filter((name) => name in figures);
 	const sum = parts.reduce((total, name) => total + tenths(figures[name]), 0);
 	const total = tenths(figures.memory);
 	return sum === total
@@ -136,7 +168,8 @@ export function statsProblems(result: StatsResult): string[] {
 	expect('gpu', result.gpuTimer ? /^\d+\.\d ms$/ : /^not measured$/);
 	expect('memory', /^\d+\.\d MiB$/);
 	expect('engine-memory', /^[1-9]\d*\.\d MiB$/);
-	expect('gpu-memory', /^\d+\.\d MiB$/);
+	expect('gpu-textures', /^\d+\.\d MiB$/);
+	expect('gpu-buffers', /^\d+\.\d MiB$/);
 	problems.push(...memoryProblems(shown));
 	for (const name of ['js-heap', 'page-memory'])
 		if (result.noPageMemory && name in shown)
@@ -157,6 +190,8 @@ export function statsProblems(result: StatsResult): string[] {
 		'objects',
 		'wasmBytes',
 		'meshBytes',
+		'gpuTextureBytes',
+		'gpuBufferBytes',
 	] as const)
 		if (!(figures[name] > 0)) problems.push(`the figures give ${name} ${figures[name]}`);
 	if (!(figures.triangles >= BOX_TRIANGLES))

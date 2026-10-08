@@ -1,6 +1,6 @@
 // Frame figures for the stats overlay and `debug.frameStats`: means per frame over windows of about
 // half a second of presented frames, read from the rings of the metrics buffer, and the memory
-// figures that the sketch thread publishes in its header. Reading takes in only the records written
+// figures that the engine's threads publish in its header. Reading takes in only the records written
 // since the last read and allocates nothing, so a sketch may read every frame. The figures live in a
 // typed array, and the published object's properties read them, because a fraction stored in an
 // object property is a new heap object in some browsers.
@@ -112,6 +112,19 @@ export interface FrameStats {
 	 * which keep room to grow, and the texture of morph target deltas, as `geometry.memoryBytes`.
 	 */
 	readonly meshBytes: number;
+	/**
+	 * The GPU bytes of every texture that the engine holds at the window's end: the scene's
+	 * textures, the render targets with their multisampled copies, the depth and shadow maps, the
+	 * post effects' targets and the environment's maps. Each counts its mip levels, layers and
+	 * samples as the GPU stores them. 0 until the thread that draws first publishes it.
+	 */
+	readonly gpuTextureBytes: number;
+	/**
+	 * The GPU bytes of every buffer that the engine holds at the window's end: vertices, indices,
+	 * instance rows, uniforms, the culling and indirect draw buffers, upload staging and the
+	 * readbacks of the GPU's timings. 0 until the thread that draws first publishes it.
+	 */
+	readonly gpuBufferBytes: number;
 }
 
 /** Presented time that a window of frame figures covers, at least. */
@@ -146,6 +159,8 @@ const FIGURES = [
 	'textureBudgetBytes',
 	'droppedLevels',
 	'meshBytes',
+	'gpuTextureBytes',
+	'gpuBufferBytes',
 ] as const;
 const FRAMES = 0;
 const SECONDS = 1;
@@ -219,7 +234,7 @@ export class FrameStatsWindow {
 	private readonly completion: RingSums;
 	/** The GPU's timed frames, which the windows share until one holds a timed frame. */
 	private readonly gpu: RingSums;
-	/** The memory figures that the sketch thread publishes. */
+	/** The memory figures that the engine's threads publish. */
 	private readonly memory: Float64Array;
 	/** The roles of each thread, in the order of `stats.threads`. */
 	private readonly roles: readonly (readonly number[])[];

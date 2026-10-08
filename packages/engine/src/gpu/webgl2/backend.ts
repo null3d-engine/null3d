@@ -27,6 +27,7 @@ import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
+import { GpuMemory, textureBytes } from '../memory';
 import {
 	forEachFallbackAttribute,
 	forEachVertexAttribute,
@@ -98,6 +99,8 @@ interface GlBuffer {
 
 /** How GL stores a texture format, and how texels of it upload. */
 interface GlFormat {
+	/** The draw list's code of the format. */
+	readonly code: number;
 	/** The sized internal format. */
 	readonly internal: number;
 	/** The format and type of uploaded texels: bytes of blocks for a compressed format. */
@@ -135,6 +138,8 @@ interface GlTexture {
 	readonly layer: number;
 	/** True for a view, which shares its texture and never deletes it. */
 	readonly view: boolean;
+	/** The GPU bytes of the texture and the renderbuffer, or 0 for a view. */
+	readonly bytes: number;
 	/** True once a write has gone into the texture, so later writes go through an unpack buffer. */
 	written: boolean;
 	/**
@@ -241,6 +246,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 		attachment: number,
 	) => {
 		formats[code] = {
+			code,
 			internal,
 			format,
 			type,
@@ -302,6 +308,7 @@ function glTexture(
 	level: number,
 	layer: number,
 	view: boolean,
+	bytes: number,
 ): GlTexture {
 	return {
 		texture,
@@ -314,6 +321,7 @@ function glTexture(
 		level,
 		layer,
 		view,
+		bytes,
 		written: false,
 		framebuffer: null,
 		framebufferDepth: null,
@@ -401,6 +409,8 @@ export class WebGL2Backend {
 	 * copies into its place, by format.
 	 */
 	private readonly spares = new Map<number, GlTexture>();
+	/** The GPU memory of every buffer, texture and renderbuffer that the backend holds. */
+	readonly gpuMemory = new GpuMemory();
 	/** Where drawing into the canvas goes during a capture; the canvas itself otherwise. */
 	canvasTarget: CanvasTarget | undefined;
 	/**
@@ -1223,12 +1233,14 @@ export class WebGL2Backend {
 		gl.bindBuffer(target, buffer);
 		gl.bufferData(target, size, gl.DYNAMIC_DRAW);
 		this.buffers[id] = { buffer, size };
+		this.gpuMemory.addBuffers(size);
 	}
 
 	private destroyBuffer(id: number): void {
 		const old = this.buffers[id];
 		if (!old) return;
 		this.gl.deleteBuffer(old.buffer);
+		this.gpuMemory.addBuffers(-old.size);
 		this.buffers[id] = undefined;
 		for (let slot = 0; slot < this.blockBuffers.length; slot++)
 			if (this.blockBuffers[slot] === old.buffer) this.blockBuffers[slot] = null;
@@ -1263,20 +1275,19 @@ export class WebGL2Backend {
 			const renderbuffer = gl.createRenderbuffer();
 			if (!renderbuffer) throw new Error('WebGL2 could not create a renderbuffer');
 			gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+			const stored = samples > 1 ? Math.min(samples, this.maxSamples) : 1;
 			if (samples > 1) {
-				gl.renderbufferStorageMultisample(
-					gl.RENDERBUFFER,
-					Math.min(samples, this.maxSamples),
-					format.internal,
-					width,
-					height,
-				);
+				gl.renderbufferStorageMultisample(gl.RENDERBUFFER, stored, format.internal, width, height);
 			} else {
 				gl.renderbufferStorage(gl.RENDERBUFFER, format.internal, width, height);
 			}
 			const copied = samples > 1 && usage & G.TEXTURE_USAGE_TEXTURE_BINDING;
 			const copy = copied ? this.depthCopy(width, height, format) : null;
 			const target = copy ? gl.TEXTURE_2D : 0;
+			const bytes =
+				textureBytes(format.code, width, height, 1, 1, stored) +
+				(copy ? textureBytes(format.code, width, height, 1, 1, 1) : 0);
+			this.gpuMemory.addTextures(bytes);
 			this.textures[id] = glTexture(
 				copy,
 				renderbuffer,
@@ -1288,6 +1299,7 @@ export class WebGL2Backend {
 				0,
 				0,
 				false,
+				bytes,
 			);
 			return;
 		}
@@ -1304,7 +1316,22 @@ export class WebGL2Backend {
 		// textures are complete only with nearest filters.
 		gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		this.textures[id] = glTexture(texture, null, target, width, height, format, mips, 0, 0, false);
+		const volume = target === gl.TEXTURE_3D;
+		const bytes = textureBytes(format.code, width, height, layers, mips, 1, volume);
+		this.gpuMemory.addTextures(bytes);
+		this.textures[id] = glTexture(
+			texture,
+			null,
+			target,
+			width,
+			height,
+			format,
+			mips,
+			0,
+			0,
+			false,
+			bytes,
+		);
 	}
 
 	/** The texture of one sample that shaders read in place of a multisampled depth target. */
@@ -1345,6 +1372,7 @@ export class WebGL2Backend {
 			level,
 			words[a + 3] as number,
 			true,
+			0,
 		);
 	}
 
@@ -1355,6 +1383,7 @@ export class WebGL2Backend {
 		this.textures[id] = undefined;
 		this.forgetFramebuffers(old);
 		if (old.view) return;
+		this.gpuMemory.addTextures(-old.bytes);
 		if (old.texture) {
 			for (const other of this.textures)
 				if (other?.view && other.texture === old.texture) this.forgetFramebuffers(other);
@@ -1411,6 +1440,7 @@ export class WebGL2Backend {
 			const grown = Math.max(bytes, 2 * size);
 			gl.bufferData(gl.PIXEL_UNPACK_BUFFER, grown, gl.STREAM_DRAW);
 			this.unpackSizes[slot] = grown;
+			this.gpuMemory.addBuffers(grown - size);
 			at = 0;
 		}
 		this.writeBytes(gl.PIXEL_UNPACK_BUFFER, at, source, bytes);
@@ -1731,12 +1761,14 @@ export class WebGL2Backend {
 		const w = Math.max(1, width, old?.width ?? 0);
 		const h = Math.max(1, height, old?.height ?? 0);
 		if (old && old.width === w && old.height === h) return old;
-		if (old?.texture) gl.deleteTexture(old.texture);
+		if (old) this.deleteSpare(old);
 		const spare = gl.createTexture();
 		if (!spare) throw new Error('WebGL2 could not create a texture');
 		this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, spare);
 		gl.texStorage2D(gl.TEXTURE_2D, 1, format.internal, w, h);
-		const made = glTexture(spare, null, gl.TEXTURE_2D, w, h, format, 1, 0, 0, false);
+		const bytes = textureBytes(format.code, w, h, 1, 1, 1);
+		this.gpuMemory.addTextures(bytes);
+		const made = glTexture(spare, null, gl.TEXTURE_2D, w, h, format, 1, 0, 0, false, bytes);
 		this.spares.set(format.internal, made);
 		return made;
 	}
@@ -2490,9 +2522,22 @@ export class WebGL2Backend {
 		for (const v of this.layoutArrays) if (v) gl.deleteVertexArray(v.vao);
 		if (this.shaderVertices) gl.deleteVertexArray(this.shaderVertices);
 		if (this.copyFramebuffer) gl.deleteFramebuffer(this.copyFramebuffer);
-		for (const buffer of this.unpackBuffers) if (buffer) gl.deleteBuffer(buffer);
+		for (let slot = 0; slot < UNPACK_RING; slot++) {
+			const buffer = this.unpackBuffers[slot];
+			if (buffer) gl.deleteBuffer(buffer);
+			this.unpackBuffers[slot] = null;
+			this.gpuMemory.addBuffers(-(this.unpackSizes[slot] as number));
+			this.unpackSizes[slot] = 0;
+		}
 		if (this.mipFramebuffer) gl.deleteFramebuffer(this.mipFramebuffer);
 		if (this.mipSampler) gl.deleteSampler(this.mipSampler);
-		for (const spare of this.spares.values()) gl.deleteTexture(spare.texture);
+		for (const spare of this.spares.values()) this.deleteSpare(spare);
+		this.spares.clear();
+	}
+
+	/** Deletes a spare texture, and takes its bytes off the memory total. */
+	private deleteSpare(spare: GlTexture): void {
+		this.gl.deleteTexture(spare.texture);
+		this.gpuMemory.addTextures(-spare.bytes);
 	}
 }
