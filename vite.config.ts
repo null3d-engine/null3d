@@ -1,10 +1,12 @@
 import { defineConfig, type Plugin, searchForWorkspaceRoot, type UserConfig } from 'vite';
+import { cityServer } from './bench/lib/city-files.ts';
 import null3d from './packages/vite-plugin/src/index.ts';
 import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 import { tunnelServer } from './tests/lib/tunnel-server.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
+import { sampleTexturesServer } from './tools/lib/sample-textures.ts';
 import { samplesServer } from './tools/lib/samples.ts';
 import { ensureShaderModules } from './tools/lib/shader-modules.ts';
 import { sourceResolve } from './tools/lib/source-condition.ts';
@@ -15,8 +17,10 @@ import { sourceResolve } from './tools/lib/source-condition.ts';
 // local network instead, on its own port, for tablets and phones that reach the Mac by its .local
 // name. The dev server and `vite preview` also serve the startup build of the engine test page, one
 // address prefix per load, and the pinned sample content under /samples/ from the shared cache,
-// with the environment maps of its HDR files under /sample-environments/. Requests that come
-// through BrowserStack Local's tunnel get cache times and compression.
+// with the environment maps of its HDR files under /sample-environments/ and the KTX2 files of its
+// images under /sample-textures/, and S6's model files, built from the sample content's city
+// layout, to modules that import them. Requests that come through BrowserStack Local's tunnel get
+// cache times and compression.
 
 const https = process.env.NULL3D_HTTPS === '1';
 
@@ -68,6 +72,8 @@ const config: UserConfig = {
 		loadServer(),
 		samplesServer(import.meta.dirname),
 		sampleEnvironmentsServer(import.meta.dirname),
+		sampleTexturesServer(import.meta.dirname),
+		cityServer(import.meta.dirname),
 		indexRedirect,
 	],
 	// The pages take the packages' source, not the files that their pack step builds.

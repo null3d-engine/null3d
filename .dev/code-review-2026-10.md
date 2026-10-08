@@ -135,7 +135,7 @@ Pairings with M2 work:
 
 - R5-06 (lit holes for cameras of 45 degrees or narrower) shares its cause with the cascade blend's fit. Each cascade's sphere fits only its slice along the view. Fix both in M2-R1, with a test that picks each point's cascade as the shader does.
 - R5-07, R5-08 and R5-09 are fixed with the tile changes of M2-R9: per-face marks, a margin of the filter's reach, and a cap on redraws per frame ([D-61](decisions/D-61-shadow-tile-redraws.md)).
-- R5-05 pairs with M2-A4's texture budget, which drops over-quality textures first, in Godot's order.
+- R5-05 pairs with M2-A4's texture budget, which drops over-quality textures first, in Godot's order. M2-A4 fixed it: arrays stop at 128 MiB, shrink below a quarter, and count their old texture until it is destroyed ([D-69](decisions/D-69-texture-budget.md)).
 - R4-04 pairs with the animator changes (proposed M2-C9).
 
 ## Code issues from the technique review

@@ -15,7 +15,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 9. HTML settings panel that controls the scene
 10. Day and night: sun, sky and environment (0.2)
 11. Physics with a library in the sketch worker
-12. Minimap with a second camera (later in 0.2)
+12. Minimap with a second camera (0.2)
 13. Screenshots
 14. Video on a surface, with frames from the page
 15. Custom full-screen effect (0.2)
@@ -369,18 +369,19 @@ return {
 
 WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`.
 
-## 12. Minimap with a second camera (later in 0.2)
+## 12. Minimap with a second camera (0.2)
 
 ```ts
 const MAP = 1 << 2;                                    // layer for map-only markers
-const mapCamera = scene.createOrthographicCamera({ height: 200, near: 1, far: 500, position: [0, 300, 0], target: [0, 0, 0] });
+const mapCamera = scene.createOrthographicCamera({ height: 200, near: 1, far: 500, position: [0, 300, 0] });
+mapCamera.setRotationEuler(-Math.PI / 2, 0, 0);        // look straight down, north at the top
 mapCamera.setLayers(1 | MAP);
-render.addPass({ name: 'Minimap', kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256], before: 'Post' });
-const map = materials.unlit({ map: textures.fromPass('minimap') });
-// Show `map` on a plane in front of a second view, or on a screen in the world.
+const pass = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const map = materials.unlit({ map: textures.fromPass(pass) });
+// Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
 ```
 
-Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). A minimap or picture in picture needs a render-to-texture pass, which is not built yet; check `guides/custom-passes` before using it. Docs: `guides/custom-passes`, `api/render`.
+To save GPU time, draw the map every few frames: `render.setPassEnabled(pass, frame % 4 === 0)`. Several full views, such as split screens, come after 1.0 (`guides/multiple-views`). Docs: `guides/custom-passes`, `api/render`.
 
 ## 13. Screenshots
 
@@ -445,7 +446,7 @@ const blocks = post.addEffect({ wgsl: pixelate, uniforms: { size: 4 } });
 post.setEffectUniform(blocks, 'size', 8);
 ```
 
-The effect runs on HDR color before bloom and the tone curve, in a full-screen pass of its own. Each effect adds one pass, so put several per-pixel looks in one function. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
+The effect runs on HDR color before bloom and the tone curve. The engine joins an effect that reads only its own pixel into the pass of the effect before it, and folds the last pass into the final pass when bloom and FXAA are off, so per-pixel looks can stay separate effects. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
 ## 16. Very large worlds (0.2)
 

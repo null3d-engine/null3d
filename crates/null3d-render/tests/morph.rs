@@ -99,7 +99,7 @@ fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
     // No frame has drawn yet, so the first frame waits for every pipeline and draws the morphed
     // objects at once.
     world.pipelines_built = 0;
-    world.add_morphed([0.0; 3], [1.0, 0.0]);
+    let (_, block) = world.add_morphed([0.0; 3], [1.0, 0.0]);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
 
@@ -140,7 +140,7 @@ fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
     // The views draw the morphed vertices, in a format without the morph attribute, with no
     // MORPH build: WebGPU has none.
     let morphed = common::morphed::morph_box().format | vertex::MORPH;
-    let drawn = skinned_format(morphed);
+    let drawn = skinned_format(morphed, true);
     assert_eq!(drawn & vertex::MORPH, 0);
     assert!(
         pipelines_of(&first, drawn)
@@ -158,6 +158,14 @@ fn webgpu_morphs_a_morphed_object_once_in_the_skinning_pass() {
     assert_eq!((writes(&second, deltas), writes(&second, weights)), (0, 1));
     assert_eq!(count(&second, Op::CreateTexture), 0);
     assert_eq!(count(&second, Op::CreateBindGroup), 0);
+    // The weights held still, so the box keeps its morphed vertices and the pass does nothing.
+    assert_eq!(world.renderer.skinned_vertices(), 0);
+    world.set_weight(block, 0, 0.5);
+    world.step(&mut mock, false);
+    assert!(
+        world.renderer.skinned_vertices() > 0,
+        "a new weight morphs again"
+    );
 }
 
 #[test]

@@ -237,6 +237,36 @@ jobs:
             (cd "$dir" && bun install --frozen-lockfile && tar -xzf "$RUNNER_TEMP/builds/bench-build-$build/build.tgz")
           done
 
+      # S6's city files take minutes to build and optimize, and each build of the pages needs them.
+      # The cache keeps the built files and the optimized models of every build. The asset tool keys
+      # each optimized model by its inputs and the tool, so an entry from another commit is never
+      # used by mistake. Each run saves a new entry on main, and later runs restore the latest.
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/null3d/samples/city
+            ~/.cache/null3d/bench-assets
+          key: null3d-bench-city-${{ hashFiles('tools/samples/lock.json') }}-${{ github.run_id }}
+          restore-keys: null3d-bench-city-${{ hashFiles('tools/samples/lock.json') }}-
+      - name: Build S6's city files for each build that has S6
+        run: |
+          mkdir -p ~/.cache/null3d/bench-assets
+          for build in baseline new; do
+            dir="$RUNNER_TEMP/$build"
+            [ -f "$dir/bench/lib/city-files.ts" ] || continue
+            mkdir -p "$dir/node_modules/.cache"
+            rm -rf "$dir/node_modules/.cache/null3d-assets"
+            ln -s ~/.cache/null3d/bench-assets "$dir/node_modules/.cache/null3d-assets"
+            (cd "$dir" && bun bench/lib/city-files.ts)
+          done
+      - uses: actions/cache/save@v4
+        if: env.SAVE_CACHES == 'true'
+        with:
+          path: |
+            ~/.cache/null3d/samples/city
+            ~/.cache/null3d/bench-assets
+          key: null3d-bench-city-${{ hashFiles('tools/samples/lock.json') }}-${{ github.run_id }}
+
       # Rounds and run length: see "The benchmark job in CI" in .dev/benchmarks.md. The command builds
       # each commit's benchmark pages for production, and serves each build on a port of its own.
       - name: Run both builds' benchmark pages in turns, and compare them

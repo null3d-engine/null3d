@@ -4,12 +4,15 @@
 // with the pipelines it creates, which begin to build, without blocking, when the frame is first
 // prepared.
 
+import { SKINNING_FULL, SKINNING_SKIP_ONLY } from '../generated/core';
 import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
+import type { JoinedBuilds } from '../gpu/effect-join';
 import { captureWebGPU, readbackWebGL2 } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
+import { WebGL2GpuTimer } from '../gpu/webgl2/gpu-timer';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
@@ -46,6 +49,8 @@ interface SceneBackend {
 		objects: number;
 	};
 	resetCounts(): void;
+	/** The backend's builds of joined effects' shaders. */
+	readonly joins: JoinedBuilds;
 }
 
 /** Adds what the backend did since its last reset to a frame's record, then resets its counts. */
@@ -93,6 +98,7 @@ export class FrameReplay {
 		control: ArrayBufferLike,
 	) {
 		this.slots = controlViews(control).slots;
+		backend.joins.onFailed = (template) => Atomics.store(this.slots, Slot.JoinFailed, template);
 	}
 
 	/** Starts the builds of a frame's pipelines, once, and returns true when the frame may draw. */
@@ -108,6 +114,12 @@ export class FrameReplay {
 
 	/** Replays a frame's list, apart from the pipelines it creates, which are building already. */
 	replay(frame: number): void {
+		const delay = Atomics.load(this.slots, Slot.ReplayDelayMs);
+		if (delay > 0) {
+			// The test switch's wait: the sketch thread steps the next frame meanwhile.
+			const until = performance.now() + delay;
+			while (performance.now() < until);
+		}
 		const from = this.restOf(frame);
 		this.backend.replay(this.words, this.floats, from, this.end, this.viewsOf);
 		if (!this.backend.building) this.complete = true;
@@ -220,6 +232,12 @@ export class WebGPUSceneRenderer implements Renderer {
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
 	resize(): void {}
 
+	/** Makes the skinning pass write 32-bit float directions where core skinning mode `mode` asks. */
+	setSkinningMode(mode: number): void {
+		if (mode === SKINNING_FULL || mode === SKINNING_SKIP_ONLY)
+			this.backend.skinWithFloatDirections();
+	}
+
 	prepare(frame: number): boolean {
 		return this.frames.prepare(frame);
 	}
@@ -289,6 +307,8 @@ export class WebGL2SceneRenderer implements Renderer {
 	readonly transparent: boolean;
 	readonly lost: Promise<string>;
 	readonly completions: FenceCompletion | undefined;
+	/** GPU time per frame, where the context has timer queries and the page measures. */
+	private readonly timer: WebGL2GpuTimer | undefined;
 	private readonly backend: WebGL2Backend;
 	private readonly frames: FrameReplay;
 	private readonly release = new AbortController();
@@ -329,6 +349,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);
+		this.timer = metrics && WebGL2GpuTimer.create(gl, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
 	}
 
@@ -371,7 +392,9 @@ export class WebGL2SceneRenderer implements Renderer {
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
 		try {
+			this.timer?.beginFrame(input.frame);
 			this.frames.replay(input.frame);
+			this.timer?.endFrame();
 		} catch (error) {
 			this.lostDuring(error);
 		}
@@ -428,6 +451,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	destroy(): void {
 		this.frames.abandon();
 		this.release.abort();
+		if (!this.gl.isContextLost()) this.timer?.destroy();
 		this.backend.destroy();
 		releaseContext(this.gl);
 	}

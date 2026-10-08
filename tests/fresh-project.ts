@@ -7,7 +7,8 @@
 // sketch on every GPU tier. Then the tool optimizes a model, and last, it builds the project for
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
-// address holds. Run `bun run build` first,
+// address holds. Last, the project's service worker caches the build on a first visit, and the
+// page must start the threaded engine again with the server stopped. Run `bun run build` first,
 // for the WebAssembly files. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawnSync } from 'node:child_process';
@@ -25,7 +26,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
-import { ISOLATION_HEADERS, NOTICES_FILE } from '../packages/vite-plugin/src/index.ts';
+import {
+	FILES_LIST,
+	ISOLATION_HEADERS,
+	NOTICES_FILE,
+	type OfflineFiles,
+} from '../packages/vite-plugin/src/index.ts';
 import { DEFAULT_PACK_DIR, type PackedPackage, packPackages } from '../tools/lib/packages.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
@@ -79,16 +85,28 @@ function step(title: string, cwd: string, command: string, args: readonly string
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
 }
 
+/** A browser page, as the command-line tool's browser opens it. */
+type Page = Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newPage']>>;
+
+/** The page's globals that the checks read, typed, as this file's Node settings lack them. */
+type PageGlobals = {
+	document: { documentElement: { dataset: { start?: string } } };
+	crossOriginIsolated: boolean;
+	navigator: { serviceWorker: { ready: Promise<unknown> } };
+	caches: {
+		keys(): Promise<string[]>;
+		open(name: string): Promise<{ keys(): Promise<{ url: string }[]> }>;
+	};
+};
+
 /**
  * Serves a production build with the isolation headers and the strict policy on every file, as a
- * strict host does, and fails unless its page starts the engine with threads and no file breaks
- * the policy. A worker takes the policy of its own script's response, so every file carries it.
- * The address asks for the single-threaded build, which a shipped game must ignore.
+ * strict host does. A worker takes the policy of its own script's response, so every file carries
+ * it.
  */
-async function startsUnderStrictPolicy(dist: string): Promise<void> {
-	console.log('\nStart under a strict Content-Security-Policy');
+function serveBuild(dist: string) {
 	const headers = { ...ISOLATION_HEADERS, 'Content-Security-Policy': STRICT_POLICY };
-	const server = Bun.serve({
+	return Bun.serve({
 		port: 0,
 		async fetch(request) {
 			const path = new URL(request.url).pathname;
@@ -98,6 +116,33 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 				: new Response('not found', { status: 404, headers });
 		},
 	});
+}
+
+/**
+ * Waits for the page's start, and returns how it ended: the build that started, or the error.
+ * Functions, not text: Playwright evaluates text with eval, which the strict policy blocks.
+ */
+async function startOf(page: Page): Promise<{ start: string | undefined; isolated: boolean }> {
+	const start = await page
+		.waitForFunction(
+			() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
+			undefined,
+			{ timeout: 30_000 },
+		)
+		.then((handle) => handle.jsonValue());
+	const isolated = await page.evaluate(
+		() => (globalThis as unknown as PageGlobals).crossOriginIsolated,
+	);
+	return { start, isolated };
+}
+
+/**
+ * Fails unless the build's page starts the engine with threads and no file breaks the strict
+ * policy. The address asks for the single-threaded build, which a shipped game must ignore.
+ */
+async function startsUnderStrictPolicy(dist: string): Promise<void> {
+	console.log('\nStart under a strict Content-Security-Policy');
+	const server = serveBuild(dist);
 	const browser = await launchBrowser(defaultEnvironment());
 	try {
 		const page = await browser.newPage();
@@ -106,25 +151,61 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 			if (/Content.Security.Policy/i.test(message.text())) violations.push(message.text());
 		});
 		await page.goto(`${server.url.href}?threads=off`);
-		// Functions, not text: Playwright evaluates text with eval, which the strict policy blocks.
-		// The casts give the page's globals the types that this file's Node settings lack.
-		type PageGlobals = {
-			document: { documentElement: { dataset: { start?: string } } };
-			crossOriginIsolated: boolean;
-		};
-		const start = await page
-			.waitForFunction(
-				() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
-				undefined,
-				{ timeout: 30_000 },
-			)
-			.then((handle) => handle.jsonValue());
-		const isolated = await page.evaluate(
-			() => (globalThis as unknown as PageGlobals).crossOriginIsolated,
-		);
+		const { start, isolated } = await startOf(page);
 		if (start !== 'threaded' || !isolated || violations.length > 0)
 			throw new Error(
 				`under a strict policy, with ?threads=off in the address, the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
+			);
+	} finally {
+		await browser.close();
+		server.stop(true);
+	}
+}
+
+/**
+ * The project's service worker caches the page and the files of the build's list on the first
+ * visit. Then the server stops, and the page must load again from the cache alone: isolated, with
+ * the threaded engine and the sprite shaders that it preloads, and with no failed request but the
+ * worker's own check of the list. The cache must hold the page, the start's files and the sprite
+ * feature's, and no other feature's.
+ */
+async function playsOffline(dist: string): Promise<void> {
+	console.log('\nPlay offline after the first visit');
+	const list = JSON.parse(readFileSync(join(dist, FILES_LIST), 'utf8')) as OfflineFiles;
+	const sprites = list.features.sprites ?? [];
+	if (sprites.length === 0 || list.start.some((file) => /shaders-sprites-/.test(file)))
+		throw new Error(`${FILES_LIST} does not list the sprite shaders as a feature of their own`);
+	const server = serveBuild(dist);
+	const browser = await launchBrowser(defaultEnvironment());
+	try {
+		const page = await browser.newPage();
+		await page.goto(server.url.href);
+		const first = await startOf(page);
+		if (first.start !== 'threaded' || !first.isolated)
+			throw new Error(`the first visit did not start the threaded engine: ${first.start}`);
+		const cached = await page.evaluate(async () => {
+			const { navigator, caches } = globalThis as unknown as PageGlobals;
+			await navigator.serviceWorker.ready;
+			const names = await caches.keys();
+			const keys = await Promise.all(names.map(async (name) => (await caches.open(name)).keys()));
+			return keys.flat().map((request) => new URL(request.url).pathname.slice(1));
+		});
+		const expected = ['', ...list.start, ...sprites].sort();
+		if (JSON.stringify(cached.sort()) !== JSON.stringify(expected))
+			throw new Error(
+				`the service worker cached ${cached.length} files, not the ${expected.length} of the page, the start and the sprites`,
+			);
+		server.stop(true);
+		const failed: string[] = [];
+		// The worker's check for a newer build fails offline, as it should, and changes nothing.
+		page.context().on('requestfailed', (request) => {
+			if (!request.url().endsWith(`/${FILES_LIST}`)) failed.push(request.url());
+		});
+		await page.reload();
+		const offline = await startOf(page);
+		if (offline.start !== 'threaded' || !offline.isolated || failed.length > 0)
+			throw new Error(
+				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(failed)}`,
 			);
 	} finally {
 		await browser.close();
@@ -175,6 +256,7 @@ async function main(): Promise<void> {
 		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== engineNotices)
 			throw new Error(`the production build lacks the engine's notices in ${NOTICES_FILE}`);
 		await startsUnderStrictPolicy(join(project, 'dist'));
+		await playsOffline(join(project, 'dist'));
 		passed = true;
 		console.log(`\nThe packed packages pass in a fresh project (${packed.length} packages).`);
 	} finally {

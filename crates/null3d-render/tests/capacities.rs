@@ -267,9 +267,9 @@ fn a_crowd_past_one_dispatchs_workgroups_skins_every_vertex() {
 
 #[test]
 fn a_crowd_of_1000_characters_spreads_its_skinned_vertices_over_storage_bindings() {
-    // 1,000 columns of 4,962 vertices, as many as 1,000 of S5's knights: about 159 MB of skinned
-    // vertices, more than one storage binding of WebGPU's default 128 MiB holds.
-    let (dispatches, buffers) = skins_every_vertex(1_000, 1_654, 128 * MIB);
+    // 1,000 columns of 4,962 vertices, as many as 1,000 of S5's knights: about 119 MB of skinned
+    // vertices, more than one storage binding of 64 MiB holds.
+    let (dispatches, buffers) = skins_every_vertex(1_000, 1_654, 64 * MIB);
     assert_eq!(buffers.len(), 2);
     assert!(dispatches.len() >= 2);
 }
@@ -278,7 +278,7 @@ fn a_crowd_of_1000_characters_spreads_its_skinned_vertices_over_storage_bindings
 fn skinned_vertices_past_every_buffer_fail_with_their_cap_and_recover() {
     // At a 1 MiB binding, the eight skinned vertex buffers hold 8 MiB: 24 columns of 288,000
     // bytes, three to a buffer.
-    let (mut world, objects) = crowd(25, 3_000, MIB);
+    let (mut world, objects) = crowd(25, 4_000, MIB);
     let mut mock = MockBackend::default();
     assert_eq!(
         refused(&mut world),

@@ -92,9 +92,12 @@ export function encoderPool(size) {
 	};
 }
 
+/** @param {Uint8Array} bytes */
+const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
 /**
  * An encode that runs once for each image and setting: a second texture with the same image,
- * kind, format and largest side, in this model or another, takes the first one's result.
+ * kind, format, largest side and bake, in this model or another, takes the first one's result.
  *
  * @param {(job: TextureJob) => Promise<EncodedTexture>} encode
  * @returns {(job: TextureJob) => Promise<EncodedTexture>}
@@ -103,8 +106,9 @@ export function encodeOnce(encode) {
 	/** @type {Map<string, Promise<EncodedTexture>>} */
 	const started = new Map();
 	return (job) => {
-		const hash = createHash('sha256').update(job.bytes).digest('hex');
-		const key = `${hash} ${job.kind} ${job.codec} ${job.maxSide}`;
+		const { bake } = job;
+		const baked = bake ? ` ${hash(bake.bytes)} ${bake.scale} ${bake.factor}` : '';
+		const key = `${hash(job.bytes)} ${job.kind} ${job.codec} ${job.maxSide}${baked}`;
 		let pending = started.get(key);
 		if (!pending) {
 			pending = encode(job);

@@ -15,10 +15,13 @@ export interface SceneCode {
 	frame(t: number): void;
 }
 
-/** Times the shared code that `build` makes for the scene `sceneName`, and publishes the result. */
+/**
+ * Times the shared code that `build` makes for the scene `sceneName`, and publishes the result. A
+ * scene whose data comes from a file loads it in `build`, before the timing starts.
+ */
 export function runSceneCodePage(
 	sceneName: string,
-	build: (options: RunOptions) => SceneCode,
+	build: (options: RunOptions) => SceneCode | Promise<SceneCode>,
 ): void {
 	const params = new URLSearchParams(location.search);
 	showPageName();
@@ -27,7 +30,7 @@ export function runSceneCodePage(
 		if (options.hold !== null || options.demo) {
 			throw new Error('A scene-code page draws nothing: remove ?hold and ?demo from the address.');
 		}
-		const code = build(options);
+		const code = await build(options);
 		const timings = await measureFrames(
 			(t) => {
 				code.frame(t);

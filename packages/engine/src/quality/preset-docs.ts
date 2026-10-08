@@ -23,12 +23,6 @@ export const PLANNED_SETTINGS = {
 		changes: 'start',
 		values: { min: 1, max: 256, whole: true },
 	},
-	// Low and Medium stay under half the GPU texture memory at which a tablet's tab died (D-12).
-	textureMemoryMiB: {
-		presets: [256, 512, 1024, 2048],
-		changes: 'start',
-		values: { min: 64, max: 16384, whole: true },
-	},
 } as const satisfies Record<string, Setting>;
 
 /** Every row of the preset table: the settings that the engine applies, and the planned ones. */
@@ -106,7 +100,7 @@ export const SETTING_DOCS: {
 export interface SettingRow {
 	name: AnySettingName;
 	label: string;
-	/** Each preset's value in words, from Low to Ultra. */
+	/** Each preset's value in words, from Low to Ultra, with WebGL2's own where it differs. */
 	values: string[];
 	changes: SettingChange;
 	/** True for a setting that the engine applies; false for a planned one. */
@@ -123,7 +117,12 @@ export function settingRows(): SettingRow[] {
 		return {
 			name,
 			label: docs.label,
-			values: setting.presets.map((value) => print(value)),
+			values: setting.presets.map((value, preset) => {
+				const webgl2 = setting.webgl2?.[preset] ?? value;
+				return webgl2 === value
+					? print(value)
+					: `${print(value)} (${TIER_DOCS.webgl2}: ${print(webgl2)})`;
+			}),
 			changes: setting.changes,
 			built: name in QUALITY_SETTINGS,
 			setting,

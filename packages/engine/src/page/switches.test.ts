@@ -23,23 +23,31 @@ describe('parseSwitches', () => {
 			cells: true,
 			prepass: undefined,
 			occlusion: undefined,
-			vertexSkinning: false,
+			skinning: 'lean',
 			indexInstances: false,
 			shadowDepthBits: 16,
+			textureCache: true,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
+			join: true,
 			memoryMiB: undefined,
 			preset: undefined,
 			hold: undefined,
 			bench: false,
 			glTiming: undefined,
+			replayDelay: undefined,
 		});
 	});
 
-	it('skins in the vertex shader on WebGPU with ?skinning=vertex, and in a compute pass otherwise', () => {
-		expect(parseSwitches('?skinning=vertex').vertexSkinning).toBe(true);
-		expect(parseSwitches('?skinning=compute').vertexSkinning).toBe(false);
+	it('picks how WebGPU skins with ?skinning=, and the lean skinning pass otherwise', () => {
+		for (const mode of ['vertex', 'full', 'skip', 'narrow'] as const)
+			expect(parseSwitches(`?skinning=${mode}`).skinning).toBe(mode);
+		expect(parseSwitches('?skinning=compute').skinning).toBe('lean');
+		expect(parseSwitches('').skinning).toBe('lean');
+	});
+
+	it('reads instances by index on core WebGPU with ?instances=index, and copies them otherwise', () => {
 		expect(parseSwitches('?instances=index').indexInstances).toBe(true);
 		expect(parseSwitches('?instances=copy').indexInstances).toBe(false);
 	});
@@ -48,6 +56,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?shadowdepth=32').shadowDepthBits).toBe(32);
 		expect(parseSwitches('?shadowdepth=16').shadowDepthBits).toBe(16);
 		expect(parseSwitches('?shadowdepth=24').shadowDepthBits).toBe(16);
+	});
+
+	it('turns the cache of transcoded textures off with ?texture-cache=off, and leaves it on otherwise', () => {
+		expect(parseSwitches('?texture-cache=off').textureCache).toBe(false);
+		expect(parseSwitches('?texture-cache=on').textureCache).toBe(true);
+		expect(parseSwitches('?texture-cache=no').textureCache).toBe(true);
 	});
 
 	it('turns occlusion culling on or off with ?occlusion=, and leaves it to the page otherwise', () => {
@@ -83,6 +97,12 @@ describe('parseSwitches', () => {
 	it('reads ?bench with or without a value', () => {
 		expect(parseSwitches('?bench').bench).toBe(true);
 		expect(parseSwitches('?gpu=webgl2&bench=1').bench).toBe(true);
+	});
+
+	it('reads ?replay-delay, a whole number of ms up to a second', () => {
+		expect(parseSwitches('?replay-delay=40').replayDelay).toBe(40);
+		for (const value of ['0', '2.5', '-3', '5000', 'x'])
+			expect(parseSwitches(`?replay-delay=${value}`).replayDelay).toBeUndefined();
 	});
 
 	it('reads ?gl-timing, which times each WebGL call for benchmark pages', () => {

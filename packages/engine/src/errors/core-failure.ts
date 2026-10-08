@@ -9,6 +9,8 @@ import type { ErrorCode } from './fixes';
 export interface CoreErrors {
 	lastErrorCode(): number;
 	lastErrorDetail(index: number): number;
+	/** The message of the last render graph error, with the passes and resources by name. */
+	renderGraphMessage?(): string;
 }
 
 /**
@@ -43,6 +45,8 @@ const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
 		`the skinned vertices of the characters in the scene pass the ${megabytes} MB that GPU skinning holds on this device`,
 	13: (pages) =>
 		`the skinned meshes fill more than ${pages} mesh pages, the most that GPU skinning reads`,
+	14: (views) =>
+		`the frame draws ${views} views, the camera's included, which is the most it draws`,
 };
 
 /** What the renderer ran out of, for the details `limit` and `value` of E1501. */
@@ -131,6 +135,19 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 					`${name} got a ${a === UNKNOWN_MESH ? 'mesh' : 'material'} that is not from this engine.`,
 				);
 			return error('E1501', `${name} failed: ${renderLimit(a, b)}.`);
+		case 1502:
+		case 1503:
+		case 1504:
+		case 1505: {
+			// The core's message starts with the code, which the error adds itself.
+			const message = core.renderGraphMessage?.().replace(/^E\d+: /, '');
+			return error(
+				`E${code}` as ErrorCode,
+				message
+					? `${name} failed: ${message}`
+					: `${name} failed: the render graph does not compile.`,
+			);
+		}
 		default: {
 			const id = `E${code}`;
 			return error(

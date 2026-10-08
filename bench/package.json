@@ -6,16 +6,17 @@
 		"test": "playwright test"
 	},
 	"devDependencies": {
-		"@playwright/test": "1.63.0",
 		"@null3d/cli": "workspace:*",
 		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
+		"@playwright/test": "1.63.0",
 		"@types/three": "0.186.0",
 		"@webgpu/types": "0.1.74",
 		"fast-png": "8.0.0",
 		"gifenc": "1.0.3",
 		"three": "0.186.1",
+		"three-mesh-bvh": "0.9.15",
 		"vite": "8.3.1"
 	}
 }

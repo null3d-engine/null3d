@@ -14,7 +14,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::caps::Capabilities;
-use null3d_gpu::drawlist::{Op, format, pass_flags, template};
+use null3d_gpu::drawlist::{Op, format, layout, pass_flags, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::ao::Ao;
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
@@ -586,4 +586,33 @@ fn culling_starts_in_two_phases_once_ambient_occlusion_turns_the_prepass_off() {
             passes(&steady, &templates)
         );
     }
+}
+
+#[test]
+fn a_smaller_canvas_binds_the_pyramid_to_the_occluders_depth_made_again() {
+    let mut world = world(Antialias::Msaa, occluding());
+    let mut mock = device();
+    world.step(&mut mock, true);
+    world.step(&mut mock, false);
+    // The canvas shrinks: the graph makes the occluders' depth again under its id, at the new
+    // size, so the pyramid's group must bind the new texture, not the destroyed one.
+    world.canvas = (world.canvas.0 / 2, world.canvas.1 / 2);
+    let commands = world.step(&mut mock, false);
+    let remade: Vec<u32> = commands
+        .iter()
+        .filter(|(op, _)| *op == Op::CreateTexture)
+        .map(|(_, o)| o[0])
+        .collect();
+    let bound: Vec<u32> = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::DEPTH_PYRAMID)
+        .map(|(_, o)| o[15])
+        .collect();
+    assert!(!remade.is_empty(), "the graph makes its textures again");
+    assert_eq!(
+        bound.len(),
+        1,
+        "the pyramid's group binds again: made {remade:?}"
+    );
+    assert!(remade.contains(&bound[0]));
 }

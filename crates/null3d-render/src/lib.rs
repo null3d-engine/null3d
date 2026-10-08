@@ -83,3 +83,4 @@ pub mod skinning;
 pub mod sorted;
 pub mod textures;
 pub mod view;
+mod view_copy;

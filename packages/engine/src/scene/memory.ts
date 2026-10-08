@@ -1,9 +1,10 @@
 // Typed-array views on engine memory. A shared memory keeps its old buffer when it grows, but
 // views made before the growth cannot reach past the old end; the single-threaded build's memory
-// detaches every view when it grows, and a write through a detached view is lost. Each view
-// therefore is re-made when the buffer changes. Every core call that can grow the memory goes
-// through `checkGrowth`, and the sketch runner refreshes after the frame's steps, so sketch code
-// never writes through a view from before a growth. When the engine stops, every later call
+// detaches every view when it grows, and a write through a detached view is lost. The scene's
+// arrays also move within the memory when the scene grows, which the core counts in a word of its
+// own. Each view therefore is re-made when the buffer changes or that count does. Every core call
+// that can grow the memory or the scene goes through `checkGrowth`, and the sketch runner
+// refreshes after the frame's steps, so sketch code never writes through a stale view. When the engine stops, every later call
 // through the core and every view made after it fails with E1420: the page keeps its copy of the
 // core for the next engine, which sketch code that outlives the engine must never reach.
 
@@ -38,14 +39,24 @@ export class CoreMemory {
 	generation = 0;
 	/** The core's copy of the world matrix it read last, made again when the memory grows. */
 	private worldMatrixView: Float64Array | undefined;
+	/** The core's count of moves of viewed arrays, made again when the memory grows. */
+	private movedView: Uint32Array | undefined;
+	/** The count of moves that the current views were made at. */
+	private moved = 0;
 
 	private stoppedNow = false;
 
+	/**
+	 * `movedAddress` is the address of the core's count of moves of viewed arrays, or 0 for a core
+	 * whose arrays move only when the memory grows.
+	 */
 	constructor(
 		public glue: CoreGlue,
 		readonly memory: WebAssembly.Memory,
+		private readonly movedAddress = 0,
 	) {
 		this.viewsOf = memory.buffer;
+		this.moved = this.movedCount();
 	}
 
 	/** True once the engine has stopped. */
@@ -64,14 +75,34 @@ export class CoreMemory {
 		this.worldMatrixView = undefined;
 	}
 
-	/** True once after the memory's buffer changed; callers then re-make their views. */
+	/**
+	 * True once after the memory's buffer changed or viewed arrays moved; callers then re-make their
+	 * views.
+	 */
 	refresh(): boolean {
 		if (this.stoppedNow) return false;
 		const buffer = this.memory.buffer;
-		if (buffer === this.viewsOf) return false;
-		this.viewsOf = buffer;
+		if (buffer !== this.viewsOf) {
+			this.viewsOf = buffer;
+			this.movedView = undefined;
+		} else {
+			const moved = this.movedCount();
+			if (moved === this.moved) return false;
+		}
+		this.moved = this.movedCount();
 		this.generation++;
 		return true;
+	}
+
+	/** The core's count of moves of viewed arrays, or 0 for a core without one. */
+	private movedCount(): number {
+		if (this.movedAddress === 0) return 0;
+		let view = this.movedView;
+		if (view === undefined) {
+			view = new Uint32Array(this.memory.buffer, this.movedAddress, 1);
+			this.movedView = view;
+		}
+		return view[0] as number;
 	}
 
 	/** A view of `length` values of `type` on engine memory from `address`. */

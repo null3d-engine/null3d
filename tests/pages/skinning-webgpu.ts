@@ -3,15 +3,17 @@
 // - vertex-shader: every shadow cascade and the main pass skin each character in the vertex shader,
 //   which reads four joint matrices from a float texture per vertex.
 // - compute: one compute pass skins each character that some pass draws into a buffer of
-//   positions and normals. The cascades and the main pass draw that buffer as plain vertices.
+//   positions, normals and texture coordinates, as the engine's skinning pass writes them for the
+//   crowd scene's Knight: 20 bytes a vertex with 8-bit normals, or 28 with ?normals=float. The
+//   cascades and the main pass draw that buffer as plain vertices.
 // Both paths cull the characters per pass on the CPU and upload the joint matrices each frame to
 // the float texture that the vertex shaders, or the compute pass, read, as the engine does.
 // The page first draws one pose both ways and compares the two images. Then each path draws frames
 // back to back in timed batches, each frame in a submit of its own, and each batch ends when the
 // GPU has finished its last frame. The paths take turns, so heat affects both alike. Where the
 // adapter has timestamp queries, each batch also records the GPU's time from its first pass to
-// its last. Switches: ?characters=, ?cascades=, ?rounds=, ?warmup= (milliseconds) and ?gpu=compat,
-// which asks for a compatibility mode adapter. The page uses no engine code: it measures which
+// its last. Switches: ?characters=, ?cascades=, ?rounds=, ?warmup= (milliseconds), ?normals=float
+// and ?gpu=compat, which asks for a compatibility mode adapter. The page uses no engine code: it measures which
 // design the engine builds.
 import { progress, run } from './lib/result';
 import {
@@ -32,7 +34,7 @@ import {
 	type SkinningResult,
 	skinningPaths,
 } from './lib/skinning';
-import { REST_WORDS, SKIN_WORKGROUP, SKINNED_WORDS, SKINNING_WGSL } from './lib/skinning-wgsl';
+import { REST_WORDS, SKIN_WORKGROUP, SKINNING_WGSL, skinnedWords } from './lib/skinning-wgsl';
 
 const params = new URLSearchParams(location.search);
 const characters = Number(params.get('characters') ?? 100);
@@ -40,6 +42,9 @@ const cascadeCount = Math.min(MAX_CASCADES, Math.max(1, Number(params.get('casca
 const rounds = Number(params.get('rounds') ?? SKINNING.rounds);
 const warmUpMs = Number(params.get('warmup') ?? SKINNING.warmUpMs);
 const compat = params.get('gpu') === 'compat';
+/** True when the compute pass writes 8-bit normals, as the engine does; ?normals=float writes floats. */
+const narrow = params.get('normals') !== 'float';
+const SKINNED_WORDS = skinnedWords(narrow);
 const [width, height] = SKINNING.size;
 const PATHS = skinningPaths('webgpu');
 
@@ -67,6 +72,7 @@ const SKIN_BUFFERS: GPUVertexBufferLayout[] = [
 			{ shaderLocation: 1, offset: 12, format: 'float32x3' },
 			{ shaderLocation: 2, offset: 24, format: 'uint8x4' },
 			{ shaderLocation: 3, offset: 28, format: 'float32x4' },
+			{ shaderLocation: 5, offset: 44, format: 'unorm16x2' },
 		],
 	},
 	{
@@ -82,10 +88,25 @@ const PLAIN_BUFFERS: GPUVertexBufferLayout[] = [
 		arrayStride: SKINNED_WORDS * 4,
 		attributes: [
 			{ shaderLocation: 0, offset: 0, format: 'float32x3' },
-			{ shaderLocation: 1, offset: 12, format: 'float32x3' },
+			{ shaderLocation: 1, offset: 12, format: narrow ? 'snorm8x4' : 'float32x3' },
+			{ shaderLocation: 2, offset: (SKINNED_WORDS - 1) * 4, format: 'unorm16x2' },
 		],
 	},
 ];
+
+/**
+ * Words of a plain vertex at `position` with normal `normal` and texture coordinates (0, 0), as
+ * the skinned buffer holds them.
+ */
+function plainVertex(position: readonly number[], normal: readonly number[]): Uint32Array {
+	const words = new Uint32Array(SKINNED_WORDS);
+	new Float32Array(words.buffer, 0, 3).set(position);
+	if (narrow) {
+		const bytes = new Int8Array(words.buffer, 12, 4);
+		bytes.set(normal.map((v) => Math.round(v * 127)));
+	} else new Float32Array(words.buffer, 12, 3).set(normal);
+	return words;
+}
 
 /** The scene on the GPU, and a frame of each path. */
 class SkinningRenderer {
@@ -153,12 +174,17 @@ class SkinningRenderer {
 		const rest = new Float32Array(mesh.vertexCount * REST_WORDS);
 		const restWords = new Uint32Array(rest.buffer);
 		const jointWords = new Uint32Array(mesh.joints.buffer);
+		const { segments, rings } = SKINNING;
 		for (let v = 0; v < mesh.vertexCount; v++) {
 			const at = v * REST_WORDS;
 			rest.set(mesh.positions.subarray(v * 3, v * 3 + 3), at);
 			rest.set(mesh.normals.subarray(v * 3, v * 3 + 3), at + 3);
 			restWords[at + 6] = jointWords[v] as number;
 			rest.set(mesh.weights.subarray(v * 4, v * 4 + 4), at + 7);
+			// Texture coordinates around and up the body, in 16 bits each.
+			const u = Math.round(((v % segments) / segments) * 0xffff);
+			const up = Math.round((Math.floor(v / segments) / (rings - 1)) * 0xffff);
+			restWords[at + 11] = (u | (up << 16)) >>> 0;
 		}
 		this.restVertices = buffer(GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE, rest);
 		this.restIndices = buffer(GPUBufferUsage.INDEX, mesh.indices);
@@ -174,15 +200,16 @@ class SkinningRenderer {
 			characters * mesh.vertexCount * SKINNED_WORDS * 4,
 		);
 		const g = GROUND;
-		this.ground = buffer(
-			GPUBufferUsage.VERTEX,
-			new Float32Array([
-				...[-g, 0, -g, 0, 1, 0],
-				...[-g, 0, g, 0, 1, 0],
-				...[g, 0, g, 0, 1, 0],
-				...[g, 0, -g, 0, 1, 0],
-			]),
-		);
+		const corners = [
+			[-g, 0, -g],
+			[-g, 0, g],
+			[g, 0, g],
+			[g, 0, -g],
+		];
+		const ground = new Uint32Array(corners.length * SKINNED_WORDS);
+		for (const [k, corner] of corners.entries())
+			ground.set(plainVertex(corner, [0, 1, 0]), k * SKINNED_WORDS);
+		this.ground = buffer(GPUBufferUsage.VERTEX, ground);
 		this.groundIndices = buffer(GPUBufferUsage.INDEX, new Uint16Array([0, 1, 2, 0, 2, 3]));
 		this.instances = buffer(GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE, this.lists.byteLength);
 		this.skinParams = buffer(GPUBufferUsage.UNIFORM, 16);
@@ -280,7 +307,7 @@ class SkinningRenderer {
 			plainShaded: render(W.plainShaded, [passLayout, litLayout], PLAIN_BUFFERS, true),
 			skinOnce: device.createComputePipeline({
 				layout: device.createPipelineLayout({ bindGroupLayouts: [skinLayout] }),
-				compute: { module: module(W.skinOnce), entryPoint: 'main' },
+				compute: { module: module(W.skinOnce(narrow)), entryPoint: 'main' },
 			}),
 		};
 
@@ -711,6 +738,7 @@ run('skinning-webgpu', async (): Promise<SkinningResult & Record<string, unknown
 		gpuTimer: timed,
 		drawn: counts.drawn,
 		skinned: counts.skinned,
+		skinnedBytes: SKINNED_WORDS * 4,
 		image,
 		paths: Object.fromEntries(PATHS.map((path) => [path, timing(path)])),
 	};

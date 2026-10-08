@@ -13,6 +13,7 @@
 //! engine's error table.
 
 use std::cell::{Cell, UnsafeCell};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use null3d_core::animation::{
@@ -25,7 +26,7 @@ use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
-use null3d_core::handle::Handle;
+use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
 use null3d_core::lights::LightTable;
@@ -36,8 +37,8 @@ use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
-use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
+use null3d_gpu::drawlist::{format, sizes};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
 use null3d_render::background::{Background, BackgroundSource, Sky};
@@ -55,7 +56,7 @@ use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::grading::{Lut, Vignette};
-use null3d_render::graph::RenderScale;
+use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::MeshError;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
@@ -64,12 +65,14 @@ use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
-use null3d_render::skinning;
+use null3d_render::skinning::{self, SkinningMode};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
-use null3d_render::view::ViewId;
+use null3d_render::view::{MAX_VIEWS, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+mod heap;
 
 use constants::{
     CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
@@ -98,6 +101,15 @@ extern "C" {
 
 /// Upload ranges one frame can list before it uploads everything instead.
 const UPLOAD_RANGES: u32 = 4096;
+
+/// The objects the scene has room for at the start when the page gives no expected count: few, so a
+/// small scene keeps small tables. A growth from a size this small takes a small fraction of a
+/// millisecond, so a scene that grows past it during play barely pauses.
+pub const START_OBJECTS: u32 = 1_023;
+
+/// Counts the times that arrays TypeScript views moved without the memory growing: each scene
+/// growth. TypeScript compares it with the count it made its views at.
+static ARRAYS_MOVED: AtomicU32 = AtomicU32::new(0);
 
 /// Engine error codes for failures that do not come from the core.
 mod codes {
@@ -136,6 +148,8 @@ mod render_detail {
     pub const SKINNED_VERTICES_FULL: u32 = 12;
     /// The second detail is the most mesh pages of skinned meshes that WebGPU skinning reads.
     pub const SKINNED_PAGES_FULL: u32 = 13;
+    /// The second detail is the most views a frame builder draws, the camera's included.
+    pub const TOO_MANY_VIEWS: u32 = 14;
 }
 
 struct Engine {
@@ -186,6 +200,15 @@ struct Engine {
     background_values: Box<[f32; constants::background_value::COUNT as usize]>,
     /// The uniforms of the custom effect that TypeScript sets next with `setEffect`.
     effect_values: Box<[f32; EFFECT_FLOATS]>,
+    /// The message of the last render graph error that a call met, with the passes and resources
+    /// by name, which `renderGraphMessage` gives TypeScript.
+    graph_message: String,
+    /// The objects that the page expects the scene to hold, or 0. The scene grows ahead of need
+    /// only once it holds more.
+    expected_objects: u32,
+    /// The capacity at which a growth ahead of need failed, which the frame steps then do not try
+    /// again, or 0.
+    ahead_failed: u32,
 }
 
 /// The post-processing values before TypeScript writes any: an exposure of 1, bloom's intensity,
@@ -406,19 +429,22 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
-/// the vertex shader of each pass, not in a compute pass. With `index_instances`, WebGPU's vertex
-/// shaders read each culled instance by index from storage buffers, not from a copy that the
-/// culling shader writes, for the test of decision record D-23. With `large_world`, each object's
-/// position holds whole cells besides its 32-bit part, so positions keep their precision at any
-/// distance. With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth
-/// pyramid. The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
-/// Every capacity is fixed from here on.
+/// opaque objects' depth before it shades them. `skinning` is the code of WebGPU's skinning mode
+/// (`constants::SKINNING`): the skinning pass with or without its savings, or the vertex shader of
+/// each pass; an unknown code takes the default. With `index_instances`, WebGPU's vertex shaders
+/// read each culled instance by index from storage buffers, not from a copy that the culling
+/// shader writes, for the test of decision record D-23. With `large_world`, each object's position
+/// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid. The
+/// shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
+/// The scene starts with room for `expected_objects` objects, or for `START_OBJECTS` with 0, and
+/// grows when it needs more (`ensure_room`, `grow_ahead`). Every other capacity is fixed from here
+/// on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
     job_workers: u32,
-    scene_capacity: u32,
+    expected_objects: u32,
     max_batches: u32,
     commands: u32,
     storage_binding_bytes: u32,
@@ -430,7 +456,7 @@ pub fn init_engine(
     transparent: bool,
     cell_culling: bool,
     depth_prepass: bool,
-    vertex_skinning: bool,
+    skinning: u32,
     index_instances: bool,
     large_world: bool,
     gpu_occlusion: bool,
@@ -464,6 +490,10 @@ pub fn init_engine(
     };
     let capabilities = Capabilities::from_bits(u64::from(capabilities));
     let cascade_depth = CascadeDepth::from_bits(shadow_depth_bits);
+    let scene_capacity = match expected_objects {
+        0 => START_OBJECTS,
+        expected => expected.min(MAX_SLOTS),
+    };
     *cell = Some(Engine {
         scene: if large_world {
             SceneStorage::with_large_world(scene_capacity)
@@ -494,7 +524,7 @@ pub fn init_engine(
                 ),
                 cell_culling,
                 depth_prepass,
-                vertex_skinning,
+                skinning: SkinningMode::from_code(skinning).unwrap_or_default(),
                 index_instances,
                 gpu_occlusion,
                 cascade_depth,
@@ -519,6 +549,9 @@ pub fn init_engine(
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
         background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
         effect_values: Box::new([0.0; EFFECT_FLOATS]),
+        graph_message: String::new(),
+        expected_objects,
+        ahead_failed: 0,
     });
     0
 }
@@ -558,6 +591,32 @@ pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
             values: *e.effect_values,
         });
         e.renderer.settings_mut().set_effect(index as usize, effect);
+        0
+    })
+}
+
+/// Draws the `length` custom effects from place `index` on as one group, with the joined shader
+/// of render pipeline template `template`, from the next frame on, once its pipeline is built.
+/// Template 0 ends the group that starts at `index`.
+#[wasm_bindgen(js_name = setEffectGroup)]
+pub fn set_effect_group(index: u32, length: u32, template: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_effect_group(index as usize, length as usize, template);
+        0
+    })
+}
+
+/// Folds the custom effects from place `index` on into the final pass, with the final pass's
+/// build of render pipeline template `template`, from the next frame on, while nothing reads the
+/// image between them. Template 0 folds none.
+#[wasm_bindgen(js_name = setEffectFold)]
+pub fn set_effect_fold(index: u32, template: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_effect_fold(index as usize, template);
         0
     })
 }
@@ -660,6 +719,75 @@ pub fn scene_capacity() -> u32 {
     value_with_engine(|e| Ok(e.scene.capacity()))
 }
 
+/// The address of the count of moves of viewed arrays; views made at another count are stale.
+#[wasm_bindgen(js_name = arraysMovedAddress)]
+pub fn arrays_moved_address() -> u32 {
+    ARRAYS_MOVED.as_ptr() as usize as u32
+}
+
+/// The capacity, doubled from `capacity` as often as needed, that holds `needed` objects with a
+/// quarter of its places to spare, so the frames after a large load do not grow it again.
+fn grown_capacity(capacity: u32, needed: u32) -> u32 {
+    let wanted = needed.saturating_add(needed / 3);
+    let mut grown = capacity.max(1);
+    while grown < wanted && grown < MAX_SLOTS {
+        grown = grown.saturating_mul(2).saturating_add(1).min(MAX_SLOTS);
+    }
+    grown
+}
+
+/// Grows the scene to hold `capacity` objects, or as many as the renderer draws beside the
+/// instance batches' rows, but at least `needed`. The renderer makes room first, as for a new
+/// batch, so no later frame runs out of memory while it records.
+fn grow_scene(e: &mut Engine, capacity: u32, needed: u32) -> Result<(), u32> {
+    let batch_rows = e
+        .batches
+        .iter()
+        .fold(0u32, |sum, (_, batch)| sum.saturating_add(batch.capacity()));
+    let limit = e.renderer.max_sources();
+    let capacity = capacity.min(limit.saturating_sub(batch_rows).saturating_sub(1));
+    if capacity < needed || capacity <= e.scene.capacity() {
+        return Err(record_failure(RecordError::TooManySources { limit }));
+    }
+    let added = capacity.saturating_sub(e.scene.capacity());
+    e.renderer
+        .reserve_sources(capacity + 1 + batch_rows)
+        .map_err(|_| {
+            core_failure(CoreError::OutOfMemory {
+                bytes: added.saturating_mul(BYTES_PER_SOURCE),
+            })
+        })?;
+    e.scene.try_grow(capacity).map_err(core_failure)?;
+    e.structure_changed = true;
+    ARRAYS_MOVED.fetch_add(1, Ordering::Release);
+    Ok(())
+}
+
+/// Grows the scene, when its free places are fewer than `count`, so it holds `count` more objects.
+/// Past the most objects a handle can name, it leaves the scene alone, and the reserve fails.
+fn ensure_room(e: &mut Engine, count: u32) -> Result<(), u32> {
+    let (capacity, live) = (e.scene.capacity(), e.scene.slots().live_count());
+    let needed = live.saturating_add(count);
+    if needed <= capacity || needed > MAX_SLOTS {
+        return Ok(());
+    }
+    grow_scene(e, grown_capacity(capacity, needed), needed)
+}
+
+/// Doubles the scene once it is three quarters full, at a frame's start, so that objects created
+/// during play rarely find it full: a growth then costs a pause in the middle of the sketch's
+/// code. A scene that holds no more than the page expects does not grow ahead.
+fn grow_ahead(e: &mut Engine) {
+    let (capacity, live) = (e.scene.capacity(), e.scene.slots().live_count());
+    let threshold = (capacity - capacity / 4).max(e.expected_objects);
+    if live <= threshold || capacity >= MAX_SLOTS || e.ahead_failed == capacity {
+        return;
+    }
+    if grow_scene(e, grown_capacity(capacity, capacity + 1), live).is_err() {
+        e.ahead_failed = capacity;
+    }
+}
+
 /// The address of one of the per-slot arrays TypeScript writes (see `constants::scene_field`):
 /// positions (3 floats), rotations (4), scales (3), local bounding radii (1), local bounding
 /// sphere centres (3), the whole cells of each position (3 integers, or 0 without large-world
@@ -682,19 +810,24 @@ pub fn scene_arrays(field: u32) -> u32 {
     })
 }
 
-/// Reserves an object slot and returns its handle; TypeScript writes the object's transform, then
-/// a create command.
+/// Reserves an object slot, growing the scene when it is full, and returns its handle; TypeScript
+/// writes the object's transform, then a create command.
 #[wasm_bindgen(js_name = reserveObject)]
 pub fn reserve_object() -> u32 {
-    value_with_engine(|e| e.scene.reserve().map(Handle::raw).map_err(core_failure))
+    value_with_engine(|e| {
+        ensure_room(e, 1)?;
+        e.scene.reserve().map(Handle::raw).map_err(core_failure)
+    })
 }
 
-/// Reserves `count` object slots at once, or none when too few are free, and returns the address
+/// Reserves `count` object slots at once, growing the scene when too few are free, or reserves
+/// none when it cannot grow, and returns the address
 /// of their handles in the staging words. TypeScript writes the objects' transforms, then their
 /// create commands, as after `reserveObject`.
 #[wasm_bindgen(js_name = reserveObjects)]
 pub fn reserve_objects(count: u32) -> u32 {
     value_with_engine(|e| {
+        ensure_room(e, count)?;
         let at = reserve_staging(e, count)?;
         e.scene.reserve_many(&mut e.staging).map_err(core_failure)?;
         Ok(at)
@@ -750,6 +883,7 @@ pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
         let step = step_us as f32 / 1_000_000.0;
         e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
+        grow_ahead(e);
         e.structure_changed |= e.scene.take_structure_changed();
         if !e.removed_meshes.is_empty() {
             release_mesh_ids(e);
@@ -853,6 +987,7 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
                 e.rebuilt = rebuilt;
                 0
             }
+            Err(RecordError::Graph(error)) => graph_failure(e, error),
             Err(error) => record_failure(error),
         }
     })
@@ -1999,6 +2134,47 @@ pub fn sync_textures(images_arrived: u32, frames_taken: u32) {
     with_engine(|e| {
         let textures = e.renderer.settings_mut().textures_mut();
         textures.sync(images_arrived, frames_taken);
+        // The memory budget moves textures between arrays before the frame culls and records, so
+        // the draw tables it builds bind the arrays that hold them.
+        e.structure_changed |= textures.fit_memory();
+        0
+    });
+}
+
+// Notes that the page can load a texture's texels again, at any mip level, as it can a file's.
+// Only such a texture drops levels under the memory budget. New texels from the page undo it.
+/// Notes that the page can load a texture's texels again.
+#[wasm_bindgen(js_name = setTextureReloadable)]
+pub fn set_texture_reloadable(texture: u32) -> u32 {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        match textures.set_reloadable(Handle::from_raw(texture)) {
+            Ok(()) => 0,
+            Err(error) => texture_failure(error),
+        }
+    })
+}
+
+// The next texture whose texels the page should load again, or 0 for none. `textureStat` gives
+// the levels to leave out (`RELOAD_LEVEL`) and the hidden texture that takes the texels
+// (`RELOAD_TEXTURE`), whose `setTextureImage` or `setTextureData` the page then calls.
+/// Takes the next texture whose texels the page should load again.
+#[wasm_bindgen(js_name = takeTextureReload)]
+pub fn take_texture_reload() -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        Ok(textures.take_reload().map_or(0, Handle::raw))
+    })
+}
+
+// Stops a texture's load again for good, after the page could not load its texels: it keeps the
+// levels it holds and drops no more.
+/// Stops a texture's load again for good.
+#[wasm_bindgen(js_name = failTextureReload)]
+pub fn fail_texture_reload(texture: u32) {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures.fail_reload(Handle::from_raw(texture));
         0
     });
 }
@@ -2012,6 +2188,7 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
     with_engine(|e| {
         let textures = e.renderer.settings().textures();
         let stats = textures.stats();
+        let handle = Handle::from_raw(texture);
         let bytes = |b: u64| b as f64;
         value = match field {
             texture_stat::MEMORY_BYTES => bytes(textures.memory_bytes()),
@@ -2025,6 +2202,20 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
             texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
             texture_stat::UPLOAD_BUDGET => f64::from(textures.budget()),
             texture_stat::MAX_ANISOTROPY => f64::from(textures.max_anisotropy()),
+            texture_stat::MEMORY_BUDGET => bytes(textures.memory_budget()),
+            texture_stat::DROPPED_LEVELS => match textures.dropped_levels(handle) {
+                Ok(levels) => f64::from(levels),
+                Err(error) => return texture_failure(error),
+            },
+            texture_stat::DROPPED_TOTAL => f64::from(textures.dropped().0),
+            texture_stat::DROPPED_TEXTURES => f64::from(textures.dropped().1),
+            texture_stat::BUDGET_EPOCH => f64::from(textures.budget_epoch()),
+            texture_stat::RELOAD_LEVEL => {
+                textures.reload_of(handle).map_or(0.0, |r| f64::from(r.0))
+            }
+            texture_stat::RELOAD_TEXTURE => textures
+                .reload_of(handle)
+                .map_or(0.0, |r| f64::from(r.1.raw())),
             _ => f64::from(textures.max_size()),
         };
         0
@@ -2057,6 +2248,9 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
         match option {
             texture_option::UPLOAD_BUDGET => textures.set_budget(value),
             texture_option::MAX_ANISOTROPY => textures.set_max_anisotropy(value),
+            texture_option::MEMORY_BUDGET_KIB => {
+                textures.set_memory_budget(u64::from(value) * 1024)
+            }
             _ => textures.upload_all_next_frame(),
         }
         0
@@ -2126,12 +2320,164 @@ fn set_camera(camera: u32, lens: Lens, layers: u32, target: u32) -> u32 {
         let camera = Handle::from_raw(camera);
         if target == camera_target::SHADOWS {
             settings.set_shadow_camera(Some((camera, lens)));
+        } else if let Some(place) = target.checked_sub(camera_target::PASS_VIEWS) {
+            let view = ViewId::from_place(place as usize);
+            settings.set_view_camera(view, camera, lens);
+            settings.set_layers(view, layers);
         } else {
             settings.set_camera(camera, lens);
             settings.set_layers(ViewId::CAMERA, layers);
         }
         0
     })
+}
+
+// --- Render passes ---
+
+/// Fails with a render graph error, keeping its message for `renderGraphMessage`.
+fn graph_failure(e: &mut Engine, error: GraphError) -> u32 {
+    e.graph_message = e.renderer.graph_message(error);
+    fail(error.code(), error.details())
+}
+
+/// Adds a scene pass: a view that draws the scene into a target of `width` x `height` texels,
+/// which the render graph names `target`, through a pass that it names `pass`. The view reads the
+/// targets of the other passes named in `reads`, one name per line, so the objects it draws may
+/// show them. With `clears`, its target clears to the exposed linear color `r`, `g`, `b` and
+/// alpha `a`; without, to the color the camera's target clears to. The view draws once a camera
+/// is set for it through `setPerspectiveCamera` or `setOrthographicCamera`, with
+/// `constants::camera_target::PASS_VIEWS` plus its place. Returns its place, from 1, or 0 when the
+/// builder draws the most views already, or when the pass does not fit the render graph, with the
+/// graph's error (E1502 to E1505), whose message `renderGraphMessage` gives.
+#[wasm_bindgen(js_name = addScenePass)]
+#[allow(clippy::too_many_arguments)]
+pub fn add_scene_pass(
+    pass: &str,
+    target: &str,
+    reads: &str,
+    width: u32,
+    height: u32,
+    clears: bool,
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+) -> u32 {
+    value_with_engine(|e| {
+        let names = ViewNames {
+            pass: pass.to_owned(),
+            target: target.to_owned(),
+            reads: reads
+                .split('\n')
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        };
+        let view = View::default().with_target(ViewTarget {
+            size: Some((width.max(1), height.max(1))),
+            clear: clears.then_some([r, g, b, a]),
+            ..ViewTarget::default()
+        });
+        let settings = e.renderer.settings_mut();
+        let Some(id) = settings.add_named_view(view, names) else {
+            return Err(render_failure(
+                render_detail::TOO_MANY_VIEWS,
+                MAX_VIEWS as u32,
+            ));
+        };
+        if let Err(error) = e.renderer.check_graph() {
+            e.renderer.settings_mut().remove_view(id);
+            let code = graph_failure(e, error);
+            // The graph declares the passes as they were, which compiled before.
+            let _ = e.renderer.check_graph();
+            return Err(code);
+        }
+        e.structure_changed = true;
+        Ok(id.index() as u32)
+    })
+}
+
+/// Removes the scene pass of view place `place`, from 1. Fails with the render graph's error
+/// (E1502 to E1505) when another running pass reads its target, and keeps the pass.
+#[wasm_bindgen(js_name = removeScenePass)]
+pub fn remove_scene_pass(place: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        let settings = e.renderer.settings_mut();
+        let (Some(kept), Some(names)) = (
+            settings.views().get(view.index()).copied(),
+            settings.view_names().get(view.index()).cloned(),
+        ) else {
+            return 0;
+        };
+        settings.remove_view(view);
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let settings = e.renderer.settings_mut();
+            settings.add_named_view(kept, names);
+            let _ = e.renderer.check_graph();
+            return code;
+        }
+        e.structure_changed = true;
+        0
+    })
+}
+
+/// Switches the scene pass of view place `place`, from 1, on or off. A pass switched off keeps the
+/// last image it drew in its target.
+#[wasm_bindgen(js_name = setScenePassEnabled)]
+pub fn set_scene_pass_enabled(place: u32, enabled: bool) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        e.renderer.settings_mut().set_view_enabled(view, enabled);
+        0
+    })
+}
+
+/// Creates a texture that shows the target of the scene pass of view place `place`, from 1, and
+/// returns its handle. It holds the pass's `width` x `height` texels, and samples as no texture
+/// until the pass first draws.
+#[wasm_bindgen(js_name = createPassTexture)]
+pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
+    value_with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        // The canvas's format holds 8-bit color, which the store counts as such.
+        let format = match settings.canvas().scene_color.format() {
+            format::CANVAS => format::RGBA8_UNORM,
+            other => other,
+        };
+        let texture = settings
+            .textures_mut()
+            .create_pass(place, width, height, format)
+            .map_err(texture_failure)?;
+        // The camera's passes now read the target, which can close a cycle.
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let textures = e.renderer.settings_mut().textures_mut();
+            let _ = textures.destroy(texture, 0);
+            let _ = e.renderer.check_graph();
+            return Err(code);
+        }
+        e.structure_changed = true;
+        Ok(texture.raw())
+    })
+}
+
+/// The message of the last render graph error that a call met, with the passes and resources by
+/// name.
+#[wasm_bindgen(js_name = renderGraphMessage)]
+pub fn render_graph_message() -> String {
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_ref() };
+    engine.map_or_else(String::new, |e| e.graph_message.clone())
+}
+
+/// The render graph of the passes as they are now, as Graphviz DOT text.
+#[wasm_bindgen(js_name = renderGraphDot)]
+pub fn render_graph_dot() -> String {
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_mut() };
+    engine.map_or_else(String::new, |e| e.renderer.graph_dot())
 }
 
 /// Fits the main directional light's cascades to the camera's view again, after a camera with the
@@ -3271,4 +3617,22 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
         };
         write_hits(q.hits, found)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_growth_doubles_until_a_quarter_of_the_places_is_spare() {
+        // A full scene doubles once.
+        assert_eq!(grown_capacity(16_383, 16_384), 32_767);
+        // A load of many objects at once doubles until it leaves a quarter of the places free.
+        assert_eq!(grown_capacity(16_383, 30_000), 65_535);
+        assert_eq!(grown_capacity(START_OBJECTS, 5_096), 8_191);
+        assert_eq!(grown_capacity(1_000, 1_001), 2_001);
+        // The growth stops at the most objects a handle can name.
+        assert_eq!(grown_capacity(524_287, 524_288), MAX_SLOTS);
+        assert_eq!(grown_capacity(700_000, MAX_SLOTS), MAX_SLOTS);
+    }
 }

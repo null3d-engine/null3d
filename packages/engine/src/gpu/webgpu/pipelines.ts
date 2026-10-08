@@ -17,6 +17,8 @@ import {
 	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
+	LAYOUT_FINAL_EFFECTS,
+	LAYOUT_FINAL_EFFECTS_DEPTH_MS,
 	LAYOUT_FRAME,
 	LAYOUT_INSTANCE_INDEX,
 	LAYOUT_JOINTS,
@@ -24,6 +26,7 @@ import {
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	LAYOUT_VIEW_COPY,
 	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_INSTANCE_INDEX,
 	PERMUTATION_PREPASS,
@@ -33,6 +36,7 @@ import {
 	SIZE_INDEX_STRIDE,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_MAP_SLOTS,
+	STATE_ALPHA_TO_COVERAGE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
 	STATE_BLEND_MULTIPLY,
@@ -72,10 +76,13 @@ import {
 	TEMPLATE_OCCLUSION_EARLY,
 	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_SHADOW_CUTOUT,
+	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_VIEW_COPY,
 	VERTEX_INSTANCE_LOCATION,
 	VERTEX_TYPE_F32,
 	VERTEX_TYPE_SINT8,
@@ -146,6 +153,12 @@ export interface RenderTemplate {
 	 * nothing.
 	 */
 	readonly ownPrepass?: boolean;
+	/**
+	 * True for a template whose fragment shader runs in pipelines that draw depth only, as the
+	 * masked casters' does: it discards the fragments that their alpha cuts. Other templates draw
+	 * depth only with no fragment stage.
+	 */
+	readonly depthFragment?: boolean;
 }
 
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
@@ -278,6 +291,8 @@ export function gpuVertexFormat(attribute: VertexAttribute): GPUVertexFormat {
 
 /** The id of the pipeline constant that scales the attribute at a location: 1000 plus it. */
 const SCALE_ID = 1000;
+/** The id of the skinning pass's pipeline constant that writes normals and tangents in 8 bits. */
+const NARROW_DIRECTIONS_ID = 1100;
 
 /** The mesh locations that a template's variant reads, or undefined for a template without meshes. */
 function meshLocations(t: RenderTemplate, permutation: number): number[] | undefined {
@@ -336,6 +351,12 @@ function scaleConstants(
 }
 
 export class Pipelines {
+	/**
+	 * True when the skinning pass writes normals and tangents as 32-bit floats, in place of 8-bit
+	 * integers, as the core's skinned vertex format then has them. Only the switch that measures
+	 * the two asks for it.
+	 */
+	floatSkinnedDirections = false;
 	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
 	/** The layouts that only some devices bind, which the first pipeline or bind group to use them makes. */
 	private readonly laterLayouts: (GPUBindGroupLayoutDescriptor | undefined)[] = [];
@@ -560,6 +581,8 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
+		// The copy of a view's image into its target reads the image with textureLoad.
+		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
 		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
 		const effectEntries: GPUBindGroupLayoutEntry[] = [
@@ -571,6 +594,21 @@ export class Pipelines {
 		this.defineLayout(LAYOUT_EFFECT_DEPTH_MS, 'effect depth ms', [
 			...effectEntries,
 			unfiltered(3, true),
+		]);
+		// The final pass with custom effects folded into it: the pass's own entries, then every
+		// effect's block and the scene's depth, which the effects read as a group does. The effects
+		// sample the scene color with a linear filter, so it binds as a filterable float texture:
+		// effects run on the HDR path, whose color formats filter.
+		const foldEntries: GPUBindGroupLayoutEntry[] = [
+			...finalEntries.map((entry) =>
+				entry.binding === 1 ? { binding: 1, visibility: fragment, texture: {} } : entry,
+			),
+			{ binding: 4, visibility: fragment, buffer: { type: 'uniform' } },
+		];
+		this.defineLayout(LAYOUT_FINAL_EFFECTS, 'final effects', [...foldEntries, unfiltered(5)]);
+		this.defineLayout(LAYOUT_FINAL_EFFECTS_DEPTH_MS, 'final effects depth ms', [
+			...foldEntries,
+			unfiltered(5, true),
 		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
@@ -591,6 +629,14 @@ export class Pipelines {
 				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
 			],
 			[TEMPLATE_SHADOW_DEPTH, 'shadow depth', shaders.shadow_depth, [0, 1], [LAYOUT_DEPTH]],
+			[TEMPLATE_SHADOW_CUTOUT, 'shadow cutout', shaders.shadow_cutout, [0, 1], [LAYOUT_DEPTH]],
+			[
+				TEMPLATE_SHADOW_CUTOUT_MAP,
+				'shadow cutout map',
+				shaders.shadow_cutout_map,
+				[0, 1, 2, 3],
+				[LAYOUT_DEPTH, LAYOUT_TEXTURES],
+			],
 			[TEMPLATE_OUTLINE_MASK, 'outline mask', shaders.outline_mask, [0, 1], [LAYOUT_DEPTH]],
 			[TEMPLATE_SPRITE, 'sprite', shaders.sprite, [0, 2], [LAYOUT_FRAME]],
 			[TEMPLATE_LINE, 'line', shaders.line, [0], [LAYOUT_FRAME]],
@@ -611,6 +657,7 @@ export class Pipelines {
 				meshLocations,
 				vertexBuffers: INSTANCE_BUFFERS,
 				ownPrepass: id === TEMPLATE_SPRITE || id === TEMPLATE_SPRITE_MAP,
+				depthFragment: id === TEMPLATE_SHADOW_CUTOUT || id === TEMPLATE_SHADOW_CUTOUT_MAP,
 			});
 		}
 		this.defineTemplate(TEMPLATE_FINAL, {
@@ -642,6 +689,13 @@ export class Pipelines {
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}
+		this.defineTemplate(TEMPLATE_VIEW_COPY, {
+			label: 'view copy',
+			shader: shaders.view_copy,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_BACKGROUND, {
 			label: 'background',
 			shader: shaders.background,
@@ -715,20 +769,29 @@ export class Pipelines {
 	 * Adds a template of the sketch's compiled WGSL. A custom material's is the standard material's
 	 * template with the material's WGSL, in the shader variants that the plugin built, which also
 	 * read the first texture coordinates. A material with textures binds them in the slots of the
-	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and a custom tone
-	 * curve's binds as the final pass or its bloom build does.
+	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and so does a
+	 * group of joined effects. A custom tone curve's binds as the final pass or its bloom build does,
+	 * and the final pass with effects folded into it binds their buffer and the depth too.
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
 		const { kind } = shader;
 		if (kind !== undefined) {
+			const effect = kind === 'effect' || kind === 'effectGroup';
+			const [layout, multisampled, label] = effect
+				? [LAYOUT_EFFECT, LAYOUT_EFFECT_DEPTH_MS, `custom effect ${id}`]
+				: kind === 'effectFold'
+					? [LAYOUT_FINAL_EFFECTS, LAYOUT_FINAL_EFFECTS_DEPTH_MS, `folded effects ${id}`]
+					: [
+							kind === 'final' ? LAYOUT_FINAL : LAYOUT_FINAL_BLOOM,
+							undefined,
+							`custom tone curve ${id}`,
+						];
 			this.defineTemplate(id, {
-				label: kind === 'effect' ? `custom effect ${id}` : `custom tone curve ${id}`,
+				label,
 				shader: shader.variants,
 				pipeline: 'main',
-				layouts: [
-					kind === 'effect' ? LAYOUT_EFFECT : kind === 'final' ? LAYOUT_FINAL : LAYOUT_FINAL_BLOOM,
-				],
-				multisampledLayouts: kind === 'effect' ? [LAYOUT_EFFECT_DEPTH_MS] : undefined,
+				layouts: [layout],
+				multisampledLayouts: multisampled === undefined ? undefined : [multisampled],
 				vertexBuffers: [],
 			});
 			return;
@@ -872,7 +935,9 @@ export class Pipelines {
 							},
 						],
 					}
-				: undefined,
+				: t.depthFragment
+					? { module, entryPoint: entryPoints?.fragment, targets: [] }
+					: undefined,
 			primitive: {
 				topology: stateFlags & STATE_LINE_LIST ? 'line-list' : 'triangle-list',
 				cullMode:
@@ -893,7 +958,10 @@ export class Pipelines {
 						depthBiasClamp: 0,
 					}
 				: undefined,
-			multisample: { count: sampleCount },
+			multisample: {
+				count: sampleCount,
+				alphaToCoverageEnabled: (stateFlags & STATE_ALPHA_TO_COVERAGE) !== 0,
+			},
 		};
 	}
 
@@ -971,10 +1039,11 @@ export class Pipelines {
 			const color = (permutation & PERMUTATION_VERTEX_COLOR) !== 0 ? ' color' : '';
 			const shader = variantFor(this.skin, permutation, 'wgsl')?.wgsl;
 			if (!shader) throw new Error("the device's shader modules have no skinning shader");
+			const constants = this.floatSkinnedDirections ? { [NARROW_DIRECTIONS_ID]: 0 } : undefined;
 			return {
 				label: `skin${tangent}${color}`,
 				layout: this.skinLayout,
-				compute: { module: this.module('skin', shader), entryPoint: 'main' },
+				compute: { module: this.module('skin', shader), entryPoint: 'main', constants },
 			};
 		}
 		if (template === TEMPLATE_CULL) {

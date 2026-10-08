@@ -27,6 +27,10 @@ pub(crate) const MATERIAL_LOADER: &str = "load_material_uniforms";
 /// The name of the function that the build writes to load an effect's uniforms.
 pub(crate) const EFFECT_LOADER: &str = "load_effect_uniforms";
 
+/// The name of the function that the build writes to load an effect's uniforms in its piece, from
+/// the block at a slot that the engine's chain gives.
+pub(crate) const EFFECT_PIECE_LOADER: &str = "load_effect_piece_uniforms";
+
 /// What owns the uniforms, which decides where the loader reads them and how messages name it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Owner {
@@ -34,6 +38,9 @@ pub(crate) enum Owner {
     Material,
     /// A custom effect: the loader reads the vectors of the effect's uniform block.
     Effect,
+    /// A custom effect's piece, which a host of joined effects holds: the loader reads the vectors
+    /// of the block at the slot it takes.
+    EffectPiece,
 }
 
 impl Owner {
@@ -41,7 +48,7 @@ impl Owner {
     fn noun(self) -> &'static str {
         match self {
             Self::Material => "a custom material",
-            Self::Effect => "a custom effect",
+            Self::Effect | Self::EffectPiece => "a custom effect",
         }
     }
 }
@@ -62,6 +69,8 @@ pub struct Uniform {
 pub(crate) struct Uniforms {
     pub fields: Vec<Uniform>,
     pub loader: String,
+    /// An effect's loader for its pieces, which reads the block at a slot. Empty for a material.
+    pub piece_loader: String,
 }
 
 /// A type that a uniform can have: its name as the output gives it, its floats, and how the
@@ -192,6 +201,11 @@ pub(crate) fn read(
     }
     Ok(Some(Uniforms {
         loader: loader(&fields, owner),
+        piece_loader: if owner == Owner::Effect {
+            loader(&fields, Owner::EffectPiece)
+        } else {
+            String::new()
+        },
         fields: fields
             .into_iter()
             .map(|(name, ty, offset)| Uniform {
@@ -213,6 +227,9 @@ fn loader(fields: &[(&str, UniformType, u32)], owner: Owner) -> String {
         Owner::Effect => format!(
             "\n// The effect's uniforms, from its uniform block, as the build packed them.\nfn {EFFECT_LOADER}() -> {STRUCT} {{\n    var u: {STRUCT};\n"
         ),
+        Owner::EffectPiece => format!(
+            "\n// The effect's uniforms, from the uniform block at `slot`, as the build packed them.\nfn {EFFECT_PIECE_LOADER}(slot: u32) -> {STRUCT} {{\n    var u: {STRUCT};\n"
+        ),
     };
     let mut loaded = None;
     for (name, ty, offset) in fields {
@@ -221,6 +238,7 @@ fn loader(fields: &[(&str, UniformType, u32)], owner: Owner) -> String {
             let fetch = match owner {
                 Owner::Material => format!("custom_value(id, {part}u)"),
                 Owner::Effect => format!("effect_value({part}u)"),
+                Owner::EffectPiece => format!("effect_value_at(slot, {part}u)"),
             };
             code.push_str(&format!("    let v{part} = {fetch};\n"));
             loaded = Some(part);

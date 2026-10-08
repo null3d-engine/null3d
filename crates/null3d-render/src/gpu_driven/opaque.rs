@@ -129,6 +129,9 @@ impl Bundle {
 /// slice of the view's compacted instances and, where the bucket shades or its prepass draws with
 /// its own vertex shader, the bind group of its material's map, from its mesh page's buffers in
 /// `meshes`, into `targets`. Its draws start `first_draw` draws into the view's indirect buffer.
+/// It leaves out each bucket whose maps' group `hidden` names: a group that binds a target that
+/// the view draws into, or one that it does not read.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
@@ -137,6 +140,7 @@ pub(super) fn record_bundle(
     targets: PassTargets,
     kind: Bundle,
     first_draw: u32,
+    hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
     let frame_group = if kind == Bundle::Prepass {
         ids::prepass_group(view)
@@ -158,6 +162,7 @@ pub(super) fn record_bundle(
         meshes,
         frame_group,
         first_draw,
+        hidden,
     };
     match kind {
         Bundle::Opaque => draws.record(list, |b| b.pipeline, |_| true)?,
@@ -180,6 +185,7 @@ struct Draws<'a> {
     meshes: &'a MeshBuffers,
     frame_group: u32,
     first_draw: u32,
+    hidden: &'a dyn Fn(u32) -> bool,
 }
 
 impl Draws<'_> {
@@ -199,13 +205,14 @@ impl Draws<'_> {
             meshes,
             frame_group,
             first_draw,
+            hidden,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
         let mut groups = DrawGroups::default();
         let mut bound = None;
         for bucket in &layout.buckets {
             let id = pipeline_of(bucket);
-            if id == 0 {
+            if id == 0 || (bucket.group != 0 && hidden(bucket.group)) {
                 continue;
             }
             let own = own_of(bucket);

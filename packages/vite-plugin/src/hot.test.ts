@@ -70,8 +70,13 @@ describe('hot state', () => {
 	});
 
 	it('never swaps a custom effect or tone curve, so their edits reload the page', () => {
-		const effect = { kind: 'effect', uniforms: [], depth: false, variants: {} } as CompiledEffect;
-		const curve = { kind: 'toneCurve', variants: {} } as CompiledToneCurve;
+		const effect = {
+			kind: 'effect',
+			uniforms: [],
+			depth: false,
+			variants: {},
+		} as unknown as CompiledEffect;
+		const curve = { kind: 'toneCurve', variants: {} } as unknown as CompiledToneCurve;
 		const hot = new HotState();
 		for (const shader of [effect, curve]) {
 			expect(contractOf(shader)).toBeNull();
