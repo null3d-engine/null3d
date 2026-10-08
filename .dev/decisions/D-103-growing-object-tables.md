@@ -1,8 +1,8 @@
 # D-103: Object tables that grow on demand
 
-Status: decided by the owner on 2026-10-08 at about 00:05 (UTC+8): option (d), tables that grow. The coordinator set a small start at about 00:55, so that small games stay small. Timed on the Mac on 2026-10-08. The phone figures are estimates, not runs. Date: 2026-10-08. Task: M2-L3 needs it.
+Status: decided by the owner on 2026-10-08 at about 00:05 (UTC+8): option (d), tables that grow. The coordinator set a small start at about 00:55, so that small games stay small. Timed on the Mac, the Galaxy S25 and the Pixel 9 on 2026-10-08. Date: 2026-10-08. Task: M2-L3 needs it.
 
-Summary: The scene's object tables start with room for 1,023 objects, not 16,383. They double when the scene needs more, up to 1,048,575, the most that a handle names. A small scene's engine memory is 6.2 to 6.5 MB smaller. A growth copies 263 bytes per object: 1 ms from 16,383 to 32,767 objects in Chrome on the Mac. It comes at a frame's start once the scene is three quarters full, or at a create call that finds it full. The `expectedObjects` option sizes the tables from the start.
+Summary: The scene's object tables start with room for 1,023 objects, not 16,383. They double when the scene needs more, up to 1,048,575, the most that a handle names. A small scene's engine memory is 6.2 to 6.5 MB smaller. A growth copies 263 bytes per object. From 16,383 to 32,767 objects it takes 1 ms in Chrome on the Mac, and 2.4 to 5.3 ms on the Galaxy S25 and the Pixel 9. It comes at a frame's start once the scene is three quarters full, or at a create call that finds it full. The `expectedObjects` option sizes the tables from the start.
 
 ## Question
 
@@ -71,9 +71,32 @@ The core's copy alone took these times in a native release build on the Mac (`gr
 
 In Chrome the first growth took longer than the second in every run, and these runs do not show why. Every growth to 16,383 objects or fewer costs under 1 ms on the Mac.
 
-Estimate for phones, with no device run: the copy is bound by memory speed. Take the S24+ and the iPad as 2 to 4 times slower than the Mac at it. A growth to 32,767 objects should then take about 2 to 4 ms there, and one to 65,535 about 4 to 8 ms. A device run of `tests/pages/object-growth.html?timing` would replace these estimates. The device runner's `object-growth` plan runs that page three times on each GPU path, and its summary gives the tables above ([Device sessions](../devices.md#the-object-growth-plan)).
+The device runner's `object-growth` plan runs `tests/pages/object-growth.html?timing` three times on each GPU path, and its summary gives the tables above ([Device sessions](../devices.md#the-object-growth-plan)).
 
-The plan's first run, in Chrome 155 on the Mac on 2026-10-08 at a 1-minute load of 7.7, passed 6 of 6 loads. It gave 0.98 to 1.07 ms on WebGPU and 0.91 to 0.97 ms on WebGL2 for the growth from 16,383 to 32,767 objects, and 1.55 to 1.83 ms and 1.62 to 1.87 ms for the growth to 65,535. Those agree with the table above. The growths to 8,191 objects or fewer took 0.06 to 0.37 ms, less than the table's, and the first growth again varied the most. The engine memory was 22.8 to 22.9 MB on WebGPU and 23.5 to 23.6 MB on WebGL2 with the default start, and 29.3 to 29.4 MB and 30.1 MB with room for 16,383 objects.
+The plan's first run, in Chrome 155 on the Mac on 2026-10-08 at a 1-minute load of 7.7, passed 6 of 6 loads. The growth from 16,383 to 32,767 objects took 0.98 to 1.07 ms on WebGPU and 0.91 to 0.97 ms on WebGL2. The growth to 65,535 took 1.55 to 1.83 ms and 1.62 to 1.87 ms. Those agree with the table above. The growths to 8,191 objects or fewer took 0.06 to 0.37 ms, less than the table's, and the first growth again varied the most. With the default start, the engine memory was 22.8 to 22.9 MB on WebGPU and 23.5 to 23.6 MB on WebGL2. With room for 16,383 objects, it was 29.3 to 29.4 MB and 30.1 MB.
+
+### The cost of a growth on phones
+
+Before the phone runs, this record estimated that a phone copies 2 to 4 times slower than the Mac. That made a growth to 32,767 objects about 2 to 4 ms, and one to 65,535 about 4 to 8 ms. The `object-growth` plan replaced the estimates on 2026-10-08, in Chrome 152 on BrowserStack Automate. Both phones passed 6 of 6 loads: 3 on WebGPU and 3 on WebGL2. Each cell is the lowest to the highest of the 3 loads.
+
+| Growth | S25, WebGPU | S25, WebGL2 | Pixel 9, WebGPU | Pixel 9, WebGL2 |
+| --- | --- | --- | --- | --- |
+| 1,023 to 2,047 | 0.20 to 1.48 ms | 0.25 to 1.01 ms | 0.32 to 1.95 ms | 0.54 to 2.13 ms |
+| 2,047 to 4,095 | 0.19 to 0.35 ms | 0.18 to 0.19 ms | 0.34 to 0.58 ms | 0.25 to 1.02 ms |
+| 4,095 to 8,191 | 0.19 to 0.37 ms | 0.20 to 0.25 ms | 0.32 to 0.49 ms | 0.23 to 0.64 ms |
+| 8,191 to 16,383 | 0.43 to 0.71 ms | 0.42 to 0.53 ms | 0.66 to 1.73 ms | 0.67 to 1.07 ms |
+| 16,383 to 32,767 | 2.84 to 3.28 ms | 2.35 to 2.44 ms | 4.22 to 5.24 ms | 3.52 to 5.30 ms |
+| 32,767 to 65,535 | 4.10 to 4.88 ms | 4.42 to 5.17 ms | 5.91 to 9.63 ms | 8.98 to 10.17 ms |
+
+The runs are `20261008-010432-object-growth` on the Galaxy S25 and `20261008-010728-object-growth` on the Pixel 9.
+
+- The Galaxy S25 is inside both estimates: 2.35 to 3.28 ms to 32,767 objects, and 4.10 to 5.17 ms to 65,535.
+- The Pixel 9 is above both. A growth to 32,767 objects took 3.52 to 5.30 ms, up to 1.3 ms more than the estimate. One to 65,535 took 5.91 to 10.17 ms, up to 2.2 ms more. Its times also spread more from load to load.
+- Every growth to 16,383 objects or fewer took under 2.2 ms on both phones. As on the Mac, the first growth varied the most.
+
+What the Pixel 9's times mean for a game: a frame at 60 Hz has 16.7 ms. A growth in play adds its time to the frame in which it comes. A growth to 65,535 objects takes up to 10.2 ms on the Pixel 9, so it uses more than half of that frame. If the sketch's own work fills the rest, that frame shows late, and the player sees one hitch. A growth to 32,767 takes up to 5.3 ms, about a third of a frame. Each growth doubles the room, so a scene that grows in play pauses once per doubling, not every frame. The rules of this record therefore stay. A game that creates its objects in its setup does not see the growths. A game that passes 16,383 objects during play should set `expectedObjects` to the size it will reach. Its tables then never grow in play.
+
+The phones' engine memory with the default start was 9.2 to 11.1 MB, and 17.6 to 19.7 MB with room for 16,383 objects. The default start saved about 7.3 to 8.6 MB there. The engine's memory is smaller on the phones than on the Mac, and these runs do not show why.
 
 ## Options
 
