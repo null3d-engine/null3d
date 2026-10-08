@@ -290,6 +290,7 @@ A run folder holds every page's full result, with frames and images, and stays o
 
 - The CI comparison leaves S6 out (`COMPARED_SCENES` in `bench/run.ts`) until it runs at a pinned preset.
 - On the Mac: `bun run bench:run --scenes s6 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,threejs-webgl,scene-code`.
+- `?occlusion-turns` on null3D's page runs T-36 in place of the timed run. Software occlusion culling runs off and on in turns over the same stretches of the route. Then the page checks at stops along it that the culling hides nothing that shows, with the camera at rest. The device runner's `occlusion-s6` plan runs it ([Devices](devices.md#the-s6-occlusion-plan), [D-22](decisions/D-22-occlusion-presets.md#software-occlusion-culling-on-webgl2)).
 - The report adds a table of each page's load, with the medians of its runs. It gives the times from the page's start to the first frame and to the whole city. It also gives when each model file arrived, and the megabytes of content downloaded. Each run loads in a fresh window of one browser, whose cache may still hold the files, and a local server sends them. So the times count the work after the download more than the download itself.
 
 ## Shadows

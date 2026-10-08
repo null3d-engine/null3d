@@ -63,6 +63,16 @@ So `rg11b10ufloat` cannot turn alpha into coverage. PlayCanvas reads the specifi
 - three.js's shadows ignore vertex alpha: its depth material copies the map and `alphaTest` alone. null3D cuts the vertex alpha too, which glTF's `COLOR_0` alpha means. So the parity scene casts only from the cards that their map cuts (`?ringShadows=off`), and the other shadow tests keep null3D's own references.
 - `gltf-alpha-modes` changed its references, as its `MASK` materials now take alpha to coverage. Its twin turns `alphaToCoverage` on for materials with an alpha test. No other existing reference changed, on either reference set. The runs covered the image tests of alpha, transparency, glTF, sprites, points, custom materials, blending, skinning, shadows, demos, standard materials and outlines.
 
+### The color space that blending works in
+
+Added 8 October 2026 (M2-R6). Until then the materials page said that null3D's blending matches three.js's. That holds for one of three.js's renderers only. three.js 0.186's source shows the two:
+
+- `WebGPURenderer` draws into a render target in the working color space, which is linear, whenever it tone maps or encodes the output (`needsFrameBufferTarget` in `renderers/common/Renderer.js`). An output pass then tone maps and encodes. So it blends in linear color before the tone mapping, as null3D's HDR path does.
+- `WebGLRenderer` tone maps and encodes sRGB at the end of each material's shader, and the canvas's 8-bit buffer blends the encoded values. The sRGB curve is concave, so the encoded mix is never lighter than the linear mix: a see-through surface over another color looks darker there than in null3D, and an additive glow stronger.
+- null3D's 8-bit path tone maps and encodes in each shader too, so there it blends as `WebGLRenderer` does.
+
+The parity scenes still pass because their `WebGLRenderer` frames draw into an sRGB render target (`readFrame` in `bench/pages/threejs/harness.ts`). The GPU then encodes after the blend, so `WebGLRenderer` blends in linear color there too. A port that draws `WebGLRenderer` into the canvas sees the difference. The materials page, the mapping entry for `blending` and the port skill's materials table say so.
+
 ### A fault found on the way
 
 WebGPU builds a pipeline that draws depth only with no fragment stage, which the depth template never needed. The cutout templates need theirs to discard, so their templates keep it (`depthFragment`). Before that, every masked caster on WebGPU cast its whole shape, with no error.

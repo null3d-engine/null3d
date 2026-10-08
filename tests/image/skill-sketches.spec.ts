@@ -1,7 +1,8 @@
-// Draws each complete sketch that the agent skills show in the engine's hold mode, on every GPU
-// tier: it must set up, step and draw without an error. A sketch that picks a camera must also show
-// more than its background, because code that runs can still draw nothing. The unit tests type
-// check the same sketches. Sketches under a heading that names a later version are left out.
+// Draws each complete sketch that the agent skills and the docs' cookbook show in the engine's hold
+// mode, on every GPU tier: it must set up, step and draw without an error. A sketch that picks a
+// camera must also show more than its background, because code that runs can still draw nothing.
+// The unit tests type check the same sketches. Sketches under a heading that names a later version
+// are left out.
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { watchConsole } from '../../packages/cli/src/page.js';

@@ -281,6 +281,9 @@ pub trait FrameBuilder {
     /// Turns software occlusion culling on or off from the next frame on, where the builder culls
     /// on the CPU. Elsewhere it does nothing.
     fn set_software_occlusion(&mut self, _on: bool) {}
+    /// Sets the pixels that software occlusion culling's buffer holds about, or 0 for the core's
+    /// default, where the builder culls on the CPU. Elsewhere it does nothing.
+    fn set_occlusion_buffer(&mut self, _pixels: u32) {}
     /// Gives mesh `mesh`, by its id that counts from 1, a blocker of its own for software
     /// occlusion culling, where the builder culls on the CPU. Elsewhere it does nothing. Fails
     /// only when memory cannot grow.

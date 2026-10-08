@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps and backgrounds from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with environment maps, backgrounds, fog and light units from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -131,6 +131,8 @@ Because each light is an object, it moves, turns, hides and has a parent the way
 
 Point and spot lights that move in most frames should be dynamic, with `dynamic: true`, as any object that moves in most frames should be. [Static and dynamic objects](static-dynamic.md) explains the choice.
 
+A glTF file's lights (`KHR_lights_punctual`) become directional, point and spot lights in each copy of the model, in the same units. A light on a node that a clip moves is left out ([Animation](../api/animation.md#models-from-gltf-files)).
+
 ## Lights far from the origin
 
 The engine keeps each object's position relative to a grid cell, a cube of space about 1 km wide. Scenes far from the origin then stay precise. Lights take part too. Each frame the engine finds every point and spot light's position relative to the camera, with the offset between their cells in 64-bit floats. A lamp 1,000 km from the origin is then as precise, next to the camera, as a lamp at the origin.
@@ -206,7 +208,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - A map of the default size takes 2 MB of GPU memory. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 the cube map takes one of the 16 texture units that a fragment shader may use. A standard material with all eight maps, an alpha mask and shadows uses all 16.
+- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 12 of them, the cube map included, so four stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
 
 The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 
@@ -262,9 +264,14 @@ The sky lights nothing. For light that matches it, add a directional light along
 - Only environments blur. three.js blurs a cube texture by turning it into a PMREM texture first. For a background that blurs, load an environment with `assets.loadEnvironment`.
 - `WebGLRenderer` draws an sRGB cube texture without exposure and tone mapping. The engine changes every background with them, as three.js's `WebGPURenderer` does.
 
+## Lights in scene passes
+
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient light, the environment and the fog. It draws the sun's shadows where the camera's cascades reach. It draws no point or spot lights and no sky. Its texture clears to the pass's `clearColor`, which is the scene's background color by default.
+
 ## Related pages
 
 - [Lights](../api/lights.md): the calls and options of each kind of light.
+- [Shadows](shadows.md): shadow cascades, the shadow atlas of spot and point lights, and cut-out shadows.
 - [Scene](../api/scene.md#fog): the fog's options.
 - [Objects and transforms](../api/objects.md): the calls that lights share with every object.
 - [Render layers](render-layers.md): which cameras a light lights.

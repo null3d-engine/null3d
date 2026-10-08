@@ -52,6 +52,8 @@
 		"gate": "bun bench/gate.ts",
 		"readme-media": "bun bench/readme-media.ts",
 		"dev": "vite",
+		"examples:build": "vite build --config examples/vite.build.config.ts",
+		"examples:preview": "vite preview --config examples/vite.build.config.ts",
 		"dev-cert": "bun tools/dev-cert.ts",
 		"android": "adb reverse tcp:5173 tcp:5173",
 		"release": "bun tools/release.ts"
