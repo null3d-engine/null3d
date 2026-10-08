@@ -2,7 +2,7 @@
 
 Status: decided by the owner on 2026-10-08 (UTC+8) for the object limit, the load and the layout fix. Pending: the Mac timing, which waits for a quiet Mac, and the owner's choice of a CI check of the streamed load ([below](#pending-for-the-owner-a-ci-check-of-the-streamed-load)). Also pending: the device runs on the iPad, the S24+ and the cloud phones, and load times on a network. Date: 2026-10-08. Task: M2-L3.
 
-Summary: S6 builds two model files from the sample content's city layout. It loads them in two stages, kit models first and towers second, with no engine change. Its 20,738 objects needed more than the 16,383 that one engine held. So the engine's object tables grow on demand ([D-103](D-103-growing-object-tables.md)), and S6's page asks for room for 21,000 at its start. The optimized city takes 37.5 MB to download and 87 MB of GPU memory as ETC2 or ASTC. Texture sharing between model files becomes a task of its own.
+Summary: S6 builds two model files from the sample content's city layout. It loads them in two stages, kit models first and towers second, with no engine change. Its 20,738 objects needed more than the 16,383 that one engine held. So the engine's object tables grow on demand ([D-103](D-103-growing-object-tables.md)), and S6's page asks for room for 21,000 at its start. The optimized city takes 37.5 MB to download and 87 MB of GPU memory as ETC2 or ASTC. Texture sharing between model files becomes a task of its own. Later the same day, the towers became one mesh per material, with float positions, and the city 19,089 objects ([addendum](#addendum-2026-10-08-one-tower-mesh-per-material)).
 
 ## Question
 
@@ -128,7 +128,7 @@ The tower file's meshes after the asset tool, without textures, owner's Mac, 8 O
 | One mesh per material, floats (chosen) | 200 | 32-bit floats | 0.015 mm | 0.003 mm | 0 | 801,456 |
 
 - A box with its own mesh kept errors under 2 mm: its longest side set its steps, and its shorter sides fell between steps.
-- The floats add 156 KB to the merged file, and the merge saves 2.1 MB against one mesh per box. Most of that saving is the 1,849 blockers, 20,460 triangles, that the old file stored.
+- The whole optimized tower file, as the pages load it, went from 2,966,784 to 842,132 bytes, besides its 33 MB of textures, which did not change. The floats add 156 KB to the merged file, and the merge saves 2.1 MB against one mesh per box. Most of that saving is the 1,849 blockers, 20,460 triangles, that the old file stored.
 - The tool's blockers: before, 1,705 boxes got a box blocker and the 144 ground slabs none. After, none of the 200 meshes fits a blocker, so all 200 block with their own triangles, the slabs among them.
 
 ### Options
@@ -139,3 +139,30 @@ The tower file's meshes after the asset tool, without textures, owner's Mac, 8 O
 | (b) Merged meshes in tiles, such as 100 m squares, quantized | Steps of 6 mm or less | More draws; still not exact; a generator of tiles |
 | (c) Merged meshes with float positions, set per mesh (chosen) | Exact corners; any tool user can choose it for such a mesh | 156 KB more for the towers |
 | (d) A tool option for all meshes of a file | One flag | Every mesh of the file pays, the kit's included |
+
+### Software occlusion on WebGL2: the towers crowd out the kit's blockers
+
+The WebGL2 path draws blockers nearest first, by the nearest point of each object's bounding sphere, up to 16,384 triangles a frame ([D-50](D-50-blockers-and-stored-trees.md)). A tower mesh's sphere centres on its node and reaches its farthest box, up to about 400 m. So the camera stands inside most of those spheres, and each counts as 0 m away. The tower meshes in view then draw first, all their boxes, near and far, and fill most of the budget. The kit buildings near the camera no longer fit.
+
+A replay of the engine's choice along the whole route, one frame a second for the 187 s loop, with the Mac's bench window of 1,400 x 800, gave these figures per frame. It takes the blockers from both optimized files and the rules of `crates/null3d-render/src/occlusion.rs`.
+
+| Per frame, median (90th percentile) | One mesh per box (before) | One mesh per material |
+| --- | --- | --- |
+| Kit blockers drawn | 274 (327) | 12 (230) |
+| Kit blocker triangles | 15,944 (16,356) | 468 (14,104) |
+| Tower blockers drawn | 33 (269) | 129 (161) |
+| Tower blocker triangles | 396 (3,228) | 15,744 (16,200) |
+| Distance where the budget ran out | 127 m (151 m) | 0 m (109 m) |
+| Kit blockers drawn before and not now | | 254 (306), of which 47 (81) within 50 m |
+
+The engine's own counts agree. One run of S6 on WebGL2 per build, at the Mac's preset (Medium, which WebGL2 caps), 10 seconds from the route's start, the Mac's load about 12. These are counts, not timings:
+
+| Per frame, median | One mesh per box (before) | One mesh per material |
+| --- | --- | --- |
+| Index list entries that occlusion hid | 2,550 | 524 |
+| Index list entries drawn | 3,072 | 5,566 |
+| Draw calls, all passes | 1,147 | 1,092 |
+
+So occlusion hides about 80% fewer entries, and the merge saves fewer draws on WebGL2 than the 1,971 to 322 of a pass suggests. The occlusion rules stay as they are in this change, by the owner's brief.
+
+Proposed fix, an engine task of its own: give each blocker one candidate per part, not per object. When the engine builds a blocker mesh, it splits the welded triangles into their connected parts and keeps a bounding sphere for each. The frame's pick then sorts the parts of every blocker by their own nearest points, so each box of a tower mesh competes as a box did before. For S6 that comes close to the figures of one mesh per box: up to 1,849 tower parts of 12 triangles or more, against 1,705 box blockers before. Boxes whose corners meet weld into one part. A blocker of one closed part, such as a kit building, stays one candidate. The asset tool needs no change.
