@@ -105,6 +105,7 @@ Labels take the place of three.js's `CSS2DRenderer` and `CSS2DObject`, and of dr
 - [Cameras](cameras.md): `worldToScreen` places a single point on the canvas.
 - [Engine](engine.md): `createEngine` and its `maxLabels` option.
 - [Sketch](sketch.md): the sketch's context, which holds `ui`.
+- [The picking demo](https://github.com/null3d-engine/null3d/tree/main/examples/picking): labels on shapes that turn, which a click selects.
 
 ## API reference
 

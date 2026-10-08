@@ -1657,6 +1657,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			name: `demo-${demo.name}`,
 			sketch: `examples/${demo.name}/sketch.ts`,
 			hold: demo.hold,
+			...(demo.largeWorld && { switches: ['largeWorld'] }),
+			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
