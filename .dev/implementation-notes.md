@@ -489,6 +489,13 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 - WebGPU's first frame builds the pass's three pipelines whether or not the scene has lights, so play builds none.
 - The render crate's tests write a fixture of light grids for the `light-clusters` page. Linux's math library rounds tangents, logarithms and powers in its own way. So the fixture's parameters may differ from the Mac's by a millionth of their size. The counts, lights and grids must match exactly.
 
+## Writes that skip a mark
+
+- Development builds report E1110 for a static object whose position, rotation, scale or bounding sphere changed without a setter. They check before each transform update, the late one included (M1-B5, #93, #84, #164).
+- They also report a row of a static instance, sprite or point batch that changed without `markDirty` (M2-R6). The core's update of the batches clears their marks, so the check runs right before it, after the late update. It reads the marks through the batch field `DIRTY_WORDS` of `batchArrays`.
+- The check of objects reads every static object in each frame. Rows can number hundreds of thousands, so the row check takes turns: it hashes at most 8,192 rows of each batch per frame (`ROWS_PER_CHECK`). In Bun on the MacBook Pro, a check of every row of a batch of 100,000 rows took 1.4 to 1.5 ms. The slice took 0.18 ms. A cheaper hash did not change the time. A row's hash may change between its turns, after the core has cleared a mark. So in each frame the check adds the core's marks to marks of its own, one bit a row, and clears a row's bit only when it hashes that row. A row marked and then written again without a mark before its turn goes unreported. That is the price of the bounded time.
+- Line batches are left out. Their `markDirty` counts points, while the core marks segments, and the row arrays hold points. A check of them would need its own map from points to segments.
+
 ## Raycasts and overlap queries
 
 - Every query checks its input in every build, in `packages/engine/src/scene/queries.ts`. Most API checks run in development builds only. Bad query input once aborted the engine in production builds, so these checks stay. [D-30](decisions/D-30-scene-queries.md#addendum-2026-10-04-input-checks-in-every-build-and-late-moves) gives their cost.

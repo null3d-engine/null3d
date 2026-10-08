@@ -23,7 +23,7 @@ export const ERROR_FIXES = {
 	E1109:
 		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Split a mesh of millions of vertices into smaller meshes, or simplify it. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
 	E1110:
-		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. If your code writes no engine memory, this is an engine bug: report it with the message.',
+		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. For a row of a static batch, call markDirty(start, count) on the batch after you write its arrays, or create the batch with dynamic: true. If your code writes no engine memory, this is an engine bug: report it with the message.',
 	E1111:
 		'Destroy the objects and instance batches that use the mesh or model first, with destroy() on each. Then destroy the mesh or model, in the same frame or later. Destroying the group that scene.instantiate() returned takes the whole copy of a model. To keep an object and drop its mesh, give it another mesh with setMesh() first.',
 	E1203:

@@ -941,6 +941,12 @@ export class SketchRunner {
 		}
 		if (this.followEffects()) restart = true;
 		if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
+		// Development builds first report static batch rows written without markDirty, because the
+		// batch update clears the marks.
+		if (DEV) {
+			const unmarked = this.context.scene.unmarkedRows?.check();
+			if (unmarked) this.report(unmarked);
+		}
 		glue.updateBatches(frame);
 		if (!this.cellsWarned && glue.cellsRefused() !== 0) {
 			this.cellsWarned = true;

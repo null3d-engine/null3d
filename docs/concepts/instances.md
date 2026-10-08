@@ -125,7 +125,7 @@ trees.rotations.set(q, 42 * 4);
 trees.markDirty(42, 1); // recompute and upload row 42 only
 ```
 
-A mark past the batch's capacity throws [E1108](../errors/E1108.md). A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
+A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds check the rule. Before each batch update, they note the marked rows, and compare up to 8,192 drawn rows of each static batch with the values they read before. The next frame takes the next rows, so the check finds a write within a few frames, and costs a bounded time per frame. A row that changed without a mark raises [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check. Release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
 
 ## Pools: draw only the rows in use
 
