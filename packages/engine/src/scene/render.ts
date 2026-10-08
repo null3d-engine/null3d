@@ -163,7 +163,7 @@ export class Render {
 	 * A scene pass draws the sun, its shadows where the main camera's cascades reach, the ambient
 	 * light, the point and spot lights that its camera sees, the environment's light and fog. A
 	 * point or spot light casts its shadow in the pass where the main camera's view gives it a
-	 * shadow, so a light that only the pass sees casts none there. A pass does not draw ambient
+	 * shadow. A light that only the pass sees casts none there. A pass does not draw ambient
 	 * occlusion or the sky background yet.
 	 *
 	 * Throws E1220 for options it does not take, a name that a live pass writes already, or the

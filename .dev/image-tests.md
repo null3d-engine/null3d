@@ -44,7 +44,7 @@ Each demo in `examples/` is a sketch that the examples page runs live and the ma
 - Demos load sample content through `sampleUrl('...')` with a string literal, so the sample check finds each file. On a new machine, run `bun run samples:fetch` before the dev server shows them.
 - A demo can post a `label` message with `{ id, text, active }`. The examples page then makes an element for the label, binds it with `engine.labels.bind`, and shows the text. The picking demo uses this. The image tests read only the engine's pixels, so they do not show labels.
 - The demos use only lights that light surfaces now: no hemisphere lights, which are stored but do not light yet. On 8 October 2026, three demos with hemisphere lights drew their scenes much darker than planned.
-- A demo with a scene pass may light its scene with point and spot lights: a pass draws the ones that its camera sees ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). A light that only the pass sees casts no shadow in it. Until 8 October 2026 passes drew no such lights, so the demos of that day light their passes' scenes with the sun, the ambient light and the environment only.
+- A demo with a scene pass may light its scene with point and spot lights. A pass draws the ones that its camera sees ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). A light that only the pass sees casts no shadow in it. Until 8 October 2026 passes drew no such lights. So the demos of that day light their passes' scenes with the sun, the ambient light and the environment only.
 
 Checks of the demos, made on 8 October 2026 while M2-L5 made them:
 

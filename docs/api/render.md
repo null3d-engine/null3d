@@ -61,7 +61,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a scene pass draws
 
-A scene pass draws the scene's objects with their materials, the sun, its shadows where the camera's shadow cascades reach, the ambient light, the point and spot lights that its camera sees, the environment's light and the fog. A point or spot light casts its shadow in the pass when the camera's view gives it one, so a light that only the pass sees casts no shadow there. In this version a pass draws no ambient occlusion and no sky background, and it culls each frame in one pass, without occlusion culling. Its texture clears to `clearColor` instead of the sky.
+A scene pass draws the scene's objects with their materials and the fog. It draws the sun, its shadows where the camera's shadow cascades reach, the ambient light and the environment's light. It also draws the point and spot lights that its camera sees. Such a light casts its shadow in the pass when the camera's view gives it one. A light that only the pass sees casts no shadow there. In this version a pass draws no ambient occlusion and no sky background. It culls each frame in one pass, without occlusion culling. Its texture clears to `clearColor` instead of the sky.
 
 ### Switching and removing passes
 

@@ -506,7 +506,7 @@ render.removePass(map);              // destroys its textures
 render.dumpGraph();                  // Graphviz DOT text of the compiled graph, for debugging
 ```
 
-- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light, the point and spot lights its camera sees, and fog, but no ambient occlusion and no sky for now. A light that only the pass sees casts no shadow there.
+- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light, fog, and the point and spot lights its camera sees. It draws no ambient occlusion and no sky for now. A light that only the pass sees casts no shadow there.
 - Full-screen passes of your own WGSL come later in 0.2: use `post.addEffect` for now.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.
