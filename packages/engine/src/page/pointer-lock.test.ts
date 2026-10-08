@@ -56,6 +56,18 @@ describe('requestPointerLock', () => {
 		);
 	});
 
+	it("ends the reason with one full stop when the browser's message ends with one", async () => {
+		const { canvas } = stage(() =>
+			Promise.reject(
+				new DOMException('The root document of this element is not valid.', 'WrongDocumentError'),
+			),
+		);
+		const error = await requestPointerLock(canvas).catch((error: Error) => error);
+		expect((error as Error).message).toStartWith(
+			'E1425: the browser refused the pointer lock: WrongDocumentError: The root document of this element is not valid. ',
+		);
+	});
+
 	it('fails with E1425 on the error event, in browsers that give no promise', async () => {
 		const { canvas } = stage((_canvas, document) => {
 			setTimeout(() => document.dispatchEvent(new Event('pointerlockerror')));

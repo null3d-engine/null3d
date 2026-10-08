@@ -71,6 +71,8 @@ Known differences, which [Camera controls](../../docs/api/controls.md#difference
 
 The unit tests feed the same scripted input to null3D's controls and to three.js's, and compare the poses after each frame. Fly controls have 7 such tests, and first-person controls 11. A browser test locks the pointer in Chrome and checks that the engine's first-person controls reach the pose of three.js's `PointerLockControls` on the same canvas.
 
+That test runs in Playwright's full Chromium build in Chrome's own headless mode, not in Playwright's headless shell, which the other SwiftShader tests use. The headless shell, Chromium 153 with Playwright 1.63, gets the lock wrong in two ways. On Linux, as in CI, it grants the lock. But each mouse move under the lock reports the pointer's position as its movement, and then the same movement back. The moves add up to nothing, so neither camera turned, and the test failed in CI. On a Mac it refuses the lock with `WrongDocumentError`. Playwright's mouse cannot set the movement itself, as Chrome DevTools' mouse event has no movement field. The full build reports the movement as Google Chrome does, on Linux and on a Mac. The browser's own reason can end with a full stop, as `WrongDocumentError`'s does, so E1425's message drops it before adding its own.
+
 ## Consequences
 
 - `shared/control.ts` gains `EVENT_POINTER_LOCK` and `FLAG_LOCKED`. `page/input.ts` writes them, `sketch/input.ts` reads them, and `InputPointer` gains `locked`.

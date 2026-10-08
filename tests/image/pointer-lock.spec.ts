@@ -6,6 +6,18 @@
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
+// Playwright's headless shell, the default Chromium of the SwiftShader runs, gets the lock wrong. On
+// Linux, as in CI, each move under the lock reports the pointer's position as its movement, and then
+// the same movement back, so the moves add up to nothing. On a Mac it refuses the lock. Playwright's
+// full Chromium build, in Chrome's own headless mode, locks and reports the movement as Google Chrome
+// does. So these tests run in it, where the environment names no browser of its own.
+test.use({
+	channel: [
+		async ({ launchOptions }, use) => use(launchOptions.channel ?? 'chromium'),
+		{ scope: 'worker' },
+	],
+});
+
 interface Pose {
 	rotation: number[];
 	locked: boolean;

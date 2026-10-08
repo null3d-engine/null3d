@@ -18,10 +18,18 @@ export interface PointerLockOptions {
 	unadjustedMovement?: boolean;
 }
 
-/** The name and message of a refusal, or the cause the page gives when the browser gives none. */
+/**
+ * The name and message of a refusal, or the cause the page gives when the browser gives none,
+ * without a closing full stop, which the engine's message adds.
+ */
 function reason(error: unknown): string {
-	if (error instanceof Error) return error.message ? `${error.name}: ${error.message}` : error.name;
-	return String(error);
+	const text =
+		error instanceof Error
+			? error.message
+				? `${error.name}: ${error.message}`
+				: error.name
+			: String(error);
+	return text.replace(/\.+$/, '');
 }
 
 /** Resolves once the canvas holds the pointer lock. Fails with E1425 when the browser refuses it. */
