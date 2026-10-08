@@ -245,19 +245,21 @@ Seven glTF sample models play their clips as three.js plays them. Each joint's s
 
 A skinned mesh's vertices follow the joints of an animated object. Each vertex names up to four joints, with a weight for each. Its skinned place is the sum of its joints' skinning matrices applied to it, each times its weight. The mesh's own world matrix then places it, as three.js draws a `SkinnedMesh`.
 
-On WebGPU, a compute pass skins each skinned mesh once per frame, before the shadow passes and the scene passes. Those passes then draw the skinned vertices as a plain mesh, so every material skins, custom materials included. A skinned mesh that no view draws in a frame, neither the camera nor a shadow cascade, is not skinned in that frame. A skinned mesh whose pose and morph weights did not change since its last skin is not skinned either. So a character that stands still, or whose clips are paused, costs no skinning work, and neither does moving it in its pose.
+On both paths, the vertex shader of each pass that draws a skinned mesh skins it, as three.js does. The shadow passes skin it again. On the devices that the engine was measured on, this was as fast as skinning once per frame, or faster. On WebGPU that was a compute pass, and on WebGL2 transform feedback. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. On WebGL2, skinned meshes that share a mesh and a material draw in one instanced draw, so a crowd costs few draw calls.
 
-On WebGL2, which has no compute shaders, the vertex shader of each pass that draws a skinned mesh skins it, as three.js does. The shadow passes skin it again. On the phones and tablets that the engine was measured on, this was faster than skinning once per frame with transform feedback. Every material skins there too, custom materials included. Skinned meshes that share a mesh and a material still draw in one instanced draw, so a crowd costs few draw calls. Each frame uploads every animated object's skinning matrices to one float texture, 48 bytes per joint.
+On WebGPU, a compute pass, the skinning pass, skins two kinds of mesh once per frame instead. It runs before the shadow passes and the scene passes. The first kind is morphed meshes, which it morphs first. The second is meshes whose material has no skinning build of its vertex shader: custom materials and the debug views. The passes then draw the skinned vertices as a plain mesh, so every material skins, custom materials included. The pass skips a mesh that no view draws in a frame, neither the camera nor a shadow cascade. It also skips a mesh whose pose and morph weights did not change since its last skin. The `?skinning=compute` switch makes the pass skin every skinned mesh, to compare the two ways ([Testing](../guides/testing.md#switches-for-tests)).
+
+On WebGL2, every material skins in the vertex shader, custom materials included.
 
 A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds. The work is one matrix product per joint, however many vertices the mesh has. Skinned meshes cast and receive shadows that follow their poses.
 
 ### Limits of skinning
 
-- On WebGPU, each skinned copy keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. A knight of the S5 benchmark takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB. A morphed mesh takes the same room, as the skinning pass morphs it there.
+- On WebGPU, each copy that the skinning pass skins or morphs keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. With `?skinning=compute`, a knight of the S5 benchmark takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB.
 - Those vertices fill at most 8 GPU buffers, each as large as the device lets a shader read. That is 1 GiB in all at WebGPU's default limit of 128 MiB per buffer.
 - Skinned meshes fill at most 32 mesh buffers. Each mesh buffer holds meshes with one set of vertex attributes, up to that same size.
 - A scene past either limit draws nothing in its frames, and gives [E1501](../errors/E1501.md), which names the limit. The canvas keeps the last whole frame, and the scene draws again once it fits.
-- WebGL2 skins in the vertex shader, so it has neither limit.
+- Meshes that the vertex shaders skin count toward neither limit, on WebGPU or on WebGL2.
 - The engine's animation table holds 65,536 joints in all, for every animated object.
 
 ## Morph targets
@@ -298,7 +300,7 @@ A morphed object culls with a sphere that its weights grow: each target's longes
 | `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; `mesh.mesh.morphTargetNames` lists the names in order |
 | `geometry.morphAttributes.position`, with `morphTargetsRelative = true` | `geometry.fromArrays({ ..., morphTargets: { positions } })` |
 | `geometry.morphAttributes.color` | `geometry.fromArrays({ ..., colors, morphTargets: { colors } })` |
-| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it. WebGL2 skins in the vertex shader of each pass, as three.js does |
+| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | The same on both paths. On WebGPU, the skinning pass skins morphed meshes and custom materials' meshes once per frame instead |
 
 Where three.js and null3D differ:
 

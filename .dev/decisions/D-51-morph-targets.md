@@ -36,7 +36,7 @@ The weights stay 32-bit floats, in a texture of their own. Each frame uploads on
 
 | GPU path | Where | Why |
 | --- | --- | --- |
-| WebGPU, both tiers | In the skinning pass, before the joints. An object that only morphs goes through the pass too | The pass already writes each skinned mesh's vertices once per frame, and every pass then draws them. Each template, custom materials' too, draws morphed meshes as they are, with no MORPH build. `?skinning=vertex` still morphs in the pass, as WebGPU has no MORPH build |
+| WebGPU, both tiers | In the skinning pass, before the joints. An object that only morphs goes through the pass too | The pass already writes each skinned mesh's vertices once per frame, and every pass then draws them. Each template, custom materials' too, draws morphed meshes as they are, with no MORPH build. Since the vertex shaders became WebGPU's default way to skin ([D-20](D-20-webgpu-skinning.md)), a morphed object still goes through the pass, as WebGPU has no MORPH build |
 | WebGL2 | In the vertex shader of each pass that draws the mesh, under the MORPH bit, before skinning | WebGL2 has no compute pass. D-10 measured transform feedback slower than skinning in the vertex shader, and morphing reads the same kind of data |
 
 On WebGL2 the texture of deltas takes binding 6 of the instance group, and the texture of weights binding 7. They follow the joint texture and the texture of first joints. The texture of first joints has a second half of rows: the first weight texel of each instance's object. A crowd of one morphed mesh therefore still draws in one instanced draw per part. Group 3's slots start two later (22). On WebGPU the skinning pass's group binds the two textures at bindings 4 and 5.

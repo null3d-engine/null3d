@@ -427,8 +427,8 @@ pub struct RendererConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
-    /// Where to skin skinned meshes: once per frame in the skinning pass, with its savings, or in
-    /// the vertex shader of each pass that draws them.
+    /// Where to skin skinned meshes: in the vertex shader of each pass that draws them, or once
+    /// per frame in the skinning pass, with its savings.
     pub skinning: SkinningMode,
     /// True when the vertex shaders of the culled buckets read each instance by index from
     /// storage buffers, where their templates can, instead of a copy that the culling shader
@@ -453,7 +453,7 @@ impl Default for RendererConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
-            skinning: SkinningMode::LEAN,
+            skinning: SkinningMode::default(),
             index_instances: false,
             gpu_occlusion: false,
             cascade_depth: CascadeDepth::default(),
@@ -749,7 +749,7 @@ impl GpuDrivenRenderer {
                 input.scene,
                 input.animations,
                 input.morphs,
-                self.settings.meshes(),
+                &self.settings,
                 self.config.storage_binding_bytes,
             )?;
             self.skinning.open_before_first_frame(input.pipelines_built);

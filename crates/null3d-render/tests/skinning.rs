@@ -1,10 +1,11 @@
 //! Skinning on both frame builders, checked through the mock backend, which rejects what a real
-//! GPU would, and by decoding the lists they record. On WebGPU: the skinning pass, which skins each
-//! skinned object that some view draws once per frame, the joint texture it reads, and the views'
-//! draws of the skinned vertices, the outline mask's among them. On WebGL2: the skinning builds of
-//! the pipelines that draw skinned objects, shadows and the outline mask included, the joint
-//! texture and the texture of first joints that their vertex shaders read, and the instanced draws
-//! that skinned objects of one mesh share.
+//! GPU would, and by decoding the lists they record. On WebGPU: the SKIN builds that skin in the
+//! vertex shader by default, the objects that the skinning pass still takes, and the skinning pass
+//! itself, which skins each skinned object that some view draws once per frame, the joint texture
+//! it reads, and the views' draws of the skinned vertices, the outline mask's among them. On
+//! WebGL2: the skinning builds of the pipelines that draw skinned objects, shadows and the outline
+//! mask included, the joint texture and the texture of first joints that their vertex shaders
+//! read, and the instanced draws that skinned objects of one mesh share.
 
 mod common;
 
@@ -18,16 +19,26 @@ use null3d_gpu::drawlist::{
 };
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::debug_view::DebugView;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::materials::{CustomShading, Shading};
 use null3d_render::outline::Outline;
 use null3d_render::skinning::{JOINTS_PER_ROW, SkinningMode, TEXELS_PER_JOINT, skinned_format};
 use null3d_render::view::ViewId;
 
-/// The common world with a skinned column at `position`, which casts shadows. Returns the world
-/// and the column.
+/// The common world on a WebGPU frame builder that skins in the skinning pass.
+fn skinning_pass() -> World {
+    World::with_config(RendererConfig {
+        skinning: SkinningMode::LEAN,
+        ..RendererConfig::default()
+    })
+}
+
+/// The common world with a skinned column at `position`, which casts shadows and which the
+/// skinning pass skins. Returns the world and the column.
 fn skinned(position: [f32; 3]) -> (World, Handle) {
-    let mut world = World::new();
+    let mut world = skinning_pass();
     // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
     // objects at once.
     world.pipelines_built = 0;
@@ -158,7 +169,7 @@ fn column_with_tangents() -> null3d_render::geometry::Geometry {
 
 #[test]
 fn the_skinning_pass_skins_formats_with_a_tangent_with_a_build_of_their_own() {
-    let mut world = World::new();
+    let mut world = skinning_pass();
     world.add_skinned([-1.0, 0.0, 0.0]);
     world.add_skinned_mesh([1.0, 0.0, 0.0], &column_with_tangents());
     let mut mock = MockBackend::default();
@@ -271,7 +282,7 @@ fn without_the_pose_skip_a_still_character_skins_every_frame() {
 fn a_still_character_added_during_play_keeps_its_pose_once_its_pipelines_are_built() {
     // Frames have drawn, so a skinned object added now waits for its pipelines, and its regions
     // keep no pose until they are built: a dispatch whose pipeline still builds writes nothing.
-    let mut world = World::new();
+    let mut world = skinning_pass();
     world.add_skinned([0.0, 0.0, 0.0]);
     world.animation_step = 0.0;
     let mut mock = MockBackend::default();
@@ -395,6 +406,60 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
     );
     let second = world.step(&mut mock, false);
     assert_eq!(count(&second, Op::Dispatch), 1);
+}
+
+#[test]
+fn by_default_the_vertex_shaders_skin_and_the_pass_takes_what_has_no_skin_build() {
+    // A lit column, which the vertex shaders skin, and one with a custom material, which has no
+    // SKIN build, so the skinning pass skins it.
+    let mut world = World::new();
+    world.pipelines_built = 0;
+    world.add_skinned([-1.0, 0.0, 0.0]);
+    let custom = world.add_skinned([1.0, 0.0, 0.0]);
+    let material = world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .create(
+            Shading::Custom(CustomShading {
+                template: template::CUSTOM_FIRST,
+                attributes: 0,
+                base_color: true,
+                textures: 0,
+            }),
+            0,
+            [1.0; 4],
+        )
+        .unwrap();
+    world
+        .scene
+        .apply_commands(&[Command::set_material(custom, material + 1)], world.frame)
+        .unwrap();
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+
+    assert_eq!(world.renderer.skinned_vertices(), RINGS * AROUND);
+    let pipelines = operands(&first, Op::CreateRenderPipeline);
+    assert!(
+        pipelines
+            .iter()
+            .any(|p| p[1] == template::INSTANCED_LIT && p[2] & permutation::SKIN != 0),
+        "the lit column's SKIN build"
+    );
+    let custom_pipeline = pipelines
+        .iter()
+        .find(|p| p[1] == template::CUSTOM_FIRST)
+        .expect("the custom material's pipeline");
+    assert_eq!(custom_pipeline[2] & permutation::SKIN, 0);
+    assert_eq!(custom_pipeline[7], skinned_format(column().format, true));
+
+    // A debug view has no SKIN build either, so the pass skins both columns.
+    world
+        .renderer
+        .settings_mut()
+        .set_debug_view(DebugView::Normals);
+    world.step(&mut mock, true);
+    assert_eq!(world.renderer.skinned_vertices(), 2 * RINGS * AROUND);
 }
 
 #[test]
@@ -753,7 +818,7 @@ fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgl2() {
 #[test]
 fn a_skinned_object_added_during_play_draws_once_its_pipelines_are_built() {
     // A frame has drawn, so a pipeline counts as built from the frame after the one that created it.
-    let mut world = World::new();
+    let mut world = skinning_pass();
     let mut mock = MockBackend::default();
     world.step(&mut mock, true);
     world.add_skinned([0.0, 0.0, 0.0]);

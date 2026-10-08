@@ -401,7 +401,7 @@ export async function createRenderer(
 		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature, WGSL_FEATURE_FILES),
 	]);
 	if (scene && shaders) {
-		const renderer = new WebGPUSceneRenderer(
+		return new WebGPUSceneRenderer(
 			gpu.tier,
 			gpu.device,
 			canvas,
@@ -411,10 +411,9 @@ export async function createRenderer(
 			options.imageTable,
 			shaders,
 			device.transparent,
+			device.skinning,
 			options.gpuError,
 		);
-		renderer.setSkinningMode(device.skinning);
-		return renderer;
 	}
 	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
 }

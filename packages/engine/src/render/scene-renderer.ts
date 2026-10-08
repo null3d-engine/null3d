@@ -4,7 +4,7 @@
 // with the pipelines it creates, which begin to build, without blocking, when the frame is first
 // prepared.
 
-import { SKINNING_FULL, SKINNING_SKIP_ONLY } from '../generated/core';
+import { SKINNING_FULL, SKINNING_SKIP_ONLY, SKINNING_VERTEX } from '../generated/core';
 import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
@@ -189,7 +189,9 @@ export class WebGPUSceneRenderer implements Renderer {
 
 	/**
 	 * A transparent canvas composites with premultiplied alpha; any other ignores alpha.
-	 * `gpuError` hears the first WebGPU error of each kind that no error scope caught.
+	 * `skinning` is the core's code of the skinning mode, which picks the shaders that a preload
+	 * of skinning prepares and the skinning pass's directions. `gpuError` hears the first WebGPU
+	 * error of each kind that no error scope caught.
 	 */
 	constructor(
 		readonly tier: Tier,
@@ -201,6 +203,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		images: ImageTable | undefined,
 		shaders: DeviceShaderSet,
 		readonly transparent: boolean,
+		skinning: number,
 		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
@@ -223,6 +226,10 @@ export class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
+		// The skinning pass writes 32-bit float directions in the modes that measure 8-bit ones.
+		if (skinning === SKINNING_FULL || skinning === SKINNING_SKIP_ONLY)
+			this.backend.skinWithFloatDirections();
+		this.backend.skinsInVertexShaders = skinning === SKINNING_VERTEX;
 		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
@@ -231,12 +238,6 @@ export class WebGPUSceneRenderer implements Renderer {
 
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
 	resize(): void {}
-
-	/** Makes the skinning pass write 32-bit float directions where core skinning mode `mode` asks. */
-	setSkinningMode(mode: number): void {
-		if (mode === SKINNING_FULL || mode === SKINNING_SKIP_ONLY)
-			this.backend.skinWithFloatDirections();
-	}
 
 	prepare(frame: number): boolean {
 		return this.frames.prepare(frame);
