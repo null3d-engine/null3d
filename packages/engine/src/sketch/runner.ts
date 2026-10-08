@@ -461,7 +461,7 @@ export class SketchRunner {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		const { check } = this.sketch.quality;
-		if (check && this.holdSeconds === undefined) await this.checkPreset(check.fps);
+		if (check && this.holdSeconds === undefined) await this.checkPreset();
 		// Warm-ups that the setup started without waiting for them publish their frames first, so
 		// the frame loop never records while a setup frame does.
 		await this.setupFrames;
@@ -475,7 +475,7 @@ export class SketchRunner {
 	 * hold its frame rate. Its code loads after the first frame, while the scene keeps drawing. A
 	 * check that cannot load leaves the preset as it is.
 	 */
-	private async checkPreset(fps: number | undefined): Promise<void> {
+	private async checkPreset(): Promise<void> {
 		if (!(await this.drawSetupFrame())) return;
 		const loading = import('./preset-check');
 		let loaded = false;
@@ -497,7 +497,7 @@ export class SketchRunner {
 					lower: () => quality.lower(),
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-					maxFps: fps,
+					maxFps: this.sketch.fps,
 					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
