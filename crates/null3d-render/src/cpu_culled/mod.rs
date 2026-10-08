@@ -1550,6 +1550,10 @@ impl FrameBuilder for CpuCulledRenderer {
         self.occluders.set_on(on);
     }
 
+    fn set_occlusion_buffer(&mut self, pixels: u32) {
+        self.occluders.set_buffer_pixels(pixels);
+    }
+
     fn set_mesh_blocker(
         &mut self,
         mesh: u32,
