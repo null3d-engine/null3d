@@ -151,7 +151,7 @@ The stats overlay sits over the top-left corner of the canvas, as stats.js does.
 - The `?stats` switch in the page's address shows it, and `?stats=off` hides it. Production builds read the switch only when the Vite plugin's `urlSwitches` option is on.
 - `debug.stats(true)` in the sketch shows it, and `debug.stats(false)` hides it.
 
-The page and the sketch show and hide the same overlay, and the last call wins. The page draws the overlay and updates it twice a second. The pointer goes through the overlay to the canvas. A held engine for image tests shows no overlay.
+The page and the sketch show and hide the same overlay, and the last call wins, from either side. So the sketch's `debug.stats(false)` hides an overlay that the page showed, and the page's `engine.stats(false)` hides one that the sketch showed. The option and the switch only set the overlay at the start. Each `debug.stats` call sends a message to the page, so call it when the choice changes, not in every frame. The page draws the overlay and updates it twice a second. The pointer goes through the overlay to the canvas. A held engine for image tests shows no overlay.
 
 The overlay shows these lines:
 
