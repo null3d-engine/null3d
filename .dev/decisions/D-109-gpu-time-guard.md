@@ -34,6 +34,8 @@ What CI's benchmark job saw. Main's run 37644306103 compared 73abc0739 with ef2e
 
 The GPU rule was replayed on the 14 comparisons that helpers ran on the owner's Mac from 6 to 8 October 2026. 13 of them timed the GPU, on 17 pages in all. Two builds of the same commit, f46c068, differed by 6.5% in S4. One page failed: S4 on WebGPU, 1.27 ms to 1.60 ms, from f46c068 to #309. That was a real cost. #307 found two shadow fixes between those commits, which added 0.11 ms and 0.17 ms to S4's GPU work. Round by round, two builds with the same WebGL2 shaders differed by 2% to 3% in S4 and 3% to 6% in S6. One build's two rounds of S6 at High on WebGPU differed by 9%.
 
+The first run of the GPU check was on 8 October 2026. It compared main before #434's fix (061177262, with #389) with this change, which holds the fix. It ran in Chrome 155 on the owner's Mac and took 14 minutes with both builds. The Mac's 1-minute load was 8.6 at the start and 24 at the end. It printed `GPU-Checked: 061177262..0b8b832c3 passed: s4 medium 6.83 to 2.96 ms (-56.6%); s6 medium 10.24 to 4.93 ms (-55.5%); s4 high 5.15 to 3.92 ms (-24.3%); s6 high 13.57 to 4.59 ms (-66.7%)`. Under that load #389 cost less than in D-89's quiet runs, but every page still showed it. S4 at High counted as "same". Its baseline's rounds ran from 4.46 to 7.71 ms, so the change was less than twice its noise of 13.2%. A check on a loaded Mac can therefore miss a smaller fault. That is why the nightly run waits for the quiet window.
+
 How the data was produced: `bun run bench:run --compare` on the Mac, the records under each worktree's `target/bench/*-compare/runs.json`, judged again with the new rule. CI's figures come from the artifact of run 37644306103.
 
 ## Options
