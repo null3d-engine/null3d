@@ -167,6 +167,8 @@ The engine's own counts agree. One run of S6 on WebGL2 per build, at the Mac's p
 | Index list entries drawn | 3,072 | 5,566 |
 | Draw calls, all passes | 1,147 | 1,092 |
 
-So occlusion hides about 80% fewer entries, and the merge saves fewer draws on WebGL2 than the 1,971 to 322 of a pass suggests. The occlusion rules stay as they are in this change, by the owner's brief.
+So occlusion hides about 80% fewer entries, and the merge saves fewer draws on WebGL2 than the 1,971 to 322 of a pass suggests.
+
+Order of work, the coordinator's ruling of 8 October 2026: M2-I3's T-36 measures this culling on S6, so the merged towers must not land before the engine fixes it. The engine fix goes first, as a pull request of its own, after #437. The merged towers then merge main and show the hidden entries back near the figure of one mesh per box.
 
 Proposed fix, an engine task of its own: give each blocker one candidate per part, not per object. When the engine builds a blocker mesh, it splits the welded triangles into their connected parts and keeps a bounding sphere for each. The frame's pick then sorts the parts of every blocker by their own nearest points, so each box of a tower mesh competes as a box did before. For S6 that comes close to the figures of one mesh per box: up to 1,849 tower parts of 12 triangles or more, against 1,705 box blockers before. Boxes whose corners meet weld into one part. A blocker of one closed part, such as a kit building, stays one candidate. The asset tool needs no change.
