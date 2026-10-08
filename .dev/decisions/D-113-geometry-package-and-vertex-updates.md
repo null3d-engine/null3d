@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M2-P2 on 2026-10-08, within the task's plan. Date: 2026-10-08. Task: M2-P2.
 
-Summary: `@null3d/geometry` holds ports of three.js's other geometry classes as functions that return arrays for `geometry.fromArrays`. Their numbers equal three.js 0.186.1's in 124 tests. `mesh.updateVertices(name, values, start, count)` writes one attribute into the mesh's pages in place, and the next frame uploads only the changed vertices' bytes. The mesh keeps its first bounding sphere. Meshes with joints or morph targets take no updates.
+Summary: `@null3d/geometry` holds ports of three.js's other geometry classes as functions that return arrays for `geometry.fromArrays`. Their numbers equal three.js 0.186.1's in 124 tests. `mesh.updateVertices(name, values, start, count)` writes one attribute into the mesh's pages in place. The next frame uploads only the changed vertices' bytes. The mesh keeps its first bounding sphere. Meshes with joints or morph targets take no updates.
 
 ## Question
 
@@ -45,14 +45,14 @@ The package has no WebAssembly and loads no files, so it needs none of the add-o
 | (b) `geometry.updateVertices(mesh, arrays)`, as the task's plan worded it, with several attributes at once | One call for positions and normals | An object of arrays per call allocates, or a sketch keeps one. The port skill and the mapping already named the call on the mesh |
 | (c) Upload the page from the first changed byte to its end, as a removal of meshes does | No new state | A mesh early in a shared page would upload every mesh after it, each frame |
 
-The page's GPU copy keeps one range of changed bytes, which grows to hold each update until the next upload. A mesh split into parts, past 65,535 vertices, keeps a list of the mesh vertex that each part vertex copies, so an update reaches every copy. A mesh in one part needs no list.
+The page's GPU copy keeps one range of changed bytes, which grows to hold each update until the next upload. A mesh past 65,535 vertices splits into parts. It keeps a list of the mesh vertex that each part vertex copies, so an update reaches every copy. A mesh in one part needs no list.
 
 ### Bounds and caches
 
 - The mesh keeps the bounding sphere of its first vertices, as three.js keeps a geometry's `boundingSphere`. A new sphere would need every object's bounds again, which rebuilds the draw tables in each frame. `setBounds` gives an object bounds that hold every shape.
 - Raycasts and overlap queries drop the mesh's tree and list the scene's items again at the next query. A frame without queries pays nothing.
-- WebGL2's software occlusion culling stops using the mesh as a blocker: a blocker from its old shape would hide what it no longer covers, and a new one in each frame costs more than it saves.
-- The shadow tiles of point and spot lights add the mesh's update count to each caster's pose stamp, so a still caster whose mesh changed draws its tiles again. The first update of a mesh changes the scene's structure once, which puts its casters among those that the tiles stamp.
+- WebGL2's software occlusion culling stops using the mesh as a blocker. A blocker from its old shape would hide what it no longer covers. A new one in each frame costs more than it saves.
+- The shadow tiles of point and spot lights add the mesh's update count to each caster's pose stamp. So a still caster whose mesh changed draws its tiles again. The first update of a mesh changes the scene's structure once, which puts its casters among those that the tiles stamp.
 - Meshes with joints or morph targets refuse updates. Their joint spheres and morph reach come from the first vertices, and their poses would need those again.
 
 ## Decision
