@@ -920,7 +920,11 @@ impl GpuDrivenRenderer {
                     .graph
                     .depth_texture(view)
                     .expect("a view that culls in two phases samples its depth");
-                if self.pyramids.prepare(list, view, input.canvas, depth)? {
+                let remade = self.graph.textures_made();
+                if self
+                    .pyramids
+                    .prepare(list, view, input.canvas, depth, remade)?
+                {
                     pyramids_made |= 1 << index;
                 }
             }

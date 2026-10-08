@@ -142,15 +142,17 @@ impl Pyramids {
     }
 
     /// Makes a view's pyramid for a canvas of `canvas` pixels, unless its buffers hold it, and
-    /// binds its group when the group would name another depth target or buffer. `depth` is the
-    /// view's depth target. Returns true when it made the pyramid's buffer, which the view's
-    /// occlusion group names too.
+    /// binds its group when the group would name another depth target or buffer, or when the
+    /// render graph made its textures again (`remade`), which makes the depth target again under
+    /// its id. `depth` is the view's depth target. Returns true when it made the pyramid's buffer,
+    /// which the view's occlusion group names too.
     pub(super) fn prepare(
         &mut self,
         list: &mut DrawList,
         view: ViewId,
         canvas: (u32, u32),
         depth: u32,
+        remade: bool,
     ) -> Result<bool, RecordError> {
         let pyramid = self.views[view.index()].get_or_insert_with(ViewPyramid::default);
         let made = pyramid.bytes != 0;
@@ -173,7 +175,7 @@ impl Pyramids {
             )?;
             pyramid.bytes = bytes;
         }
-        if grown || pyramid.bound_depth != depth {
+        if grown || remade || pyramid.bound_depth != depth {
             let entry = |binding: u32, kind: u32, id: u32, size: u32| [binding, kind, id, 0, size];
             let entries = [
                 entry(
