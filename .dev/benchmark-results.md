@@ -229,6 +229,25 @@ S5 draws animated characters, 500 by default, with shadows. Its scene and pages 
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGL2 | 500 | 1.25 / 54.02 (WebGL) | 2% | 1.20 / 54.00 (WebGL) | 2% | 120.0 / 18.4 | n/a | 5711b3b4 | 20261004-112928-bench |
 | 2026-10-04 | Apple M5 Max, Chrome 154 | WebGPU | 500 | 2.32 / 54.02 (WebGL) | 4% | 2.32 / 54.00 (WebGL) | 4% | 60.0 / 18.4 | 7.38 | 5711b3b4 | 20261004-112928-bench |
 
+## S6
+
+S6 is the city: 19,173 objects of the sample content's layout in 200 materials, which stream in as two model files, with shadows, 32 point lights, bloom and ambient occlusion ([Benchmarks](benchmarks.md#the-city), [D-106](decisions/D-106-s6-city.md)). The Objects column counts the layout's rows.
+
+| Date | Device and browser | GPU path | Objects | Whole frame, ms: null3D / three.js | Share | Own work, ms: null3D / three.js | Share | fps: null3D / three.js | GPU ms, null3D | Commit | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-08 | Apple M5 Max, Chrome 155 | WebGL2 | 19,173 | 1.29 / 3.19 (WebGL) | 40% | 1.28 / 3.19 (WebGL) | 40% | 117.0 / 113.1 | n/a | 75a91fc2 | 20261008-005257-bench |
+| 2026-10-08 | Apple M5 Max, Chrome 155 | WebGPU | 19,173 | 0.47 / 3.19 (WebGL) | 15% | 0.47 / 3.19 (WebGL) | 15% | 64.9 / 113.1 | 19.72 | 75a91fc2 | 20261008-005257-bench |
+| 2026-10-08 | bsgalaxys25-chrome, Chrome 152.0.7977.54 | WebGPU | 19,173 | 2.46 / 10.54 (WebGL) | 23% | 2.45 / 10.54 (WebGL) | 23% | 30.0 / 30.0 | 20.35 | 75a91fc2 | 20261008-011056-bench |
+| 2026-10-08 | bsgalaxys25-chrome, Chrome 152.0.7977.54 | WebGL2 | 19,173 | 1.97 / 10.54 (WebGL) | 19% | 1.93 / 10.54 (WebGL) | 18% | 30.0 / 30.0 | n/a | 75a91fc2 | 20261008-011056-bench |
+| 2026-10-08 | bspixel9-chrome, Chrome 152.0.7977.54 | WebGPU | 19,173 | 4.93 / 11.41 (WebGL) | 43% | 4.80 / 11.40 (WebGL) | 42% | 54.4 / 31.6 | 11.86 | 75a91fc2 | 20261008-013953-bench |
+| 2026-10-08 | bspixel9-chrome, Chrome 152.0.7977.54 | WebGL2 | 19,173 | 4.21 / 11.41 (WebGL) | 37% | 3.61 / 11.40 (WebGL) | 32% | 59.7 / 31.6 | n/a | 75a91fc2 | 20261008-013953-bench |
+| 2026-10-08 | bsipad10-safari, Safari 27.0 | WebGPU | 19,173 | 1.68 / 22.89 (WebGL) | 7% | 1.68 / 22.89 (WebGL) | 7% | 30.7 / 11.2 | n/a | 75a91fc2 | 20261008-020949-bench |
+| 2026-10-08 | bsipad10-safari, Safari 27.0 | WebGL2 | 19,173 | 8.64 / 22.89 (WebGL) | 38% | 7.86 / 22.89 (WebGL) | 34% | 52.3 / 11.2 | n/a | 75a91fc2 | 20261008-020949-bench |
+
+- The rows at commit 75a91fc2 predate the WebGPU MSAA fix ([#434](https://github.com/null3d-engine/null3d/pull/434)). Their WebGPU frame rates and GPU times do not stand; their CPU times and their WebGL2 figures do.
+- The Galaxy S25's screen ran at 30 Hz, so its frame rates show the cap, not the engines.
+- On the cloud iPad, three.js's WebGPU page failed every load, so its rows compare with three.js's WebGL page only.
+
 ## Feature GPU costs on phones
 
 These tables give what single features cost on cloud phones, from BrowserStack Automate. They are not comparisons with three.js. Each figure is GPU time from the browser's GPU timer, on WebGPU, unless a row says otherwise. Chrome on these phones has no GPU timer for WebGL2. The Galaxy S25's screen ran at 30 Hz in these runs, so the device runner marks its frame figures unreliable. Its GPU times do not depend on the screen. The archive in `bench/results` keeps no runs of these plans, so the run folders' names are the sources.
