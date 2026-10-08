@@ -34,7 +34,9 @@
 // moves its sun and its clouds every frame. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
-// the GPU culls, and the memory figures that the sketch thread publishes.
+// the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
+// it collapsed to its frame rate, which samples none of them, so it keeps the budgets of a page
+// without the overlay.
 // It samples the production build
 // of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
@@ -298,8 +300,10 @@ async function main(): Promise<void> {
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
 		const sky = args.includes('--sky') ? '&sky' : '';
 		if (sky && scene !== 's1') throw new Error('--sky draws behind S1 only');
+		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${stats ? '&stats' : ''}`;
+		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${statsQuery}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -378,7 +382,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
