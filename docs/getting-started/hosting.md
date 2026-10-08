@@ -209,7 +209,7 @@ A game can play with no network after its first visit. Its own service worker ca
 | `gltf` | The glTF loader, its worker and the meshopt decoder | `assets.loadGltf` |
 | `ktx2` | The KTX2 loader and the Basis Universal transcoder | `assets.loadTexture` or `assets.loadGltf` with a KTX2 texture |
 | `environment` | The readers of environment maps, the built-in environments and the code that prefilters them | `assets.loadEnvironment` or `assets.builtinEnvironment` |
-| `lut` | The readers of color grading tables | `assets.loadLut` |
+| `lut` | The readers and makers of color grading tables | `assets.loadLut` or `assets.lutFromData` |
 
 Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. In this version, the start's files take about 6.7 MB, the skinning shaders 5.2 MB and the whole build 17.8 MB. These are the sizes of the files as they are, which the cache keeps. With compression, the downloads are about a fifth of that.
 

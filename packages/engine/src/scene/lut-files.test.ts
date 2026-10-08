@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { LutFileError, parse3dl, parseCube, parseLut } from './lut-files';
+import { LutFileError, parse3dl, parseCube, parseLut, tableFromData } from './lut-files';
 
 /** The texel of a table at (r, g, b): its four bytes. */
 function texel(texels: Uint8Array, size: number, r: number, g: number, b: number): number[] {
@@ -110,5 +110,80 @@ describe('.3dl tables', () => {
 		const text = threeDl(3, () => [0, 0, 0]).join('\n');
 		expect(() => parse3dl(text, 80)).toThrow('more numbers than a table of 256 a side holds');
 		expect(parse3dl(text, 81).size).toBe(3);
+	});
+});
+
+describe('tables from numbers', () => {
+	/** A warm grade of lift, gamma and gain, as the sample warm table's script writes it. */
+	const warm = (r: number, g: number, b: number) => [
+		0.02 + r ** 0.95 * 1.04,
+		0.01 + g * 1.01,
+		b ** 1.05 * 0.9,
+	];
+	/** The numbers of a table of `size`, red fastest, each written with five decimals. */
+	function numbers(size: number, stride: 3 | 4): number[] {
+		const values: number[] = [];
+		for (let b = 0; b < size; b++)
+			for (let g = 0; g < size; g++)
+				for (let r = 0; r < size; r++) {
+					const color = warm(r / (size - 1), g / (size - 1), b / (size - 1));
+					values.push(...color.map((value) => Number(value.toFixed(5))));
+					if (stride === 4) values.push(0.5);
+				}
+		return values;
+	}
+
+	it('make the table that a .cube file of the same numbers makes, from three or four per texel', () => {
+		const size = 9;
+		const rgb = numbers(size, 3);
+		const lines = ['TITLE "Warm"', `LUT_3D_SIZE ${size}`, 'DOMAIN_MIN 0 0 0', 'DOMAIN_MAX 2 2 2'];
+		for (let k = 0; k < rgb.length; k += 3) lines.push(rgb.slice(k, k + 3).join(' '));
+		const parsed = parseCube(lines.join('\n'));
+		const domainMax = [2, 2, 2] as const;
+		expect(tableFromData({ size, data: rgb, title: 'Warm', domainMax })).toEqual(parsed);
+		const rgba = new Float64Array(numbers(size, 4));
+		const fromRgba = tableFromData({ size, data: rgba, title: 'Warm', domainMax });
+		expect(fromRgba.texels).toEqual(parsed.texels);
+		expect(texel(fromRgba.texels, size, 0, 0, 0)).toEqual([5, 3, 0, 255]);
+	});
+
+	it('clamp values to 0 to 1 and default the domain to 0 to 1', () => {
+		const data = [-1, 0.5, 2, ...Array(21).fill(0)];
+		const table = tableFromData({ size: 2, data });
+		expect(texel(table.texels, 2, 0, 0, 0)).toEqual([0, 128, 255, 255]);
+		expect([table.domainMin, table.domainMax, table.title]).toEqual([
+			[0, 0, 0],
+			[1, 1, 1],
+			undefined,
+		]);
+	});
+
+	it('refuse a size, a count, a value or a domain that the engine cannot use, and say why', () => {
+		const flat = (size: number) => Array(size ** 3 * 3).fill(0.5);
+		const bad: [Parameters<typeof tableFromData>[0], string][] = [
+			[{ size: 1, data: flat(1) }, 'a table of 1 texels a side; the engine reads 2 to 256'],
+			[{ size: 257, data: [] }, 'a table of 257 texels a side; the engine reads 2 to 256'],
+			[{ size: 2.5, data: [] }, 'a table of 2.5 texels a side'],
+			[
+				{ size: 2, data: Array(20).fill(0) },
+				'20 numbers for a table of 2 a side: give 24, three per texel, or 32, four per texel',
+			],
+			[
+				{ size: 2, data: [0, Number.NaN, ...flat(2).slice(2)] },
+				'NaN at number 1: give finite numbers from 0 to 1',
+			],
+			[
+				{ size: 2, data: flat(2), domainMin: [0, 0] as unknown as [0, 0, 0] },
+				'the domainMin 0,0, which is not three finite numbers',
+			],
+			[
+				{ size: 2, data: flat(2), domainMin: [1, 0, 0], domainMax: [1, 1, 1] },
+				'a domain whose maximum is not above its minimum',
+			],
+		];
+		for (const [table, reason] of bad) {
+			expect(() => tableFromData(table)).toThrow(LutFileError);
+			expect(() => tableFromData(table)).toThrow(reason);
+		}
 	});
 });

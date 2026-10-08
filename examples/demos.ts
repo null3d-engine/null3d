@@ -192,7 +192,6 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Post effects',
 		summary:
 			'Crates under neon lights, with bloom, ambient occlusion, an outline, a vignette and a custom lens effect. Every 3 seconds the color grading table changes: none, warm, then cool.',
-		assets: 'Shows how color grading tables load from .cube files.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the pink lamp.`,
 		hold: 4,
 	},
