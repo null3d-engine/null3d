@@ -2,12 +2,14 @@
 // stats overlay and the frame figures, which work in every build. Development builds use DebugDraw
 // (draw.ts), which extends it with the drawing. The page draws the overlay. The frame figures' code
 // (stats.ts) downloads at the first call of `frameStats`, so a sketch that never asks for figures
-// never downloads it.
+// never downloads it. That call also turns on the sampled figures for the engine's life: GPU time,
+// the counts of the draws that the GPU culls, and the memory figures that the sketch publishes.
 
 import type { Vec3Like } from '../math/types';
 import type { QualityPreset } from '../quality/presets';
 import type { ColorInput } from '../scene/color';
 import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
+import { sampleFrames } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
 import type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug';
 import type { FrameStats, FrameStatsWindow, StatsSources } from './stats';
@@ -33,14 +35,19 @@ function noFigures(tier: Tier, preset: QualityPreset): FrameStats {
 		completedFps: 0,
 		cpuMs: 0,
 		threads: [],
+		gpuMs: null,
 		drawCalls: 0,
+		triangles: 0,
+		objects: 0,
 		uploadBytes: 0,
 		tier,
 		preset,
 		renderScale: 0,
+		wasmBytes: 0,
 		textureBytes: 0,
 		textureBudgetBytes: 0,
 		droppedLevels: 0,
+		meshBytes: 0,
 	};
 }
 
@@ -86,6 +93,7 @@ export class SketchDebug implements Debug {
 	private load(): void {
 		this.loading = true;
 		const { metrics, threads, sources } = this.host;
+		sampleFrames(metrics, true);
 		import('./stats').then(({ FrameStatsWindow }) => {
 			this.window = new FrameStatsWindow(metrics, threads, sources);
 		}, console.warn);

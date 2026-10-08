@@ -616,6 +616,7 @@ describe('the checks plan', () => {
 				jobWorkers: 1,
 				preset: 'high',
 			},
+			gpuTimer: true,
 			overlay: {
 				text: [
 					'webgpu  high  scale 1.00',
@@ -623,6 +624,13 @@ describe('the checks plan', () => {
 					'sketch-worker  1.50 ms',
 					'render-worker  1.50 ms',
 					'job workers (1)  busiest 1.50 ms',
+					'gpu 0.20 ms per frame',
+					'draw calls 3',
+					'triangles 37  objects 6',
+					'memory  wasm 64.0 MiB  js heap 10.0 MiB',
+					'gpu memory  textures 0.0 MiB  meshes 4.0 MiB',
+					'page memory measuring',
+					'main thread 5 s  long tasks 0  input delay n/a',
 				].join('\n'),
 				offset: [0, 0],
 				pointerEvents: 'none',
@@ -632,6 +640,11 @@ describe('the checks plan', () => {
 				presentedFps: 60,
 				completedFps: 60,
 				cpuMs: 1.5,
+				gpuMs: 0.2,
+				triangles: 37,
+				objects: 6,
+				wasmBytes: 64 * 1024 * 1024,
+				meshBytes: 4 * 1024 * 1024,
 				tier: 'webgpu',
 				preset: 'high',
 				renderScale: 1,
@@ -642,7 +655,13 @@ describe('the checks plan', () => {
 		const bad = {
 			...good,
 			overlay: { ...good.overlay, offset: [0, 12], text: 'webgpu  high  scale 1.00' },
-			figures: { ...good.figures, frames: 0, threads: [thread('sketch-worker')] },
+			figures: {
+				...good.figures,
+				frames: 0,
+				triangles: 0,
+				meshBytes: 0,
+				threads: [thread('sketch-worker')],
+			},
 		};
 		expect(judge(check, bad, NONE_MISSING)).toEqual([
 			"the overlay sits 0, 12 px from the canvas's corner",
@@ -650,8 +669,29 @@ describe('the checks plan', () => {
 			'the overlay does not show "sketch-worker"',
 			'the overlay does not show "render-worker"',
 			'the overlay does not show "job workers (1)"',
+			'the overlay does not show "gpu"',
+			'the overlay does not show "triangles"',
+			'the overlay does not show "memory  wasm"',
+			'the overlay does not show "gpu memory  textures"',
+			'the overlay does not show "page memory"',
+			'the overlay does not show "main thread"',
 			'the sketch got no frame figures',
+			'the figures give meshBytes 0',
+			"the figures give 0 triangles, fewer than the box's",
 			'the figures name the threads sketch-worker',
+		]);
+		const nothingDrawn = {
+			...good,
+			overlay: {
+				...good.overlay,
+				text: good.overlay.text
+					.replace('triangles 37  objects 6', 'triangles 0  objects 0')
+					.replace('wasm 64.0 MiB', 'wasm n/a'),
+			},
+		};
+		expect(judge(check, nothingDrawn, NONE_MISSING)).toEqual([
+			'the overlay shows no triangles or objects drawn',
+			"the overlay shows no size of the engine's memory",
 		]);
 		expect(judge(check, { ...good, overlay: null }, NONE_MISSING)).toEqual([
 			'the page shows no stats overlay',

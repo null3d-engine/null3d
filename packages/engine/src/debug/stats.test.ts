@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'bun:test';
-import { Counter, createMetricsBuffer, FrameRecorder, Phase, Role } from '../shared/metrics';
-import { statsText } from './overlay';
+import {
+	Counter,
+	createMetricsBuffer,
+	FrameRecorder,
+	MemoryFigure,
+	Phase,
+	Role,
+} from '../shared/metrics';
+import { overlayFigures, type PageFigures, RecentMainThread } from './overlay';
 import { type FrameStats, FrameStatsWindow, STATS_WINDOW_MS } from './stats';
+import { statsText } from './stats-text';
 
 /** The threads of a pipelined engine with two job workers, as `engine.measure` names them. */
 const THREADS: [string, number[]][] = [
@@ -31,6 +39,8 @@ function writeFrame(recorders: FrameRecorder[], frame: number, scale = 1): void 
 	render.addPhase(Phase.Replay, 0.75);
 	render.count(Counter.DrawCalls, 12);
 	render.count(Counter.UploadBytes, 3072);
+	render.count(Counter.Triangles, 1536);
+	render.count(Counter.DrawnObjects, 40);
 	render.interval(PRESENTED_MS);
 	render.commit(1);
 	completion.begin(frame);
@@ -43,6 +53,9 @@ function writeFrame(recorders: FrameRecorder[], frame: number, scale = 1): void 
 	job1.commit(0.5);
 }
 
+/** A WebAssembly memory of 64 MiB, as the figures read it. */
+const WASM_BYTES = 64 * 1024 * 1024;
+
 function setUp() {
 	const buffer = createMetricsBuffer(false, 2);
 	const recorders = [Role.Sketch, Role.Render, Role.Completion, Role.Job, Role.Job + 1].map(
@@ -54,8 +67,10 @@ function setUp() {
 		tier: 'webgl2',
 		preset: () => preset,
 		renderScaleThousandths: () => scale,
+		wasmBytes: () => WASM_BYTES,
 	});
 	return {
+		buffer,
 		recorders,
 		window,
 		setPreset: (value: typeof preset) => {
@@ -82,7 +97,12 @@ describe('FrameStatsWindow', () => {
 		expect(stats.completedFps).toBeCloseTo(50, 6);
 		expect(stats.cpuMs).toBeCloseTo(2.25, 6);
 		expect(stats.drawCalls).toBe(12);
+		expect(stats.triangles).toBe(1536);
+		expect(stats.objects).toBe(40);
 		expect(stats.uploadBytes).toBe(3072);
+		expect(stats.wasmBytes).toBe(WASM_BYTES);
+		// No GPU timer wrote a record, so the GPU time is unknown.
+		expect(stats.gpuMs).toBeNull();
 		expect(stats.tier).toBe('webgl2');
 		expect(stats.preset).toBe('high');
 		expect(stats.renderScale).toBe(0.75);
@@ -121,6 +141,7 @@ describe('FrameStatsWindow', () => {
 			tier: 'webgpu',
 			preset: () => 'low',
 			renderScaleThousandths: () => 1000,
+			wasmBytes: () => WASM_BYTES,
 		});
 		expect(window.update()).toBe(false);
 		for (let frame = 31; frame <= 60; frame++) writeFrame(recorders, frame);
@@ -153,6 +174,7 @@ describe('FrameStatsWindow', () => {
 			tier: 'webgpu',
 			preset: () => 'medium',
 			renderScaleThousandths: () => 1000,
+			wasmBytes: () => WASM_BYTES,
 		});
 		for (let frame = 1; frame <= 30; frame++) {
 			sketch.begin(frame);
@@ -181,17 +203,22 @@ type FrameStatsThreads = [
 	FrameStats['threads'][number],
 ];
 
+/** The page's own figures where the browser gives none. */
+const NO_PAGE_FIGURES: PageFigures = { jsHeapBytes: null, page: null, mainThread: null };
+
 describe('statsText', () => {
 	it('waits for the first window', () => {
 		const { window } = setUp();
-		expect(statsText(window.stats)).toBe('webgl2  high  scale 0.75\nwaiting for frames');
+		expect(statsText(overlayFigures(window.stats, NO_PAGE_FIGURES))).toBe(
+			'webgl2  high  scale 0.75\nwaiting for frames',
+		);
 	});
 
-	it("shows each thread's time and phases, and the job workers in one line", () => {
+	it("shows each thread's time and phases, the job workers in one line, and n/a for figures it lacks", () => {
 		const { recorders, window } = setUp();
 		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
 		window.update();
-		expect(statsText(window.stats).split('\n')).toEqual([
+		expect(statsText(overlayFigures(window.stats, NO_PAGE_FIGURES)).split('\n')).toEqual([
 			'webgl2  high  scale 0.75',
 			'60.0 fps presented, 50.0 completed',
 			'busiest thread 2.25 ms per frame',
@@ -200,7 +227,116 @@ describe('statsText', () => {
 			'render-worker  1.00 ms',
 			'  replay 0.75',
 			'job workers (2)  busiest 0.50 ms',
+			'gpu n/a',
 			'draw calls 12  upload 3.0 KB',
+			'triangles 1536  objects 40',
+			'memory  wasm 64.0 MiB  js heap n/a',
+			'gpu memory  textures 0.0 MiB  meshes 0.0 MiB',
+			'page memory n/a',
+			'main thread n/a',
 		]);
+	});
+
+	it('shows the GPU time, the memory and the page thread where they are known', () => {
+		const { buffer, recorders, window } = setUp();
+		const sketch = recorders[0] as FrameRecorder;
+		sketch.publishMemory(MemoryFigure.TextureBytes, 8 * 1024 * 1024);
+		sketch.publishMemory(MemoryFigure.MeshBytes, 2.5 * 1024 * 1024);
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) {
+			writeFrame(recorders, frame);
+			if (frame % 10 !== 0) continue;
+			gpu.begin(frame);
+			gpu.commit(frame === 10 ? 1.5 : 2.5);
+		}
+		window.update();
+		const text = statsText(
+			overlayFigures(window.stats, {
+				jsHeapBytes: 12 * 1024 * 1024,
+				page: { bytes: 300 * 1024 * 1024, browserBytes: 492 * 1024 * 1024 },
+				mainThread: { seconds: 5, longTasks: 2, longestTaskMs: 120.4, inputDelayMs: 8.2 },
+			}),
+		).split('\n');
+		expect(text.slice(8)).toEqual([
+			'gpu 2.17 ms per frame',
+			'draw calls 12  upload 3.0 KB',
+			'triangles 1536  objects 40',
+			'memory  wasm 64.0 MiB  js heap 12.0 MiB',
+			'gpu memory  textures 8.0 MiB  meshes 2.5 MiB',
+			'page memory 300.0 MiB (browser 492.0 MiB)',
+			'main thread 5 s  long tasks 2 (120 ms)  input delay 8 ms',
+		]);
+	});
+
+	it('shows large counts in thousands and millions, and a page figure still being measured', () => {
+		const lines = statsText({
+			heading: 'three.js WebGLRenderer',
+			frames: 30,
+			presentedFps: 60,
+			completedFps: null,
+			cpuMs: 4,
+			threads: [{ name: 'main', busyMs: 4 }],
+			gpuMs: 3.25,
+			drawCalls: 120,
+			uploadBytes: null,
+			triangles: 2_345_678,
+			objects: 15_000_000,
+			memory: {
+				wasmBytes: null,
+				textureBytes: null,
+				meshBytes: null,
+				jsHeapBytes: null,
+				page: { bytes: null, browserBytes: null },
+			},
+			mainThread: { seconds: 5, longTasks: 0, longestTaskMs: 0, inputDelayMs: null },
+		}).split('\n');
+		expect(lines).toEqual([
+			'three.js WebGLRenderer',
+			'60.0 fps presented',
+			'busiest thread 4.00 ms per frame',
+			'main  4.00 ms',
+			'gpu 3.25 ms per frame',
+			'draw calls 120',
+			'triangles 2345.7 k  objects 15.00 M',
+			'memory  wasm n/a  js heap n/a',
+			'gpu memory  textures n/a  meshes n/a',
+			'page memory measuring',
+			'main thread 5 s  long tasks 0  input delay n/a',
+		]);
+	});
+});
+
+describe('FrameStatsWindow GPU time', () => {
+	it('keeps the GPU time of the last window that held a timed frame', () => {
+		const { buffer, recorders, window } = setUp();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame);
+		gpu.begin(11);
+		gpu.commit(4);
+		window.update();
+		expect(window.stats.gpuMs).toBe(4);
+		for (let frame = 31; frame <= 60; frame++) writeFrame(recorders, frame);
+		window.update();
+		expect(window.stats.gpuMs).toBe(4);
+		expect(JSON.parse(JSON.stringify(window.stats)).gpuMs).toBe(4);
+	});
+});
+
+describe('RecentMainThread', () => {
+	it('sums the long tasks and keeps the longest task and input delay of the last windows', () => {
+		const recent = new RecentMainThread();
+		expect(recent.add(null)).toBeNull();
+		recent.add({ seconds: 0.5, longTasks: 1, longestTaskMs: 80, inputDelayMs: null });
+		const both = recent.add({ seconds: 0.5, longTasks: 2, longestTaskMs: 60, inputDelayMs: 12 });
+		expect(both).toEqual({ seconds: 1, longTasks: 3, longestTaskMs: 80, inputDelayMs: 12 });
+		const quiet = { seconds: 0.5, longTasks: 0, longestTaskMs: 0, inputDelayMs: null };
+		for (let k = 0; k < 9; k++) recent.add(quiet);
+		// The first windows have left the last few.
+		expect(recent.add(quiet)).toEqual({
+			seconds: 5,
+			longTasks: 0,
+			longestTaskMs: 0,
+			inputDelayMs: null,
+		});
 	});
 });

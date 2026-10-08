@@ -69,6 +69,8 @@ const DISCARD_COLOR = [COLOR_ATTACHMENT0];
 const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
+/** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
+const TRIANGLES = 0x0004;
 /**
  * Pixel unpack buffers in the ring that texture rewrites go through: one for the frame being
  * replayed and one for each frame that the GPU may still be reading.
@@ -403,9 +405,18 @@ export class WebGL2Backend {
 	canvasTarget: CanvasTarget | undefined;
 	/**
 	 * What the replays since the last reset uploaded, drew and built, the other objects they made,
-	 * and the draw commands they skipped because the program was still compiling.
+	 * and the draw commands they skipped because the program was still compiling. The triangles and
+	 * instances are those that the draws drew.
 	 */
-	readonly counts = { uploadBytes: 0, drawCalls: 0, pipelines: 0, objects: 0, skippedDraws: 0 };
+	readonly counts = {
+		uploadBytes: 0,
+		drawCalls: 0,
+		pipelines: 0,
+		objects: 0,
+		skippedDraws: 0,
+		triangles: 0,
+		instances: 0,
+	};
 
 	// Views on engine memory, rebuilt when it grows, and copies for browsers that refuse views on
 	// shared memory. The replay's own views give the words and the floats.
@@ -761,6 +772,16 @@ export class WebGL2Backend {
 		this.counts.pipelines = 0;
 		this.counts.objects = 0;
 		this.counts.skippedDraws = 0;
+		this.counts.triangles = 0;
+		this.counts.instances = 0;
+	}
+
+	/** Counts a draw of `count` vertices or indices, `instances` times, with the current pipeline. */
+	private countDraw(count: number, instances: number): void {
+		this.counts.drawCalls++;
+		this.counts.instances += instances;
+		if ((this.current as Pipeline).mode === TRIANGLES)
+			this.counts.triangles += Math.floor(count / 3) * instances;
 	}
 
 	/**
@@ -934,7 +955,7 @@ export class WebGL2Backend {
 						words[a] as number,
 						words[a + 1] as number,
 					);
-					this.counts.drawCalls++;
+					this.countDraw(words[a] as number, words[a + 1] as number);
 					break;
 				case G.OP_DRAW_INDEXED: {
 					if (this.skipDraws) {
@@ -951,7 +972,7 @@ export class WebGL2Backend {
 						(words[a + 2] as number) * this.indexBytes,
 						words[a + 1] as number,
 					);
-					this.counts.drawCalls++;
+					this.countDraw(words[a] as number, words[a + 1] as number);
 					break;
 				}
 				case G.OP_MULTI_DRAW_INDEXED:
@@ -2427,16 +2448,23 @@ export class WebGL2Backend {
 				ints[offsets] as number,
 				ints[instances] as number,
 			);
-			this.counts.drawCalls += 1;
+			this.countDraw(ints[counts] as number, ints[instances] as number);
 			return;
 		}
 		if (this.drawLists.length < 3 * count) this.drawLists = new Int32Array(3 * count);
 		const lists = this.drawLists;
+		let drawn = 0;
+		let triangles = 0;
 		for (let k = 0; k < count; k++) {
+			const instanceCount = ints[instances + k] as number;
 			lists[k] = ints[counts + k] as number;
 			lists[count + k] = ints[offsets + k] as number;
-			lists[2 * count + k] = ints[instances + k] as number;
+			lists[2 * count + k] = instanceCount;
+			drawn += instanceCount;
+			triangles += Math.floor((ints[counts + k] as number) / 3) * instanceCount;
 		}
+		this.counts.instances += drawn;
+		if (mode === TRIANGLES) this.counts.triangles += triangles;
 		ext.multiDrawElementsInstancedWEBGL(
 			mode,
 			lists,

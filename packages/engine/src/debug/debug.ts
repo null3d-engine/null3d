@@ -61,16 +61,20 @@ export type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' |
 export interface Debug {
 	/**
 	 * Shows an overlay of frame figures over the top-left corner of the canvas, or hides it with
-	 * `false`: the GPU path, the quality preset, the render scale, the frame rates, and CPU time per
-	 * frame of each thread and phase. The page draws the overlay and updates it twice a second. Its
-	 * code downloads at the first call.
+	 * `false`: the GPU path, the quality preset, the render scale, the frame rates, CPU time per
+	 * frame of each thread and phase, GPU time, draw calls, triangles and objects drawn, memory, and
+	 * the page thread's long tasks and input delay. The page draws the overlay and updates it twice
+	 * a second. Its code downloads at the first call. The page's `engine.stats` shows and hides the
+	 * same overlay, and the last call wins.
 	 */
 	stats(show?: boolean): void;
 	/**
 	 * The figures that the stats overlay shows, for the sketch: means per frame over about the last
 	 * half second. Call it each time you need figures, and read them from the object it returns. It
 	 * allocates nothing, so a sketch can call it every frame. Its code downloads at the first call,
-	 * so the figures are 0 until about half a second after that call.
+	 * so the figures are 0 until about half a second after that call. The first call also turns on
+	 * the figures that the engine samples, for the engine's life: GPU time on one frame in eleven,
+	 * the memory of textures and meshes, and on WebGPU the counts of the objects that the GPU culls.
 	 */
 	frameStats(): FrameStats;
 	/**

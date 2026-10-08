@@ -10,6 +10,7 @@ import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
+import type { CulledCounts } from './culled-counts';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
 import { IndirectArguments } from './indirect-arguments';
@@ -116,6 +117,10 @@ export class WebGPUBackend {
 	private mipSampler: GPUSampler | undefined;
 	/** Pipelines by id: null while one builds, and undefined for an id that names none. */
 	private readonly renderPipelines: (GPURenderPipeline | null | undefined)[] = [];
+	/** True for each render pipeline, by id, that draws lines rather than triangles. */
+	private readonly lineLists: boolean[] = [];
+	/** True while the render pass's pipeline draws lines. */
+	private lines = false;
 	private readonly computePipelines: (GPUComputePipeline | null | undefined)[] = [];
 	/** Pipelines that are building, or that wait for their custom material's shader. */
 	private builds = 0;
@@ -160,6 +165,8 @@ export class WebGPUBackend {
 	private readonly canvasFormat: GPUTextureFormat;
 	/** Times the passes of each frame, while the page measures. */
 	timer: GpuTimer | undefined;
+	/** Reads back what the draws culled on the GPU drew, while the page samples. */
+	culled: CulledCounts | undefined;
 	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
@@ -168,7 +175,8 @@ export class WebGPUBackend {
 	/**
 	 * What the replays since the last reset uploaded, the part that went through staging, drew and
 	 * built, the other GPU objects they made, and the draw commands they skipped because their
-	 * pipeline was still building.
+	 * pipeline was still building. The triangles and instances are those of the draws that the CPU
+	 * issued, without the indirect draws, whose counts the GPU writes.
 	 */
 	readonly counts = {
 		uploadBytes: 0,
@@ -178,6 +186,8 @@ export class WebGPUBackend {
 		pipelines: 0,
 		objects: 0,
 		skippedDraws: 0,
+		triangles: 0,
+		instances: 0,
 	};
 	// Descriptors that every frame fills again, so replay allocates none of its own.
 	private readonly renderPass = new RenderPassSetup();
@@ -500,6 +510,7 @@ export class WebGPUBackend {
 		if (!this.encoder && !this.staging.pending) return;
 		const encoder = this.commandEncoder();
 		this.timer?.endFrame();
+		this.culled?.copy(encoder);
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;
@@ -508,6 +519,7 @@ export class WebGPUBackend {
 		this.routes.submitted(this.staging.takeMadeBuffer());
 		this.encoder = undefined;
 		this.timer?.afterSubmit();
+		this.culled?.afterSubmit();
 	}
 
 	/** Destroys the copy buffers that a larger one replaced, once their commands are submitted. */
@@ -524,6 +536,15 @@ export class WebGPUBackend {
 		this.counts.pipelines = 0;
 		this.counts.objects = 0;
 		this.counts.skippedDraws = 0;
+		this.counts.triangles = 0;
+		this.counts.instances = 0;
+	}
+
+	/** Counts a draw of `count` vertices or indices, `instances` times, with the current pipeline. */
+	private countDraw(count: number, instances: number): void {
+		this.counts.drawCalls++;
+		this.counts.instances += instances;
+		if (!this.lines) this.counts.triangles += Math.floor(count / 3) * instances;
 	}
 
 	/**
@@ -698,6 +719,7 @@ export class WebGPUBackend {
 			);
 			return;
 		}
+		this.lineLists[id] = ((words[a + 6] as number) & G.STATE_LINE_LIST) !== 0;
 		if (!this.templateReady(words[a + 1] as number, words[a + 2] as number)) {
 			// Its draws draw nothing until the shader arrives and the pipeline builds.
 			this.renderPipelines[id] = null;
@@ -805,16 +827,14 @@ export class WebGPUBackend {
 				case G.OP_CREATE_BUFFER: {
 					this.counts.objects++;
 					this.buffers[words[a] as number]?.destroy();
-					// Where draws copy their arguments, a buffer of indirect draws is also a source of
-					// copies: a render pass with several of its draws copies each one's arguments out
-					// (see ./indirect-arguments.ts).
+					// A buffer of indirect draws is also a source of copies: of each draw's arguments
+					// where a render pass with several of its draws copies them out
+					// (./indirect-arguments.ts), and of the counts that the culling shaders wrote
+					// while the page samples (./culled-counts.ts).
 					const usage = words[a + 2] as number;
 					this.buffers[words[a] as number] = device.createBuffer({
 						size: words[a + 1] as number,
-						usage:
-							this.indirect.copying && usage & G.BUFFER_USAGE_INDIRECT
-								? usage | G.BUFFER_USAGE_COPY_SRC
-								: usage,
+						usage: usage & G.BUFFER_USAGE_INDIRECT ? usage | G.BUFFER_USAGE_COPY_SRC : usage,
 					});
 					break;
 				}
@@ -1102,8 +1122,10 @@ export class WebGPUBackend {
 	): boolean {
 		switch (op) {
 			case G.OP_SET_PIPELINE: {
-				const pipeline = this.need(this.renderPipelines, words[a] as number, 'render pipeline');
+				const id = words[a] as number;
+				const pipeline = this.need(this.renderPipelines, id, 'render pipeline');
 				this.skipDraws = pipeline === null;
+				this.lines = this.lineLists[id] === true;
 				if (pipeline) pass.setPipeline(pipeline);
 				return true;
 			}
@@ -1133,7 +1155,7 @@ export class WebGPUBackend {
 			}
 			case G.OP_DRAW:
 				if (this.skipDraws) return this.skipDraw();
-				this.counts.drawCalls++;
+				this.countDraw(words[a] as number, words[a + 1] as number);
 				pass.draw(
 					words[a] as number,
 					words[a + 1] as number,
@@ -1143,7 +1165,7 @@ export class WebGPUBackend {
 				return true;
 			case G.OP_DRAW_INDEXED:
 				if (this.skipDraws) return this.skipDraw();
-				this.counts.drawCalls++;
+				this.countDraw(words[a] as number, words[a + 1] as number);
 				pass.drawIndexed(
 					words[a] as number,
 					words[a + 1] as number,
@@ -1158,8 +1180,10 @@ export class WebGPUBackend {
 				const copy = this.indirect.take(id, offset);
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
+				const buffer = this.need(this.buffers, id, 'buffer');
+				this.culled?.note(buffer, offset, this.lines);
 				if (copy) pass.drawIndexedIndirect(copy, 0);
-				else pass.drawIndexedIndirect(this.need(this.buffers, id, 'buffer'), offset);
+				else pass.drawIndexedIndirect(buffer, offset);
 				return true;
 			}
 			default:

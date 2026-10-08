@@ -29,3 +29,15 @@ export const GpuObjects = 7;
  * thread's record, or `CORE_NOT_COUNTED` where the GPU culls.
  */
 export const OccludedEntries = 8;
+/**
+ * Triangles that the frame's draws drew, over every pass: a draw of triangles counts its vertices
+ * or indices over 3, times its instances, and a draw of lines counts none. Where the GPU culls,
+ * the draws that it culled add the counts of the newest frame read back from the GPU.
+ */
+export const Triangles = 9;
+/**
+ * Instances that the frame's draws drew, over every pass: each draw counts its instances, so an
+ * object counts once in each pass that draws it, such as a shadow cascade. Where the GPU culls,
+ * the draws that it culled add the counts of the newest frame read back from the GPU.
+ */
+export const DrawnObjects = 10;

@@ -133,7 +133,7 @@ Engine docs: `api/debug`, `guides/debugging`.
 
 | Tool | Shows | Builds |
 | --- | --- | --- |
-| `debug.stats(true)` in the sketch | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase | Every build |
+| `debug.stats(true)` in the sketch; (0.2) `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 also GPU time, triangles and objects drawn, memory, and the page thread's long tasks and input delay | Every build |
 | `debug.frameStats()` | The overlay's figures for the sketch, as means over about half a second. It allocates nothing, so read it every frame if you need to | Every build |
 | `await engine.measure(5)` on the page | Every figure of section 3 of `references/performance.md`: CPU, GPU, frame rates, uploads, rebuilds, pipelines, memory | Every build |
 | `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`; `'lit'` to go back | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders | Development only |

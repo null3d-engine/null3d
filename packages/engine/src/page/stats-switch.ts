@@ -1,6 +1,7 @@
-// Shows and hides the stats overlay when the sketch asks for it with `debug.stats`. The overlay's
-// code (debug/overlay.ts) downloads at the first request, so a page whose sketch never asks for it
-// never downloads it.
+// Shows and hides the stats overlay when the page asks for it, with `engine.stats`, the `stats`
+// option or the `?stats` switch, or when the sketch asks with `debug.stats`. The overlay's code
+// (debug/overlay.ts) downloads at the first request, so a page that never shows it never
+// downloads it.
 
 import type { OverlaySetup, StatsOverlay } from '../debug/overlay';
 

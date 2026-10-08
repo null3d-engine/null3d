@@ -14,6 +14,7 @@ import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGL2GpuTimer } from '../gpu/webgl2/gpu-timer';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
+import { CulledCounts } from '../gpu/webgpu/culled-counts';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
 import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
@@ -47,6 +48,10 @@ interface SceneBackend {
 		skippedDraws: number;
 		/** GPU objects other than pipelines that the replays made. */
 		objects: number;
+		/** Triangles that the draws drew. */
+		triangles: number;
+		/** Instances that the draws drew. */
+		instances: number;
 	};
 	resetCounts(): void;
 	/** The backend's builds of joined effects' shaders. */
@@ -62,6 +67,8 @@ function recordCounts(record: FrameRecorder, backend: SceneBackend): void {
 	record.count(Counter.Pipelines, counts.pipelines);
 	record.count(Counter.SkippedDraws, counts.skippedDraws);
 	record.count(Counter.GpuObjects, counts.objects);
+	record.count(Counter.Triangles, counts.triangles);
+	record.count(Counter.DrawnObjects, counts.instances);
 	backend.resetCounts();
 }
 
@@ -225,6 +232,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		this.backend.moreShaders = shaders;
 		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
+		this.backend.culled = metrics && new CulledCounts(device);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
 	}
@@ -254,9 +262,15 @@ export class WebGPUSceneRenderer implements Renderer {
 		const start = performance.now();
 		const { backend } = this;
 		backend.timer?.beginFrame(input.frame);
+		backend.culled?.beginFrame(record.measuring);
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
+		const culled = backend.culled;
+		if (culled) {
+			backend.counts.triangles += culled.triangles;
+			backend.counts.instances += culled.instances;
+		}
 		recordCounts(record, backend);
 	}
 
@@ -296,6 +310,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		this.frames.abandon();
 		this.errors.stop();
 		this.backend.timer?.destroy();
+		this.backend.culled?.destroy();
 		this.backend.destroy();
 		this.context.unconfigure();
 		this.device.destroy();

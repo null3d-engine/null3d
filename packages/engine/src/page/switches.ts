@@ -13,8 +13,8 @@
 // in a pass each, none joined. ?replay-delay= makes the thread that draws wait before it replays
 // each frame's list, for a test of memory that the sketch thread frees while the list may still
 // point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
-// publishes the running engine for benchmark tools, and ?gl-timing times each WebGL call for
-// benchmark pages.
+// publishes the running engine for benchmark tools, ?gl-timing times each WebGL call for
+// benchmark pages, and ?stats shows the stats overlay.
 
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
@@ -225,6 +225,11 @@ export interface Switches {
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
+	 * True when a bare ?stats or ?stats=on shows the stats overlay, false when ?stats=off hides it,
+	 * and undefined without the switch. It wins over the page's option.
+	 */
+	stats: boolean | undefined;
+	/**
 	 * How ?gl-timing asks the WebGL2 path to time each WebGL call on the thread that draws, for a
 	 * benchmark page to read: `calls` for a bare ?gl-timing, `sync` for ?gl-timing=sync, or
 	 * undefined to time none.
@@ -334,6 +339,7 @@ export function parseSwitches(search: string): Switches {
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
+		stats: params.get('stats') === '' ? true : onOff(params.get('stats')),
 		glTiming: !params.has('gl-timing')
 			? undefined
 			: params.get('gl-timing') === 'sync'

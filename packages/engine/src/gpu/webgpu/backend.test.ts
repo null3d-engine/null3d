@@ -338,7 +338,7 @@ describe('WebGPUBackend', () => {
 
 	it('draws straight from the shared buffer of arguments in other browsers', () => {
 		const { usage, log } = drawIndirect(MAC_CHROME);
-		expect(usage).toBe(INDIRECT);
+		expect(usage).toBe(INDIRECT | G.BUFFER_USAGE_COPY_SRC);
 		expect(log).toEqual([
 			'begin pass',
 			'draw from buffer 0 at 0',

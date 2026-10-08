@@ -319,6 +319,12 @@ export interface EngineOptions {
 	 * draw. Throws E1421 for a name it does not know.
 	 */
 	preload?: readonly ShaderFeature[];
+	/**
+	 * True shows the stats overlay over the canvas from the first frame, as `engine.stats(true)`
+	 * does. The default is false. The `?stats` or `?stats=on` switch shows it too, and `?stats=off`
+	 * hides it, whatever this option says. A held engine for image tests shows no overlay.
+	 */
+	stats?: boolean;
 }
 
 /**
@@ -516,6 +522,16 @@ export interface Engine {
 	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time.
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
+	/**
+	 * Shows an overlay of figures over the top-left corner of the canvas, or hides it with `false`:
+	 * the GPU path, the frame rates, CPU time per frame of each thread, GPU time, draw calls,
+	 * triangles and objects drawn, memory, and the page thread's long tasks and input delay. The
+	 * page draws it and updates it twice a second, and its code downloads at the first call. While
+	 * it shows, the engine times one frame in eleven on the GPU and reads back the counts of the
+	 * objects that the GPU culls, which costs a little GPU time. The sketch's `debug.stats` shows
+	 * and hides the same overlay, and the last call wins.
+	 */
+	stats(show?: boolean): void;
 	/**
 	 * Resolves with an image of the next frame that the engine draws, as a PNG file. The thread
 	 * that draws reads the frame back and encodes it, so the page's thread does no work for it when
@@ -1209,7 +1225,9 @@ async function startEngine(
 			tier,
 			preset: () => mode.preset,
 			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
+			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
 		},
+		sharedMemory: threaded,
 	}));
 	Atomics.store(slots, Slot.Running, 1);
 	/**
@@ -1272,6 +1290,8 @@ async function startEngine(
 
 	// What the start sets up, which a stop takes down again, from any point of the start.
 	let coreMemory: WebAssembly.Memory | undefined;
+	/** The engine's WebAssembly memory as the page sees it, once the core has loaded. */
+	let wasmMemory: WebAssembly.Memory | undefined;
 	let memoryKey: MemoryKey | undefined;
 	/** True while the page's own core starts in the shared memory. */
 	let pageCoreStarting = false;
@@ -1536,7 +1556,7 @@ async function startEngine(
 		coreMemory = core.memory;
 		memoryKey = core.memoryKey;
 		onProgress('core');
-		let wasmMemory = core.memory;
+		wasmMemory = core.memory;
 		const capabilities: EngineCapabilities = {
 			tier,
 			threaded,
@@ -1944,6 +1964,9 @@ async function startEngine(
 					perSecond: secondRates(reader.records),
 				};
 			},
+			stats(show = true) {
+				if (!stopped()) statsSwitch.show(show);
+			},
 			async capture() {
 				try {
 					if (stopped()) throw new Error('the engine has stopped');
@@ -1966,6 +1989,8 @@ async function startEngine(
 		};
 		if (hold === undefined) {
 			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
+			const stats = switches.stats ?? (options.stats === true || undefined);
+			if (stats !== undefined) statsSwitch.show(stats);
 			return engine;
 		}
 		try {

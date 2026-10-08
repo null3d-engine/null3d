@@ -53,6 +53,7 @@ const engine = await createEngine({
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
   preload: ['skinning', 'bloom'],  // (0.2) features whose shaders load before the first frame, for games that fetch nothing in play (E1421 for an unknown name)
+  stats: true,           // (0.2) the stats overlay from the first frame; ?stats in the address shows it too, ?stats=off hides it
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
@@ -66,6 +67,7 @@ engine.setPaused(true);                  // the first step after resuming counts
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
 engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
+engine.stats(true);                               // (0.2) the stats overlay on or off from the page; the sketch's debug.stats shares it
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
@@ -573,13 +575,13 @@ debug.frustum(camera, color);                   // in the canvas's shape
 debug.light(sun, { position, size, color });    // a directional light's direction
 debug.skeleton(hero, color);                    // (0.2) skin joints: blue at the joint, green at its parent
 
-debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale
-const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls
+debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale; (0.2) GPU ms, triangles, objects, memory, long tasks
+const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls; (0.2) s.gpuMs, s.triangles, s.objects, s.wasmBytes, s.meshBytes
 debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' | 'shadows'; 'lit' draws the materials again
 debug.shadowCamera(player);              // place the sun's shadow cascades from another camera; no argument goes back
 ```
 
-Debug drawing and `debug.view` exist in development builds only. In a production build every drawing call and `debug.view` do nothing, and the build holds none of their code. A debug view replaces every material until the next call, clears to black and skips tone mapping. Lines are one pixel wide, and objects in front of them hide them. `debug.stats` and `debug.frameStats` work in every build. The figures are means over the last half second. They are 0 for about half a second after the first call. `frameStats()` allocates nothing, so you can call it every frame. The object changes, so copy it with `JSON.parse(JSON.stringify(s))` before you send it. For GPU time and memory, call `engine.measure(seconds)` on the page (section 1).
+Debug drawing and `debug.view` exist in development builds only. In a production build every drawing call and `debug.view` do nothing, and the build holds none of their code. A debug view replaces every material until the next call, clears to black and skips tone mapping. Lines are one pixel wide, and objects in front of them hide them. `debug.stats` and `debug.frameStats` work in every build. The figures are means over the last half second. They are 0 for about half a second after the first call. `frameStats()` allocates nothing, so you can call it every frame. The object changes, so copy it with `JSON.parse(JSON.stringify(s))` before you send it. In 0.2 its first call turns on GPU timing on one frame in eleven for the engine's life. Triangles and objects count every pass, shadow maps included, so an object counts once per pass that draws it. For percentiles of CPU and GPU time and memory, call `engine.measure(seconds)` on the page (section 1). A three.js page prints its own figures in the overlay's layout with `statsText` from `@null3d/engine/stats` (0.2).
 
 ## 20. Math, color and time (`api/math`, `api/time`)
 
