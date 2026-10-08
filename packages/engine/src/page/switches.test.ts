@@ -113,6 +113,8 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?gpu=webgl2&stats=on').stats).toBe(true);
 		expect(parseSwitches('?stats=off').stats).toBe(false);
 		expect(parseSwitches('?stats=maybe').stats).toBeUndefined();
+		expect(parseSwitches('?stats=collapsed').stats).toEqual({ collapsed: true });
+		expect(parseSwitches('?stats=open').stats).toEqual({ collapsed: false });
 		expect(parseSwitches('?gpu=webgl2').stats).toBeUndefined();
 	});
 

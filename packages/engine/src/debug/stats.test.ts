@@ -7,7 +7,9 @@ import {
 	Phase,
 	Role,
 } from '../shared/metrics';
-import { overlayFigures, type PageFigures, RecentMainThread } from './overlay';
+import { rateLevel, targetFps, workLevel } from './frame-target';
+import { overlayFigures, type PageFigures } from './overlay';
+import { codeMs, drawingMs, tenthsOfMib, WorkThreads, widthStep } from './overlay-look';
 import { type FrameStats, FrameStatsWindow, STATS_WINDOW_MS } from './stats';
 import { statsText } from './stats-text';
 
@@ -208,7 +210,7 @@ type FrameStatsThreads = [
 ];
 
 /** The page's own figures where the browser gives none. */
-const NO_PAGE_FIGURES: PageFigures = { jsHeapBytes: null, page: null, mainThread: null };
+const NO_PAGE_FIGURES: PageFigures = { jsHeapBytes: null, page: null };
 
 describe('statsText', () => {
 	it('waits for the first window', () => {
@@ -254,13 +256,13 @@ describe('statsText', () => {
 			gpu.commit(frame === 10 ? 1.5 : 2.5);
 		}
 		window.update();
-		const text = statsText(
-			overlayFigures(window.stats, {
+		const text = statsText({
+			...overlayFigures(window.stats, {
 				jsHeapBytes: 12 * 1024 * 1024,
 				page: { bytes: 300 * 1024 * 1024, browserBytes: 492 * 1024 * 1024 },
-				mainThread: { seconds: 5, longTasks: 2, longestTaskMs: 120.4, inputDelayMs: 8.2 },
 			}),
-		).split('\n');
+			mainThread: { seconds: 5, longTasks: 2, longestTaskMs: 120.4, inputDelayMs: 8.2 },
+		}).split('\n');
 		expect(text.slice(8)).toEqual([
 			'gpu 2.17 ms per frame',
 			'draw calls 12  upload 3.0 KB',
@@ -338,21 +340,101 @@ describe('FrameStatsWindow GPU time', () => {
 	});
 });
 
-describe('RecentMainThread', () => {
-	it('sums the long tasks and keeps the longest task and input delay of the last windows', () => {
-		const recent = new RecentMainThread();
-		expect(recent.add(null)).toBeNull();
-		recent.add({ seconds: 0.5, longTasks: 1, longestTaskMs: 80, inputDelayMs: null });
-		const both = recent.add({ seconds: 0.5, longTasks: 2, longestTaskMs: 60, inputDelayMs: 12 });
-		expect(both).toEqual({ seconds: 1, longTasks: 3, longestTaskMs: 80, inputDelayMs: 12 });
-		const quiet = { seconds: 0.5, longTasks: 0, longestTaskMs: 0, inputDelayMs: null };
-		for (let k = 0; k < 9; k++) recent.add(quiet);
-		// The first windows have left the last few.
-		expect(recent.add(quiet)).toEqual({
-			seconds: 5,
-			longTasks: 0,
-			longestTaskMs: 0,
-			inputDelayMs: null,
-		});
+describe('the overlay target and colors', () => {
+	it("aims at the display's rate, at most 60 frames a second, or a lower cap", () => {
+		expect(targetFps(0, undefined)).toBe(60);
+		expect(targetFps(120, undefined)).toBe(60);
+		expect(targetFps(50, undefined)).toBe(50);
+		expect(targetFps(120, 30)).toBe(30);
+		expect(targetFps(120, 90)).toBe(60);
+	});
+
+	it('colors work green below 80% of the interval, amber up to it, and red past it', () => {
+		expect([10, 13.2, 13.4, 16.6, 16.7, 17].map((ms) => workLevel(ms, 16.6))).toEqual([
+			'ok',
+			'ok',
+			'warn',
+			'warn',
+			'bad',
+			'bad',
+		]);
+	});
+
+	it('colors the frame rate green from 90% of the target, amber from 75%, and red below', () => {
+		expect([60, 54, 53.9, 45, 44.9].map((fps) => rateLevel(fps, 60))).toEqual([
+			'ok',
+			'ok',
+			'warn',
+			'warn',
+			'bad',
+		]);
+	});
+
+	it('steps a bar from empty to full, and adds memory up in tenths of a MiB', () => {
+		expect([-1, 0, 0.002, 0.256, 1, 2.5].map(widthStep)).toEqual([0, 0, 0, 51, 200, 200]);
+		expect(tenthsOfMib(64 * 1024 * 1024)).toBe(640);
+		expect(tenthsOfMib(1.26 * 1024 * 1024)).toBe(13);
+	});
+
+	it("splits a thread's time into the sketch's code and the engine's work", () => {
+		expect(codeMs({ name: 'sketch-worker', busyMs: 2, phases: { update: 0.5, record: 1 } })).toBe(
+			0.5,
+		);
+		expect(codeMs({ name: 'render-worker', busyMs: 1, phases: { replay: 0.8 } })).toBe(0);
+		expect(codeMs({ name: 'main', busyMs: 0.4, phases: { update: 0.5 } })).toBe(0.4);
+	});
+
+	it('finds each thread of the work bars, with the job workers as their slowest', () => {
+		const threads = new WorkThreads();
+		threads.update([
+			{ name: 'sketch-worker', busyMs: 2 },
+			{ name: 'render-worker', busyMs: 1 },
+			{ name: 'job-0', busyMs: 0.5 },
+			{ name: 'job-1', busyMs: 0.9 },
+			{ name: 'job-2', busyMs: 0.7 },
+		]);
+		expect(threads.sketch?.busyMs).toBe(2);
+		expect(threads.drawing?.busyMs).toBe(1);
+		expect(threads.page).toBeUndefined();
+		expect(threads.jobs).toBe(3);
+		expect(threads.slowestJob?.name).toBe('job-1');
+		threads.update([{ name: 'main', busyMs: 3 }]);
+		expect([threads.sketch, threads.drawing, threads.slowestJob, threads.jobs]).toEqual([
+			undefined,
+			undefined,
+			undefined,
+			0,
+		]);
+		expect(threads.page?.busyMs).toBe(3);
+	});
+
+	it('puts the thread that runs the sketch and draws on one bar, with the drawing last', () => {
+		const threads = new WorkThreads();
+		const both = {
+			name: 'sketch-worker',
+			busyMs: 6,
+			phases: { update: 1, upload: 0.5, replay: 2 },
+		};
+		threads.update([both, { name: 'job-0', busyMs: 1 }], 'sketch-worker');
+		expect(threads.both).toBe(both);
+		expect(threads.sketch).toBeUndefined();
+		expect(drawingMs(both)).toBe(2.5);
+		expect(
+			drawingMs({ name: 'main', busyMs: 1, phases: { update: 0.8, replay: 0.5 } }),
+		).toBeCloseTo(0.2);
+	});
+
+	it('names the bar furthest past the target, or the work outside the engine', () => {
+		const threads = new WorkThreads();
+		threads.update([
+			{ name: 'sketch-worker', busyMs: 18 },
+			{ name: 'render-worker', busyMs: 12 },
+			{ name: 'job-0', busyMs: 20 },
+		]);
+		expect(threads.heldBackBy(16.7, 19)).toBe('Jobs');
+		expect(threads.heldBackBy(16.7, 25)).toBe('GPU');
+		expect(threads.heldBackBy(25, 24)).toBe('outside the engine');
+		threads.update([{ name: 'main', busyMs: 30 }], 'main');
+		expect(threads.heldBackBy(16.7, null)).toBe('Sketch + drawing');
 	});
 });

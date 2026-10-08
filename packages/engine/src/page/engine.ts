@@ -3,6 +3,7 @@
 // page loads the renderer only when it draws itself, and the sketch runner and the scene API only
 // when it runs the sketch itself: in the single-threaded build, and with sketchThread: 'main'.
 
+import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
@@ -321,11 +322,12 @@ export interface EngineOptions {
 	 */
 	preload?: readonly ShaderFeature[];
 	/**
-	 * True shows the stats overlay over the canvas from the first frame, as `engine.stats(true)`
-	 * does. The default is false. The `?stats` or `?stats=on` switch shows it too, and `?stats=off`
-	 * hides it, whatever this option says. A held engine for image tests shows no overlay.
+	 * True or options show the stats overlay over the canvas from the first frame, as
+	 * `engine.stats` does with the same value. The default is false. The `?stats` or `?stats=on`
+	 * switch shows it too, with these options when they are given, and `?stats=off` hides it,
+	 * whatever this option says. A held engine for image tests shows no overlay.
 	 */
-	stats?: boolean;
+	stats?: boolean | StatsOverlayOptions;
 }
 
 /**
@@ -524,15 +526,18 @@ export interface Engine {
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
-	 * Shows an overlay of figures over the top-left corner of the canvas, or hides it with `false`:
-	 * the GPU path, the frame rates, CPU time per frame of each thread, GPU time, draw calls,
-	 * triangles and objects drawn, memory, and the page thread's long tasks and input delay. The
-	 * page draws it and updates it twice a second, and its code downloads at the first call. While
-	 * it shows, the engine times one frame in eleven on the GPU and reads back the counts of the
-	 * objects that the GPU culls, which costs a little GPU time. The sketch's `debug.stats` shows
-	 * and hides the same overlay, and the last call wins.
+	 * Shows an overlay of figures over a corner of the canvas, or hides it with `false`: the GPU
+	 * path, the frame rates, CPU time per frame of each thread, GPU time, draw calls, triangles and
+	 * objects drawn, memory, and the page thread's long tasks and input delay. Its header is a
+	 * button with the frame rate, which shows and hides the other figures. Options pick the corner
+	 * and whether the overlay starts collapsed to its header; a call on a shown overlay changes the
+	 * options it names. The page draws the overlay and updates it a few times a second, and its
+	 * code downloads at the first call. While the other figures show, the engine times one frame in
+	 * eleven on the GPU and reads back the counts of the objects that the GPU culls, which costs a
+	 * little GPU time. The sketch's `debug.stats` shows and hides the same overlay, and the last
+	 * call wins.
 	 */
-	stats(show?: boolean): void;
+	stats(show?: boolean | StatsOverlayOptions): void;
 	/**
 	 * Resolves with an image of the next frame that the engine draws, as a PNG file. The thread
 	 * that draws reads the frame back and encodes it, so the page's thread does no work for it when
@@ -668,8 +673,8 @@ interface WorkerEvents {
 	failure(error: EngineError, endsStart?: boolean): void;
 	/** The quality preset and settings after a change, and the preset check's result. */
 	quality(update: QualityUpdate): void;
-	/** The sketch asked to show or hide the stats overlay. */
-	stats(show: boolean): void;
+	/** The sketch asked to show or hide the stats overlay, or to change its options. */
+	stats(show: StatsRequest): void;
 	/** The slot in the label table of a label's id, or -1 once it has none. */
 	labelSlot: LabelSlotSender;
 }
@@ -1237,6 +1242,9 @@ async function startEngine(
 			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
 		},
 		sharedMemory: threaded,
+		fpsCap: switches.fps,
+		gpuFeatures,
+		mode,
 	}));
 	Atomics.store(slots, Slot.Running, 1);
 	/**
@@ -1301,6 +1309,8 @@ async function startEngine(
 	let coreMemory: WebAssembly.Memory | undefined;
 	/** The engine's WebAssembly memory as the page sees it, once the core has loaded. */
 	let wasmMemory: WebAssembly.Memory | undefined;
+	/** The GPU features or WebGL2 extensions that the engine found, once it has probed the device. */
+	let gpuFeatures: readonly string[] = [];
 	let memoryKey: MemoryKey | undefined;
 	/** True while the page's own core starts in the shared memory. */
 	let pageCoreStarting = false;
@@ -1582,6 +1592,7 @@ async function startEngine(
 			maxCanvasSize: maxCanvasSize(tier, report),
 			depth: device.depth,
 		};
+		gpuFeatures = capabilities.features;
 		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
 		const wakeByMessage = switches.wakeByMessage || !report.atomicsWaitAsync;
 		setWakeByMessage(wakeByMessage);
@@ -2003,8 +2014,11 @@ async function startEngine(
 		};
 		if (hold === undefined) {
 			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
-			const stats = switches.stats ?? (options.stats === true || undefined);
-			if (stats !== undefined) statsSwitch.show(stats);
+			// The switch's start state goes on top of the option's corner.
+			if (switches.stats !== false) {
+				if (options.stats) statsSwitch.show(options.stats);
+				if (switches.stats) statsSwitch.show(switches.stats);
+			}
 			return engine;
 		}
 		try {

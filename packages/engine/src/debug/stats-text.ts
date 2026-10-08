@@ -53,11 +53,11 @@ export interface StatsMemory {
 	readonly textureBytes: number | null;
 	/** The GPU bytes that every mesh takes. */
 	readonly meshBytes: number | null;
-	/** The JavaScript heap of the page's own thread, where the browser reports it (Chromium). */
+	/** The JavaScript heap of the page's own thread, where the browser has `performance.memory`. */
 	readonly jsHeapBytes: number | null;
 	/**
 	 * The memory of the whole page and its workers, from the browser's own measurement, where the
-	 * browser offers one (Chromium, on a cross-origin isolated page).
+	 * browser has `performance.measureUserAgentSpecificMemory`, on a cross-origin isolated page.
 	 */
 	readonly page: PageMemory | null;
 }
@@ -110,7 +110,7 @@ function mib(bytes: number | null): string {
 }
 
 /** A count rounded to a whole number, in thousands (k) or millions (M) from 10,000 up. */
-function count(value: number | null): string {
+export function count(value: number | null): string {
 	if (value === null) return NONE;
 	if (value < 10_000) return `${Math.round(value)}`;
 	if (value < 10_000_000) return `${(value / 1000).toFixed(1)} k`;

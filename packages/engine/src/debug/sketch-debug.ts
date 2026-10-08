@@ -13,11 +13,12 @@ import { sampleFrames } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
 import type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug';
 import type { FrameStats, FrameStatsWindow, StatsSources } from './stats';
+import type { StatsRequest } from './stats-options';
 
 /** What the debug API needs from the thread that runs the sketch. */
 export interface DebugHost {
-	/** Asks the page to show or hide its stats overlay. */
-	showStats(show: boolean): void;
+	/** Asks the page to show or hide its stats overlay, or to change its options. */
+	showStats(show: StatsRequest): void;
 	/** The metrics buffer that the frame figures read. */
 	metrics: ArrayBufferLike;
 	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
@@ -70,7 +71,7 @@ export class SketchDebug implements Debug {
 	view(_view: DebugView): void {}
 	shadowCamera(_camera?: Camera): void {}
 
-	stats(show = true): void {
+	stats(show: StatsRequest = true): void {
 		// The page may have changed the overlay since this sketch's last call, so each call goes on.
 		this.host.showStats(show);
 	}

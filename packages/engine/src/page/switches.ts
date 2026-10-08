@@ -16,6 +16,7 @@
 // publishes the running engine for benchmark tools, ?gl-timing times each WebGL call for
 // benchmark pages, and ?stats shows the stats overlay.
 
+import type { StatsRequest } from '../debug/stats-options';
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
@@ -226,9 +227,10 @@ export interface Switches {
 	bench: boolean;
 	/**
 	 * True when a bare ?stats or ?stats=on shows the stats overlay, false when ?stats=off hides it,
-	 * and undefined without the switch. It wins over the page's option.
+	 * options when ?stats=collapsed or ?stats=open shows it collapsed or open, and undefined without
+	 * the switch. It wins over the page's option.
 	 */
-	stats: boolean | undefined;
+	stats: StatsRequest | undefined;
 	/**
 	 * How ?gl-timing asks the WebGL2 path to time each WebGL call on the thread that draws, for a
 	 * benchmark page to read: `calls` for a bare ?gl-timing, `sync` for ?gl-timing=sync, or
@@ -271,6 +273,13 @@ function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T
 /** True for `on`, false for `off`, and undefined for anything else. */
 function onOff(value: string | null): boolean | undefined {
 	return value === 'on' ? true : value === 'off' ? false : undefined;
+}
+
+/** ?stats: on for a bare switch or `on`, off for `off`, or the start state for `collapsed` or `open`. */
+function statsSwitch(value: string | null): StatsRequest | undefined {
+	return value === 'collapsed' || value === 'open'
+		? { collapsed: value === 'collapsed' }
+		: value === '' || onOff(value);
 }
 
 /** A number above 0, or undefined for a missing or unusable value. */
@@ -339,7 +348,7 @@ export function parseSwitches(search: string): Switches {
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
-		stats: params.get('stats') === '' ? true : onOff(params.get('stats')),
+		stats: statsSwitch(params.get('stats')),
 		glTiming: !params.has('gl-timing')
 			? undefined
 			: params.get('gl-timing') === 'sync'

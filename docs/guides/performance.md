@@ -279,7 +279,7 @@ On WebGPU, every preset leaves it off. In the S2 benchmark in Chrome on a MacBoo
 
 ## Measure
 
-For a quick look while the scene runs, add `?stats` to the page's address, or call `debug.stats(true)` in the sketch. The overlay shows the frame rates, the CPU time of each thread and phase, and GPU time, twice a second. It also shows draw calls, triangles and objects drawn, memory, and long tasks on the page's thread ([Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures)). While it shows, the engine times one frame in eleven on the GPU, which costs a little GPU time. For figures that you compare between changes, measure.
+For a quick look while the scene runs, add `?stats` to the page's address, or call `debug.stats(true)` in the sketch. The overlay's header shows the frame rate. Its card shows each thread's CPU time and the GPU's time against the engine's target frame rate, with your code apart from the engine's work. It also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back ([Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures)). While the card is open, the engine times one frame in eleven on the GPU, which costs a little GPU time. For figures that you compare between changes, measure.
 
 `engine.measure(seconds)` on the page records every frame for that many seconds and returns these figures:
 

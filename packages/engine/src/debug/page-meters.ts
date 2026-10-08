@@ -79,6 +79,8 @@ export class PageMemorySampler {
 	/** Why the browser refused a measurement, or null. */
 	failure: string | null = null;
 	private running = false;
+	/** The count of starts, so that a loop of an earlier start ends when a new one begins. */
+	private starts = 0;
 	private readonly figures = { bytes: null as number | null, browserBytes: null as number | null };
 
 	/**
@@ -91,7 +93,7 @@ export class PageMemorySampler {
 		private readonly onSample?: (measurement: MemoryMeasurement) => void,
 	) {}
 
-	/** True where the browser offers the measurement: Chromium, on a cross-origin isolated page. */
+	/** True where the browser offers the measurement, on a cross-origin isolated page. */
 	static get supported(): boolean {
 		return typeof measureOf() === 'function';
 	}
@@ -106,10 +108,12 @@ export class PageMemorySampler {
 		const measure = measureOf();
 		if (!measure || this.running) return;
 		this.running = true;
+		const start = ++this.starts;
+		const current = () => this.running && this.starts === start;
 		const sample = async () => {
-			while (this.running) {
+			while (current()) {
 				const result = await measure.call(performance);
-				if (!this.running) return;
+				if (!current()) return;
 				this.last = result;
 				this.figures.browserBytes = result.bytes;
 				this.figures.bytes = countSharedOnce(result, this.sharedBytes());
@@ -118,6 +122,7 @@ export class PageMemorySampler {
 			}
 		};
 		sample().catch((error: unknown) => {
+			if (!current()) return;
 			this.running = false;
 			this.failure = `the browser refused the measurement: ${error instanceof Error ? error.message : String(error)}`;
 		});
@@ -137,7 +142,7 @@ function measureOf(): MeasureMemory | undefined {
 
 /**
  * The JavaScript heap of the page's own thread in bytes, from `performance.memory`, or null where
- * the browser does not report it. Only Chromium reports it.
+ * the browser does not have it.
  *
  * @category api/debug
  */
@@ -152,7 +157,8 @@ interface EventTimingEntry extends PerformanceEntry {
 
 /**
  * Watches the page's own thread in windows, one after another: its long tasks and its longest
- * input delay, from the browser's performance entries, where the browser reports them (Chromium).
+ * input delay. They come from the browser's long task and event timing entries, where the browser
+ * reports them.
  *
  * @category api/debug
  */

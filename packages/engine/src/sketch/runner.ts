@@ -20,6 +20,7 @@
 
 import { DebugDraw } from '../debug/draw';
 import { type DebugHost, SketchDebug } from '../debug/sketch-debug';
+import type { StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -107,8 +108,8 @@ export interface SketchCore {
 	fps?: number;
 	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
 	threads: readonly (readonly [string, readonly number[]])[];
-	/** Asks the page to show or hide its stats overlay. */
-	showStats(show: boolean): void;
+	/** Asks the page to show or hide its stats overlay, or to change its options. */
+	showStats(show: StatsRequest): void;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
 }
