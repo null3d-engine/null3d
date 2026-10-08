@@ -45,7 +45,8 @@ export default defineSketch(async (ctx) => {
 	scene.createAmbientLight({ color: '#dbe8ff', intensity: 0.8 });
 	scene.createMesh({
 		mesh: geometry.circle({ radius: 60, segments: 64 }),
-		material: materials.standard({ color: '#7c9a52' }),
+		// Both faces draw, so the ground stays in view when a pan takes the camera below it.
+		material: materials.standard({ color: '#7c9a52', doubleSided: true }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 		receiveShadows: true,
 	});

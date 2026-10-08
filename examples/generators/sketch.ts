@@ -1,6 +1,6 @@
 // Geometry generators: the nine shapes that geometry makes, with the parameters of three.js's
 // geometry classes. Each shape turns back and forth, or toward the pointer while it points. The flat
-// shapes face +Z and draw only their front faces, so none turns far enough to show its back.
+// shapes, the last three, draw both faces, so they stay in view when the camera orbits behind them.
 import { defineSketch, math } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
@@ -44,7 +44,7 @@ export default defineSketch((ctx) => {
 	const meshes = shapes.map((mesh, i) =>
 		scene.createMesh({
 			mesh,
-			material: materials.standard({ color: colors[i] }),
+			material: materials.standard({ color: colors[i], doubleSided: i >= 6 }),
 			position: [((i % 3) - 1) * 2.6, (1 - Math.floor(i / 3)) * 2.2, 0],
 			dynamic: true,
 		}),

@@ -64,7 +64,7 @@ export default defineSketch(async (ctx) => {
 	const concrete = materials.standard({ color: '#8a8b92', roughness: 0.9 });
 	scene.createMesh({ mesh: box, material: concrete, position: [0, -0.05, 0], scale: [8, 0.1, 8] });
 	scene.createMesh({ mesh: box, material: concrete, position: [0, 2, -2.05], scale: [8, 4, 0.1] });
-	scene.createMesh({ mesh: box, material: concrete, position: [-2.05, 2, 0], scale: [0.1, 4, 8] });
+	scene.createMesh({ mesh: box, material: concrete, position: [-2.05, 2, 1], scale: [0.1, 4, 6] });
 
 	const wood = materials.standard({ color: '#c4c8d4', roughness: 0.8 });
 	const crates = [

@@ -52,7 +52,7 @@ export default defineSketch((ctx) => {
 
 	scene.createMesh({
 		mesh: geometry.plane({ width: 40, height: 40 }),
-		material: solid('#7d8a6a', 0.95),
+		material: materials.standard({ color: '#7d8a6a', roughness: 0.95, doubleSided: true }),
 		rotation: QUARTER_X,
 		receiveShadows: true,
 	});

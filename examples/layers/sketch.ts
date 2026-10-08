@@ -54,27 +54,28 @@ export default defineSketch((ctx) => {
 			position: [0, 0.05, 0],
 			scale: [2.4, 0.1, 2.4],
 		});
-		// Three walls, open at the front, low enough to look over.
+		// Three walls on the floor, open at the front, low enough to look over. The back wall fits
+		// between the side walls, so no two faces share a plane and flicker.
 		scene.createMesh({
 			mesh: box,
 			material: wall,
 			parent: house,
-			position: [0, 0.6, -1.15],
-			scale: [2.4, 1.1, 0.1],
+			position: [0, 0.625, -1.15],
+			scale: [2.2, 1.05, 0.1],
 		});
 		scene.createMesh({
 			mesh: box,
 			material: wall,
 			parent: house,
-			position: [-1.15, 0.6, 0],
-			scale: [0.1, 1.1, 2.4],
+			position: [-1.15, 0.625, 0],
+			scale: [0.1, 1.05, 2.4],
 		});
 		scene.createMesh({
 			mesh: box,
 			material: wall,
 			parent: house,
-			position: [1.15, 0.6, 0],
-			scale: [0.1, 1.1, 2.4],
+			position: [1.15, 0.625, 0],
+			scale: [0.1, 1.05, 2.4],
 		});
 		// A table and a bed in a color of their own.
 		const color = furniture[h % furniture.length];

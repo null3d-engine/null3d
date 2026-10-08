@@ -68,7 +68,8 @@ export default defineSketch((ctx) => {
 
 	scene.createMesh({
 		mesh: geometry.fromArrays(heightField()),
-		material: materials.standard({ color: '#6f9e58' }),
+		// Both faces draw, so the hills stay in view when the camera orbits under them.
+		material: materials.standard({ color: '#6f9e58', doubleSided: true }),
 	});
 	const gem = scene.createMesh({
 		mesh: geometry.fromArrays(crystal()),
