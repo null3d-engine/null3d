@@ -19,10 +19,9 @@ run('demo-probe', async () => {
 	if (!demo) throw new Error(`Add ?demo= with the name of a demo, not ${name}.`);
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
-	const sketch = new URL(
-		`./sketches/demo-probe-sketch.ts?demo=${new URL(demo.sketch).pathname}`,
-		import.meta.url,
-	);
+	// The plugin reads the sketch's address as a literal, so the query goes on after.
+	const sketch = new URL('./sketches/demo-probe-sketch.ts', import.meta.url);
+	sketch.searchParams.set('demo', new URL(demo.sketch).pathname);
 	const engine = await startDemo({ canvas, demo: { ...demo, sketch } });
 	await engine.firstFrame;
 	window.demoProbe = () =>

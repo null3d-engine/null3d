@@ -120,7 +120,7 @@ export default defineSketch((ctx) => {
 	});
 
 	const look: Vec3 = [-0.2, 1.8, 0];
-	const camera = scene.createPerspectiveCamera({ position: [-1.4, 1.7, 5.6], target: look });
+	const camera = scene.createPerspectiveCamera({ position: [-1.398, 2.16, 5.59], target: look });
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, {
 		target: look,
