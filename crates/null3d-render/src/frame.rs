@@ -847,20 +847,6 @@ impl SceneSettings {
         }
     }
 
-    /// True when a custom effect, a group of joined effects, the fold into the final pass or the
-    /// custom tone curve draws with pipelines of `template`.
-    fn post_uses_template(&self, template: u32) -> bool {
-        let joins = &self.effect_joins;
-        self.effects
-            .iter()
-            .any(|effect| effect.template == template)
-            || joins.groups.iter().any(|&(_, group)| group == template)
-            || joins.fold.is_some_and(|(_, fold)| fold == template)
-            || self
-                .tone_curve
-                .is_some_and(|curve| (curve..curve + 2).contains(&template))
-    }
-
     /// How the sketch joins its effects.
     pub(crate) fn effect_joins(&self) -> &EffectJoins {
         &self.effect_joins
@@ -898,6 +884,20 @@ impl SceneSettings {
     /// recorded frame on.
     pub fn set_tone_curve(&mut self, template: Option<u32>) {
         self.tone_curve = template;
+    }
+
+    /// True when a custom effect, a group of joined effects, the fold into the final pass or the
+    /// custom tone curve draws with pipelines of `template`.
+    fn post_uses_template(&self, template: u32) -> bool {
+        let joins = &self.effect_joins;
+        self.effects
+            .iter()
+            .any(|effect| effect.template == template)
+            || joins.groups.iter().any(|&(_, group)| group == template)
+            || joins.fold.is_some_and(|(_, fold)| fold == template)
+            || self
+                .tone_curve
+                .is_some_and(|curve| (curve..curve + 2).contains(&template))
     }
 
     /// The sketch time and the seconds since the frame before.
