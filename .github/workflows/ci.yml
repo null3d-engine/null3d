@@ -301,8 +301,8 @@ jobs:
     # The npm packages as a developer installs them: each public package packed as the publish job
     # packs it, and checked for every file it needs, then installed into a fresh Vite project where
     # the command-line tool's test command type checks the project and draws its sketch on every
-    # GPU tier, and Vite builds it for production. Then the project builds the examples page from a
-    # copy of examples/, as the website does, and two demos must start from that build.
+    # GPU tier, and Vite builds it for production. Then the project builds a page of its own layout
+    # around a copy of examples/, as the website does, and two demos must start from that build.
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
