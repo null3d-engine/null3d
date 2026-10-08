@@ -27,7 +27,7 @@ const MODES = [
 const show = (on: boolean) =>
 	(globalThis as { showStats?: (show: boolean) => void }).showStats?.(on);
 /** Runs in the page: asks the page to show or hide the overlay, or to change its options. */
-const showFromPage = (request: boolean | { corner?: string; collapsed?: boolean }) =>
+const showFromPage = (request: boolean | { collapsed?: boolean }) =>
 	(globalThis as { showPageStats?: (show: unknown) => void }).showPageStats?.(request);
 /** Opens the stats page and waits for its result. */
 async function openStats(page: Page, query: string): Promise<StatsResult & { error?: string }> {
@@ -51,12 +51,37 @@ function call<T>(page: Page, name: string, ...args: unknown[]): Promise<T> {
 /** The boxes of the canvas, the overlay's element and its header button, in the page. */
 const boxes = (page: Page) => call<OverlayBoxes>(page, 'overlayBoxes');
 
+/** Checks that the overlay sits on the canvas's top-right corner. */
+function expectTopRight(at: OverlayBoxes): void {
+	expect(at.host.right).toBeCloseTo(at.canvas.right, 0);
+	expect(at.host.top).toBeCloseTo(at.canvas.top, 0);
+}
+
+/** Checks that the header button has the same right and top edges in two sets of boxes. */
+function expectButtonKept(before: OverlayBoxes, after: OverlayBoxes): void {
+	expect(after.button.right).toBeCloseTo(before.button.right, 0);
+	expect(after.button.top).toBeCloseTo(before.button.top, 0);
+}
+
 for (const mode of MODES)
 	test(`the stats overlay and the sketch's frame figures, ${mode.name}`, async ({ page }) => {
 		const result = await openStats(page, mode.query);
 		expect(statsProblems(result)).toEqual([]);
 		// Chrome's GPU paths time frames wherever they offer the timer.
 		if (result.gpuTimer) expect(result.figures?.gpuMs).not.toBeNull();
+
+		// The overlay keeps to the canvas's top-right corner, and its button stays put as the card
+		// closes and opens again.
+		const open = await boxes(page);
+		expectTopRight(open);
+		await page.evaluate(showFromPage, { collapsed: true });
+		await expect(page.locator(CARD)).toBeHidden();
+		const closed = await boxes(page);
+		expectTopRight(closed);
+		expectButtonKept(open, closed);
+		await page.evaluate(showFromPage, { collapsed: false });
+		await expect(page.locator(CARD)).toBeVisible();
+		expectButtonKept(open, await boxes(page));
 
 		// Hidden and shown again by the sketch and by the page, then gone with the engine.
 		const overlay = page.locator(OVERLAY);
@@ -81,28 +106,27 @@ test('the stats overlay leaves out the figures that the browser does not give, a
 	expect(Object.keys(result.overlay?.figures ?? {})).not.toContain('page-memory');
 });
 
-test('the stats overlay sits in each corner, opens and closes by pointer and keyboard, and keeps its button in place', async ({
+test('the stats overlay opens and closes by pointer and keyboard, and keeps its button in place', async ({
 	page,
 }) => {
 	await openStats(page, 'gpu=webgl2');
-	await page.evaluate(showFromPage, { corner: 'top-right', collapsed: true });
+	await page.evaluate(showFromPage, { collapsed: true });
 	const header = page.locator(HEADER);
 	await expect(header).toHaveAttribute('aria-expanded', 'false');
 	await expect(page.locator(CARD)).toBeHidden();
 	await expect(header).toHaveText(/^\d+ fps$/);
 	let at = await boxes(page);
-	expect(at.host.right).toBeCloseTo(at.canvas.right, 0);
-	expect(at.host.top).toBeCloseTo(at.canvas.top, 0);
+	expectTopRight(at);
 
 	// A click opens the card and a second closes it, and the button stays where it was.
-	const collapsed = at.button;
+	const collapsed = at;
 	await header.click();
 	await expect(header).toHaveAttribute('aria-expanded', 'true');
 	await expect(page.locator(CARD)).toBeVisible();
-	expect((await boxes(page)).button).toEqual(collapsed);
+	expectButtonKept(collapsed, await boxes(page));
 	await header.click();
 	await expect(header).toHaveAttribute('aria-expanded', 'false');
-	expect((await boxes(page)).button).toEqual(collapsed);
+	expectButtonKept(collapsed, await boxes(page));
 
 	// Enter and Space toggle it from the keyboard, with a focus ring, and the sketch's keyboard
 	// input hears neither key.
@@ -130,21 +154,6 @@ test('the stats overlay sits in each corner, opens and closes by pointer and key
 	await page.mouse.move(x - 20, y - 5);
 	await page.mouse.up();
 	expect((await call<{ canvasDowns: number }>(page, 'inputSeen')).canvasDowns).toBe(downs + 1);
-
-	// Each corner holds the overlay, and a bottom corner keeps the button at the bottom as the card
-	// opens above it.
-	for (const corner of ['top-left', 'bottom-left', 'bottom-right', 'top-right'] as const) {
-		await page.evaluate(showFromPage, { corner, collapsed: true });
-		await expect(header).toHaveAttribute('aria-expanded', 'false');
-		at = await boxes(page);
-		const side = corner.endsWith('right') ? 'right' : 'left';
-		const end = corner.startsWith('bottom') ? 'bottom' : 'top';
-		expect(at.host[side], `${corner}, ${side}`).toBeCloseTo(at.canvas[side], 0);
-		expect(at.host[end], `${corner}, ${end}`).toBeCloseTo(at.canvas[end], 0);
-		await page.evaluate(showFromPage, { collapsed: false });
-		await expect(page.locator(CARD)).toBeVisible();
-		expect((await boxes(page)).button, corner).toEqual(at.button);
-	}
 });
 
 for (const { name, query, latency } of [

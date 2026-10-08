@@ -676,7 +676,7 @@ describe('the checks plan', () => {
 			},
 		};
 		expect(judge(check, bad, NONE_MISSING)).toEqual([
-			"the overlay sits 0, 12 px from the canvas's corner",
+			"the overlay sits 0, 12 px from the canvas's top-right corner",
 			'the overlay does not start with its card open',
 			'the overlay does not show sketch',
 			'the overlay does not show jobs',

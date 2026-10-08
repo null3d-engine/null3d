@@ -95,11 +95,11 @@ function readOverlay(canvas: HTMLCanvasElement): OverlayView | null {
 	for (const node of root.querySelectorAll<HTMLElement>('[data-figure]'))
 		if (!node.closest('[hidden]')) figures[node.dataset.figure as string] = node.textContent ?? '';
 	const box = host.getBoundingClientRect();
-	const corner = canvas.getBoundingClientRect();
+	const canvasBox = canvas.getBoundingClientRect();
 	return {
 		figures,
 		expanded: root.querySelector('button')?.getAttribute('aria-expanded') ?? null,
-		offset: [box.left - corner.left, box.top - corner.top],
+		offset: [canvasBox.right - box.right, box.top - canvasBox.top],
 		pointerEvents: getComputedStyle(host).pointerEvents,
 	};
 }

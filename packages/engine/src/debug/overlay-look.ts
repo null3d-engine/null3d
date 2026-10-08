@@ -39,7 +39,7 @@ const CSS = `
 	--drawing: #b79cf5;
 	display: flex;
 	flex-direction: column;
-	align-items: flex-start;
+	align-items: flex-end;
 	gap: 8px;
 	padding: 12px;
 	font: 12px/1.35 ${FONT};
@@ -50,8 +50,6 @@ const CSS = `
 	color: #10141a;
 	pointer-events: none;
 }
-:host([data-corner$='right']) .panel { align-items: flex-end; }
-:host([data-corner^='bottom']) .panel { flex-direction: column-reverse; }
 [hidden] { display: none !important; }
 button {
 	display: inline-flex;
@@ -79,8 +77,6 @@ button:focus-visible { outline: 2px solid #2f6fde; outline-offset: 3px; }
 .ring[data-level='bad'] .arc { stroke: var(--bad); }
 .chevron { width: 10px; height: 10px; flex: none; transition: transform 0.18s ease; }
 button[aria-expanded='true'] .chevron { transform: rotate(180deg); }
-:host([data-corner^='bottom']) .chevron { transform: rotate(180deg); }
-:host([data-corner^='bottom']) button[aria-expanded='true'] .chevron { transform: none; }
 .card {
 	display: grid;
 	gap: 12px;

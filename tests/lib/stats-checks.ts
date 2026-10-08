@@ -1,5 +1,5 @@
 // Checks of the stats page's result, shared by the Playwright test and the real-browser runner: the
-// overlay sits on the canvas's top-left corner, lets the pointer through apart from its header
+// overlay sits on the canvas's top-right corner, lets the pointer through apart from its header
 // button, and shows the figures: a bar of work for each engine thread and the GPU, memory parts
 // that add up to the total, and the counts. The sketch's frame figures name every engine thread as
 // `engine.measure` names them, and count the triangles and objects drawn and the engine's memory.
@@ -27,7 +27,7 @@ export interface OverlayView {
 	figures: Record<string, string>;
 	/** The header button's `aria-expanded`. */
 	expanded: string | null;
-	/** The overlay's place from the canvas's top-left corner. */
+	/** How far the overlay's right and top edges sit inside the canvas's top-right corner. */
 	offset: [number, number];
 	/** The pointer events of the overlay's element. */
 	pointerEvents: string;
@@ -112,7 +112,9 @@ export function statsProblems(result: StatsResult): string[] {
 	if (!figures) return ['the sketch posted no figures'];
 	const problems: string[] = [];
 	if (overlay.offset[0] !== 0 || overlay.offset[1] !== 0)
-		problems.push(`the overlay sits ${overlay.offset.join(', ')} px from the canvas's corner`);
+		problems.push(
+			`the overlay sits ${overlay.offset.join(', ')} px from the canvas's top-right corner`,
+		);
 	if (overlay.pointerEvents !== 'none') problems.push('the overlay takes pointer events');
 	if (overlay.expanded !== 'true') problems.push('the overlay does not start with its card open');
 	const shown = overlay.figures;

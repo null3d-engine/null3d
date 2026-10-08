@@ -157,7 +157,7 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | Library | What to do |
 | --- | --- |
 | lil-gui, dat.gui, Tweakpane | Keep on the page; send values to the sketch |
-| stats.js | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it takes `{ corner, collapsed }` options, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
+| stats.js | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it sits at the canvas's top right, takes a `{ collapsed }` option, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
 | GSAP, tween.js | For scene values, lerp in `onUpdate` (property animation comes after 1.0); DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |

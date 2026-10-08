@@ -1,14 +1,14 @@
-// The stats overlay that `debug.stats`, `engine.stats` and the `stats` option show: a panel over a
-// corner of the canvas, which the page updates from the metrics buffer a few times a second. The
-// page owns the overlay's element, and the engine's threads write the figures it reads as they
-// always do. The panel's header is a button with the frame rate, which shows and hides a card of
-// the other figures. The figures are judged against the engine's target frame rate
-// (frame-target.ts). While the card shows, the engine samples the costly figures: GPU time, the
-// counts of the draws that the GPU culls, and the memory figures that the sketch thread publishes.
-// Collapsed to its header, the overlay turns that sampling off and formats none of the card's
-// figures. The page adds what only it can measure, where the browser offers it: its JavaScript
-// heap and the whole page's memory. Only the header button takes the pointer, so drags on the rest
-// of the panel still reach the canvas.
+// The stats overlay that `debug.stats`, `engine.stats` and the `stats` option show: a panel over
+// the top-right corner of the canvas, which the page updates from the metrics buffer a few times a
+// second. The page owns the overlay's element, and the engine's threads write the figures it reads
+// as they always do. The panel's header is a button with the frame rate, which shows and hides a
+// card of the other figures under it. The figures are judged against the engine's target frame
+// rate (frame-target.ts). While the card shows, the engine samples the costly figures: GPU time,
+// the counts of the draws that the GPU culls, and the memory figures that the sketch thread
+// publishes. Collapsed to its header, the overlay turns that sampling off and formats none of the
+// card's figures. The page adds what only it can measure, where the browser offers it: its
+// JavaScript heap and the whole page's memory. Only the header button takes the pointer, so drags
+// on the rest of the panel still reach the canvas.
 // overlay-look.ts holds the look.
 
 import type { EngineMode } from '../page/engine';
@@ -17,7 +17,7 @@ import { targetFps } from './frame-target';
 import { addStyles, buildPanel, keepKeys, StatsCard, StatsHeader } from './overlay-look';
 import { PageMemorySampler, pageHeapBytes } from './page-meters';
 import { type FrameStats, FrameStatsWindow, type StatsSources } from './stats';
-import type { StatsCorner, StatsOverlayOptions } from './stats-options';
+import type { StatsOverlayOptions } from './stats-options';
 import type { StatsFigures } from './stats-text';
 
 /** What the overlay reads. */
@@ -44,8 +44,6 @@ export interface OverlaySetup {
 const REFRESH_MS = 250;
 /** The attribute that marks the overlay's element. */
 export const OVERLAY_ATTRIBUTE = 'data-null3d-stats';
-/** The corner that the overlay sits in when no option names one. */
-export const DEFAULT_CORNER: StatsCorner = 'top-left';
 
 /** The host element's own style: its place on the page, over everything, apart from the pointer. */
 const HOST_STYLE: Partial<CSSStyleDeclaration> = {
@@ -100,7 +98,6 @@ export class StatsOverlay {
 	private readonly window: FrameStatsWindow;
 	private readonly timer: ReturnType<typeof setInterval>;
 	private readonly pageMemory: PageMemorySampler;
-	private corner: StatsCorner = DEFAULT_CORNER;
 	private collapsed: boolean;
 	/** The offsets that `follow` last wrote, so an unchanged place writes nothing. */
 	private x = Number.NaN;
@@ -140,7 +137,6 @@ export class StatsOverlay {
 		this.host = host;
 		this.showCollapsed();
 		if (!this.collapsed) this.updateCard();
-		this.setCorner(options.corner ?? DEFAULT_CORNER);
 		document.body.append(host);
 		this.follow();
 		this.timer = setInterval(() => this.refresh(), REFRESH_MS);
@@ -148,10 +144,6 @@ export class StatsOverlay {
 
 	/** Changes the options that `options` names. */
 	configure(options: StatsOverlayOptions): void {
-		if (options.corner !== undefined) {
-			this.setCorner(options.corner);
-			this.follow();
-		}
 		if (options.collapsed !== undefined) this.setCollapsed(options.collapsed);
 	}
 
@@ -192,18 +184,6 @@ export class StatsOverlay {
 		this.card.element.hidden = this.collapsed;
 	}
 
-	private setCorner(corner: StatsCorner): void {
-		this.corner = corner;
-		this.host.dataset.corner = corner;
-		this.x = Number.NaN;
-		this.y = Number.NaN;
-		const { style } = this.host;
-		style.left = '';
-		style.right = '';
-		style.top = '';
-		style.bottom = '';
-	}
-
 	private refresh(): void {
 		this.follow();
 		if (!this.window.update()) return;
@@ -232,27 +212,23 @@ export class StatsOverlay {
 	}
 
 	/**
-	 * Puts the overlay in its corner of the canvas, and hides it while the canvas is off the page.
-	 * A right or bottom corner sets the overlay's right or bottom offset, so the overlay keeps to
-	 * the corner as its size changes.
+	 * Puts the overlay on the canvas's top-right corner, and hides it while the canvas is off the
+	 * page. The overlay's right offset keeps it to the corner as the card opens and closes.
 	 */
 	private follow(): void {
 		const { canvas } = this.setup;
-		const { host, corner } = this;
+		const { host } = this;
 		host.hidden = !canvas.isConnected;
 		const rect = canvas.getBoundingClientRect();
-		const page = document.documentElement;
-		const right = corner.endsWith('right');
-		const bottom = corner.startsWith('bottom');
-		const x = right ? page.clientWidth - rect.right - scrollX : rect.left + scrollX;
-		const y = bottom ? page.clientHeight - rect.bottom - scrollY : rect.top + scrollY;
+		const x = document.documentElement.clientWidth - rect.right - scrollX;
+		const y = rect.top + scrollY;
 		if (x !== this.x) {
 			this.x = x;
-			host.style[right ? 'right' : 'left'] = `${x}px`;
+			host.style.right = `${x}px`;
 		}
 		if (y !== this.y) {
 			this.y = y;
-			host.style[bottom ? 'bottom' : 'top'] = `${y}px`;
+			host.style.top = `${y}px`;
 		}
 	}
 }

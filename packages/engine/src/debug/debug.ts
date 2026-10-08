@@ -61,12 +61,12 @@ export type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' |
  */
 export interface Debug {
 	/**
-	 * Shows an overlay of frame figures over a corner of the canvas, or hides it with `false`: the
-	 * GPU path, the quality preset, the render scale, the frame rates, CPU time per frame of each
-	 * thread and phase, GPU time, draw calls, triangles and objects drawn, memory, and the page
-	 * thread's long tasks and input delay. Its header is a button with the frame rate, which shows
-	 * and hides the other figures. Options pick the corner and whether the overlay starts collapsed
-	 * to its header. The page draws the overlay and updates it a few times a second. Its code
+	 * Shows an overlay of frame figures over the top-right corner of the canvas, or hides it with
+	 * `false`: the GPU path, the quality preset, the render scale, the frame rates, CPU time per
+	 * frame of each thread and phase, GPU time, draw calls, triangles and objects drawn, memory, and
+	 * the page thread's long tasks and input delay. Its header is a button with the frame rate,
+	 * which shows and hides the other figures. Options pick whether the overlay starts collapsed to
+	 * its header. The page draws the overlay and updates it a few times a second. Its code
 	 * downloads at the first call. The page's `engine.stats` shows and hides the same overlay, and
 	 * the last call wins. Each call sends a message to the page, so call it when the choice
 	 * changes, not in every frame.

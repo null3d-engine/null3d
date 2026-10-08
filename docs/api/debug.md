@@ -10,7 +10,7 @@ summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleto
 
 > Ships in null3D 0.1. `debug.skeleton` and `@null3d/engine/stats` ship in null3D 0.2. So do the stats overlay's page switches, its options and card, and its figures of GPU time, triangles, objects and memory. The API is experimental, so it can still change between versions.
 
-Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over a corner of the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
+Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the top-right corner of the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
 ## Debug drawing
 
@@ -145,7 +145,7 @@ flowchart LR
     page["The page's own meters:<br/>heap, page memory"] --> card
 ```
 
-The stats overlay sits over a corner of the canvas. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures under it and closes the card again. Four calls show the overlay:
+The stats overlay sits over the top-right corner of the canvas. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures under it and closes the card again. Four calls show the overlay:
 
 - `createEngine({ stats: true })` shows it from the first frame.
 - `engine.stats(true)` on the page shows it, and `engine.stats(false)` hides it.
@@ -156,20 +156,19 @@ Each call also takes options in place of `true`:
 
 | Option | What it sets | Default |
 | --- | --- | --- |
-| `corner` | `'top-left'`, `'top-right'`, `'bottom-left'` or `'bottom-right'`: the corner of the canvas that the overlay sits in | `'top-left'` |
 | `collapsed` | True starts the overlay with its card closed, so only the header shows | `false` |
 
 ```ts
 const engine = await createEngine({
   canvas,
   sketch: new URL('./sketch.ts', import.meta.url),
-  stats: { corner: 'top-right', collapsed: true },
+  stats: { collapsed: true },
 });
 ```
 
 The page and the sketch show and hide the same overlay, and the last call wins, from either side. So the sketch's `debug.stats(false)` hides an overlay that the page showed, and the page's `engine.stats(false)` hides one that the sketch showed. Options add up: a call changes only the options that it names, and an overlay that shows again keeps them. Each `debug.stats` call sends a message to the page, so call it when the choice changes, not in every frame. The page draws the overlay and updates it four times a second. A held engine for image tests shows no overlay.
 
-The header stays in its corner when the card opens. In a bottom corner, the card opens above it. Only the header button and the card's mode symbol take the pointer. Drags anywhere else on the overlay reach the canvas.
+The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button and the card's mode symbol take the pointer. Drags anywhere else on the overlay reach the canvas.
 
 ### The card
 

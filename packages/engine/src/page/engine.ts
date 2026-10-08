@@ -526,12 +526,12 @@ export interface Engine {
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
-	 * Shows an overlay of figures over a corner of the canvas, or hides it with `false`: the GPU
-	 * path, the frame rates, CPU time per frame of each thread, GPU time, draw calls, triangles and
-	 * objects drawn, memory, and the page thread's long tasks and input delay. Its header is a
-	 * button with the frame rate, which shows and hides the other figures. Options pick the corner
-	 * and whether the overlay starts collapsed to its header; a call on a shown overlay changes the
-	 * options it names. The page draws the overlay and updates it a few times a second, and its
+	 * Shows an overlay of figures over the top-right corner of the canvas, or hides it with
+	 * `false`: the GPU path, the frame rates, CPU time per frame of each thread, GPU time, draw
+	 * calls, triangles and objects drawn, memory, and the page thread's long tasks and input delay.
+	 * Its header is a button with the frame rate, which shows and hides the other figures. Options
+	 * pick whether the overlay starts collapsed to its header; a call on a shown overlay changes
+	 * the options it names. The page draws the overlay and updates it a few times a second, and its
 	 * code downloads at the first call. While the other figures show, the engine times one frame in
 	 * eleven on the GPU and reads back the counts of the objects that the GPU culls, which costs a
 	 * little GPU time. The sketch's `debug.stats` shows and hides the same overlay, and the last

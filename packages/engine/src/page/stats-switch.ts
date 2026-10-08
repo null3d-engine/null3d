@@ -2,7 +2,7 @@
 // option or the `?stats` switch, or when the sketch asks with `debug.stats`. The overlay's code
 // (debug/overlay.ts) downloads at the first request, so a page that never shows it never
 // downloads it. The options of every request add up for the engine's life, so an overlay that
-// shows again keeps the corner and the start state that the last requests gave.
+// shows again keeps the start state that the last requests gave.
 
 import type { OverlaySetup, StatsOverlay } from '../debug/overlay';
 import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
@@ -28,7 +28,6 @@ export class StatsSwitch {
 			return;
 		}
 		if (show !== true) {
-			if (show.corner !== undefined) this.options.corner = show.corner;
 			if (show.collapsed !== undefined) this.options.collapsed = show.collapsed;
 			this.overlay?.configure(show);
 		}

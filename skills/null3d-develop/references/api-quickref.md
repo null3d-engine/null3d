@@ -53,7 +53,7 @@ const engine = await createEngine({
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) true for planet-scale scenes: setters keep positions exact far out
   preload: ['skinning', 'bloom'],  // (0.2) features whose shaders load before the first frame, for games that fetch nothing in play (E1421 for an unknown name)
-  stats: true,           // (0.2) the stats overlay from the first frame, or { corner: 'top-right', collapsed: true }; ?stats shows it too, ?stats=off hides it
+  stats: true,           // (0.2) the stats overlay from the first frame, or { collapsed: true }; ?stats shows it too, ?stats=off hides it
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
@@ -579,7 +579,7 @@ debug.frustum(camera, color);                   // in the canvas's shape
 debug.light(sun, { position, size, color });    // a directional light's direction
 debug.skeleton(hero, color);                    // (0.2) skin joints: blue at the joint, green at its parent
 
-debug.stats(true);                       // overlay on the canvas: fps, CPU ms per thread and phase, tier, preset, render scale; (0.2) options { corner, collapsed }, a card of work bars against the target, GPU ms, memory, triangles, objects
+debug.stats(true);                       // overlay at the canvas's top right: fps, CPU ms per thread and phase, tier, preset, render scale; (0.2) option { collapsed }, a card of work bars against the target, GPU ms, memory, triangles, objects
 const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls; (0.2) s.gpuMs, s.triangles, s.objects, s.wasmBytes, s.meshBytes
 debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' | 'shadows'; 'lit' draws the materials again
 debug.shadowCamera(player);              // place the sun's shadow cascades from another camera; no argument goes back
