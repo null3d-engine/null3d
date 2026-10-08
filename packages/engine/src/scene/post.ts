@@ -279,8 +279,9 @@ export interface PostSettings {
 	 */
 	ao?: AoSettings | false;
 	/**
-	 * A color grading table from `assets.loadLut`, which maps each pixel's color after the tone
-	 * mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default.
+	 * A color grading table from `assets.loadLut` or `assets.lutFromData`, which maps each pixel's
+	 * color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off
+	 * by default.
 	 */
 	lut?: Lut | false;
 	/**
@@ -653,7 +654,7 @@ function checkSettings(settings: PostSettings): void {
 	if (lut !== undefined && lut !== false && !(lut instanceof Lut))
 		throw new EngineError(
 			'E1213',
-			`post.set() got ${String(lut)} for lut, which takes a table from assets.loadLut() or false.`,
+			`post.set() got ${String(lut)} for lut, which takes a table from assets.loadLut() or assets.lutFromData(), or false.`,
 		);
 	checkNumber('lutIntensity', lutIntensity, 1);
 	if (

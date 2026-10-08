@@ -328,6 +328,59 @@ describe('environments', () => {
 	});
 });
 
+describe('color grading tables', () => {
+	/** Textures that record the size and texels of each 3D texture. */
+	function volumeTextures() {
+		const volumes: [number, Uint8Array, string][] = [];
+		const textures = {
+			fromVolume(size: number, texels: Uint8Array, call: string) {
+				volumes.push([size, texels, call]);
+				return { bytes: texels.length } as unknown as Texture;
+			},
+		} as unknown as Textures;
+		return { textures, volumes };
+	}
+
+	test('a .cube file and its numbers make the same texture and table', async () => {
+		// The corners of a table of 2, red fastest.
+		const rows = Array.from({ length: 8 }, (_, k) => {
+			const [r, g, b] = [k & 1, (k >> 1) & 1, k >> 2];
+			return `${0.1 + r * 0.8} ${g * 0.25} ${b * 0.75}`;
+		});
+		const text = ['TITLE "Look"', 'LUT_3D_SIZE 2', 'DOMAIN_MAX 1 2 1', ...rows].join('\n');
+		serve({ 'https://game.example/look.cube': text });
+		const { textures, volumes } = volumeTextures();
+		const assets = new Assets(textures, PAGE);
+		const loaded = await assets.loadLut('/look.cube');
+		const made = await assets.lutFromData({
+			size: 2,
+			data: rows.flatMap((row) => row.split(' ').map(Number)),
+			domainMax: [1, 2, 1],
+			title: 'Look',
+		});
+		for (const lut of [loaded, made])
+			expect([lut.size, lut.title, lut.domainMin, lut.domainMax, lut.bytes]).toEqual([
+				2,
+				'Look',
+				[0, 0, 0],
+				[1, 2, 1],
+				32,
+			]);
+		expect(volumes.map(([, , call]) => call)).toEqual(['assets.loadLut', 'assets.lutFromData']);
+		expect(volumes[1]?.[1]).toEqual(volumes[0]?.[1] as Uint8Array);
+	});
+
+	test('numbers that make no table give E1208', async () => {
+		const assets = new Assets(volumeTextures().textures, PAGE);
+		expect(await codeOf(assets.lutFromData({ size: 2, data: [0, 0, 0] }))).toBe(
+			'E1208: assets.lutFromData() got 3 numbers for a table of 2 a side: give 24, three per texel, or 32, four per texel.',
+		);
+		expect(await codeOf(assets.lutFromData({ size: 300, data: [] }))).toBe(
+			'E1208: assets.lutFromData() got a table of 300 texels a side; the engine reads 2 to 256.',
+		);
+	});
+});
+
 describe('loads of a texture again', () => {
 	beforeEach(() => {
 		fetched = [];

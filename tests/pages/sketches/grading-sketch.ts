@@ -1,8 +1,9 @@
 // Color grading's scene (bench/scenes/grading.ts), which the parity test also draws with three.js's
 // LUTPass and VignetteShader: boxes in seven hues over a row of grays on a light ground. ?lut=warm
-// loads the warm table from its .cube file, and ?lut=cool the cool one from its .3dl file. With
-// ?mix, the table draws at the tests' intensity, and ?vignette turns the vignette on. ?scale=
-// draws at that render scale, with a range that reaches down to it.
+// loads the warm table from its .cube file, and ?lut=cool the cool one from its .3dl file.
+// ?lut=warm-numbers makes the warm table from the numbers of its .cube file instead. With ?mix,
+// the table draws at the tests' intensity, and ?vignette turns the vignette on. ?scale= draws at
+// that render scale, with a range that reaches down to it.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
@@ -16,18 +17,22 @@ import {
 	GRADING_LUTS,
 	GRADING_SUN,
 	GRADING_VIGNETTE,
+	gradingWarmNumbers,
 } from '../../../bench/scenes/grading';
 
 const params = new URL(import.meta.url).searchParams;
 const name = params.get('lut');
 const LUT = name === 'warm' || name === 'cool' ? GRADING_LUTS[name] : undefined;
+const NUMBERS = name === 'warm-numbers';
 const MIX = params.has('mix');
 const VIGNETTE = params.has('vignette');
 const SCALE = params.get('scale');
 
 export default defineSketch(async ({ scene, materials, geometry, post, quality, assets }) => {
-	if (LUT) {
-		const lut = await assets.loadLut(LUT);
+	if (LUT || NUMBERS) {
+		const lut = LUT
+			? await assets.loadLut(LUT)
+			: await assets.lutFromData({ size: 33, data: gradingWarmNumbers() });
 		post.set({ lut, lutIntensity: MIX ? GRADING_INTENSITY : 1 });
 	}
 	if (VIGNETTE) post.set({ vignette: GRADING_VIGNETTE });

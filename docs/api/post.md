@@ -171,7 +171,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 
 ## Color grading
 
-A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md), then give it to `post.set`:
+A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md#color-grading-tables), or make one from numbers with [`assets.lutFromData`](assets.md#tables-from-numbers). Then give it to `post.set`:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -185,7 +185,7 @@ export default defineSketch(async ({ assets, post }) => {
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `lut` | A table from `assets.loadLut`, or `false` to turn grading off. | Off |
+| `lut` | A table from `assets.loadLut` or `assets.lutFromData`, or `false` to turn grading off. | Off |
 | `lutIntensity` | The share of the table's color in each pixel, from 0 to 1, as `LUTPass`'s `intensity`. | 1 |
 
 - The table grades each pixel after the tone mapping and the sRGB encoding, as `LUTPass` does after three.js's `OutputPass`. Tables made for sRGB display color, as most are, look as their authors made them.
@@ -264,7 +264,7 @@ post.set({ toneMapping: reinhard });
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
@@ -279,8 +279,8 @@ post.set({ toneMapping: reinhard });
 - [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.
 - [Quality presets](../concepts/quality-presets.md): `aoScale` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
-- [Assets](assets.md): `assets.loadLut`, which loads color grading tables.
-- [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene.
+- [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.
+- [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene. It makes its warm and cool tables from lift, gamma and gain in code.
 
 ## API reference
 

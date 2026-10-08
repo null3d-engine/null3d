@@ -56,7 +56,7 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1
 | `GTAOPass` | `ao` | The settings keep their names. `distanceFallOff` becomes `distanceFalloff`, and `blendIntensity` becomes `intensity`. |
 | `SSAOPass`, `SAOPass`, N8AO | `ao` | Their settings mean other things. Start from the defaults and tune `radius` and `scale` by eye. |
 | `OutlinePass` | `outline` and `mesh.setOutlined(true)` | `visibleEdgeColor` becomes `color`, and `hiddenEdgeColor` becomes `hiddenColor`. Set `width` to about twice `edgeThickness`. |
-| `LUTPass` | `lut: await assets.loadLut(url)`, `lutIntensity` | Load the same `.cube` or `.3dl` file. |
+| `LUTPass` | `lut: await assets.loadLut(url)`, `lutIntensity` | Load the same `.cube` or `.3dl` file. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`, with floats from 0 to 1 in the same order. |
 | `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. The default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs in the final pass. |
 | `SMAAPass`, `SSAARenderPass`, `TAARenderPass` | MSAA, which the presets from Medium up use | null3D has no SMAA, SSAA or TAA. |
