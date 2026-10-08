@@ -10,6 +10,8 @@ import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
+import { GpuMemory, textureBytes } from '../memory';
+import type { CulledCounts } from './culled-counts';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
 import { IndirectArguments } from './indirect-arguments';
@@ -102,6 +104,10 @@ export class WebGPUBackend {
 	private readonly textures: (GPUTexture | undefined)[] = [];
 	/** Each texture's format code, for the blocks of texels of its writes. */
 	private readonly formats: number[] = [];
+	/** Each texture's bytes on the GPU, which its release takes off the memory total. */
+	private readonly textureSizes: number[] = [];
+	/** The GPU memory of every texture and buffer that the backend and its helpers hold. */
+	readonly gpuMemory = new GpuMemory();
 	/** Each texture's view for bind groups: the whole texture, in the dimension it was made with. */
 	private readonly bindingViews: (GPUTextureView | undefined)[] = [];
 	/** Each render target's view: a texture of one layer and one mip level, or a view of one. */
@@ -116,6 +122,10 @@ export class WebGPUBackend {
 	private mipSampler: GPUSampler | undefined;
 	/** Pipelines by id: null while one builds, and undefined for an id that names none. */
 	private readonly renderPipelines: (GPURenderPipeline | null | undefined)[] = [];
+	/** True for each render pipeline, by id, that draws lines rather than triangles. */
+	private readonly lineLists: boolean[] = [];
+	/** True while the render pass's pipeline draws lines. */
+	private lines = false;
 	private readonly computePipelines: (GPUComputePipeline | null | undefined)[] = [];
 	/** Pipelines that are building, or that wait for their custom material's shader. */
 	private builds = 0;
@@ -160,6 +170,8 @@ export class WebGPUBackend {
 	private readonly canvasFormat: GPUTextureFormat;
 	/** Times the passes of each frame, while the page measures. */
 	timer: GpuTimer | undefined;
+	/** Reads back what the draws culled on the GPU drew, while the page samples. */
+	culled: CulledCounts | undefined;
 	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
@@ -168,7 +180,8 @@ export class WebGPUBackend {
 	/**
 	 * What the replays since the last reset uploaded, the part that went through staging, drew and
 	 * built, the other GPU objects they made, and the draw commands they skipped because their
-	 * pipeline was still building.
+	 * pipeline was still building. The triangles and instances are those of the draws that the CPU
+	 * issued, without the indirect draws, whose counts the GPU writes.
 	 */
 	readonly counts = {
 		uploadBytes: 0,
@@ -178,6 +191,8 @@ export class WebGPUBackend {
 		pipelines: 0,
 		objects: 0,
 		skippedDraws: 0,
+		triangles: 0,
+		instances: 0,
 	};
 	// Descriptors that every frame fills again, so replay allocates none of its own.
 	private readonly renderPass = new RenderPassSetup();
@@ -206,8 +221,8 @@ export class WebGPUBackend {
 		this.canvasFormat = canvasFormat;
 		this.pipelines = new Pipelines(device, shaders);
 		this.pipelines.prebuildMipmaps();
-		this.staging = new StagingRing(device);
-		this.indirect = new IndirectArguments(device);
+		this.staging = new StagingRing(device, this.gpuMemory);
+		this.indirect = new IndirectArguments(device, this.gpuMemory);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.joins = new JoinedBuilds(this.images.shaders);
@@ -265,7 +280,10 @@ export class WebGPUBackend {
 	/** Ends a capture: the frames draw into the canvas again, and the capture's own targets go. */
 	endCapture(): void {
 		this.canvasTarget = undefined;
-		for (const texture of this.resolveStandIns.values()) texture.destroy();
+		for (const [id, texture] of this.resolveStandIns) {
+			texture.destroy();
+			this.gpuMemory.addTextures(-(this.textureSizes[id] as number));
+		}
 		this.resolveStandIns.clear();
 	}
 
@@ -285,6 +303,7 @@ export class WebGPUBackend {
 				sampleCount: texture.sampleCount,
 				usage: texture.usage,
 			});
+			this.gpuMemory.addTextures(this.textureSizes[id] as number);
 			this.resolveStandIns.set(id, standIn);
 		}
 		return standIn.createView();
@@ -308,22 +327,29 @@ export class WebGPUBackend {
 	private createTexture(words: Uint32Array, a: number): void {
 		const id = words[a] as number;
 		this.releaseTexture(id);
+		const width = words[a + 1] as number;
+		const height = words[a + 2] as number;
 		const layers = words[a + 3] as number;
+		const format = words[a + 4] as number;
 		const usage = words[a + 5] as number;
+		const samples = words[a + 6] as number;
 		const mips = words[a + 7] as number;
 		const dimension = lookUp(VIEW_DIMENSIONS, words[a + 8] as number, 'view dimension');
 		const bound = (usage & G.TEXTURE_USAGE_TEXTURE_BINDING) !== 0;
 		const texture = this.device.createTexture({
 			dimension: dimension === '3d' ? '3d' : '2d',
-			size: [words[a + 1] as number, words[a + 2] as number, layers],
-			format: this.format(words[a + 4] as number) as GPUTextureFormat,
+			size: [width, height, layers],
+			format: this.format(format) as GPUTextureFormat,
 			usage,
-			sampleCount: words[a + 6] as number,
+			sampleCount: samples,
 			mipLevelCount: mips,
 			textureBindingViewDimension: bound ? dimension : undefined,
 		});
 		this.textures[id] = texture;
-		this.formats[id] = words[a + 4] as number;
+		this.formats[id] = format;
+		const bytes = textureBytes(format, width, height, layers, mips, samples, dimension === '3d');
+		this.textureSizes[id] = bytes;
+		this.gpuMemory.addTextures(bytes);
 		if (bound)
 			this.bindingViews[id] = texture.createView({
 				dimension,
@@ -354,7 +380,11 @@ export class WebGPUBackend {
 	/** Destroys a texture, or releases a view. */
 	private releaseTexture(id: number): void {
 		this.canvasResolved.delete(id);
-		this.textures[id]?.destroy();
+		const texture = this.textures[id];
+		if (texture) {
+			texture.destroy();
+			this.gpuMemory.addTextures(-(this.textureSizes[id] as number));
+		}
 		this.textures[id] = undefined;
 		this.bindingViews[id] = undefined;
 		this.targetViews[id] = undefined;
@@ -394,6 +424,7 @@ export class WebGPUBackend {
 				size: bytes,
 				usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
 			});
+			this.gpuMemory.addBuffers(bytes);
 		}
 		copy.setVia(this.copyBuffer, bytesPerRow, rows);
 		encoder.copyTextureToBuffer(copy.source, copy.via, copy.size);
@@ -500,6 +531,7 @@ export class WebGPUBackend {
 		if (!this.encoder && !this.staging.pending) return;
 		const encoder = this.commandEncoder();
 		this.timer?.endFrame();
+		this.culled?.copy(encoder);
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
 		const start = this.routes.timing ? performance.now() : 0;
@@ -508,11 +540,12 @@ export class WebGPUBackend {
 		this.routes.submitted(this.staging.takeMadeBuffer());
 		this.encoder = undefined;
 		this.timer?.afterSubmit();
+		this.culled?.afterSubmit();
 	}
 
 	/** Destroys the copy buffers that a larger one replaced, once their commands are submitted. */
 	private destroyRetired(): void {
-		for (const buffer of this.retiredCopyBuffers) buffer.destroy();
+		for (const buffer of this.retiredCopyBuffers) this.destroyBuffer(buffer);
 		this.retiredCopyBuffers.length = 0;
 	}
 
@@ -524,6 +557,15 @@ export class WebGPUBackend {
 		this.counts.pipelines = 0;
 		this.counts.objects = 0;
 		this.counts.skippedDraws = 0;
+		this.counts.triangles = 0;
+		this.counts.instances = 0;
+	}
+
+	/** Counts a draw of `count` vertices or indices, `instances` times, with the current pipeline. */
+	private countDraw(count: number, instances: number): void {
+		this.counts.drawCalls++;
+		this.counts.instances += instances;
+		if (!this.lines) this.counts.triangles += Math.floor(count / 3) * instances;
 	}
 
 	/**
@@ -698,6 +740,7 @@ export class WebGPUBackend {
 			);
 			return;
 		}
+		this.lineLists[id] = ((words[a + 6] as number) & G.STATE_LINE_LIST) !== 0;
 		if (!this.templateReady(words[a + 1] as number, words[a + 2] as number)) {
 			// Its draws draw nothing until the shader arrives and the pipeline builds.
 			this.renderPipelines[id] = null;
@@ -804,18 +847,17 @@ export class WebGPUBackend {
 			switch (op) {
 				case G.OP_CREATE_BUFFER: {
 					this.counts.objects++;
-					this.buffers[words[a] as number]?.destroy();
-					// Where draws copy their arguments, a buffer of indirect draws is also a source of
-					// copies: a render pass with several of its draws copies each one's arguments out
-					// (see ./indirect-arguments.ts).
+					this.releaseBuffer(words[a] as number);
+					// A buffer of indirect draws is also a source of copies: of each draw's arguments
+					// where a render pass with several of its draws copies them out
+					// (./indirect-arguments.ts), and of the counts that the culling shaders wrote
+					// while the page samples (./culled-counts.ts).
 					const usage = words[a + 2] as number;
 					this.buffers[words[a] as number] = device.createBuffer({
 						size: words[a + 1] as number,
-						usage:
-							this.indirect.copying && usage & G.BUFFER_USAGE_INDIRECT
-								? usage | G.BUFFER_USAGE_COPY_SRC
-								: usage,
+						usage: usage & G.BUFFER_USAGE_INDIRECT ? usage | G.BUFFER_USAGE_COPY_SRC : usage,
 					});
+					this.gpuMemory.addBuffers(words[a + 1] as number);
 					break;
 				}
 				case G.OP_WRITE_BUFFER: {
@@ -845,8 +887,7 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_DESTROY_BUFFER:
-					this.buffers[words[a] as number]?.destroy();
-					this.buffers[words[a] as number] = undefined;
+					this.releaseBuffer(words[a] as number);
 					break;
 				case G.OP_CREATE_TEXTURE:
 					this.counts.objects++;
@@ -1102,8 +1143,10 @@ export class WebGPUBackend {
 	): boolean {
 		switch (op) {
 			case G.OP_SET_PIPELINE: {
-				const pipeline = this.need(this.renderPipelines, words[a] as number, 'render pipeline');
+				const id = words[a] as number;
+				const pipeline = this.need(this.renderPipelines, id, 'render pipeline');
 				this.skipDraws = pipeline === null;
+				this.lines = this.lineLists[id] === true;
 				if (pipeline) pass.setPipeline(pipeline);
 				return true;
 			}
@@ -1133,7 +1176,7 @@ export class WebGPUBackend {
 			}
 			case G.OP_DRAW:
 				if (this.skipDraws) return this.skipDraw();
-				this.counts.drawCalls++;
+				this.countDraw(words[a] as number, words[a + 1] as number);
 				pass.draw(
 					words[a] as number,
 					words[a + 1] as number,
@@ -1143,7 +1186,7 @@ export class WebGPUBackend {
 				return true;
 			case G.OP_DRAW_INDEXED:
 				if (this.skipDraws) return this.skipDraw();
-				this.counts.drawCalls++;
+				this.countDraw(words[a] as number, words[a + 1] as number);
 				pass.drawIndexed(
 					words[a] as number,
 					words[a + 1] as number,
@@ -1158,8 +1201,10 @@ export class WebGPUBackend {
 				const copy = this.indirect.take(id, offset);
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
+				const buffer = this.need(this.buffers, id, 'buffer');
+				this.culled?.note(buffer, offset, this.lines);
 				if (copy) pass.drawIndexedIndirect(copy, 0);
-				else pass.drawIndexedIndirect(this.need(this.buffers, id, 'buffer'), offset);
+				else pass.drawIndexedIndirect(buffer, offset);
 				return true;
 			}
 			default:
@@ -1188,13 +1233,29 @@ export class WebGPUBackend {
 		return this.buffers[id];
 	}
 
+	/** Destroys a buffer that the backend made, and takes its bytes off the memory total. */
+	private destroyBuffer(buffer: GPUBuffer): void {
+		buffer.destroy();
+		this.gpuMemory.addBuffers(-buffer.size);
+	}
+
+	/** Destroys the draw list's buffer of an id, where there is one. */
+	private releaseBuffer(id: number): void {
+		const buffer = this.buffers[id];
+		if (!buffer) return;
+		this.destroyBuffer(buffer);
+		this.buffers[id] = undefined;
+	}
+
 	destroy(): void {
-		for (const buffer of this.buffers) buffer?.destroy();
-		for (const texture of this.textures) texture?.destroy();
+		for (let id = 0; id < this.buffers.length; id++) this.releaseBuffer(id);
+		for (let id = 0; id < this.textures.length; id++) this.releaseTexture(id);
+		this.endCapture();
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
 		this.indirect.destroy();
-		this.copyBuffer?.destroy();
+		if (this.copyBuffer) this.destroyBuffer(this.copyBuffer);
+		this.copyBuffer = undefined;
 		this.destroyRetired();
 	}
 }

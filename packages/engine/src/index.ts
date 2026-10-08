@@ -3,6 +3,7 @@
 
 export type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug/debug';
 export type { FrameStats, FrameStatsThread } from './debug/stats';
+export type { StatsOverlayOptions } from './debug/stats-options';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
 export type { ShaderFeature } from './generated/shader-features';

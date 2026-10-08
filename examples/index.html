@@ -73,7 +73,8 @@
 				position: absolute;
 				top: 0.75rem;
 				left: 0.75rem;
-				max-width: min(24rem, calc(100% - 1.5rem));
+				/* Room at the right for the stats overlay, collapsed to its frame rate. */
+				max-width: min(24rem, calc(100% - 10rem));
 				padding: 0.4rem 0.75rem;
 				font-size: 14px;
 				background: rgb(13 17 23 / 0.8);
@@ -126,6 +127,8 @@
 				.sidebar.open { transform: none; visibility: visible; transition: transform 0.2s ease; }
 				.sidebar .brand { display: none; }
 				.backdrop { position: fixed; inset: var(--bar) 0 0 0; z-index: 1; background: rgb(0 0 0 / 0.5); }
+				/* The stats overlay sits over the whole page, so it hides while the drawer is open. */
+				body:has(.sidebar.open) [data-null3d-stats] { display: none; }
 				.welcome { padding: 1.25rem 1rem; }
 			}
 			@media (prefers-reduced-motion: reduce) {

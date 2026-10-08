@@ -9,6 +9,7 @@ import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
 import type { JoinedBuilds } from '../gpu/effect-join';
+import type { GpuMemory } from '../gpu/memory';
 import { captureWebGPU, readbackWebGL2 } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
@@ -47,21 +48,33 @@ interface SceneBackend {
 		skippedDraws: number;
 		/** GPU objects other than pipelines that the replays made. */
 		objects: number;
+		/** Triangles that the draws drew. */
+		triangles: number;
+		/** Instances that the draws drew. */
+		instances: number;
 	};
 	resetCounts(): void;
+	/** The GPU memory that the backend holds. */
+	readonly gpuMemory: GpuMemory;
 	/** The backend's builds of joined effects' shaders. */
 	readonly joins: JoinedBuilds;
 }
 
-/** Adds what the backend did since its last reset to a frame's record, then resets its counts. */
+/**
+ * Adds what the backend did since its last reset to a frame's record, then resets its counts. While
+ * the page reads the frame figures, it also publishes the GPU memory that the backend holds.
+ */
 function recordCounts(record: FrameRecorder, backend: SceneBackend): void {
 	const { counts } = backend;
+	if (record.figures) record.publishGpuMemory(backend.gpuMemory.bytes);
 	record.count(Counter.UploadBytes, counts.uploadBytes);
 	record.count(Counter.DrawCalls, counts.drawCalls);
 	record.count(Counter.Dispatches, counts.dispatches ?? 0);
 	record.count(Counter.Pipelines, counts.pipelines);
 	record.count(Counter.SkippedDraws, counts.skippedDraws);
 	record.count(Counter.GpuObjects, counts.objects);
+	record.count(Counter.Triangles, counts.triangles);
+	record.count(Counter.DrawnObjects, counts.instances);
 	backend.resetCounts();
 }
 
@@ -184,6 +197,12 @@ export class WebGPUSceneRenderer implements Renderer {
 	private readonly frames: FrameReplay;
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
+	/**
+	 * True once a frame has had a reader of the frame figures: the reader of the GPU-culled draws'
+	 * counts then loads, so a page that never shows them never downloads it.
+	 */
+	private culledLoading = false;
+	private destroyed = false;
 	readonly lost: Promise<string>;
 	readonly errors: GpuErrorWatch;
 
@@ -224,7 +243,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		);
 		this.backend.moreShaders = shaders;
 		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
-		this.backend.timer = metrics && GpuTimer.create(device, metrics);
+		this.backend.timer = metrics && GpuTimer.create(device, metrics, this.backend.gpuMemory);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
 	}
@@ -254,10 +273,29 @@ export class WebGPUSceneRenderer implements Renderer {
 		const start = performance.now();
 		const { backend } = this;
 		backend.timer?.beginFrame(input.frame);
+		const figures = record.figures;
+		if (figures && !this.culledLoading) this.loadCulledCounts();
+		backend.culled?.beginFrame(figures);
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
+		const culled = backend.culled;
+		// Until the culled draws' counts come back, the frame's figures leave its counts out.
+		const uncounted = figures && !culled?.known;
+		if (culled?.known) {
+			backend.counts.triangles += culled.triangles;
+			backend.counts.instances += culled.instances;
+		}
+		record.count(Counter.UncountedFigures, uncounted ? 1 : 0);
 		recordCounts(record, backend);
+	}
+
+	private loadCulledCounts(): void {
+		this.culledLoading = true;
+		import('../gpu/webgpu/culled-counts').then(({ CulledCounts }) => {
+			if (!this.destroyed)
+				this.backend.culled = new CulledCounts(this.device, this.backend.gpuMemory);
+		}, console.warn);
 	}
 
 	/**
@@ -293,9 +331,11 @@ export class WebGPUSceneRenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.destroyed = true;
 		this.frames.abandon();
 		this.errors.stop();
 		this.backend.timer?.destroy();
+		this.backend.culled?.destroy();
 		this.backend.destroy();
 		this.context.unconfigure();
 		this.device.destroy();

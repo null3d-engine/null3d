@@ -1,5 +1,6 @@
 // Messages between the page and the engine's workers.
 
+import type { StatsRequest } from '../debug/stats-options';
 import { setErrorFixes } from '../errors/engine-error';
 import type { ErrorFixes } from '../errors/fixes';
 import { messageOf } from '../errors/message';
@@ -174,7 +175,7 @@ export type WorkerReply =
 	 */
 	| { type: 'quality'; update: QualityUpdate }
 	/** The sketch asked to show or hide the stats overlay, which the page draws. */
-	| { type: 'stats'; show: boolean }
+	| { type: 'stats'; show: StatsRequest }
 	/** The slot in the label table of a label's id and its generation, or -1 once it has none. */
 	| { type: 'label'; id: string; slot: number; generation: number }
 	| ({ type: 'captured' } & CapturedFrame)

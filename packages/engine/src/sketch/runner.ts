@@ -20,6 +20,7 @@
 
 import { DebugDraw } from '../debug/draw';
 import { type DebugHost, SketchDebug } from '../debug/sketch-debug';
+import type { StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -63,7 +64,7 @@ import {
 	type PreloadSender,
 	type ShaderSender,
 } from '../shared/images';
-import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
+import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -107,14 +108,19 @@ export interface SketchCore {
 	fps?: number;
 	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
 	threads: readonly (readonly [string, readonly number[]])[];
-	/** Asks the page to show or hide its stats overlay. */
-	showStats(show: boolean): void;
+	/** Asks the page to show or hide its stats overlay, or to change its options. */
+	showStats(show: StatsRequest): void;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
+/**
+ * While a reader shows the frame figures, the frames whose number has none of these bits publish
+ * the memory figures.
+ */
+const MEMORY_EVERY_MASK = 7;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -382,7 +388,7 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				textureMemory: textures.memory,
+				wasmBytes: () => this.core.memory.buffer.byteLength,
 			},
 		};
 		const templates = new ShaderTemplates(sketch.sendShader);
@@ -637,6 +643,16 @@ export class SketchRunner {
 	/** The render scale of the frame being drawn, in thousandths. */
 	private renderScale(): number {
 		return this.governorLoop ? this.governor.scale : this.heldScale;
+	}
+
+	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
+	private publishMemory(): void {
+		const { record } = this;
+		const textures = this.textures.memory;
+		record.publishMemory(MemoryFigure.TextureBytes, textures.bytes);
+		record.publishMemory(MemoryFigure.TextureBudgetBytes, textures.budgetBytes);
+		record.publishMemory(MemoryFigure.DroppedLevels, textures.droppedLevels);
+		record.publishMemory(MemoryFigure.MeshBytes, this.context.geometry.memoryBytes);
 	}
 
 	/**
@@ -995,6 +1011,8 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// The memory figures change slowly, so a few times a window is enough.
+		if ((frame & MEMORY_EVERY_MASK) === 0 && this.record.figures) this.publishMemory();
 		// A frame whose list needs more room than any before moves the list, so each frame gives
 		// the thread that draws its list's address.
 		const parity = frame & 1;

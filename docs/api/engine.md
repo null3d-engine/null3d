@@ -98,6 +98,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
+| `stats` | false | `true` shows the stats overlay from the first frame, and `{ collapsed: true }` shows it with its card closed: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). The `?stats` switch shows it too, and `?stats=off` hides it. A held engine shows no overlay. |
 
 ## A transparent canvas
 
@@ -140,6 +141,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). After E1404 the engine stops drawing new frames, and the canvas keeps the last one: destroy the engine and start a new one. It can also be a job worker that did not start ([E1405](../errors/E1405.md)). On WebGPU it can be a GPU that ran out of memory ([E1304](../errors/E1304.md)) or rejected the engine's work ([E1305](../errors/E1305.md)). The engine then draws on without the objects that failed. Without a handler, the engine logs the failure to the console. The handler is the only place where these failures show: no promise rejects for them.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
+- `stats(true)` shows the stats overlay over the canvas, and `stats(false)` hides it: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). Options in place of `true` set whether the card starts closed, on a shown overlay too. The sketch's `debug.stats` shows and hides the same overlay, and the last call from either side wins.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
 - `captureFrame()` returns the pixels of the next frame that the engine draws, as RGBA8 rows, top row first. The thread that draws waits for its frame loop to take a new frame, then draws that frame again offscreen and reads it back. So captures back to back give newer frames, even on a slow GPU whose readback holds that thread up. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).

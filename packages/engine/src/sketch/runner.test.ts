@@ -824,17 +824,18 @@ describe('SketchRunner and quality presets', () => {
 		}
 	});
 
-	it('asks the page for the stats overlay once per change, and gives the sketch frame figures', async () => {
+	it('asks the page for the stats overlay at each call, and gives the sketch frame figures', async () => {
 		const { runner, context, control, log, stopDrawing } = await start(() => ({}), undefined, {
 			drawing: { presentedMs: 20, completedMs: 25 },
 		});
 		try {
 			const { debug } = context;
+			// The page may have changed the overlay since the sketch's last call, so each call goes on.
 			debug.stats(true);
 			debug.stats();
 			debug.stats(false);
-			debug.stats(false);
 			expect(log.filter((entry) => entry.startsWith('stats'))).toEqual([
+				'stats true',
 				'stats true',
 				'stats false',
 			]);
