@@ -1,0 +1,68 @@
+digraph "render graph" {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=10];
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+  subgraph "cluster 1" {
+    label="compute pass";
+    "pass LightClusters" [shape=box, label="1. LightClusters\ncompute pass"];
+    "pass Culling" [shape=box, label="2. Culling\ncompute pass"];
+    "pass MapCulling" [shape=box, label="3. MapCulling\ncompute pass"];
+  }
+  subgraph "cluster 2" {
+    label="render pass: 64 x 64, 4 samples\nminimapImage: clear, discard, resolve\nminimapDepth: clear, discard";
+    "pass Map" [shape=box, label="4. Map\nscene pass, 64 x 64, all layers"];
+  }
+  subgraph "cluster 3" {
+    label="render pass: 64 x 64\nminimap: clear, store";
+    "pass MapCopy" [shape=box, label="5. MapCopy\nfullscreen pass, 64 x 64"];
+  }
+  subgraph "cluster 4" {
+    label="render pass: full size, 4 samples\nsceneColor: clear, discard, resolve into canvas\nsceneDepth: clear, discard";
+    "pass Opaque" [shape=box, label="6. Opaque\nscene pass, full size, layers 0x00000001"];
+    "pass Resolve" [shape=box, label="7. Resolve\nresolve pass, full size"];
+  }
+  "pass DebugLines" [shape=box, style=dashed, label="DebugLines\nscene pass, full size, all layers, off"];
+  "pass Transparent" [shape=box, style=dashed, label="Transparent\nscene pass, full size, all layers, off"];
+  "pass MapTransparent" [shape=box, style=dashed, label="MapTransparent\nscene pass, 64 x 64, all layers, off"];
+  "pass OutlineCulling" [shape=box, style=dashed, label="OutlineCulling\ncompute pass, off"];
+  "pass OutlineMask" [shape=box, style=dashed, label="OutlineMask\nscene pass, full size, all layers, off"];
+  "pass Final" [shape=box, style=dashed, label="Final\nfullscreen pass, canvas size, off"];
+  "pass FinalOutline" [shape=box, style=dashed, label="FinalOutline\nfullscreen pass, canvas size, off"];
+  "resource canvas" [shape=ellipse, label="canvas"];
+  "resource shadowMap" [shape=ellipse, label="shadowMap\ndepth16unorm, 1 x 1\nkept in texture 0: sampled"];
+  "resource shadowAtlas" [shape=ellipse, label="shadowAtlas\ndepth32float, 1 x 1\nkept in texture 1: sampled"];
+  "resource minimap" [shape=ellipse, label="minimap\nrgba8unorm-srgb, 64 x 64\nkept in texture 2: attachment, sampled"];
+  "resource lights" [shape=note, label="lights\nbuffer from outside the graph"];
+  "resource lightGrid" [shape=note, label="lightGrid\nbuffer"];
+  "resource objects" [shape=note, label="objects\nbuffer from outside the graph"];
+  "resource visible" [shape=note, label="visible\nbuffer"];
+  "resource MapVisible" [shape=note, label="MapVisible\nbuffer"];
+  "resource sceneColor" [shape=ellipse, label="sceneColor\ncanvas format, full size, 4 samples\ntexture 6: attachment\nresolves into canvas"];
+  "resource sceneDepth" [shape=ellipse, label="sceneDepth\ndepth32float, full size, 4 samples\ntexture 7: attachment"];
+  "resource minimapImage" [shape=ellipse, label="minimapImage\ncanvas format, 64 x 64, 4 samples\ntexture 3: attachment\nresolves into texture 4: attachment, sampled"];
+  "resource minimapDepth" [shape=ellipse, label="minimapDepth\ndepth32float, 64 x 64, 4 samples\ntexture 5: attachment"];
+  "resource outlineVisible" [shape=note, label="outlineVisible\nbuffer"];
+  "resource outlineMask" [shape=ellipse, label="outlineMask\nrgba8unorm, full size, 4 samples\nnot used this frame"];
+  "resource lights" -> "pass LightClusters";
+  "pass LightClusters" -> "resource lightGrid" [label="creates"];
+  "resource objects" -> "pass Culling";
+  "pass Culling" -> "resource visible" [label="creates"];
+  "resource objects" -> "pass MapCulling";
+  "pass MapCulling" -> "resource MapVisible" [label="creates"];
+  "pass Map" -> "resource minimapImage" [label="creates"];
+  "pass Map" -> "resource minimapDepth" [label="creates"];
+  "resource MapVisible" -> "pass Map";
+  "resource shadowMap" -> "pass Map";
+  "resource shadowAtlas" -> "pass Map";
+  "resource minimapImage" -> "pass MapCopy";
+  "pass MapCopy" -> "resource minimap";
+  "pass Opaque" -> "resource sceneColor" [label="creates"];
+  "pass Opaque" -> "resource sceneDepth" [label="creates"];
+  "resource visible" -> "pass Opaque";
+  "resource lightGrid" -> "pass Opaque";
+  "resource shadowMap" -> "pass Opaque";
+  "resource shadowAtlas" -> "pass Opaque";
+  "resource minimap" -> "pass Opaque";
+  "resource sceneColor" -> "pass Resolve";
+  "pass Resolve" -> "resource canvas";
+}

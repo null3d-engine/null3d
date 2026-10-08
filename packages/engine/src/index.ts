@@ -138,6 +138,13 @@ export type {
 	RaycastOptions,
 } from './scene/queries';
 export type {
+	Render,
+	RenderPass,
+	RenderPassOptions,
+	RenderPassSize,
+	ScenePassOptions,
+} from './scene/render';
+export type {
 	AlphaMode,
 	Blending,
 	BoxOptions,

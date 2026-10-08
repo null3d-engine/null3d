@@ -8,7 +8,7 @@ summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; 
 
 # Textures
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` ships in 0.2. Cube maps are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -127,6 +127,21 @@ The image moves to the thread that draws, without a copy, so the sketch can use 
 A texture with `depth` above 1 holds that many layers, up to 256, one after another in `data`. Its layers are a texture array of their own. Materials read its first layer.
 
 Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true, as in three.js's `DataTexture`.
+
+## Textures of render passes
+
+`textures.fromPass(pass)` returns the texture that a scene pass of `render.addPass` draws into (0.2). Materials and sprites take it as a map, as three.js's render target textures are.
+
+```ts
+const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const screen = materials.unlit({ map: textures.fromPass(map) });
+```
+
+- The texture has the pass's size. It holds linear color after the exposure, so its `colorSpace` is `'linear'`. Its `format` is `'rgba16float'` where the device draws high dynamic range color, and `'rgba8unorm'` elsewhere.
+- The image stands upright on a plane, with v = 0 at its bottom row.
+- It samples as no texture until the pass first draws, and keeps the last image while the pass is switched off.
+- `texture.update` throws E1208: the pass alone gives its texels. `render.removePass` destroys the textures of the pass.
+- A pass runs only while a texture shows it. [Render graph API](render.md) covers passes.
 
 ## Updating and destroying
 

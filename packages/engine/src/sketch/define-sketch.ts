@@ -11,6 +11,7 @@ import { reasonOf } from '../errors/message';
 import type { EngineCapabilities } from '../page/engine';
 import type { Assets } from '../scene/assets';
 import type { Post } from '../scene/post';
+import type { Render } from '../scene/render';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 import type { Textures } from '../scene/textures';
@@ -146,6 +147,8 @@ export interface SketchContext {
 	input: Input;
 	/** Post-processing: the tone mapping and the exposure of the scene's color. */
 	post: Post;
+	/** The sketch's own render passes, such as a camera that draws into a texture. */
+	render: Render;
 	/** HTML labels that follow scene objects, which the page binds with `engine.labels.bind`. */
 	ui: Ui;
 	/** The quality preset that the engine runs, its settings, and a notice when they change. */

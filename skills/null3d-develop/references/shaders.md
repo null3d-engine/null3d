@@ -286,23 +286,19 @@ post.set({ toneMapping: reinhard });   // post.set({ toneMapping: 'aces' }) retu
 - Exactly `fn toneCurve(color: vec3f) -> vec3f`. The input is exposed linear color after bloom. The engine clamps the result to 0 to 1, then encodes sRGB, dithers and grades.
 - A curve takes no uniforms. It needs HDR color, as effects do; on a device with no HDR target the built-in curve stays.
 
-## 7. Custom passes (later in 0.2)
+## 7. Custom passes
+
+A scene pass (0.2) draws the scene from another camera into a texture, which any material shows:
 
 ```ts
-render.addPass({
-  name: 'Heatmap',
-  kind: 'fullscreen',
-  reads: ['sceneDepth'],
-  writes: 'heat', size: 'screen/2',
-  wgsl: /* wgsl */ `fn pass(input: PassInput) -> vec4f { let d = readDepth(input.uv); return vec4f(d, 0.0, 0.0, 1.0); }`,
-  before: 'Post',
-});
-const heat = textures.fromPass('heat');   // use it in a material
+const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custom material's texture
 ```
 
-- `kind: 'scene'` draws objects with a camera and a layer mask, optionally with a `materialOverride`.
-- `kind: 'compute'` exists on WebGPU only; check `ctx.engine.capabilities.tier` and give WebGL2 users a fallback.
-- The graph checks every declaration and reports each problem as an error with a code. See `concepts/render-graph` for the checks. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
+- The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
+- A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
+- The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
+- Full-screen passes of your own WGSL come later in 0.2. Until then, write full-screen WGSL as a custom effect (section 5). Docs: `api/render`, `guides/custom-passes`.
 
 ## 8. Portable WGSL rules
 

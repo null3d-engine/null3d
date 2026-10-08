@@ -26,6 +26,7 @@ import {
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
+	LAYOUT_VIEW_COPY,
 	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_INSTANCE_INDEX,
 	PERMUTATION_PREPASS,
@@ -81,6 +82,7 @@ import {
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_VIEW_COPY,
 	VERTEX_INSTANCE_LOCATION,
 	VERTEX_TYPE_F32,
 	VERTEX_TYPE_SINT8,
@@ -579,6 +581,8 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 2, visibility: fragment, sampler: {} },
 		]);
+		// The copy of a view's image into its target reads the image with textureLoad.
+		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
 		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
 		const effectEntries: GPUBindGroupLayoutEntry[] = [
@@ -685,6 +689,13 @@ export class Pipelines {
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}
+		this.defineTemplate(TEMPLATE_VIEW_COPY, {
+			label: 'view copy',
+			shader: shaders.view_copy,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_BACKGROUND, {
 			label: 'background',
 			shader: shaders.background,

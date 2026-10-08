@@ -4,10 +4,6 @@
 // codes.ts, which only the docs generator and the tests import. Codes group by area: 11xx objects
 // and handles, 12xx values, 13xx browsers and GPUs, 14xx setup and loading, 15xx rendering.
 
-/** The fix for every render graph error: only the engine declares render passes. */
-const RENDER_GRAPH_FIX =
-	'The engine declares every render pass itself, so this is an engine bug. Report it with the message, the browser and the quality preset.';
-
 export const ERROR_FIXES = {
 	E1101:
 		'Stop using an object after you call destroy() on it. Look for places that still keep a reference, such as arrays of enemies or selection state.',
@@ -56,6 +52,8 @@ export const ERROR_FIXES = {
 		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
 	E1219:
 		"Give each label an id of its own, such as 'hp-12', and pass the same id to engine.labels.bind on the page. Untrack labels that you no longer show with ui.untrackLabel. To track more labels at once, raise createEngine's maxLabels option.",
+	E1220:
+		"Give render.addPass the options of its kind, such as { kind: 'scene', camera, writes: 'minimap', size: [256, 256] }. Give each pass a name and a texture name of its own. Remove passes that no longer draw before you add more.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:
@@ -116,10 +114,14 @@ export const ERROR_FIXES = {
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
-	E1502: RENDER_GRAPH_FIX,
-	E1503: RENDER_GRAPH_FIX,
-	E1504: RENDER_GRAPH_FIX,
-	E1505: RENDER_GRAPH_FIX,
+	E1502:
+		"Name in reads only the textures that your other passes write, as their writes option spells them. Add the pass that writes a texture before a pass that reads it, and remove a pass that reads a texture before the pass that writes it. If the message names only the engine's own passes, report it with the message, the browser and the quality preset.",
+	E1503:
+		"Give each pass's texture a name that no other pass writes. The engine's own passes write sceneColor, sceneDepth, outlineMask and the other names that render.dumpGraph() shows, so pick another name.",
+	E1504:
+		'Break the loop: a pass cannot read its own texture. To show a mirror in a mirror, add a pass for the inner mirror first, and let the outer pass read its texture.',
+	E1505:
+		"Draw into targets of one size and one sample count in each pass, and into at most four color targets. If the message names only the engine's own passes, report it with the message, the browser and the quality preset.",
 } satisfies Record<string, string>;
 
 /**

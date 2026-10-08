@@ -2,7 +2,7 @@
 
 three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, ambient occlusion at half size before the opaque pass, and mip-chain bloom. Custom effects (0.2) run after the scene and before bloom, on HDR color; the engine joins per-pixel effects into few passes. One final pass then merges bloom, tone mapping, FXAA, dithering, outlines, color grading and the vignette. You port settings, and custom shaders as effects. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
-Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. So are `bloom`, `ao`, `outline`, `lut`, `vignette`, custom effects with `post.addEffect` and custom tone curves (0.2). Custom passes (`render.addPass`) come later in 0.2. The port's report lists each effect it dropped.
+Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. So are `bloom`, `ao`, `outline`, `lut`, `vignette`, custom effects with `post.addEffect` and custom tone curves (0.2). Scene passes that render into a texture (`render.addPass({ kind: 'scene' })` with `textures.fromPass`) are built in 0.2, so `WebGLRenderTarget` render-to-texture ports. Full-screen passes of your own WGSL with `render.addPass` come later in 0.2: port a `ShaderPass` as a custom effect. The port's report lists each effect it dropped.
 
 ## Contents
 

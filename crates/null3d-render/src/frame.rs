@@ -37,7 +37,7 @@ use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
-use crate::graph::{GraphError, RenderScale, Size};
+use crate::graph::{GraphError, RenderScale};
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
@@ -53,7 +53,7 @@ use crate::shadows::{
 };
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
-use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
+use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
 pub const NO_MESH: u32 = 0;
@@ -320,6 +320,14 @@ pub trait FrameBuilder {
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
+    /// Declares the render graph's passes for the views as they are now, and compiles the graph
+    /// outside a frame, so a new pass fails at once when it does not fit. The next frame makes the
+    /// plan's textures.
+    fn check_graph(&mut self) -> Result<(), GraphError>;
+    /// The render graph as Graphviz DOT text, compiled first.
+    fn graph_dot(&mut self) -> String;
+    /// A render graph error's message, with the passes and resources by name.
+    fn graph_message(&self, error: GraphError) -> String;
 }
 
 /// The engine memory address of bytes, as the replay loop reads it: an offset into WebAssembly
@@ -624,6 +632,8 @@ pub struct SceneSettings {
     background: Option<Background>,
     /// The views, the camera's first.
     views: Vec<View>,
+    /// The names that each view gives the render graph, by view.
+    view_names: Vec<ViewNames>,
     lighting: Lighting,
     /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
     shadow_schedule: CascadeSchedule,
@@ -692,6 +702,7 @@ impl SceneSettings {
             used_materials: Vec::new(),
             background: None,
             views: vec![View::default()],
+            view_names: vec![ViewNames::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
@@ -1293,19 +1304,136 @@ impl SceneSettings {
         }
     }
 
-    /// Adds a view that draws the scene into color and depth targets of its own, or returns
-    /// `None` when the builder already draws [`MAX_VIEWS`] views.
+    /// Adds a view that draws the scene into a target of its own, with the engine's names, or
+    /// returns `None` when the builder already draws [`MAX_VIEWS`] views.
     pub fn add_view(&mut self, view: View) -> Option<ViewId> {
-        if self.views.len() >= MAX_VIEWS {
-            return None;
+        self.add_named_view(view, ViewNames::default())
+    }
+
+    /// Adds a view that draws the scene into a target of its own, with `names` in the render
+    /// graph, in the place of the first removed view or after the last. Returns `None` when the
+    /// builder already draws [`MAX_VIEWS`] views.
+    pub fn add_named_view(&mut self, view: View, names: ViewNames) -> Option<ViewId> {
+        let place = match self.views.iter().skip(1).position(View::is_removed) {
+            Some(place) => place + 1,
+            None if self.views.len() < MAX_VIEWS => {
+                self.views.push(View::removed());
+                self.view_names.push(ViewNames::default());
+                self.views.len() - 1
+            }
+            None => return None,
+        };
+        self.views[place] = view;
+        self.view_names[place] = names;
+        self.link_view_reads();
+        Some(ViewId::from_index(place))
+    }
+
+    /// Removes a view other than the camera's. Its place draws nothing until the next view added
+    /// takes it, so the places of the other views stay.
+    pub fn remove_view(&mut self, view: ViewId) {
+        if view == ViewId::CAMERA || view.index() >= self.views.len() {
+            return;
         }
-        self.views.push(view);
-        Some(ViewId::from_index(self.views.len() - 1))
+        self.views[view.index()] = View::removed();
+        self.view_names[view.index()] = ViewNames::default();
+        self.link_view_reads();
+    }
+
+    /// Finds the views whose targets each view reads, by the names of their targets. A name that
+    /// no view's target has reaches the render graph, which fails to compile on it.
+    fn link_view_reads(&mut self) {
+        for index in 0..self.views.len() {
+            let reads = self.view_names[index]
+                .reads
+                .iter()
+                .filter_map(|name| {
+                    self.view_names
+                        .iter()
+                        .zip(&self.views)
+                        .position(|(other, view)| !view.is_removed() && other.target == *name)
+                })
+                .fold(0, |mask, place| mask | (1 << place));
+            self.views[index].target_mut().reads = reads;
+        }
+    }
+
+    /// Sets the camera object and the lens that a view draws from.
+    pub fn set_view_camera(&mut self, view: ViewId, camera: Handle, lens: impl Into<Lens>) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.set_camera(camera, lens.into());
+        }
+    }
+
+    /// Switches a view other than the camera's on or off. A view switched off keeps the last
+    /// image it drew.
+    pub fn set_view_enabled(&mut self, view: ViewId, enabled: bool) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.target_mut().enabled = enabled;
+        }
+    }
+
+    /// Marks each view's target shown while a live texture shows it, so the camera's passes read
+    /// it. A builder calls it before it syncs its graph with the views.
+    pub(crate) fn mark_shown_views(&mut self) {
+        let shown = self.textures.shown_views();
+        for (index, view) in self.views.iter_mut().enumerate().skip(1) {
+            view.target_mut().shown = shown & (1 << index) != 0;
+        }
+    }
+
+    /// Gives the textures that show views' targets the GPU id of each target, by `target_of`, once
+    /// the frame's graph made its textures. With `remade`, the graph made its textures again.
+    pub(crate) fn set_view_targets(
+        &mut self,
+        target_of: impl Fn(ViewId) -> Option<u32>,
+        remade: bool,
+    ) {
+        for index in 1..self.views.len() {
+            let view = ViewId::from_index(index);
+            self.textures
+                .set_pass_target(index as u32, target_of(view), remade);
+        }
+    }
+
+    /// True when a view may draw in the next frame: the camera's view, and any other view that is
+    /// switched on while a texture shows its target or another view reads it. The render graph
+    /// culls the rest, so a builder need not cull them.
+    pub fn view_draws(&self, view: ViewId) -> bool {
+        if view == ViewId::CAMERA {
+            return true;
+        }
+        let Some(drawn) = self.views.get(view.index()) else {
+            return false;
+        };
+        let bit = 1 << view.index();
+        let read = self
+            .views
+            .iter()
+            .any(|other| !other.is_removed() && other.target().reads & bit != 0);
+        !drawn.is_removed()
+            && drawn.target().enabled
+            && (self.textures.shown_views() & bit != 0 || read)
+    }
+
+    /// The views whose targets each view may not show, as a mask of view places, by view: for a
+    /// view other than the camera's, every view whose target it does not read, itself included.
+    /// The camera's view may show every target.
+    pub fn hidden_targets(&self, view: ViewId) -> u32 {
+        match self.views.get(view.index()) {
+            Some(other) if view != ViewId::CAMERA && view.is_camera() => !other.target().reads,
+            _ => 0,
+        }
     }
 
     /// The views, the camera's first.
     pub fn views(&self) -> &[View] {
         &self.views
+    }
+
+    /// The names that each view gives the render graph, by view.
+    pub fn view_names(&self) -> &[ViewNames] {
+        &self.view_names
     }
 
     /// The directional light: the direction its light travels, and its exposed color: its linear
@@ -1505,6 +1633,22 @@ impl SceneSettings {
         self.lighting.fog = fog;
     }
 
+    /// The color that a view's target clears to: its own color for a view other than the
+    /// camera's that has one, else the camera's.
+    pub(crate) fn clear_color_of(&self, view: ViewId) -> [f32; 4] {
+        match self.views.get(view.index()).and_then(|v| v.target().clear) {
+            Some([r, g, b, a]) if view != ViewId::CAMERA => {
+                let [r, g, b, _] = self.canvas.scene_color.clear_color(
+                    Some([r, g, b]),
+                    false,
+                    self.drawn_output(),
+                );
+                [r * a, g * a, b * a, a]
+            }
+            _ => self.clear_color(),
+        }
+    }
+
     /// The color that clears the color targets, as the scene's render passes hold it: black in a
     /// debug view.
     pub(crate) fn clear_color(&self) -> [f32; 4] {
@@ -1581,9 +1725,11 @@ impl SceneSettings {
 
     /// A view's values for a frame on a canvas of `canvas` device pixels that the scene draws at
     /// render scale `scale`, or `None` when the view has no camera to draw from. The projection
-    /// takes the canvas's shape, and the target size is the render size, which fragment positions
-    /// count in. Shaders work in positions relative to the camera, so the constants put a
-    /// perspective camera at the origin, and an orthographic camera at infinity behind its view.
+    /// takes the shape of the view's target, and the target size is the size the view draws at,
+    /// which fragment positions count in: the render size for the camera's view. A view with a
+    /// target of its own counts a texel as a pixel. Shaders work in positions relative to the
+    /// camera, so the constants put a perspective camera at the origin, and an orthographic camera
+    /// at infinity behind its view.
     pub fn view_frame(
         &self,
         view: ViewId,
@@ -1592,12 +1738,17 @@ impl SceneSettings {
         canvas: (u32, u32),
         scale: RenderScale,
     ) -> Option<ViewFrame> {
-        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view_id = view;
         let view = self.views.get(view.index())?;
+        let own_target = view_id != ViewId::CAMERA;
+        let (width, height) = view.draw_size(canvas, scale);
+        let (pixels, pixel_ratio) = match view.target().size {
+            Some(size) if own_target => (size, 1.0),
+            _ => (canvas, self.pixel_ratio),
+        };
+        let aspect = pixels.0 as f32 / pixels.1.max(1) as f32;
         let camera = view.transform(scene, parity, aspect)?;
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
-        let (width, height) = Size::Full.viewport(canvas, scale);
         let (width, height) = (width as f32, height as f32);
         let output = self.drawn_output();
         let uniform = FrameUniform {
@@ -1614,8 +1765,8 @@ impl SceneSettings {
             camera_range: [
                 camera.depth.near,
                 camera.depth.far,
-                2.0 * self.pixel_ratio / canvas.0.max(1) as f32,
-                2.0 * self.pixel_ratio / canvas.1.max(1) as f32,
+                2.0 * pixel_ratio / pixels.0.max(1) as f32,
+                2.0 * pixel_ratio / pixels.1.max(1) as f32,
             ],
             occlusion: match self.ao() {
                 Some(ao) if view_id == ViewId::CAMERA => {

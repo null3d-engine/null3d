@@ -37,8 +37,8 @@ use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
-use null3d_gpu::drawlist::sizes;
 use null3d_gpu::drawlist::vertex::{self, Type};
+use null3d_gpu::drawlist::{format, sizes};
 use null3d_render::ao::Ao;
 use null3d_render::arrays::{ArrayName, ArraysError, Data, MeshArrays, Values, from_arrays};
 use null3d_render::background::{Background, BackgroundSource, Sky};
@@ -56,7 +56,7 @@ use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::grading::{Lut, Vignette};
-use null3d_render::graph::RenderScale;
+use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::MeshError;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
@@ -67,7 +67,7 @@ use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
-use null3d_render::view::ViewId;
+use null3d_render::view::{MAX_VIEWS, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
@@ -148,6 +148,8 @@ mod render_detail {
     pub const SKINNED_VERTICES_FULL: u32 = 12;
     /// The second detail is the most mesh pages of skinned meshes that WebGPU skinning reads.
     pub const SKINNED_PAGES_FULL: u32 = 13;
+    /// The second detail is the most views a frame builder draws, the camera's included.
+    pub const TOO_MANY_VIEWS: u32 = 14;
 }
 
 struct Engine {
@@ -198,6 +200,9 @@ struct Engine {
     background_values: Box<[f32; constants::background_value::COUNT as usize]>,
     /// The uniforms of the custom effect that TypeScript sets next with `setEffect`.
     effect_values: Box<[f32; EFFECT_FLOATS]>,
+    /// The message of the last render graph error that a call met, with the passes and resources
+    /// by name, which `renderGraphMessage` gives TypeScript.
+    graph_message: String,
     /// The objects that the page expects the scene to hold, or 0. The scene grows ahead of need
     /// only once it holds more.
     expected_objects: u32,
@@ -544,6 +549,7 @@ pub fn init_engine(
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
         background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
         effect_values: Box::new([0.0; EFFECT_FLOATS]),
+        graph_message: String::new(),
         expected_objects,
         ahead_failed: 0,
     });
@@ -981,6 +987,7 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
                 e.rebuilt = rebuilt;
                 0
             }
+            Err(RecordError::Graph(error)) => graph_failure(e, error),
             Err(error) => record_failure(error),
         }
     })
@@ -2313,12 +2320,164 @@ fn set_camera(camera: u32, lens: Lens, layers: u32, target: u32) -> u32 {
         let camera = Handle::from_raw(camera);
         if target == camera_target::SHADOWS {
             settings.set_shadow_camera(Some((camera, lens)));
+        } else if let Some(place) = target.checked_sub(camera_target::PASS_VIEWS) {
+            let view = ViewId::from_place(place as usize);
+            settings.set_view_camera(view, camera, lens);
+            settings.set_layers(view, layers);
         } else {
             settings.set_camera(camera, lens);
             settings.set_layers(ViewId::CAMERA, layers);
         }
         0
     })
+}
+
+// --- Render passes ---
+
+/// Fails with a render graph error, keeping its message for `renderGraphMessage`.
+fn graph_failure(e: &mut Engine, error: GraphError) -> u32 {
+    e.graph_message = e.renderer.graph_message(error);
+    fail(error.code(), error.details())
+}
+
+/// Adds a scene pass: a view that draws the scene into a target of `width` x `height` texels,
+/// which the render graph names `target`, through a pass that it names `pass`. The view reads the
+/// targets of the other passes named in `reads`, one name per line, so the objects it draws may
+/// show them. With `clears`, its target clears to the exposed linear color `r`, `g`, `b` and
+/// alpha `a`; without, to the color the camera's target clears to. The view draws once a camera
+/// is set for it through `setPerspectiveCamera` or `setOrthographicCamera`, with
+/// `constants::camera_target::PASS_VIEWS` plus its place. Returns its place, from 1, or 0 when the
+/// builder draws the most views already, or when the pass does not fit the render graph, with the
+/// graph's error (E1502 to E1505), whose message `renderGraphMessage` gives.
+#[wasm_bindgen(js_name = addScenePass)]
+#[allow(clippy::too_many_arguments)]
+pub fn add_scene_pass(
+    pass: &str,
+    target: &str,
+    reads: &str,
+    width: u32,
+    height: u32,
+    clears: bool,
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+) -> u32 {
+    value_with_engine(|e| {
+        let names = ViewNames {
+            pass: pass.to_owned(),
+            target: target.to_owned(),
+            reads: reads
+                .split('\n')
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        };
+        let view = View::default().with_target(ViewTarget {
+            size: Some((width.max(1), height.max(1))),
+            clear: clears.then_some([r, g, b, a]),
+            ..ViewTarget::default()
+        });
+        let settings = e.renderer.settings_mut();
+        let Some(id) = settings.add_named_view(view, names) else {
+            return Err(render_failure(
+                render_detail::TOO_MANY_VIEWS,
+                MAX_VIEWS as u32,
+            ));
+        };
+        if let Err(error) = e.renderer.check_graph() {
+            e.renderer.settings_mut().remove_view(id);
+            let code = graph_failure(e, error);
+            // The graph declares the passes as they were, which compiled before.
+            let _ = e.renderer.check_graph();
+            return Err(code);
+        }
+        e.structure_changed = true;
+        Ok(id.index() as u32)
+    })
+}
+
+/// Removes the scene pass of view place `place`, from 1. Fails with the render graph's error
+/// (E1502 to E1505) when another running pass reads its target, and keeps the pass.
+#[wasm_bindgen(js_name = removeScenePass)]
+pub fn remove_scene_pass(place: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        let settings = e.renderer.settings_mut();
+        let (Some(kept), Some(names)) = (
+            settings.views().get(view.index()).copied(),
+            settings.view_names().get(view.index()).cloned(),
+        ) else {
+            return 0;
+        };
+        settings.remove_view(view);
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let settings = e.renderer.settings_mut();
+            settings.add_named_view(kept, names);
+            let _ = e.renderer.check_graph();
+            return code;
+        }
+        e.structure_changed = true;
+        0
+    })
+}
+
+/// Switches the scene pass of view place `place`, from 1, on or off. A pass switched off keeps the
+/// last image it drew in its target.
+#[wasm_bindgen(js_name = setScenePassEnabled)]
+pub fn set_scene_pass_enabled(place: u32, enabled: bool) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        e.renderer.settings_mut().set_view_enabled(view, enabled);
+        0
+    })
+}
+
+/// Creates a texture that shows the target of the scene pass of view place `place`, from 1, and
+/// returns its handle. It holds the pass's `width` x `height` texels, and samples as no texture
+/// until the pass first draws.
+#[wasm_bindgen(js_name = createPassTexture)]
+pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
+    value_with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        // The canvas's format holds 8-bit color, which the store counts as such.
+        let format = match settings.canvas().scene_color.format() {
+            format::CANVAS => format::RGBA8_UNORM,
+            other => other,
+        };
+        let texture = settings
+            .textures_mut()
+            .create_pass(place, width, height, format)
+            .map_err(texture_failure)?;
+        // The camera's passes now read the target, which can close a cycle.
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let textures = e.renderer.settings_mut().textures_mut();
+            let _ = textures.destroy(texture, 0);
+            let _ = e.renderer.check_graph();
+            return Err(code);
+        }
+        e.structure_changed = true;
+        Ok(texture.raw())
+    })
+}
+
+/// The message of the last render graph error that a call met, with the passes and resources by
+/// name.
+#[wasm_bindgen(js_name = renderGraphMessage)]
+pub fn render_graph_message() -> String {
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_ref() };
+    engine.map_or_else(String::new, |e| e.graph_message.clone())
+}
+
+/// The render graph of the passes as they are now, as Graphviz DOT text.
+#[wasm_bindgen(js_name = renderGraphDot)]
+pub fn render_graph_dot() -> String {
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_mut() };
+    engine.map_or_else(String::new, |e| e.renderer.graph_dot())
 }
 
 /// Fits the main directional light's cascades to the camera's view again, after a camera with the

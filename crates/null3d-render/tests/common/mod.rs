@@ -262,8 +262,9 @@ impl<B: FrameBuilder> World<B> {
     }
 
     /// Adds a view from a second camera at `position`, which looks down -z as the first camera
-    /// does, with the same lens, and returns it. The camera is a new object, created in the
-    /// current frame, so the frame that records next has a structure change.
+    /// does, with the same lens, and returns it. A texture shows its target, so it draws. The
+    /// camera is a new object, created in the current frame, so the frame that records next has a
+    /// structure change.
     pub fn add_view(&mut self, position: [f32; 3]) -> ViewId {
         self.add_view_through(position, LENS)
     }
@@ -283,9 +284,27 @@ impl<B: FrameBuilder> World<B> {
                 self.frame,
             )
             .unwrap();
-        self.renderer
+        let view = self
+            .renderer
             .settings_mut()
             .add_view(View::new(camera, lens, ALL_LAYERS))
+            .unwrap();
+        self.show(view);
+        view
+    }
+
+    /// Gives `view` a texture that shows its target, so the camera's passes read it and the view
+    /// draws. Returns the texture.
+    pub fn show(&mut self, view: ViewId) -> Handle {
+        self.renderer
+            .settings_mut()
+            .textures_mut()
+            .create_pass(
+                view.index() as u32,
+                64,
+                64,
+                null3d_gpu::drawlist::format::RGBA16_FLOAT,
+            )
             .unwrap()
     }
 

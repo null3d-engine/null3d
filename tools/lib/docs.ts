@@ -103,7 +103,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
 	{ id: 'api/controls', title: 'Camera controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls (0.1); fly and first-person controls (0.2).' },
 	{ id: 'api/post', title: 'Post-processing API', since: '0.1', summary: 'post.set for tone mapping and exposure; the effects of 0.2; custom effects with post.addEffect and custom tone curves.' },
-	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass declarations; enabling and disabling passes; dumpGraph.' },
+	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass for scene passes that draw into textures; switching and removing passes; render.dumpGraph.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events.' },
 	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
 	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },

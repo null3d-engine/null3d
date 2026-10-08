@@ -11,7 +11,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{NO_TARGET, Op, sizes};
+use null3d_gpu::drawlist::{NO_TARGET, Op, format, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -115,9 +115,8 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
 
         // Each view's list goes into its own ring of index list textures, and each view draws
-        // in a render pass of its own: the camera's resolves into the canvas, and the side
-        // view's draws into targets of its own. The render passes do not overlap, so the side
-        // view's targets share the camera's textures.
+        // in a render pass of its own: the side view's first, into its own target, which resolves
+        // into the texture that shows it, then the camera's, which resolves into the canvas.
         let commands = world.commands();
         let ring = world.frame % 3;
         let visible = BATCH_ROWS + 3;
@@ -132,16 +131,20 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         let passes = render_passes(&commands);
         assert_eq!(passes.len(), 2);
         assert_eq!(
-            passes[0][1], 0,
+            passes[1][1], 0,
             "the camera's pass resolves into the canvas"
         );
-        assert_eq!(
-            passes[1][1], NO_TARGET,
-            "nothing reads the side view's color"
+        assert_ne!(
+            passes[0][1], NO_TARGET,
+            "the side view resolves into the texture that shows it"
         );
-        assert_eq!(passes[0][0], passes[1][0]);
-        assert_eq!(passes[0][2], passes[1][2]);
-        assert_eq!(count(&commands, Op::CreateTexture), 18 + 3);
+        assert_ne!(
+            passes[0][0], passes[1][0],
+            "the side view's target is its own"
+        );
+        // The side view's target and the texture it resolves into, and the white texel that
+        // its texture shows until the target exists, come on top of the camera's textures.
+        assert_eq!(count(&commands, Op::CreateTexture), 18 + 3 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -175,6 +178,7 @@ fn a_view_added_later_draws_from_its_own_rings_without_a_rebuild() {
         .settings_mut()
         .add_view(View::new(camera, LENS, ALL_LAYERS))
         .unwrap();
+    world.show(twin);
     step(&mut world, &mut mock, false);
     let commands = world.commands();
     assert_eq!(
@@ -183,10 +187,11 @@ fn a_view_added_later_draws_from_its_own_rings_without_a_rebuild() {
         "one camera, one visible set"
     );
     assert_eq!(render_passes(&commands).len(), 2);
-    // Its index list textures, draw records and frame uniforms are new. The data textures that
-    // every view reads and the camera view's rings are not, and its targets share the camera's
-    // textures, as their render passes do not overlap.
-    assert_eq!(count(&commands, Op::CreateTexture), 3);
+    // Its index list textures, draw records and frame uniforms are new. So are its target, the
+    // white texel that its texture shows until the target exists, and the targets of the plan
+    // that the new pass changes. The data textures that every view reads and the camera view's
+    // rings are not.
+    assert_eq!(count(&commands, Op::CreateTexture), 8);
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 0);
     assert!(texture_writes(&commands, RESIDENT).is_empty());
     // A new ring lists into the slot after slot 0, as the camera's did in the first frame.
@@ -243,6 +248,12 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         .settings_mut()
         .add_view(View::new(world.camera, LENS, ALL_LAYERS))
         .unwrap();
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .create_pass(late.index() as u32, 64, 64, format::RGBA16_FLOAT)
+        .unwrap();
     world.renderer.record(&input).unwrap();
     let before = mock.draws;
     mock.replay(world.renderer.list(2).words()).unwrap();
@@ -292,7 +303,7 @@ fn the_frame_draws_through_the_render_graph_and_compiles_it_only_when_its_passes
     world.record(true);
     mock.replay(world.renderer.list(world.frame).words())
         .unwrap();
-    assert_eq!(steps(&world), [vec!["Opaque", "Resolve"], vec!["Opaque1"]]);
+    assert_eq!(steps(&world), [vec!["Opaque1"], vec!["Opaque", "Resolve"]]);
     assert_eq!(world.renderer.render_graph().compiles(), 2);
 }
 

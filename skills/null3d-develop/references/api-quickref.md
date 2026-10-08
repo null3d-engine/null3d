@@ -360,7 +360,8 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
-- Later: `textures.fromPass` (0.2). Cube maps come from `assets.loadCubemap` (0.2), section 11.
+- `textures.fromPass(pass)` (0.2) gives the texture of a scene pass from `render.addPass` (section 16).
+- Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
 Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
 
@@ -491,18 +492,22 @@ post.removeEffect(fx);                  // (0.2)
 ## 16. Render graph (0.2) (`api/render`)
 
 ```ts
-render.addPass({
-  name: 'Minimap',
-  kind: 'scene',                     // 'scene' | 'fullscreen' | 'compute' (compute: WebGPU only)
-  camera: topCamera, layers: MAP_LAYER,
-  writes: 'minimapColor', size: [256, 256],   // or 'screen', 'screen/2', 'screen/4'
-  before: 'Post',
+const map = render.addPass({
+  kind: 'scene',                     // a camera draws the scene into a texture
+  camera: topCamera,
+  writes: 'minimap',                 // the texture's name; other passes list it in reads
+  size: [256, 256],                  // pixels
+  layers: MAP_LAYER,                 // optional: the camera's layers by default
+  clearColor: '#103050',             // optional: the scene's background color by default
 });
-// sample 'minimapColor' as a texture: textures.fromPass('minimapColor')
-render.setPassEnabled('Minimap', false);
-render.removePass('Minimap');
-render.dumpGraph();   // Graphviz DOT text of the compiled graph, for debugging
+const screen = materials.unlit({ map: textures.fromPass(map) });
+render.setPassEnabled(map, false);   // keeps its last image; allocates nothing
+render.removePass(map);              // destroys its textures
+render.dumpGraph();                  // Graphviz DOT text of the compiled graph, for debugging
 ```
+
+- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights, no ambient occlusion and no sky for now.
+- Full-screen passes of your own WGSL come later in 0.2: use `post.addEffect` for now.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.
 

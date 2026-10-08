@@ -706,6 +706,9 @@ pub mod layout {
     /// [`FINAL_EFFECTS`] with a multisampled scene depth, whose sample 0 the effects read. Only
     /// WebGPU has it.
     pub const FINAL_EFFECTS_DEPTH_MS: u32 = 24;
+    /// Group 0 of the copy of a view's image into its target: the image, which it reads with
+    /// `textureLoad`, as plain floats. Only WebGPU has it.
+    pub const VIEW_COPY: u32 = 25;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1458,6 +1461,10 @@ pub mod template {
     /// [`SHADOW_CUTOUT`] times the alpha of the material's base color map. The bind group of index
     /// 1 is the map's, as for [`INSTANCED_UNLIT_MAP`].
     pub const SHADOW_CUTOUT_MAP: u32 = 38;
+    /// The copy of a view's image into the target that materials sample: one triangle over the
+    /// target, which reads the texel of the same column in the mirrored row of the image, so the
+    /// target holds the image's bottom row first. Only WebGPU has it.
+    pub const VIEW_COPY: u32 = 39;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1743,6 +1750,7 @@ pub fn typescript_constants() -> String {
                 ("EFFECT_DEPTH_MS", layout::EFFECT_DEPTH_MS),
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
+                ("VIEW_COPY", layout::VIEW_COPY),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1828,6 +1836,7 @@ pub fn typescript_constants() -> String {
                 ("BACKGROUND_SKY", template::BACKGROUND_SKY),
                 ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
                 ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
+                ("VIEW_COPY", template::VIEW_COPY),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

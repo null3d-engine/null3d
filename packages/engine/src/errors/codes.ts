@@ -195,6 +195,14 @@ const DOCS = {
 			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels.',
 		since: '0.2',
 	},
+	E1220: {
+		title: 'Invalid render pass',
+		cause:
+			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, or a texture name or pass name that another pass has. Or the sketch added more scene passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled() or render.removePass() got something that is not a render pass.',
+		example:
+			'E1220: render.addPass() got writes "minimap", which the pass "minimap" writes already. Give each pass a texture name of its own.',
+		since: '0.2',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
@@ -423,7 +431,7 @@ const DOCS = {
 	E1502: {
 		title: 'Pass input missing',
 		cause:
-			'A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks every pass before the frame draws.',
+			"A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks the sketch's passes when render.addPass() or render.removePass() changes them, and every pass before the frame draws.",
 		example:
 			'E1502: the pass "Final" reads "sceneColor", but no pass that runs this frame writes it.',
 		since: '0.1',
@@ -431,21 +439,21 @@ const DOCS = {
 	E1503: {
 		title: 'Target created twice',
 		cause:
-			'Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. Each target has one creator, which sets its format and size.',
+			"Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. A sketch's pass whose texture has the name of a target of the engine's own passes does this. Each target has one creator, which sets its format and size.",
 		example: 'E1503: both "Opaque" and "Sky" create "sceneColor".',
 		since: '0.1',
 	},
 	E1504: {
 		title: 'Render pass cycle',
 		cause:
-			'Render passes need each other in a loop, so no order runs each pass after the passes whose output it reads.',
+			"Render passes need each other in a loop, so no order runs each pass after the passes whose output it reads. A sketch's pass that reads its own texture makes such a loop.",
 		example: 'E1504: the passes form a cycle: "Tint" runs after "Glow", and "Glow" after "Tint".',
 		since: '0.1',
 	},
 	E1505: {
 		title: 'Pass targets do not match',
 		cause:
-			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
+			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. It can draw into more than four color targets, or into color targets of more than 32 bytes per sample, which some devices cannot hold. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
 		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
 		since: '0.1',
 	},
