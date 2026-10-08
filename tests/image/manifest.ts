@@ -1429,6 +1429,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [GRID_IMAGE.width, GRID_IMAGE.height],
 		timeoutSeconds: 60,
 	},
+	// Four times of day from `timeOfDay`: the sky background, the sky's environment, the main
+	// light, the fog and the exposure together, over spheres from mirror to rough. The sky's
+	// environment must show the sky behind it in the smooth spheres at each time. A held frame
+	// makes the whole map at once, which a software GPU does slowly (D-118).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `time-of-day-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/time-of-day-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

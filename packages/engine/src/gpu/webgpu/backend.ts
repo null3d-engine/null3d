@@ -382,6 +382,7 @@ export class WebGPUBackend {
 		this.canvasResolved.delete(id);
 		const texture = this.textures[id];
 		if (texture) {
+			this.generators?.release(texture, this.gpuMemory);
 			texture.destroy();
 			this.gpuMemory.addTextures(-(this.textureSizes[id] as number));
 		}
@@ -478,15 +479,23 @@ export class WebGPUBackend {
 		}
 	}
 
+	/** The generators' code once a generator ran, which frees a sky map with its texture. */
+	private generators: CubeGenerator | undefined;
+
 	/**
-	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
-	 * generator submits its commands at once, ahead of the frame's, which never write the texture.
+	 * Runs a generator that the table holds on a cube texture: the whole map in one submit, ahead
+	 * of the frame's commands, which never write the texture, or one stage of a sky map in the
+	 * frame's commands, ahead of its passes. A sky map's stages before the last write only what the
+	 * generator keeps, so frames draw with the map as it was until the last copies the new levels in.
 	 */
-	private generateTexture(words: Uint32Array, a: number): void {
+	private generateTexture(op: number, words: Uint32Array, floats: Float32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
-		const generator = words[a + 1] as number;
-		const [source, code] = this.images.generator<CubeGenerator>(generator);
-		code.run(this.device, texture, source);
+		const id = words[a + 1] as number;
+		const code = this.images.generatorCodeFor<CubeGenerator>(id);
+		this.generators = code;
+		if (op === G.OP_SKY_MAP_STEP)
+			code.skyStage(this.device, this.commandEncoder(), texture, words, floats, a, this.gpuMemory);
+		else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -937,7 +946,8 @@ export class WebGPUBackend {
 					this.destroyPipeline(words[a] as number);
 					break;
 				case G.OP_GENERATE_TEXTURE:
-					this.generateTexture(words, a);
+				case G.OP_SKY_MAP_STEP:
+					this.generateTexture(op, words, floats, a);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);

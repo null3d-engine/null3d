@@ -40,6 +40,7 @@ export const OP_COPY_TEXTURE_TO_TEXTURE = 49;
 export const OP_RELEASE_IMAGE = 51;
 export const OP_DESTROY_PIPELINE = 52;
 export const OP_GENERATE_TEXTURE = 54;
+export const OP_SKY_MAP_STEP = 55;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;

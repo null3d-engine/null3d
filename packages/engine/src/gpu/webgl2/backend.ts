@@ -450,7 +450,7 @@ export class WebGL2Backend {
 	private program: WebGLProgram | null = null;
 	private vertexArray: WebGLVertexArrayObject | null = null;
 	private activeUnit = -1;
-	private readonly unitTextures: (WebGLTexture | null)[] = [];
+	private readonly unitTextures: (WebGLTexture | null | undefined)[] = [];
 	private readonly unitSamplers: (WebGLSampler | null)[] = [];
 	/** The texture that bind groups set at each slot, which the program's unit for the slot gets. */
 	private readonly slotTextures: (WebGLTexture | null)[] = [];
@@ -463,7 +463,7 @@ export class WebGL2Backend {
 	 * borrowed changed since the program's units were set.
 	 */
 	private unitsChanged = true;
-	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
+	private readonly blockBuffers: (WebGLBuffer | null | undefined)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
 	/** The faces that GL culls: `BACK` or `FRONT`, or 0 while culling is off. */
@@ -868,7 +868,8 @@ export class WebGL2Backend {
 					this.destroyPipeline(words[a] as number);
 					break;
 				case G.OP_GENERATE_TEXTURE:
-					this.generateTexture(words, a);
+				case G.OP_SKY_MAP_STEP:
+					this.generateTexture(op, words, floats, a);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
@@ -1385,6 +1386,7 @@ export class WebGL2Backend {
 		if (old.view) return;
 		this.gpuMemory.addTextures(-old.bytes);
 		if (old.texture) {
+			this.generators?.release(gl, old.texture, this.gpuMemory);
 			for (const other of this.textures)
 				if (other?.view && other.texture === old.texture) this.forgetFramebuffers(other);
 			gl.deleteTexture(old.texture);
@@ -1624,16 +1626,32 @@ export class WebGL2Backend {
 		this.endSpareDraws(texture);
 	}
 
+	/** The generators' code once a generator ran, which frees a sky map with its texture. */
+	private generators: CubeGenerator | undefined;
+
 	/**
-	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
-	 * generator draws full-screen triangles with no depth test, culling, scissor or blending, and
-	 * writes every channel. It changes bindings that the state cache holds, so the cache forgets
-	 * them, and the next draws bind what they need again.
+	 * Runs a generator that the table holds on a cube texture: the whole map, or one stage of a sky
+	 * map, whose stages before the last write only what the generator keeps. The generator draws
+	 * full-screen triangles with no depth test, culling, scissor or blending, and writes every
+	 * channel. It changes bindings that the state cache holds, so the cache forgets them, and the
+	 * next draws bind what they need again.
 	 */
-	private generateTexture(words: Uint32Array, a: number): void {
+	private generateTexture(op: number, words: Uint32Array, floats: Float32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
-		const generator = words[a + 1] as number;
-		const [source, code] = this.images.generator<CubeGenerator>(generator);
+		const id = words[a + 1] as number;
+		const code = this.images.generatorCodeFor<CubeGenerator>(id);
+		this.generators = code;
+		this.beforeGenerator();
+		const target = texture.texture as WebGLTexture;
+		const { width, mips } = texture;
+		if (op === G.OP_SKY_MAP_STEP)
+			code.skyStage(this.programHost, target, width, mips, words, floats, a, this.gpuMemory);
+		else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
+		this.afterGenerator();
+	}
+
+	/** Sets the state that a generator's draws take: no depth test, culling, scissor or blending. */
+	private beforeGenerator(): void {
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
@@ -1642,17 +1660,18 @@ export class WebGL2Backend {
 		this.setAlphaToCoverage(false);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
-		code.run(
-			this.programHost,
-			texture.texture as WebGLTexture,
-			texture.width,
-			texture.mips,
-			source,
-		);
+	}
+
+	/**
+	 * Forgets the bindings that a generator changed, so the next draws bind what they need. The
+	 * caches keep their length, so a sky map's stage in every frame grows no array again.
+	 */
+	private afterGenerator(): void {
 		this.program = null;
 		this.activeUnit = -1;
-		this.unitTextures.length = 0;
-		this.blockBuffers.length = 0;
+		// Loops rather than `fill`, which takes the browser's slow path on these sparse arrays.
+		for (let unit = 0; unit < this.unitTextures.length; unit++) this.unitTextures[unit] = undefined;
+		for (let slot = 0; slot < this.blockBuffers.length; slot++) this.blockBuffers[slot] = undefined;
 		this.viewport.fill(-1);
 		this.unitsChanged = true;
 	}

@@ -78,6 +78,8 @@ export default defineSketch(async (context) => {
 	let room: Environment | undefined;
 	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
 	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
+	// `sky=light` lights the swarm with the sky's environment too, which refreshes in stages as
+	// the sun moves, for the allocation sample of the sky map's stages and its diffuse light.
 	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
 	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
 	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
@@ -95,6 +97,10 @@ export default defineSketch(async (context) => {
 	if (skyMode === 'room')
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			context.scene.setBackground(loaded);
+		});
+	if (skyMode === 'light')
+		void context.assets.skyEnvironment().then((loaded) => {
+			context.scene.setEnvironment(loaded);
 		});
 	if (switches.has('environment'))
 		void context.assets.builtinEnvironment('room').then((loaded) => {

@@ -1538,6 +1538,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.sky_maps_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {
