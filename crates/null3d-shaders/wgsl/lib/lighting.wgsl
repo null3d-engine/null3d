@@ -13,9 +13,10 @@ const ROUGHNESS_FLOOR: f32 = 0.045;
 /// How much the change of the normal across a pixel widens the highlight, Filament's variance of
 /// its specular anti-aliasing kernel.
 const SPECULAR_AA_VARIANCE: f32 = 0.15;
-/// The most that the specular anti-aliasing kernel adds to the squared GGX alpha: Filament's
-/// threshold, squared as Filament squares it, so silhouettes do not turn matte.
-const SPECULAR_AA_LIMIT: f32 = 0.04;
+/// The most that the specular anti-aliasing kernel adds to the squared GGX alpha, so silhouettes
+/// do not turn matte: half of Filament's threshold, squared as Filament squares it. The lower limit
+/// flickers less on small glossy shapes (D-79).
+const SPECULAR_AA_LIMIT: f32 = 0.01;
 
 /// The light a Lambert surface reflects under one directional light and ambient light, as
 /// three.js's MeshLambertMaterial computes it. It is the albedo over pi times the irradiance. The
