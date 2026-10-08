@@ -71,7 +71,9 @@ The core's copy alone took these times in a native release build on the Mac (`gr
 
 In Chrome the first growth took longer than the second in every run, and these runs do not show why. Every growth to 16,383 objects or fewer costs under 1 ms on the Mac.
 
-Estimate for phones, with no device run: the copy is bound by memory speed. Take the S24+ and the iPad as 2 to 4 times slower than the Mac at it. A growth to 32,767 objects should then take about 2 to 4 ms there, and one to 65,535 about 4 to 8 ms. A device run of `tests/pages/object-growth.html?timing` would replace these estimates.
+Estimate for phones, with no device run: the copy is bound by memory speed. Take the S24+ and the iPad as 2 to 4 times slower than the Mac at it. A growth to 32,767 objects should then take about 2 to 4 ms there, and one to 65,535 about 4 to 8 ms. A device run of `tests/pages/object-growth.html?timing` would replace these estimates. The device runner's `object-growth` plan runs that page three times on each GPU path, and its summary gives the tables above ([Device sessions](../devices.md#the-object-growth-plan)).
+
+The plan's first run, in Chrome 155 on the Mac on 2026-10-08 at a 1-minute load of 7.7, passed 6 of 6 loads. It gave 0.98 to 1.07 ms on WebGPU and 0.91 to 0.97 ms on WebGL2 for the growth from 16,383 to 32,767 objects, and 1.55 to 1.83 ms and 1.62 to 1.87 ms for the growth to 65,535. Those agree with the table above. The growths to 8,191 objects or fewer took 0.06 to 0.37 ms, less than the table's, and the first growth again varied the most. The engine memory was 22.8 to 22.9 MB on WebGPU and 23.5 to 23.6 MB on WebGL2 with the default start, and 29.3 to 29.4 MB and 30.1 MB with room for 16,383 objects.
 
 ## Options
 
