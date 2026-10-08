@@ -7,7 +7,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | Path | Contents |
 | --- | --- |
 | `examples/demos.ts` | The list of demos and their groups, in `DEMO_GROUPS` order. Each entry names its group and its sketch, with a literal `new URL('./<name>/sketch.ts', import.meta.url)`, and says why the demo loads files, when it does |
-| `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, and shows its labels in a layer that the page gives it |
+| `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, shows its labels in a layer that the page gives it, and shows the stats overlay |
 | `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
 | `examples/<name>/sketch.ts` | One demo, under 150 lines |
@@ -32,7 +32,7 @@ The examples page links only by relative addresses, and each demo's entry names 
 The website's repository holds this repository as a git submodule, pinned to the release tag that matches the `@null3d/engine` version it installs. Its build:
 
 1. Installs `@null3d/engine`, `@null3d/controls` and `@null3d/vite-plugin` from npm, and never lists the submodule as a workspace, whose `workspace:*` versions would break.
-2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and later its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
+2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
 3. Builds its pages with `null3d()` from the plugin, `base: './'`, and `resolve.dedupe` for `@null3d/engine` and `@null3d/controls`. The dedupe matters when the submodule has its own `node_modules`: its workspace links point at packages whose built files are missing. Each entry of the list names its sketch with a literal address, so the build ships every sketch that the website imports.
 4. Sets the environment variable `VITE_NULL3D_SAMPLES_BASE` to the folder of the sample files, such as `./samples/`, and copies them there with `copyNamedSamples` from `tools/lib/samples.ts`, which copies every file that the demos name.
 5. Sends the isolation headers, for example with a Cloudflare Pages `_headers` file, as [hosting](../docs/getting-started/hosting.md) says.
@@ -69,6 +69,8 @@ Each link loads `?demo=<name>` as a new page. The page does not swap engines in 
 `startDemo` names no quality preset, and leaves the frame-budget governor on, as every preset has it. The engine then picks the preset for each device. It starts from the device's kind: High on a desktop, Medium on a tablet and Low on a phone. It caps that at Medium on WebGL2 and in WebGPU's compatibility mode. Then its start-up check lowers the preset until one holds the frame rate, and keeps the result for the next visit.
 
 A page that names a preset skips that check. A phone would then start at High, and stutter and heat until the governor stepped down. The check already gives High on desktops with a strong GPU, where the richer look matters. The `?preset=` switch still fixes a preset, to try another one.
+
+`startDemo` shows the engine's stats overlay over the canvas's top-left corner, through the engine's `stats` option, so the examples page and the website both show it. A page passes `stats: false` to leave it off, and a visitor adds `?stats=off` to the address. The overlay shows the frame rates, the CPU time of each thread, the GPU time, the draw calls, the triangles and objects drawn, memory, and the page thread's long tasks. While it shows, the engine times one frame in eleven on the GPU, and reads back the counts of the objects that the GPU culls. That costs a little GPU time and a few small objects on those frames ([D-116](decisions/D-116-stats-overlay-figures.md)). A held frame never shows the overlay, so the held frames match the image tests.
 
 In hold mode the engine runs no check, and the preset follows the device's kind. The image tests do not use `startDemo`. The manifest draws each demo's sketch through the test pages, so the examples page does not change their images.
 

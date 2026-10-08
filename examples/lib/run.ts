@@ -22,14 +22,30 @@ export interface StartOptions {
 	 * it. Without a layer, the demo shows no labels.
 	 */
 	labels?: HTMLElement;
+	/**
+	 * True shows the engine's stats overlay over the canvas's top-left corner, which is the
+	 * default. False leaves it off. The `?stats=off` switch hides it too, and a held frame never
+	 * shows it.
+	 */
+	stats?: boolean;
 }
 
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
-export async function startDemo({ canvas, demo, labels }: StartOptions): Promise<Engine> {
+export async function startDemo({
+	canvas,
+	demo,
+	labels,
+	stats = true,
+}: StartOptions): Promise<Engine> {
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
 	// No preset: the engine's start-up check picks one that the device holds at its frame rate.
-	const engine = await createEngine({ canvas, sketch: demo.sketch, largeWorld: demo.largeWorld });
+	const engine = await createEngine({
+		canvas,
+		sketch: demo.sketch,
+		largeWorld: demo.largeWorld,
+		stats,
+	});
 	if (labels) showLabels(engine, labels);
 	return engine;
 }
