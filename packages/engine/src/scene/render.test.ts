@@ -32,7 +32,7 @@ function setup() {
 	let next = 1;
 	const written = new Set<string>();
 	const glue = {
-		addScenePass(...args: unknown[]) {
+		addPass(...args: unknown[]) {
 			calls.push(['add', ...args]);
 			const [, target, reads] = args as [string, string, string];
 			const missing = reads.split('\n').find((read) => read !== '' && !written.has(read));
@@ -110,7 +110,29 @@ describe('render passes', () => {
 			128,
 			true,
 		]);
-		expect(calls[0]).toEqual(['add', 'minimap', 'minimap', '', 256, 128, false, 0, 0, 0, 1]);
+		// A scale below 0 makes a scene pass, whose camera sends its layers.
+		expect(calls[0]).toEqual([
+			'add',
+			'minimap',
+			'minimap',
+			'',
+			256,
+			128,
+			false,
+			0,
+			0,
+			0,
+			1,
+			-1,
+			1,
+			-1,
+			0,
+			1,
+			0,
+			0,
+			0,
+			0,
+		]);
 		// The camera sends its lens to the pass's view, with its own layers.
 		expect(lenses).toEqual([[C.CAMERA_TARGET_PASS_VIEWS + 1, 0b11]]);
 
@@ -138,6 +160,15 @@ describe('render passes', () => {
 			0.25,
 			1,
 			0.5,
+			-1,
+			1,
+			4,
+			0,
+			1,
+			0,
+			0,
+			0,
+			0,
 		]);
 		expect(preloads).toEqual([['views']]);
 		expect(render.takeNewPipelines()).toBe(true);
@@ -249,10 +280,108 @@ describe('render passes', () => {
 			scene.onRangedLight?.();
 			render.addPass({ kind: 'scene', camera: camera().camera, writes: 'other', size: [8, 8] });
 			expect(warnings.length).toBe(1);
-			expect(String(warnings[0])).toContain('scene passes do not draw them yet');
+			expect(String(warnings[0])).toContain('scene and reflection passes do not draw them yet');
 		} finally {
 			console.warn = warn;
 		}
+	});
+
+	it('adds a reflection pass with its plane, size, pace and layers, and no camera', () => {
+		const { render, calls, cameras, preloads } = setup();
+		const water = render.addPass({
+			kind: 'reflection',
+			writes: 'water',
+			plane: { point: [1, -2, 3] },
+		});
+		expect([water.kind, water.name, water.width, water.height]).toEqual([
+			'reflection',
+			'water',
+			0,
+			0,
+		]);
+		// Without a scale, the preset's sets the size; without layers, the camera's are drawn.
+		expect(calls[0]).toEqual([
+			'add',
+			'water',
+			'water',
+			'',
+			0,
+			0,
+			false,
+			0,
+			0,
+			0,
+			1,
+			0,
+			1,
+			-1,
+			0,
+			1,
+			0,
+			1,
+			-2,
+			3,
+		]);
+		render.addPass({
+			kind: 'reflection',
+			writes: 'floor',
+			name: 'Floor',
+			plane: { point: [0, 0, 0], normal: [0, 0, 2] },
+			scale: 0.25,
+			every: 3,
+			layers: 2,
+			reads: ['water'],
+			clearColor: [0.5, 0.25, 1],
+		});
+		expect(calls[1]).toEqual([
+			'add',
+			'Floor',
+			'floor',
+			'water',
+			0,
+			0,
+			true,
+			0.5,
+			0.25,
+			1,
+			1,
+			0.25,
+			3,
+			2,
+			0,
+			0,
+			2,
+			0,
+			0,
+			0,
+		]);
+		expect(cameras).toEqual([]);
+		expect(preloads).toEqual([['views']]);
+		render.setPassEnabled(water, false);
+		render.removePass(water);
+		expect(calls.slice(2)).toEqual([
+			['enabled', 1, false],
+			['remove', 1],
+		]);
+	});
+
+	it('refuses options that a reflection pass does not take', () => {
+		const { render } = setup();
+		const add = (options: object) =>
+			thrown(() => render.addPass({ kind: 'reflection', writes: 'w', ...options } as never));
+		const point = [0, 0, 0];
+		expect(add({}).code).toBe('E1220');
+		expect(add({ plane: { normal: [0, 1, 0] } }).code).toBe('E1220');
+		expect(add({ plane: { point: [0, Number.NaN, 0] } }).code).toBe('E1220');
+		expect(add({ plane: { point, normal: [0, 0, 0] } }).code).toBe('E1220');
+		expect(add({ plane: { point }, scale: 0.3 }).code).toBe('E1220');
+		expect(add({ plane: { point }, every: 0 }).code).toBe('E1220');
+		expect(add({ plane: { point }, every: 1.5 }).code).toBe('E1220');
+		const sized = add({ plane: { point }, size: [8, 8] });
+		expect(sized.code).toBe('E1220');
+		expect(sized.message).toContain('which a reflection pass does not take');
+		expect(add({ plane: { point }, layers: 0.5 }).code).toBe('E1207');
+		expect(add({ plane: { point }, reads: ['w'] }).code).toBe('E1504');
 	});
 
 	it("dumps the core's graph", () => {

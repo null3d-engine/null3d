@@ -3,9 +3,11 @@
 //! target, which the pass that draws it declares in the render graph. Its lens is perspective or
 //! orthographic. The first view is the camera's, and it draws the scene color and depth that reach
 //! the canvas. Each further view draws into a color target of its own (see [`ViewTarget`]), which
-//! the render graph keeps from frame to frame, and which materials can show. A further view runs
-//! only while some running pass reads its target: the camera's passes read the target of each
-//! view that a texture shows, and a view reads the targets that it lists.
+//! the render graph keeps from frame to frame, and which materials can show. A mirror view draws
+//! the camera's view mirrored across a plane (see [`crate::mirror`]), into a target of the render
+//! size or a share of it. A view can draw in one frame of several, and keep its image between.
+//! A further view runs only while some running pass reads its target: the camera's passes read
+//! the target of each view that a texture shows, and a view reads the targets that it lists.
 //!
 //! A view never draws an object whose material shows the target of a view that it does not read,
 //! its own included, since a pass cannot sample a texture that it draws into.
@@ -28,6 +30,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use crate::camera::{Affine, Lens, Mat4, ViewDepth};
 use crate::frame_data::FrameUniform;
 use crate::graph::{RenderScale, Size};
+use crate::mirror::Mirror;
 use crate::shadow_tiles::MAX_TILES;
 use crate::shadows::MAX_CASCADES;
 
@@ -107,13 +110,21 @@ impl ViewId {
 /// The target of a view other than the camera's, and how it draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewTarget {
-    /// Its width and height in texels, or `None` for the canvas's size.
+    /// Its width and height in texels, or `None` for the render size halved `halvings` times.
     pub size: Option<(u32, u32)>,
+    /// How many times a target without a size of its own halves the render size each way.
+    pub halvings: u8,
     /// The color it clears to before the view draws, as exposed linear color with alpha, or
     /// `None` for the color that the camera's target clears to.
     pub clear: Option<[f32; 4]>,
     /// False while the view is switched off: its target keeps the last image it drew.
     pub enabled: bool,
+    /// The view draws in one frame of every `every`, from the first, and keeps its image between.
+    pub every: u32,
+    /// The frames left after this one before the view draws again.
+    pub wait: u32,
+    /// True when the view's turn comes in this frame.
+    pub due: bool,
     /// True while a texture shows the target, so the camera's passes read it.
     pub shown: bool,
     /// The views whose targets this view reads, as a mask of view places: the objects it draws
@@ -127,10 +138,41 @@ impl Default for ViewTarget {
     fn default() -> Self {
         Self {
             size: None,
+            halvings: 0,
             clear: None,
             enabled: true,
+            every: 1,
+            wait: 0,
+            due: true,
             shown: false,
             reads: 0,
+        }
+    }
+}
+
+impl ViewTarget {
+    /// True when the view draws in this frame: it is switched on, and its turn has come.
+    pub fn draws(&self) -> bool {
+        self.enabled && self.due
+    }
+
+    /// Moves the view's turns on to the next frame: a view that draws once in `every` frames
+    /// draws in the first, then waits `every - 1` frames after each frame that it draws.
+    pub(crate) fn pace(&mut self) {
+        self.due = self.wait == 0;
+        self.wait = if self.due {
+            self.every.max(1) - 1
+        } else {
+            self.wait - 1
+        };
+    }
+
+    /// The size of the render graph's target: its own size, or the render size halved.
+    pub fn graph_size(&self) -> Size {
+        match (self.size, self.halvings) {
+            (Some((width, height)), _) => Size::Fixed { width, height },
+            (None, 0) => Size::Full,
+            (None, halvings) => Size::Halved(halvings),
         }
     }
 }
@@ -154,6 +196,18 @@ pub struct View {
     layers: u32,
     target: ViewTarget,
     removed: bool,
+    /// What a mirror view mirrors, or `None` for a view of its own camera.
+    mirror: Option<Mirroring>,
+}
+
+/// A mirror view's plane, and where its size and layers come from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Mirroring {
+    plane: Mirror,
+    /// Its own halvings of the render size, or `None` to take the quality preset's.
+    halvings: Option<u8>,
+    /// True when it draws the camera's layers rather than its own.
+    follows_layers: bool,
 }
 
 impl Default for View {
@@ -164,6 +218,7 @@ impl Default for View {
             layers: DEFAULT_LAYERS,
             target: ViewTarget::default(),
             removed: false,
+            mirror: None,
         }
     }
 }
@@ -174,14 +229,45 @@ impl View {
         Self {
             camera: Some((camera, lens.into())),
             layers,
-            target: ViewTarget::default(),
-            removed: false,
+            ..Self::default()
         }
     }
 
     /// The same view, drawing into `target`.
     pub fn with_target(self, target: ViewTarget) -> Self {
         Self { target, ..self }
+    }
+
+    /// A view that draws the camera's view mirrored across `mirror`'s plane, into a target of the
+    /// render size halved `halvings` times, or as many times as the quality preset says with
+    /// `None`. It draws the objects on `layers`, or on the camera's layers with `None`.
+    pub fn mirror(mirror: Mirror, halvings: Option<u8>, layers: Option<u32>) -> Self {
+        Self {
+            layers: layers.unwrap_or(DEFAULT_LAYERS),
+            mirror: Some(Mirroring {
+                plane: mirror,
+                halvings,
+                follows_layers: layers.is_none(),
+            }),
+            ..Self::default()
+        }
+    }
+
+    /// The plane that a mirror view mirrors the camera's view across, or `None` for another view.
+    pub fn mirrored(&self) -> Option<&Mirror> {
+        self.mirror.as_ref().map(|mirroring| &mirroring.plane)
+    }
+
+    /// Takes a mirror view's size and layers for the frame: the preset's halvings `halvings`
+    /// unless it has its own, and the camera's layers `camera_layers` unless it has its own.
+    pub(crate) fn follow_camera(&mut self, halvings: u8, camera_layers: u32) {
+        let Some(mirroring) = self.mirror else {
+            return;
+        };
+        self.target.halvings = mirroring.halvings.unwrap_or(halvings);
+        if mirroring.follows_layers {
+            self.layers = camera_layers;
+        }
     }
 
     /// The view's target, which only views other than the camera's draw into.
@@ -200,11 +286,11 @@ impl View {
     }
 
     /// The size the view draws at in texels, for a canvas of `canvas` pixels at render scale
-    /// `scale`: its target's own size, or the render size.
+    /// `scale`: its target's own size, or the render size or a share of it.
     pub fn draw_size(&self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32) {
         match self.target.size {
             Some(size) => size,
-            None => Size::Full.viewport(canvas, scale),
+            None => self.target.graph_size().viewport(canvas, scale),
         }
     }
 
@@ -296,5 +382,85 @@ impl ViewFrame {
             depth,
             layers,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_view_that_draws_once_in_three_frames_draws_first_then_waits_two_frames() {
+        let mut target = ViewTarget {
+            every: 3,
+            ..ViewTarget::default()
+        };
+        let mut drawn = Vec::new();
+        for _ in 0..7 {
+            target.pace();
+            drawn.push(target.draws());
+        }
+        assert_eq!(drawn, [true, false, false, true, false, false, true]);
+        let mut every_frame = ViewTarget::default();
+        for _ in 0..3 {
+            every_frame.pace();
+            assert!(
+                every_frame.draws(),
+                "a view draws in every frame by default"
+            );
+        }
+        every_frame.enabled = false;
+        assert!(
+            !every_frame.draws(),
+            "a view switched off draws in no frame"
+        );
+    }
+
+    #[test]
+    fn a_target_takes_its_own_size_or_the_render_size_halved() {
+        let fixed = ViewTarget {
+            size: Some((64, 32)),
+            halvings: 2,
+            ..ViewTarget::default()
+        };
+        assert_eq!(
+            fixed.graph_size(),
+            Size::Fixed {
+                width: 64,
+                height: 32
+            }
+        );
+        let full = ViewTarget::default();
+        assert_eq!(full.graph_size(), Size::Full);
+        let half = ViewTarget {
+            halvings: 1,
+            ..ViewTarget::default()
+        };
+        assert_eq!(half.graph_size(), Size::HALF);
+        let view = View::default().with_target(half);
+        let canvas = (1001, 600);
+        assert_eq!(view.draw_size(canvas, RenderScale::FULL), (501, 300));
+    }
+
+    #[test]
+    fn a_mirror_view_takes_the_presets_size_and_the_cameras_layers_unless_it_has_its_own() {
+        let mirror = Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
+        let mut follows = View::mirror(mirror, None, None);
+        follows.follow_camera(2, 0b101);
+        assert_eq!(follows.target().halvings, 2);
+        assert_eq!(follows.layers(), 0b101);
+        assert_eq!(follows.mirrored(), Some(&mirror));
+        let mut own = View::mirror(mirror, Some(0), Some(0b10));
+        own.follow_camera(2, 0b101);
+        assert_eq!(own.target().halvings, 0);
+        assert_eq!(own.layers(), 0b10);
+        let mut plain = View::default();
+        plain.follow_camera(2, 0b101);
+        assert_eq!(
+            plain.target().halvings,
+            0,
+            "a view that mirrors nothing keeps its size"
+        );
+        assert_eq!(plain.layers(), DEFAULT_LAYERS);
     }
 }

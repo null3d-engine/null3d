@@ -128,6 +128,7 @@ describe('the preset table', () => {
 			'pointLightShadows',
 			'bloomSize',
 			'aoScale',
+			'reflectionScale',
 			'governor',
 			'depthPrepass',
 			'gpuOcclusion',
@@ -165,6 +166,7 @@ describe('the preset table', () => {
 			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
+			'reflectionScale',
 			'softwareOcclusion',
 			'governor',
 			'antialias',
@@ -190,6 +192,7 @@ describe('the preset table', () => {
 			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
+			'reflectionScale',
 			'softwareOcclusion',
 			'governor',
 		]);
@@ -237,6 +240,7 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 128,
 			aoScale: 0,
+			reflectionScale: 0.25,
 			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
@@ -260,6 +264,7 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 512,
 			aoScale: 0,
+			reflectionScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 3,
@@ -283,6 +288,7 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 512,
 			aoScale: 0.5,
+			reflectionScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
@@ -306,6 +312,7 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 512,
 			aoScale: 0.5,
+			reflectionScale: 1,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
@@ -400,7 +407,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, reflectionScale, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

@@ -154,6 +154,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 0.25, 0.5],
 	},
+	// The size of the textures of reflection passes whose `scale` option names none, as a share of
+	// the render size each way. A reflection draws the scene a second time, so its cost follows its
+	// pixels: half the size each way draws a quarter of them. A change makes the texture again on
+	// the next frame. D-120 gives the figures.
+	reflectionScale: {
+		presets: [0.25, 0.5, 0.5, 1],
+		changes: 'live',
+		values: [0.25, 0.5, 1],
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
 	// measured yet, so these values follow the plan until device runs settle them (D-41).
@@ -347,6 +356,13 @@ export interface QualitySettings {
 	 * change to or from 0 adds or removes ambient occlusion's passes.
 	 */
 	aoScale: 0 | 0.25 | 0.5;
+	/**
+	 * The size of a reflection pass's texture, as a share of the render size each way: 1, 0.5 or
+	 * 0.25, for each reflection whose `scale` option names none. A reflection draws the scene again,
+	 * so a smaller share costs less, with a softer reflection. It changes during play, which makes
+	 * the reflections' textures again.
+	 */
+	reflectionScale: 0.25 | 0.5 | 1;
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then
