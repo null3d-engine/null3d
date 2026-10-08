@@ -1413,8 +1413,13 @@ impl FrameBuilder for CpuCulledRenderer {
             .view_frame(ViewId::CAMERA, scene, parity, canvas, scale);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
-        self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref());
+        self.tiles.plan(
+            input,
+            tile_settings,
+            filter,
+            camera.as_ref(),
+            self.settings.meshes(),
+        );
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();
@@ -1568,6 +1573,13 @@ impl FrameBuilder for CpuCulledRenderer {
             self.skins.morph_mut().deltas_moved(first);
         }
         self.occluders.forget(ids);
+    }
+
+    fn meshes_updated(&mut self, id: u32, positions: bool) {
+        self.meshes.updated(self.settings.meshes().updated());
+        if positions {
+            self.occluders.stop_blocking(id);
+        }
     }
 
     fn mesh_gpu_bytes(&self) -> u64 {

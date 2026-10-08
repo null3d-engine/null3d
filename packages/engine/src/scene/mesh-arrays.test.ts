@@ -7,6 +7,7 @@ import {
 	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
 	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
 	ARRAYS_PROBLEM_NOT_FINITE,
+	ARRAYS_PROBLEM_POSED,
 	MESH_ARRAYS_COLORS,
 	MESH_ARRAYS_COLORS_ALPHA,
 	MESH_ARRAYS_COMPUTE_TANGENTS,
@@ -19,10 +20,16 @@ import {
 	MORPH_NORMALS,
 	MORPH_POSITIONS,
 } from '../generated/core';
-import { VERTEX_TYPE_SNORM8, VERTEX_TYPE_UINT16, VERTEX_TYPE_UNORM8 } from '../generated/gpu';
+import {
+	VERTEX_ATTRIBUTES,
+	VERTEX_TYPE_SNORM8,
+	VERTEX_TYPE_UINT16,
+	VERTEX_TYPE_UNORM8,
+	VERTEX_TYPE_UNORM16,
+} from '../generated/gpu';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
-import { arraysProblem, meshFromArrays, typeField } from './mesh-arrays';
+import { arraysProblem, meshFromArrays, typeField, updateVertices } from './mesh-arrays';
 import type { MeshArrays } from './resources';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -336,5 +343,138 @@ describe('meshes from arrays in engine memory', () => {
 		);
 		const memoryFull = fakeCore({ code: 1109, details: [64 * 1024 * 1024, 0] });
 		expect(refuse(memoryFull.core, QUAD).code).toBe('E1109');
+	});
+});
+
+/** A core that takes vertex updates, recording each call's arguments. */
+function updatingCore(failure?: { code: number; details: [number, number] }) {
+	const memory = new WebAssembly.Memory({ initial: 1 });
+	const calls: { words: number; args: number[] }[] = [];
+	const glue = {
+		meshArrays: (words: number) => {
+			calls.push({ words, args: [] });
+			return 256;
+		},
+		updateVertices: (...args: number[]) => {
+			(calls[calls.length - 1] as { args: number[] }).args = args;
+			return failure ? 1206 : 0;
+		},
+		lastErrorCode: () => failure?.code ?? 0,
+		lastErrorDetail: (index: number) => failure?.details[index] ?? 0,
+	} as unknown as CoreGlue;
+	return { core: new CoreMemory(glue, memory), memory, calls };
+}
+
+/** The format bits of texture coordinates, colors and joints. */
+const [MESH_UV0 = 0, MESH_COLOR = 0, MESH_JOINTS = 0] = [2, 5, 6].map(
+	(k) => VERTEX_ATTRIBUTES[k]?.[0] ?? 0,
+);
+
+/** A mesh of four vertices with float positions and normals, and 16-bit normalized uvs. */
+const LAYOUT = { count: 4, format: MESH_UV0 | (typeField(2, VERTEX_TYPE_UNORM16) ?? 0) };
+
+describe('vertex updates', () => {
+	const call = 'mesh.updateVertices';
+
+	test('copy the named vertices of the whole array, in the type the mesh keeps', () => {
+		const { core, memory, calls } = updatingCore();
+		const positions = new Float32Array(12).map((_, k) => k);
+		updateVertices(core, 7, LAYOUT, 'positions', positions, 0, 4, call);
+		expect(Array.from(new Float32Array(memory.buffer, 256, 12))).toEqual(Array.from(positions));
+		updateVertices(core, 7, LAYOUT, 'normals', [...positions], 1, 2, call);
+		expect(Array.from(new Float32Array(memory.buffer, 256, 6))).toEqual([3, 4, 5, 6, 7, 8]);
+		const uvs = new Uint16Array([0, 1, 2, 3, 4, 5, 6, 7]);
+		updateVertices(core, 7, LAYOUT, 'uvs', uvs, 3, 1, call);
+		expect(Array.from(new Uint16Array(memory.buffer, 256, 2))).toEqual([6, 7]);
+		expect(calls).toEqual([
+			{ words: 12, args: [7, 0, 3, 0, 4] },
+			{ words: 6, args: [7, 1, 3, 1, 2] },
+			{ words: 1, args: [7, 2, 2, 3, 1] },
+		]);
+	});
+
+	test('take three or four numbers of color per vertex, and skip an empty range', () => {
+		const { core, calls } = updatingCore();
+		const colors = { count: 4, format: MESH_COLOR };
+		updateVertices(core, 7, colors, 'colors', new Float32Array(12), 0, 4, call);
+		updateVertices(core, 7, colors, 'colors', new Float32Array(16), 2, 2, call);
+		updateVertices(core, 7, colors, 'colors', new Float32Array(16), 4, 0, call);
+		expect(calls.map(({ args }) => args)).toEqual([
+			[7, 5, 3, 0, 4],
+			[7, 5, 4, 2, 2],
+		]);
+	});
+
+	test('name what does not fit, and send nothing', () => {
+		const { core, calls } = updatingCore();
+		const message = (
+			name: string,
+			values: Float32Array | Uint16Array | number[],
+			start = 0,
+			count = 4,
+			layout = LAYOUT,
+		) => {
+			try {
+				updateVertices(core, 7, layout, name as 'positions', values, start, count, call);
+			} catch (error) {
+				expect((error as EngineError).code).toBe('E1206');
+				return (error as EngineError).message;
+			}
+			throw new Error('the update went through');
+		};
+		const twelve = new Float32Array(12);
+		expect(message('joints', twelve)).toStartWith(
+			'E1206: mesh.updateVertices() got joints; updates take positions, normals, uvs, uvs1, colors or tangents.',
+		);
+		expect(message('uvs1', new Float32Array(8))).toStartWith(
+			'E1206: mesh.updateVertices() got uvs1 for a mesh without uvs1.',
+		);
+		expect(message('uvs', new Float32Array(8))).toStartWith(
+			'E1206: mesh.updateVertices() got uvs in a Float32Array; the mesh keeps its uvs in a Uint16Array.',
+		);
+		expect(message('positions', new Uint16Array(12))).toStartWith(
+			'E1206: mesh.updateVertices() got positions in a Uint16Array; the mesh keeps its positions in a Float32Array or a plain array.',
+		);
+		expect(message('positions', new Float32Array(9))).toStartWith(
+			'E1206: mesh.updateVertices() got 9 numbers in positions for 4 vertices, not 12.',
+		);
+		expect(message('positions', twelve, 2, 3)).toStartWith(
+			'E1206: mesh.updateVertices() got vertices 2 to 4, past the last of 4 vertices.',
+		);
+		expect(message('positions', twelve, 0.5, 1)).toStartWith(
+			'E1206: mesh.updateVertices() got start 0.5 and count 1; both take whole numbers of 0 or more.',
+		);
+		expect(message('positions', twelve, 0, 4, { count: 4, format: MESH_JOINTS })).toStartWith(
+			'E1206: mesh.updateVertices() got a mesh with joints or morph targets, whose vertices take no updates.',
+		);
+		expect(calls).toEqual([]);
+	});
+
+	test('that the core refuses name the value it found wrong', () => {
+		const refused = (details: [number, number]) => {
+			const { core } = updatingCore({ code: 1206, details });
+			const positions = [0, 1, 2, 3, 4, 5, 6, Number.NaN, 8, 9, 10, 11];
+			try {
+				updateVertices(core, 7, LAYOUT, 'positions', positions, 1, 3, call);
+			} catch (error) {
+				return (error as EngineError).message;
+			}
+			throw new Error('the update went through');
+		};
+		expect(refused([ARRAYS_PROBLEM_NOT_FINITE, 4])).toStartWith(
+			'E1206: mesh.updateVertices() got NaN at positions[7].',
+		);
+		expect(refused([ARRAYS_PROBLEM_POSED, 0])).toStartWith(
+			'E1206: mesh.updateVertices() got a mesh with joints or morph targets, whose vertices take no updates.',
+		);
+	});
+
+	test('reuse one view of engine memory for each type', () => {
+		const { core } = updatingCore();
+		const positions = new Float32Array(12);
+		updateVertices(core, 7, LAYOUT, 'positions', positions, 0, 4, call);
+		const view = core.heap(Float32Array);
+		updateVertices(core, 7, LAYOUT, 'normals', positions, 0, 4, call);
+		expect(core.heap(Float32Array)).toBe(view);
 	});
 });

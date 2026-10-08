@@ -175,6 +175,7 @@ export type {
 	TorusOptions,
 	UnlitOptions,
 	UnlitValues,
+	UpdatableAttribute,
 	UvTransform,
 	VertexArray,
 	VertexValues,

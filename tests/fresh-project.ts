@@ -40,7 +40,7 @@ const ROOT = join(import.meta.dirname, '..');
 /** The project's files besides its package manifest. */
 const TEMPLATE = join(ROOT, 'tests/fixtures/fresh-project');
 /** The packages that the project's page and sketch import. */
-const DEPENDENCIES = ['@null3d/engine', '@null3d/controls'];
+const DEPENDENCIES = ['@null3d/engine', '@null3d/controls', '@null3d/geometry'];
 /** The packages that the project's tools run. */
 const DEV_DEPENDENCIES = ['@null3d/vite-plugin', '@null3d/cli'];
 /** Tools from npm, at the versions that the repository pins. */
@@ -248,13 +248,13 @@ async function main(): Promise<void> {
 		);
 		if (cores.length !== 2)
 			throw new Error(`the production build holds ${cores.length} engine cores, not 2`);
+		// The engine's notices come first, then the geometry package's.
 		const notices = join(project, 'dist', NOTICES_FILE);
-		const engineNotices = readFileSync(
-			join(ROOT, 'packages/engine/THIRD-PARTY-NOTICES.txt'),
-			'utf8',
-		);
-		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== engineNotices)
-			throw new Error(`the production build lacks the engine's notices in ${NOTICES_FILE}`);
+		const own = (name: string) =>
+			readFileSync(join(ROOT, `packages/${name}/THIRD-PARTY-NOTICES.txt`), 'utf8').trimEnd();
+		const expected = `${own('engine')}\n\n${own('geometry')}\n`;
+		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== expected)
+			throw new Error(`the production build lacks the packages' notices in ${NOTICES_FILE}`);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
 		passed = true;

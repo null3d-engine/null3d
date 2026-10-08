@@ -11,7 +11,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `skills/` | Agent skills for building with null3D and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code, which `bun install` writes. Git does not keep it. Never edit it. |
 | `crates/` | The Rust crates: core, GPU layer, renderer, shaders, the WebAssembly entry point, and the modules that build tools load: the shader compiler and the asset tool's formats |
-| `packages/` | npm packages: `engine`, `vite-plugin`, `controls`, and `cli`, which is the `null3d` command. Code in the repository reads their TypeScript source, and a pack builds their JavaScript, as [Releases](.dev/releases.md#the-npm-packages) says |
+| `packages/` | npm packages: `engine`, `vite-plugin`, `controls`, `geometry`, and `cli`, which is the `null3d` command. Code in the repository reads their TypeScript source, and a pack builds their JavaScript, as [Releases](.dev/releases.md#the-npm-packages) says |
 | `tests/` | Browser tests: test pages, the image test manifest and its reference images, the Playwright tests and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |

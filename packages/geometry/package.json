@@ -1,0 +1,53 @@
+{
+	"name": "@null3d/geometry",
+	"version": "0.0.0",
+	"description": "Geometry generators for null3D: torus knots, polyhedra, lathes, shapes, extrusions and tubes, with three.js's option names and output.",
+	"license": "MIT OR Apache-2.0",
+	"author": "Ramesh Nair (https://hiddentao.com)",
+	"homepage": "https://github.com/null3d-engine/null3d#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/null3d-engine/null3d.git",
+		"directory": "packages/geometry"
+	},
+	"bugs": {
+		"url": "https://github.com/null3d-engine/null3d/issues"
+	},
+	"keywords": [
+		"null3d",
+		"3d",
+		"geometry",
+		"extrude",
+		"threejs"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"null3d-source": "./src/index.ts",
+			"types": "./lib/index.d.ts",
+			"default": "./lib/index.js"
+		}
+	},
+	"files": [
+		"lib",
+		"LICENSE-MIT",
+		"LICENSE-APACHE",
+		"THIRD-PARTY-NOTICES.txt"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"prepack": "bun ../../tools/build-package.ts geometry"
+	},
+	"peerDependencies": {
+		"@null3d/engine": "workspace:*"
+	},
+	"devDependencies": {
+		"@null3d/engine": "workspace:*",
+		"@types/three": "0.186.0",
+		"@webgpu/types": "0.1.74",
+		"three": "0.186.1"
+	}
+}

@@ -705,8 +705,13 @@ impl GpuDrivenRenderer {
         );
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
-        self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref());
+        self.tiles.plan(
+            input,
+            tile_settings,
+            filter,
+            camera.as_ref(),
+            self.settings.meshes(),
+        );
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let passes = CasterPasses {
@@ -1505,6 +1510,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         if let Some(first) = moves.morph_texels {
             self.skinning.morph_mut().deltas_moved(first);
         }
+    }
+
+    fn meshes_updated(&mut self, _id: u32, _positions: bool) {
+        self.meshes.updated(self.settings.meshes().updated());
     }
 
     fn mesh_gpu_bytes(&self) -> u64 {

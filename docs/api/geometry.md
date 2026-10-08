@@ -3,17 +3,19 @@ id: api/geometry
 title: Geometry
 status: experimental
 since: "0.1"
-summary: "Generators with three.js parameters; meshes from arrays; morph targets; vertex formats; large meshes."
+summary: "Generators with three.js parameters; extra shapes in @null3d/geometry; meshes from arrays; morph targets; vertices that change; vertex formats; large meshes."
 ---
 
 # Geometry
 
-> Ships in null3D 0.1. Integer attributes, joints and weights, and morph targets ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use it.
+> Ships in null3D 0.1. Integer attributes, joints and weights, morph targets, the `@null3d/geometry` package and vertex updates ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use it.
 
 ```mermaid
 flowchart LR
     gen["Generators: box, sphere, plane,<br/>cylinder, cone, torus,<br/>capsule, circle, ring"] --> mesh["MeshGeometry"]
+    extra["@null3d/geometry: torusKnot,<br/>polyhedra, lathe, shape,<br/>extrude, tube"] --> arrays
     arrays["geometry.fromArrays()<br/>positions, normals, uvs, ...<br/>as floats or integers"] --> mesh
+    mesh --> update["mesh.updateVertices()<br/>new values each frame"]
     mesh --> format["Vertex format:<br/>the attributes the mesh has,<br/>and the type of each"]
     format --> pages["GPU buffers shared by<br/>every mesh of the format"]
     mesh --> objects["scene.createMesh()<br/>scene.createInstances()"]
@@ -48,6 +50,39 @@ scene.createMesh({ mesh: crate, material: materials.standard({ color: '#c8a064' 
 Every shape is centered on its origin. The options have the names of the three.js constructor's arguments, and the API reference below gives each default. Angles are in radians. Segment counts round down to whole numbers. Each count has a least, which the API reference gives, and a smaller count rises to it. A sphere, for example, has at least 3 segments around it.
 
 The generators give each vertex a position, a normal and texture coordinates, with the values that three.js gives them. The [geometry generators demo](https://github.com/null3d-engine/null3d/tree/main/examples/generators) draws all nine shapes.
+
+## Extra shapes
+
+The `@null3d/geometry` package holds the rest of three.js's geometry classes. Install it beside the engine:
+
+```sh
+bun add @null3d/geometry
+```
+
+Each function takes the parameters and defaults of a three.js class, as named options, and returns arrays for `geometry.fromArrays`. The arrays hold the same numbers as the three.js geometry's attributes: the same vertices in the same order, with the same normals and texture coordinates.
+
+```ts
+// sketch.ts
+import { extrude, Shape, torusKnot } from '@null3d/geometry';
+
+const knot = geometry.fromArrays(torusKnot({ radius: 1, tube: 0.3, tubularSegments: 128 }));
+const outline = new Shape().moveTo(0, 0).lineTo(1, 0).lineTo(0.5, 1).lineTo(0, 0);
+const wedge = geometry.fromArrays(extrude({ shapes: outline, depth: 0.4, bevelEnabled: false }));
+```
+
+| Function | three.js class | Shape |
+| --- | --- | --- |
+| `torusKnot` | `TorusKnotGeometry` | A tube that winds around a torus |
+| `tetrahedron`, `octahedron`, `icosahedron`, `dodecahedron` | `TetrahedronGeometry` and the others | A polyhedron, with `detail` that splits its faces toward a sphere |
+| `polyhedron` | `PolyhedronGeometry` | A polyhedron from your own corners and faces |
+| `lathe` | `LatheGeometry` | A profile of points turned around the Y axis, such as a vase |
+| `shape` | `ShapeGeometry` | A flat shape from outlines, with holes, in the XY plane |
+| `extrude` | `ExtrudeGeometry` | A shape pushed along +Z or along a curve, with an optional bevel |
+| `tube` | `TubeGeometry` | A tube along a 3D curve |
+
+The package also has the classes that these shapes take, with three.js's names and methods. `Shape` and `Path` draw with `moveTo`, `lineTo`, `bezierCurveTo` and the rest. The 2D and 3D curves, such as `CatmullRomCurve3`, and `ShapeUtils` come too. Points are arrays of numbers, `[x, y]` or `[x, y, z]`, not `Vector2` or `Vector3` objects. A method that returns a point returns a new array, or fills the array that you pass last.
+
+A mesh has one material. three.js's `ExtrudeGeometry` puts its caps and its sides in two groups, which can take two materials. Here they form one mesh. To give the caps a material of their own, make them as a second mesh with `shape`, at each end. The [extra shapes demo](https://github.com/null3d-engine/null3d/tree/main/examples/extra-shapes) draws a shape from each function.
 
 ## Meshes from arrays
 
@@ -139,6 +174,37 @@ head.setMorphWeight('Smile', 0.8);
 
 Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than three.js's copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,194,304 deltas, 32 MiB of GPU memory. Each of a vertex's positions, normals, tangents and colors counts once. Past those limits, `fromArrays` throws E1206. The GPU keeps each delta in a 16-bit float, which is exact to 1/2048 of the delta's size, and each weight in a 32-bit float. A morphed color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it, so a color that the weights push past 1 or below 0 draws brighter or darker there.
 
+## Vertices that change
+
+`mesh.updateVertices(name, values, start, count)` writes new values into one attribute of a mesh, as three.js's `attribute.needsUpdate = true` does. Keep the arrays that you made the mesh with, change them, and pass them again:
+
+```ts
+// sketch.ts: a sheet whose middle rows rise and fall
+const sheet = geometry.fromArrays({ positions, normals, indices });
+scene.createMesh({ mesh: sheet, material: materials.standard() });
+
+return {
+  onUpdate() {
+    for (let v = 0; v < count; v++) positions[v * 3 + 1] = Math.sin(time.now + v * 0.1) * 0.2;
+    sheet.updateVertices('positions', positions);
+  },
+};
+```
+
+The call follows these rules:
+
+- `name` is `positions`, `normals`, `uvs`, `uvs1`, `colors` or `tangents`, and the mesh must have that attribute. Colors take three or four numbers per vertex. Three keep each vertex's alpha.
+- `values` holds the values of every vertex, in the array type that the mesh was made with. That is a `Float32Array` or a plain array for floats, or the same integer array.
+- `start` and `count` pick the vertices that change, as three.js's `addUpdateRange` does. By default every vertex changes. The next frame uploads only the bytes of those vertices.
+- Values that do not fit the mesh throw [E1206](../errors/E1206.md), and so does a mesh with joints or morph targets.
+- The call allocates nothing, so a call in every frame makes no garbage.
+
+Change the normals with the positions when the shape changes, because the engine does not compute them again. The [vertex updates demo](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates) moves waves over a sheet of water this way.
+
+The mesh keeps the bounding sphere of the vertices that it was made with, as three.js keeps a geometry's `boundingSphere` until you compute it again. Culling tests that sphere. When the new vertices reach outside it, give each object that draws the mesh bounds that hold every shape, with [`setBounds`](objects.md#mesh-calls). Raycasts and overlap queries always test the new vertices. Shadows of point and spot lights draw again when a mesh that casts them changes.
+
+The first update of a mesh rebuilds the draw tables once, as `setMesh` does, so make it at setup or behind a loading screen. Later updates cost only the copy and the upload. On WebGL2, a mesh whose positions changed no longer hides the objects behind it from software occlusion culling. For many objects that move as wholes, use [instance batches](../concepts/instances.md) instead: they move each object with one matrix, not each vertex.
+
 ## Vertex formats
 
 A mesh keeps the attributes that you give it, each in the type that it came in. Its vertex format is that set of attributes and their types. Every vertex holds its position and its normal, and each other attribute adds to its size. Each attribute takes whole groups of 4 bytes, as glTF lays them out. So three 8-bit values take 4 bytes, and three 16-bit values take 8:
@@ -186,6 +252,10 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 | `geometry.morphAttributes.color = [...]` | `morphTargets: { colors: [...] }`, with `colors` on the mesh |
 | `mesh.morphTargetDictionary` | `mesh.mesh.morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
 | `geometry.dispose()` | `mesh.destroy()`, once no object or batch uses the mesh |
+| `new TorusKnotGeometry(1, 0.4)`, and `Icosahedron`, `Lathe`, `Shape`, `Extrude`, `Tube` and the other geometry classes | `geometry.fromArrays(torusKnot({ radius: 1, tube: 0.4 }))`, with the functions of `@null3d/geometry` |
+| `new THREE.Shape()`, `new THREE.CatmullRomCurve3(points)` | The same classes from `@null3d/geometry`, with points as arrays: `new CatmullRomCurve3([[0, 0, 0], [1, 1, 0]])` |
+| `attribute.needsUpdate = true`, `setUsage(DynamicDrawUsage)` | `mesh.updateVertices('positions', positions)`. There is no usage hint |
+| `attribute.addUpdateRange(start, count)` | `mesh.updateVertices(name, values, startVertex, vertexCount)`, in vertices rather than numbers |
 
 [three.js to null3D](../porting/threejs-mapping.md) lists every mapping.
 

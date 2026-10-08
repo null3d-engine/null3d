@@ -38,13 +38,14 @@ M3 sets the rule for these labels before 0.1.0 ([D-108](decisions/D-108-first-re
 
 ## The npm packages
 
-Four packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+Five packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
 
 | Package | What its tarball holds | What its pack step makes |
 | --- | --- | --- |
 | `@null3d/engine` | `lib/`, the built JavaScript and declarations. Both WebAssembly builds in `dist/wasm/`, the KTX2 transcoder and the meshopt decoder in `vendor/`, and a copy of `docs/` | The shader modules, then `lib/` and the copy of the docs |
 | `@null3d/vite-plugin` | `lib/`, and the shader compiler in `dist/shader-compiler.wasm` | `lib/` |
 | `@null3d/controls` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/geometry` | `lib/`, and `THIRD-PARTY-NOTICES.txt` with the three.js and earcut licences, which the Vite plugin adds to a build's notices | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
 ### Source in the repository, built files on npm
@@ -83,7 +84,7 @@ The publish job packs each package with `bun pm pack`, then publishes each tarba
 
 ### The fresh-project test
 
-`bun run test:packages` packs the packages, then makes a new Vite project from `tests/fixtures/fresh-project/` in a temporary folder. The folder is outside the repository, so no package in the repository's `node_modules` can stand in for a file that a tarball lacks. The test installs the tarballs with Bun, then runs the command-line tool's `test` command twice. The first run keeps its images as the references, and the second must match them. The command type checks the project with `skipLibCheck` off, so every declaration file in the packages must compile. It draws the sketch, which uses the orbit controls, on WebGPU, WebGPU's compatibility mode and WebGL2. Last, `vite build` must write both engine cores. The `packages` job in CI runs the test on SwiftShader.
+`bun run test:packages` packs the packages, then makes a new Vite project from `tests/fixtures/fresh-project/` in a temporary folder. The folder is outside the repository, so no package in the repository's `node_modules` can stand in for a file that a tarball lacks. The test installs the tarballs with Bun, then runs the command-line tool's `test` command twice. The first run keeps its images as the references, and the second must match them. The command type checks the project with `skipLibCheck` off, so every declaration file in the packages must compile. It draws the sketch, which uses the orbit controls and a torus knot from the geometry package, on WebGPU, WebGPU's compatibility mode and WebGL2. Last, `vite build` must write both engine cores. The `packages` job in CI runs the test on SwiftShader.
 
 The project's `overrides` take each `@null3d` package from its tarball. Without them, Bun looks on npm for the engine version that the controls name, which npm does not have before the release.
 
@@ -91,20 +92,21 @@ The first run passed on a MacBook Pro M5 Max in Chrome on 3 October 2026. The ty
 
 ### The first version of a new package
 
-This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin` and `@null3d/controls` by hand. Each new add-on package, such as `@null3d/rapier` and `@null3d/particles`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already.
+This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls` and `@null3d/geometry` by hand. Each new add-on package, such as `@null3d/rapier` and `@null3d/particles`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
 3. Log in to npm with `npm login`, as an account that may publish in the `@null3d` scope.
-4. Publish each new tarball. Provenance needs a CI provider, so a flag turns it off for these three publishes:
+4. Publish each new tarball. Provenance needs a CI provider, so a flag turns it off for these four publishes:
 
    ```sh
    npm publish target/packages/null3d-engine-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-vite-plugin-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-controls-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-geometry-0.0.0.tgz --access public --provenance=false
    ```
 
-5. On npmjs.com, open each of the four packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release-publish.yml`.
+5. On npmjs.com, open each of the five packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release-publish.yml`.
 6. Run the Release workflow with `minor`. Its publish job publishes 0.1.0 of every package through trusted publishing, with provenance.
 
 Until step 5, the publish job fails at the first package that has no trusted publisher. It skips the versions that npm has, so run it again after the setup.

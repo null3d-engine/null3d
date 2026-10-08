@@ -42,7 +42,7 @@ use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
 };
-use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
@@ -307,6 +307,30 @@ pub trait FrameBuilder {
     /// again from where `moves` says they changed, and the removed `ids` lose what the builder
     /// kept for them.
     fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves);
+    /// Writes new values into one attribute of mesh `id`'s vertices, as
+    /// [`MeshStorage::update_vertices`] says, and makes the next frame upload the bytes that
+    /// changed. Returns true for the mesh's first update.
+    ///
+    /// # Errors
+    /// [`UpdateError`] for an update that does not fit the mesh, which then changes nothing.
+    fn update_mesh_vertices(
+        &mut self,
+        id: u32,
+        location: usize,
+        components: u32,
+        start: u32,
+        count: u32,
+        bytes: &[u8],
+    ) -> Result<bool, UpdateError> {
+        let meshes = self.settings_mut().meshes_mut();
+        let first = meshes.update_vertices(id, location, components, start, count, bytes)?;
+        self.meshes_updated(id, location == vertex::POSITION);
+        Ok(first)
+    }
+    /// Makes the GPU copies of the meshes follow the last vertex update, of mesh `id`: the byte
+    /// ranges that [`MeshStorage::updated`] lists upload again. When the update changed the
+    /// positions, the builder also stops using what it made from the mesh's old shape.
+    fn meshes_updated(&mut self, id: u32, positions: bool);
     /// The GPU bytes of the meshes: the buffers of every page and the texture of morph deltas.
     fn mesh_gpu_bytes(&self) -> u64;
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
@@ -1835,6 +1859,9 @@ struct PageBuffers {
     /// The page's vertex bytes that the buffers hold.
     vertices: usize,
     indices: usize,
+    /// The page's vertex bytes that changed in place since the last upload, below `vertices`:
+    /// the first and the end byte, or an empty range.
+    changed: (usize, usize),
 }
 
 impl PageBuffers {
@@ -1852,7 +1879,9 @@ impl PageBuffers {
         } else {
             *self
         };
+        let (first, end) = held.changed;
         (page.vertices.len() - held.vertices)
+            + end.min(held.vertices).saturating_sub(first)
             + ((page.indices.len() - (held.indices & !1)) * 2).next_multiple_of(4)
     }
 }
@@ -1943,6 +1972,12 @@ impl MeshBuffers {
                 )?;
                 remade = true;
             }
+            let (first, end) = std::mem::take(&mut buffers.changed);
+            let end = end.min(buffers.vertices);
+            if first < end {
+                let (at, bytes) = arena.push(&page.vertices[first..end])?;
+                list.push(Op::WriteBuffer, &[vertex_id, first as u32, at, bytes])?;
+            }
             let new_vertices = &page.vertices[buffers.vertices..];
             if !new_vertices.is_empty() {
                 let offset = buffers.vertices as u32;
@@ -1969,6 +2004,27 @@ impl MeshBuffers {
                 buffers.vertices = buffers.vertices.min(vertices);
                 buffers.indices = buffers.indices.min(indices);
             }
+        }
+    }
+
+    /// Makes the next upload send the vertex bytes that `ranges` list, each a page's index with
+    /// its first and end byte. Bytes past what a page's buffers hold upload with the page's new
+    /// data anyway.
+    pub(crate) fn updated(&mut self, ranges: &[(u32, usize, usize)]) {
+        for &(page, first, end) in ranges {
+            let Some(buffers) = self.pages.get_mut(page as usize) else {
+                continue;
+            };
+            let end = end.min(buffers.vertices);
+            if first >= end {
+                continue;
+            }
+            let (low, high) = buffers.changed;
+            buffers.changed = if low < high {
+                (low.min(first), high.max(end))
+            } else {
+                (first, end)
+            };
         }
     }
 

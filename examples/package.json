@@ -5,6 +5,7 @@
 	"devDependencies": {
 		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",
+		"@null3d/geometry": "workspace:*",
 		"@webgpu/types": "0.1.74"
 	}
 }

@@ -33,6 +33,7 @@
 //! - a shadow caster moves, turns, scales, shows, hides or changes its layers within the tile's
 //!   view, or leaves it;
 //! - a skinned or morphed caster within the tile's view changes its pose or its weights;
+//! - a caster within the tile's view draws a mesh whose vertices changed;
 //! - the scene's structure changes, as casters may then come or go.
 //!
 //! The frame builder learns which casters moved from the frame's upload list. Moving objects are
@@ -41,7 +42,10 @@
 //! views its sphere touches, before or after its move: one to three of a point light's six faces
 //! for a caster near the light. A pose need not move the sphere, so the module also keeps a stamp
 //! of each skinned or morphed caster's pose, and compares it in each frame while the caster lies
-//! within a shadowed light's range.
+//! within a shadowed light's range. The stamp also counts the updates of the caster's mesh's
+//! vertices, so a caster whose mesh changed draws its tiles again too. The first update of a mesh
+//! changes the scene's structure once, which lists its casters among those that the module
+//! stamps.
 //!
 //! A tile whose view misses the camera's view waits: no receiver on screen reads it. It draws when
 //! the camera turns toward it. A tile that holds no depth of its light yet draws at once. Other
@@ -78,6 +82,7 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, format};
 use crate::camera::{Affine, Mat4, ViewDepth, multiply, view_matrix};
 use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
+use crate::meshes::MeshStorage;
 use crate::pipelines::PassTargets;
 use crate::view::ViewFrame;
 
@@ -399,14 +404,15 @@ impl ShadowTiles {
 
     /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
     /// `filter` texels, for the camera's view `camera`, or for no camera: then no tile draws.
-    /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
-    /// frame before.
+    /// `meshes` says which meshes' vertices changed. Allocates only when more lights cast
+    /// shadows, or the scene holds more objects, than in any frame before.
     pub fn plan(
         &mut self,
         input: &FrameInput<'_>,
         settings: TileSettings,
         filter: u32,
         camera: Option<&ViewFrame>,
+        meshes: &MeshStorage,
     ) {
         self.frames = [None; MAX_TILES];
         self.waiting = 0;
@@ -429,8 +435,8 @@ impl ShadowTiles {
                 self.shapes[(lit.first + face) as usize] = TileShape::of(light, face, shape.size);
             }
         }
-        self.mark_moved_casters(input, shadows);
-        self.mark_posed_casters(input, shadows);
+        self.mark_moved_casters(input, shadows, meshes);
+        self.mark_posed_casters(input, shadows, meshes);
         self.uniform = TileUniform::default();
         let size = shape.size as f32;
         self.uniform.kernel = [size, 1.0 / size, filter as f32, 0.0];
@@ -774,7 +780,12 @@ impl ShadowTiles {
     /// before or after the move, as tiles that must draw. Remembers every caster from scratch, and
     /// marks every tile, when it knows none yet, the upload list overflowed or the structure
     /// changed.
-    fn mark_moved_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+    fn mark_moved_casters(
+        &mut self,
+        input: &FrameInput<'_>,
+        shadows: &[LightShadow],
+        meshes: &MeshStorage,
+    ) {
         let scene = input.scene;
         let slots = scene.slots().high_water() as usize + 1;
         if self.casters.len() < slots {
@@ -788,7 +799,7 @@ impl ShadowTiles {
         if !self.casters_known || input.snapshot.overflowed() || input.structure_changed {
             self.posed.clear();
             for (slot, caster) in self.casters[..slots].iter_mut().enumerate().skip(1) {
-                *caster = caster_of(input, slot);
+                *caster = caster_of(input, slot, meshes);
                 if caster.pose != 0 {
                     // Room for every slot is reserved above, so this never allocates.
                     self.posed.push(slot as u32);
@@ -806,7 +817,7 @@ impl ShadowTiles {
                 if slot >= slots || !casts(scene, slot) {
                     continue;
                 }
-                let now = caster_of(input, slot);
+                let now = caster_of(input, slot, meshes);
                 let before = std::mem::replace(&mut self.casters[slot], now);
                 if before != now {
                     self.mark(shadows, &before, &now);
@@ -819,7 +830,12 @@ impl ShadowTiles {
     /// when its pose changed since the module last saw it. A pose can change while the caster's
     /// sphere stays, as when an animated character moves its hands in front of its body. Only
     /// casters within reach of a light that holds tiles stamp their pose.
-    fn mark_posed_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+    fn mark_posed_casters(
+        &mut self,
+        input: &FrameInput<'_>,
+        shadows: &[LightShadow],
+        meshes: &MeshStorage,
+    ) {
         if !self.casters_known {
             return;
         }
@@ -835,7 +851,7 @@ impl ShadowTiles {
             if !reached || !casts(input.scene, slot) {
                 continue;
             }
-            let pose = pose_of(input, slot);
+            let pose = pose_of(input, slot, meshes);
             if pose != before.pose {
                 let now = Caster { pose, ..before };
                 self.casters[slot] = now;
@@ -876,7 +892,7 @@ fn casts(scene: &SceneStorage, slot: usize) -> bool {
 
 /// A scene slot's caster in the frame `input`: its world matrix, bounding sphere, cell and
 /// layers, and its pose.
-fn caster_of(input: &FrameInput<'_>, slot: usize) -> Caster {
+fn caster_of(input: &FrameInput<'_>, slot: usize, meshes: &MeshStorage) -> Caster {
     let (scene, parity) = (input.scene, input.parity());
     let world = scene.world(parity);
     Caster {
@@ -884,23 +900,30 @@ fn caster_of(input: &FrameInput<'_>, slot: usize) -> Caster {
         sphere: world.sphere(slot),
         cell: scene.cell_position(slot as u32, parity).cell,
         layers: scene.layers()[slot],
-        pose: pose_of(input, slot),
+        pose: pose_of(input, slot, meshes),
     }
 }
 
 /// A stamp of the pose that the object at scene slot `slot` draws with in the frame `input`: a
 /// hash of its animated instance's skinning matrices and of its morph weights, with the matrices
-/// of the instance that animates the weights. 0 for an object that is neither skinned nor
-/// morphed. Two poses that differ get different stamps, but for a chance of one in 2^64.
-fn pose_of(input: &FrameInput<'_>, slot: usize) -> u64 {
+/// of the instance that animates the weights, and of the count of updates of its mesh's vertices
+/// in `meshes`. 0 for an object that is neither skinned nor morphed, and whose mesh's vertices
+/// never changed. Two poses that differ get different stamps, but for a chance of one in 2^64.
+fn pose_of(input: &FrameInput<'_>, slot: usize, meshes: &MeshStorage) -> u64 {
     let scene = input.scene;
     let skin = scene.skins().get(slot).copied().unwrap_or(0);
     let morph = scene.morphs().get(slot).copied().unwrap_or(0);
-    if skin == 0 && morph == 0 {
+    let updates = scene
+        .meshes()
+        .get(slot)
+        .and_then(|mesh| mesh.checked_sub(1))
+        .and_then(|id| meshes.mesh(id))
+        .map_or(0, |mesh| mesh.updates);
+    if skin == 0 && morph == 0 && updates == 0 {
         return 0;
     }
-    // 64-bit FNV-1a over the bits of each float.
-    let mut stamp = 0xcbf2_9ce4_8422_2325u64;
+    // 64-bit FNV-1a over the update count and the bits of each float.
+    let mut stamp = (0xcbf2_9ce4_8422_2325u64 ^ u64::from(updates)).wrapping_mul(0x0100_0000_01b3);
     let mut add = |values: &[f32]| {
         for value in values {
             stamp = (stamp ^ u64::from(value.to_bits())).wrapping_mul(0x0100_0000_01b3);

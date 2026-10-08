@@ -20,6 +20,7 @@ import {
 	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
 	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
 	ARRAYS_PROBLEM_NOT_FINITE,
+	ARRAYS_PROBLEM_POSED,
 	MESH_ARRAYS_COLORS,
 	MESH_ARRAYS_COLORS_ALPHA,
 	MESH_ARRAYS_COMPUTE_NORMALS,
@@ -51,8 +52,14 @@ import {
 	VERTEX_TYPE_UNORM16,
 	VERTEX_TYPES,
 } from '../generated/gpu';
-import type { CoreMemory, ViewConstructor } from './memory';
-import type { IntegerArray, MeshArrays, MorphTargets, VertexValues } from './resources';
+import type { CoreMemory, HeapConstructor } from './memory';
+import type {
+	IntegerArray,
+	MeshArrays,
+	MorphTargets,
+	UpdatableAttribute,
+	VertexValues,
+} from './resources';
 
 /**
  * The bits that give the attribute at `location` the type `type` in a vertex format, or undefined
@@ -167,7 +174,7 @@ const MAX_JOINT = 0xffff;
 
 /** Each integer typed array's name, with its types when normalized and when plain. */
 const INTEGER_ARRAYS: readonly [
-	type: ViewConstructor<IntegerArray> & { readonly name: string },
+	type: HeapConstructor<IntegerArray> & { readonly name: string },
 	normalized: number,
 	plain: number,
 ][] = [
@@ -484,4 +491,120 @@ function arraysFailure(core: CoreMemory, arrays: MeshArrays, call: string): Engi
 			`${call}() got ${valuesOf(given).array[at]} at ${spec.name}[${at}].`,
 		);
 	return new EngineError('E1206', `${call}() got arrays that do not make whole vertices.`);
+}
+
+/** The last vertex shader location whose attribute takes updates: the colors. */
+const LAST_UPDATABLE = 5;
+
+/** The format bits of the attributes that make a mesh refuse updates: joints and morph targets. */
+const POSED_BITS = (VERTEX_ATTRIBUTES[6]?.[0] ?? 0) | (VERTEX_ATTRIBUTES[8]?.[0] ?? 0);
+
+/** A mesh's vertex count and vertex format, as updates of its vertices read them. */
+export interface VertexLayout {
+	readonly count: number;
+	readonly format: number;
+}
+
+/** The typed array class that holds values of a vertex type, as `INTEGER_ARRAYS` names them. */
+function arrayClass(type: number): HeapConstructor<Float32Array | IntegerArray> {
+	if (type === VERTEX_TYPE_F32) return Float32Array;
+	const integer = INTEGER_ARRAYS.find(([, n, p]) => n === type || p === type);
+	if (!integer) throw new Error(`no typed array holds vertex type ${type}`);
+	return integer[0];
+}
+
+/**
+ * What is wrong with an update of attribute `name` of a mesh, or undefined when it fits. Returns
+ * the attribute's spec, type and values per vertex in `out`.
+ */
+function updateProblem(
+	layout: VertexLayout,
+	name: UpdatableAttribute,
+	values: Float32Array | IntegerArray | readonly number[],
+	start: number,
+	count: number,
+	out: { spec?: ArraySpec; type: number; components: number },
+): string | undefined {
+	const spec = ARRAYS.find((array) => array.name === name);
+	if (!spec || spec.location > LAST_UPDATABLE)
+		return `got ${String(name)}; updates take positions, normals, uvs, uvs1, colors or tangents.`;
+	if (layout.format & POSED_BITS)
+		return 'got a mesh with joints or morph targets, whose vertices take no updates.';
+	const [bit = 0, , shift = 0, types = []] = VERTEX_ATTRIBUTES[spec.location] ?? [];
+	if (bit !== 0 && (layout.format & bit) === 0) return `got ${name} for a mesh without ${name}.`;
+	const width = 32 - Math.clz32(Math.max(types.length - 1, 0));
+	const type = types[(layout.format >>> shift) & ((1 << width) - 1)] ?? VERTEX_TYPE_F32;
+	const kind = arrayClass(type);
+	const fits = Array.isArray(values) ? type === VERTEX_TYPE_F32 : values instanceof kind;
+	if (!fits)
+		return `got ${name} in ${withArticle(className(values))}; the mesh keeps its ${name} in ${withArticle(kind.name)}${type === VERTEX_TYPE_F32 ? ' or a plain array' : ''}.`;
+	const vertices = layout.count;
+	let components = spec.perVertex;
+	if (components === 0) components = values.length === vertices * 3 ? 3 : 4;
+	if (values.length !== vertices * components)
+		return spec.perVertex === 0
+			? `got ${values.length} numbers in ${name} for ${vertices} vertices, not ${vertices * 3} or ${vertices * 4}.`
+			: `got ${values.length} numbers in ${name} for ${vertices} vertices, not ${vertices * components}.`;
+	if (!Number.isInteger(start) || !Number.isInteger(count) || start < 0 || count < 0)
+		return `got start ${start} and count ${count}; both take whole numbers of 0 or more.`;
+	if (start + count > vertices)
+		return `got vertices ${start} to ${start + count - 1}, past the last of ${vertices} vertices.`;
+	out.spec = spec;
+	out.type = type;
+	out.components = components;
+	return undefined;
+}
+
+/** What `updateProblem` found out about a fitting update, kept from call to call. */
+const fitting: { spec?: ArraySpec; type: number; components: number } = {
+	type: 0,
+	components: 0,
+};
+
+/**
+ * Writes new values of attribute `name` into vertices `start` to `start + count` of the mesh with
+ * id `id` and layout `layout`. `values` holds the attribute's values of every vertex, as
+ * `geometry.fromArrays` takes them, and the update copies those of the vertices it names. Throws
+ * E1206 for an update that does not fit the mesh, which then keeps its vertices. Allocates nothing
+ * unless the engine's memory grows.
+ */
+export function updateVertices(
+	core: CoreMemory,
+	id: number,
+	layout: VertexLayout,
+	name: UpdatableAttribute,
+	values: Float32Array | IntegerArray | readonly number[],
+	start: number,
+	count: number,
+	call: string,
+): void {
+	const problem = updateProblem(layout, name, values, start, count, fitting);
+	if (problem) throw new EngineError('E1206', `${call}() ${problem}`);
+	const { spec, type, components } = fitting;
+	if (!spec || count === 0) return;
+	const kind = arrayClass(type);
+	const length = count * components;
+	const words = Math.ceil((length * kind.BYTES_PER_ELEMENT) / 4);
+	const address = core.checkGrowth(core.glue.meshArrays(words), call);
+	const heap = core.heap(kind);
+	const at = address / kind.BYTES_PER_ELEMENT;
+	const from = start * components;
+	if (from === 0 && length === values.length && !Array.isArray(values))
+		heap.set(values as ArrayLike<number>, at);
+	else for (let k = 0; k < length; k++) heap[at + k] = values[from + k] as number;
+	const status = core.glue.updateVertices(id, spec.location, components, start, count);
+	if (status === 0) return;
+	const { glue } = core;
+	if (glue.lastErrorCode() !== BAD_ARRAYS) throw coreFailure(glue, call);
+	const found = glue.lastErrorDetail(0);
+	if (found === ARRAYS_PROBLEM_POSED)
+		throw new EngineError(
+			'E1206',
+			`${call}() got a mesh with joints or morph targets, whose vertices take no updates.`,
+		);
+	if (found === ARRAYS_PROBLEM_NOT_FINITE) {
+		const place = from + glue.lastErrorDetail(1);
+		throw new EngineError('E1206', `${call}() got ${values[place]} at ${name}[${place}].`);
+	}
+	throw new EngineError('E1206', `${call}() got values that do not fit the mesh.`);
 }

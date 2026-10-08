@@ -681,8 +681,8 @@
       "three": "TorusKnot / Icosahedron / Octahedron / Tetrahedron / Dodecahedron / Polyhedron / Lathe / Extrude / Shape / Tube Geometry",
       "status": "direct",
       "since": "0.2",
-      "target": "The same generators from @null3d/geometry",
-      "notes": "Same parameters as three.js; Shape and Path objects are ported too.",
+      "target": "geometry.fromArrays(torusKnot({ radius, tube, tubularSegments, radialSegments, p, q })), and icosahedron, octahedron, tetrahedron, dodecahedron, polyhedron, lathe, shape, extrude and tube, from @null3d/geometry",
+      "notes": "Install @null3d/geometry. Each function takes the constructor's arguments as named options with three.js's defaults, and returns arrays with three.js's vertices, normals and texture coordinates for geometry.fromArrays. Shape, Path, the curves and ShapeUtils come with the same names and methods, but points are [x, y] or [x, y, z] arrays, not Vector2 or Vector3. ExtrudeGeometry's caps and sides form one mesh, which takes one material.",
       "docs": "api/geometry",
       "detect": "\\b(TorusKnot|Icosahedron|Octahedron|Tetrahedron|Dodecahedron|Polyhedron|Lathe|Extrude|Shape|Tube)Geometry\\b|\\bnew\\s+(THREE\\.)?Shape\\s*\\("
     },
@@ -703,8 +703,8 @@
       "three": "attribute.needsUpdate / setUsage(DynamicDrawUsage) (vertices changing every frame)",
       "status": "changed",
       "since": "0.2",
-      "target": "meshAsset.updateVertices(name, data, start, count)",
-      "notes": "For many moving objects, use instances instead of rewriting vertices.",
+      "target": "mesh.updateVertices(name, values, start, count)",
+      "notes": "Pass the attribute's values of every vertex, in the array type the mesh was made with; start and count pick the vertices that change, as addUpdateRange does, but in vertices. The mesh keeps the bounding sphere it was made with, so give objects bounds with setBounds when vertices move outside it. Meshes with joints or morph targets take no updates. For many moving objects, use instances instead of rewriting vertices.",
       "docs": "api/geometry",
       "detect": "\\.attributes\\.\\w+\\.needsUpdate|\\.setUsage\\s*\\(|DynamicDrawUsage"
     },

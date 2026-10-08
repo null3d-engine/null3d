@@ -58,7 +58,7 @@ use null3d_render::gpu_driven::{
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
-use null3d_render::meshes::MeshError;
+use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
@@ -1766,6 +1766,46 @@ pub fn destroy_meshes(count: u32) -> u32 {
     })
 }
 
+// The staging words hold the new values in the attribute's own type, as TypeScript wrote them,
+// and keep their room for the next update, so an update in each frame allocates nothing.
+/// Writes new values of the attribute at vertex shader `location` into vertices `start` to
+/// `start + count` of mesh `mesh`, which counts from 1, from the staging words: `components`
+/// values per vertex, vertex after vertex. The next frame uploads the bytes that changed. The
+/// first update of a mesh changes the scene's structure once, so the shadow tiles of point and
+/// spot lights watch the objects that draw it. New positions make queries build the mesh's tree
+/// again. Fails, changing nothing, for an update that does not fit the mesh.
+#[wasm_bindgen(js_name = updateVertices)]
+pub fn update_vertices(mesh: u32, location: u32, components: u32, start: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        let Some(id) = mesh.checked_sub(1) else {
+            return render_failure(render_detail::UNKNOWN_MESH, mesh);
+        };
+        let words = std::mem::take(&mut e.staging);
+        // SAFETY: the words are initialized, and any word holds four valid bytes.
+        let bytes =
+            unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), words.len() * 4) };
+        let updated =
+            e.renderer
+                .update_mesh_vertices(id, location as usize, components, start, count, bytes);
+        e.staging = words;
+        match updated {
+            Ok(first) => {
+                e.structure_changed |= first;
+                if location as usize == vertex::POSITION {
+                    e.queries.mesh_changed(mesh);
+                }
+                0
+            }
+            Err(UpdateError::UnknownMesh) => render_failure(render_detail::UNKNOWN_MESH, mesh),
+            Err(UpdateError::Posed) => fail(codes::BAD_ARRAYS, [arrays_problem::POSED, 0]),
+            Err(UpdateError::NotFinite { at }) => {
+                fail(codes::BAD_ARRAYS, [arrays_problem::NOT_FINITE, at])
+            }
+            Err(_) => fail(codes::BAD_ARRAYS, [arrays_problem::LENGTH, 0]),
+        }
+    })
+}
+
 /// Gives the ids of removed meshes to later meshes, but those that a created object or a live
 /// batch still names: they wait for a later frame, so a stray object draws nothing rather than
 /// another mesh. It runs only in a frame after a destroy, and allocates nothing.
@@ -1811,20 +1851,36 @@ pub fn mesh_memory_bytes() -> f64 {
     bytes
 }
 
+/// A value of mesh `mesh`'s slot, which counts from 1, or 0 for an unknown mesh.
+fn mesh_value<T: Default>(mesh: u32, value: impl FnOnce(&MeshSlot) -> T) -> T {
+    let mut out = None;
+    with_engine(|e| {
+        out = mesh
+            .checked_sub(1)
+            .and_then(|id| e.renderer.settings().meshes().mesh(id))
+            .map(value);
+        0
+    });
+    out.unwrap_or_default()
+}
+
 /// The distance from a mesh's origin to its farthest vertex, or 0 for an unknown mesh.
 #[wasm_bindgen(js_name = meshRadius)]
 pub fn mesh_radius(mesh: u32) -> f32 {
-    let mut radius = 0.0;
-    with_engine(|e| {
-        if let Some(slot) = mesh
-            .checked_sub(1)
-            .and_then(|id| e.renderer.settings().meshes().mesh(id))
-        {
-            radius = slot.radius;
-        }
-        0
-    });
-    radius
+    mesh_value(mesh, |slot| slot.radius)
+}
+
+/// A mesh's vertex count, or 0 for an unknown mesh.
+#[wasm_bindgen(js_name = meshVertexCount)]
+pub fn mesh_vertex_count(mesh: u32) -> u32 {
+    mesh_value(mesh, |slot| slot.vertex_count)
+}
+
+/// A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. A mesh
+/// with joints or morph targets has their bits.
+#[wasm_bindgen(js_name = meshFormat)]
+pub fn mesh_format(mesh: u32) -> u32 {
+    mesh_value(mesh, |slot| slot.format)
 }
 
 /// Creates a material with a linear color and opacity, and returns its id, counting from 1. Its

@@ -277,6 +277,22 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/** A mesh's vertex count, or 0 for an unknown mesh. */
+	meshVertexCount(mesh: number): number;
+	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
+	meshFormat(mesh: number): number;
+	/**
+	 * Writes new values of the attribute at vertex shader `location` into vertices `start` to
+	 * `start + count` of a mesh, from `meshArrays`'s words: `components` values per vertex in the
+	 * attribute's own type. The next frame uploads the bytes that changed. Returns the status.
+	 */
+	updateVertices(
+		mesh: number,
+		location: number,
+		components: number,
+		start: number,
+		count: number,
+	): number;
 	/**
 	 * Destroys `count` meshes whose ids `meshArrays`'s words hold: their data goes at once, and the
 	 * next frame gives their ids to later meshes once no object or batch names them.
@@ -764,6 +780,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'meshRadius',
+	'meshVertexCount',
+	'meshFormat',
+	'updateVertices',
 	'destroyMeshes',
 	'meshMemoryBytes',
 	'createMaterial',

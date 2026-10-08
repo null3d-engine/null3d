@@ -42,6 +42,20 @@ export const DEMOS: readonly Demo[] = [
 		hold: 1,
 	},
 	{
+		name: 'extra-shapes',
+		title: 'Extra shapes',
+		summary:
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes.',
+		hold: 1,
+	},
+	{
+		name: 'vertex-updates',
+		title: 'Vertex updates',
+		summary:
+			'A sheet of water whose waves move every frame. The sketch rewrites its positions and normals and passes them to mesh.updateVertices, which allocates nothing.',
+		hold: 1,
+	},
+	{
 		name: 'math',
 		title: 'Math helpers',
 		summary:

@@ -333,6 +333,8 @@ pub mod arrays_problem {
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
     pub const MORPH_NOT_FINITE: u32 = 10;
+    /// A vertex update named a mesh with joints or morph targets, which take no updates.
+    pub const POSED: u32 = 11;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
 }
@@ -1159,6 +1161,7 @@ pub fn typescript() -> String {
                 ("MORPH_TOO_LARGE", arrays_problem::MORPH_TOO_LARGE),
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
+                ("POSED", arrays_problem::POSED),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
             ],
         ),

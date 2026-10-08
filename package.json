@@ -29,7 +29,7 @@
 		"shaders": "bun tools/shaders.ts",
 		"check": "biome check . && bun tests/check-references.ts",
 		"check:fix": "biome check --write .",
-		"typecheck": "bun tools/shaders.ts && tsc -p tsconfig.json && tsc -p packages/engine && tsc -p packages/engine/tsconfig.test.json && tsc -p packages/controls && tsc -p packages/controls/tsconfig.test.json && tsc -p packages/cli && tsc -p tests/pages && tsc -p tests/fixtures/project && tsc -p tests/fixtures/typed-uniforms && tsc -p examples && tsc -p bench && tsc -p bench/tsconfig.node.json",
+		"typecheck": "bun tools/shaders.ts && tsc -p tsconfig.json && tsc -p packages/engine && tsc -p packages/engine/tsconfig.test.json && tsc -p packages/controls && tsc -p packages/controls/tsconfig.test.json && tsc -p packages/geometry && tsc -p packages/geometry/tsconfig.test.json && tsc -p packages/cli && tsc -p tests/pages && tsc -p tests/fixtures/project && tsc -p tests/fixtures/typed-uniforms && tsc -p examples && tsc -p bench && tsc -p bench/tsconfig.node.json",
 		"test": "bun tools/shaders.ts && bun test --conditions=null3d-source tools packages bench/scenes bench/pages bench/lib tests/lib",
 		"prepare": "husky && bun tools/generate.ts",
 		"test:browser": "bun run --cwd tests test",

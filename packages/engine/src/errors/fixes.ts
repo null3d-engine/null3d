@@ -33,7 +33,7 @@ export const ERROR_FIXES = {
 	E1205:
 		"Use a KeyboardEvent.code name such as 'KeyW' or 'ArrowLeft', or a mouse button from 'Mouse0' to 'Mouse4'. Gamepad names start with 'Gamepad', such as 'GamepadA' or 'GamepadLeftStickUp'. Define an action with input.actions.define() before you use it, and give it a name that no key or button has. Objects take the pointer events 'click', 'pointerdown', 'pointerup', 'pointermove', 'pointerenter' and 'pointerleave'.",
 	E1206:
-		'Give positions and normals three numbers per vertex, uvs and uvs1 two, colors three or four, and tangents four. Give three indices per triangle, each below the vertex count. Without indices, use a vertex count that is a multiple of three. Pass normals or computeNormals: true, and pass uvs with computeTangents: true. Replace NaN and Infinity values.',
+		'Give positions and normals three numbers per vertex, uvs and uvs1 two, colors three or four, and tangents four. Give three indices per triangle, each below the vertex count. Without indices, use a vertex count that is a multiple of three. Pass normals or computeNormals: true, and pass uvs with computeTangents: true. Replace NaN and Infinity values. Give mesh.updateVertices() the values of every vertex in the array type the mesh was made with, for an attribute the mesh has, and a range within its vertices. A mesh with joints or morph targets takes no updates.',
 	E1207:
 		'Pass a whole number whose bits name the layers: 1 << n is layer n. The operator | joins layers, so (1 << 0) | (1 << 3) is layers 0 and 3. Layers run from 0 to 31.',
 	E1208:

@@ -549,6 +549,67 @@ fn webgl2_a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes() {
     ));
 }
 
+/// Checks that a still caster draws its light's tile again when its mesh's vertices change, and
+/// that the frame uploads only the vertex that changed.
+fn a_caster_whose_vertices_change_draws_its_light_s_tile<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let lit_box = world.objects[0];
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+    let slot = world.scene.resolve(lit_box).unwrap() as usize;
+    let mesh = world.scene.meshes()[slot] - 1;
+    let corner = |at: f32| {
+        [at; 3]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>()
+    };
+    // The mesh's first update changes the structure once, as the engine's call does.
+    let first = world
+        .renderer
+        .update_mesh_vertices(mesh, 0, 3, 0, 1, &corner(0.25));
+    assert_eq!(first, Ok(true));
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+    // A later update draws the tile again with no structure change, and uploads one vertex.
+    let later = world
+        .renderer
+        .update_mesh_vertices(mesh, 0, 3, 0, 1, &corner(0.3));
+    assert_eq!(later, Ok(false));
+    let [(_, first_byte, end_byte)] = world.renderer.settings().meshes().updated()[..] else {
+        panic!("one changed range")
+    };
+    let changed = step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    let writes = changed
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[1] == first_byte as u32)
+        .filter(|(_, o)| o[3] == (end_byte - first_byte) as u32)
+        .count();
+    assert_eq!(writes, 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+#[test]
+fn webgpu_a_caster_whose_vertices_change_draws_its_light_s_tile() {
+    a_caster_whose_vertices_change_draws_its_light_s_tile(GpuDrivenRenderer::new(
+        Default::default(),
+    ));
+}
+
+#[test]
+fn webgl2_a_caster_whose_vertices_change_draws_its_light_s_tile() {
+    a_caster_whose_vertices_change_draws_its_light_s_tile(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    ));
+}
+
 #[test]
 fn turning_one_light_s_shadows_off_and_on_keeps_the_atlas_and_the_graph() {
     let three = TileSettings {

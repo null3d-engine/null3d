@@ -1,0 +1,62 @@
+Third-party code in @null3d/geometry
+
+The @null3d/geometry package ships code from the projects below. Each section names the files
+that hold the code, its licence, and the notices that the licence asks a copy to carry.
+
+A build with the null3D Vite plugin writes this text into null3d-third-party-notices.txt beside
+the page, after the engine's own notices. Keep that file with the build when you publish it, or
+show its text in your game's credits.
+
+==============================================================================
+three.js: the geometry generators, curves, paths and shapes (index.js)
+==============================================================================
+
+Ports of three.js 0.186.1, https://github.com/mrdoob/three.js: TorusKnotGeometry,
+PolyhedronGeometry and its four subclasses, LatheGeometry, ShapeGeometry, ExtrudeGeometry,
+TubeGeometry, Curve, CurvePath, Path, Shape, ShapeUtils, the curves in extras/curves, and the
+interpolations in extras/core/Interpolations.js.
+
+The MIT License
+
+Copyright © 2010-2026 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+earcut: the polygon triangulation (index.js)
+==============================================================================
+
+A port of earcut 3.0.2, https://github.com/mapbox/earcut, the copy that three.js 0.186.1
+ships in src/extras/lib/earcut.js.
+
+ISC License
+
+Copyright (c) 2024, Mapbox
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
