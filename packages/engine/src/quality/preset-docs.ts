@@ -80,6 +80,13 @@ export const SETTING_DOCS: {
 		print: (value) =>
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
+	reflectionScale: {
+		label: 'Reflection passes',
+		print: (value) =>
+			({ 0.25: 'quarter resolution', 0.5: 'half resolution', 1: 'full resolution' })[
+				Number(value)
+			] ?? '',
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

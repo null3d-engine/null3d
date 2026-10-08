@@ -109,6 +109,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
 | `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
 | `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
+| `Reflector`, `Water`, `Water2` (add-ons) | A reflection pass, `render.addPass({ kind: 'reflection', writes, plane: { point, normal } })` (0.2), and a custom material whose surface function sets `s.reflection` from `reflection_uv` (`api/render`). `Reflector`'s `textureWidth` becomes the pass's `scale`, a share of the render size; its `color` becomes the material's `color` with `metalness: 1, roughness: 0`. `Water`'s `distortionScale` becomes the factor on `s.normal.xz` in `reflection_uv`'s offset, and `waterColor` and `sunColor` the material's color and the scene's sun. `Water`'s `waterNormals` texture becomes ripples from sine waves or `null3d::noise`, or a normal texture of the material. `Refractor` and `Water2`'s refraction have no port yet: list them |
 
 ## 7. Texture settings
 

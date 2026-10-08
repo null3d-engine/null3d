@@ -55,6 +55,7 @@ struct Surface {
   emissive: vec3f,         // linear RGB, added after lighting
   occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
   irradiance: vec3f,       // baked light added to the ambient light, zero by default
+  reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
@@ -299,6 +300,23 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
 - Full-screen passes of your own WGSL come later in 0.2. Until then, write full-screen WGSL as a custom effect (section 5). Docs: `api/render`, `guides/custom-passes`.
+
+A reflection pass (0.2) draws the camera's view mirrored across a plane, for water and polished floors. A surface function reads it where the surface shows on the screen:
+
+```wgsl
+#import null3d::reflection::{reflection_uv}
+var mirror: texture_2d<f32>;    // textures: { mirror: textures.fromPass(pass) }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, reflection_uv(clip, vec2f(0.0)), 0.0).rgb, 1.0);
+    return s;
+}
+```
+
+- The engine lights `s.reflection.rgb` as the light from the mirror direction, in place of that share of the environment's reflection, so Fresnel and metalness weigh it. A tilted normal times a small factor as `reflection_uv`'s offset makes water ripple.
+- Roughness does not blur it. Docs: `api/render`, `shaders/surface-functions`, and the water recipe in `guides/custom-passes`.
 
 ## 8. Portable WGSL rules
 

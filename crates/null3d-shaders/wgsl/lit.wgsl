@@ -364,6 +364,11 @@ struct Surface {
     occlusion: f32,
     /// Baked light that reaches the surface, such as a light map's, added to the ambient light.
     irradiance: vec3f,
+#ifdef CUSTOM
+    /// Light from the mirror direction, such as a reflection pass's color, in `rgb`, and how much
+    /// of it takes the place of the environment's reflection, from 0 to 1, in `a`.
+    reflection: vec4f,
+#endif
 }
 
 #ifdef MAPS
@@ -449,6 +454,9 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.emissive = m.emissive.rgb * m.strengths.w;
     s.occlusion = 1.0;
     s.irradiance = vec3f(0.0);
+#ifdef CUSTOM
+    s.reflection = vec4f(0.0);
+#endif
 #ifdef MAPS
     s = with_maps(s, input);
 #endif
@@ -544,7 +552,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// factor of it. `occlusion` darkens the ambient light and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
 /// position relative to the camera, `to_view` points from the surface toward the camera, and
-/// `dfg` holds the split-sum terms at the surface's roughness and view angle.
+/// `dfg` holds the split-sum terms at the surface's roughness and view angle. In custom materials,
+/// `reflection` holds light from the mirror direction and its share, which takes the place of
+/// that share of the environment's reflection, with or without an environment.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -553,6 +563,9 @@ fn light_surface(
     dfg: vec2f,
     extra: vec3f,
     occlusion: f32,
+#ifdef CUSTOM
+    reflection: vec4f,
+#endif
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = engine_frame.sun_color.rgb;
@@ -577,10 +590,19 @@ fn light_surface(
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     var indirect = ambient * occlusion;
     let env = engine_frame.environment;
+#ifdef CUSTOM
+    let mirrored = saturate(reflection.a);
+    if has_environment(env) || mirrored > 0.0 {
+        let strength = select(0.0, material_row.uv_u.w, has_environment(env));
+#else
     if has_environment(env) {
         let strength = material_row.uv_u.w;
+#endif
         let irradiance = environment_irradiance(env, normal) * strength;
-        let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
+        var radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
+#ifdef CUSTOM
+        radiance = mix(radiance, reflection.rgb, mirrored);
+#endif
         let image = indirect_specular(m, radiance, irradiance, dfg);
         let n_dot_v = saturate(dot(normal, to_view));
         let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
@@ -621,6 +643,9 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         dfg,
         s.irradiance * engine_frame.output.exposure,
         s.occlusion * screen_occlusion(pixel.xyz, blended),
+#ifdef CUSTOM
+        s.reflection,
+#endif
     );
     let outgoing = reflected + s.emissive * engine_frame.output.exposure;
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
