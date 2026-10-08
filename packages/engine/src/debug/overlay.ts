@@ -6,9 +6,8 @@
 // adds what only it can measure: its JavaScript heap, the whole page's memory and its own thread's
 // long tasks and input delay. The box ignores the pointer, so input still reaches the canvas.
 
-import type { MainThreadWatch } from '../page/main-thread';
-import type { PageMemorySampler } from '../page/page-memory';
 import { sampleFrames } from '../shared/metrics';
+import { MainThreadWindow, PageMemorySampler, pageHeapBytes } from './page-meters';
 import { type FrameStats, FrameStatsWindow, type StatsSources } from './stats';
 import { type StatsFigures, type StatsMainThread, statsText } from './stats-text';
 
@@ -22,16 +21,8 @@ export interface OverlaySetup {
 	threads: Iterable<readonly [string, readonly number[]]>;
 	/** The tier, the preset, the render scale and the WebAssembly memory's size. */
 	sources: StatsSources;
-	/**
-	 * A new watch of the page's thread that keeps no list, a new sampler of the page's memory, and
-	 * the page thread's heap. The page's own code gives them, so the overlay's file loads none of
-	 * the page's modules, which the build would otherwise split out of the page's file.
-	 */
-	page: {
-		mainThread: MainThreadWatch;
-		memory: PageMemorySampler;
-		heapBytes(): number | null;
-	};
+	/** True when the engine's threads share its WebAssembly memory: the threaded build. */
+	sharedMemory: boolean;
 }
 
 /** How often the overlay reads new figures and follows the canvas. */
@@ -111,13 +102,16 @@ export class StatsOverlay {
 	private readonly element: HTMLPreElement;
 	private readonly window: FrameStatsWindow;
 	private readonly timer: ReturnType<typeof setInterval>;
+	private readonly mainThread = new MainThreadWindow();
 	private readonly recent = new RecentMainThread();
+	private readonly pageMemory: PageMemorySampler;
 
 	constructor(private readonly setup: OverlaySetup) {
-		const { metrics } = setup;
+		const { metrics, sources } = setup;
 		sampleFrames(metrics, true);
-		this.window = new FrameStatsWindow(metrics, setup.threads, setup.sources);
-		setup.page.memory.start();
+		this.window = new FrameStatsWindow(metrics, setup.threads, sources);
+		this.pageMemory = new PageMemorySampler(() => (setup.sharedMemory ? sources.wasmBytes() : 0));
+		this.pageMemory.start();
 		const element = document.createElement('pre');
 		element.setAttribute(OVERLAY_ATTRIBUTE, '');
 		Object.assign(element.style, STYLE);
@@ -131,23 +125,23 @@ export class StatsOverlay {
 	remove(): void {
 		clearInterval(this.timer);
 		this.element.remove();
-		this.setup.page.mainThread.stop();
-		this.setup.page.memory.stop();
+		this.mainThread.stop();
+		this.pageMemory.stop();
 		sampleFrames(this.setup.metrics, false);
 	}
 
 	private refresh(): void {
 		this.follow();
 		if (!this.window.update()) return;
-		const main = this.recent.add(this.setup.page.mainThread.takeWindow());
+		const main = this.recent.add(this.mainThread.take());
 		this.element.textContent = this.text(main);
 	}
 
 	private text(mainThread: StatsMainThread | null): string {
 		return statsText(
 			overlayFigures(this.window.stats, {
-				jsHeapBytes: this.setup.page.heapBytes(),
-				page: this.setup.page.memory.page,
+				jsHeapBytes: pageHeapBytes(),
+				page: this.pageMemory.page,
 				mainThread,
 			}),
 		);

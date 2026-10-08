@@ -159,10 +159,11 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 /**
  * Places that allocate with `--stats` on top of `BUDGETS`, while the overlay samples. On WebGPU, on
  * one frame in eleven, the GPU timer's readback and the readback of the GPU-culled draws' counts
- * each make a command buffer or a view of the mapped range, and a promise with its reaction. On
- * S1 the timer's places took 40 to 45 bytes per frame in all and the counts' 17 to 19, with 100,000
- * instances and with 20,000. A frame without a readback allocates nothing more, so these budgets
- * stay the same whatever the scene holds. WebGL2's timer allocated nothing that the profiler saw.
+ * each make a command buffer or a view of the mapped range, and a promise with its reaction: the
+ * browser returns each of them, so no pool can keep them. On S1 the timer's places took 35 to 38
+ * bytes per frame in all and the counts' 17 to 20, with 100,000 instances and with 20,000. A frame
+ * without a readback allocates nothing more, so these budgets stay the same whatever the scene
+ * holds. WebGL2's timer allocated nothing that the profiler saw.
  */
 const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
@@ -172,6 +173,7 @@ const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 		'read webgpu/gpu-timer.ts': 16,
 		'afterSubmit webgpu/culled-counts.ts': 16,
 		'read webgpu/culled-counts.ts': 12,
+		'Uint32Array (built-in)': 8,
 		'then (built-in)': 32,
 	},
 };

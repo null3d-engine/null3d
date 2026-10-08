@@ -94,7 +94,6 @@ import {
 	takeParkedWorker,
 	takeWhenFree,
 } from './ownership';
-import { PageMemorySampler, pageHeapBytes } from './page-memory';
 import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
@@ -1237,12 +1236,7 @@ async function startEngine(
 			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
 			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
 		},
-		page: {
-			mainThread: new MainThreadWatch(false),
-			// The threaded build's threads share the engine's memory, which the figure counts once.
-			memory: new PageMemorySampler(() => (threaded ? (wasmMemory?.buffer.byteLength ?? 0) : 0)),
-			heapBytes: pageHeapBytes,
-		},
+		sharedMemory: threaded,
 	}));
 	Atomics.store(slots, Slot.Running, 1);
 	/**

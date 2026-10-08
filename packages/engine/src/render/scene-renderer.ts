@@ -14,7 +14,6 @@ import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGL2GpuTimer } from '../gpu/webgl2/gpu-timer';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
-import { CulledCounts } from '../gpu/webgpu/culled-counts';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
 import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
@@ -191,6 +190,12 @@ export class WebGPUSceneRenderer implements Renderer {
 	private readonly frames: FrameReplay;
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
+	/**
+	 * True once a frame has sampled: the reader of the GPU-culled draws' counts then loads, so a
+	 * page that never samples never downloads it.
+	 */
+	private culledLoading = false;
+	private destroyed = false;
 	readonly lost: Promise<string>;
 	readonly errors: GpuErrorWatch;
 
@@ -232,7 +237,6 @@ export class WebGPUSceneRenderer implements Renderer {
 		this.backend.moreShaders = shaders;
 		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
-		this.backend.culled = metrics && new CulledCounts(device);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
 	}
@@ -262,7 +266,9 @@ export class WebGPUSceneRenderer implements Renderer {
 		const start = performance.now();
 		const { backend } = this;
 		backend.timer?.beginFrame(input.frame);
-		backend.culled?.beginFrame(record.measuring);
+		const sampling = record.measuring;
+		if (sampling && !this.culledLoading) this.loadCulledCounts();
+		backend.culled?.beginFrame(sampling);
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
@@ -272,6 +278,13 @@ export class WebGPUSceneRenderer implements Renderer {
 			backend.counts.instances += culled.instances;
 		}
 		recordCounts(record, backend);
+	}
+
+	private loadCulledCounts(): void {
+		this.culledLoading = true;
+		import('../gpu/webgpu/culled-counts').then(({ CulledCounts }) => {
+			if (!this.destroyed) this.backend.culled = new CulledCounts(this.device);
+		}, console.warn);
 	}
 
 	/**
@@ -307,6 +320,7 @@ export class WebGPUSceneRenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.destroyed = true;
 		this.frames.abandon();
 		this.errors.stop();
 		this.backend.timer?.destroy();

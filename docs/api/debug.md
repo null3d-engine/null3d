@@ -237,14 +237,14 @@ The browser's page measurement counts a shared memory once for each thread that 
 
 ```ts
 import {
-  MainThreadWatch,
+  MainThreadWindow,
   PageMemorySampler,
   pageHeapBytes,
   statsText,
 } from '@null3d/engine/stats';
 
 const element = document.querySelector('#stats') as HTMLElement;
-const mainThread = new MainThreadWatch(false);
+const mainThread = new MainThreadWindow();
 const pageMemory = new PageMemorySampler();
 pageMemory.start();
 
@@ -269,7 +269,7 @@ function showFigures(fps: number, cpuMs: number, info: { calls: number; triangle
       jsHeapBytes: pageHeapBytes(),
       page: pageMemory.page,
     },
-    mainThread: mainThread.takeWindow(),
+    mainThread: mainThread.take(),
   });
 }
 ```

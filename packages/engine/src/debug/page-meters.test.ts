@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { countSharedOnce, type MemoryMeasurement, PageMemorySampler } from './page-memory';
+import {
+	countSharedOnce,
+	MainThreadWindow,
+	type MemoryMeasurement,
+	PageMemorySampler,
+} from './page-meters';
 
 const MIB = 1024 * 1024;
 
@@ -82,5 +87,13 @@ describe('PageMemorySampler', () => {
 		expect(sampler.failure).toBe(
 			'the browser refused the measurement: the page is not cross-origin isolated',
 		);
+	});
+});
+
+describe('MainThreadWindow', () => {
+	it('gives no figures where the browser reports no long tasks', () => {
+		const watch = new MainThreadWindow();
+		expect(watch.take()).toBeNull();
+		watch.stop();
 	});
 });

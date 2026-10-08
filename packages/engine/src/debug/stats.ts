@@ -8,10 +8,9 @@
 import type { QualityPreset } from '../quality/presets';
 import {
 	Counter,
-	MemoryFigure,
+	memoryFigures,
 	PHASE_NAMES,
 	type PhaseName,
-	PublishedMemory,
 	RingSums,
 	Role,
 	SUM_BUSY_MS,
@@ -214,7 +213,8 @@ export class FrameStatsWindow {
 	private readonly completion: RingSums;
 	/** The GPU's timed frames, which the windows share until one holds a timed frame. */
 	private readonly gpu: RingSums;
-	private readonly memory: PublishedMemory;
+	/** The memory figures that the sketch thread publishes. */
+	private readonly memory: Float64Array;
 	/** The roles of each thread, in the order of `stats.threads`. */
 	private readonly roles: readonly (readonly number[])[];
 
@@ -232,7 +232,7 @@ export class FrameStatsWindow {
 		this.values[RENDER_SCALE] = sources.renderScaleThousandths() / 1000;
 		this.values[GPU_MS] = -1;
 		this.gpu = new RingSums(buffer, Role.Gpu);
-		this.memory = new PublishedMemory(buffer);
+		this.memory = memoryFigures(buffer);
 		const ring = (role: number): RingSums => {
 			let sums = this.rings[role];
 			if (!sums) {
@@ -281,8 +281,7 @@ export class FrameStatsWindow {
 		values[UPLOAD_BYTES] = mean(render, SUM_COUNTERS + Counter.UploadBytes);
 		values[RENDER_SCALE] = this.sources.renderScaleThousandths() / 1000;
 		values[WASM_BYTES] = this.sources.wasmBytes();
-		for (let figure = 0; figure < MemoryFigure.Count; figure++)
-			values[MEMORY + figure] = this.memory.read(figure);
+		values.set(this.memory, MEMORY);
 		const gpu = this.gpu.sums;
 		if ((gpu[SUM_RECORDS] as number) > 0) {
 			values[GPU_MS] = mean(gpu, SUM_BUSY_MS);

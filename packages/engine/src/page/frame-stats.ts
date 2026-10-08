@@ -1,6 +1,7 @@
 // Turns the frame records of one measurement into its metrics: CPU time per frame by thread and
 // phase, GPU time, frame intervals, uploads and draw calls, memory, load time and download size.
 
+import { messageOf } from '../errors/message';
 import { CORE_NOT_COUNTED } from '../generated/core';
 import {
 	COUNTER_NAMES,
@@ -20,7 +21,6 @@ import {
 	ratePerSecond,
 	spanMs,
 } from '../shared/stats';
-import { PageMemorySampler, pageHeapBytes } from './page-memory';
 
 /**
  * One thread's CPU time per frame, in `FrameSummary.threads`.
@@ -435,6 +435,16 @@ export function timerStep(times: readonly number[]): number | null {
 	return whole ? step : null;
 }
 
+interface MemoryMeasurement {
+	bytes: number;
+	breakdown: { bytes: number; attribution: { url?: string; scope?: string }[] }[];
+}
+
+type MeasureMemory = () => Promise<MemoryMeasurement>;
+
+/** Time from one heap sample's arrival to the request for the next. */
+const HEAP_SAMPLE_GAP_MS = 5000;
+
 /**
  * Samples the JavaScript heap of the page and its workers, where the browser offers a measurement
  * that covers workers (Chrome, on a cross-origin isolated page). Chrome answers when every worker
@@ -445,41 +455,55 @@ export function timerStep(times: readonly number[]): number | null {
  */
 export class HeapSampler {
 	private readonly samples: MemoryStats['jsHeapSamples'] = [];
-	private readonly sampler = new PageMemorySampler(undefined, (result) =>
-		this.samples.push({
-			atSeconds: (performance.now() - this.started) / 1000,
-			bytes: result.bytes,
-		}),
-	);
-	private started = 0;
+	private last: MemoryMeasurement | undefined;
+	private running = false;
+	private supported = false;
+	private failure: string | null = null;
 
 	start(): void {
-		this.started = performance.now();
-		this.sampler.start();
+		const measure = (performance as { measureUserAgentSpecificMemory?: MeasureMemory })
+			.measureUserAgentSpecificMemory;
+		// The browser offers the measurement only on a cross-origin isolated page.
+		if (!measure) return;
+		this.supported = true;
+		this.running = true;
+		const started = performance.now();
+		const sample = async () => {
+			while (this.running) {
+				const result = await measure.call(performance);
+				if (!this.running) return;
+				this.last = result;
+				this.samples.push({ atSeconds: (performance.now() - started) / 1000, bytes: result.bytes });
+				await new Promise((resolve) => setTimeout(resolve, HEAP_SAMPLE_GAP_MS));
+			}
+		};
+		sample().catch((error: unknown) => {
+			this.running = false;
+			const reason = messageOf(error);
+			this.failure = `the browser refused the measurement: ${reason}`;
+		});
 	}
 
 	stop(): Pick<MemoryStats, 'jsHeap' | 'jsHeapSamples' | 'jsHeapNote'> {
-		const { sampler } = this;
-		sampler.stop();
-		const last = sampler.last;
-		if (!last)
+		this.running = false;
+		if (!this.last)
 			return {
 				jsHeap: pageHeap(),
 				jsHeapSamples: this.samples,
 				jsHeapNote:
-					sampler.failure ??
-					(PageMemorySampler.supported
+					this.failure ??
+					(this.supported
 						? 'no measurement of the workers finished during the run; each takes about a minute'
 						: 'this browser does not measure the heap of workers'),
 			};
 		const byScope: Record<string, number> = {};
-		for (const entry of last.breakdown) {
+		for (const entry of this.last.breakdown) {
 			const where = entry.attribution[0];
 			const name = where ? `${where.scope ?? 'unknown'} ${where.url ?? ''}`.trim() : 'shared';
 			byScope[name] = (byScope[name] ?? 0) + entry.bytes;
 		}
 		return {
-			jsHeap: { bytes: last.bytes, byScope },
+			jsHeap: { bytes: this.last.bytes, byScope },
 			jsHeapSamples: this.samples,
 			jsHeapNote: null,
 		};
@@ -488,8 +512,10 @@ export class HeapSampler {
 
 /** The page's own heap, in browsers that report it (Chrome). */
 function pageHeap(): MemoryStats['jsHeap'] {
-	const bytes = pageHeapBytes();
-	return bytes === null ? null : { bytes, byScope: { Window: bytes } };
+	const memory = (performance as { memory?: { usedJSHeapSize: number } }).memory;
+	return memory
+		? { bytes: memory.usedJSHeapSize, byScope: { Window: memory.usedJSHeapSize } }
+		: null;
 }
 
 /** Bytes of WebAssembly the page downloaded, from the browser's resource timing entries. */

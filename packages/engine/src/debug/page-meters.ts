@@ -1,4 +1,12 @@
-// The memory of the whole page and its workers, from the browser's own measurement:
+// The page's own meters for the stats overlay: the load of the page's thread, and the memory of the
+// whole page and its workers. They live apart from the engine's start, which loads none of them, and
+// `@null3d/engine/stats` exports them, so a page that draws with another engine measures its own
+// figures with the same code. `engine.measure` keeps small meters of its own in the start.
+//
+// The page thread's load comes from the browser's long task and event timing entries, which only
+// Chromium reports.
+//
+// The memory of the whole page and its workers comes from the browser's own measurement:
 // `performance.measureUserAgentSpecificMemory`, which only Chromium offers, and only on a
 // cross-origin isolated page. The browser answers once every worker has run the measurement as a
 // task, or after about a minute, so samples follow each other with a gap of a few seconds.
@@ -8,7 +16,7 @@
 // for each holder but the first. A thread holds it when its figure is at least the shared memory's
 // size, since no thread's own heap comes near the engine's memory.
 
-import { messageOf } from '../errors/message';
+import type { StatsMainThread } from './stats-text';
 
 /**
  * The memory of the whole page and its workers, from the browser's own measurement, in
@@ -111,7 +119,7 @@ export class PageMemorySampler {
 		};
 		sample().catch((error: unknown) => {
 			this.running = false;
-			this.failure = `the browser refused the measurement: ${messageOf(error)}`;
+			this.failure = `the browser refused the measurement: ${error instanceof Error ? error.message : String(error)}`;
 		});
 	}
 
@@ -136,4 +144,70 @@ function measureOf(): MeasureMemory | undefined {
 export function pageHeapBytes(): number | null {
 	const memory = (performance as { memory?: { usedJSHeapSize: number } }).memory;
 	return memory ? memory.usedJSHeapSize : null;
+}
+
+interface EventTimingEntry extends PerformanceEntry {
+	processingStart: number;
+}
+
+/**
+ * Watches the page's own thread in windows, one after another: its long tasks and its longest
+ * input delay, from the browser's performance entries, where the browser reports them (Chromium).
+ *
+ * @category api/debug
+ */
+export class MainThreadWindow {
+	private readonly observers: PerformanceObserver[] = [];
+	private readonly supported: boolean;
+	private start = performance.now();
+	private longTasks = 0;
+	private longestTask = 0;
+	private delay = -1;
+
+	/** Starts watching. */
+	constructor() {
+		const types = globalThis.PerformanceObserver?.supportedEntryTypes ?? [];
+		this.supported = types.includes('longtask');
+		if (!this.supported) return;
+		const longTasks = new PerformanceObserver((list) => {
+			for (const entry of list.getEntries()) {
+				this.longTasks++;
+				this.longestTask = Math.max(this.longestTask, entry.duration);
+			}
+		});
+		longTasks.observe({ type: 'longtask' });
+		this.observers.push(longTasks);
+		if (!types.includes('event')) return;
+		const events = new PerformanceObserver((list) => {
+			for (const entry of list.getEntries() as EventTimingEntry[])
+				this.delay = Math.max(this.delay, entry.processingStart - entry.startTime);
+		});
+		events.observe({ type: 'event', durationThreshold: 16 } as PerformanceObserverInit);
+		this.observers.push(events);
+	}
+
+	/**
+	 * The long tasks and the longest input delay since the last call, or since the watch began,
+	 * and starts the next window. Null where the browser does not report long tasks.
+	 */
+	take(): StatsMainThread | null {
+		if (!this.supported) return null;
+		const now = performance.now();
+		const figures = {
+			seconds: (now - this.start) / 1000,
+			longTasks: this.longTasks,
+			longestTaskMs: this.longestTask,
+			inputDelayMs: this.delay >= 0 ? this.delay : null,
+		};
+		this.start = now;
+		this.longTasks = 0;
+		this.longestTask = 0;
+		this.delay = -1;
+		return figures;
+	}
+
+	/** Stops watching. */
+	stop(): void {
+		for (const observer of this.observers) observer.disconnect();
+	}
 }

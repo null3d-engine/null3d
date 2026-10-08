@@ -4,17 +4,17 @@
 // same code. The engine's start does not load this module.
 
 export {
+	MainThreadWindow,
+	type MemoryMeasurement,
+	type PageMemory,
+	PageMemorySampler,
+	pageHeapBytes,
+} from './debug/page-meters';
+export {
 	type StatsFigures,
 	type StatsMainThread,
 	type StatsMemory,
 	type StatsThread,
 	statsText,
 } from './debug/stats-text';
-export { MainThreadWatch } from './page/main-thread';
-export {
-	type MemoryMeasurement,
-	type PageMemory,
-	PageMemorySampler,
-	pageHeapBytes,
-} from './page/page-memory';
 export { countPerSecond, type Percentiles, percentiles, ratePerSecond } from './shared/stats';

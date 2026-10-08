@@ -180,18 +180,12 @@ function sample(header: Int32Array, on: boolean): void {
 	else Atomics.sub(header, MEASURING, 1);
 }
 
-/** Reads the memory figures that the sketch thread publishes, for code on any thread. */
-export class PublishedMemory {
-	private readonly times: Float64Array;
-
-	constructor(buffer: ArrayBufferLike) {
-		this.times = new Float64Array(buffer, 0, HEADER_WORDS / 2);
-	}
-
-	/** A figure by its `MemoryFigure` place: 0 before the sketch thread first published it. */
-	read(figure: number): number {
-		return this.times[MEMORY + figure] as number;
-	}
+/**
+ * A view of the memory figures that the sketch thread publishes, in the order of `MemoryFigure`, for
+ * code on any thread. Each is 0 before the sketch thread first published it.
+ */
+export function memoryFigures(buffer: ArrayBufferLike): Float64Array {
+	return new Float64Array(buffer, MEMORY * 8, MemoryFigure.Count);
 }
 
 /** The display's refresh rate in hertz, as the thread that draws measured it, or 0 before then. */
@@ -282,7 +276,7 @@ export class FrameRecorder {
 
 	/** Publishes a memory figure by its `MemoryFigure` place, for the frame figures on any thread. */
 	publishMemory(figure: number, value: number): void {
-		if (figure < MemoryFigure.Count) this.views.times[MEMORY + figure] = value;
+		this.views.times[MEMORY + figure] = value;
 	}
 
 	/**

@@ -2,7 +2,7 @@
 // page that draws with another engine, such as three.js, can print its own figures in the same
 // layout. `@null3d/engine/stats` exports them.
 
-import type { PageMemory } from '../page/page-memory';
+import type { PageMemory } from './page-meters';
 
 /**
  * One thread's CPU time per frame, in `StatsFigures.threads`.
