@@ -6,6 +6,7 @@
 // that loads on a feature's first use as a whole, such as the texture generators'.
 // tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
+import { posix } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
 /**
@@ -51,6 +52,8 @@ export interface BuiltFile {
 
 /** Where the engine's TypeScript source lives, relative to the repository. */
 export const ENGINE_SOURCE = 'packages/engine/src/';
+/** The engine package's folder, whose vendored scripts the parts may hold too. */
+const ENGINE_PACKAGE = 'packages/engine/';
 
 export interface EnginePart {
 	/** The part's name in the report. */
@@ -73,7 +76,9 @@ export interface EnginePart {
  * Universal transcoder's script, loads in a job worker, or in the task worker that the on-demand
  * loader starts where the engine has no job workers. The glTF loader loads in the thread that runs
  * the sketch with the sketch's first glTF file, and starts the glTF worker, which parses files.
- * The glTF worker loads the meshopt decoder's code with the first file that holds meshopt data.
+ * The glTF worker loads the meshopt decoder's code with the first file that holds meshopt data, and
+ * the engine's Draco code with the first file that holds Draco data, which then loads Draco's own
+ * script, the one part that a module path outside the engine's source names.
  * The readers of color grading tables load in the thread that runs the sketch with
  * the first table, the sprite code with the first sprite batch, and the line code with the first
  * line batch.
@@ -154,6 +159,12 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
 	{ name: 'gltf-worker.js', module: 'workers/gltf-worker.ts', loadedBy: 'sketch-worker-gltf.js' },
 	{ name: 'gltf-meshopt.js', module: 'scene/gltf-meshopt.ts', loadedBy: 'gltf-worker.js' },
+	{ name: 'gltf-draco.js', module: 'scene/gltf-draco.ts', loadedBy: 'gltf-worker.js' },
+	{
+		name: 'gltf-draco-decoder.js',
+		module: '../vendor/draco/draco_wasm_wrapper_gltf.js',
+		loadedBy: 'gltf-draco.js',
+	},
 	{ name: 'sketch-worker-lut.js', module: 'scene/lut-files.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-environment.js',
@@ -243,10 +254,16 @@ export function isFirstUseShaderPart(name: string): boolean {
 
 /**
  * The WebAssembly modules that the on-demand loader compiles on first use: the KTX2 transcoder,
- * with a page's first KTX2 file, and the meshopt decoder, with its first glTF file that holds
- * meshopt data. A build copies each as it is, under its name with a hash.
+ * with a page's first KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt
+ * data, and Draco's decoder, with its first glTF file that holds Draco data. A build copies each
+ * as it is, under its name with a hash. Draco's decoder is a recorded exception to the limit of
+ * files that load on first use (D-14).
  */
-export const FIRST_USE_WASM = ['basis_transcoder.wasm', 'meshopt_decoder.wasm'] as const;
+export const FIRST_USE_WASM = [
+	'basis_transcoder.wasm',
+	'meshopt_decoder.wasm',
+	'draco_decoder_gltf.wasm',
+] as const;
 
 /** Every file that the size report measures, by the name that the report prints. */
 export const REPORTED_FILES: readonly string[] = [
@@ -384,7 +401,8 @@ export function findEngineParts(
 	shaderParts: readonly string[] = SHADER_PARTS,
 ): Map<string, BuiltFile> {
 	const found = new Map<string, BuiltFile>();
-	const holds = (file: BuiltFile, module: string) => file.sources.includes(ENGINE_SOURCE + module);
+	const holds = (file: BuiltFile, module: string) =>
+		file.sources.includes(posix.join(ENGINE_SOURCE, module));
 	for (const part of parts) {
 		if (part.loadedBy) continue;
 		const matches = files.filter((file) => holds(file, part.module));
@@ -421,7 +439,7 @@ export function findEngineParts(
 		if (file) found.set(part, file);
 	}
 	for (const file of files) {
-		if (claimed.has(file) || !file.sources.some((s) => s.startsWith(ENGINE_SOURCE))) continue;
+		if (claimed.has(file) || !file.sources.some((s) => s.startsWith(ENGINE_PACKAGE))) continue;
 		throw new Error(
 			`${file.file} holds engine code that the size report does not name: add its part to ENGINE_PARTS in tools/lib/size-report.ts`,
 		);

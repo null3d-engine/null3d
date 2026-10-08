@@ -83,7 +83,7 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	});
 	const codes = {
 		broken: await codeOf(addressOf(broken.glb())),
-		draco: await codeOf(addressOf(shipBuilder().uses('KHR_draco_mesh_compression', true).glb())),
+		required: await codeOf(addressOf(shipBuilder().uses('KHR_materials_variants', true).glb())),
 		missing: await codeOf(addressOf(missing.gltf(bin), 'model/gltf+json')),
 		loop: await codeOf(addressOf(loop.glb())),
 		huge: await codeOf(addressOf(huge.glb())),

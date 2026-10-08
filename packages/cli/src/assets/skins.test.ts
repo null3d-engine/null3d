@@ -29,7 +29,7 @@ const parse = (glb: Uint8Array, decode?: MeshoptDecode): GltfData =>
 		readContainer(glb, 'https://example.com/knight.glb'),
 		new Map(),
 		'https://example.com/knight.glb',
-		decode,
+		{ meshopt: decode },
 	);
 
 type Box = { min: number[]; max: number[] };

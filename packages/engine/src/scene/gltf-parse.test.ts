@@ -86,10 +86,10 @@ describe('the container', () => {
 	});
 
 	test('an extension that the file requires and the engine does not read gives E1417', () => {
-		const b = shipBuilder().uses('KHR_draco_mesh_compression', true);
+		const b = shipBuilder().uses('KHR_materials_variants', true);
 		expect(refusal(b.glb())).toEqual([
 			'E1417',
-			'it requires KHR_draco_mesh_compression, which the engine does not read',
+			'it requires KHR_materials_variants, which the engine does not read',
 		]);
 		// One that the file only uses is left alone.
 		expect(() => parse(shipBuilder().uses('KHR_materials_clearcoat').glb())).not.toThrow();

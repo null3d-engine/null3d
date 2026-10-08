@@ -57,14 +57,17 @@ export interface ModelScene {
  * texture maps, texture transforms in a .gltf file whose buffers and images are files of their
  * own, unlit materials, emissive strength, lights, a node with instancing of its own, KTX2 textures
  * in a .gltf file, alpha modes, vertex colors, the second texture coordinates, meshopt
- * compression under each of its two names, and morph targets: weights that a clip animates, eight
+ * compression under each of its two names, Draco compression, and morph targets: weights that a
+ * clip animates, eight
  * targets on two primitives, a file's default weight on primitives that share targets, and targets
  * that move vertex colors. Three scenes make their files in code: the color targets, and two small
  * equivalents of Khronos test models whose originals need an environment map or transmission:
  * KHR_materials_specular's factors and textures, and KHR_materials_ior's indices with the specular
  * values. The specular and IOR scenes' own lights light them. The vendor name's file is the instancing model as
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
- * name's file covers every mode and filter.
+ * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
+ * Draco model, and the coordinates test model as Draco's encoder compresses it
+ * (tests/lib/draco-fixtures.ts), each against its uncompressed scene.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -106,6 +109,21 @@ export const MODEL_SCENES = {
 	},
 	'meshopt-khr': {
 		url: sampleUrl('sources/khronos/MeshoptCubeTest/glTF-Meshopt/MeshoptCubeTest.gltf'),
+	},
+	rigged: {
+		url: sampleUrl('sources/khronos/RiggedSimple/glTF-Binary/RiggedSimple.glb'),
+		clip: { name: 'animation_0', time: 1 },
+	},
+	'draco-rigged': {
+		url: sampleUrl('sources/khronos/RiggedSimple/glTF-Draco/RiggedSimple.gltf'),
+		clip: { name: 'animation_0', time: 1 },
+		uncompressed: 'rigged',
+	},
+	'draco-texture-coordinates': {
+		// An address from this module, so the benchmark pages' build ships the file too.
+		url: new URL('../../tests/pages/assets/models/texture-coordinates-draco.glb', import.meta.url)
+			.href,
+		uncompressed: 'texture-coordinates',
 	},
 	'morph-cube': {
 		url: sampleUrl('sources/khronos/AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb'),

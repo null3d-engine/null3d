@@ -137,6 +137,12 @@ Two runs each. The differences are within the Mac's run-to-run spread.
 - The production build's KTX2 page with its files on another origin starts threaded and single-threaded under the stated policy, and runs both decoders. Five cases each leave one item out (`cdn.spec.ts`). Without `blob:` in `worker-src` or the CDN in `connect-src`, it gives E1422. Without `'wasm-unsafe-eval'`, it gives E1418. Without CORS on the `.wasm` files or on the workers' scripts, it gives E1423.
 - The same page under the strict policy of one origin runs both decoders (`content-security-policy.spec.ts`). It fails on main.
 
+### Draco (M2-A6, 8 October 2026)
+
+- Draco adds its entry to the glTF loader's table of decoders, as planned above. The glTF worker asks for it beside a file's buffers, and the loader compiles `draco_decoder_gltf.wasm` with `compileOnce` and sends it.
+- The worker imports Draco's script (`scene/gltf-draco.ts`) on first use, and instantiates the module through the script's `instantiateWasm` hook. Pages without Draco files download neither.
+- A decoder that failed, or whose memory grew past 64 MiB, gives way to a fresh instance from the same module. [D-110](D-110-draco-decoding.md) gives the build's choices and figures.
+
 ### Options rejected while building
 
 - Move glTF parsing into the job workers, so that only job workers decode. A long parse would sit beside frame work, and Draco's decoder runs where the file is parsed.

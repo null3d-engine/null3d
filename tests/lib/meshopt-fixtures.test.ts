@@ -41,10 +41,10 @@ describe('meshopt sample files', () => {
 				),
 			],
 		]);
-		const decoded = parseGltf(compressed, bin, url, decode);
+		const decoded = parseGltf(compressed, bin, url, { meshopt: decode });
 		// The file's 35 meshes, and copies of the 5 that its clip turns, which name their joints.
 		expect(decoded.meshes).toHaveLength(40);
-		expect(decoded).toEqual(parseGltf(compressed, bin, url, reference));
+		expect(decoded).toEqual(parseGltf(compressed, bin, url, { meshopt: reference }));
 		// The variant whose fallback buffer holds the decoded bytes, read without the decoder.
 		const withFallback = readContainer(
 			readFileSync(samplePath('sources/khronos/MeshoptCubeTest/glTF/MeshoptCubeTest.gltf')),
@@ -71,8 +71,8 @@ describe('meshopt sample files', () => {
 			expect(Buffer.from(await buildFixture(fixture)).equals(committed)).toBe(true);
 			const container = readContainer(new Uint8Array(committed), url);
 			expect(usesMeshopt(container)).toBe(true);
-			expect(parseGltf(container, new Map(), url, decode)).toEqual(
-				parseGltf(container, new Map(), url, reference),
+			expect(parseGltf(container, new Map(), url, { meshopt: decode })).toEqual(
+				parseGltf(container, new Map(), url, { meshopt: reference }),
 			);
 		});
 });

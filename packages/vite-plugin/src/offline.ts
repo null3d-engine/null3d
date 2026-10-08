@@ -39,6 +39,9 @@ export const FEATURE_MODULES: Readonly<Record<string, readonly string[]>> = {
 		'workers/gltf-worker',
 		'scene/gltf-meshopt',
 		'vendor/meshopt/meshopt_decoder.wasm',
+		'scene/gltf-draco',
+		'vendor/draco/draco_wasm_wrapper_gltf',
+		'vendor/draco/draco_decoder_gltf.wasm',
 	],
 	ktx2: ['scene/ktx2', 'scene/ktx2-transcode', 'vendor/basis/basis_transcoder.wasm'],
 	environment: [

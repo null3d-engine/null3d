@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { Plugin, ResolvedConfig, Rollup, UserConfig } from 'vite';
+import { DRACO_RELEASE } from '../../../tools/lib/draco-vendor';
 import { fixture } from '../../../tools/lib/fixture';
 import null3d, {
 	CORE_FILES,
@@ -205,6 +206,14 @@ describe('the third-party notices', () => {
 			expect(notices).toContain(readFileSync(file, 'utf8').trim());
 		const { version } = JSON.parse(readFileSync(join(meshopt, 'package.json'), 'utf8'));
 		expect(notices).toContain(`meshoptimizer ${version}`);
+		// Draco's licence is the Apache License 2.0, whose text Basis Universal's section holds, and
+		// whose appendix only differs in the copyright line.
+		const apache = readFileSync(join(engine, 'vendor/draco/LICENSE'), 'utf8')
+			.split('APPENDIX:')[0]
+			?.trim() as string;
+		expect(notices).toContain(apache);
+		expect(notices).toContain(`Draco ${DRACO_RELEASE.version}`);
+		expect(notices).toContain('Copyright 2016 The Draco Authors.');
 	});
 });
 

@@ -54,9 +54,10 @@ describe('REPORTED_FILES', () => {
 		expect(REPORTED_FILES).toContain('js/page.js');
 		expect(REPORTED_FILES).toContain('js/render-worker.js');
 		expect(REPORTED_FILES).toContain('js/shaders-glsl-draw-index.js');
-		expect(REPORTED_FILES.slice(-2)).toEqual([
+		expect(REPORTED_FILES.slice(-3)).toEqual([
 			'first-use/basis_transcoder.wasm',
 			'first-use/meshopt_decoder.wasm',
+			'first-use/draco_decoder_gltf.wasm',
 		]);
 	});
 });
@@ -66,6 +67,7 @@ describe('findFirstUseWasm', () => {
 		'meshopt_decoder-JKal9Vjx.wasm',
 		'null3d_bg-58dKJVnh.wasm',
 		'basis_transcoder-DBaCnI5p.wasm',
+		'draco_decoder_gltf-Qw3eRt5Y.wasm',
 		'ktx2-Cl41QH8w.js',
 	];
 
@@ -73,6 +75,7 @@ describe('findFirstUseWasm', () => {
 		expect([...findFirstUseWasm(names)]).toEqual([
 			['basis_transcoder.wasm', 'basis_transcoder-DBaCnI5p.wasm'],
 			['meshopt_decoder.wasm', 'meshopt_decoder-JKal9Vjx.wasm'],
+			['draco_decoder_gltf.wasm', 'draco_decoder_gltf-Qw3eRt5Y.wasm'],
 		]);
 	});
 
@@ -125,6 +128,24 @@ describe('findEngineParts', () => {
 		const stray = built('stray-S1.js', ['scene/scene.ts']);
 		expect(() => findEngineParts([page, worker, stray], parts)).toThrow(
 			'stray-S1.js holds engine code that the size report does not name',
+		);
+	});
+
+	it("names a vendored script of the engine package by its path from the engine's source", () => {
+		const vendored = {
+			name: 'worker-vendor.js',
+			module: '../vendor/lib.js',
+			loadedBy: 'worker.js',
+		};
+		const loader = built('worker-W1.js', ['workers/worker.ts'], 'import("./lib-V1.js")');
+		const script = built('lib-V1.js', [], '', ['packages/engine/vendor/lib.js']);
+		const found = findEngineParts(
+			[page, loader, script],
+			[...parts.slice(0, 1), parts[2]!, vendored],
+		);
+		expect(found.get('worker-vendor.js')?.file).toBe('lib-V1.js');
+		expect(() => findEngineParts([page, loader, script], [parts[0]!, parts[2]!])).toThrow(
+			'lib-V1.js holds engine code that the size report does not name',
 		);
 	});
 

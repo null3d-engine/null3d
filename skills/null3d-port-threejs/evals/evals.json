@@ -18,7 +18,7 @@
         "The water ShaderMaterial becomes a WGSL surface function, not GLSL",
         "Raycasting uses camera.screenToRay with scene.raycast, or object click events, marked as 0.2",
         "CSS2DRenderer becomes ui.trackLabel with engine.labels.bind, marked as 0.2",
-        "DRACOLoader is replaced by converting the model with bunx @null3d/cli assets optimize, marked as 0.2",
+        "The DRACOLoader setup is deleted, since assets.loadGltf reads Draco files, and the model is converted with bunx @null3d/cli assets optimize, marked as 0.2",
         "Includes a parity and performance verification plan"
       ]
     },

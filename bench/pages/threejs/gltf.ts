@@ -1,12 +1,14 @@
 // The three.js twin of the glTF model scenes (bench/scenes/gltf-models.ts), which null3D's image
 // tests draw. `?model=` names the scene. It loads the model with GLTFLoader, its KTX2 textures
-// with KTX2Loader and its meshopt data with the MeshoptDecoder that three.js ships, plays the
+// with KTX2Loader, its Draco data with DRACOLoader and its meshopt data with the MeshoptDecoder
+// that three.js ships, plays the
 // scene's clip to its time with an AnimationMixer, turns alpha to coverage on for MASK materials, as
 // null3D does by default, frames it from its bounds or the scene's frame
 // as the null3D sketch does, draws one frame into an offscreen target of the image's size, and
 // publishes the pixels as the hold pages do. `?renderer=webgl` draws with WebGLRenderer,
 // and `?renderer=webgpu` with WebGPURenderer.
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
@@ -45,7 +47,12 @@ run('hold', async () => {
 	const ktx2 = new KTX2Loader();
 	if (rendererName === 'webgpu') await ktx2.detectSupportAsync(renderer as never);
 	else ktx2.detectSupport(renderer as never);
-	const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
+	// DRACOLoader finds the decoder that three.js ships beside it, as KTX2Loader does.
+	const draco = new DRACOLoader();
+	const loader = new GLTFLoader()
+		.setKTX2Loader(ktx2)
+		.setDRACOLoader(draco)
+		.setMeshoptDecoder(MeshoptDecoder);
 	const gltf = await loader.loadAsync(modelUrl(model));
 	// null3D smooths the cut edges of glTF's MASK materials with alpha to coverage by default, so
 	// the twin turns it on for every material with an alpha test.
@@ -78,6 +85,7 @@ run('hold', async () => {
 
 	const pixels = await readFrame(width, height, () => renderer.render(scene, camera));
 	ktx2.dispose();
+	draco.dispose();
 	return {
 		scene: `gltf-${name}`,
 		renderer: rendererName,

@@ -283,7 +283,7 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
 		since: '0.1',
@@ -361,7 +361,7 @@ const DOCS = {
 	E1416: {
 		title: 'glTF file not read',
 		cause:
-			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks. A PNG or JPEG image inside the file may claim sides past 4,096, or its images may decode to more than 1 GiB. Or the rewriteUrl option refused an address that the file names.",
+			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Draco data may not decode, or decode to other counts than its accessors give. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks. A PNG or JPEG image inside the file may claim sides past 4,096, or its images may decode to more than 1 GiB. Or the rewriteUrl option refused an address that the file names.",
 		example:
 			'E1416: assets.loadGltf() could not read https://example.com/ship.glb: accessor 3 reads 4800 bytes from bufferView 1, which holds 2400.',
 		since: '0.2',
@@ -371,13 +371,13 @@ const DOCS = {
 		cause:
 			'A glTF file needs an extension that the engine does not read, as its extensionsRequired list says. Or a call asked a model for something it cannot give, such as instance batches of a model with no meshes.',
 		example:
-			'E1417: assets.loadGltf() cannot load https://example.com/ship.glb: it requires KHR_draco_mesh_compression, which the engine does not read.',
+			'E1417: assets.loadGltf() cannot load https://example.com/ship.glb: it requires KHR_materials_variants, which the engine does not read.',
 		since: '0.2',
 	},
 	E1418: {
 		title: 'WebAssembly blocked by the page',
 		cause:
-			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core, the KTX2 transcoder or the meshopt decoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
+			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core, the KTX2 transcoder, the meshopt decoder or the Draco decoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
 		example:
 			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
 		since: '0.2',

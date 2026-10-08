@@ -121,6 +121,11 @@ const DECODERS: Readonly<Record<GltfDecoder, WasmFile>> = {
 		url: new URL('../../vendor/meshopt/meshopt_decoder.wasm', import.meta.url),
 		what: 'the meshopt decoder',
 	},
+	draco: {
+		name: 'draco',
+		url: new URL('../../vendor/draco/draco_decoder_gltf.wasm', import.meta.url),
+		what: 'the Draco decoder',
+	},
 };
 
 /** A request that waits for the worker. */
@@ -390,6 +395,10 @@ async function buildPrefab(
 	const { parts, bounds } = partsOf(template, data, meshes, instancing);
 	if (DEV && data.notes.length > 0)
 		console.warn(`${call}() left out parts of ${address}: ${data.notes.join('; ')}.`);
+	if (DEV && data.draco)
+		console.warn(
+			`${call}() loaded ${address}, whose meshes use Draco compression. Draco's decoder adds about 60 KB to the page's download, and decodes slower than meshopt. Convert the file to meshopt with \`bunx @null3d/cli assets optimize\`.`,
+		);
 	return new Prefab(
 		context.core,
 		address.href,

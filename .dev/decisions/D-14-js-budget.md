@@ -332,6 +332,8 @@ This is also the way to trim the start. Each feature's shaders move into a file 
 
 The Draco decoder is a third-party build. Its module may go in the size report's section of first-use WebAssembly, beside the KTX2 transcoder's and meshopt's, which have no budget. Either way, a page that reads no Draco file never downloads it. Its script must make no code from strings, or a page's Content-Security-Policy without `'unsafe-eval'` stops it, as it stopped the official KTX2 transcoder (M2-R18). The engine then builds it from its release's sources, as it builds the transcoder.
 
+Built (M2-A6, 8 October 2026, [D-110](D-110-draco-decoding.md)): the official script makes no code from strings, so the engine ships the release's files unchanged. After Brotli, the module is 48,764 B, Draco's script 9,480 B and the engine's Draco code 1,775 B: 60,019 B in all. Each script stays within the 16 KB limit, so the exception covers the module alone, which the size report lists among the first-use WebAssembly modules with this record's name.
+
 ### Hosts that compress with gzip
 
 The budgets count bytes after Brotli. Many hosts compress with gzip instead: GitHub Pages and nginx's defaults among them. The library code review measured what a page downloads at its start there (R8-02, [Code review, October 2026](../code-review-2026-10.md)):

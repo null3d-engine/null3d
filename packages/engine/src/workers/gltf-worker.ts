@@ -1,14 +1,15 @@
 // The glTF worker: parses glTF files off the sketch's frames, for the glTF loader (scene/gltf.ts),
 // which starts it with the first file. Each file arrives as bytes. The worker reads its container
 // and JSON, and asks for the buffers that the file names by address, which the loader downloads.
-// It also asks for the decoders that the file needs and that it has not had yet, such as
-// meshoptimizer's, whose modules the on-demand loader compiles once per page (shared/tasks.ts).
-// Then it parses the file, decoding its meshopt data. It decodes the PNG, JPEG, WebP and AVIF
+// It also asks for the decoders that the file needs and that it has not had yet, meshoptimizer's
+// and Draco's, whose modules the on-demand loader compiles once per page (shared/tasks.ts). Then it
+// parses the file, decoding its meshopt and Draco data. It decodes the PNG, JPEG, WebP and AVIF
 // images that the file holds with createImageBitmap, once for each way a material uses them, and
 // hands everything back in one message that moves the arrays and images rather than copying them.
 // A file it refuses comes back as an error with the engine's code, so no load ever waits for an
 // answer that does not come.
 
+import type { DracoDecoder } from '../scene/gltf-draco';
 import {
 	type GltfContainer,
 	type GltfData,
@@ -16,11 +17,12 @@ import {
 	type MeshoptDecode,
 	parseGltf,
 	readContainer,
+	usesDraco,
 	usesMeshopt,
 } from '../scene/gltf-parse';
 
 /** The decoders that a file can need, by the name of their compiled module. */
-export type GltfDecoder = 'meshopt';
+export type GltfDecoder = 'meshopt' | 'draco';
 
 /** A request of the loader: a new file, or the buffers and decoders that a file asked for. */
 export type GltfRequest =
@@ -50,13 +52,46 @@ let meshopt: Promise<MeshoptDecode> | undefined;
 function startMeshopt(compiled: WebAssembly.Module): void {
 	meshopt ??= import('../scene/gltf-meshopt')
 		.then((module) => module.meshoptDecoder(compiled))
-		.catch((error: unknown) => {
-			meshopt = undefined;
-			throw new GltfError(
-				'E1406',
-				`the meshopt decoder did not load: ${error instanceof Error ? error.message : String(error)}`,
-			);
-		});
+		.catch(
+			decoderFailed('meshopt', () => {
+				meshopt = undefined;
+			}),
+		);
+}
+
+/**
+ * The Draco decoder's compiled module, once a file has needed it, and its instance. A spent
+ * instance gives way to a fresh one from the module, so the memory of a file that grew it goes.
+ */
+let dracoModule: WebAssembly.Module | undefined;
+let draco: Promise<DracoDecoder> | undefined;
+
+/** The Draco decoder, started from its compiled module when it has no instance that can decode. */
+async function dracoDecoder(): Promise<DracoDecoder> {
+	const compiled = dracoModule;
+	if (!compiled) throw new GltfError('E1406', 'the Draco decoder did not load');
+	draco ??= import('../scene/gltf-draco')
+		.then((module) => module.dracoDecoder(compiled))
+		.catch(
+			decoderFailed('Draco', () => {
+				draco = undefined;
+			}),
+		);
+	const decoder = await draco;
+	if (!decoder.spent) return decoder;
+	draco = undefined;
+	return dracoDecoder();
+}
+
+/** Forgets a decoder that did not start, and fails with E1406. */
+function decoderFailed(name: string, forget: () => void): (error: unknown) => never {
+	return (error) => {
+		forget();
+		throw new GltfError(
+			'E1406',
+			`the ${name} decoder did not load: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	};
 }
 
 self.onmessage = (event: MessageEvent<GltfRequest>) => {
@@ -65,7 +100,9 @@ self.onmessage = (event: MessageEvent<GltfRequest>) => {
 	try {
 		if ('file' in request) {
 			const container = readContainer(new Uint8Array(request.file), request.url);
-			const decoders: GltfDecoder[] = usesMeshopt(container) && !meshopt ? ['meshopt'] : [];
+			const decoders: GltfDecoder[] = [];
+			if (usesMeshopt(container) && !meshopt) decoders.push('meshopt');
+			if (usesDraco(container) && !dracoModule) decoders.push('draco');
 			if (container.external.size > 0 || decoders.length > 0) {
 				waiting.set(id, { container, url: request.url });
 				answer({ id, needs: [...container.external], decoders });
@@ -74,7 +111,9 @@ self.onmessage = (event: MessageEvent<GltfRequest>) => {
 			void finish(id, container, new Map(), request.url);
 			return;
 		}
-		for (const [, compiled] of request.decoders ?? []) startMeshopt(compiled);
+		for (const [name, compiled] of request.decoders ?? [])
+			if (name === 'draco') dracoModule = compiled;
+			else startMeshopt(compiled);
 		const file = waiting.get(id);
 		waiting.delete(id);
 		if (!file) return;
@@ -86,8 +125,8 @@ self.onmessage = (event: MessageEvent<GltfRequest>) => {
 };
 
 /**
- * Parses a file whose buffers are all here, with the meshopt decoder when the file holds meshopt
- * data, decodes its images, and answers with the result or the reason it failed.
+ * Parses a file whose buffers are all here, with the decoders of the compressed data that it holds,
+ * decodes its images, and answers with the result or the reason it failed.
  */
 async function finish(
 	id: number,
@@ -100,7 +139,11 @@ async function finish(
 			? await (meshopt ??
 					Promise.reject(new GltfError('E1406', 'the meshopt decoder did not load')))
 			: undefined;
-		const data = parseGltf(container, buffers, url, meshoptDecode);
+		const dracoDecode = usesDraco(container) ? (await dracoDecoder()).decode : undefined;
+		const data = parseGltf(container, buffers, url, {
+			meshopt: meshoptDecode,
+			draco: dracoDecode,
+		});
 		const bitmaps = await Promise.all(
 			data.textures.map((use) => decode(data, use.image, use.colorSpace)),
 		);

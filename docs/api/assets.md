@@ -8,7 +8,7 @@ summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadEnvironment, buil
 
 # Assets
 
-> Ships in null3D 0.1, with glTF models, color grading tables and environments from 0.2. The API is experimental, so it can still change between versions. Morph targets load but do not draw. glTF files with Draco compression do not load yet. Coding agents must not use these parts.
+> Ships in null3D 0.1, with glTF models, color grading tables and environments from 0.2. The API is experimental, so it can still change between versions. Morph targets load but do not draw. Coding agents must not use these parts.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
@@ -75,6 +75,7 @@ The prefab turns each part of the file into the engine's own:
 | An animation | A clip that a copy's animator plays, with linear, step and cubic spline keys. The job workers resample it while `loadGltf` waits |
 | A morph target | Kept with its mesh for a later version to draw. The mesh draws in its shape at rest |
 | `KHR_meshopt_compression`, `EXT_meshopt_compression` | The decoded vertex and index data, as the uncompressed file holds it. The first file with meshopt data downloads the decoder, about 6 KB after Brotli. A fallback buffer never downloads |
+| `KHR_draco_mesh_compression` | The decoded vertices and triangles. Normals and tangents become 8-bit integers, and texture coordinates between 0 and 1 become 16-bit integers. The first file with Draco data downloads Draco's decoder, about 60 KB after Brotli. Development builds warn about each such file and name the command that converts it to meshopt |
 
 Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them on, and a mesh without normals shades flat. A mesh without tangents turns the normal map's green channel over. Blended materials write no depth. The engine finds the lights near each surface by their ranges. So a point or spot light without a range ends where its light falls below 0.001 lux.
 
@@ -201,10 +202,10 @@ Each call rejects with an engine error that says how to fix the problem:
 | --- | --- |
 | [E1411](../errors/E1411.md) | The file did not download: the server answered with an error, such as 404, or the network failed |
 | [E1412](../errors/E1412.md) | The file downloaded, but the browser could not decode the image, the file was not a KTX2 file that the engine loads, the file was not valid JSON, it held no color grading table that the engine reads, or it was not an environment map of `bunx @null3d/cli assets env`. A KTX2 file also fails before it transcodes when it passes a limit, such as a side larger than `textures.maxSize` |
-| [E1416](../errors/E1416.md) | `loadGltf` got a file that is not a glTF 2.0 model it can read: broken JSON, an offset or a count past the data, a missing buffer or image, or a loop of nodes. Or the file passes a limit on what one file may decode to, as [Assets and prefabs](../concepts/assets.md#limits-on-each-file) lists |
+| [E1416](../errors/E1416.md) | `loadGltf` got a file that is not a glTF 2.0 model it can read: broken JSON, an offset or a count past the data, a missing buffer or image, or a loop of nodes. Or its Draco data does not decode to what its accessors say. Or the file passes a limit on what one file may decode to, as [Assets and prefabs](../concepts/assets.md#limits-on-each-file) lists |
 | [E1109](../errors/E1109.md) | `loadGltf` made a mesh too large for engine memory |
-| [E1417](../errors/E1417.md) | `loadGltf` got a file that requires an extension the engine does not read, such as Draco compression |
-| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader, the table readers or the environment map reader did not download, when the first such file loads |
+| [E1417](../errors/E1417.md) | `loadGltf` got a file that requires an extension the engine does not read |
+| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader or its decoders, the table readers or the environment map reader did not download, when the first such file loads |
 | [E1213](../errors/E1213.md) | `builtinEnvironment` got a name that no built-in environment has |
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
 | [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take |

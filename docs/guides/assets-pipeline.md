@@ -77,7 +77,7 @@ scene.instantiate(ship);
 
 The integers need a transform that turns them back into positions. The command puts it in the mesh's node when nothing else moves with the node. A node with children, a light, a camera or an animation keeps its transform. Its mesh then moves to a new child node of the same name. Each instance of an instancing node takes the transform too, and so do the bind matrices of a skin.
 
-Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`.
+Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`. The engine loads Draco files as well. It then downloads Draco's decoder, about 60 KB after Brotli, and development builds warn about each such file. [Compressed meshes](../concepts/assets.md#compressed-meshes) says when a Draco file is worth keeping.
 
 ## What it does to clips
 

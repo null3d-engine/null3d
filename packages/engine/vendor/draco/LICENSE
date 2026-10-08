@@ -1,73 +1,3 @@
-Third-party code in the null3D engine
-
-The @null3d/engine package ships code from the projects below, inside the files that a
-production build of a game copies. Each section names the files that hold the code, its
-licence, and the notices that the licence asks a copy to carry.
-
-A build with the null3D Vite plugin writes this text as null3d-third-party-notices.txt beside
-the page. Keep that file with the build when you publish it, or show its text in your game's
-credits. Each null3D add-on package adds its own notices to the same file.
-
-==============================================================================
-Basis Universal: the KTX2 transcoder (basis_transcoder.mjs, basis_transcoder.wasm)
-==============================================================================
-
-Basis Universal v2.50, from https://github.com/BinomialLLC/basis_universal. null3D builds the
-transcoder from the unchanged v2.50 sources with the official build's settings, changed so
-that its bindings make no code from strings and its script is an ES module for browsers.
-Apache License 2.0. Its NOTICE file:
-
-NOTICE
-
-Basis Universal™ Supercompressed GPU Texture Compression Library
-
-Copyright © 2016–2026 Binomial LLC. 
-All rights reserved except as granted under the [Apache 2.0 license](https://github.com/BinomialLLC/basis_universal/blob/master/LICENSE).
-"Basis Universal" is a trademark of Binomial LLC.
-
-The documents in the Basis Universal wiki, and the Basis Universal library, example, and tool source code, fall under the Apache 2.0 license, unless otherwise explicitly indicated. 
-
-Redistributions or derivative works must include a readable copy of the attribution notices from this NOTICE file (see Apache License 2.0 §4(d)).
-
-If you modify the Basis Universal source code, specifications, or wiki documents and redistribute the files, you must cause any modified files to carry prominent notices stating that you changed the files (see Apache 2.0 §4(b)).
-
-**This software, documentation and specifications are provided "as is", without warranty of any kind (see Apache 2.0 §§7–8).**
-
-The transcoder holds Zstandard's decoder, under this licence:
-
-BSD License
-
-For Zstandard software
-
-Copyright (c) 2016-present, Facebook, Inc. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
- * Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
- * Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
- * Neither the name Facebook nor the names of its contributors may be used to
-   endorse or promote products derived from this software without specific
-   prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-The Apache License 2.0, as Basis Universal ships it:
-
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -256,7 +186,7 @@ The Apache License 2.0, as Basis Universal ships it:
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright 2019-2026 Binomial LLC
+   Copyright [yyyy] [name of copyright owner]
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -270,59 +200,10 @@ The Apache License 2.0, as Basis Universal ships it:
    See the License for the specific language governing permissions and
    limitations under the License.
 
-==============================================================================
-meshoptimizer: the meshopt decoder (meshopt_decoder.wasm, and the gltf-meshopt file)
-==============================================================================
+--------------------------------------------------------------------------------
+Files: docs/assets/js/ASCIIMathML.js
 
-meshoptimizer 1.3.0, from https://github.com/zeux/meshoptimizer: its decoder's SIMD module, taken
-unchanged from the npm package's meshopt_decoder.mjs, and code that calls it as that file does.
-
-MIT License
-
-Copyright (c) 2016-2026 Arseny Kapoulkine
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-==============================================================================
-Draco: the Draco decoder (draco_wasm_wrapper_gltf.js, draco_decoder_gltf.wasm)
-==============================================================================
-
-Draco 1.5.7, from https://github.com/google/draco: its decoder for glTF files, the
-draco_wasm_wrapper_gltf.js script and the draco_decoder_gltf.wasm module, unchanged from the
-release's javascript folder.
-
-Copyright 2016 The Draco Authors.
-
-Licensed under the Apache License, Version 2.0, whose text the Basis Universal section above
-gives in full.
-
-==============================================================================
-three.js: the table of specular terms in the engine core (null3d_bg.wasm), and the OpenEXR
-decoders in the HDR file reader (panorama-worker.js)
-==============================================================================
-
-The values of three.js's DFG table, from three.js 0.186.1, https://github.com/mrdoob/three.js.
-The ports of EXRLoader's decoders, from the same release.
-
-The MIT License
-
-Copyright © 2010-2026 three.js authors
+Copyright (c) 2014 Peter Jipsen and other ASCIIMathML.js contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -342,102 +223,30 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-==============================================================================
-OpenEXR decoders in the HDR file reader (panorama-worker.js)
-==============================================================================
+--------------------------------------------------------------------------------
+Files: docs/assets/css/pygments/*
 
-The reader's decoders of PIZ, RLE, ZIP, PXR24 and B44 data are ports of three.js's
-EXRLoader, from three.js 0.186.1, under the MIT License that the three.js section above
-gives. EXRLoader follows TinyEXR and OpenEXR, whose notices follow.
+This is free and unencumbered software released into the public domain.
 
-Copyright (c) 2014 - 2017, Syoyo Fujita
-All rights reserved.
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the Syoyo Fujita nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
 
-Copyright (c) 2002, Industrial Light & Magic, a division of Lucas
-Digital Ltd. LLC
-
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-*       Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-*       Redistributions in binary form must reproduce the above
-copyright notice, this list of conditions and the following disclaimer
-in the documentation and/or other materials provided with the
-distribution.
-*       Neither the name of Industrial Light & Magic nor the names of
-its contributors may be used to endorse or promote products derived
-from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-==============================================================================
-Rust crates in the engine core (null3d_bg.wasm, null3d.js)
-==============================================================================
-
-The engine core is compiled from Rust with these crates, each offered under the MIT License
-or the Apache License 2.0. null3D takes them under the MIT License.
-
-- The Rust standard library: Copyright (c) The Rust Project Contributors
-- bumpalo 3.20.3: Copyright (c) 2019 Nick Fitzgerald
-- cfg-if 1.0.5: Copyright (c) 2014 Alex Crichton
-- once_cell 1.21.4: Copyright (c) Aleksey Kladov
-- wasm-bindgen 0.2.129: Copyright (c) 2014 Alex Crichton
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
+For more information, please refer to <http://unlicense.org>

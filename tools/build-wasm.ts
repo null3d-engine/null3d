@@ -656,7 +656,7 @@ async function main(): Promise<void> {
 	for (const [part, size] of parts)
 		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);
 	console.log(
-		'\nthe WebAssembly modules that load on first use: the KTX2 transcoder with the first KTX2 file, and the meshopt decoder with the first glTF file that holds meshopt data (no budget)',
+		"\nthe WebAssembly modules that load on first use: the KTX2 transcoder with the first KTX2 file, the meshopt decoder with the first glTF file that holds meshopt data, and Draco's decoder with the first glTF file that holds Draco data, a recorded exception (D-14) (no budget)",
 	);
 	for (const [file, size] of firstUseWasm) printSize(file, size);
 	for (const [file, size] of firstUseWasm) sizes[file] = size;

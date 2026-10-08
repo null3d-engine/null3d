@@ -1218,11 +1218,11 @@
       "id": "draco",
       "category": "Loaders",
       "three": "DRACOLoader + setDecoderPath",
-      "status": "changed",
+      "status": "direct",
       "since": "0.2",
-      "target": "Draco files load, but convert them to meshopt with `bunx @null3d/cli assets optimize`",
-      "notes": "meshopt decodes faster and needs no separate decoder download.",
-      "docs": "guides/assets-pipeline",
+      "target": "Built in: assets.loadGltf(url) decodes Draco data",
+      "notes": "Delete the setup and the decoder files. The engine ships Draco's glTF decoder and downloads it, about 60 KB after Brotli, with the first Draco file. Convert the files to meshopt with `bunx @null3d/cli assets optimize`: meshopt files decode faster, with a decoder of about 6 KB.",
+      "docs": "concepts/assets",
       "detect": "\\bDRACOLoader\\b|setDecoderPath"
     },
     {

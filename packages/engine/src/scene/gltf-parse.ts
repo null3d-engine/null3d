@@ -8,8 +8,8 @@
 // the images that the file holds, and the loader those it names by address. It allocates only what
 // it returns, so a file with huge counts fails with E1416 before it allocates anything.
 //
-// Buffer views compressed with meshopt decode on first use, through the decoder that the caller
-// passes in. The worker loads the decoder only for a file that holds meshopt data.
+// Buffer views compressed with meshopt, and primitives compressed with Draco, decode through the
+// decoders that the caller passes in. The worker loads each decoder only for a file that needs it.
 //
 // The module imports only its sibling modules of the glTF worker, so the worker's bundle holds no
 // engine code.
@@ -58,6 +58,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'EXT_mesh_gpu_instancing',
 	'KHR_meshopt_compression',
 	'EXT_meshopt_compression',
+	'KHR_draco_mesh_compression',
 ];
 
 /**
@@ -86,6 +87,49 @@ export type MeshoptDecode = (
 	mode: string,
 	filter: string,
 ) => void;
+
+/** The extension that compresses a primitive's vertices and triangles with Draco. */
+const DRACO = 'KHR_draco_mesh_compression';
+
+/** One attribute that a primitive's Draco data holds, as its accessor describes it. */
+export interface DracoAttribute {
+	/** The attribute's id in the Draco data. */
+	id: number;
+	/** Its glTF name, such as NORMAL, which decides whether the decoder quantizes its floats. */
+	name: string;
+	componentType: number;
+	components: number;
+	normalized: boolean;
+}
+
+/** What one primitive's Draco data must decode to, as its accessors give it. */
+export interface DracoRequest {
+	/** The vertices of every attribute. */
+	vertices: number;
+	/** The indices that the primitive's index accessor holds, or undefined without one. */
+	indices: number | undefined;
+	attributes: DracoAttribute[];
+	/** Takes the bytes of each array from the file's budget before the decoder makes it. */
+	take(bytes: number, what: string): void;
+}
+
+/**
+ * A primitive's decoded arrays: each attribute in the order of the request, in its accessor's type
+ * or quantized into a smaller one, and three indices per triangle.
+ */
+export interface DracoDecoded {
+	attributes: { array: AccessorArray; componentType: number; normalized: boolean }[];
+	indices: Uint16Array | Uint32Array;
+}
+
+/** Decodes one primitive's Draco data. Throws when it does not decode to what the request says. */
+export type DracoDecode = (source: Uint8Array, request: DracoRequest) => DracoDecoded;
+
+/** The decoders that a file's compressed data needs. */
+export interface GltfDecoders {
+	meshopt?: MeshoptDecode;
+	draco?: DracoDecode;
+}
 
 /**
  * The strides that each meshopt mode and filter allow, as the extension's rules give them. Tables
@@ -119,6 +163,21 @@ function meshoptOf(value: unknown): Entry | undefined {
 export function usesMeshopt(container: GltfContainer): boolean {
 	const views = container.json.bufferViews;
 	return Array.isArray(views) && views.some((view) => meshoptOf(view) !== undefined);
+}
+
+/** True when a primitive of a file holds Draco data, which only the Draco decoder reads. */
+export function usesDraco(container: GltfContainer): boolean {
+	const meshes = container.json.meshes;
+	return (
+		Array.isArray(meshes) &&
+		meshes.some(
+			(mesh) =>
+				Array.isArray((mesh as Entry | null)?.primitives) &&
+				((mesh as Entry).primitives as unknown[]).some(
+					(primitive) => ((primitive as Entry | null)?.extensions as Entry | undefined)?.[DRACO],
+				),
+		)
+	);
 }
 
 /**
@@ -404,6 +463,8 @@ export interface GltfData {
 	animation?: AnimationData;
 	/** What the parser left out, such as points and lines, for a warning in development builds. */
 	notes: string[];
+	/** True when the file holds Draco data, which development builds warn about. */
+	draco?: true;
 }
 
 /** The parts of a glTF file's JSON that the parser reads. */
@@ -499,16 +560,18 @@ export function readContainer(file: Uint8Array, url: string): GltfContainer {
 
 /**
  * Parses a file whose container `readContainer` read, with the bytes of each buffer that it names
- * by address. `decode` reads buffer views of meshopt data. Without it, such a view reads its
- * fallback buffer, when the caller gives that buffer's bytes. Throws a `GltfError`.
+ * by address. The meshopt decoder reads buffer views of meshopt data. Without it, such a view reads
+ * its fallback buffer, when the caller gives that buffer's bytes. The Draco decoder reads
+ * primitives of Draco data. Throws a `GltfError`.
  */
 export function parseGltf(
 	container: GltfContainer,
 	externalBuffers: ReadonlyMap<number, Uint8Array>,
 	url: string,
-	decode?: MeshoptDecode,
+	decoders: GltfDecoders = {},
 ): GltfData {
 	const { json } = container;
+	const decode = decoders.meshopt;
 	const notes: string[] = [];
 	let sourceBytes = container.bytes;
 	for (const bytes of externalBuffers.values()) sourceBytes += bytes.length;
@@ -686,12 +749,86 @@ export function parseGltf(
 		}
 	};
 
+	let draco = false;
+	/**
+	 * Decodes a primitive's Draco data, and returns its triangles and a reader that gives the
+	 * decoded arrays for the accessors of the attributes that the data holds. Undefined for a
+	 * primitive without Draco data.
+	 */
+	const dracoOf: DracoReader = (primitive, what) => {
+		const extension = (primitive.extensions as Entry | undefined)?.[DRACO];
+		if (extension === undefined) return undefined;
+		draco = true;
+		const name = `${what}'s Draco data`;
+		const data = entry(extension, name);
+		if (!decoders.draco) broken(`${what} holds Draco data, and the parser has no decoder`);
+		const attributes = entry(primitive.attributes, `${what}'s attributes`);
+		const source = viewOf(index(data.bufferView, views.length, `${name}'s bufferView`)).bytes;
+		let vertices = -1;
+		const wanted: DracoAttribute[] = [];
+		const accessorOf: number[] = [];
+		for (const [attribute, id] of Object.entries(entry(data.attributes, `${name}'s attributes`))) {
+			if (attributes[attribute] === undefined)
+				broken(`${name} holds ${attribute}, which the primitive's attributes do not name`);
+			const k = index(attributes[attribute], accessors.length, `${what}'s ${attribute}`);
+			const accessor = accessors[k] as Entry;
+			const components = TYPES.get(accessor.type);
+			if (components === undefined) broken(`accessor ${k} has the type ${String(accessor.type)}`);
+			const componentType = Number(accessor.componentType);
+			if (!COMPONENTS[componentType])
+				broken(`accessor ${k} has the component type ${String(accessor.componentType)}`);
+			const n = count(accessor.count, `accessor ${k}'s count`);
+			if (vertices >= 0 && n !== vertices)
+				broken(`${what}'s ${attribute} has ${n} values, and its other attributes ${vertices}`);
+			vertices = n;
+			accessorOf.push(k);
+			wanted.push({
+				id: count(id, `${name}'s id of ${attribute}`),
+				name: attribute,
+				componentType,
+				components,
+				normalized: accessor.normalized === true,
+			});
+		}
+		if (vertices < 0) broken(`${name} holds no attributes`);
+		const indices =
+			primitive.indices === undefined
+				? undefined
+				: count(
+						(accessors[index(primitive.indices, accessors.length, `${what}'s indices`)] as Entry)
+							.count,
+						`${what}'s indices count`,
+					);
+		let decoded: DracoDecoded;
+		try {
+			decoded = (decoders.draco as DracoDecode)(source, {
+				vertices,
+				indices,
+				attributes: wanted,
+				take: (bytes, part) => budget.take(bytes, `${what}'s ${part}`),
+			});
+		} catch (error) {
+			if (error instanceof GltfError) throw error;
+			broken(`${name} does not decode: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		const arrays = new Map<number, ReturnType<Reader>>();
+		decoded.attributes.forEach((array, i) => {
+			const k = accessorOf[i] as number;
+			const { components } = wanted[i] as DracoAttribute;
+			arrays.set(k, { ...array, components, count: vertices, accessor: accessors[k] as Entry });
+		});
+		return {
+			read: (k, part, shared) => arrays.get(k) ?? read(k, part, shared),
+			indices: decoded.indices,
+		};
+	};
+
 	const meshes = list(json.meshes, 'meshes').map((value, k): MeshData => {
 		const mesh = entry(value, `mesh ${k}`);
 		const primitives: PrimitiveData[] = [];
 		list(mesh.primitives, `mesh ${k}'s primitives`).forEach((p, j) => {
 			const what = `mesh ${k}'s primitive ${j}`;
-			const primitive = parsePrimitive(entry(p, what), what, read, budget, notes);
+			const primitive = parsePrimitive(entry(p, what), what, read, budget, notes, dracoOf);
 			if (primitive) primitives.push(primitive);
 		});
 		const data: MeshData = { name: text(mesh.name), primitives };
@@ -901,6 +1038,7 @@ export function parseGltf(
 	const animation = parseAnimation(json, nodes, meshes, place, read, budget, notes);
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
+	if (draco) data.draco = true;
 	return data;
 }
 
@@ -1044,19 +1182,33 @@ const ATTRIBUTES: readonly [
 	['WEIGHTS_0', 'weights', [4], { [FLOAT]: false, [UNSIGNED_BYTE]: true, [UNSIGNED_SHORT]: true }],
 ];
 
+/**
+ * A primitive's decoded Draco data: its triangles, and a reader that gives the decoded arrays of
+ * the attributes that the data holds. Undefined for a primitive without Draco data.
+ */
+type DracoReader = (
+	primitive: Entry,
+	what: string,
+) => { read: Reader; indices: Uint16Array | Uint32Array } | undefined;
+
 /** One primitive's vertex arrays and triangles, or undefined for points and lines, which it notes. */
 function parsePrimitive(
 	primitive: Entry,
 	what: string,
-	read: Reader,
+	fileRead: Reader,
 	budget: FileBudget,
 	notes: string[],
+	dracoOf: DracoReader,
 ): PrimitiveData | undefined {
-	const mode = Number(primitive.mode ?? TRIANGLES);
+	let mode = Number(primitive.mode ?? TRIANGLES);
 	if (mode !== TRIANGLES && mode !== TRIANGLE_STRIP && mode !== TRIANGLE_FAN) {
 		notes.push(`${what} draws points or lines, which the engine does not draw from glTF files yet`);
 		return undefined;
 	}
+	// Draco data decodes to a list of triangles, whatever mode the primitive gives.
+	const draco = dracoOf(primitive, what);
+	const read = draco?.read ?? fileRead;
+	if (draco) mode = TRIANGLES;
 	const attributes = entry(primitive.attributes, `${what}'s attributes`);
 	if (attributes.POSITION === undefined) broken(`${what} has no POSITION attribute`);
 	const out: Partial<PrimitiveData> = {};
@@ -1088,8 +1240,8 @@ function parsePrimitive(
 			out.max = [max[0] as number, max[1] as number, max[2] as number];
 		}
 	}
-	let indices: Uint16Array | Uint32Array | undefined;
-	if (primitive.indices !== undefined) {
+	let indices: Uint16Array | Uint32Array | undefined = draco?.indices;
+	if (!draco && primitive.indices !== undefined) {
 		const data = read(Number(primitive.indices), `${what}'s indices`);
 		if (
 			data.components !== 1 ||
@@ -1104,15 +1256,15 @@ function parsePrimitive(
 			budget.take(data.array.length * 2, `${what}'s indices`);
 			indices = Uint16Array.from(data.array);
 		} else indices = data.array;
-		for (const i of indices)
-			if (i >= vertices) broken(`${what} has the index ${i}, past its ${vertices} vertices`);
 	}
+	for (const i of indices ?? [])
+		if (i >= vertices) broken(`${what} has the index ${i}, past its ${vertices} vertices`);
 	if (mode !== TRIANGLES) indices = toTriangles(indices, vertices, mode, budget, what);
 	const corners = indices ? indices.length : vertices;
 	if (corners % 3 !== 0) broken(`${what} has ${corners} corners, which make no whole triangles`);
 	if (vertices === 0) return undefined;
 	const colors = out.colors ? out.colors.array.length / vertices : 0;
-	const morph = parseMorphTargets(primitive, vertices, colors, what, read, budget, notes);
+	const morph = parseMorphTargets(primitive, vertices, colors, what, fileRead, budget, notes);
 	if (morph) out.morph = morph;
 	const material =
 		primitive.material === undefined ? -1 : count(primitive.material, `${what}'s material`);
