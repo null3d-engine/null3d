@@ -761,7 +761,8 @@ impl CpuCulledRenderer {
     /// multi-draw arrays, the cascades' and the tiles' uniform blocks, the final pass's settings,
     /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
-        self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
+        self.upload_bound_without_clusters()
+            + self.clusters.pending_bytes(&self.layout, &self.casters)
     }
 
     /// [`Self::upload_bound`] without the cluster orders.
@@ -1160,7 +1161,8 @@ impl CpuCulledRenderer {
         let meshes = self.settings.meshes();
         self.skins
             .upload(list, arena, input.animations, input.morphs, meshes)?;
-        self.clusters.upload(list, arena, &self.layout)?;
+        self.clusters
+            .upload(list, arena, &self.layout, &self.casters)?;
         self.light_textures
             .upload(list, arena, &mut self.lights, input.frame)?;
 

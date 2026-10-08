@@ -33,7 +33,7 @@ use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
-use null3d_core::scene::{CommandRing, SceneStorage};
+use null3d_core::scene::{CommandRing, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
@@ -1327,6 +1327,23 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         Ok(batch) => {
             batch.set_layers(mask);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
+/// Sets whether every row of a batch casts shadows and receives them, from the cast and receive
+/// bits of an object's flags. Sprite and line batches take neither. The renderer's tables depend on
+/// the bits, so a change rebuilds them, as an object's new flags do.
+#[wasm_bindgen(js_name = setBatchShadows)]
+pub fn set_batch_shadows(batch: u32, bits: u32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            if batch.shadows() != bits & flags::SHADOWS {
+                batch.set_shadows(bits);
+                e.structure_changed = true;
+            }
             0
         }
         Err(error) => core_failure(error),

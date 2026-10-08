@@ -67,6 +67,7 @@
 
 use null3d_core::cells::{CellCoords, CellPosition};
 use null3d_core::culling::Frustum;
+use null3d_core::handle::Handle;
 use null3d_core::lights::{LightShadow, NOT_VISIBLE, VisibleLight, kind};
 use null3d_core::morph::NOT_LINKED;
 use null3d_core::scene::{SceneStorage, flags};
@@ -305,6 +306,15 @@ impl Caster {
     }
 }
 
+/// An instance batch that casts shadows, with its layers and active rows as the module last saw
+/// them.
+#[derive(Clone, Copy, Debug)]
+struct BatchCaster {
+    id: Handle,
+    layers: u32,
+    active: u32,
+}
+
 /// A light that the frame gives tiles: its place in the shadow list, its first tile, its tiles,
 /// and its position relative to the camera.
 #[derive(Clone, Copy, Debug)]
@@ -340,6 +350,8 @@ pub struct ShadowTiles {
     casters_known: bool,
     /// The scene slots of skinned and morphed objects, while `casters_known` holds.
     posed: Vec<u32>,
+    /// The instance batches that cast shadows, while `casters_known` holds.
+    batches: Vec<BatchCaster>,
     /// The last frame whose draw list created a pipeline.
     last_new_pipeline: u32,
 }
@@ -366,6 +378,7 @@ impl ShadowTiles {
             casters: Vec::new(),
             casters_known: false,
             posed: Vec::new(),
+            batches: Vec::new(),
             last_new_pipeline: 0,
         }
     }
@@ -431,6 +444,7 @@ impl ShadowTiles {
         }
         self.mark_moved_casters(input, shadows);
         self.mark_posed_casters(input, shadows);
+        self.mark_moved_batches(input, shadows);
         self.uniform = TileUniform::default();
         let size = shape.size as f32;
         self.uniform.kernel = [size, 1.0 / size, filter as f32, 0.0];
@@ -794,6 +808,24 @@ impl ShadowTiles {
                     self.posed.push(slot as u32);
                 }
             }
+            self.batches.clear();
+            let casting = || {
+                input
+                    .batches
+                    .iter()
+                    .filter(|(_, batch)| batch.shadows() & flags::CAST_SHADOWS != 0)
+            };
+            if self.batches.try_reserve(casting().count()).is_err() {
+                self.slots.iter_mut().for_each(|slot| slot.clean = false);
+                return;
+            }
+            let parity = input.parity();
+            self.batches
+                .extend(casting().map(|(id, batch)| BatchCaster {
+                    id,
+                    layers: batch.layers(),
+                    active: batch.frame_active_count(parity),
+                }));
             self.casters_known = true;
             self.slots.iter_mut().for_each(|slot| slot.clean = false);
             return;
@@ -812,6 +844,62 @@ impl ShadowTiles {
                     self.mark(shadows, &before, &now);
                 }
             }
+        }
+    }
+
+    /// Marks the tiles whose views a row of a casting batch touches, before or after its move, as
+    /// tiles that must draw, for each row that the batch's update changed in this frame. A batch
+    /// whose active count or layers changed marks every tile.
+    fn mark_moved_batches(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+        if !self.casters_known {
+            return;
+        }
+        let parity = input.parity();
+        let table = input.scene.cell_table();
+        let mut all = false;
+        for k in 0..self.batches.len() {
+            let known = self.batches[k];
+            let Ok(batch) = input.batches.get(known.id) else {
+                all = true;
+                continue;
+            };
+            let (layers, active) = (batch.layers(), batch.frame_active_count(parity));
+            if layers != known.layers || active != known.active {
+                self.batches[k] = BatchCaster {
+                    layers,
+                    active,
+                    ..known
+                };
+                all = true;
+                continue;
+            }
+            if batch.frame() != input.frame {
+                continue;
+            }
+            let (now, before) = (batch.world(parity), batch.world(parity ^ 1));
+            let cells = batch.cells();
+            for range in batch.changed_ranges() {
+                let (start, end) = (
+                    range.start as usize,
+                    (range.start + range.count).min(active),
+                );
+                for (row, &cell) in cells.iter().enumerate().take(end as usize).skip(start) {
+                    let (before, now) = (before.sphere(row), now.sphere(row));
+                    if before == now {
+                        continue;
+                    }
+                    let caster = |sphere| Caster {
+                        sphere,
+                        cell: table.coords(cell),
+                        layers,
+                        ..Caster::default()
+                    };
+                    self.mark(shadows, &caster(before), &caster(now));
+                }
+            }
+        }
+        if all {
+            self.slots.iter_mut().for_each(|slot| slot.clean = false);
         }
     }
 

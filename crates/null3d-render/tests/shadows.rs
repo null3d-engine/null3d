@@ -744,3 +744,41 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
     world.step(&mut mock, true);
     assert_eq!(drawn(&world.step(&mut mock, false)).0.len(), 2);
 }
+
+#[test]
+fn a_batch_that_casts_draws_into_each_cascade_and_one_that_receives_reads_the_map() {
+    let mut world = World::new();
+    world.renderer.settings_mut().set_sun_shadow(Some(SUN));
+    let both = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    world
+        .batches
+        .get_mut(world.batch)
+        .unwrap()
+        .set_shadows(both);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+
+    // No scene object casts, so each cascade's bundle draws the batch alone.
+    let bundles = bundles(&commands);
+    let cascades: Vec<_> = bundles
+        .values()
+        .filter(|(formats, _)| formats[0] == format::NONE)
+        .collect();
+    assert_eq!(cascades.len(), 3);
+    for (_, draws) in cascades {
+        assert_eq!(*draws, 1, "the batch's draw");
+    }
+    let pipelines = operands(&commands, Op::CreateRenderPipeline);
+    assert!(pipelines.iter().any(|p| p[1] == template::SHADOW_DEPTH));
+    let receiving = |p: &&Vec<u32>| p[2] & permutation::RECEIVE_SHADOWS != 0;
+    assert!(
+        pipelines
+            .iter()
+            .filter(|p| p[1] == template::INSTANCED_LIT)
+            .any(|p| receiving(&p)),
+        "the batch reads the shadow map"
+    );
+}

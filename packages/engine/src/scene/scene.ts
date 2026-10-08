@@ -266,6 +266,13 @@ export interface InstanceOptions {
 	 * planet, an origin among its rows.
 	 */
 	origin?: Vec3;
+	/**
+	 * True makes every row cast the shadows of the lights that cast them, as `castShadows` does for
+	 * a mesh. The default is false.
+	 */
+	castShadows?: boolean;
+	/** True makes shadows fall on every row, as `receiveShadows` does for a mesh. The default is false. */
+	receiveShadows?: boolean;
 }
 
 /**
@@ -274,9 +281,15 @@ export interface InstanceOptions {
  * @category api/scene
  */
 export interface InstantiateOptions extends NodeOptions {
-	/** True makes every mesh of the copy cast the shadows of a directional light. The default is false. */
+	/**
+	 * True makes every mesh of the copy, and every row of its instance batches, cast the shadows of
+	 * the lights that cast them. The default is false.
+	 */
 	castShadows?: boolean;
-	/** True makes shadows fall on every mesh of the copy. The default is false. */
+	/**
+	 * True makes shadows fall on every mesh of the copy, and on every row of its instance batches.
+	 * The default is false.
+	 */
 	receiveShadows?: boolean;
 	/**
 	 * True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on
@@ -1912,6 +1925,34 @@ export class InstanceBatch {
 	}
 
 	/**
+	 * Makes every row cast the shadows of the lights that cast them, or stop, as
+	 * `Object3D.setCastShadows` does for a mesh. The default is false. A change rebuilds the
+	 * engine's tables of what it draws.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setShadowBit('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+
+	/**
+	 * Makes shadows fall on every row, or stop, as `Object3D.setReceiveShadows` does for a mesh. The
+	 * default is false. Unlit materials show no shadows. A change rebuilds the engine's tables of
+	 * what it draws.
+	 */
+	setReceiveShadows(receive: boolean): void {
+		this.setShadowBit('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	private shadowBits = 0;
+
+	private setShadowBit(call: string, bit: number, on: boolean): void {
+		const bits = on ? this.shadowBits | bit : this.shadowBits & ~bit;
+		const { core } = this.scene;
+		core.check(core.glue.setBatchShadows(this.id, bits), call, undefined, true);
+		for (const part of this.parts) core.glue.setBatchShadows(part, bits);
+		this.shadowBits = bits;
+	}
+
+	/**
 	 * Calls `handler` for each pointer event of `type` on a row of the batch, as `Object3D.on` does.
 	 * The event's `instance` names the row.
 	 */
@@ -2743,7 +2784,7 @@ export class Scene {
 		try {
 			prefab.animate(objects);
 			for (const spec of prefab.instancing)
-				batches.push(this.placeInstancing(instance, spec, call, options.layers));
+				batches.push(this.placeInstancing(instance, spec, call, options));
 		} catch (error) {
 			// The animation table or the batch table is full: the copy goes whole, so the sketch
 			// holds no part of it that it cannot reach.
@@ -2929,13 +2970,13 @@ export class Scene {
 	 * The instance batch of a node of a model with instancing of its own. Each row takes its
 	 * transform from the file, after the node's place in the world when the copy is created. The
 	 * node's place is the batch's origin, so the rows keep their precision far from the world's
-	 * origin.
+	 * origin. The copy's layers and shadow options reach every row.
 	 */
 	private placeInstancing(
 		instance: PrefabInstance,
 		spec: InstancingTemplate,
 		call: string,
-		layers?: number,
+		{ layers, castShadows, receiveShadows }: InstantiateOptions,
 	): InstanceBatch {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
@@ -2952,7 +2993,12 @@ export class Scene {
 			object = object.liveParent;
 		}
 		const origin: Vec3 = [world[12] as number, world[13] as number, world[14] as number];
-		const batch = this.createParts(spec.parts, spec.count, { origin, layers }, call);
+		const batch = this.createParts(
+			spec.parts,
+			spec.count,
+			{ origin, layers, castShadows, receiveShadows },
+			call,
+		);
 		const { positions, rotations, scales } = batch;
 		for (let r = 0; r < spec.count; r++) {
 			trs(spec.positions.subarray(r * 3, r * 3 + 3), spec.rotations, spec.scales, r);
@@ -3004,6 +3050,8 @@ export class Scene {
 		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1), uses);
 		this.rememberBatch(batch);
 		if (options.layers !== undefined) batch.setLayers(options.layers);
+		if (options.castShadows) batch.setCastShadows(true);
+		if (options.receiveShadows) batch.setReceiveShadows(true);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
@@ -3065,6 +3113,8 @@ export class Scene {
 		this.rememberBatch(batch);
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
+		if (options.castShadows) batch.setCastShadows(true);
+		if (options.receiveShadows) batch.setReceiveShadows(true);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}

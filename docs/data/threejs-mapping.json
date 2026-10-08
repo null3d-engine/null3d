@@ -374,7 +374,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
-      "notes": "Both are false by default, as in three.js. The directional light, spot lights and point lights cast them on both GPU paths; point lights where the preset's pointLightShadows is on. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
+      "notes": "Both are false by default, as in three.js. The directional light, spot lights and point lights cast them on both GPU paths; point lights where the preset's pointLightShadows is on. Unlit materials show no shadows. An instance batch takes castShadows and receiveShadows in createInstances, or batch.setCastShadows(true) / setReceiveShadows(true), for every row (since 0.2).",
       "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },
@@ -1287,7 +1287,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createInstances(mesh, count, { material, dynamic, colors }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array, which is stored, and draws from 0.2. Prefabs from glTF models come in 0.2.",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array, which is stored, and draws from 0.2. Prefabs from glTF models come in 0.2. castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2).",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },

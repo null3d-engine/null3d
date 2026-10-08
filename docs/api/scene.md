@@ -60,7 +60,7 @@ Groups, meshes, cameras and lights take the same object options: `name`, `positi
 
 ## Models and copies
 
-`scene.instantiate(prefab, options)` creates the objects of a model that [`assets.loadGltf`](assets.md#gltf-models) loaded. It returns a `PrefabInstance`: a group that holds the copy of the file's nodes. The `options` place that group as they place any object. Every copy shares the model's meshes, materials and textures, so a second copy costs only its objects. `castShadows` and `receiveShadows` apply to every mesh of the copy. The engine reserves the places of all the copy's objects with one call, and queues their changes as one batch. So no frame shows part of a copy.
+`scene.instantiate(prefab, options)` creates the objects of a model that [`assets.loadGltf`](assets.md#gltf-models) loaded. It returns a `PrefabInstance`: a group that holds the copy of the file's nodes. The `options` place that group as they place any object. Every copy shares the model's meshes, materials and textures, so a second copy costs only its objects. `castShadows` and `receiveShadows` apply to every mesh of the copy, and to every row of the instance batches of nodes with instancing of their own. The engine reserves the places of all the copy's objects with one call, and queues their changes as one batch. So no frame shows part of a copy.
 
 ```ts
 const ship = await assets.loadGltf('/models/ship.glb');

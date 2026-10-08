@@ -1084,6 +1084,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same scene with every object a row of an instance batch, static or dynamic: batch rows cast
+	// and receive shadows as objects do, so they borrow the shadows test's references.
+	...['', 'dynamic'].map(
+		(kind): ImageTest => ({
+			name: kind === '' ? 'shadows-batches' : `shadows-batches-${kind}`,
+			sketch: `tests/pages/sketches/shadows-sketch.ts?batches=${kind}`,
+			hold: 0,
+			size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+			reference: 'shadows',
+		}),
+	),
 	// Spot light shadows: two spot lights, each with a tile of the shadow atlas, over casters that
 	// receive shadows, a receiver that casts none, a caster that receives none, and an unlit box.
 	// The tile size is fixed, as the presets of the GPU tiers differ. Both GPU paths draw the same

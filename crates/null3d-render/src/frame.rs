@@ -1550,14 +1550,18 @@ impl SceneSettings {
         if fitter != slot {
             cascades.seen_from(fitted, absolute, shadow.map_size);
         }
-        self.moving_casters.update(scene, input.structure_changed);
+        self.moving_casters
+            .update(scene, input.batches, input.structure_changed);
         let moving = &self.moving_casters;
         let drawn = self.shadow_schedule.plan(
             &mut cascades,
             absolute,
             shadow.map_size,
             quality.far_interval,
-            |bounds| quality.follow_movers && moving.touch(scene, parity, shadow.layers, bounds),
+            |bounds| {
+                quality.follow_movers
+                    && moving.touch(scene, input.batches, parity, shadow.layers, bounds)
+            },
         );
         Some(ShadowFrame {
             cascades,

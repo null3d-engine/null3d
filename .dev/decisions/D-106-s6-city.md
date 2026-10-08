@@ -51,7 +51,7 @@ Texture sharing: today two model files that name one texture each upload their o
 | --- | --- | --- | --- |
 | Object limit | (a) A fixed limit of 32,767 for every engine | One line | About 5 MB more for every engine, scenes of 10 objects included |
 | | (b) A `createEngine` start option, default 16,383 | Pays only where asked | A page must know its count before it starts |
-| | (c) Instance batches for small props | No engine change | Batch rows neither cast nor receive shadows, so roads would lose the buildings' shadows |
+| | (c) Instance batches for small props | No engine change | Batch rows neither cast nor receive shadows (until M2-R6), so roads would lose the buildings' shadows |
 | | (d) Tables that grow on demand (chosen) | Every scene pays for what it holds | Engine work: a copy of the tables when they grow |
 | Load | (a) Tiles nearest the camera first, with textures shared between files | The finest stream | Needs texture sharing in the engine first |
 | | (b) Two stages: the kit file, then the tower file (chosen) | No engine change; each texture loads once | The towers' textures arrive as one block |

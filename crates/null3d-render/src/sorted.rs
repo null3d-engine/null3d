@@ -297,9 +297,14 @@ impl SortedLayout {
                 SkinnedPipeline::Waiting(_) => None,
             }
         };
-        // Instance batches receive no shadows yet.
+        // Instance batches receive shadows as their shadow bits say.
         let batch_key = |index: usize, batch: &InstanceBatch| {
-            key_of(batch.mesh(), batch.material(), place(index, batch).1, 0)
+            key_of(
+                batch.mesh(),
+                batch.material(),
+                place(index, batch).1,
+                batch.shadows(),
+            )
         };
         collect_bucket_keys(&mut self.key_counts, scene, batches, scene_key, batch_key);
 

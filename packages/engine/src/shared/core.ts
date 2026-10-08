@@ -210,6 +210,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
+	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
+	setBatchShadows(batch: number, bits: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
 	/**
@@ -756,6 +758,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'batchArrays',
 	'setBatchActiveCount',
 	'setBatchLayers',
+	'setBatchShadows',
 	'markBatchDirty',
 	'memoryEpoch',
 	'queryArrays',
