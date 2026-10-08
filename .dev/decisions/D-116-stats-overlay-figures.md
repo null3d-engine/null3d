@@ -189,6 +189,19 @@ The owner approved this fix on 8 October 2026, after the Galaxy S24 run above.
 
 **The card.** The legend now has four items, since `GPU textures` and `GPU buffers` replace `GPU`. They wrap onto two lines in the card's width. The split shows at once whether a scene's memory is in images or in rows and vertices. The memory bar's parts still add up to the total in its heading, and the stats test checks it. The type `StatsMemory` gives `gpuTextureBytes` and `gpuBufferBytes` in place of `textureBytes` and `meshBytes`. The type `FrameStats` keeps the scene's `textureBytes` and `meshBytes` beside the new figures.
 
+**Figures.** All runs are from 8 October 2026, in Chrome on the owner's Mac (Apple M5 Max). The instances demo ran on the dev server at 1440 x 900, with `?stats=open`, and the card was read after 6 seconds:
+
+| Path | Before | After |
+| --- | --- | --- |
+| WebGPU, High | GPU 0.0 MiB | GPU textures 37.7 MiB, GPU buffers 3.4 MiB |
+| WebGL2, Medium | GPU 0.0 MiB | GPU textures 61.0 MiB, GPU buffers 2.7 MiB |
+
+The memory total grew from 29.8 to 70.9 MiB on WebGPU, and from 30.0 to 93.8 MiB on WebGL2. The canvas's targets and the engine's buffers make up the GPU parts, since the demo has no textures and no shadow map. Its 10,000 rows take 0.6 MiB of the buffers.
+
+- **Browser tests.** The stats test adds 20,000 instance rows and turns on the shadows of the first directional light. It checks that the buffers hold at least 64 bytes per row, and the textures at least 2 bytes per texel of each shadow cascade. It passes on both GPU paths, in Chrome on the Mac's GPU and with `CI=1`, with the production build too. The other 26 stats tests pass both ways.
+- **Allocation.** `bun run bench:allocation` on S1, bytes per frame of the sketch worker and the render worker. Hidden: WebGPU 327 and 568, WebGL2 376 and 161, the figures of a page without the overlay. Open (`--stats`): WebGPU 310 and 652, WebGL2 371 and 182. All four pass, and no place of the new code allocates.
+- **Size.** Against the branch before this fix, after Brotli: `page-renderer.js` grows by 604 B (1.9%), `sketch-worker-renderer.js` by 545 B and `render-worker.js` by 503 B. The overlay's file grows by 119 B, and the reader of the culled counts by 71 B. The pipelined start takes 137.5 KB of its 140 KB budget, up from 136.9 KB.
+
 ## The whole-page line when the browser never answers
 
 On the Galaxy S24, `performance.measureUserAgentSpecificMemory` did not answer within a minute, and the line stayed on `measuring`. The owner approved this fix on 8 October 2026.
