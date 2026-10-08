@@ -293,6 +293,11 @@ function showError(environment: DevEnvironment, error: WgslError): void {
 	});
 }
 
+/** Prints the warnings of WGSL that a hot update compiled, in the dev server's log. */
+function showWarnings(environment: DevEnvironment, warnings: readonly string[]): void {
+	for (const warning of warnings) environment.logger.warn(warning, { timestamp: true });
+}
+
 /** The modules of a changed file that Vite still updates: all but the one the plugin compiled. */
 function otherModules(modules: readonly EnvironmentModuleNode[], file: string) {
 	return modules.filter((module) => module.id !== file);
@@ -491,6 +496,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				const path = projectPath(root, id);
 				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), compiler);
 				if ('error' in compiled) return this.error(compiled.error);
+				for (const warning of compiled.warnings) this.warn(warning);
 				const key = keyOf(id, path);
 				if (key !== undefined) hot.remember(key, compiled.shader);
 				if (options.wgslDeclarations !== false && !PACKAGE_MODULE.test(id)) {
@@ -521,6 +527,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					const path = projectPath(root, file);
 					const tagged = await compileTaggedWgsl(code, file, path, compiler);
 					if ('error' in tagged) return this.error(tagged.error);
+					for (const warning of tagged.warnings) this.warn(warning);
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
@@ -566,6 +573,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					showError(environment, compiled.error);
 					return otherModules(modules, file);
 				}
+				showWarnings(environment, compiled.warnings);
 				const key = hotKey(path);
 				// Without a hot update, Vite reloads the page as it does for any module.
 				if (!hot.swaps(key, compiled.shader)) return;
@@ -587,6 +595,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					showError(environment, result.error);
 					return otherModules(modules, file);
 				}
+				showWarnings(environment, result.warnings);
 				const key = hotKey(path, changed[k]?.index);
 				if (!hot.swaps(key, result.shader)) return;
 				updates.push({ key, shader: result.shader });

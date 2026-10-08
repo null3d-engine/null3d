@@ -8,8 +8,8 @@ use common::{
     SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
 };
 use null3d_shaders::{
-    ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs,
-    literals_safari_refuses, typescript,
+    ALLOWED_LANGUAGE_FEATURES, Binding, Compiler, GlslTexture, GlslUniformBlock, Inputs,
+    ShaderSource, literals_safari_refuses, typescript,
 };
 use precision::{newer_built_in_calls, precision_breaks};
 
@@ -580,6 +580,60 @@ fn flat_interpolation_without_either_is_rejected() {
         );
         assert!(problem.message.ends_with(SEE_RULES), "{problem}");
     }
+}
+
+/// A compute shader that claims a slot with an atomic compare-exchange.
+const COMPARE_EXCHANGE: &str = r"var<workgroup> slots: array<atomic<u32>, 64>;
+
+@compute @workgroup_size(64)
+fn cs_main(@builtin(local_invocation_index) lane: u32) {
+    let claim = atomicCompareExchangeWeak(&slots[lane], 0u, 1u);
+}
+";
+
+#[test]
+fn atomic_compare_exchange_fails_the_engines_shader_build() {
+    let source = COMPARE_EXCHANGE;
+    let problem = only_problem(build_wgsl(source));
+    assert_eq!(problem.file.as_deref(), Some(SHADER));
+    assert_eq!(
+        (problem.line, problem.column),
+        (
+            Some(5),
+            Some(column_of(source, 5, "atomicCompareExchangeWeak"))
+        )
+    );
+    assert!(problem.message.contains("Safari 27.0"), "{problem}");
+    assert!(problem.message.ends_with(SEE_RULES), "{problem}");
+}
+
+#[test]
+fn atomic_compare_exchange_in_a_users_shader_builds_with_a_warning() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let inputs = Inputs::read(&root).expect("the repository's shaders");
+    let mut compiler = Compiler::new(&inputs.files).expect("the shader library");
+    let shader: ShaderSource = serde_json::from_value(serde_json::json!({
+        "path": SHADER,
+        "source": COMPARE_EXCHANGE,
+        "variants": { "webgpu": { "targets": ["wgsl"] } },
+    }))
+    .expect("a shader source");
+    let built = compiler.compile(&shader).expect("the user's shader builds");
+    assert!(built["webgpu"].wgsl.is_some());
+    let warnings = compiler.take_warnings();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let warning = &warnings[0];
+    assert_eq!(
+        (warning.line, warning.column),
+        (
+            Some(5),
+            Some(column_of(COMPARE_EXCHANGE, 5, "atomicCompareExchangeWeak"))
+        )
+    );
+    assert_eq!(warning.variants, ["webgpu"]);
+    assert!(warning.message.contains("Safari 27.0"), "{warning}");
+    assert!(warning.message.contains("321006@main"), "{warning}");
+    assert!(compiler.take_warnings().is_empty());
 }
 
 /// A vertex shader that reads the draw index in its variant for WebGL2 alone.

@@ -248,9 +248,18 @@ const BUILDS = {
 	webgl2: { defs: ['WEBGL2'], targets: ['glsl'] },
 } as const satisfies Record<string, ShaderVariantSpec>;
 
-/** The result of compiling WGSL from a project: the shader, or the problems that stopped it. */
+/**
+ * The result of compiling WGSL from a project: the shader with its warnings, or the problems that
+ * stopped it.
+ */
 export type WgslCompile =
-	| { readonly ok: true; readonly shader: CompiledWgsl }
+	| {
+			readonly ok: true;
+			readonly shader: CompiledWgsl;
+			readonly warnings: readonly ShaderProblem[];
+			/** The builds that the compile made, which the warnings' variants name. */
+			readonly builds: readonly string[];
+	  }
 	| {
 			readonly ok: false;
 			readonly problems: readonly ShaderProblem[];
@@ -275,27 +284,39 @@ export async function compileWgsl(
 	if (noEntryPoints && declaresFunction(source, POST_FUNCTIONS)) {
 		const result = await compiler.effect({ path, source });
 		// Effects and tone curves build for both GPU paths.
-		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
+		const builds = ['webgpu', 'webgl2'];
+		if (!result.ok) return { ok: false, problems: result.problems, builds };
+		const { warnings } = result;
 		const { function: kind, uniforms, depth, joins, variants, pieces } = result.effect;
-		if (kind === 'toneCurve') return { ok: true, shader: { kind, variants, pieces } };
-		return { ok: true, shader: { kind, uniforms, depth, joins, variants, pieces } };
+		if (kind === 'toneCurve')
+			return { ok: true, shader: { kind, variants, pieces }, warnings, builds };
+		return {
+			ok: true,
+			shader: { kind, uniforms, depth, joins, variants, pieces },
+			warnings,
+			builds,
+		};
 	}
 	const material = noEntryPoints && declaresFunction(source, MATERIAL_FUNCTIONS);
 	if (material || isMeshShader(source)) {
 		const result = await compiler.material({ path, source });
 		// Custom materials build for both GPU paths.
-		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
-		return { ok: true, shader: { kind: 'material', ...result.material } };
+		const builds = ['webgpu', 'webgl2'];
+		if (!result.ok) return { ok: false, problems: result.problems, builds };
+		const shader = { kind: 'material', ...result.material } as const;
+		return { ok: true, shader, warnings: result.warnings, builds };
 	}
 	const shape = pipelinesOf(path, source, hint);
 	if ('problem' in shape) return { ok: false, problems: [shape.problem], builds: [] };
 	const render = Object.keys(shape.pipelines).length > 0;
 	const variants = render ? BUILDS : { webgpu: BUILDS.webgpu };
 	const result = await compiler.shader({ path, source, pipelines: shape.pipelines, variants });
-	if (!result.ok) return { ok: false, problems: result.problems, builds: Object.keys(variants) };
+	const builds = Object.keys(variants);
+	if (!result.ok) return { ok: false, problems: result.problems, builds };
 	const { webgpu, webgl2 } = result.variants;
 	if (!webgpu) throw new Error('null3D: the shader compiler gave no WebGPU build.');
-	return { ok: true, shader: { kind: 'shader', webgpu, webgl2: webgl2 ?? null } };
+	const shader = { kind: 'shader', webgpu, webgl2: webgl2 ?? null } as const;
+	return { ok: true, shader, warnings: result.warnings, builds };
 }
 
 /** Where WGSL starts in the file that holds it: the file as messages name it, and a place. */
@@ -381,8 +402,27 @@ export function wgslError(
 	};
 }
 
-/** Compiled WGSL, or the error that stops the module that holds it. */
-export type ShaderOrError = { readonly shader: CompiledWgsl } | { readonly error: WgslError };
+/**
+ * The warnings of compiled WGSL, each as one line of a message with its place in the file that
+ * holds the WGSL.
+ */
+function warningLines(
+	compiled: Extract<WgslCompile, { ok: true }>,
+	source: string,
+	origin: WgslOrigin,
+): string[] {
+	return compiled.warnings.map(
+		(warning) => `null3D: ${describe(inFile(warning, source, origin), compiled.builds)}`,
+	);
+}
+
+/**
+ * Compiled WGSL with its warnings, or the error that stops the module that holds it. The shader
+ * works on every browser that the warnings do not name.
+ */
+export type ShaderOrError =
+	| { readonly shader: CompiledWgsl; readonly warnings: readonly string[] }
+	| { readonly error: WgslError };
 
 /**
  * Compiles a `.wgsl` file. `path` names the file in messages, `id` is its module id, and `text` its
@@ -396,8 +436,10 @@ export async function compileWgslFile(
 ): Promise<ShaderOrError> {
 	const source = text.replaceAll('\r\n', '\n');
 	const compiled = await compileWgsl(path, source, FILE_HINT, compiler);
-	if (compiled.ok) return { shader: compiled.shader };
-	return { error: wgslError(compiled, source, { path, line: 1, column: 1 }, id, source) };
+	const origin = { path, line: 1, column: 1 };
+	if (compiled.ok)
+		return { shader: compiled.shader, warnings: warningLines(compiled, source, origin) };
+	return { error: wgslError(compiled, source, origin, id, source) };
 }
 
 /**
@@ -418,7 +460,8 @@ export async function compileLiteral(
 	}
 	const origin = { path, ...placeOf(code, literal.start + 1) };
 	const compiled = await compileWgsl(path, literal.source, TAG_HINT, compiler);
-	if (compiled.ok) return { shader: compiled.shader };
+	if (compiled.ok)
+		return { shader: compiled.shader, warnings: warningLines(compiled, literal.source, origin) };
 	return { error: wgslError(compiled, literal.source, origin, id, code) };
 }
 
@@ -430,26 +473,31 @@ export interface TaggedShader {
 }
 
 /**
- * Compiles each tagged template literal in a script module, all at once, or gives the error that
- * stops the module at its first literal that does not compile.
+ * Compiles each tagged template literal in a script module, all at once, with every literal's
+ * warnings, or gives the error that stops the module at its first literal that does not compile.
  */
 export async function compileTaggedWgsl(
 	code: string,
 	id: string,
 	path: string,
 	compiler: ShaderCompiler = compileHere,
-): Promise<{ readonly shaders: readonly TaggedShader[] } | { readonly error: WgslError }> {
+): Promise<
+	| { readonly shaders: readonly TaggedShader[]; readonly warnings: readonly string[] }
+	| { readonly error: WgslError }
+> {
 	const literals = findTaggedWgsl(code, id);
 	const results = await Promise.all(
 		literals.map((literal) => compileLiteral(literal, code, id, path, compiler)),
 	);
 	const shaders: TaggedShader[] = [];
+	const warnings: string[] = [];
 	for (const [k, result] of results.entries()) {
 		if ('error' in result) return result;
 		const { start, end } = literals[k] as TaggedWgsl;
 		shaders.push({ start, end, shader: result.shader });
+		warnings.push(...result.warnings);
 	}
-	return { shaders };
+	return { shaders, warnings };
 }
 
 /** Lines of text around a place, each with its number, and a caret under the place's column. */
