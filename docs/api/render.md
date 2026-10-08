@@ -102,6 +102,7 @@ The core checks the whole graph when `render.addPass`, `render.removePass` or `t
 - [The render graph](../concepts/render-graph.md): how the graph orders passes and plans their memory.
 - [Textures](textures.md): `textures.fromPass`.
 - [Cameras](cameras.md): perspective and orthographic cameras.
+- [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a camera on a pole sweeps a yard behind a wall, and a monitor shows what it sees.
 
 ## API reference
 

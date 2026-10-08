@@ -170,3 +170,4 @@ digraph "render graph" {
 - [Quality presets, dynamic resolution and frame budgets](quality-presets.md): the settings that switch passes and scale the render size.
 - [Shadows](shadows.md): the shadow cascades.
 - [Render graph API](../api/render.md): adding passes and printing the graph (0.2).
+- [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a scene pass that draws a second camera's view for a monitor.
