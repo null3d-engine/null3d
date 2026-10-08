@@ -553,6 +553,29 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
  */
 const S5_SWIFTSHADER_COUNT = 100;
 
+/**
+ * S6's objects on SwiftShader: the ones nearest the camera's start, which fill the held view's
+ * street. The whole city's 3.85 million triangles would take the software GPU minutes per frame.
+ */
+const S6_SWIFTSHADER_COUNT = 4_000;
+
+/**
+ * The seconds that S6's held frame may take. The first load on a machine builds and optimizes the
+ * city's model files, about two minutes on the owner's Mac, while the page waits for its import.
+ */
+const S6_TIMEOUT_SECONDS = 600;
+
+/**
+ * S6's thread modes: the first alone. Copies of one mesh meet in many places of the city, and a
+ * pixel where two meet can hold both at the same depth. On WebGPU the culling shader keeps the
+ * copies of a mesh in an order that changes from frame to frame, so either copy can win such a
+ * pixel. The streets' tiles stand a step apart for that, yet held frames in two thread modes still
+ * differed in up to 3 pixels on the Mac, by one step of color. WebGL2, which culls in a fixed
+ * order, never differed. A second mode would fail at random. The reference's tolerance covers
+ * those pixels, and the other benchmark scenes check that every mode draws the same image.
+ */
+const S6_MODES = ['pipelined'] as const;
+
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
@@ -1696,16 +1719,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
 	// their frame, so other devices may differ in fewer of their pixels. S5 draws a smaller crowd on
-	// SwiftShader.
+	// SwiftShader, and S6 the part of the city nearest its camera, in one thread mode.
 	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
 			page: `bench/pages/null3d/${scene}.html`,
 			size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
 			hold: HOLD_TIME,
-			modes: ['pipelined', 'low latency'],
-			timeoutSeconds: 90,
+			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
+			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
 			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
+			...(scene === 's6' && { swiftShaderSwitches: [`n=${S6_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),

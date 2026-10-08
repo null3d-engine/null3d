@@ -377,7 +377,7 @@ const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY,
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 const upload = await assets.loadGltf(userFile, { rewriteUrl: (a) => (a.origin === location.origin ? a : null) }); // (0.2) check the addresses a user's model names
-ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
+ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material, occluder }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
 ship.clips;                // (0.2) clip names, which a copy's animator plays

@@ -15,8 +15,13 @@ import type { BuildContext, SceneSetup, Three } from './harness';
  */
 const NORMAL_BIAS = 0.02;
 
-/** What the cascaded shadows need from the frame loop. */
-export type Cascades = Required<Pick<SceneSetup, 'afterCamera' | 'onAspect'>>;
+/**
+ * What the cascaded shadows need from the frame loop, and on WebGL, the setup of a material that
+ * joins the scene later, which CSM needs before the material draws.
+ */
+export type Cascades = Required<Pick<SceneSetup, 'afterCamera' | 'onAspect'>> & {
+	setupMaterial?(material: ThreeModule.Material): void;
+};
 
 /**
  * Casts the sun's shadows in cascades that reach `distance` meters from the camera. On WebGL, CSM
@@ -57,6 +62,7 @@ export async function castCascadedShadows(
 				csm.update();
 			},
 			onAspect: () => csm.updateFrustums(),
+			setupMaterial: (material) => csm.setupMaterial(material),
 		};
 	}
 	const { CSMShadowNode } = await import('three/addons/csm/CSMShadowNode.js');

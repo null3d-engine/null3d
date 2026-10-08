@@ -24,6 +24,9 @@ export default defineConfig({
 			cwd: REPO_ROOT,
 			url: `http://localhost:${PREVIEW_PORT}/bench/pages/index.html`,
 			reuseExistingServer: false,
+			// The first build on a machine builds S6's city files and optimizes them, which takes
+			// about four minutes on the owner's Mac; later builds take them from the caches.
+			timeout: 600_000,
 		},
 	],
 });
