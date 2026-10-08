@@ -28,7 +28,15 @@ export interface StartOptions {
 export async function startDemo({ canvas, demo, labels }: StartOptions): Promise<Engine> {
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
-	const engine = await createEngine({ canvas, sketch: demo.sketch, largeWorld: demo.largeWorld });
+	// The demos ask for the High preset on every device. The engine caps it on the GPU paths that
+	// run at most Medium, and the frame-budget governor of every preset lowers the render scale
+	// and the shadows when a device cannot hold the frame rate.
+	const engine = await createEngine({
+		canvas,
+		sketch: demo.sketch,
+		largeWorld: demo.largeWorld,
+		preset: 'high',
+	});
 	if (labels) showLabels(engine, labels);
 	return engine;
 }

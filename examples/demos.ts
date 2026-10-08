@@ -1,13 +1,21 @@
 // The feature demos. Each demo is a sketch of under 150 lines in a folder of its own, such as
-// instances/sketch.ts. The examples page lists the demos and runs each one live, and the image test
+// instances/sketch.ts. The examples page lists the demos by group and runs each one live, and the image test
 // manifest draws each one in hold mode at its hold time. Each entry names its sketch with a literal
 // `new URL('./<name>/sketch.ts', import.meta.url)`, so a production build of the page ships every
 // sketch, under any address prefix.
+
+/** The groups of demos, in the order that a page lists them. */
+export const DEMO_GROUPS = ['Rendering', 'Scale', 'Basics'] as const;
+
+/** The group that a demo belongs to. */
+export type DemoGroup = (typeof DEMO_GROUPS)[number];
 
 /** A demo in the examples folder. */
 export interface Demo {
 	/** The demo's folder, which holds its sketch.ts: lowercase words joined by dashes. */
 	name: string;
+	/** The group that a page lists the demo under. */
+	group: DemoGroup;
 	/** The address of the demo's sketch module. */
 	sketch: URL;
 	title: string;
@@ -31,6 +39,7 @@ export interface Demo {
 export const DEMOS: readonly Demo[] = [
 	{
 		name: 'instances',
+		group: 'Scale',
 		sketch: new URL('./instances/sketch.ts', import.meta.url),
 		title: 'Instance batches',
 		summary:
@@ -39,6 +48,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'mesh-arrays',
+		group: 'Basics',
 		sketch: new URL('./mesh-arrays/sketch.ts', import.meta.url),
 		title: 'Meshes from arrays',
 		summary:
@@ -47,6 +57,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'generators',
+		group: 'Basics',
 		sketch: new URL('./generators/sketch.ts', import.meta.url),
 		title: 'Geometry generators',
 		summary:
@@ -55,6 +66,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'math',
+		group: 'Basics',
 		sketch: new URL('./math/sketch.ts', import.meta.url),
 		title: 'Math helpers',
 		summary:
@@ -63,6 +75,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'input',
+		group: 'Basics',
 		sketch: new URL('./input/sketch.ts', import.meta.url),
 		title: 'Input and actions',
 		summary: 'An action map moves a box with the keyboard or a gamepad. The camera follows it.',
@@ -72,6 +85,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'far-from-origin',
+		group: 'Scale',
 		sketch: new URL('./far-from-origin/sketch.ts', import.meta.url),
 		title: 'Far from the origin',
 		summary:
@@ -80,6 +94,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'objects',
+		group: 'Basics',
 		sketch: new URL('./objects/sketch.ts', import.meta.url),
 		title: 'Objects and parents',
 		summary:
@@ -88,6 +103,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'layers',
+		group: 'Rendering',
 		sketch: new URL('./layers/sketch.ts', import.meta.url),
 		title: 'Render layers',
 		summary:
@@ -96,6 +112,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'hold-mode',
+		group: 'Basics',
 		sketch: new URL('./hold-mode/sketch.ts', import.meta.url),
 		title: 'Hold mode',
 		summary:
@@ -104,6 +121,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'gltf-model',
+		group: 'Rendering',
 		sketch: new URL('./gltf-model/sketch.ts', import.meta.url),
 		title: 'A glTF model',
 		summary:
@@ -115,6 +133,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'character',
+		group: 'Rendering',
 		sketch: new URL('./character/sketch.ts', import.meta.url),
 		title: 'An animated character',
 		summary:
@@ -126,6 +145,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'picking',
+		group: 'Basics',
 		sketch: new URL('./picking/sketch.ts', import.meta.url),
 		title: 'Picking with labels',
 		summary:
@@ -135,6 +155,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'environment',
+		group: 'Rendering',
 		sketch: new URL('./environment/sketch.ts', import.meta.url),
 		title: 'Environment light',
 		summary:
@@ -146,6 +167,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'post-effects',
+		group: 'Rendering',
 		sketch: new URL('./post-effects/sketch.ts', import.meta.url),
 		title: 'Post effects',
 		summary:
@@ -155,6 +177,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'security-camera',
+		group: 'Rendering',
 		sketch: new URL('./security-camera/sketch.ts', import.meta.url),
 		title: 'A security camera',
 		summary:
@@ -164,6 +187,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'sprites-lines',
+		group: 'Rendering',
 		sketch: new URL('./sprites-lines/sketch.ts', import.meta.url),
 		title: 'Sprites and lines',
 		summary:
@@ -172,6 +196,7 @@ export const DEMOS: readonly Demo[] = [
 	},
 	{
 		name: 'large-world',
+		group: 'Scale',
 		sketch: new URL('./large-world/sketch.ts', import.meta.url),
 		title: 'A large world',
 		summary:
