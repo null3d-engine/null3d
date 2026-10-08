@@ -93,12 +93,15 @@ const isPhoneScene = (scene: (typeof SCENES)[number]) => PHONE_SCENES.includes(s
  * first frames, with shadows in cascades over 5,000 objects. S6's twin on WebGPURenderer held no
  * frame of the whole city in 90 seconds. On CI's runners, S6's null3D pages took 30 to 45 seconds
  * to start and drew 0.14 to 0.23 frames a second at 1,000 objects, so two of five short runs gave no
- * result in 90 seconds. The tests run these pages on real GPUs only. S6's image tests still draw
- * null3D's held frames on SwiftShader, and its WebGL twin passes here.
+ * result in 90 seconds. S6's twin on WebGLRenderer draws about one frame in 8 seconds there, and
+ * the busy software GPU then held the next test's browser context past its time limit. The tests
+ * run these pages on real GPUs only. S6's image tests still draw null3D's held frames on
+ * SwiftShader, and its scene-code page still runs here.
  */
 const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = [
 	's4 on threejs-webgl',
 	's4 on threejs-webgpu',
+	's6 on threejs-webgl',
 	's6 on threejs-webgpu',
 	's6 on null3d-webgpu',
 	's6 on null3d-webgl2',
