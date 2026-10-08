@@ -1407,8 +1407,8 @@
       "three": "FlyControls / FirstPersonControls / PointerLockControls",
       "status": "changed",
       "since": "0.2",
-      "target": "createFlyControls / createFirstPersonControls from @null3d/controls",
-      "notes": "Pointer lock is requested on the page: engine.requestPointerLock().",
+      "target": "createFlyControls(ctx, camera, { movementSpeed, rollSpeed, dragToLook, autoForward }) or createFirstPersonControls(ctx, camera, { movementSpeed, lookSpeed, pointerSpeed, minPolarAngle, maxPolarAngle }) from @null3d/controls; controls.update(dt) in onUpdate",
+      "notes": "Option names and defaults match FlyControls, FirstPersonControls and PointerLockControls. First-person controls take the place of both FirstPersonControls and PointerLockControls: while the canvas holds the pointer lock, the mouse turns the view as PointerLockControls turn it. The page asks for the lock in a click handler with engine.requestPointerLock(), and the sketch reads input.pointer.locked; lock(), unlock(), isLocked and the lock and unlock events have no equivalent. For code that moves the camera itself, set movementSpeed: 0 and call controls.moveForward and controls.moveRight. There is no DOM element, dispose or change event: update(dt) returns true when the camera moved.",
       "docs": "api/controls",
       "detect": "\\b(Fly|FirstPerson|PointerLock)Controls\\b"
     },

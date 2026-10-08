@@ -94,6 +94,7 @@ import {
 	takeParkedWorker,
 	takeWhenFree,
 } from './ownership';
+import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
@@ -544,6 +545,14 @@ export interface Engine {
 	 * handles one.
 	 */
 	simulateGpuLoss(): void;
+	/**
+	 * Locks the pointer to the canvas, for first-person controls and games that turn with the mouse.
+	 * The browser hides the pointer, and the sketch's `input.pointer.dx` and `dy` give the mouse's
+	 * movement, with no edge to stop it. Call it in a click or key handler: browsers lock the pointer
+	 * only right after the user acts. Resolves once the lock begins. Fails with E1425 when the browser
+	 * refuses it. The user ends the lock with Esc, and the page with `document.exitPointerLock()`.
+	 */
+	requestPointerLock(options?: PointerLockOptions): Promise<void>;
 	/**
 	 * Stops the engine and its workers. The engine cannot start again. The sketch's `onDestroy` runs
 	 * first, and later calls from the sketch's code fail with E1420. The thread that draws destroys
@@ -1357,6 +1366,8 @@ async function startEngine(
 			await localDrawing?.stop();
 			localRunner?.dispose();
 			input?.listen(false);
+			// A stopped engine reads no input, so it gives the pointer back.
+			if (globalThis.document?.pointerLockElement === options.canvas) document.exitPointerLock();
 			canvasWatch?.listen(false);
 			stopPreferences?.();
 			stopDisplay?.();
@@ -1958,6 +1969,9 @@ async function startEngine(
 			simulateGpuLoss() {
 				if (localDrawing) localDrawing.simulateLoss();
 				else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
+			},
+			requestPointerLock(lockOptions) {
+				return requestPointerLock(options.canvas, lockOptions);
 			},
 			async destroy(destroyOptions) {
 				await stop();

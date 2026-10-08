@@ -146,7 +146,8 @@ Enemies that need different meshes become one batch per mesh. An enemy loaded fr
 | `controls.listenToKeyEvents(window)` | Read the keys with `input.isDown`, and call `controls.pan(dx, dy)` or `controls.rotateLeft(angle)` |
 | The controls' own `preventDefault` on wheel events | On the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`, so the wheel and a pinch zoom the camera, not the page |
 | `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work. `update(dt)` returns true when the camera moved |
-| `PointerLockControls` | `createFirstPersonControls` plus `engine.requestPointerLock()` on the page (0.2) |
+| `FlyControls`, `FirstPersonControls` | `createFlyControls` or `createFirstPersonControls` with the same option names and defaults (0.2); `controls.update(dt)` every frame |
+| `PointerLockControls` | `createFirstPersonControls(ctx, camera, { movementSpeed: 0, pointerSpeed })` (0.2). The page calls `engine.requestPointerLock()` in a click handler in place of `controls.lock()`; the sketch reads `input.pointer.locked` in place of `isLocked` and the lock events, and keeps `controls.moveForward(d)` and `controls.moveRight(d)` |
 | Clicks on UI buttons over the canvas | Handled on the page; send the action to the sketch |
 
 Pointer events that land on HTML UI elements above the canvas do not reach the engine, which matches what users expect.
