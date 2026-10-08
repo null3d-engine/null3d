@@ -421,6 +421,13 @@ const DOCS = {
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
 		since: '0.2',
 	},
+	E1425: {
+		title: 'Pointer lock refused',
+		cause:
+			'engine.requestPointerLock() asked the browser to lock the pointer to the canvas, and the browser refused or ended the lock before it began. Browsers lock the pointer only right after the user clicks or presses a key. They never lock it on phones or in some frames, and they refuse for a moment after the user pressed Esc.',
+		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
+		since: '0.2',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

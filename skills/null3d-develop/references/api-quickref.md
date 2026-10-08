@@ -76,7 +76,7 @@ await engine.destroy({ release: true }); // (0.2) also frees the memory that the
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
-await engine.requestPointerLock();                // (0.2) for first-person controls
+await engine.requestPointerLock();                // (0.2) in a click handler, for first-person controls; E1425 when refused
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 ```
 
@@ -447,7 +447,7 @@ Hit objects are the same wrappers you created; `hit.instance` is the row of a ba
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
 ```ts
-input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, dragDx, dragDy, wheel, pinch, isTouch }
+input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, dragDx, dragDy, wheel, pinch, isTouch, locked (0.2) }
                         // per frame: dragDx/dragDy only while a button is held; pinch is the trackpad-pinch part of wheel
 input.isDown('KeyW');   // KeyboardEvent.code names; 'Mouse0' to 'Mouse4' (Mouse0 is also a tap); 'GamepadA'
 input.wasPressed('Space'); input.wasReleased('Space');   // true for one frame; a tap between frames gives both
@@ -464,7 +464,11 @@ const controls = createOrbitControls(ctx, camera, {   // three.js's OrbitControl
 controls.update(dt);                    // every frame in onUpdate; true when the camera moved
 vec3.set(controls.target, 0, 2, 0);     // change the target in place; set any property at any time
 controls.rotateLeft(a); controls.pan(dx, dy); controls.dollyIn(0.9);   // from code: keys, a gamepad
-createMapControls(ctx, camera);         // pans over the ground; fly and first-person controls (0.2)
+createMapControls(ctx, camera);         // pans over the ground
+// (0.2) createFlyControls(ctx, camera, { movementSpeed, rollSpeed, dragToLook, autoForward }): WASD RF move, arrows QE turn, the pointer steers
+// (0.2) createFirstPersonControls(ctx, camera, { movementSpeed, lookSpeed, pointerSpeed, minPolarAngle, maxPolarAngle }):
+//   WASD walks, a drag looks; while input.pointer.locked the mouse turns the view as PointerLockControls do
+//   controls.moveForward(d); controls.moveRight(d); controls.getDirection(out); controls.lookAt(x, y, z)
 // either camera kind: an orthographic camera zooms by its view height, within minZoom and maxZoom
 ```
 

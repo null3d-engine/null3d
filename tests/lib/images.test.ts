@@ -146,6 +146,14 @@ describe('the manifest', () => {
 		expect(long.map((demo) => demo.name)).toEqual([]);
 	});
 
+	it('loads files only in the demos that say why', () => {
+		const loads = (demo: (typeof DEMOS)[number]) =>
+			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(
+				readFileSync(join(REPO_ROOT, 'examples', demo.name, 'sketch.ts'), 'utf8'),
+			);
+		expect(DEMOS.filter((demo) => loads(demo) !== (demo.assets !== undefined))).toEqual([]);
+	});
+
 	it('finds what is wrong with a list of tests', () => {
 		const exists = (file: string) => file.startsWith('sketches/') || file.startsWith('pages/');
 		expect(manifestProblems(TESTS, exists)).toEqual([]);

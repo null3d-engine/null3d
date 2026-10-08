@@ -128,6 +128,20 @@ A pull request's run tests GitHub's merge of it into main as main was at the pus
 - Two pull requests that add text at one place of a file clash after the first one's squash. This happens even when one pull request already contains the other's text. Merge the second only after the first merges, and merge main into it first. The record of [tested devices](tested-devices.md) had many of these clashes, so each run there is now a file of its own ([D-97](decisions/D-97-tested-devices-per-file.md)).
 - Main's full run after the merge is the last check of the combined code. The size check of a run on main compares with the commit before. So a file's growth counts only against the pull request that makes it.
 
+### The GPU check
+
+CI's benchmark job has no GPU timer, so it cannot see a change that slows only the GPU. On the Mac's GPU, pull request 389 made S4 and S6 on WebGPU 5 to 33 times slower. Yet it passed every CI job ([D-109](decisions/D-109-gpu-time-guard.md)). So a pull request that can change the GPU's work runs the GPU check, and records the result. The check needs a computer with a GPU of its own.
+
+- It must run when the pull request changes `crates/null3d-shaders/src/`, `crates/null3d-shaders/wgsl/` or `crates/null3d-shaders/shaders.toml`. It must also run when the pull request changes `packages/engine/src/gpu/`, `packages/engine/src/render/` or `packages/engine/src/quality/`. Changes to tests there do not count.
+- Run `bun run bench:gpu-check` once the branch's code is final, on a Mac whose load is low. It builds a worktree of the branch's merge base with origin/main, once per commit, and builds the branch. The worktree sits beside the checkout, in a folder named after it with `-gpu-check-base`, so the unit tests never find its files. Then it runs S4 and S6 on WebGPU at Medium and at High, in turns, in Chrome. Its first run on the owner's Mac took 14 minutes: 5 for the two builds and 9 for the comparisons. The first comparison also built the benchmark pages and S6's city. Set `NULL3D_PORT` to a port of your own: the check takes that port and the next.
+- It prints one line, such as `GPU-Checked: 061177262..a0a7c1777 passed: s4 medium 1.86 to 1.90 ms (+2.2%); ...`. Put that line on a plain commit, an empty one if need be, such as `test: record the GPU check`. The commit must be the last one that changes the files above, or come after it. A later change to those files needs a new run.
+- CI cannot run the check, since its machines have no GPU timer. So the trailer is the author's record that the check ran, and what it measured. CI's trailer check only fails the pull request when the trailer is missing or says nothing. It cannot check the figures.
+- `failed`: a page's GPU time grew more than 25% and 0.3 ms. Find the cause and fix it. A slowdown on purpose needs a `Bench-Expected:` trailer that names it, such as `Bench-Expected: s4/null3d-webgpu/gpu-time: a second shadow pass`, and then a new run.
+- `not measured`: the browser gave no GPU times, as on a machine without a GPU timer. Run it on a computer with one.
+- `not judged`: the benchmark pages changed between the two commits, so the builds drew different work. The line still gives the figures, and the reviewer judges them.
+- A change that cannot change the GPU's work, such as a comment in those folders, still needs the trailer. It then says why no check ran, such as `GPU-Checked: not run; only comments change in packages/engine/src/gpu/`.
+- Each night, the owner's Mac runs the same check on main against the night before. That catches what slips past a pull request, within a day.
+
 ## What CI runs where
 
 Each event runs every job, apart from a draft pull request, by the owner's decision of 7 October 2026 ([D-99](decisions/D-99-no-merge-queue.md)).

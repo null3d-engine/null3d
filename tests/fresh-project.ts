@@ -8,8 +8,10 @@
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
 // address holds. Last, the project's service worker caches the build on a first visit, and the
-// page must start the threaded engine again with the server stopped. Run `bun run build` first,
-// for the WebAssembly files. Run from the repository root:
+// page must start the threaded engine again with the server stopped. Then the project builds a page
+// of its own layout around a copy of this repository's examples folder, as a website that holds the
+// repository as a submodule does, and two demos must start from that build. Run
+// `bun run build` first, for the WebAssembly files. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawnSync } from 'node:child_process';
 import {
@@ -78,9 +80,19 @@ export function projectManifest(
 }
 
 /** Runs a command in the project's folder with its output shown, and fails when it fails. */
-function step(title: string, cwd: string, command: string, args: readonly string[]): void {
+function step(
+	title: string,
+	cwd: string,
+	command: string,
+	args: readonly string[],
+	env: Record<string, string> = {},
+): void {
 	console.log(`\n${title}: ${command} ${args.join(' ')}`);
-	const result = spawnSync(command, args, { cwd, stdio: 'inherit' });
+	const result = spawnSync(command, args, {
+		cwd,
+		stdio: 'inherit',
+		env: { ...process.env, ...env },
+	});
 	if (result.status !== 0)
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
 }
@@ -90,7 +102,7 @@ type Page = Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newPag
 
 /** The page's globals that the checks read, typed, as this file's Node settings lack them. */
 type PageGlobals = {
-	document: { documentElement: { dataset: { start?: string } } };
+	document: { documentElement: { dataset: { start?: string; demo?: string } } };
 	crossOriginIsolated: boolean;
 	navigator: { serviceWorker: { ready: Promise<unknown> } };
 	caches: {
@@ -100,12 +112,15 @@ type PageGlobals = {
 };
 
 /**
- * Serves a production build with the isolation headers and the strict policy on every file, as a
- * strict host does. A worker takes the policy of its own script's response, so every file carries
- * it.
+ * Serves a production build with the isolation headers and, unless `strict` is false, the strict
+ * policy on every file, as a strict host does. A worker takes the policy of its own script's
+ * response, so every file carries it.
  */
-function serveBuild(dist: string) {
-	const headers = { ...ISOLATION_HEADERS, 'Content-Security-Policy': STRICT_POLICY };
+function serveBuild(dist: string, strict = true) {
+	const headers = {
+		...ISOLATION_HEADERS,
+		...(strict ? { 'Content-Security-Policy': STRICT_POLICY } : {}),
+	};
 	return Bun.serve({
 		port: 0,
 		async fetch(request) {
@@ -213,6 +228,104 @@ async function playsOffline(dist: string): Promise<void> {
 	}
 }
 
+/** The demos that the website's build must start: ones that make their content in code. */
+const BUILT_DEMOS = ['instances', 'security-camera'];
+
+/**
+ * A website's page that shows one demo in a layout of its own. It imports only the list of demos
+ * and the function that starts one, as the website does, and marks the root element with how the
+ * start ended.
+ */
+const SITE_PAGE = {
+	'index.html': [
+		'<!doctype html>',
+		'<html lang="en">',
+		'\t<head><meta charset="utf-8" /><title>Demo</title></head>',
+		'\t<body><h1></h1><canvas width="640" height="360"></canvas>',
+		'\t\t<script type="module" src="./main.ts"></script></body>',
+		'</html>',
+		'',
+	],
+	'main.ts': [
+		"import { DEMOS } from '../null3d/examples/demos';",
+		"import { startDemo } from '../null3d/examples/lib/run';",
+		'',
+		"const name = new URLSearchParams(location.search).get('demo');",
+		'const demo = DEMOS.find((candidate) => candidate.name === name);',
+		'const root = document.documentElement;',
+		"if (!demo) root.dataset.demo = 'no demo named ' + name;",
+		'else {',
+		"\t(document.querySelector('h1') as HTMLElement).textContent = demo.title;",
+		"\tconst canvas = document.querySelector('canvas') as HTMLCanvasElement;",
+		'\tstartDemo({ canvas, demo }).then(',
+		"\t\t() => (root.dataset.demo = 'running'),",
+		'\t\t(error) => (root.dataset.demo = String(error)),',
+		'\t);',
+		'}',
+		'',
+	],
+	'vite.config.ts': [
+		"import null3d from '@null3d/vite-plugin';",
+		"import { defineConfig } from 'vite';",
+		'',
+		'export default defineConfig({',
+		"\tbase: './',",
+		'\tplugins: [null3d({ urlSwitches: true })],',
+		"\tresolve: { dedupe: ['@null3d/engine', '@null3d/controls'] },",
+		"\tbuild: { outDir: '../dist-site', emptyOutDir: true },",
+		'});',
+		'',
+	],
+};
+
+/**
+ * Builds a website's page of its own layout around a copy of the repository's examples folder, as
+ * a website does that holds the repository as a submodule and installs the packages from npm. The
+ * build takes the packages from the project's tarballs, and each demo of BUILT_DEMOS must start.
+ */
+async function buildsExamples(project: string): Promise<void> {
+	const copy = join(project, 'null3d');
+	cpSync(join(ROOT, 'examples'), join(copy, 'examples'), {
+		recursive: true,
+		filter: (source) => !source.includes('node_modules'),
+	});
+	copyFileSync(join(ROOT, 'tsconfig.web.base.json'), join(copy, 'tsconfig.web.base.json'));
+	const site = join(project, 'site');
+	mkdirSync(site);
+	for (const [file, lines] of Object.entries(SITE_PAGE))
+		writeFileSync(join(site, file), lines.join('\n'));
+	step(
+		'Build a website page of the demos',
+		site,
+		join(project, 'node_modules/.bin/vite'),
+		['build'],
+		{
+			VITE_NULL3D_SAMPLES_BASE: './samples/',
+		},
+	);
+	console.log('\nStart demos from the website build');
+	const server = serveBuild(join(project, 'dist-site'), false);
+	const browser = await launchBrowser(defaultEnvironment());
+	try {
+		const page = await browser.newPage();
+		for (const demo of BUILT_DEMOS) {
+			await page.goto(`${server.url.href}?demo=${demo}`);
+			const state = await page
+				.waitForFunction(
+					() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.demo,
+					undefined,
+					{ timeout: 30_000 },
+				)
+				.then((handle) => handle.jsonValue());
+			if (state !== 'running')
+				throw new Error(`the website build did not start the ${demo} demo: ${state}`);
+		}
+	} finally {
+		await browser.close();
+		server.stop(true);
+	}
+}
+
 async function main(): Promise<void> {
 	const keep = process.argv.includes('--keep');
 	console.log('Packing the public packages');
@@ -257,6 +370,7 @@ async function main(): Promise<void> {
 			throw new Error(`the production build lacks the engine's notices in ${NOTICES_FILE}`);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
+		await buildsExamples(project);
 		passed = true;
 		console.log(`\nThe packed packages pass in a fresh project (${packed.length} packages).`);
 	} finally {
