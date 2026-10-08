@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, jest } from 'bun:test';
 import {
 	countSharedOnce,
+	FIRST_ANSWER_LIMIT_MS,
 	MainThreadWindow,
 	type MemoryMeasurement,
 	PageMemorySampler,
+	resetPageMeasurement,
 } from './page-meters';
 
 const MIB = 1024 * 1024;
@@ -36,6 +38,8 @@ describe('countSharedOnce', () => {
 describe('PageMemorySampler', () => {
 	const real = Object.getOwnPropertyDescriptor(performance, 'measureUserAgentSpecificMemory');
 	afterEach(() => {
+		jest.useRealTimers();
+		resetPageMeasurement();
 		if (real) Object.defineProperty(performance, 'measureUserAgentSpecificMemory', real);
 		else
 			delete (performance as { measureUserAgentSpecificMemory?: unknown })
@@ -87,6 +91,83 @@ describe('PageMemorySampler', () => {
 		expect(sampler.failure).toBe(
 			'the browser refused the measurement: the page is not cross-origin isolated',
 		);
+	});
+
+	/**
+	 * Gives the page a measurement that answers only when the test says so, and counts its
+	 * requests.
+	 */
+	function heldMeasurement() {
+		const held = { calls: 0, answer: (_: MemoryMeasurement) => {} };
+		Object.defineProperty(performance, 'measureUserAgentSpecificMemory', {
+			configurable: true,
+			value: () => {
+				held.calls++;
+				return new Promise<MemoryMeasurement>((resolve) => {
+					held.answer = resolve;
+				});
+			},
+		});
+		return held;
+	}
+
+	it('stops asking and hides the figures when the browser never answers the first request', () => {
+		jest.useFakeTimers();
+		const held = heldMeasurement();
+		const sampler = new PageMemorySampler();
+		sampler.start();
+		expect(sampler.page).toEqual({ bytes: null, browserBytes: null });
+		jest.advanceTimersByTime(FIRST_ANSWER_LIMIT_MS - 1);
+		expect(sampler.page).toEqual({ bytes: null, browserBytes: null });
+		jest.advanceTimersByTime(1);
+		expect(sampler.page).toBeNull();
+		// No request follows, even from a sampler that starts again or a new one.
+		sampler.stop();
+		sampler.start();
+		new PageMemorySampler().start();
+		jest.advanceTimersByTime(10 * FIRST_ANSWER_LIMIT_MS);
+		expect(held.calls).toBe(1);
+		expect(sampler.page).toBeNull();
+	});
+
+	it('shows an answer that comes after the page stopped asking, and asks no more', async () => {
+		jest.useFakeTimers();
+		const held = heldMeasurement();
+		const sampler = new PageMemorySampler();
+		sampler.start();
+		jest.advanceTimersByTime(FIRST_ANSWER_LIMIT_MS);
+		expect(sampler.page).toBeNull();
+		const result = measurement(30);
+		held.answer(result);
+		await Promise.resolve();
+		expect(sampler.page).toEqual({ bytes: result.bytes, browserBytes: result.bytes });
+		jest.advanceTimersByTime(10 * FIRST_ANSWER_LIMIT_MS);
+		expect(held.calls).toBe(1);
+	});
+
+	it('keeps one request in flight while samplers stop, start and join it', async () => {
+		jest.useFakeTimers();
+		const held = heldMeasurement();
+		const first = new PageMemorySampler();
+		const second = new PageMemorySampler();
+		first.start();
+		first.stop();
+		first.start();
+		second.start();
+		expect(held.calls).toBe(1);
+		// The answer reaches both, within the limit, and the next request follows a gap later.
+		jest.advanceTimersByTime(FIRST_ANSWER_LIMIT_MS / 2);
+		const result = measurement(30);
+		held.answer(result);
+		await Promise.resolve();
+		expect(first.page?.browserBytes).toBe(result.bytes);
+		expect(second.page?.browserBytes).toBe(result.bytes);
+		jest.advanceTimersByTime(FIRST_ANSWER_LIMIT_MS);
+		expect(held.calls).toBe(2);
+		// A later request that takes longer than the limit hides nothing: the page has an answer.
+		jest.advanceTimersByTime(10 * FIRST_ANSWER_LIMIT_MS);
+		expect(first.page?.browserBytes).toBe(result.bytes);
+		expect(held.calls).toBe(2);
 	});
 });
 

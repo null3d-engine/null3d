@@ -9,7 +9,9 @@
 // The memory of the whole page and its workers comes from the browser's own measurement:
 // `performance.measureUserAgentSpecificMemory`, which only Chromium offers, and only on a
 // cross-origin isolated page. The browser answers once every worker has run the measurement as a
-// task, or after about a minute, so samples follow each other with a gap of a few seconds.
+// task, or after about a minute, so samples follow each other with a gap of a few seconds. Some
+// browsers offer the measurement and never answer it. When the first answer has not come within
+// two minutes, the page stops asking, and the overlay hides the line that shows the figure.
 //
 // Chromium adds a shared memory, such as the engine's WebAssembly memory, to the figure of each
 // thread that holds it. The corrected figure counts it once: it takes the shared memory's size away
@@ -57,6 +59,61 @@ type MeasureMemory = () => Promise<MemoryMeasurement>;
 const SAMPLE_GAP_MS = 5000;
 
 /**
+ * How long the page waits for the browser's first answer before it stops asking. A browser that
+ * answers does so once every worker has run the measurement as a task, or after about a minute.
+ * Some browsers offer the measurement and never answer it, which would leave the line on
+ * "measuring" for good. Two minutes is twice the longest wait of a browser that answers.
+ */
+export const FIRST_ANSWER_LIMIT_MS = 120_000;
+
+/**
+ * The browser's measurement as the whole page asks for it. Every sampler on the page shares one
+ * request in flight, since the measurement covers the whole page and a second request would only
+ * wait behind the first. When the first request goes unanswered for `FIRST_ANSWER_LIMIT_MS`, the
+ * page asks no more for the rest of its life.
+ */
+const browser = {
+	/** The request in flight, or undefined. */
+	pending: undefined as Promise<MemoryMeasurement> | undefined,
+	/** True once the browser answered a request. */
+	answered: false,
+	/** True once the first request went unanswered for the limit. */
+	silent: false,
+};
+
+/**
+ * The request in flight, or a new one, or undefined once the page has stopped asking. The first
+ * request starts the wait for the browser's first answer.
+ */
+function requestMeasurement(measure: MeasureMemory): Promise<MemoryMeasurement> | undefined {
+	if (browser.silent) return undefined;
+	if (browser.pending) return browser.pending;
+	const pending = measure.call(performance);
+	browser.pending = pending;
+	const limit = browser.answered
+		? undefined
+		: setTimeout(() => {
+				if (!browser.answered) browser.silent = true;
+			}, FIRST_ANSWER_LIMIT_MS);
+	const settle = () => {
+		clearTimeout(limit);
+		if (browser.pending === pending) browser.pending = undefined;
+	};
+	pending.then(() => {
+		browser.answered = true;
+		settle();
+	}, settle);
+	return pending;
+}
+
+/** Forgets the page's requests and its first answer, as a new page starts. For tests. */
+export function resetPageMeasurement(): void {
+	browser.pending = undefined;
+	browser.answered = false;
+	browser.silent = false;
+}
+
+/**
  * The page's memory with a shared memory of `sharedBytes` counted once: the browser's figure, less
  * the shared memory for each thread past the first whose figure holds it.
  */
@@ -69,7 +126,9 @@ export function countSharedOnce(measurement: MemoryMeasurement, sharedBytes: num
 
 /**
  * Samples the memory of the whole page and its workers, one measurement after another with a gap
- * of a few seconds, where the browser offers the measurement. `page` holds the newest figures.
+ * of a few seconds, where the browser offers the measurement. `page` holds the newest figures. At
+ * most one measurement is in flight on the page. When the browser leaves the first one unanswered
+ * for two minutes, the page asks no more, and `page` is null until an answer comes after all.
  *
  * @category api/debug
  */
@@ -79,8 +138,10 @@ export class PageMemorySampler {
 	/** Why the browser refused a measurement, or null. */
 	failure: string | null = null;
 	private running = false;
-	/** The count of starts, so that a loop of an earlier start ends when a new one begins. */
-	private starts = 0;
+	/** True while this sampler waits for the page's request in flight. */
+	private waiting = false;
+	/** The wait before the next request. */
+	private gap: ReturnType<typeof setTimeout> | undefined;
 	private readonly figures = { bytes: null as number | null, browserBytes: null as number | null };
 
 	/**
@@ -98,40 +159,54 @@ export class PageMemorySampler {
 		return typeof measureOf() === 'function';
 	}
 
-	/** The newest figures, or null where the browser offers no measurement. */
+	/**
+	 * The newest figures, or null where the browser offers no measurement, refused it, or left the
+	 * first one unanswered for two minutes.
+	 */
 	get page(): PageMemory | null {
-		return this.running || this.last ? this.figures : null;
+		if (this.last) return this.figures;
+		return this.running && !browser.silent ? this.figures : null;
 	}
 
 	/** Starts the samples. It does nothing where the browser offers no measurement. */
 	start(): void {
-		const measure = measureOf();
-		if (!measure || this.running) return;
+		if (!measureOf() || this.running) return;
 		this.running = true;
-		const start = ++this.starts;
-		const current = () => this.running && this.starts === start;
-		const sample = async () => {
-			while (current()) {
-				const result = await measure.call(performance);
-				if (!current()) return;
-				this.last = result;
-				this.figures.browserBytes = result.bytes;
-				this.figures.bytes = countSharedOnce(result, this.sharedBytes());
-				this.onSample?.(result);
-				await new Promise((resolve) => setTimeout(resolve, SAMPLE_GAP_MS));
-			}
-		};
-		sample().catch((error: unknown) => {
-			if (!current()) return;
-			this.running = false;
-			this.failure = `the browser refused the measurement: ${error instanceof Error ? error.message : String(error)}`;
-		});
+		this.ask();
 	}
 
-	/** Stops the samples. A measurement under way still ends, and its figures stay out. */
+	/** Stops the samples. A measurement under way still ends, and its figures still count. */
 	stop(): void {
 		this.running = false;
+		clearTimeout(this.gap);
+		this.gap = undefined;
 	}
+
+	/** Asks for a measurement, or joins the page's request in flight. */
+	private readonly ask = (): void => {
+		this.gap = undefined;
+		const measure = measureOf();
+		if (!measure || !this.running || this.waiting) return;
+		const pending = requestMeasurement(measure);
+		if (!pending) return;
+		this.waiting = true;
+		pending.then(this.answer, this.refusal);
+	};
+
+	private readonly answer = (result: MemoryMeasurement): void => {
+		this.waiting = false;
+		this.last = result;
+		this.figures.browserBytes = result.bytes;
+		this.figures.bytes = countSharedOnce(result, this.sharedBytes());
+		this.onSample?.(result);
+		if (this.running && !browser.silent) this.gap = setTimeout(this.ask, SAMPLE_GAP_MS);
+	};
+
+	private readonly refusal = (error: unknown): void => {
+		this.waiting = false;
+		this.running = false;
+		this.failure = `the browser refused the measurement: ${error instanceof Error ? error.message : String(error)}`;
+	};
 }
 
 /** The browser's measurement of the page's memory, where it offers one. */
