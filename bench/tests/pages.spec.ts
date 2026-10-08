@@ -90,20 +90,28 @@ const isPhoneScene = (scene: (typeof SCENES)[number]) => PHONE_SCENES.includes(s
 /**
  * Pages that SwiftShader draws too slowly for the tests: S4's three.js twins take minutes over their
  * first frames, with shadows in cascades over 5,000 objects. S6's twin on WebGPURenderer held no
- * frame of the whole city in 90 seconds, and measured no frame of 1,000 objects in its short run,
- * where its WebGL twin and null3D's pages pass. The tests run them on real GPUs only.
+ * frame of the whole city in 90 seconds. On CI's runners, S6's null3D pages took 30 to 45 seconds
+ * to start and drew 0.14 to 0.23 frames a second at 1,000 objects, so two of five short runs gave no
+ * result in 90 seconds. The tests run these pages on real GPUs only. S6's image tests still draw
+ * null3D's held frames on SwiftShader, and its WebGL twin passes here.
  */
 const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = [
 	's4 on threejs-webgl',
 	's4 on threejs-webgpu',
 	's6 on threejs-webgpu',
+	's6 on null3d-webgpu',
+	's6 on null3d-webgl2',
+	's6 on null3d-compat',
+	's6 on null3d-webgpu-low',
+	's6 on null3d-webgl2-low',
 ];
-/** Leaves a page's test out on SwiftShader when SwiftShader draws the page too slowly. */
-const skipWhereTooSlow = (page: string) =>
-	test.skip(
-		SWIFTSHADER && TOO_SLOW_FOR_SWIFTSHADER.includes(page),
-		'SwiftShader takes minutes to draw its first frames',
-	);
+/**
+ * Declares a page's test, or a skipped one on SwiftShader when SwiftShader draws the page too
+ * slowly. A skip declared this way sets up no browser context, which a busy software GPU can hold
+ * past the test's time limit.
+ */
+const testUnlessTooSlow = (page: string) =>
+	SWIFTSHADER && TOO_SLOW_FOR_SWIFTSHADER.includes(page) ? test.skip : test;
 /**
  * The warm-up and measured seconds of a page's short benchmark run. null3D counts a frame only when
  * the sketch stepped it and the renderer drew it inside the measured time, and the renderer draws a
@@ -283,64 +291,68 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 			continue;
 		}
 		if (!isNull3dPage(kind))
-			test(`${scene} on ${kind} renders a hold frame that is not blank`, async ({ page }) => {
-				skipWhereTooSlow(`${scene} on ${kind}`);
-				const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
+			testUnlessTooSlow(`${scene} on ${kind}`)(
+				`${scene} on ${kind} renders a hold frame that is not blank`,
+				async ({ page }) => {
+					const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
+					expect([result.scene, result.renderer]).toEqual([scene, renderer]);
+					const { width, height } = PARITY_CANVAS;
+					expect([result.width, result.height]).toEqual([width, height]);
+					const pixels = Buffer.from(result.pixels, 'base64');
+					expect(pixels.length).toBe(width * height * 4);
+
+					writePng(join(IMAGE_DIR, `${scene}-${kind}.png`), { width, height, data: pixels });
+
+					const total = width * height;
+					const color = BACKGROUNDS[scene];
+					if (color === null) {
+						// A sky changes smoothly, so its frame holds few sharp edges; a city holds many.
+						expect(edgeShare(pixels, width, height)).toBeGreaterThan(MIN_DRAWN_SHARE[scene] / 10);
+					} else {
+						const background = countBackground(pixels, color);
+						// The background must read back as its own color: with wrong color handling, every
+						// pixel would differ from it and the blank check below would pass on any image.
+						expect(background).toBeGreaterThan(0);
+						expect((total - background) / total).toBeGreaterThan(MIN_DRAWN_SHARE[scene]);
+					}
+
+					if (scene === 's1-static') {
+						// Rows must arrive top first. The sun shines from above, so the lit tops of the boxes
+						// below eye level make the lower half of this frame brighter than the upper half.
+						// Upside-down rows would reverse that.
+						const middle = height / 2;
+						expect(meanBrightness(pixels, width, middle, height)).toBeGreaterThan(
+							meanBrightness(pixels, width, 0, middle),
+						);
+					}
+				},
+			);
+
+		testUnlessTooSlow(`${scene} on ${kind}`)(
+			`${scene} on ${kind} runs a short benchmark`,
+			async ({ page }) => {
+				if (isPhoneScene(scene)) await page.setViewportSize(PHONE_VIEWPORT);
+				const result = await runShortBenchmark(page, scene, kind);
 				expect([result.scene, result.renderer]).toEqual([scene, renderer]);
-				const { width, height } = PARITY_CANVAS;
-				expect([result.width, result.height]).toEqual([width, height]);
-				const pixels = Buffer.from(result.pixels, 'base64');
-				expect(pixels.length).toBe(width * height * 4);
-
-				writePng(join(IMAGE_DIR, `${scene}-${kind}.png`), { width, height, data: pixels });
-
-				const total = width * height;
-				const color = BACKGROUNDS[scene];
-				if (color === null) {
-					// A sky changes smoothly, so its frame holds few sharp edges; a city holds many.
-					expect(edgeShare(pixels, width, height)).toBeGreaterThan(MIN_DRAWN_SHARE[scene] / 10);
-				} else {
-					const background = countBackground(pixels, color);
-					// The background must read back as its own color: with wrong color handling, every
-					// pixel would differ from it and the blank check below would pass on any image.
-					expect(background).toBeGreaterThan(0);
-					expect((total - background) / total).toBeGreaterThan(MIN_DRAWN_SHARE[scene]);
-				}
-
-				if (scene === 's1-static') {
-					// Rows must arrive top first. The sun shines from above, so the lit tops of the boxes
-					// below eye level make the lower half of this frame brighter than the upper half.
-					// Upside-down rows would reverse that.
-					const middle = height / 2;
-					expect(meanBrightness(pixels, width, middle, height)).toBeGreaterThan(
-						meanBrightness(pixels, width, 0, middle),
-					);
-				}
-			});
-
-		test(`${scene} on ${kind} runs a short benchmark`, async ({ page }) => {
-			skipWhereTooSlow(`${scene} on ${kind}`);
-			if (isPhoneScene(scene)) await page.setViewportSize(PHONE_VIEWPORT);
-			const result = await runShortBenchmark(page, scene, kind);
-			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
-			expect(result.n).toBe(shortRunCount(scene));
-			expect(result.frames).toBeGreaterThan(0);
-			expect(result.cpuMs.median).toBeGreaterThan(0);
-			expect(result.intervalMs.median).toBeGreaterThan(0);
-			expect(result.userAgent).toContain('Chrome');
-			if (isPhoneScene(scene)) {
-				// The canvas fills the window below the status line, and each second has its row.
-				expect(result.canvas?.width).toBe(PHONE_VIEWPORT.width);
-				expect(result.canvas?.height).toBeLessThan(PHONE_VIEWPORT.height);
-				expect(result.trace?.length).toBeGreaterThan(0);
-				for (const second of result.trace ?? []) {
-					expect(second.renderScale).toBeGreaterThan(0);
-					expect(second.renderScale).toBeLessThanOrEqual(1);
-					if (isNull3dPage(kind)) expect(second.completedFps).not.toBeNull();
-					else expect(second.completedFps).toBeNull();
-				}
-			} else expect(result.trace).toBeUndefined();
-		});
+				expect(result.n).toBe(shortRunCount(scene));
+				expect(result.frames).toBeGreaterThan(0);
+				expect(result.cpuMs.median).toBeGreaterThan(0);
+				expect(result.intervalMs.median).toBeGreaterThan(0);
+				expect(result.userAgent).toContain('Chrome');
+				if (isPhoneScene(scene)) {
+					// The canvas fills the window below the status line, and each second has its row.
+					expect(result.canvas?.width).toBe(PHONE_VIEWPORT.width);
+					expect(result.canvas?.height).toBeLessThan(PHONE_VIEWPORT.height);
+					expect(result.trace?.length).toBeGreaterThan(0);
+					for (const second of result.trace ?? []) {
+						expect(second.renderScale).toBeGreaterThan(0);
+						expect(second.renderScale).toBeLessThanOrEqual(1);
+						if (isNull3dPage(kind)) expect(second.completedFps).not.toBeNull();
+						else expect(second.completedFps).toBeNull();
+					}
+				} else expect(result.trace).toBeUndefined();
+			},
+		);
 	}
 }
 
