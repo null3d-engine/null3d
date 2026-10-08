@@ -8,6 +8,7 @@
 // show them its own way with the list and startDemo.
 import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
 import { startDemo } from './lib/run';
+import { sourceUrl } from './lib/source';
 
 const params = new URLSearchParams(location.search);
 const name = params.get('demo');
@@ -92,7 +93,10 @@ function welcome(missing?: string): void {
 	stage.append(box);
 }
 
-/** Runs the demo on a canvas that fills the panel, with a caption at its top left. */
+/**
+ * Runs the demo on a canvas that fills the panel, with a caption at its top left. The caption's
+ * links open the held frame, or the live demo from it, and the demo's code on the main branch.
+ */
 async function runDemo(demo: Demo): Promise<void> {
 	document.title = `${demo.title}: null3D demos`;
 	const canvas = element('canvas');
@@ -111,14 +115,19 @@ async function runDemo(demo: Demo): Promise<void> {
 		controls.className = 'controls';
 		caption.append(controls);
 	}
-	const mode = element('p');
-	mode.className = 'quiet';
-	mode.append(
+	const code = element('a', 'View code', sourceUrl(demo));
+	code.target = '_blank';
+	code.rel = 'noopener';
+	const links = element('p');
+	links.className = 'quiet';
+	links.append(
 		params.has('hold')
 			? element('a', 'Live', demoLink(demo))
 			: element('a', `Held frame at ${demo.hold} s`, demoLink(demo, true)),
+		' · ',
+		code,
 	);
-	caption.append(mode);
+	caption.append(links);
 	stage.append(canvas, labels, caption);
 	try {
 		await startDemo({ canvas, demo, labels });

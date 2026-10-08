@@ -18,6 +18,11 @@ export interface Demo {
 	group: DemoGroup;
 	/** The address of the demo's sketch module. */
 	sketch: URL;
+	/**
+	 * The demo's code under the examples folder, for a demo that is not one `<name>/sketch.ts`: a
+	 * file, or a folder of several files that ends with a slash, such as `showcase/city/`.
+	 */
+	code?: string;
 	title: string;
 	/** What the demo shows. */
 	summary: string;

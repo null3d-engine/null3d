@@ -8,6 +8,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | --- | --- |
 | `examples/demos.ts` | The list of demos and their groups, in `DEMO_GROUPS` order. Each entry names its group and its sketch, with a literal `new URL('./<name>/sketch.ts', import.meta.url)`, and says why the demo loads files, when it does |
 | `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, and shows its labels in a layer that the page gives it |
+| `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
 | `examples/<name>/sketch.ts` | One demo, under 150 lines |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
@@ -30,7 +31,7 @@ The examples page links only by relative addresses, and each demo's entry names 
 The website's repository holds this repository as a git submodule, pinned to the release tag that matches the `@null3d/engine` version it installs. Its build:
 
 1. Installs `@null3d/engine`, `@null3d/controls` and `@null3d/vite-plugin` from npm, and never lists the submodule as a workspace, whose `workspace:*` versions would break.
-2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and later its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
+2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and later its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
 3. Builds its pages with `null3d()` from the plugin, `base: './'`, and `resolve.dedupe` for `@null3d/engine` and `@null3d/controls`. The dedupe matters when the submodule has its own `node_modules`: its workspace links point at packages whose built files are missing. Each entry of the list names its sketch with a literal address, so the build ships every sketch that the website imports.
 4. Sets the environment variable `VITE_NULL3D_SAMPLES_BASE` to the folder of the sample files, such as `./samples/`, and copies them there with `copyNamedSamples` from `tools/lib/samples.ts`, which copies every file that the demos name.
 5. Sends the isolation headers, for example with a Cloudflare Pages `_headers` file, as [hosting](../docs/getting-started/hosting.md) says.
@@ -46,8 +47,17 @@ The examples page is the clone's own layout of the demos. The website has a layo
 - In a wide window, a sidebar at the left lists the demos by group. The groups come in the order of `DEMO_GROUPS` in `examples/demos.ts`, and a group with no demos does not show. The panel at the right runs the demo that `?demo=<name>` names. Its canvas fills the panel. A caption at the top left gives the demo's title, its summary and how to steer it.
 - In a window narrower than 768 CSS pixels, the sidebar is a drawer. A menu button in a bar at the top opens it. The drawer slides in below the bar, so the same button closes it. Escape, a tap beside the drawer and a pick close it too. The caption starts folded to its title there, to leave the canvas clear.
 - Without `?demo=`, the panel shows a short welcome and starts no engine. A page that ran a demo at once would start an engine on every visit, before the reader picks one.
-- A small link in the caption opens the demo's held frame (`?hold=<time>`). The held page links back to the live demo.
+- A small link in the caption opens the demo's held frame (`?hold=<time>`). The held page links back to the live demo. Beside it, "View code" opens the demo's code on the main branch in a new tab.
 - The sidebar is a `nav` landmark, and the running demo's link has `aria-current="page"`. The menu button reports the drawer's state with `aria-expanded`. Opening the drawer moves the focus to the running demo's link and makes the panel inert. Closing it with Escape or a tap beside it returns the focus to the button.
+
+### The link to a demo's code
+
+`sourceUrl(demo, ref)` gives the GitHub address of a demo's code at a branch or a tag, and `ref` is `main` when a page names none. The clone's page names none. The website names the release tag that it builds from, so its link shows the code that it runs.
+
+- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Every feature demo is one sketch, so the reader lands on the code at once.
+- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
+
+The address comes from the demo's entry, not from its `sketch` field. A build gives each sketch a hashed address of its own. `REPOSITORY_URL` in the same module holds the repository's address. A unit test checks it against the `repository` field of the root `package.json`.
 
 ### Each pick is a new page
 
