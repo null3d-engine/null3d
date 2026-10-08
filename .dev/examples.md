@@ -55,9 +55,11 @@ Each link loads `?demo=<name>` as a new page. The page does not swap engines in 
 
 ### Engine settings of the demos
 
-`startDemo` asks for the High quality preset on every device, so each demo shows the engine's best look. The engine caps the preset on the GPU paths that run at most Medium: WebGL2 and WebGPU's compatibility mode. The frame-budget governor runs in every preset. So a phone that cannot hold the frame rate at High lowers its render scale first, then its shadows. A preset that the page names skips the engine's preset check, which would start a phone at Low. The `?preset=` switch still wins over the page, to try another preset.
+`startDemo` names no quality preset, and leaves the frame-budget governor on, as every preset has it. The engine then picks the preset for each device. It starts from the device's kind: High on a desktop, Medium on a tablet and Low on a phone. It caps that at Medium on WebGL2 and in WebGPU's compatibility mode. Then its start-up check lowers the preset until one holds the frame rate, and keeps the result for the next visit.
 
-Hold mode keeps the preset that the page names. The image tests do not use `startDemo`. The manifest draws each demo's sketch through the test pages, so the preset of the examples page does not change their images.
+A page that names a preset skips that check. A phone would then start at High, and stutter and heat until the governor stepped down. The check already gives High on desktops with a strong GPU, where the richer look matters. The `?preset=` switch still fixes a preset, to try another one.
+
+In hold mode the engine runs no check, and the preset follows the device's kind. The image tests do not use `startDemo`. The manifest draws each demo's sketch through the test pages, so the examples page does not change their images.
 
 ## Procedural first
 
@@ -77,7 +79,7 @@ The owner decided these points about the examples:
 - The separate `null3d-engine/demos-vs-threejs` repository moves into `examples/`, as a tier of comparison demos. It does not stay a self-contained app. Its scenes, its three.js code and its rules move here, and its two character models go to the sample-assets repository. Then the repository is deleted, with the owner's go-ahead at that time. Its measuring tools do not move: `bench/run.ts`, `bench/parity.ts`, `tests/real-browsers.ts` and `bench/readme-media.ts` do that work here.
 - One `examples/` folder serves the clone and the website, as above. The website lays the demos out in its own design, so the examples give it data and a way to start each demo, not a page.
 - Demos are procedural first, as above.
-- The examples page of a clone lists the demos by group in a sidebar, and runs one in a panel beside it, as above. Each pick loads a new page, and `startDemo` asks for the High preset with the governor on. The sidebar shows no thumbnails: they would need image files, and the website's copy of the folder has none.
+- The examples page of a clone lists the demos by group in a sidebar, and runs one in a panel beside it, as above. Each pick loads a new page. `startDemo` names no preset, so the engine's start-up check picks one for each device. The sidebar shows no thumbnails: they would need image files, and the website's copy of the folder has none.
 - Every demo and comparison shows the engine's stats overlay. The overlay gains memory, triangle, object, main-thread and GPU-time figures, and a switch on the page. A three.js page prints the same figures in the same layout.
 - The demos must show the engine's power, not one call each. The weak feature demos get richer scenes. A showcase tier holds larger scenes from the benchmarks. New demos cover the features that have none.
 - The comparison demos show where null3D leads by most, by the figures in [Benchmark results](benchmark-results.md). These are animated crowds (S5's mechanism: 120 against 18 frames per second on the Mac) and deep hierarchies (S2: 3 to 16% of three.js's CPU time). They are also a town with shadows and many lights (S4 and S3), and a page that stays responsive beside a heavy scene. The set is Battle and Factory from the old repository, a new Night town, and a Busy page. The old repository's City is left out: most of its objects stand still, where three.js ties. Swarms of identical boxes are left out too: they are GPU-bound on phones, and the scene code takes most of the frame.
